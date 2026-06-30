@@ -5,3 +5,6 @@ target/
 node_modules/
 dist/
 build/
+data/
+*.log
+.DS_Store
