@@ -1,0 +1,55 @@
+package com.eneik.production.models.persistence;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.persistence.*;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+import java.time.Instant;
+import java.util.UUID;
+
+@Entity
+@Table(name = "tasks")
+public class TaskEntity {
+    @Id
+    @GeneratedValue(strategy = GenerationType.AUTO)
+    private UUID id;
+
+    @ManyToOne
+    @JoinColumn(name = "tag", nullable = false)
+    private RoleEntity role;
+
+    @Column(nullable = false)
+    private String description;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    private JsonNode payload;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private TaskStatus status = TaskStatus.queued;
+
+    private String linearIssueId;
+
+    @Column(nullable = false, updatable = false)
+    private Instant createdAt = Instant.now();
+
+    @Column(nullable = false)
+    private Instant updatedAt = Instant.now();
+
+    public UUID getId() { return id; }
+    public void setId(UUID id) { this.id = id; }
+    public RoleEntity getRole() { return role; }
+    public void setRole(RoleEntity role) { this.role = role; }
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
+    public JsonNode getPayload() { return payload; }
+    public void setPayload(JsonNode payload) { this.payload = payload; }
+    public TaskStatus getStatus() { return status; }
+    public void setStatus(TaskStatus status) { this.status = status; }
+    public String getLinearIssueId() { return linearIssueId; }
+    public void setLinearIssueId(String linearIssueId) { this.linearIssueId = linearIssueId; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+}

@@ -1,0 +1,13 @@
+package com.eneik.production.dto;
+
+import com.eneik.production.models.persistence.TaskStatus;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.UUID;
+
+public record TaskDto(
+    UUID id,
+    String tag,
+    String description,
+    TaskStatus status,
+    JsonNode payload
+) {}
