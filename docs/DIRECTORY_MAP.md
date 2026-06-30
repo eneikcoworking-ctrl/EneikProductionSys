@@ -16,7 +16,7 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 
 ---
 
-## 2. DIRECTORY STRUCTURE (LEAN / TOC ALIGNED)
+## 2. DIRECTORY STRUCTURE (SPRING BOOT / LEAN / TOC ALIGNED)
 
 ```text
 /
@@ -26,47 +26,45 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 │   ├── env/                   # Environment variables (ACC-05)
 │   └── sync/                  # Linear/Task sync scripts (ACC-01: TAG-09)
 ├── docs/                      # Architectural Blueprints & ADRs
-├── src/                       # Source Code
-│   ├── routes/                # [CONTROLLER LAYER] Entry points & Contracts (ACC-02: TAG-02)
+├── src/main/java/com/eneik/production/
 │   ├── controllers/           # [CONTROLLER LAYER] Business Logic Orchestration
-│   │   ├── core/              # Primary operations (ACC-01)
 │   │   ├── policy/            # Regulatory filters (ACC-07: TAG-10)
-│   │   └── auth/              # Security boundaries (ACC-06: TAG-07)
+│   │   └── GreetingController.java # Primary operations (ACC-01/TAG-02)
 │   ├── models/                # [MODEL LAYER] Domain Entities & State
 │   │   ├── domain/            # Pure Business Entities (ACC-02: TAG-01)
 │   │   ├── persistence/       # DB Schemas & Mappings (ACC-03: TAG-08)
-│   │   └── ml/                # Predictive Models (ACC-03: TAG-04)
-│   ├── views/                 # [VIEW LAYER] UI & Interaction
-│   │   ├── components/        # Atomic Design System (ACC-04: TAG-03)
-│   │   ├── pages/             # Route-mapped layouts (ACC-04: TAG-11)
-│   │   └── states/            # Client-side UI state (ACC-04)
+│   │   └── ml/                # Predictive Models (ACC-03: TAG-04) placeholder
 │   ├── services/              # Cross-cutting concerns (External Integrations)
 │   └── utils/                 # Shared Utilities (Validation, Formatting)
+├── src/main/resources/        # App configurations & SQL
+├── src/views/                 # [VIEW LAYER] UI & Interaction (React/Next.js)
+│   ├── components/            # Atomic Design System (ACC-04: TAG-03)
+│   ├── pages/                 # Route-mapped layouts (ACC-04: TAG-11)
+│   └── states/                # Client-side UI state (ACC-04)
 ├── tests/                     # ZERO-DEFECT CONTROL LAYER
 │   ├── unit/                  # Component-level tests (ACC-02/03/04)
 │   ├── integration/           # MVC Pipeline tests (ACC-06: TAG-06)
 │   ├── e2e/                   # JTBD User Journey verification (ACC-06: TAG-06)
 │   └── security/              # Automated SAST/DAST audits (ACC-06: TAG-07)
 ├── scripts/                   # Sync & Automation
-│   ├── audit_pr.py            # Jules' Automated Audit Script (TAG-00)
-│   └── linear_sync.sh         # Task synchronization (TAG-09)
+├── pom.xml                    # Maven Dependency Management
 ├── BARCAN-TAG-*.md            # Operational boundaries for agents
-└── package.json               # Dependency management
+└── README_BRAND-OS_AGENTS.md  # Global Agent Map
 ```
 
 ---
 
 ## 3. LEAN/TOC PIPELINE CHECK (CONCURRENCY PROTECTION)
 
-- **Isolation Strategy**: Code separation is strictly enforced at the directory level. `ACC-04` (Views) can work entirely within `src/views/` without blocking `ACC-02` (Models).
-- **The Constraint (TAG-00)**: All PRs converge at `scripts/audit_pr.py`. This script performs automated linting/testing (Zero-Defect) *before* TAG-00 (Account 01) performs the final human-representative review.
+- **Isolation Strategy**: Code separation is strictly enforced at the package level in Java and directory level in Frontend. `ACC-04` (Views) can work entirely within `src/views/` without blocking `ACC-02` (Models) in `src/main/java/.../models/`.
+- **The Constraint (TAG-00)**: All PRs converge at the automated audit script. This performs automated linting/testing (Zero-Defect) *before* TAG-00 (Account 01) performs the final human-representative review.
 - **Merge Bottleneck Prevention**: By using **Contract-First Development** (TAG-02), frontend and backend roles work against a mockable interface, allowing true concurrent execution.
 
 ---
 
 ## 4. ZERO-DEFECT FOLDER ISOLATION
 
-Each account has a dedicated `test/` subdirectory for their domain.
+Each account has a dedicated test focus.
 - `tests/unit/models/` -> Managed by ACC-02/03
 - `tests/unit/views/` -> Managed by ACC-04
 - `tests/integration/` -> Primary workspace for ACC-06 (QA) to ensure MVC connections.
