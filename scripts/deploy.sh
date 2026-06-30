@@ -1,19 +1,15 @@
-#!/bin/bash
-# @file deploy.sh
-# @agent TAG-05 (Necessary Identity)
-# @description Deployment script ensuring environment identity.
+#!/usr/bin/env bash
+set -euo pipefail
 
-set -e
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-echo "Verifying environment identity..."
-ENVIRONMENT=${1:-"staging"}
+cd "$REPO_ROOT"
 
-if [[ "$ENVIRONMENT" == "production" ]]; then
-    echo "DEPLOYING TO PRODUCTION (Rigid Boundary check passed)"
+if docker compose version >/dev/null 2>&1; then
+  docker compose up --build -d
 else
-    echo "DEPLOYING TO STAGING"
+  docker-compose up --build -d
 fi
 
-echo "Running migrations..."
-# Psql command placeholder
-echo "Done."
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
