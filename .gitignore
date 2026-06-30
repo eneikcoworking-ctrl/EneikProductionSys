@@ -1,4 +1,10 @@
 target/
+*.class
+.DS_Store
+.env
+node_modules/
+dist/
+build/
 data/
 *.log
 .DS_Store

@@ -13,6 +13,11 @@ import java.util.UUID;
 public class Greeting {
     private final UUID id;
     private final String message;
+    private final GreetingStatus currentStatus;
+    private final Instant createdAt;
+    private final Integer leadTimeSeconds;
+
+    public Greeting(UUID id, String message, GreetingStatus currentStatus, Instant createdAt, Integer leadTimeSeconds) {
     private final String currentStatus;
     private final Instant createdAt;
     private final int leadTimeSeconds;
@@ -25,6 +30,7 @@ public class Greeting {
         this.id = id;
         this.message = message;
         this.currentStatus = currentStatus;
+        this.createdAt = createdAt;
         this.createdAt = Instant.now();
         this.leadTimeSeconds = leadTimeSeconds;
     }
@@ -37,6 +43,7 @@ public class Greeting {
         return message;
     }
 
+    public GreetingStatus getCurrentStatus() {
     public String getCurrentStatus() {
         return currentStatus;
     }
@@ -45,6 +52,12 @@ public class Greeting {
         return createdAt;
     }
 
+    public Integer getLeadTimeSeconds() {
+        return leadTimeSeconds;
+    }
+
+    public String getFormattedGreeting() {
+        return String.format("%s [%s] (Created at %s)", message, currentStatus, createdAt.toString());
     public int getLeadTimeSeconds() {
         return leadTimeSeconds;
     }

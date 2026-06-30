@@ -9,7 +9,7 @@ This manifest is used by **Jules (The Agent)** during automated PR audits to ens
   - `TAG-01/02` -> Must stay within `src/models/domain/` or `src/routes/`.
   - `TAG-03/11` -> Must stay within `src/views/`.
   - `TAG-10` -> Modifications permitted ONLY in `src/controllers/policy/`.
-- [ ] **Leakage Check**: Are "View" dependencies (e.g., CSS, Svelte state/stores) found in the "Model" layer? (FAIL if true).
+- [ ] **Leakage Check**: Are "View" dependencies (e.g., CSS, React hooks) found in the "Model" layer? (FAIL if true).
 - [ ] **Contract Integrity**: If `src/routes/` is modified, is there a corresponding update to the OpenAPI spec?
 
 ## 2. DOMAIN LOGIC AUDIT (Ontological Integrity)

@@ -1,5 +1,12 @@
 package com.eneik.production.services;
 
+import org.springframework.stereotype.Service;
+import java.util.Map;
+
+/**
+ * @file MLPredictionServiceClient.java
+ * @agent TAG-04 (Modal Quantifier)
+ * @description Client for the AI Prediction Service.
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
@@ -22,6 +29,13 @@ import java.util.logging.Logger;
 @Service
 public class MLPredictionServiceClient {
 
+    public Map<String, Object> predictBottleneck(int wipCount, double avgCycleTime) {
+        // In a real implementation, this would call http://localhost:8000/api/v1/predict/bottleneck
+        // For now, it's a skeleton for testing fallback.
+        return Map.of(
+            "risk_score", 0.15,
+            "is_bottleneck_predicted", false
+        );
     private static final Logger LOGGER = Logger.getLogger(MLPredictionServiceClient.class.getName());
 
     private final RestTemplate restTemplate;
