@@ -1,0 +1,101 @@
+openapi: 3.0.0
+info:
+  title: BRAND OS API
+  description: API for the Brand OS Agency, providing greetings, predictions, and authentication.
+  version: 1.0.0
+paths:
+  /api/hello:
+    get:
+      summary: Get the fixed "Hello World" greeting.
+      responses:
+        '200':
+          description: A successful response with the fixed greeting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Greeting'
+  /api/greeting/{id}:
+    get:
+      summary: Get a specific greeting by ID.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: A successful response with the requested greeting.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Greeting'
+  /api/predict:
+    post:
+      summary: Predict user satisfaction using Bayesian logic.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                user_context:
+                  type: string
+      responses:
+        '200':
+          description: A successful prediction result.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Prediction'
+  /api/auth:
+    post:
+      summary: Authenticate and verify knowledge tokens.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                token:
+                  type: string
+      responses:
+        '200':
+          description: Authentication status and verified token.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                  verified:
+                    type: boolean
+                  pii:
+                    type: string
+                    nullable: true
+components:
+  schemas:
+    Greeting:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        message:
+          type: string
+        timestamp:
+          type: string
+          format: date-time
+    Prediction:
+      type: object
+      properties:
+        satisfaction_probability:
+          type: number
+        modal_status:
+          type: string
+        context_processed:
+          type: string
