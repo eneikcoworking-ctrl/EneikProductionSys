@@ -16,37 +16,29 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 
 ---
 
-## 2. DIRECTORY STRUCTURE (SPRING BOOT / SVELTE / LEAN / TOC ALIGNED)
+## 2. DIRECTORY STRUCTURE (SPRING BOOT / SVELTE / FASTAPI)
 
 ```text
 /
-├── .github/                   # CI/CD Workflows (ACC-05: TAG-05)
+├── .github/                   # CI/CD Workflows (ACC-05)
 ├── config/                    # System Configurations
-│   ├── agents/                # Agent-specific operational boundaries (ACC-01)
-│   ├── env/                   # Environment variables (ACC-05)
-│   └── sync/                  # Linear/Task sync scripts (ACC-01: TAG-09)
 ├── docs/                      # Architectural Blueprints & ADRs
 ├── src/main/java/com/eneik/production/
-│   ├── controllers/           # [CONTROLLER LAYER] Business Logic Orchestration
-│   │   ├── policy/            # Regulatory filters (ACC-07: TAG-10)
-│   │   └── GreetingController.java # Primary operations (ACC-01/TAG-02)
-│   ├── models/                # [MODEL LAYER] Domain Entities & State
-│   │   ├── domain/            # Pure Business Entities (ACC-02: TAG-01)
-│   │   ├── persistence/       # DB Schemas & Mappings (ACC-03: TAG-08)
-│   │   └── ml/                # Predictive Models (ACC-03: TAG-04)
-│   ├── services/              # Cross-cutting concerns (External Integrations)
-│   └── utils/                 # Shared Utilities (Validation, Formatting)
-├── src/main/resources/        # App configurations & SQL
+│   ├── controllers/           # [CONTROLLER LAYER] Orchestration (ACC-01/TAG-02)
+│   │   └── policy/            # Regulatory filters (ACC-07: TAG-10)
+│   ├── models/                # [MODEL LAYER] Domain Entities (ACC-02: TAG-01)
+│   │   └── persistence/       # DB Entities & Repositories (ACC-03: TAG-08)
+│   └── AgencyApplication.java  # Main Entry Point
+├── src/main/resources/        # Configurations & DB Migrations
+├── src/models/ml/             # [AI LAYER] FastAPI Prediction Service (ACC-03: TAG-04)
 ├── frontend/                  # [VIEW LAYER] Svelte Application (ACC-04)
-│   ├── src/                   # Svelte Components & Logic
-│   └── package.json           # Frontend dependencies
-├── src/test/java/             # Java Integration/Unit tests
-├── tests/                     # ZERO-DEFECT CONTROL LAYER (Global/E2E)
-│   ├── integration/           # Cross-service tests
-│   └── security/              # Automated SAST/DAST audits
-├── scripts/                   # Sync & Automation
+├── src/test/java/             # Backend Integration/Unit tests (ACC-06)
+├── tests/                     # ZERO-DEFECT CONTROL LAYER (E2E/Security)
+├── scripts/                   # Sync & Automation scripts
 ├── pom.xml                    # Maven Dependency Management
-├── 00_INTEGRATION_CONTRACT.md # Final Source of Truth
+├── Dockerfile*                # Containerization targets
+├── docker-compose.yml         # Unified system orchestration
+├── 00_INTEGRATION_CONTRACT.md # FINAL SOURCE OF TRUTH
 ├── BARCAN-TAG-*.md            # Operational boundaries for agents
 └── README_BRAND-OS_AGENTS.md  # Global Agent Map
 ```
@@ -55,6 +47,6 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 
 ## 3. LEAN/TOC PIPELINE CHECK (CONCURRENCY PROTECTION)
 
-- **Isolation Strategy**: Code separation is strictly enforced at the package level in Java and the `frontend/` directory for UI.
+- **Isolation Strategy**: Code separation is strictly enforced at the package level in Java, the `frontend/` directory for UI, and `src/models/ml/` for AI.
 - **The Constraint (TAG-00)**: All PRs converge at the automated audit script. This performs automated linting/testing (Zero-Defect) *before* TAG-00 (Account 01) performs the final human-representative review.
 - **Merge Bottleneck Prevention**: By using **Contract-First Development** (TAG-02), frontend and backend roles work against a mockable interface, allowing true concurrent execution.
