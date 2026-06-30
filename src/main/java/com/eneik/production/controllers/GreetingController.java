@@ -1,27 +1,52 @@
 package com.eneik.production.controllers;
 
+import com.eneik.production.controllers.policy.PrivacyFilter;
 import com.eneik.production.models.domain.Greeting;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.util.Map;
 import java.util.UUID;
 
 /**
  * @file GreetingController.java
  * @agent TAG-02 (Rigid Designator)
- * @description Controller for the Hello World greeting, providing a fixed designator.
+ * @description Controller for EneikProductionSys Greetings, integrated with PrivacyFilter.
  */
 @RestController
-@RequestMapping("/api")
+@RequestMapping("/api/v1/greetings")
+@CrossOrigin(origins = "http://localhost:3000")
 public class GreetingController {
 
-    @GetMapping("/hello")
-    public Greeting getHello() {
-        // Rigidly designated ID and Message
-        UUID fixedId = UUID.fromString("00000000-0000-0000-0000-000000000001");
-        String message = "Hello World: The Agency is Operational.";
+    @GetMapping("/latest")
+    public ResponseEntity<Greeting> getLatest() {
+        Greeting latest = new Greeting(
+            UUID.randomUUID(),
+            "Welcome to EneikProductionSys",
+            "COMPLETED",
+            Instant.now(),
+            42
+        );
+        return ResponseEntity.ok(latest);
+    }
 
-        return new Greeting(fixedId, message);
+    @PostMapping
+    public ResponseEntity<Greeting> createGreeting(@RequestBody Map<String, String> request) {
+        String rawMessage = request.get("message");
+
+        // TAG-10: Apply Privacy Filter before anything else
+        String safeMessage = PrivacyFilter.maskSensitiveData(rawMessage);
+
+        Greeting created = new Greeting(
+            UUID.randomUUID(),
+            safeMessage,
+            "RECEIVED",
+            Instant.now(),
+            0
+        );
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 }

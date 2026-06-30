@@ -1,29 +1,43 @@
 package com.eneik.production.controllers.policy;
 
-import java.util.Map;
-import java.util.HashMap;
+import com.eneik.production.exceptions.DataComplianceException;
+import java.util.regex.Pattern;
 
 /**
  * @file PrivacyFilter.java
  * @agent TAG-10 (Deontic Prohibition) & TAG-07 (Second-Order Knowledge)
- * @description Regulatory and Security filter for data transmission.
+ * @description PII detection and masking service.
  */
 public class PrivacyFilter {
-    /**
-     * Masks PII data before it leaves the boundary.
-     */
-    public static Map<String, Object> maskData(Map<String, Object> data) {
-        Map<String, Object> masked = new HashMap<>(data);
-        if (masked.containsKey("pii")) {
-            masked.put("pii", "****"); // Deontic Prohibition in action
-        }
-        return masked;
-    }
+
+    private static final Pattern EMAIL_PATTERN = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}");
+    private static final Pattern PHONE_PATTERN = Pattern.compile("\\+?\\d{1,4}?[-.\\s]?\\(?\\d{1,3}?\\)?[-.\\s]?\\d{1,4}[-.\\s]?\\d{1,4}[-.\\s]?\\d{1,9}");
+    private static final Pattern CARD_PATTERN = Pattern.compile("(?:\\d[ -]*?){13,19}");
+    private static final Pattern PASSPORT_PATTERN = Pattern.compile("[A-Z0-9]{6,12}"); // Generic passport-like pattern
 
     /**
-     * Verifies if the request context has the necessary knowledge (token).
+     * Scans input and either masks non-critical PII or blocks critical violations.
+     * Rules:
+     * - Email/Phone -> Mask with [REDACTED]
+     * - Card/Passport -> Block with DataComplianceException
      */
-    public static boolean verifyKnowledge(String token) {
-        return "VALID_KNOWLEDGE_TOKEN".equals(token); // Simplified Second-Order Knowledge check
+    public static String maskSensitiveData(String input) {
+        if (input == null) return null;
+
+        // 1. Critical Blocking (Card / Passport)
+        if (CARD_PATTERN.matcher(input).find()) {
+            throw new DataComplianceException("Credit Card Number Detected");
+        }
+        if (PASSPORT_PATTERN.matcher(input).find()) {
+            // Basic heuristic: check if it looks like a passport (e.g. alphanumeric 9 chars)
+            // For the purpose of this prompt, we block if a strong match is found.
+             throw new DataComplianceException("Passport Data Detected");
+        }
+
+        // 2. Non-Critical Masking (Email / Phone)
+        String masked = EMAIL_PATTERN.matcher(input).replaceAll("[REDACTED]");
+        masked = PHONE_PATTERN.matcher(masked).replaceAll("[REDACTED]");
+
+        return masked;
     }
 }

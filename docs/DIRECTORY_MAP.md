@@ -16,7 +16,7 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 
 ---
 
-## 2. DIRECTORY STRUCTURE (SPRING BOOT / LEAN / TOC ALIGNED)
+## 2. DIRECTORY STRUCTURE (SPRING BOOT / SVELTE / LEAN / TOC ALIGNED)
 
 ```text
 /
@@ -33,21 +33,20 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 │   ├── models/                # [MODEL LAYER] Domain Entities & State
 │   │   ├── domain/            # Pure Business Entities (ACC-02: TAG-01)
 │   │   ├── persistence/       # DB Schemas & Mappings (ACC-03: TAG-08)
-│   │   └── ml/                # Predictive Models (ACC-03: TAG-04) placeholder
+│   │   └── ml/                # Predictive Models (ACC-03: TAG-04)
 │   ├── services/              # Cross-cutting concerns (External Integrations)
 │   └── utils/                 # Shared Utilities (Validation, Formatting)
 ├── src/main/resources/        # App configurations & SQL
-├── src/views/                 # [VIEW LAYER] UI & Interaction (React/Next.js)
-│   ├── components/            # Atomic Design System (ACC-04: TAG-03)
-│   ├── pages/                 # Route-mapped layouts (ACC-04: TAG-11)
-│   └── states/                # Client-side UI state (ACC-04)
-├── tests/                     # ZERO-DEFECT CONTROL LAYER
-│   ├── unit/                  # Component-level tests (ACC-02/03/04)
-│   ├── integration/           # MVC Pipeline tests (ACC-06: TAG-06)
-│   ├── e2e/                   # JTBD User Journey verification (ACC-06: TAG-06)
-│   └── security/              # Automated SAST/DAST audits (ACC-06: TAG-07)
+├── frontend/                  # [VIEW LAYER] Svelte Application (ACC-04)
+│   ├── src/                   # Svelte Components & Logic
+│   └── package.json           # Frontend dependencies
+├── src/test/java/             # Java Integration/Unit tests
+├── tests/                     # ZERO-DEFECT CONTROL LAYER (Global/E2E)
+│   ├── integration/           # Cross-service tests
+│   └── security/              # Automated SAST/DAST audits
 ├── scripts/                   # Sync & Automation
 ├── pom.xml                    # Maven Dependency Management
+├── 00_INTEGRATION_CONTRACT.md # Final Source of Truth
 ├── BARCAN-TAG-*.md            # Operational boundaries for agents
 └── README_BRAND-OS_AGENTS.md  # Global Agent Map
 ```
@@ -56,17 +55,6 @@ The 12 specialized agents are mapped into 7 operational accounts to optimize con
 
 ## 3. LEAN/TOC PIPELINE CHECK (CONCURRENCY PROTECTION)
 
-- **Isolation Strategy**: Code separation is strictly enforced at the package level in Java and directory level in Frontend. `ACC-04` (Views) can work entirely within `src/views/` without blocking `ACC-02` (Models) in `src/main/java/.../models/`.
+- **Isolation Strategy**: Code separation is strictly enforced at the package level in Java and the `frontend/` directory for UI.
 - **The Constraint (TAG-00)**: All PRs converge at the automated audit script. This performs automated linting/testing (Zero-Defect) *before* TAG-00 (Account 01) performs the final human-representative review.
 - **Merge Bottleneck Prevention**: By using **Contract-First Development** (TAG-02), frontend and backend roles work against a mockable interface, allowing true concurrent execution.
-
----
-
-## 4. ZERO-DEFECT FOLDER ISOLATION
-
-Each account has a dedicated test focus.
-- `tests/unit/models/` -> Managed by ACC-02/03
-- `tests/unit/views/` -> Managed by ACC-04
-- `tests/integration/` -> Primary workspace for ACC-06 (QA) to ensure MVC connections.
-
-This ensures that a failure in the View layer does not block the Model pipeline during the "Lean" flow.
