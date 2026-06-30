@@ -27,6 +27,8 @@ docker compose up --build -d
 
 ```bash
 docker ps
+curl http://localhost:8080/
+curl http://localhost:8080/health
 curl http://localhost:8000/docs
 curl http://localhost:3000
 curl http://localhost:8080/api/v1/greetings/latest
