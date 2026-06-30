@@ -2,12 +2,15 @@ package com.eneik.production;
 
 import com.eneik.production.dto.GreetingResponseDTO;
 import com.eneik.production.models.persistence.Status;
+import com.eneik.production.repositories.GreetingRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -15,10 +18,19 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 public class GreetingIntegrationTest {
 
     @Autowired
     private TestRestTemplate restTemplate;
+
+    @Autowired
+    private GreetingRepository greetingRepository;
+
+    @BeforeEach
+    void setUp() {
+        greetingRepository.deleteAll();
+    }
 
     @Test
     public void testCreateAndGetLatestGreeting() {

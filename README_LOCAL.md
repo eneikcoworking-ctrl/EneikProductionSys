@@ -34,6 +34,16 @@ curl http://localhost:3000
 curl http://localhost:8080/api/v1/greetings/latest
 ```
 
+Agent orchestration API:
+
+```bash
+curl http://localhost:8080/api/v1/agents/snapshot
+curl -X POST http://localhost:8080/api/v1/agents/requirements \
+  -H "Content-Type: application/json" \
+  -d '{"title":"Build agent workflow","description":"Create accounts, roles, tasks, auto-claim rules, backend API, database schema, and dashboard."}'
+curl -X POST http://localhost:8080/api/v1/agents/auto-claim
+```
+
 `GET /api/v1/greetings/latest` returns `404` until at least one greeting exists. Seed one with:
 
 ```bash
