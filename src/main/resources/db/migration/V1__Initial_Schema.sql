@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS greetings (
+    id UUID PRIMARY KEY,
+    message TEXT NOT NULL,
+    current_status VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    lead_time_seconds BIGINT DEFAULT 0
+);
