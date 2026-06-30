@@ -2,7 +2,7 @@ package com.eneik.production.controllers;
 
 import com.eneik.production.models.domain.GreetingStatus;
 import com.eneik.production.models.persistence.GreetingEntity;
-import com.eneik.production.models.persistence.GreetingRepository;
+import com.eneik.production.repositories.GreetingRepository;
 import com.eneik.production.services.MLPredictionServiceClient;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
