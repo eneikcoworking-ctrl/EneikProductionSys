@@ -22,11 +22,10 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
            "FROM TaskEntity t WHERE t.status = com.eneik.production.models.persistence.TaskStatus.queued " +
            "GROUP BY t.role.tag")
     List<QueueDashboardDto.TagCountDto> queuedGroupedByTag();
+
     @Query(value = "SELECT * FROM tasks " +
             "WHERE status = 'queued' AND tag IN (:capableTags) " +
             "ORDER BY created_at ASC " +
             "LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<TaskEntity> lockNextQueuedTask(@Param("capableTags") List<String> capableTags);
-
-    long countByStatus(TaskStatus status);
 }
