@@ -46,3 +46,17 @@ export type PipelineData = {
   done: number;
   failed: number;
 };
+
+export type ProjectStatus = 'active' | 'accepted';
+
+export interface Project {
+  id: string;
+  name: string;
+  status: ProjectStatus;
+  createdAt: string;
+  acceptedAt?: string;
+  accountsCount?: number;
+  tasksQueued?: number;
+  tasksInProgress?: number;
+  tasksDone?: number;
+}
