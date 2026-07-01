@@ -42,6 +42,34 @@ curl -X POST http://localhost:8080/api/v1/greetings \
   -d '{"message":"Local stack is operational"}'
 ```
 
+## Agent Account API
+
+Create an agent account:
+
+```bash
+curl -X POST http://localhost:8080/api/accounts \
+  -H "Content-Type: application/json" \
+  -d '{"name":"backend-agent","capabilities":"BARCAN-TAG-02,BARCAN-TAG-11"}'
+```
+
+List accounts and update liveness:
+
+```bash
+curl http://localhost:8080/api/accounts
+curl -X POST http://localhost:8080/api/accounts/<account-id>/heartbeat
+curl -X POST http://localhost:8080/api/accounts/<account-id>/status \
+  -H "Content-Type: application/json" \
+  -d '{"status":"idle"}'
+```
+
+Use the created account to claim queued work:
+
+```bash
+curl -X POST http://localhost:8080/api/tasks/claim \
+  -H "Content-Type: application/json" \
+  -d '{"accountId":"<account-id>","capableTags":["BARCAN-TAG-02","BARCAN-TAG-11"]}'
+```
+
 ## Logs
 
 ```bash
