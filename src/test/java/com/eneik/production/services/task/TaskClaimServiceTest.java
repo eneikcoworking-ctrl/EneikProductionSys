@@ -5,6 +5,7 @@ import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.ClaimService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,7 +22,7 @@ import static org.junit.jupiter.api.Assertions.*;
 public class TaskClaimServiceTest {
 
     @Autowired
-    private TaskClaimService taskClaimService;
+    private ClaimService taskClaimService;
 
     @Autowired
     private ClaimRepository claimRepository;

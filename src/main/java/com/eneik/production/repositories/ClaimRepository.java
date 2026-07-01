@@ -6,9 +6,11 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
     List<ClaimEntity> findByReleasedAtIsNullAndLeaseExpiresAtBefore(Instant now);
+    Optional<ClaimEntity> findByTaskIdAndReleasedAtIsNull(UUID taskId);
 }
