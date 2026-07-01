@@ -1,13 +1,14 @@
 package com.eneik.production.dto;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import java.time.Instant;
 import java.util.UUID;
 
 public record ClaimDto(
-    UUID id,
+    UUID claimId,
     UUID taskId,
-    UUID accountId,
     String roleTag,
-    Instant claimedAt,
+    String description,
+    JsonNode payload,
     Instant leaseExpiresAt
 ) {}
