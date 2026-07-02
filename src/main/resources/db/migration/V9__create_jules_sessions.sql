@@ -1,6 +1,6 @@
 CREATE TABLE jules_sessions (
-  id UUID DEFAULT random_uuid() PRIMARY KEY,
-  account_id UUID NOT NULL,
+  id UUID PRIMARY KEY,
+  account_id UUID,
   task_id UUID NOT NULL,
   external_session_id VARCHAR(128),
   status VARCHAR(24) NOT NULL DEFAULT 'queued',

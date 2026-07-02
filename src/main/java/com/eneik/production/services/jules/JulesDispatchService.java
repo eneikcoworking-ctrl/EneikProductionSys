@@ -60,7 +60,7 @@ public class JulesDispatchService {
     private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId) {
         JulesSessionEntity session = new JulesSessionEntity();
         session.setTaskId(task.getId());
-        session.setAccountId(accountId != null ? accountId : UUID.fromString("00000000-0000-0000-0000-000000000000")); // Fallback UUID if null
+        session.setAccountId(accountId);
         session.setStatus("queued");
 
         ProjectEntity project = task.getProject();
