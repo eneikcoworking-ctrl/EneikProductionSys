@@ -28,6 +28,26 @@ public class WishlistEntity {
     @Column(nullable = false)
     private WishlistStatus status = WishlistStatus.pending;
 
+    private String jtbd;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "lean_value")
+    private LeanValue leanValue;
+
+    @Column(name = "toc_constraint_ref")
+    private String tocConstraintRef;
+
+    @Column(name = "six_sigma_metric")
+    private String sixSigmaMetric;
+
+    private String dod;
+
+    @Column(name = "acceptance_criteria")
+    private String acceptanceCriteria;
+
+    @Column(name = "compiled_by_role")
+    private String compiledByRole;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -77,6 +97,62 @@ public class WishlistEntity {
 
     public void setStatus(WishlistStatus status) {
         this.status = status;
+    }
+
+    public String getJtbd() {
+        return jtbd;
+    }
+
+    public void setJtbd(String jtbd) {
+        this.jtbd = jtbd;
+    }
+
+    public LeanValue getLeanValue() {
+        return leanValue;
+    }
+
+    public void setLeanValue(LeanValue leanValue) {
+        this.leanValue = leanValue;
+    }
+
+    public String getTocConstraintRef() {
+        return tocConstraintRef;
+    }
+
+    public void setTocConstraintRef(String tocConstraintRef) {
+        this.tocConstraintRef = tocConstraintRef;
+    }
+
+    public String getSixSigmaMetric() {
+        return sixSigmaMetric;
+    }
+
+    public void setSixSigmaMetric(String sixSigmaMetric) {
+        this.sixSigmaMetric = sixSigmaMetric;
+    }
+
+    public String getDod() {
+        return dod;
+    }
+
+    public void setDod(String dod) {
+        this.dod = dod;
+    }
+
+    public String getAcceptanceCriteria() {
+        return acceptanceCriteria;
+    }
+
+    public void setAcceptanceCriteria(String acceptanceCriteria) {
+        this.acceptanceCriteria = acceptanceCriteria;
+    }
+
+    public String getCompiledByRole() {
+        return compiledByRole;
+    }
+
+    public void setCompiledByRole(String compiledByRole) {
+        this.compiledByRole = compiledByRole;
     }
 
     public Instant getCreatedAt() {

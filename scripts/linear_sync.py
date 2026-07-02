@@ -12,11 +12,13 @@ sys.path.append(os.path.dirname(__file__))
 try:
     from modules.six_sigma_reporter import calculate_lead_cycle_time, calculate_dpmo, generate_markdown_report
     from modules.db_utils import db
+    from modules.linear_issue_mapper import LinearIssueMapper
 except ImportError:
     # Handle the case where the script is run from a different directory
     sys.path.append(os.path.join(os.path.dirname(__file__), 'modules'))
     from six_sigma_reporter import calculate_lead_cycle_time, calculate_dpmo, generate_markdown_report
     from db_utils import db
+    from linear_issue_mapper import LinearIssueMapper
 
 ERROR_LOG = 'docs/metrics/sync_errors.log'
 REPORT_FILE = 'docs/metrics/report_latest.md'
@@ -83,8 +85,36 @@ def map_status_to_linear_name(status: str) -> str:
         'failed': 'Backlog',
     }.get(status, 'Backlog')
 
-def sync_task_to_linear(task, state_mapping):
-    if task.get('linearIssueId') is None:
+def sync_task_to_linear(task, state_mapping, mapper: LinearIssueMapper):
+    linear_issue_id = task.get('linearIssueId')
+    metadata = db.get_task_metadata(task['id']) or {}
+
+    # 1. Prepare fields
+    status_name = map_status_to_linear_name(task['status'])
+    state_id = state_mapping.get(status_name)
+    if not state_id:
+        print(f"Could not find state ID for status {status_name}. Skipping task {task['id']}")
+        return
+
+    role_label_id = mapper.map_role_to_label(task['role']['tag'])
+
+    labels = [role_label_id]
+
+    # Assignee logic
+    active_claim = db.get_active_claim(task['id'])
+    if active_claim:
+        account_name = active_claim.get('account', {}).get('name')
+        if account_name:
+            assignee_label_id = mapper.map_assignee_to_label(account_name)
+            labels.append(assignee_label_id)
+
+    # DoD in description
+    dod_text = metadata.get('dodText', '')
+    description = task['description']
+    if dod_text:
+        description += f"\n\n### Definition of Done\n{dod_text}"
+
+    if not linear_issue_id:
         query = """
         mutation IssueCreate($input: IssueCreateInput!) {
           issueCreate(input: $input) {
@@ -98,22 +128,18 @@ def sync_task_to_linear(task, state_mapping):
         variables = {
             "input": {
                 "title": task['description'],
-                "teamId": TEAM_ID
+                "description": description,
+                "teamId": TEAM_ID,
+                "stateId": state_id,
+                "labelIds": [l for l in labels if l]
             }
         }
         data = linear_api_call(query, variables)
         if data and data.get('issueCreate', {}).get('success'):
-            issue_id = data['issueCreate']['issue']['id']
-            db.update_task_linear_id(task['id'], issue_id)
-            print(f"Created Linear issue {issue_id} for task {task['id']}")
+            linear_issue_id = data['issueCreate']['issue']['id']
+            db.update_task_linear_id(task['id'], linear_issue_id)
+            print(f"Created Linear issue {linear_issue_id} for task {task['id']}")
     else:
-        status_name = map_status_to_linear_name(task['status'])
-        state_id = state_mapping.get(status_name)
-
-        if not state_id:
-            print(f"Could not find state ID for status {status_name}")
-            return
-
         query = """
         mutation IssueUpdate($id: ID!, $input: IssueUpdateInput!) {
           issueUpdate(id: $id, input: $input) {
@@ -122,27 +148,57 @@ def sync_task_to_linear(task, state_mapping):
         }
         """
         variables = {
-            "id": task['linearIssueId'],
+            "id": linear_issue_id,
             "input": {
-                "stateId": state_id
+                "stateId": state_id,
+                "description": description,
+                "labelIds": [l for l in labels if l]
             }
         }
         data = linear_api_call(query, variables)
         if data and data.get('issueUpdate', {}).get('success'):
-            print(f"Updated Linear issue {task['linearIssueId']} for task {task['id']} to {status_name} ({state_id})")
+            print(f"Updated Linear issue {linear_issue_id} for task {task['id']}")
+
+    # PR and Blockers (Relations/Attachments)
+    if linear_issue_id:
+        # PR
+        pr_url = metadata.get('prUrl')
+        if pr_url:
+            mapper.sync_pr_link(linear_issue_id, pr_url)
+
+        # Blockers
+        blockers_str = metadata.get('blockers')
+        if blockers_str:
+            blocker_task_ids = [b.strip() for b in blockers_str.split(',') if b.strip()]
+            blocker_linear_ids = []
+            for b_id in blocker_task_ids:
+                b_task = db.get_task_by_id(b_id)
+                if b_task and b_task.get('linearIssueId'):
+                    blocker_linear_ids.append(b_task['linearIssueId'])
+
+            if blocker_linear_ids:
+                mapper.sync_blockers(linear_issue_id, blocker_linear_ids)
 
 def process_polling():
+    if os.environ.get("LINEAR_ENABLED") != "true":
+        print("Linear sync is disabled (LINEAR_ENABLED != true). Skipping.")
+        return
+
     state_mapping = fetch_workflow_states(TEAM_ID)
     if not state_mapping and os.environ.get("LINEAR_API_TOKEN"):
         log_error("Could not fetch workflow states from Linear.")
         return
 
+    mapper = LinearIssueMapper(linear_api_call, TEAM_ID)
+
     tasks = db.get_tasks_for_sync()
     for task in tasks:
         try:
-            sync_task_to_linear(task, state_mapping)
+            sync_task_to_linear(task, state_mapping, mapper)
         except Exception as e:
             log_error(f"Failed to sync task {task.get('id')}: {str(e)}")
+            import traceback
+            traceback.print_exc()
 
 def fetch_issues(team_id):
     query = """
