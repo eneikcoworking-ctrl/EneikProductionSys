@@ -9,3 +9,5 @@ data/
 *.log
 .DS_Store
 project-workspaces/
+__pycache__/
+*.pyc
