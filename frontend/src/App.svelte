@@ -4,6 +4,7 @@
   import Queue from './dashboard/Queue.svelte';
   import Bottlenecks from './dashboard/Bottlenecks.svelte';
   import Pipeline from './dashboard/Pipeline.svelte';
+  import ProjectsView from './components/ProjectsView.svelte';
   import type { Agent, QueueData, Bottleneck, PipelineData } from './lib/types';
 
   let agents: Agent[] = [];
@@ -44,7 +45,15 @@
 
 <main class="min-h-screen bg-gray-100 p-8">
   <div class="max-w-7xl mx-auto space-y-8">
-    <h1 class="text-3xl font-extrabold text-gray-900">Live Dashboard</h1>
+    <div class="flex justify-between items-center">
+      <h1 class="text-3xl font-extrabold text-gray-900">Brand OS Control Center</h1>
+    </div>
+
+    <section class="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
+      <ProjectsView />
+    </section>
+
+    <h2 class="text-2xl font-bold text-gray-800 mt-12">Live Dashboard</h2>
 
     <Pipeline {pipeline} />
 
