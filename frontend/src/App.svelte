@@ -117,6 +117,12 @@
       <div>
         <p class="label">Active Project</p>
         <h2>{dashboard.project.name}</h2>
+        <p>Factory: {dashboard.project.factoryStatus || 'pending'}</p>
+        <p>{dashboard.project.githubRepositoryStatus || 'GitHub pending'}</p>
+        <p>{dashboard.project.linearProjectStatus || 'Linear pending'}</p>
+        {#if dashboard.project.workspacePath}
+          <p>{dashboard.project.workspacePath}</p>
+        {/if}
         <p>{dashboard.project.repositoryName} · {dashboard.project.linearProjectKey}</p>
       </div>
       <div class="metric">

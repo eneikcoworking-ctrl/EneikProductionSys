@@ -27,6 +27,27 @@ public class ProjectEntity {
 
     private String linearProjectKey;
 
+    @Column(name = "github_repository_status", length = 512)
+    private String githubRepositoryStatus;
+
+    @Column(name = "github_repository_id", length = 128)
+    private String githubRepositoryId;
+
+    @Column(name = "linear_project_status", length = 512)
+    private String linearProjectStatus;
+
+    @Column(name = "linear_project_id", length = 128)
+    private String linearProjectId;
+
+    @Column(name = "workspace_path", length = 512)
+    private String workspacePath;
+
+    @Column(name = "factory_status", length = 64)
+    private String factoryStatus;
+
+    @Column(name = "factory_report", columnDefinition = "TEXT")
+    private String factoryReport;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProjectStatus status = ProjectStatus.active;
@@ -50,6 +71,20 @@ public class ProjectEntity {
     public void setRepositoryUrl(String repositoryUrl) { this.repositoryUrl = repositoryUrl; }
     public String getLinearProjectKey() { return linearProjectKey; }
     public void setLinearProjectKey(String linearProjectKey) { this.linearProjectKey = linearProjectKey; }
+    public String getGithubRepositoryStatus() { return githubRepositoryStatus; }
+    public void setGithubRepositoryStatus(String githubRepositoryStatus) { this.githubRepositoryStatus = githubRepositoryStatus; }
+    public String getGithubRepositoryId() { return githubRepositoryId; }
+    public void setGithubRepositoryId(String githubRepositoryId) { this.githubRepositoryId = githubRepositoryId; }
+    public String getLinearProjectStatus() { return linearProjectStatus; }
+    public void setLinearProjectStatus(String linearProjectStatus) { this.linearProjectStatus = linearProjectStatus; }
+    public String getLinearProjectId() { return linearProjectId; }
+    public void setLinearProjectId(String linearProjectId) { this.linearProjectId = linearProjectId; }
+    public String getWorkspacePath() { return workspacePath; }
+    public void setWorkspacePath(String workspacePath) { this.workspacePath = workspacePath; }
+    public String getFactoryStatus() { return factoryStatus; }
+    public void setFactoryStatus(String factoryStatus) { this.factoryStatus = factoryStatus; }
+    public String getFactoryReport() { return factoryReport; }
+    public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }
     public Instant getCreatedAt() { return createdAt; }

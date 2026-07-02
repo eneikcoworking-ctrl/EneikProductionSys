@@ -19,6 +19,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,6 +68,14 @@ class ProjectFlowIntegrationTest {
         ProjectDto project = createProject.getBody();
         assertThat(project).isNotNull();
         assertThat(project.status()).isEqualTo(ProjectStatus.active);
+        assertThat(project.factoryStatus()).isEqualTo("ready_local");
+        assertThat(project.workspacePath()).contains("project-workspaces-test");
+        Path workspace = Path.of(project.workspacePath());
+        assertThat(Files.exists(workspace.resolve("README.md"))).isTrue();
+        assertThat(Files.exists(workspace.resolve(".env.example"))).isTrue();
+        assertThat(Files.exists(workspace.resolve(".github").resolve("workflows").resolve("ci.yml"))).isTrue();
+        assertThat(project.githubRepositoryStatus()).contains("skipped");
+        assertThat(project.linearProjectStatus()).contains("skipped");
         assertThat(accountRepository.findByProjectIdOrderByNameAsc(project.id())).hasSize(7);
 
         ResponseEntity<WishlistItemDto> wish = restTemplate.postForEntity(

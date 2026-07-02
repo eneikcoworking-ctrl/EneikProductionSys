@@ -17,6 +17,15 @@ services:
     environment:
       ML_SERVICE_URL: http://ml:8000
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
+      PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
+      GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}
+      GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
+      LINEAR_ENABLED: ${LINEAR_ENABLED:-false}
+      LINEAR_API_KEY: ${LINEAR_API_KEY:-}
+      LINEAR_TEAM_ID: ${LINEAR_TEAM_ID:-}
+      LINEAR_API_URL: ${LINEAR_API_URL:-https://api.linear.app/graphql}
     ports:
       - "8080:8080"
     depends_on:

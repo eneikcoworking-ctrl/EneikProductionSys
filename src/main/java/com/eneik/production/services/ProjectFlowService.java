@@ -8,8 +8,11 @@ import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
 import com.eneik.production.services.jules.JulesDispatchResult;
 import com.eneik.production.services.jules.JulesDispatchService;
+import com.eneik.production.services.projectfactory.ProjectFactoryResult;
+import com.eneik.production.services.projectfactory.ProjectFactoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,7 +35,9 @@ public class ProjectFlowService {
     private final ClaimRepository claimRepository;
     private final RoleRepository roleRepository;
     private final JulesDispatchService julesDispatchService;
+    private final ProjectFactoryService projectFactoryService;
     private final ObjectMapper objectMapper;
+    private final String githubOrganization;
 
     public ProjectFlowService(ProjectRepository projectRepository,
                               WishlistItemRepository wishlistItemRepository,
@@ -41,7 +46,9 @@ public class ProjectFlowService {
                               ClaimRepository claimRepository,
                               RoleRepository roleRepository,
                               JulesDispatchService julesDispatchService,
-                              ObjectMapper objectMapper) {
+                              ProjectFactoryService projectFactoryService,
+                              ObjectMapper objectMapper,
+                              @Value("${github.org:eneikcoworking-ctrl}") String githubOrganization) {
         this.projectRepository = projectRepository;
         this.wishlistItemRepository = wishlistItemRepository;
         this.accountRepository = accountRepository;
@@ -49,7 +56,9 @@ public class ProjectFlowService {
         this.claimRepository = claimRepository;
         this.roleRepository = roleRepository;
         this.julesDispatchService = julesDispatchService;
+        this.projectFactoryService = projectFactoryService;
         this.objectMapper = objectMapper;
+        this.githubOrganization = githubOrganization;
     }
 
     @Transactional
@@ -62,22 +71,34 @@ public class ProjectFlowService {
         project.setName(name.trim());
         project.setSlug(uniqueSlug(name));
         project.setRepositoryName(project.getSlug());
-        project.setRepositoryUrl("https://github.com/eneikcoworking-ctrl/" + project.getSlug());
+        project.setRepositoryUrl("https://github.com/" + githubOrganization + "/" + project.getSlug());
         project.setRepoUrl(project.getRepositoryUrl());
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
         ProjectEntity saved = projectRepository.save(project);
+        ProjectFactoryResult factoryResult = projectFactoryService.provision(saved);
+        saved.setRepositoryUrl(factoryResult.repositoryUrl());
+        saved.setRepoUrl(factoryResult.repositoryUrl());
+        saved.setGithubRepositoryStatus(factoryResult.githubRepositoryStatus());
+        saved.setGithubRepositoryId(factoryResult.githubRepositoryId());
+        saved.setLinearProjectStatus(factoryResult.linearProjectStatus());
+        saved.setLinearProjectId(factoryResult.linearProjectId());
+        saved.setWorkspacePath(factoryResult.workspacePath());
+        saved.setFactoryStatus(factoryResult.factoryStatus());
+        saved.setFactoryReport(factoryResult.factoryReport());
+        saved = projectRepository.save(saved);
+        ProjectEntity provisionedProject = saved;
 
         JULES_NAMES.forEach(namePart -> {
             AccountEntity account = new AccountEntity();
-            account.setProject(saved);
-            account.setName(saved.getSlug() + "-" + namePart);
+            account.setProject(provisionedProject);
+            account.setName(provisionedProject.getSlug() + "-" + namePart);
             account.setCapabilities(UNIVERSAL_CAPABILITIES);
             account.setStatus(AccountStatus.idle);
             account.setLastHeartbeat(Instant.now());
             accountRepository.save(account);
         });
 
-        return toProjectDto(saved);
+        return toProjectDto(provisionedProject);
     }
 
     @Transactional
@@ -338,6 +359,13 @@ public class ProjectFlowService {
                 project.getRepositoryUrl(),
                 project.getRepoUrl(),
                 project.getLinearProjectKey(),
+                project.getGithubRepositoryStatus(),
+                project.getGithubRepositoryId(),
+                project.getLinearProjectStatus(),
+                project.getLinearProjectId(),
+                project.getWorkspacePath(),
+                project.getFactoryStatus(),
+                project.getFactoryReport(),
                 project.getStatus(),
                 project.getCreatedAt(),
                 project.getAcceptedAt(),

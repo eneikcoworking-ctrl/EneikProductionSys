@@ -57,6 +57,13 @@ export type ProjectSummary = {
   repositoryUrl?: string;
   repoUrl?: string;
   linearProjectKey?: string;
+  githubRepositoryStatus?: string;
+  githubRepositoryId?: string;
+  linearProjectStatus?: string;
+  linearProjectId?: string;
+  workspacePath?: string;
+  factoryStatus?: string;
+  factoryReport?: string;
   status: ProjectStatus;
   createdAt: string;
   acceptedAt?: string;
