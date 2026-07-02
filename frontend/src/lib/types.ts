@@ -47,17 +47,27 @@ export type PipelineData = {
   failed: number;
 };
 
+export type ProjectStatus = 'active' | 'accepted';
+
 export type ProjectSummary = {
   id: string;
   name: string;
-  slug: string;
-  repositoryName: string;
+  slug?: string;
+  repositoryName?: string;
   repositoryUrl?: string;
+  repoUrl?: string;
   linearProjectKey?: string;
-  status: 'active' | 'accepted';
+  status: ProjectStatus;
   createdAt: string;
   acceptedAt?: string;
+  accountCount?: number;
+  accountsCount?: number;
+  tasksQueued?: number;
+  tasksInProgress?: number;
+  tasksDone?: number;
 };
+
+export type Project = ProjectSummary;
 
 export type WishlistItem = {
   id: string;
@@ -75,6 +85,8 @@ export type Task = {
   description: string;
   status: 'queued' | 'claimed' | 'in_progress' | 'review' | 'done' | 'failed';
   payload?: unknown;
+  julesSessionName?: string;
+  julesDispatchStatus?: string;
 };
 
 export type ProjectDashboard = {

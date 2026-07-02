@@ -10,9 +10,11 @@ public record ProjectDto(
         String slug,
         String repositoryName,
         String repositoryUrl,
+        String repoUrl,
         String linearProjectKey,
         ProjectStatus status,
         Instant createdAt,
-        Instant acceptedAt
+        Instant acceptedAt,
+        long accountCount
 ) {
 }

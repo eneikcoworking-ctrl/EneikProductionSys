@@ -63,6 +63,7 @@ public class ProjectFlowService {
         project.setSlug(uniqueSlug(name));
         project.setRepositoryName(project.getSlug());
         project.setRepositoryUrl("https://github.com/eneikcoworking-ctrl/" + project.getSlug());
+        project.setRepoUrl(project.getRepositoryUrl());
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
         ProjectEntity saved = projectRepository.save(project);
 
@@ -335,10 +336,12 @@ public class ProjectFlowService {
                 project.getSlug(),
                 project.getRepositoryName(),
                 project.getRepositoryUrl(),
+                project.getRepoUrl(),
                 project.getLinearProjectKey(),
                 project.getStatus(),
                 project.getCreatedAt(),
-                project.getAcceptedAt()
+                project.getAcceptedAt(),
+                accountRepository.findByProjectIdOrderByNameAsc(project.getId()).size()
         );
     }
 

@@ -128,7 +128,8 @@ public class AccountController {
                 account.getName(),
                 account.getStatus(),
                 account.getCapabilities(),
-                account.getLastHeartbeat()
+                account.getLastHeartbeat(),
+                account.getCurrentProjectId()
         );
     }
 

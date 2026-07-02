@@ -20,6 +20,9 @@ public class ProjectEntity {
     @Column(nullable = false)
     private String repositoryName;
 
+    @Column(name = "repo_url")
+    private String repoUrl;
+
     private String repositoryUrl;
 
     private String linearProjectKey;
@@ -41,6 +44,8 @@ public class ProjectEntity {
     public void setSlug(String slug) { this.slug = slug; }
     public String getRepositoryName() { return repositoryName; }
     public void setRepositoryName(String repositoryName) { this.repositoryName = repositoryName; }
+    public String getRepoUrl() { return repoUrl; }
+    public void setRepoUrl(String repoUrl) { this.repoUrl = repoUrl; }
     public String getRepositoryUrl() { return repositoryUrl; }
     public void setRepositoryUrl(String repositoryUrl) { this.repositoryUrl = repositoryUrl; }
     public String getLinearProjectKey() { return linearProjectKey; }

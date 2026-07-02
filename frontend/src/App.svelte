@@ -61,7 +61,7 @@
 
   async function orchestrate() {
     if (!dashboard) return;
-    status = 'Orchestrator is deciding what is business-necessary...';
+    status = 'Technical Lead is turning wishes into business-necessary tasks...';
     const response = await fetch(`${API_BASE}/api/projects/${dashboard.project.id}/orchestrate`, {
       method: 'POST'
     });
@@ -190,6 +190,7 @@
               <span>{task.status}</span>
               <strong>{task.tag}</strong>
               <p>{task.description}</p>
+              <small>{task.julesDispatchStatus || 'Jules dispatch pending'}</small>
             </article>
           {/each}
         </div>
