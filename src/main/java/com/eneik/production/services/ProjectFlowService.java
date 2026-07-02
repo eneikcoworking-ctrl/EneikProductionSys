@@ -6,13 +6,19 @@ import com.eneik.production.dto.dashboard.PipelineDashboardDto;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
+import com.eneik.production.dto.dashboard.ClientDeliveryDto;
+import com.eneik.production.services.compiler.TechnicalLeadCompiler;
+import com.eneik.production.services.dashboard.ClientDeliveryService;
 import com.eneik.production.services.jules.JulesDispatchResult;
 import com.eneik.production.services.jules.JulesDispatchService;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,6 +28,7 @@ import java.util.*;
 
 @Service
 public class ProjectFlowService {
+    private static final Logger log = LoggerFactory.getLogger(ProjectFlowService.class);
     private static final List<String> JULES_NAMES = List.of(
             "Jules-01", "Jules-02", "Jules-03", "Jules-04", "Jules-05", "Jules-06", "Jules-07"
     );
@@ -36,6 +43,9 @@ public class ProjectFlowService {
     private final RoleRepository roleRepository;
     private final JulesDispatchService julesDispatchService;
     private final ProjectFactoryService projectFactoryService;
+    private final TechnicalLeadCompiler technicalLeadCompiler;
+    private final ClientDeliveryService clientDeliveryService;
+    private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
 
@@ -47,6 +57,9 @@ public class ProjectFlowService {
                               RoleRepository roleRepository,
                               JulesDispatchService julesDispatchService,
                               ProjectFactoryService projectFactoryService,
+                              TechnicalLeadCompiler technicalLeadCompiler,
+                              ClientDeliveryService clientDeliveryService,
+                              JdbcTemplate jdbcTemplate,
                               ObjectMapper objectMapper,
                               @Value("${github.org:eneikcoworking-ctrl}") String githubOrganization) {
         this.projectRepository = projectRepository;
@@ -57,6 +70,9 @@ public class ProjectFlowService {
         this.roleRepository = roleRepository;
         this.julesDispatchService = julesDispatchService;
         this.projectFactoryService = projectFactoryService;
+        this.technicalLeadCompiler = technicalLeadCompiler;
+        this.clientDeliveryService = clientDeliveryService;
+        this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
     }
@@ -163,9 +179,37 @@ public class ProjectFlowService {
     @Transactional
     public ProjectDto acceptProject(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
+
+        // 1. Stop generation
+        technicalLeadCompiler.stopGeneration(projectId);
+
+        // 2. Linear sync (check for close issues method)
+        // Based on exploration, LinearProjectFactoryClient doesn't have it.
+        // We'll log the skip as requested.
+        log.info("linear sync not available, skipped");
+
+        // 3. Save snapshot
+        ClientDeliveryDto snapshot = clientDeliveryService.getDelivery(projectId);
+        saveFinalReport(projectId, snapshot);
+
         project.setStatus(ProjectStatus.accepted);
         project.setAcceptedAt(Instant.now());
         return toProjectDto(projectRepository.save(project));
+    }
+
+    private void saveFinalReport(UUID projectId, ClientDeliveryDto snapshot) {
+        try {
+            int completedTasks = snapshot.delivered().size();
+            int totalWishlist = snapshot.requested().size();
+            String reportContentJson = objectMapper.writeValueAsString(snapshot);
+
+            jdbcTemplate.update(
+                "INSERT INTO project_final_reports (project_id, total_tasks_completed, total_wishlist_items, report_content) VALUES (?, ?, ?, ?)",
+                projectId, completedTasks, totalWishlist, reportContentJson
+            );
+        } catch (Exception e) {
+            log.error("Failed to save final report snapshot for project {}", projectId, e);
+        }
     }
 
     @Transactional(readOnly = true)
