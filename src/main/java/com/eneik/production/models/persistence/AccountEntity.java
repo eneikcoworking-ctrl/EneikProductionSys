@@ -26,6 +26,9 @@ public class AccountEntity {
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    @Column(name = "current_project_id")
+    private UUID currentProjectId;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public String getName() { return name; }
@@ -38,4 +41,6 @@ public class AccountEntity {
     public void setLastHeartbeat(Instant lastHeartbeat) { this.lastHeartbeat = lastHeartbeat; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public UUID getCurrentProjectId() { return currentProjectId; }
+    public void setCurrentProjectId(UUID currentProjectId) { this.currentProjectId = currentProjectId; }
 }

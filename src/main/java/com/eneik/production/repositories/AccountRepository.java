@@ -21,4 +21,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Modifying
     @Query("UPDATE AccountEntity a SET a.status = :status WHERE a.id = :id")
     void updateStatus(@Param("id") UUID id, @Param("status") AccountStatus status);
+
+    @Modifying
+    @Query("UPDATE AccountEntity a SET a.currentProjectId = :newProjectId " +
+           "WHERE a.currentProjectId IS NULL " +
+           "OR a.currentProjectId IN (SELECT p.id FROM ProjectEntity p WHERE p.status = 'accepted')")
+    void assignFreeAccountsToProject(@Param("newProjectId") UUID newProjectId);
+
+    long countByCurrentProjectId(UUID currentProjectId);
 }
