@@ -38,6 +38,13 @@ public class TaskEntity {
 
     private String julesDispatchStatus;
 
+    @Column(name = "quality_gate_passed")
+    private boolean qualityGatePassed = false;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "quality_gate_report")
+    private JsonNode qualityGateReport;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -62,6 +69,10 @@ public class TaskEntity {
     public void setJulesSessionName(String julesSessionName) { this.julesSessionName = julesSessionName; }
     public String getJulesDispatchStatus() { return julesDispatchStatus; }
     public void setJulesDispatchStatus(String julesDispatchStatus) { this.julesDispatchStatus = julesDispatchStatus; }
+    public boolean isQualityGatePassed() { return qualityGatePassed; }
+    public void setQualityGatePassed(boolean qualityGatePassed) { this.qualityGatePassed = qualityGatePassed; }
+    public JsonNode getQualityGateReport() { return qualityGateReport; }
+    public void setQualityGateReport(JsonNode qualityGateReport) { this.qualityGateReport = qualityGateReport; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
