@@ -16,6 +16,8 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByStatusAndRoleTag(TaskStatus status, String tag);
 
     long countByStatus(TaskStatus status);
+    long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
+    List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
 
     @Query("SELECT new com.eneik.production.dto.dashboard.QueueDashboardDto$TagCountDto(" +
            "t.role.tag, COUNT(t), 0L) " +
@@ -28,4 +30,17 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
             "ORDER BY created_at ASC " +
             "LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<TaskEntity> lockNextQueuedTask(@Param("capableTags") List<String> capableTags);
+
+    @Query(value = "SELECT * FROM tasks " +
+            "WHERE project_id = :projectId AND status = 'queued' " +
+            "ORDER BY created_at ASC " +
+            "LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<TaskEntity> lockNextQueuedTaskForProject(@Param("projectId") UUID projectId);
+
+    @Query("SELECT new com.eneik.production.dto.dashboard.QueueDashboardDto$TagCountDto(" +
+           "t.role.tag, COUNT(t), 0L) " +
+           "FROM TaskEntity t WHERE t.project.id = :projectId " +
+           "AND t.status = com.eneik.production.models.persistence.TaskStatus.queued " +
+           "GROUP BY t.role.tag")
+    List<QueueDashboardDto.TagCountDto> queuedGroupedByProjectAndTag(@Param("projectId") UUID projectId);
 }

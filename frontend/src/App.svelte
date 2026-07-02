@@ -1,68 +1,206 @@
 <script lang="ts">
-  import { onMount, onDestroy } from 'svelte';
-  import Agents from './dashboard/Agents.svelte';
-  import Queue from './dashboard/Queue.svelte';
-  import Bottlenecks from './dashboard/Bottlenecks.svelte';
-  import Pipeline from './dashboard/Pipeline.svelte';
-  import type { Agent, QueueData, Bottleneck, PipelineData } from './lib/types';
-
-  let agents: Agent[] = [];
-  let queue: QueueData = { byTag: [], totalQueued: 0 };
-  let bottlenecks: Bottleneck[] = [];
-  let pipeline: PipelineData = { queued: 0, claimed: 0, in_progress: 0, review: 0, done: 0, failed: 0 };
-  let interval: number | undefined;
+  import { onMount } from 'svelte';
+  import type { ProjectDashboard, ProjectSummary } from './lib/types';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
-  async function fetchData() {
-    try {
-      const [agentsRes, queueRes, bottlenecksRes, pipelineRes] = await Promise.all([
-        fetch(`${API_BASE}/api/dashboard/agents`),
-        fetch(`${API_BASE}/api/dashboard/queue`),
-        fetch(`${API_BASE}/api/dashboard/bottlenecks`),
-        fetch(`${API_BASE}/api/dashboard/pipeline`)
-      ]);
+  let projects: ProjectSummary[] = [];
+  let dashboard: ProjectDashboard | null = null;
+  let projectName = '';
+  let wishText = '';
+  let status = 'Ready';
 
-      if (agentsRes.ok) agents = await agentsRes.json();
-      if (queueRes.ok) queue = await queueRes.json();
-      if (bottlenecksRes.ok) bottlenecks = await bottlenecksRes.json();
-      if (pipelineRes.ok) pipeline = await pipelineRes.json();
-    } catch (e) {
-      console.error('Failed to fetch dashboard data', e);
+  async function loadProjects() {
+    const response = await fetch(`${API_BASE}/api/projects`);
+    if (response.ok) {
+      projects = await response.json();
+      if (!dashboard && projects.length > 0) {
+        await loadDashboard(projects[0].id);
+      }
     }
   }
 
-  onMount(() => {
-    fetchData();
-    interval = window.setInterval(fetchData, 5000);
-  });
+  async function loadDashboard(projectId: string) {
+    const response = await fetch(`${API_BASE}/api/projects/${projectId}/dashboard`);
+    if (response.ok) {
+      dashboard = await response.json();
+    }
+  }
 
-  onDestroy(() => {
-    if (interval) clearInterval(interval);
-  });
+  async function createProject() {
+    if (!projectName.trim()) return;
+    status = 'Creating isolated project workspace...';
+    const response = await fetch(`${API_BASE}/api/projects`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: projectName })
+    });
+    if (response.ok) {
+      const project = await response.json();
+      projectName = '';
+      await loadProjects();
+      await loadDashboard(project.id);
+      status = 'Project created. Seven Jules accounts attached.';
+    }
+  }
+
+  async function addWish() {
+    if (!dashboard || !wishText.trim()) return;
+    status = 'Adding client wishlist item...';
+    const response = await fetch(`${API_BASE}/api/projects/${dashboard.project.id}/wishlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: wishText, type: 'client_wish' })
+    });
+    if (response.ok) {
+      wishText = '';
+      await loadDashboard(dashboard.project.id);
+      status = 'Wishlist saved. It is not a task yet.';
+    }
+  }
+
+  async function orchestrate() {
+    if (!dashboard) return;
+    status = 'Orchestrator is deciding what is business-necessary...';
+    const response = await fetch(`${API_BASE}/api/projects/${dashboard.project.id}/orchestrate`, {
+      method: 'POST'
+    });
+    if (response.ok) {
+      const result = await response.json();
+      await loadDashboard(dashboard.project.id);
+      status = `${result.message} Created: ${result.createdTasks.length}`;
+    }
+  }
+
+  async function acceptProject() {
+    if (!dashboard) return;
+    status = 'Accepting project and stopping new work...';
+    const response = await fetch(`${API_BASE}/api/projects/${dashboard.project.id}/accept`, {
+      method: 'POST'
+    });
+    if (response.ok) {
+      await loadDashboard(dashboard.project.id);
+      await loadProjects();
+      status = 'Project accepted. New orchestration is stopped.';
+    }
+  }
+
+  onMount(loadProjects);
 </script>
 
-<main class="min-h-screen bg-gray-100 p-8">
-  <div class="max-w-7xl mx-auto space-y-8">
-    <h1 class="text-3xl font-extrabold text-gray-900">Live Dashboard</h1>
-
-    <Pipeline {pipeline} />
-
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
-      <div class="lg:col-span-2 space-y-8">
-        <Agents {agents} />
-        <Queue {queue} />
-      </div>
-      <div>
-        <Bottlenecks {bottlenecks} />
-      </div>
+<main class="shell">
+  <section class="topbar">
+    <div>
+      <p class="eyebrow">Eneik Production System</p>
+      <h1>Project Command Center</h1>
     </div>
-  </div>
-</main>
+    <div class="create-project">
+      <input bind:value={projectName} placeholder="New project name" aria-label="New project name" />
+      <button on:click={createProject}>Create</button>
+    </div>
+  </section>
 
-<style>
-  :global(body) {
-    margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  }
-</style>
+  <section class="project-strip">
+    {#each projects as project}
+      <button
+        class:active={dashboard?.project.id === project.id}
+        on:click={() => loadDashboard(project.id)}
+      >
+        <strong>{project.name}</strong>
+        <span>{project.status}</span>
+      </button>
+    {/each}
+  </section>
+
+  {#if dashboard}
+    <section class="summary">
+      <div>
+        <p class="label">Active Project</p>
+        <h2>{dashboard.project.name}</h2>
+        <p>{dashboard.project.repositoryName} · {dashboard.project.linearProjectKey}</p>
+      </div>
+      <div class="metric">
+        <span>{dashboard.agentCount}</span>
+        <p>Jules attached</p>
+      </div>
+      <div class="metric">
+        <span>{dashboard.openWishlistCount}</span>
+        <p>open wishes</p>
+      </div>
+      <div class="metric">
+        <span>{dashboard.queue.totalQueued}</span>
+        <p>queued tasks</p>
+      </div>
+      <button class="accept" disabled={dashboard.project.status === 'accepted'} on:click={acceptProject}>
+        Project accepted
+      </button>
+    </section>
+
+    <section class="workspace">
+      <div class="panel intake">
+        <div class="panel-head">
+          <h2>Client Wishlist</h2>
+          <button on:click={orchestrate} disabled={dashboard.project.status === 'accepted'}>Orchestrate</button>
+        </div>
+        <textarea bind:value={wishText} placeholder="Write anything the client wants. This is not a task yet."></textarea>
+        <button class="wide" on:click={addWish} disabled={dashboard.project.status === 'accepted'}>Add wish</button>
+        <div class="feed">
+          {#each dashboard.wishlist as item}
+            <article>
+              <span>{item.status}</span>
+              <p>{item.text}</p>
+            </article>
+          {/each}
+        </div>
+      </div>
+
+      <div class="panel agents">
+        <h2>Jules Energy Pool</h2>
+        <div class="agent-grid">
+          {#each dashboard.agents as agent}
+            <article>
+              <strong>{agent.name}</strong>
+              <span class={agent.status}>{agent.status}</span>
+              <p>{agent.currentRoleTag || 'no role selected'}</p>
+              <small>{agent.currentTaskDescription || 'waiting for business-necessary work'}</small>
+            </article>
+          {/each}
+        </div>
+      </div>
+    </section>
+
+    <section class="workspace lower">
+      <div class="panel">
+        <h2>Role Queue</h2>
+        <div class="queue">
+          {#each dashboard.queue.byTag as item}
+            <article>
+              <strong>{item.tag}</strong>
+              <span>{item.count}</span>
+            </article>
+          {/each}
+        </div>
+      </div>
+
+      <div class="panel">
+        <h2>Project Tasks</h2>
+        <div class="tasks">
+          {#each dashboard.tasks as task}
+            <article>
+              <span>{task.status}</span>
+              <strong>{task.tag}</strong>
+              <p>{task.description}</p>
+            </article>
+          {/each}
+        </div>
+      </div>
+    </section>
+  {:else}
+    <section class="empty">
+      <h2>Create a project to start</h2>
+      <p>The system will isolate the project, attach seven Jules accounts, and wait for client wishlist input.</p>
+    </section>
+  {/if}
+
+  <p class="status">{status}</p>
+</main>

@@ -15,6 +15,10 @@ public class TaskEntity {
     private UUID id;
 
     @ManyToOne
+    @JoinColumn(name = "project_id")
+    private ProjectEntity project;
+
+    @ManyToOne
     @JoinColumn(name = "tag", nullable = false)
     private RoleEntity role;
 
@@ -38,6 +42,8 @@ public class TaskEntity {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public ProjectEntity getProject() { return project; }
+    public void setProject(ProjectEntity project) { this.project = project; }
     public RoleEntity getRole() { return role; }
     public void setRole(RoleEntity role) { this.role = role; }
     public String getDescription() { return description; }

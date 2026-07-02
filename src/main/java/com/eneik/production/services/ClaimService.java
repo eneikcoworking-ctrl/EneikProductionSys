@@ -75,6 +75,44 @@ public class ClaimService {
     }
 
     @Transactional
+    public ClaimDto claimForProject(UUID projectId, UUID accountId) {
+        TaskEntity task = taskRepository.lockNextQueuedTaskForProject(projectId).orElse(null);
+        if (task == null) return null;
+
+        AccountEntity account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+        if (account.getProject() == null || !projectId.equals(account.getProject().getId())) {
+            throw new IllegalArgumentException("Account is not attached to project: " + projectId);
+        }
+        if (task.getProject() == null || !projectId.equals(task.getProject().getId())) {
+            throw new IllegalStateException("Task is not attached to project: " + projectId);
+        }
+
+        ClaimEntity claim = new ClaimEntity();
+        claim.setTask(task);
+        claim.setAccount(account);
+        claim.setRole(task.getRole());
+        claim.setClaimedAt(Instant.now());
+        claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
+        claimRepository.save(claim);
+
+        task.setStatus(TaskStatus.claimed);
+        taskRepository.save(task);
+
+        account.setStatus(AccountStatus.busy);
+        accountRepository.save(account);
+
+        return new ClaimDto(
+                claim.getId(),
+                task.getId(),
+                task.getRole().getTag(),
+                task.getDescription(),
+                task.getPayload(),
+                claim.getLeaseExpiresAt()
+        );
+    }
+
+    @Transactional
     public void heartbeat(UUID taskId) {
         ClaimEntity claim = findActiveClaimByTaskId(taskId);
         claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
