@@ -27,11 +27,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
 
                 print(f"Received Linear Webhook: {payload.get('type')} {payload.get('action')}")
 
-                if payload.get('type') == 'Issue' and payload.get('action') == 'update':
+                if payload.get('type') == 'Issue' and payload.get('action') in ['update', 'create']:
                     issue_id = payload['data']['id']
+
+                    # Update status if state changed
                     state = payload['data'].get('state', {})
                     new_status_name = state.get('name')
-
                     if new_status_name:
                         internal_status = map_linear_status_to_internal(new_status_name)
                         print(f"Updating task for issue {issue_id} to status {internal_status}")
