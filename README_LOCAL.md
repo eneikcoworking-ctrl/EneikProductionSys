@@ -70,6 +70,19 @@ curl -X POST http://localhost:8080/api/tasks/claim \
   -d '{"accountId":"<account-id>","capableTags":["BARCAN-TAG-02","BARCAN-TAG-11"]}'
 ```
 
+## Jules Integration
+
+The project flow can dispatch generated tasks to Google Jules when the repo is installed in Jules and an API key is configured:
+
+```bash
+JULES_ENABLED=true
+JULES_API_KEY=<your-jules-api-key>
+JULES_SOURCE_PREFIX=sources/github/eneikcoworking-ctrl/
+JULES_STARTING_BRANCH=main
+```
+
+Without these values, tasks are still created locally and marked with the dispatch reason.
+
 ## Logs
 
 ```bash

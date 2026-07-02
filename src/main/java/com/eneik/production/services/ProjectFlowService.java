@@ -6,6 +6,8 @@ import com.eneik.production.dto.dashboard.PipelineDashboardDto;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
+import com.eneik.production.services.jules.JulesDispatchResult;
+import com.eneik.production.services.jules.JulesDispatchService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,7 @@ public class ProjectFlowService {
     private final TaskRepository taskRepository;
     private final ClaimRepository claimRepository;
     private final RoleRepository roleRepository;
+    private final JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper;
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -37,6 +40,7 @@ public class ProjectFlowService {
                               TaskRepository taskRepository,
                               ClaimRepository claimRepository,
                               RoleRepository roleRepository,
+                              JulesDispatchService julesDispatchService,
                               ObjectMapper objectMapper) {
         this.projectRepository = projectRepository;
         this.wishlistItemRepository = wishlistItemRepository;
@@ -44,6 +48,7 @@ public class ProjectFlowService {
         this.taskRepository = taskRepository;
         this.claimRepository = claimRepository;
         this.roleRepository = roleRepository;
+        this.julesDispatchService = julesDispatchService;
         this.objectMapper = objectMapper;
     }
 
@@ -111,17 +116,16 @@ public class ProjectFlowService {
                 TaskEntity task = new TaskEntity();
                 task.setProject(project);
                 task.setRole(role);
-                task.setDescription("[" + tag + "] " + item.getText());
+                String taskSpec = buildTechnicalLeadTaskSpec(project, item, tag);
+                task.setDescription(taskSpec);
                 task.setStatus(TaskStatus.queued);
-
-                ObjectNode payload = objectMapper.createObjectNode();
-                payload.put("projectId", project.getId().toString());
-                payload.put("wishlistItemId", item.getId().toString());
-                payload.put("businessNeed", item.getText());
-                payload.put("orchestratedBy", ORCHESTRATOR_ROLE);
-                task.setPayload(payload);
+                task.setPayload(buildTaskPayload(project, item, tag, taskSpec));
 
                 TaskEntity savedTask = taskRepository.save(task);
+                JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask);
+                savedTask.setJulesSessionName(dispatch.sessionName());
+                savedTask.setJulesDispatchStatus(dispatch.reason());
+                savedTask = taskRepository.save(savedTask);
                 createdTasks.add(new TaskShortDto(savedTask.getId(), tag, savedTask.getDescription()));
             }
             item.setStatus(WishlistItemStatus.converted);
@@ -185,7 +189,9 @@ public class ProjectFlowService {
                         task.getRole().getTag(),
                         task.getDescription(),
                         task.getStatus(),
-                        task.getPayload()
+                        task.getPayload(),
+                        task.getJulesSessionName(),
+                        task.getJulesDispatchStatus()
                 ))
                 .toList();
 
@@ -239,6 +245,67 @@ public class ProjectFlowService {
         }
         tags.add("BARCAN-TAG-00");
         return List.copyOf(tags);
+    }
+
+    private String buildTechnicalLeadTaskSpec(ProjectEntity project, WishlistItemEntity item, String roleTag) {
+        String roleName = roleRepository.findById(roleTag)
+                .map(RoleEntity::getDescription)
+                .orElse(roleTag);
+        return """
+                [%s] Technical Lead Task
+
+                Client wish:
+                %s
+
+                Business interpretation:
+                Transform the client wish into the smallest valuable product increment for project "%s".
+
+                JTBD:
+                When the client needs this project to create business value, they want this role to remove the next concrete delivery constraint, so the project moves closer to acceptance and payment.
+
+                Role responsibility:
+                %s must execute only the slice that belongs to this role, with analytical clarity and no speculative expansion.
+
+                Lean management:
+                Maximize delivered customer value, minimize work in progress, avoid handoff waste, and prefer the shortest path to validated learning.
+
+                TOC:
+                Identify the current constraint blocking project acceptance. The implementation must subordinate local choices to removing that constraint.
+
+                Six Sigma:
+                Define measurable defect criteria before implementation. Reduce ambiguity, prevent regressions, and verify the result with tests or an equivalent objective check.
+
+                Definition of Done:
+                - The change directly satisfies the business interpretation.
+                - Acceptance criteria are objective and testable.
+                - Existing behavior is preserved unless explicitly changed.
+                - Relevant tests/build/checks pass.
+                - The result is ready for PR review and client-visible delivery notes.
+
+                Acceptance metrics:
+                - Business value is visible in the dashboard or product behavior.
+                - No new critical path blocker is introduced.
+                - The task can be reviewed without reading hidden context.
+                """.formatted(roleTag, item.getText(), project.getName(), roleName);
+    }
+
+    private ObjectNode buildTaskPayload(ProjectEntity project, WishlistItemEntity item, String roleTag, String taskSpec) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("projectId", project.getId().toString());
+        payload.put("repositoryName", project.getRepositoryName());
+        payload.put("repositoryUrl", project.getRepositoryUrl());
+        payload.put("linearProjectKey", project.getLinearProjectKey());
+        payload.put("wishlistItemId", item.getId().toString());
+        payload.put("clientWish", item.getText());
+        payload.put("orchestratedBy", ORCHESTRATOR_ROLE);
+        payload.put("selectedRoleTag", roleTag);
+        payload.put("technicalLeadTaskSpec", taskSpec);
+        payload.put("jtbd", "Remove the next concrete delivery constraint so the project moves closer to acceptance and payment.");
+        payload.put("leanValue", "Deliver the smallest valuable increment; minimize WIP and waste.");
+        payload.put("tocConstraint", "Current project acceptance blocker represented by this role-tagged task.");
+        payload.put("sixSigmaQualityTarget", "Objective acceptance criteria, regression prevention, and verified result.");
+        payload.put("definitionOfDone", "Business interpretation satisfied; tests/checks pass; PR-ready; client-visible result documented.");
+        return payload;
     }
 
     private boolean containsAny(String text, String... needles) {
