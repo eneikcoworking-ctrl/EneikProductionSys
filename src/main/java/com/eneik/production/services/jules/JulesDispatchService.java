@@ -1,63 +1,154 @@
 package com.eneik.production.services.jules;
 
+import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.TaskRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class JulesDispatchService {
-    private final JulesClient julesClient;
-    private final String sourcePrefix;
-    private final String startingBranch;
+    private static final Logger log = LoggerFactory.getLogger(JulesDispatchService.class);
 
-    public JulesDispatchService(JulesClient julesClient,
-                                @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix,
-                                @Value("${jules.starting-branch:main}") String startingBranch) {
-        this.julesClient = julesClient;
+    private final JulesApiClient julesApiClient;
+    private final JulesSessionRepository julesSessionRepository;
+    private final TaskRepository taskRepository;
+    private final String sourcePrefix;
+
+    @Value("${jules.stuck-threshold-minutes:30}")
+    private int stuckThresholdMinutes;
+
+    public JulesDispatchService(JulesApiClient julesApiClient,
+                                JulesSessionRepository julesSessionRepository,
+                                TaskRepository taskRepository,
+                                @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
+        this.julesApiClient = julesApiClient;
+        this.julesSessionRepository = julesSessionRepository;
+        this.taskRepository = taskRepository;
         this.sourcePrefix = sourcePrefix;
-        this.startingBranch = startingBranch;
     }
 
+    @Transactional
     public JulesDispatchResult dispatch(TaskEntity task) {
+        JulesSessionEntity session = dispatchInternal(task, null);
+        return new JulesDispatchResult(
+                "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
+                session.getExternalSessionId(),
+                "skipped".equals(session.getExternalSessionId()) ? "Jules integration disabled" : "Dispatched to Jules"
+        );
+    }
+
+    @Transactional
+    public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        return dispatchInternal(task, accountId);
+    }
+
+    private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(task.getId());
+        session.setAccountId(accountId != null ? accountId : UUID.fromString("00000000-0000-0000-0000-000000000000")); // Fallback UUID if null
+        session.setStatus("queued");
+
         ProjectEntity project = task.getProject();
         if (project == null) {
-            return new JulesDispatchResult(false, null, "Task has no project");
+            session.setStatus("failed");
+            return julesSessionRepository.save(session);
         }
 
-        String sourceName = sourcePrefix + project.getRepositoryName();
-        String title = task.getRole().getTag() + " " + project.getName();
-        return julesClient.createSession(sourceName, startingBranch, title, buildPrompt(project, task));
+        String repoUrl = sourcePrefix + project.getRepositoryName();
+        String description = task.getDescription();
+        String roleContext = "Role: " + task.getRole().getTag() + "\n" + task.getRole().getDescription();
+
+        String externalId = julesApiClient.createSession(repoUrl, description, roleContext);
+
+        if ("skipped".equals(externalId)) {
+            session.setStatus("queued");
+            session.setExternalSessionId("skipped");
+        } else if (externalId == null) {
+            session.setStatus("failed");
+        } else {
+            session.setExternalSessionId(externalId);
+            session.setStatus("running");
+        }
+
+        return julesSessionRepository.save(session);
     }
 
-    private String buildPrompt(ProjectEntity project, TaskEntity task) {
-        return """
-                You are Jules, acting as execution power for Eneik Production System.
 
-                Project:
-                - Name: %s
-                - Repository: %s
-                - Linear project key: %s
+    @Transactional
+    public JulesSessionEntity pollStatus(UUID sessionId) {
+        JulesSessionEntity session = julesSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
-                Selected role paint:
-                - %s
+        if ("skipped".equals(session.getExternalSessionId()) || session.getExternalSessionId() == null) {
+            return session;
+        }
 
-                Technical Lead task:
-                %s
+        String rawStatus = julesApiClient.getSessionStatus(session.getExternalSessionId());
+        if (rawStatus != null) {
+            String mappedStatus = mapExternalStatus(rawStatus);
+            session.setStatus(mappedStatus);
+            session.setLastStatusCheckAt(Instant.now());
 
-                Mandatory execution contract:
-                1. Treat the task payload as the source of truth.
-                2. Preserve business intent, JTBD, Definition of Done, Lean value, TOC constraint, Six Sigma quality target, and acceptance metrics.
-                3. Make the smallest coherent code change that satisfies the DoD.
-                4. Run relevant tests or add focused tests when coverage is missing.
-                5. Open a pull request when complete.
-                6. Do not broaden scope beyond the task unless the DoD cannot be met without it.
-                """.formatted(
-                project.getName(),
-                project.getRepositoryName(),
-                project.getLinearProjectKey(),
-                task.getRole().getTag(),
-                task.getDescription()
-        );
+            // If API provides PR URL, it would be good to save it,
+            // but the mock/api return might vary.
+            // For now, focusing on the state machine.
+
+            return julesSessionRepository.save(session);
+        }
+
+        return session;
+    }
+
+    /**
+     * Mapping Table:
+     * External (Jules API) -> Internal
+     * -------------------------------
+     * "QUEUED"             -> "queued"
+     * "RUNNING"            -> "running"
+     * "SUCCEEDED"          -> "pr_opened"
+     * "FAILED"             -> "failed"
+     * "CANCELLED"          -> "failed"
+     * "STUCK"              -> "stuck" (if API ever returns it)
+     */
+    public String mapExternalStatus(String externalStatus) {
+        if (externalStatus == null) return "running";
+
+        return switch (externalStatus.toUpperCase()) {
+            case "QUEUED" -> "queued";
+            case "RUNNING" -> "running";
+            case "SUCCEEDED" -> "pr_opened";
+            case "FAILED", "CANCELLED" -> "failed";
+            default -> "running"; // Default to running if unknown but alive
+        };
+    }
+
+    @Scheduled(fixedRateString = "${jules.detect-stuck-rate-ms:60000}")
+    @Transactional
+    public void detectStuck() {
+        Instant threshold = Instant.now().minus(stuckThresholdMinutes, ChronoUnit.MINUTES);
+        List<JulesSessionEntity> runningSessions = julesSessionRepository.findByStatus("running");
+
+        for (JulesSessionEntity session : runningSessions) {
+            if (session.getUpdatedAt().isBefore(threshold)) {
+                log.warn("Session {} is stuck (no update for {} minutes)", session.getId(), stuckThresholdMinutes);
+                session.setStatus("stuck");
+                julesSessionRepository.save(session);
+            }
+        }
     }
 }
