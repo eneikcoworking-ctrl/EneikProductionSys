@@ -20,7 +20,7 @@ public class TechnicalLeadCompiler {
     private final ProjectGenerationStateRepository projectGenerationStateRepository;
     private final ObjectMapper objectMapper;
 
-    private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-00";
+    private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
 
     public TechnicalLeadCompiler(WishlistRepository wishlistRepository,
                                  TaskRepository taskRepository,

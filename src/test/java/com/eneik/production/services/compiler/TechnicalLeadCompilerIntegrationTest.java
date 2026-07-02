@@ -72,13 +72,13 @@ public class TechnicalLeadCompilerIntegrationTest {
         assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
 
         // Missing fields
-        compiler.compile(wishlistId, "BARCAN-TAG-00", "", LeanValue.essential, "toc", "metric", "dod", "Given/When/Then");
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "", LeanValue.essential, "toc", "metric", "dod", "Given/When/Then");
         assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
     }
 
     @Test
     public void testCreateTaskFromWishlistSuccess() {
-        compiler.compile(wishlistId, "BARCAN-TAG-00", "When situation, client wants motivation, so result",
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When situation, client wants motivation, so result",
                          LeanValue.essential, "toc", "metric", "dod", "Given something, When action, Then result");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
