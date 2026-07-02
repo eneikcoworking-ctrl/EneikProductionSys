@@ -1,14 +1,27 @@
 package com.eneik.production.dto;
 
+import com.eneik.production.models.persistence.ProjectStatus;
 import java.time.Instant;
 import java.util.UUID;
 
 public record ProjectDto(
-    UUID id,
-    String name,
-    String repoUrl,
-    String status,
-    Instant createdAt,
-    Instant acceptedAt,
-    long accountCount
-) {}
+        UUID id,
+        String name,
+        String slug,
+        String repositoryName,
+        String repositoryUrl,
+        String repoUrl,
+        String linearProjectKey,
+        String githubRepositoryStatus,
+        String githubRepositoryId,
+        String linearProjectStatus,
+        String linearProjectId,
+        String workspacePath,
+        String factoryStatus,
+        String factoryReport,
+        ProjectStatus status,
+        Instant createdAt,
+        Instant acceptedAt,
+        long accountCount
+) {
+}

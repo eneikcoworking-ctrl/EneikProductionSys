@@ -11,6 +11,10 @@ public class AccountEntity {
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
 
+    @ManyToOne
+    @JoinColumn(name = "project_id")
+    private ProjectEntity project;
+
     @Column(nullable = false)
     private String name;
 
@@ -31,6 +35,8 @@ public class AccountEntity {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public ProjectEntity getProject() { return project; }
+    public void setProject(ProjectEntity project) { this.project = project; }
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public AccountStatus getStatus() { return status; }

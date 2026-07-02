@@ -49,14 +49,60 @@ export type PipelineData = {
 
 export type ProjectStatus = 'active' | 'accepted';
 
-export interface Project {
+export type ProjectSummary = {
   id: string;
   name: string;
+  slug?: string;
+  repositoryName?: string;
+  repositoryUrl?: string;
+  repoUrl?: string;
+  linearProjectKey?: string;
+  githubRepositoryStatus?: string;
+  githubRepositoryId?: string;
+  linearProjectStatus?: string;
+  linearProjectId?: string;
+  workspacePath?: string;
+  factoryStatus?: string;
+  factoryReport?: string;
   status: ProjectStatus;
   createdAt: string;
   acceptedAt?: string;
+  accountCount?: number;
   accountsCount?: number;
   tasksQueued?: number;
   tasksInProgress?: number;
   tasksDone?: number;
-}
+};
+
+export type Project = ProjectSummary;
+
+export type WishlistItem = {
+  id: string;
+  projectId: string;
+  text: string;
+  type: 'client_wish' | 'role_advice';
+  status: 'open' | 'converted' | 'ignored';
+  sourceRoleTag?: string;
+  createdAt: string;
+};
+
+export type Task = {
+  id: string;
+  tag: string;
+  description: string;
+  status: 'queued' | 'claimed' | 'in_progress' | 'review' | 'done' | 'failed';
+  payload?: unknown;
+  julesSessionName?: string;
+  julesDispatchStatus?: string;
+};
+
+export type ProjectDashboard = {
+  project: ProjectSummary;
+  agentCount: number;
+  openWishlistCount: number;
+  queue: QueueData;
+  pipeline: PipelineData;
+  agents: Agent[];
+  wishlist: WishlistItem[];
+  tasks: Task[];
+};

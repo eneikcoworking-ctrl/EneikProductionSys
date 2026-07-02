@@ -9,5 +9,7 @@ public record TaskDto(
     String tag,
     String description,
     TaskStatus status,
-    JsonNode payload
+    JsonNode payload,
+    String julesSessionName,
+    String julesDispatchStatus
 ) {}

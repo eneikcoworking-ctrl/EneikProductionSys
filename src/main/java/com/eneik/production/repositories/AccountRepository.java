@@ -9,10 +9,13 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 @Repository
 public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
+    List<AccountEntity> findByProjectIdOrderByNameAsc(UUID projectId);
+
     @Query("SELECT COUNT(a) > 0 FROM AccountEntity a WHERE " +
            "a.lastHeartbeat > :threshold AND " +
            "a.capabilities LIKE %:tag%")
@@ -25,7 +28,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Modifying
     @Query("UPDATE AccountEntity a SET a.currentProjectId = :newProjectId " +
            "WHERE a.currentProjectId IS NULL " +
-           "OR a.currentProjectId IN (SELECT p.id FROM ProjectEntity p WHERE p.status = 'accepted')")
+           "OR a.currentProjectId IN (SELECT p.id FROM ProjectEntity p WHERE p.status = com.eneik.production.models.persistence.ProjectStatus.accepted)")
     void assignFreeAccountsToProject(@Param("newProjectId") UUID newProjectId);
 
     long countByCurrentProjectId(UUID currentProjectId);

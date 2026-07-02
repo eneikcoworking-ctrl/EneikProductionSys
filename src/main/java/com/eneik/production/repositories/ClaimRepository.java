@@ -20,6 +20,7 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
     List<ExpiredStatDto> expiredCountByAccountSince(@Param("since") Instant since);
 
     Optional<ClaimEntity> findByAccountIdAndReleasedAtIsNull(UUID accountId);
+    Optional<ClaimEntity> findByAccountIdAndTaskProjectIdAndReleasedAtIsNull(UUID accountId, UUID projectId);
     Optional<ClaimEntity> findByTaskIdAndReleasedAtIsNull(UUID taskId);
 
     List<ClaimEntity> findByReleasedAtIsNullAndLeaseExpiresAtBefore(java.time.Instant now);

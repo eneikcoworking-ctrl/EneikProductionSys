@@ -15,6 +15,10 @@ public class TaskEntity {
     private UUID id;
 
     @ManyToOne
+    @JoinColumn(name = "project_id")
+    private ProjectEntity project;
+
+    @ManyToOne
     @JoinColumn(name = "tag", nullable = false)
     private RoleEntity role;
 
@@ -30,6 +34,10 @@ public class TaskEntity {
 
     private String linearIssueId;
 
+    private String julesSessionName;
+
+    private String julesDispatchStatus;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -38,6 +46,8 @@ public class TaskEntity {
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
+    public ProjectEntity getProject() { return project; }
+    public void setProject(ProjectEntity project) { this.project = project; }
     public RoleEntity getRole() { return role; }
     public void setRole(RoleEntity role) { this.role = role; }
     public String getDescription() { return description; }
@@ -48,6 +58,10 @@ public class TaskEntity {
     public void setStatus(TaskStatus status) { this.status = status; }
     public String getLinearIssueId() { return linearIssueId; }
     public void setLinearIssueId(String linearIssueId) { this.linearIssueId = linearIssueId; }
+    public String getJulesSessionName() { return julesSessionName; }
+    public void setJulesSessionName(String julesSessionName) { this.julesSessionName = julesSessionName; }
+    public String getJulesDispatchStatus() { return julesDispatchStatus; }
+    public void setJulesDispatchStatus(String julesDispatchStatus) { this.julesDispatchStatus = julesDispatchStatus; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

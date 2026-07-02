@@ -70,6 +70,41 @@ curl -X POST http://localhost:8080/api/tasks/claim \
   -d '{"accountId":"<account-id>","capableTags":["BARCAN-TAG-02","BARCAN-TAG-11"]}'
 ```
 
+## Jules Integration
+
+The project flow can dispatch generated tasks to Google Jules when the repo is installed in Jules and an API key is configured:
+
+```bash
+JULES_ENABLED=true
+JULES_API_KEY=<your-jules-api-key>
+JULES_SOURCE_PREFIX=sources/github/eneikcoworking-ctrl/
+JULES_STARTING_BRANCH=main
+```
+
+Without these values, tasks are still created locally and marked with the dispatch reason.
+
+## Project Factory
+
+When a project is created through `POST /api/projects`, the system provisions a local isolated workspace, stores the factory status on the project, and creates seven project-scoped Jules accounts. Local workspaces are written to:
+
+```bash
+PROJECT_FACTORY_WORKSPACE_ROOT=./project-workspaces
+```
+
+GitHub and Linear provisioning are disabled by default for safe local development. Enable them only after configuring credentials:
+
+```bash
+GITHUB_ENABLED=true
+GITHUB_TOKEN=<github-token-or-app-token>
+GITHUB_ORG=eneikcoworking-ctrl
+
+LINEAR_ENABLED=true
+LINEAR_API_KEY=<linear-api-key>
+LINEAR_TEAM_ID=<linear-team-id>
+```
+
+Without these values, the project is still created locally and the dashboard shows skipped GitHub/Linear statuses.
+
 ## Logs
 
 ```bash
