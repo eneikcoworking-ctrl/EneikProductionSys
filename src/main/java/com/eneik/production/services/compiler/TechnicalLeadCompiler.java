@@ -2,6 +2,7 @@ package com.eneik.production.services.compiler;
 
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
+import com.eneik.production.services.gate.GateOrchestrator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -18,6 +19,7 @@ public class TechnicalLeadCompiler {
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
     private final ProjectGenerationStateRepository projectGenerationStateRepository;
+    private final GateOrchestrator gateOrchestrator;
     private final ObjectMapper objectMapper;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
@@ -27,12 +29,14 @@ public class TechnicalLeadCompiler {
                                  ProjectRepository projectRepository,
                                  RoleRepository roleRepository,
                                  ProjectGenerationStateRepository projectGenerationStateRepository,
+                                 GateOrchestrator gateOrchestrator,
                                  ObjectMapper objectMapper) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.projectGenerationStateRepository = projectGenerationStateRepository;
+        this.gateOrchestrator = gateOrchestrator;
         this.objectMapper = objectMapper;
     }
 
@@ -98,6 +102,7 @@ public class TechnicalLeadCompiler {
 
         task.setStatus(TaskStatus.queued);
         TaskEntity savedTask = taskRepository.save(task);
+        gateOrchestrator.runTaskSpecGate(savedTask);
 
         wishlist.setStatus(WishlistStatus.converted_to_task);
         wishlistRepository.save(wishlist);

@@ -25,6 +25,8 @@ class DesignExcellenceGateTest {
     @Test
     void shouldPassNonUiTask() {
         TaskEntity task = createTask("BARCAN-TAG-02", null);
+        assertThat(gate.supports(task)).isFalse();
+
         GateResult result = gate.check(task);
         assertThat(result.passed()).isTrue();
         assertThat(result.failureReasons()).contains("not applicable to this role");
@@ -51,6 +53,9 @@ class DesignExcellenceGateTest {
         screenshots.addObject().put("url", "mobile_375.png").put("size", 1500);
 
         TaskEntity task = createTask("BARCAN-TAG-11", payload);
+        assertThat(gate.supports(task)).isTrue();
+        assertThat(gate.stage()).isEqualTo(GateStage.IMPLEMENTATION_RESULT);
+
         GateResult result = gate.check(task);
 
         assertThat(result.passed()).isTrue();

@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.gate.GateOrchestrator;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -24,13 +25,16 @@ public class ClaimService {
     private final ClaimRepository claimRepository;
     private final TaskRepository taskRepository;
     private final AccountRepository accountRepository;
+    private final GateOrchestrator gateOrchestrator;
 
     public ClaimService(ClaimRepository claimRepository,
                             TaskRepository taskRepository,
-                            AccountRepository accountRepository) {
+                            AccountRepository accountRepository,
+                            GateOrchestrator gateOrchestrator) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
+        this.gateOrchestrator = gateOrchestrator;
     }
 
     /**
@@ -129,6 +133,7 @@ public class ClaimService {
         TaskEntity task = claim.getTask();
         task.setStatus(TaskStatus.review);
         taskRepository.save(task);
+        gateOrchestrator.runQualityGate(task);
 
         updateAccountStatus(claim.getAccount(), AccountStatus.idle);
     }

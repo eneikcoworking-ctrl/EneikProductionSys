@@ -2,6 +2,7 @@ package com.eneik.production.services.gate;
 
 import com.eneik.production.models.persistence.TaskEntity;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -9,9 +10,22 @@ import java.util.List;
 import java.util.Set;
 
 @Service
+@Order(200)
 public class DesignExcellenceGate implements GateCheck {
     private static final Set<String> UI_TAGS = Set.of("BARCAN-TAG-03", "BARCAN-TAG-11");
     private static final String CHECK_NAME = "design_excellence";
+
+    @Override
+    public GateStage stage() {
+        return GateStage.IMPLEMENTATION_RESULT;
+    }
+
+    @Override
+    public boolean supports(TaskEntity task) {
+        return task != null
+                && task.getRole() != null
+                && UI_TAGS.contains(task.getRole().getTag());
+    }
 
     @Override
     public GateResult check(TaskEntity task) {
