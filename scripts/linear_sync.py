@@ -22,7 +22,36 @@ except ImportError:
 
 ERROR_LOG = 'docs/metrics/sync_errors.log'
 REPORT_FILE = 'docs/metrics/report_latest.md'
-TEAM_ID = os.environ.get("LINEAR_TEAM_ID", "TEAM_ID_PLACEHOLDER")
+TEAM_ID = "TEAM_ID_PLACEHOLDER"
+SETTINGS_CACHE = {}
+
+def setting_value(key, env_names):
+    if key not in SETTINGS_CACHE:
+        resolved = None
+        try:
+            resolved = db.resolve_setting(key)
+        except Exception:
+            resolved = None
+        SETTINGS_CACHE[key] = resolved or {}
+
+    value = SETTINGS_CACHE[key].get("value")
+    if value:
+        return value
+
+    for env_name in env_names:
+        value = os.environ.get(env_name)
+        if value:
+            return value
+    return ""
+
+def linear_enabled():
+    return setting_value("linear_enabled", ["LINEAR_ENABLED"]).lower() == "true"
+
+def linear_api_key():
+    return setting_value("linear_api_key", ["LINEAR_API_KEY", "LINEAR_API_TOKEN"])
+
+def linear_team_id():
+    return setting_value("linear_team_id", ["LINEAR_TEAM_ID"]) or "TEAM_ID_PLACEHOLDER"
 
 def log_error(message):
     try:
@@ -34,7 +63,7 @@ def log_error(message):
         print(f"Failed to log error: {e}")
 
 def linear_api_call(query, variables=None):
-    token = os.environ.get("LINEAR_API_TOKEN")
+    token = linear_api_key()
     if not token:
         return None
 
@@ -180,12 +209,15 @@ def sync_task_to_linear(task, state_mapping, mapper: LinearIssueMapper):
                 mapper.sync_blockers(linear_issue_id, blocker_linear_ids)
 
 def process_polling():
-    if os.environ.get("LINEAR_ENABLED") != "true":
+    global TEAM_ID
+    TEAM_ID = linear_team_id()
+
+    if not linear_enabled():
         print("Linear sync is disabled (LINEAR_ENABLED != true). Skipping.")
         return
 
     state_mapping = fetch_workflow_states(TEAM_ID)
-    if not state_mapping and os.environ.get("LINEAR_API_TOKEN"):
+    if not state_mapping and linear_api_key():
         log_error("Could not fetch workflow states from Linear.")
         return
 
@@ -253,6 +285,8 @@ def parse_git_log():
     return git_data
 
 def main():
+    global TEAM_ID
+    TEAM_ID = linear_team_id()
     process_polling()
 
     issues = fetch_issues(TEAM_ID)

@@ -1,6 +1,7 @@
 package com.eneik.production.services.github;
 
 import com.eneik.production.config.GithubConfig;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -22,6 +23,7 @@ import static org.mockito.Mockito.when;
 class GithubAccessServiceTest {
 
     private GithubConfig githubConfig;
+    private SystemSettingsService settingsService;
     private JdbcTemplate jdbcTemplate;
     private ObjectMapper objectMapper;
     private GithubAccessService githubAccessService;
@@ -29,9 +31,10 @@ class GithubAccessServiceTest {
     @BeforeEach
     void setUp() {
         githubConfig = Mockito.mock(GithubConfig.class);
+        settingsService = Mockito.mock(SystemSettingsService.class);
         jdbcTemplate = Mockito.mock(JdbcTemplate.class);
         objectMapper = new ObjectMapper();
-        githubAccessService = new GithubAccessService(githubConfig, jdbcTemplate, objectMapper);
+        githubAccessService = new GithubAccessService(githubConfig, settingsService, jdbcTemplate, objectMapper);
     }
 
     @Test
@@ -66,7 +69,8 @@ class GithubAccessServiceTest {
 
     @Test
     void testCheckAccessDisabled() {
-        when(githubConfig.isEnabled()).thenReturn(false);
+        when(settingsService.effectiveBoolean("github_enabled")).thenReturn(false);
+        when(settingsService.effectiveValue("github_token")).thenReturn("");
         UUID projectId = UUID.randomUUID();
 
         GithubAccessService.GithubAccessResult result = githubAccessService.checkAccess(projectId);

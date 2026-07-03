@@ -1,5 +1,6 @@
 package com.eneik.production.services.jules;
 
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -20,23 +21,21 @@ public class JulesApiClient {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final String apiKey;
     private final String apiBaseUrl;
-    private final boolean enabled;
+    private final SystemSettingsService settingsService;
 
     public JulesApiClient(ObjectMapper objectMapper,
-                          @Value("${JULES_API_KEY:}") String apiKey,
                           @Value("${jules.api-base-url:https://jules.googleapis.com/v1alpha}") String apiBaseUrl,
-                          @Value("${JULES_ENABLED:false}") String enabledStr) {
+                          SystemSettingsService settingsService) {
         this.httpClient = HttpClient.newBuilder().build();
         this.objectMapper = objectMapper;
-        this.apiKey = apiKey;
         this.apiBaseUrl = apiBaseUrl;
-        this.enabled = "true".equalsIgnoreCase(enabledStr);
+        this.settingsService = settingsService;
     }
 
     public String createSession(String repoUrl, String taskDescription, String roleContext) {
-        if (!enabled) {
+        String apiKey = settingsService.effectiveValue("jules_api_key");
+        if (!settingsService.effectiveBoolean("jules_enabled")) {
             log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
             return "skipped";
         }
@@ -85,7 +84,8 @@ public class JulesApiClient {
     }
 
     public String getSessionStatus(String externalSessionId) {
-        if (!enabled || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        String apiKey = settingsService.effectiveValue("jules_api_key");
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 
@@ -114,6 +114,6 @@ public class JulesApiClient {
     }
 
     public boolean isEnabled() {
-        return enabled;
+        return settingsService.effectiveBoolean("jules_enabled");
     }
 }

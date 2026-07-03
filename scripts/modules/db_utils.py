@@ -3,10 +3,18 @@ import json
 import urllib.request
 
 INTERNAL_API_URL = os.environ.get("INTERNAL_API_URL", "http://localhost:8080/internal/tasks")
+INTERNAL_SETTINGS_API_URL = os.environ.get("INTERNAL_SETTINGS_API_URL", "http://localhost:8080/internal/settings")
 
 class Database:
     def _api_call(self, path="", method="GET", data=None):
         url = INTERNAL_API_URL + path
+        return self._request(url, method, data)
+
+    def _settings_call(self, path="", method="POST", data=None):
+        url = INTERNAL_SETTINGS_API_URL + path
+        return self._request(url, method, data)
+
+    def _request(self, url, method="GET", data=None):
         payload = json.dumps(data).encode("utf-8") if data else None
 
         req = urllib.request.Request(url, data=payload, method=method)
@@ -46,5 +54,8 @@ class Database:
 
     def get_active_claim(self, task_id):
         return self._api_call(f"/{task_id}/active-claim")
+
+    def resolve_setting(self, key):
+        return self._settings_call("/resolve", method="POST", data={"key": key})
 
 db = Database()
