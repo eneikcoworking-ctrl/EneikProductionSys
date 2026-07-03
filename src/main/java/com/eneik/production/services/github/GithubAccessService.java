@@ -209,14 +209,14 @@ public class GithubAccessService {
 
     private boolean checkPrPermissions(String repoName, String token) {
         try {
-            // Scope check via header "X-OAuth-Scopes" is one way, but creating/listing PRs is more direct
-            // Let's check if we can list PRs as a proxy for PR permissions, or check scopes
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/pulls", token)
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName), token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            String scopes = response.headers().firstValue("X-OAuth-Scopes").orElse("");
-            return scopes.contains("repo") || scopes.contains("public_repo");
+            if (response.statusCode() != 200) return false;
+
+            JsonNode permissions = objectMapper.readTree(response.body()).path("permissions");
+            return permissions.path("push").asBoolean(false) || permissions.path("admin").asBoolean(false);
         } catch (Exception e) {
             return false;
         }
@@ -259,11 +259,11 @@ public class GithubAccessService {
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() != 200) return "no_ci";
+            if (response.statusCode() != 200) return checkActionsWorkflowStatus(repoName, token);
 
             JsonNode json = objectMapper.readTree(response.body());
             int totalCount = json.path("total_count").asInt();
-            if (totalCount == 0) return "no_ci";
+            if (totalCount == 0) return checkActionsWorkflowStatus(repoName, token);
 
             JsonNode checkRuns = json.path("check_runs");
             boolean allSuccess = true;
@@ -284,6 +284,33 @@ public class GithubAccessService {
 
             if (anyInProgress) return "skipped";
             return allSuccess ? "passing" : "failing";
+        } catch (Exception e) {
+            return checkActionsWorkflowStatus(repoName, token);
+        }
+    }
+
+    private String checkActionsWorkflowStatus(String repoName, String token) {
+        try {
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/actions/runs?branch=main&per_page=10", token)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) return "no_ci";
+
+            JsonNode runs = objectMapper.readTree(response.body()).path("workflow_runs");
+            if (!runs.isArray() || runs.isEmpty()) return "no_ci";
+
+            boolean anyInProgress = false;
+            for (JsonNode run : runs) {
+                String status = run.path("status").asText();
+                String conclusion = run.path("conclusion").asText();
+                if (!"completed".equals(status)) {
+                    anyInProgress = true;
+                    continue;
+                }
+                return "success".equals(conclusion) || "neutral".equals(conclusion) ? "passing" : "failing";
+            }
+            return anyInProgress ? "skipped" : "no_ci";
         } catch (Exception e) {
             return "no_ci";
         }

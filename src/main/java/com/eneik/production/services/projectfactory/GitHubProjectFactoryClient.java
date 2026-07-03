@@ -25,16 +25,19 @@ import java.util.Arrays;
 public class GitHubProjectFactoryClient {
     private final String organization;
     private final String apiBaseUrl;
+    private final String webhookUrl;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
     public GitHubProjectFactoryClient(@Value("${github.org:eneikcoworking-ctrl}") String organization,
                                       @Value("${github.api-base-url:https://api.github.com}") String apiBaseUrl,
+                                      @Value("${github.webhook-url:}") String webhookUrl,
                                       SystemSettingsService settingsService,
                                       ObjectMapper objectMapper) {
         this.organization = organization;
         this.apiBaseUrl = apiBaseUrl;
+        this.webhookUrl = webhookUrl;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
     }
@@ -63,9 +66,13 @@ public class GitHubProjectFactoryClient {
                 String repoUrl = json.path("html_url").asText(fallbackUrl);
                 String repoId = json.path("id").asText(null);
                 List<String> uploadErrors = uploadBootstrapFiles(project, artifacts);
-                String status = uploadErrors.isEmpty()
-                        ? "created repository and bootstrap files"
-                        : "created repository with bootstrap warnings: " + String.join("; ", uploadErrors);
+                List<String> configurationWarnings = configureRepository(project.getRepositoryName(), token);
+                List<String> warnings = new ArrayList<>();
+                warnings.addAll(uploadErrors);
+                warnings.addAll(configurationWarnings);
+                String status = warnings.isEmpty()
+                        ? "created repository and configured protections"
+                        : "created repository with configuration warnings: " + String.join("; ", warnings);
                 return new GitHubProvisioningResult(status, repoUrl, repoId);
             }
 
@@ -90,6 +97,94 @@ public class GitHubProjectFactoryClient {
         upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
         upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
         return errors;
+    }
+
+    private List<String> configureRepository(String repositoryName, String token) {
+        List<String> warnings = new ArrayList<>();
+        protectMainBranch(repositoryName, token, warnings);
+        registerWebhook(repositoryName, token, warnings);
+        dispatchCiWorkflow(repositoryName, token, warnings);
+        return warnings;
+    }
+
+    private void protectMainBranch(String repositoryName, String token, List<String> warnings) {
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            ObjectNode statusChecks = body.putObject("required_status_checks");
+            statusChecks.put("strict", false);
+            statusChecks.putArray("contexts");
+            body.put("enforce_admins", false);
+            ObjectNode reviews = body.putObject("required_pull_request_reviews");
+            reviews.put("required_approving_review_count", 0);
+            body.putNull("restrictions");
+            body.put("required_linear_history", false);
+            body.put("allow_force_pushes", false);
+            body.put("allow_deletions", false);
+
+            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/branches/main/protection", token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                warnings.add("branch protection HTTP " + response.statusCode() + " " + preview(response.body()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            warnings.add("branch protection interrupted");
+        } catch (IOException | IllegalArgumentException e) {
+            warnings.add("branch protection " + e.getMessage());
+        }
+    }
+
+    private void registerWebhook(String repositoryName, String token, List<String> warnings) {
+        if (webhookUrl == null || webhookUrl.isBlank()) {
+            warnings.add("webhook skipped: github.webhook-url is not configured for this local environment");
+            return;
+        }
+
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("name", "web");
+            body.put("active", true);
+            body.putArray("events").add("push").add("pull_request");
+            ObjectNode config = body.putObject("config");
+            config.put("url", webhookUrl);
+            config.put("content_type", "json");
+            config.put("insecure_ssl", "0");
+
+            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/hooks", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 201 && response.statusCode() != 422) {
+                warnings.add("webhook HTTP " + response.statusCode() + " " + preview(response.body()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            warnings.add("webhook interrupted");
+        } catch (IOException | IllegalArgumentException e) {
+            warnings.add("webhook " + e.getMessage());
+        }
+    }
+
+    private void dispatchCiWorkflow(String repositoryName, String token, List<String> warnings) {
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("ref", "main");
+
+            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/actions/workflows/ci.yml/dispatches", token)
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 204) {
+                warnings.add("ci dispatch HTTP " + response.statusCode() + " " + preview(response.body()));
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            warnings.add("ci dispatch interrupted");
+        } catch (IOException | IllegalArgumentException e) {
+            warnings.add("ci dispatch " + e.getMessage());
+        }
     }
 
     private HttpResponse<String> createRepository(String token, ObjectNode body) throws IOException, InterruptedException {
