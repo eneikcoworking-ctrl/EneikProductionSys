@@ -3,6 +3,7 @@
   import type { ProjectDashboard, ProjectSummary } from './lib/types';
   import CommandDashboardV2 from './dashboard/CommandDashboardV2.svelte';
   import ClientDeliveryView from './client/ClientDeliveryView.svelte';
+  import AdminDashboard from './dashboard/AdminDashboard.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -11,7 +12,7 @@
   let projectName = '';
   let wishText = '';
   let status = 'Ready';
-  let activeView: 'main' | 'command' | 'client' = 'main';
+  let activeView: 'main' | 'command' | 'client' | 'admin' = 'main';
 
   async function loadProjects() {
     const response = await fetch(`${API_BASE}/api/projects`);
@@ -101,6 +102,7 @@
         <button on:click={() => activeView = 'main'} class:active={activeView === 'main'}>Main</button>
         <button on:click={() => activeView = 'command'} class:active={activeView === 'command'}>Command V2</button>
         <button on:click={() => activeView = 'client'} class:active={activeView === 'client'}>Delivery</button>
+        <button on:click={() => activeView = 'admin'} class:active={activeView === 'admin'}>Admin</button>
     </div>
     <div class="create-project">
       <input bind:value={projectName} placeholder="New project name" aria-label="New project name" />
@@ -120,7 +122,9 @@
     {/each}
   </section>
 
-  {#if dashboard}
+  {#if activeView === 'admin'}
+    <AdminDashboard />
+  {:else if dashboard}
     {#if activeView === 'main'}
         <section class="summary">
           <div>

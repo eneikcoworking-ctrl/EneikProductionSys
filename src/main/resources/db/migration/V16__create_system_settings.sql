@@ -1,0 +1,5 @@
+CREATE TABLE system_settings (
+    "key" VARCHAR(64) PRIMARY KEY,
+    "value" TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

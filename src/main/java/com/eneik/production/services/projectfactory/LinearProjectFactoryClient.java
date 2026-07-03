@@ -1,6 +1,7 @@
 package com.eneik.production.services.projectfactory;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -16,27 +17,23 @@ import java.net.http.HttpResponse;
 
 @Component
 public class LinearProjectFactoryClient {
-    private final boolean enabled;
-    private final String apiKey;
-    private final String teamId;
     private final String apiUrl;
+    private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public LinearProjectFactoryClient(@Value("${linear.enabled:false}") boolean enabled,
-                                      @Value("${linear.api-key:}") String apiKey,
-                                      @Value("${linear.team-id:}") String teamId,
-                                      @Value("${linear.api-url:https://api.linear.app/graphql}") String apiUrl,
+    public LinearProjectFactoryClient(@Value("${linear.api-url:https://api.linear.app/graphql}") String apiUrl,
+                                      SystemSettingsService settingsService,
                                       ObjectMapper objectMapper) {
-        this.enabled = enabled;
-        this.apiKey = apiKey;
-        this.teamId = teamId;
         this.apiUrl = apiUrl;
+        this.settingsService = settingsService;
         this.objectMapper = objectMapper;
     }
 
     public LinearProvisioningResult provision(ProjectEntity project, String repositoryUrl) {
-        if (!enabled) {
+        String apiKey = settingsService.effectiveValue("linear_api_key");
+        String teamId = settingsService.effectiveValue("linear_team_id");
+        if (!settingsService.effectiveBoolean("linear_enabled")) {
             return new LinearProvisioningResult("skipped: Linear provisioning disabled", null, null);
         }
         if (apiKey == null || apiKey.isBlank()) {

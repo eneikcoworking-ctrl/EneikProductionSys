@@ -1,6 +1,7 @@
 package com.eneik.production.services.projectfactory;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,28 +23,26 @@ import java.util.Arrays;
 
 @Component
 public class GitHubProjectFactoryClient {
-    private final boolean enabled;
-    private final String token;
     private final String organization;
     private final String apiBaseUrl;
+    private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public GitHubProjectFactoryClient(@Value("${github.enabled:false}") boolean enabled,
-                                      @Value("${github.token:}") String token,
-                                      @Value("${github.org:eneikcoworking-ctrl}") String organization,
+    public GitHubProjectFactoryClient(@Value("${github.org:eneikcoworking-ctrl}") String organization,
                                       @Value("${github.api-base-url:https://api.github.com}") String apiBaseUrl,
+                                      SystemSettingsService settingsService,
                                       ObjectMapper objectMapper) {
-        this.enabled = enabled;
-        this.token = token;
         this.organization = organization;
         this.apiBaseUrl = apiBaseUrl;
+        this.settingsService = settingsService;
         this.objectMapper = objectMapper;
     }
 
     public GitHubProvisioningResult provision(ProjectEntity project, WorkspaceArtifacts artifacts) {
         String fallbackUrl = "https://github.com/" + organization + "/" + project.getRepositoryName();
-        if (!enabled) {
+        String token = settingsService.effectiveValue("github_token");
+        if (!settingsService.effectiveBoolean("github_enabled")) {
             return new GitHubProvisioningResult("skipped: GitHub provisioning disabled", fallbackUrl, null);
         }
         if (token == null || token.isBlank()) {
@@ -57,7 +56,7 @@ public class GitHubProjectFactoryClient {
             body.put("private", true);
             body.put("auto_init", true);
 
-            HttpRequest request = baseRequest("/orgs/" + encode(organization) + "/repos")
+            HttpRequest request = baseRequest("/orgs/" + encode(organization) + "/repos", token)
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -87,18 +86,19 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<String> uploadBootstrapFiles(ProjectEntity project, WorkspaceArtifacts artifacts) {
+        String token = settingsService.effectiveValue("github_token");
         List<String> errors = new ArrayList<>();
-        upsertContent(project.getRepositoryName(), "README.md", artifacts.readme(), errors);
-        upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), errors);
-        upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), errors);
-        upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), errors);
+        upsertContent(project.getRepositoryName(), "README.md", artifacts.readme(), token, errors);
+        upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
+        upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
+        upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
         return errors;
     }
 
-    private void upsertContent(String repositoryName, String path, String content, List<String> errors) {
+    private void upsertContent(String repositoryName, String path, String content, String token, List<String> errors) {
         try {
             String endpoint = "/repos/" + encode(organization) + "/" + encode(repositoryName) + "/contents/" + encodePath(path);
-            String sha = existingSha(endpoint);
+            String sha = existingSha(endpoint, token);
 
             ObjectNode body = objectMapper.createObjectNode();
             body.put("message", "Initialize Eneik project factory file " + path);
@@ -107,7 +107,7 @@ public class GitHubProjectFactoryClient {
                 body.put("sha", sha);
             }
 
-            HttpRequest request = baseRequest(endpoint)
+            HttpRequest request = baseRequest(endpoint, token)
                     .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -122,8 +122,8 @@ public class GitHubProjectFactoryClient {
         }
     }
 
-    private String existingSha(String endpoint) throws IOException, InterruptedException {
-        HttpRequest request = baseRequest(endpoint).GET().build();
+    private String existingSha(String endpoint, String token) throws IOException, InterruptedException {
+        HttpRequest request = baseRequest(endpoint, token).GET().build();
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() == 200) {
             return objectMapper.readTree(response.body()).path("sha").asText(null);
@@ -131,7 +131,7 @@ public class GitHubProjectFactoryClient {
         return null;
     }
 
-    private HttpRequest.Builder baseRequest(String path) {
+    private HttpRequest.Builder baseRequest(String path, String token) {
         return HttpRequest.newBuilder(URI.create(trimBaseUrl() + path))
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")

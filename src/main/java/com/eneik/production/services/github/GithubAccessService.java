@@ -1,6 +1,7 @@
 package com.eneik.production.services.github;
 
 import com.eneik.production.config.GithubConfig;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -21,12 +22,17 @@ import java.util.UUID;
 public class GithubAccessService {
 
     private final GithubConfig githubConfig;
+    private final SystemSettingsService settingsService;
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
 
-    public GithubAccessService(GithubConfig githubConfig, JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
+    public GithubAccessService(GithubConfig githubConfig,
+                               SystemSettingsService settingsService,
+                               JdbcTemplate jdbcTemplate,
+                               ObjectMapper objectMapper) {
         this.githubConfig = githubConfig;
+        this.settingsService = settingsService;
         this.jdbcTemplate = jdbcTemplate;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newHttpClient();
@@ -52,7 +58,8 @@ public class GithubAccessService {
     ) {}
 
     public GithubAccessResult checkAccess(UUID projectId) {
-        if (!githubConfig.isEnabled() || githubConfig.getToken().isBlank()) {
+        String token = settingsService.effectiveValue("github_token");
+        if (!settingsService.effectiveBoolean("github_enabled") || token.isBlank()) {
             GithubAccessResult result = new GithubAccessResult(
                     UUID.randomUUID(),
                     projectId,
@@ -70,11 +77,11 @@ public class GithubAccessService {
 
         try {
             String repoName = getRepoName(projectId);
-            boolean hasRepoAccess = checkRepoAccess(repoName);
-            boolean branchProtectionOk = hasRepoAccess && checkBranchProtection(repoName);
-            boolean prPermissionsOk = hasRepoAccess && checkPrPermissions(repoName);
-            boolean webhooksOk = hasRepoAccess && checkWebhooks(repoName);
-            String ciStatus = hasRepoAccess ? checkCiStatus(repoName) : "no_ci";
+            boolean hasRepoAccess = checkRepoAccess(repoName, token);
+            boolean branchProtectionOk = hasRepoAccess && checkBranchProtection(repoName, token);
+            boolean prPermissionsOk = hasRepoAccess && checkPrPermissions(repoName, token);
+            boolean webhooksOk = hasRepoAccess && checkWebhooks(repoName, token);
+            String ciStatus = hasRepoAccess ? checkCiStatus(repoName, token) : "no_ci";
 
             GithubAccessResult result = new GithubAccessResult(
                     UUID.randomUUID(),
@@ -170,9 +177,9 @@ public class GithubAccessService {
         return jdbcTemplate.queryForObject("SELECT repository_name FROM projects WHERE id = ?", String.class, projectId);
     }
 
-    private boolean checkRepoAccess(String repoName) {
+    private boolean checkRepoAccess(String repoName, String token) {
         try {
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName))
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName), token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -182,9 +189,9 @@ public class GithubAccessService {
         }
     }
 
-    private boolean checkBranchProtection(String repoName) {
+    private boolean checkBranchProtection(String repoName, String token) {
         try {
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/branches/main/protection")
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/branches/main/protection", token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -200,11 +207,11 @@ public class GithubAccessService {
         }
     }
 
-    private boolean checkPrPermissions(String repoName) {
+    private boolean checkPrPermissions(String repoName, String token) {
         try {
             // Scope check via header "X-OAuth-Scopes" is one way, but creating/listing PRs is more direct
             // Let's check if we can list PRs as a proxy for PR permissions, or check scopes
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/pulls")
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/pulls", token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -215,9 +222,9 @@ public class GithubAccessService {
         }
     }
 
-    private boolean checkWebhooks(String repoName) {
+    private boolean checkWebhooks(String repoName, String token) {
         try {
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/hooks")
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/hooks", token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -246,9 +253,9 @@ public class GithubAccessService {
         }
     }
 
-    private String checkCiStatus(String repoName) {
+    private String checkCiStatus(String repoName, String token) {
         try {
-            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/commits/main/check-runs")
+            HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/commits/main/check-runs", token)
                     .GET()
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -282,9 +289,9 @@ public class GithubAccessService {
         }
     }
 
-    private HttpRequest.Builder baseRequest(String path) {
+    private HttpRequest.Builder baseRequest(String path, String token) {
         return HttpRequest.newBuilder(URI.create(githubConfig.getApiBaseUrl().replaceAll("/+$", "") + path))
-                .header("Authorization", "Bearer " + githubConfig.getToken())
+                .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
                 .header("X-GitHub-Api-Version", "2022-11-28");
     }
