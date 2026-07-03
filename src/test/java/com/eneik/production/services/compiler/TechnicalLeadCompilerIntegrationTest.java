@@ -7,6 +7,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.UUID;
@@ -14,6 +15,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
+@ActiveProfiles("test")
 @Transactional
 public class TechnicalLeadCompilerIntegrationTest {
 
@@ -85,6 +87,9 @@ public class TechnicalLeadCompilerIntegrationTest {
         assertNotNull(task);
         assertEquals("Test wish", task.getDescription());
         assertEquals(TaskStatus.queued, task.getStatus());
+        assertTrue(task.isQualityGatePassed());
+        assertNotNull(task.getQualityGateReport());
+        assertEquals(5, task.getQualityGateReport().get("checks").size());
 
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElseThrow();
         assertEquals(WishlistStatus.converted_to_task, wishlist.getStatus());

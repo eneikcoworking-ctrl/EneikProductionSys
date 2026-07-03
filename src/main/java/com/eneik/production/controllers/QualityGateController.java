@@ -24,6 +24,7 @@ public class QualityGateController {
     public Map<String, Object> getDefectRate() {
         List<TaskEntity> allTasks = taskRepository.findAll();
         long totalAttempts = 0;
+        long totalOpportunities = 0;
         long totalDefects = 0;
 
         for (TaskEntity task : allTasks) {
@@ -31,6 +32,7 @@ public class QualityGateController {
             if (report != null && report.has("checks")) {
                 totalAttempts++;
                 JsonNode checks = report.get("checks");
+                totalOpportunities += checks.size();
                 for (JsonNode check : checks) {
                     if (!check.get("passed").asBoolean()) {
                         totalDefects++;
@@ -40,14 +42,13 @@ public class QualityGateController {
         }
 
         double dpmo = 0;
-        if (totalAttempts > 0) {
-            // Formula: M / (N * 5) * 1_000_000
-            // Assuming 5 opportunities per task (the 5 base checks)
-            dpmo = (double) totalDefects / (totalAttempts * 5) * 1_000_000;
+        if (totalOpportunities > 0) {
+            dpmo = (double) totalDefects / totalOpportunities * 1_000_000;
         }
 
         return Map.of(
             "totalAttempts", totalAttempts,
+            "totalOpportunities", totalOpportunities,
             "defects", totalDefects,
             "dpmo", dpmo
         );

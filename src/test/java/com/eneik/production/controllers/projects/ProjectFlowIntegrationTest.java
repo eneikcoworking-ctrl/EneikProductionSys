@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.nio.file.Files;
@@ -47,12 +48,16 @@ class ProjectFlowIntegrationTest {
     @Autowired
     private ProjectRepository projectRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     @BeforeEach
     void setUp() {
         claimRepository.deleteAll();
         taskRepository.deleteAll();
         wishlistItemRepository.deleteAll();
         accountRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM github_access_status");
         projectRepository.deleteAll();
     }
 

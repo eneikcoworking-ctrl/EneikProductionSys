@@ -7,12 +7,14 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@ActiveProfiles("test")
 public class GithubAccessControllerTest {
 
     @Autowired
@@ -25,8 +27,9 @@ public class GithubAccessControllerTest {
     public void testGetAccessStatus() {
         // Create a dummy project
         UUID projectId = UUID.randomUUID();
+        String slug = "test-project-" + projectId;
         jdbcTemplate.update("INSERT INTO projects (id, name, slug, repository_name, status) VALUES (?, ?, ?, ?, ?)",
-                projectId, "Test Project", "test-project", "test-repo", "active");
+                projectId, "Test Project", slug, "test-repo", "active");
 
         ResponseEntity<String> response = restTemplate.getForEntity("/api/projects/" + projectId + "/github-access", String.class);
 

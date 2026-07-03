@@ -2,6 +2,7 @@ package com.eneik.production.services.gate;
 
 import com.eneik.production.models.persistence.TaskEntity;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -10,11 +11,24 @@ import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
+@Order(210)
 public class BackendContractGate implements GateCheck {
     private static final Set<String> BACKEND_TAGS = Set.of("BARCAN-TAG-02", "BARCAN-TAG-07");
     private static final String CHECK_NAME = "backend_contract";
     private static final Pattern ERROR_PATTERN = Pattern.compile("400|401|403|error", Pattern.CASE_INSENSITIVE);
     private static final Pattern AUTH_VALIDATION_PATTERN = Pattern.compile("auth|validation", Pattern.CASE_INSENSITIVE);
+
+    @Override
+    public GateStage stage() {
+        return GateStage.IMPLEMENTATION_RESULT;
+    }
+
+    @Override
+    public boolean supports(TaskEntity task) {
+        return task != null
+                && task.getRole() != null
+                && BACKEND_TAGS.contains(task.getRole().getTag());
+    }
 
     @Override
     public GateResult check(TaskEntity task) {
@@ -51,7 +65,9 @@ public class BackendContractGate implements GateCheck {
         }
 
         // 3. Наличие упоминания auth/validation в acceptance_criteria
-        JsonNode acceptanceCriteria = payload.get("acceptanceCriteria");
+        JsonNode acceptanceCriteria = payload.has("acceptanceCriteria")
+                ? payload.get("acceptanceCriteria")
+                : payload.get("acceptance_criteria");
         if (acceptanceCriteria == null || !AUTH_VALIDATION_PATTERN.matcher(acceptanceCriteria.asText()).find()) {
             failureReasons.add("acceptance criteria must mention auth or validation");
         }

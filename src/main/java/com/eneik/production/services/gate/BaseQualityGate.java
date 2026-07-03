@@ -3,6 +3,7 @@ package com.eneik.production.services.gate;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -11,6 +12,7 @@ import java.util.List;
 public class BaseQualityGate {
 
     @Component
+    @Order(100)
     public static class BusinessValueGate implements GateCheck {
         @Override
         public GateResult check(TaskEntity task) {
@@ -29,6 +31,7 @@ public class BaseQualityGate {
     }
 
     @Component
+    @Order(110)
     public static class DoDGate implements GateCheck {
         @Override
         public GateResult check(TaskEntity task) {
@@ -42,6 +45,7 @@ public class BaseQualityGate {
     }
 
     @Component
+    @Order(120)
     public static class AcceptanceCriteriaGate implements GateCheck {
         @Override
         public GateResult check(TaskEntity task) {
@@ -60,6 +64,7 @@ public class BaseQualityGate {
     }
 
     @Component
+    @Order(130)
     public static class RepoUrlGate implements GateCheck {
         @Override
         public GateResult check(TaskEntity task) {
@@ -72,6 +77,7 @@ public class BaseQualityGate {
     }
 
     @Component
+    @Order(140)
     public static class ActiveRoleGate implements GateCheck {
         @Override
         public GateResult check(TaskEntity task) {

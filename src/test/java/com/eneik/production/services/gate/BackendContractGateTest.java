@@ -23,6 +23,8 @@ class BackendContractGateTest {
     @Test
     void shouldPassNonBackendTask() {
         TaskEntity task = createTask("BARCAN-TAG-11", null);
+        assertThat(gate.supports(task)).isFalse();
+
         GateResult result = gate.check(task);
         assertThat(result.passed()).isTrue();
         assertThat(result.checkName()).isEqualTo("not applicable");
@@ -64,6 +66,9 @@ class BackendContractGateTest {
         payload.put("acceptanceCriteria", "Security auth check");
 
         TaskEntity task = createTask("BARCAN-TAG-07", payload);
+        assertThat(gate.supports(task)).isTrue();
+        assertThat(gate.stage()).isEqualTo(GateStage.IMPLEMENTATION_RESULT);
+
         GateResult result = gate.check(task);
 
         assertThat(result.passed()).isTrue();
