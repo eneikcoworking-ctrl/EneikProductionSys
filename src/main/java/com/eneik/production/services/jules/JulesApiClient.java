@@ -35,13 +35,17 @@ public class JulesApiClient {
 
     public String createSession(String repoUrl, String taskDescription, String roleContext) {
         String apiKey = settingsService.effectiveValue("jules_api_key");
+        return createSession(repoUrl, taskDescription, roleContext, apiKey);
+    }
+
+    public String createSession(String repoUrl, String taskDescription, String roleContext, String apiKey) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {
             log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
             return "skipped";
         }
 
         if (apiKey == null || apiKey.isBlank()) {
-            log.warn("JULES_API_KEY is not configured. Returning 'skipped'.");
+            log.warn("Jules API key is not configured. Returning 'skipped'.");
             return "skipped";
         }
 
@@ -85,7 +89,11 @@ public class JulesApiClient {
 
     public String getSessionStatus(String externalSessionId) {
         String apiKey = settingsService.effectiveValue("jules_api_key");
-        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+        return getSessionStatus(externalSessionId, apiKey);
+    }
+
+    public String getSessionStatus(String externalSessionId, String apiKey) {
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 

@@ -33,6 +33,10 @@ public class AccountEntity {
     @Column(name = "current_project_id")
     private UUID currentProjectId;
 
+    @ManyToOne
+    @JoinColumn(name = "jules_config_id")
+    private JulesConfigEntity julesConfig;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -49,4 +53,6 @@ public class AccountEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public UUID getCurrentProjectId() { return currentProjectId; }
     public void setCurrentProjectId(UUID currentProjectId) { this.currentProjectId = currentProjectId; }
+    public JulesConfigEntity getJulesConfig() { return julesConfig; }
+    public void setJulesConfig(JulesConfigEntity julesConfig) { this.julesConfig = julesConfig; }
 }

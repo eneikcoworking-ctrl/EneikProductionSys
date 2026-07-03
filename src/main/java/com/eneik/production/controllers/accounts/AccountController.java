@@ -129,7 +129,8 @@ public class AccountController {
                 account.getStatus(),
                 account.getCapabilities(),
                 account.getLastHeartbeat(),
-                account.getCurrentProjectId()
+                account.getCurrentProjectId(),
+                account.getJulesConfig() != null ? account.getJulesConfig().getName() : null
         );
     }
 

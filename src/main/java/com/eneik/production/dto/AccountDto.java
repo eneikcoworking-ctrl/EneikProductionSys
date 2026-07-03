@@ -10,5 +10,6 @@ public record AccountDto(
     AccountStatus status,
     String capabilities,
     Instant lastHeartbeat,
-    UUID currentProjectId
+    UUID currentProjectId,
+    String julesConfigName
 ) {}
