@@ -38,4 +38,13 @@ class Database:
     def get_task_by_id(self, task_id):
         return self._api_call(f"/{task_id}")
 
+    def get_task_metadata(self, task_id):
+        return self._api_call(f"/{task_id}/metadata")
+
+    def update_task_metadata(self, task_id, updates):
+        return self._api_call(f"/{task_id}/metadata", method="PATCH", data=updates)
+
+    def get_active_claim(self, task_id):
+        return self._api_call(f"/{task_id}/active-claim")
+
 db = Database()

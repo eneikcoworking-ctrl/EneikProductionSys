@@ -63,7 +63,8 @@ public class ClientDeliveryService {
 
         String testSummary = "Data source not yet available";
         if (tableExists("github_access_status") && columnExists("github_access_status", "project_id")) {
-            List<Map<String, Object>> status = jdbcTemplate.queryForList("SELECT ci_status FROM github_access_status WHERE project_id = ? ORDER BY created_at DESC LIMIT 1", projectId);
+            String orderBy = columnExists("github_access_status", "checked_at") ? "checked_at" : "id";
+            List<Map<String, Object>> status = jdbcTemplate.queryForList("SELECT ci_status FROM github_access_status WHERE project_id = ? ORDER BY " + orderBy + " DESC LIMIT 1", projectId);
             if (!status.isEmpty()) {
                 testSummary = "Last CI Status: " + status.get(0).get("ci_status");
             }
