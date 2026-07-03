@@ -23,6 +23,14 @@
     currentProjectId?: string;
     capabilities: string;
     lastHeartbeat?: string;
+    julesConfigName?: string;
+  };
+
+  type JulesConfig = {
+    id: string;
+    name: string;
+    apiKeyMasked: string;
+    enabled: boolean;
   };
 
   type AccountsData = {
@@ -51,9 +59,12 @@
 
   let status = $state<SystemStatus | null>(null);
   let settings = $state<Setting[]>([]);
+  let julesConfigs = $state<JulesConfig[]>([]);
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
   let message = $state('Ready');
+
+  let newJulesToken = $state({ name: '', apiKey: '' });
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
 
@@ -80,7 +91,54 @@
     }
     status = await response.json();
     settings = status?.integrations?.data || [];
+    await loadJulesConfigs();
     message = 'Updated';
+  }
+
+  async function loadJulesConfigs() {
+    const response = await fetch(`${API_BASE}/api/jules-configs`);
+    if (response.ok) {
+      julesConfigs = await response.json();
+    }
+  }
+
+  async function addJulesConfig() {
+    if (!newJulesToken.name || !newJulesToken.apiKey) return;
+    const response = await fetch(`${API_BASE}/api/jules-configs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newJulesToken)
+    });
+    if (response.ok) {
+      newJulesToken = { name: '', apiKey: '' };
+      await loadJulesConfigs();
+      message = 'Token added';
+    }
+  }
+
+  async function updateJulesConfig(config: JulesConfig, updates: Partial<JulesConfig & { apiKey?: string }>) {
+    const response = await fetch(`${API_BASE}/api/jules-configs/${config.id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updates)
+    });
+    if (response.ok) {
+      editing[`jules_${config.id}`] = false;
+      drafts[`jules_${config.id}`] = '';
+      await loadJulesConfigs();
+      message = 'Token updated';
+    }
+  }
+
+  async function deleteJulesConfig(id: string) {
+    if (!confirm('Are you sure?')) return;
+    const response = await fetch(`${API_BASE}/api/jules-configs/${id}`, {
+      method: 'DELETE'
+    });
+    if (response.ok) {
+      await loadJulesConfigs();
+      message = 'Token deleted';
+    }
   }
 
   async function saveSetting(key: string, value: string) {
@@ -161,18 +219,49 @@
             </label>
           </div>
 
-          <div class="setting-line">
-            <span>token</span>
-            {#if editing[integration.secretKey]}
-              <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
-            {:else}
-              <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
-            {/if}
-            <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Изменить</button>
-            <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
-              Сохранить
-            </button>
-          </div>
+          {#if integration.name === 'Jules'}
+            <div class="jules-tokens-list">
+              {#each julesConfigs as config}
+                <div class="setting-line">
+                  <span class="token-name-label">{config.name}</span>
+                  {#if editing[`jules_${config.id}`]}
+                    <input bind:value={drafts[`jules_${config.id}`]} placeholder="new api key" />
+                  {:else}
+                    <input value={config.apiKeyMasked} disabled />
+                  {/if}
+                  <button type="button" class="secondary" onclick={() => {
+                    editing[`jules_${config.id}`] = true;
+                    drafts[`jules_${config.id}`] = '';
+                  }}>Изменить</button>
+                  <button type="button" onclick={() => updateJulesConfig(config, { apiKey: drafts[`jules_${config.id}`] })} disabled={!editing[`jules_${config.id}`]}>
+                    Сохранить
+                  </button>
+                  <button type="button" class="danger" onclick={() => deleteJulesConfig(config.id)}>×</button>
+                  <label class="toggle mini">
+                    <input type="checkbox" checked={config.enabled} onchange={(e) => updateJulesConfig(config, { enabled: e.currentTarget.checked })} />
+                  </label>
+                </div>
+              {/each}
+              <div class="setting-line add-token">
+                <input bind:value={newJulesToken.name} placeholder="Account Name (e.g. Jules-01)" />
+                <input bind:value={newJulesToken.apiKey} placeholder="API Key" />
+                <button type="button" onclick={addJulesConfig} disabled={!newJulesToken.name || !newJulesToken.apiKey}>Add Token</button>
+              </div>
+            </div>
+          {:else}
+            <div class="setting-line">
+              <span>token</span>
+              {#if editing[integration.secretKey]}
+                <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
+              {:else}
+                <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
+              {/if}
+              <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Изменить</button>
+              <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
+                Сохранить
+              </button>
+            </div>
+          {/if}
 
           {#if integration.extraKey}
             <div class="setting-line">
@@ -218,6 +307,7 @@
       <div class="table-head">
         <span>Name</span>
         <span>Status</span>
+        <span>Token</span>
         <span>Project</span>
         <span>Capabilities</span>
         <span>Heartbeat</span>
@@ -226,6 +316,7 @@
         <div class="table-row">
           <strong>{account.name}</strong>
           <span class={`pill ${account.status}`}>{account.status}</span>
+          <span class="text-xs">{account.julesConfigName || 'default'}</span>
           <span>{account.currentProjectId || 'none'}</span>
           <span>{account.capabilities}</span>
           <span>{formatDate(account.lastHeartbeat)}</span>
@@ -317,8 +408,36 @@
     grid-template-columns: 44px minmax(0, 1fr) auto auto;
   }
 
+  .jules-tokens-list .setting-line {
+    grid-template-columns: 100px minmax(0, 1fr) auto auto auto auto;
+    margin-bottom: 8px;
+  }
+
+  .token-name-label {
+    font-weight: 600;
+    font-size: 0.8rem;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .add-token {
+    grid-template-columns: 1fr 1.5fr auto !important;
+    margin-top: 12px;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 12px;
+  }
+
   .secondary {
     background: #475569;
+  }
+
+  .danger {
+    background: #ef4444;
+  }
+
+  .mini {
+    transform: scale(0.8);
   }
 
   .source-line small {
@@ -365,8 +484,8 @@
   .table-row {
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(160px, 1fr) 90px minmax(150px, 1fr) minmax(220px, 1.4fr) minmax(160px, 1fr);
-    min-width: 900px;
+    grid-template-columns: minmax(160px, 1fr) 90px 100px minmax(150px, 1fr) minmax(220px, 1.4fr) minmax(160px, 1fr);
+    min-width: 1000px;
   }
 
   .table-head {

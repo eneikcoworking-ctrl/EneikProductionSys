@@ -81,6 +81,7 @@ public class SystemStatusService {
         item.put("currentProjectId", account.getCurrentProjectId());
         item.put("capabilities", account.getCapabilities());
         item.put("lastHeartbeat", account.getLastHeartbeat());
+        item.put("julesConfigName", account.getJulesConfig() != null ? account.getJulesConfig().getName() : null);
         return item;
     }
 

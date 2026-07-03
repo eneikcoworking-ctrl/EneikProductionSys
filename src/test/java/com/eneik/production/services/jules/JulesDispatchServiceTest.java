@@ -20,6 +20,7 @@ class JulesDispatchServiceTest {
 
     private JulesApiClient julesApiClient;
     private JulesSessionRepository julesSessionRepository;
+    private com.eneik.production.repositories.AccountRepository accountRepository;
     private TaskRepository taskRepository;
     private JulesDispatchService julesDispatchService;
 
@@ -27,8 +28,9 @@ class JulesDispatchServiceTest {
     void setUp() {
         julesApiClient = mock(JulesApiClient.class);
         julesSessionRepository = mock(JulesSessionRepository.class);
+        accountRepository = mock(com.eneik.production.repositories.AccountRepository.class);
         taskRepository = mock(TaskRepository.class);
-        julesDispatchService = new JulesDispatchService(julesApiClient, julesSessionRepository, taskRepository, "prefix/");
+        julesDispatchService = new JulesDispatchService(julesApiClient, julesSessionRepository, accountRepository, taskRepository, "prefix/");
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
     }
 

@@ -42,6 +42,7 @@ public class ProjectFlowService {
     private final ClaimRepository claimRepository;
     private final RoleRepository roleRepository;
     private final JulesDispatchService julesDispatchService;
+    private final JulesConfigRepository julesConfigRepository;
     private final ProjectFactoryService projectFactoryService;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
@@ -56,6 +57,7 @@ public class ProjectFlowService {
                               ClaimRepository claimRepository,
                               RoleRepository roleRepository,
                               JulesDispatchService julesDispatchService,
+                              JulesConfigRepository julesConfigRepository,
                               ProjectFactoryService projectFactoryService,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
@@ -69,6 +71,7 @@ public class ProjectFlowService {
         this.claimRepository = claimRepository;
         this.roleRepository = roleRepository;
         this.julesDispatchService = julesDispatchService;
+        this.julesConfigRepository = julesConfigRepository;
         this.projectFactoryService = projectFactoryService;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
@@ -104,15 +107,29 @@ public class ProjectFlowService {
         saved = projectRepository.save(saved);
         ProjectEntity provisionedProject = saved;
 
-        JULES_NAMES.forEach(namePart -> {
-            AccountEntity account = new AccountEntity();
-            account.setProject(provisionedProject);
-            account.setName(provisionedProject.getSlug() + "-" + namePart);
-            account.setCapabilities(UNIVERSAL_CAPABILITIES);
-            account.setStatus(AccountStatus.idle);
-            account.setLastHeartbeat(Instant.now());
-            accountRepository.save(account);
-        });
+        List<JulesConfigEntity> configs = julesConfigRepository.findByEnabledTrue();
+        if (configs.isEmpty()) {
+            JULES_NAMES.forEach(namePart -> {
+                AccountEntity account = new AccountEntity();
+                account.setProject(provisionedProject);
+                account.setName(provisionedProject.getSlug() + "-" + namePart);
+                account.setCapabilities(UNIVERSAL_CAPABILITIES);
+                account.setStatus(AccountStatus.idle);
+                account.setLastHeartbeat(Instant.now());
+                accountRepository.save(account);
+            });
+        } else {
+            configs.forEach(config -> {
+                AccountEntity account = new AccountEntity();
+                account.setProject(provisionedProject);
+                account.setName(provisionedProject.getSlug() + "-" + config.getName());
+                account.setCapabilities(UNIVERSAL_CAPABILITIES);
+                account.setStatus(AccountStatus.idle);
+                account.setLastHeartbeat(Instant.now());
+                account.setJulesConfig(config);
+                accountRepository.save(account);
+            });
+        }
 
         return toProjectDto(provisionedProject);
     }

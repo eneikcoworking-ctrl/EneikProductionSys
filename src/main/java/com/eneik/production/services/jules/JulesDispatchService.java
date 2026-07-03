@@ -24,6 +24,7 @@ public class JulesDispatchService {
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
+    private final com.eneik.production.repositories.AccountRepository accountRepository;
     private final TaskRepository taskRepository;
     private final String sourcePrefix;
 
@@ -32,10 +33,12 @@ public class JulesDispatchService {
 
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
+                                com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
                                 @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
+        this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.sourcePrefix = sourcePrefix;
     }
@@ -73,7 +76,17 @@ public class JulesDispatchService {
         String description = task.getDescription();
         String roleContext = "Role: " + task.getRole().getTag() + "\n" + task.getRole().getDescription();
 
-        String externalId = julesApiClient.createSession(repoUrl, description, roleContext);
+        String apiKey = null;
+        if (accountId != null) {
+            apiKey = accountRepository.findById(accountId)
+                    .map(com.eneik.production.models.persistence.AccountEntity::getJulesConfig)
+                    .map(com.eneik.production.models.persistence.JulesConfigEntity::getApiKey)
+                    .orElse(null);
+        }
+
+        String externalId = apiKey != null
+                ? julesApiClient.createSession(repoUrl, description, roleContext, apiKey)
+                : julesApiClient.createSession(repoUrl, description, roleContext);
 
         if ("skipped".equals(externalId)) {
             session.setStatus("queued");
@@ -98,7 +111,17 @@ public class JulesDispatchService {
             return session;
         }
 
-        String rawStatus = julesApiClient.getSessionStatus(session.getExternalSessionId());
+        String apiKey = null;
+        if (session.getAccountId() != null) {
+            apiKey = accountRepository.findById(session.getAccountId())
+                    .map(com.eneik.production.models.persistence.AccountEntity::getJulesConfig)
+                    .map(com.eneik.production.models.persistence.JulesConfigEntity::getApiKey)
+                    .orElse(null);
+        }
+
+        String rawStatus = apiKey != null
+                ? julesApiClient.getSessionStatus(session.getExternalSessionId(), apiKey)
+                : julesApiClient.getSessionStatus(session.getExternalSessionId());
         if (rawStatus != null) {
             String mappedStatus = mapExternalStatus(rawStatus);
             session.setStatus(mappedStatus);
