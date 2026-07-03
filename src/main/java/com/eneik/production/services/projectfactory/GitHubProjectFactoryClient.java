@@ -56,10 +56,7 @@ public class GitHubProjectFactoryClient {
             body.put("private", true);
             body.put("auto_init", true);
 
-            HttpRequest request = baseRequest("/orgs/" + encode(organization) + "/repos", token)
-                    .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
-                    .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = createRepository(token, body);
 
             if (response.statusCode() == 201) {
                 JsonNode json = objectMapper.readTree(response.body());
@@ -93,6 +90,21 @@ public class GitHubProjectFactoryClient {
         upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
         upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
         return errors;
+    }
+
+    private HttpResponse<String> createRepository(String token, ObjectNode body) throws IOException, InterruptedException {
+        HttpRequest organizationRequest = baseRequest("/orgs/" + encode(organization) + "/repos", token)
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build();
+        HttpResponse<String> response = httpClient.send(organizationRequest, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() != 404) {
+            return response;
+        }
+
+        HttpRequest userRequest = baseRequest("/user/repos", token)
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
+                .build();
+        return httpClient.send(userRequest, HttpResponse.BodyHandlers.ofString());
     }
 
     private void upsertContent(String repositoryName, String path, String content, String token, List<String> errors) {
