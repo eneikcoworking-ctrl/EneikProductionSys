@@ -168,6 +168,31 @@
     return new Date(value).toLocaleString();
   }
 
+  function getStatusColor(integrationName: string): 'success' | 'warning' | 'error' | 'neutral' {
+    if (!status) return 'neutral';
+
+    if (integrationName === 'GitHub') {
+      if (!status.githubAccess.available) return 'error';
+      const ci = status.githubAccess.data?.latest?.ci_status;
+      if (ci === 'success') return 'success';
+      if (ci === 'failure' || ci === 'error') return 'error';
+      if (!ci) return 'neutral';
+      return 'warning';
+    }
+
+    if (integrationName === 'Linear') {
+      if (!status.linearCompleteness.available) return 'error';
+      const issues = (status.linearCompleteness.data?.totalIssues as number) ?? 0;
+      return issues > 0 ? 'success' : 'neutral';
+    }
+
+    if (integrationName === 'Jules') {
+      return julesConfigs.length > 0 ? 'success' : 'neutral';
+    }
+
+    return 'neutral';
+  }
+
   onMount(loadStatus);
 </script>
 
@@ -228,13 +253,7 @@
           <div class="card-header">
             <div class="card-title-group">
               <h3>{integration.name}</h3>
-              {#if integration.name === 'GitHub'}
-                <div class="status-dot {status?.githubAccess?.available ? 'success' : 'neutral'}"></div>
-              {:else if integration.name === 'Linear'}
-                <div class="status-dot {status?.linearCompleteness?.available ? 'success' : 'neutral'}"></div>
-              {:else}
-                <div class="status-dot {julesConfigs.length > 0 ? 'success' : 'neutral'}"></div>
-              {/if}
+              <div class="status-dot {getStatusColor(integration.name)}"></div>
             </div>
             <label class="toggle">
               <input
@@ -253,7 +272,7 @@
                   <div class="setting-line">
                     <div class="token-info">
                       <span class="token-name-label">{config.name}</span>
-                      <small>API Key</small>
+                      <small>Account Identity</small>
                     </div>
                     <div class="input-group">
                       {#if editing[`jules_${config.id}`]}
@@ -424,8 +443,8 @@
 <style>
   .admin-shell {
     display: grid;
-    gap: 24px;
-    padding-bottom: 40px;
+    gap: var(--space-6);
+    padding-bottom: var(--space-8);
   }
 
   .admin-header {
@@ -436,15 +455,15 @@
 
   .admin-grid.overview {
     display: grid;
-    gap: 16px;
+    gap: var(--space-4);
     grid-template-columns: repeat(4, 1fr);
   }
 
   .stat {
-    background: white;
-    border: 1px solid #e2e8f0;
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
     border-radius: 12px;
-    padding: 20px;
+    padding: var(--space-4);
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   }
 
@@ -452,34 +471,34 @@
     display: block;
     font-size: 32px;
     font-weight: 800;
-    color: #1e293b;
+    color: var(--neutral-800);
   }
 
   .stat p {
-    color: #64748b;
+    color: var(--neutral-500);
     font-size: 14px;
     font-weight: 600;
     text-transform: uppercase;
-    margin-top: 4px;
+    margin-top: var(--space-1);
   }
 
   .warning-box {
-    background: #fffbeb;
-    border: 1px solid #fde68a;
+    background: var(--warning-bg);
+    border: 1px solid var(--warning);
     border-radius: 8px;
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .warning-header {
     display: flex;
     align-items: center;
-    gap: 8px;
-    color: #92400e;
-    margin-bottom: 8px;
+    gap: var(--space-2);
+    color: var(--warning);
+    margin-bottom: var(--space-2);
   }
 
   .warning-box details {
-    color: #92400e;
+    color: var(--warning);
     font-size: 14px;
   }
 
@@ -489,16 +508,16 @@
   }
 
   .details-content {
-    margin-top: 8px;
-    padding-left: 12px;
-    border-left: 2px solid #fde68a;
+    margin-top: var(--space-2);
+    padding-left: var(--space-3);
+    border-left: 2px solid var(--warning);
   }
 
   .admin-panel {
-    background: white;
-    border: 1px solid #e2e8f0;
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
     border-radius: 12px;
-    padding: 24px;
+    padding: var(--space-6);
     box-shadow: 0 1px 3px rgba(0,0,0,0.05);
   }
 
@@ -506,30 +525,30 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 20px;
+    margin-bottom: var(--space-4);
   }
 
   .status-badge {
-    padding: 4px 12px;
+    padding: var(--space-1) var(--space-3);
     border-radius: 999px;
     font-size: 12px;
     font-weight: 700;
     text-transform: uppercase;
   }
 
-  .status-badge.online { background: #dcfce7; color: #166534; }
-  .status-badge.offline { background: #fee2e2; color: #991b1b; }
-  .status-badge.info { background: #f1f5f9; color: #475569; }
+  .status-badge.online { background: var(--success-bg); color: var(--success); }
+  .status-badge.offline { background: var(--error-bg); color: var(--error); }
+  .status-badge.info { background: var(--neutral-100); color: var(--neutral-600); }
 
   .integration-grid {
     display: grid;
-    gap: 20px;
+    gap: var(--space-4);
     grid-template-columns: repeat(3, 1fr);
   }
 
   .integration-card {
-    background: #f8fafc;
-    border: 1px solid #e2e8f0;
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-200);
     border-radius: 10px;
     display: flex;
     flex-direction: column;
@@ -537,8 +556,8 @@
   }
 
   .card-header {
-    padding: 16px;
-    border-bottom: 1px solid #e2e8f0;
+    padding: var(--space-4);
+    border-bottom: 1px solid var(--neutral-200);
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -547,7 +566,7 @@
   .card-title-group {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-2);
   }
 
   .card-title-group h3 {
@@ -561,20 +580,22 @@
     height: 10px;
     border-radius: 50%;
   }
-  .status-dot.success { background: #10b981; }
-  .status-dot.neutral { background: #94a3b8; }
+  .status-dot.success { background: var(--success); }
+  .status-dot.neutral { background: var(--neutral-400); }
+  .status-dot.warning { background: var(--warning); }
+  .status-dot.error { background: var(--error); }
 
   .toggle {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-1);
     cursor: pointer;
   }
-  .toggle-label { font-size: 10px; font-weight: 800; color: #64748b; }
+  .toggle-label { font-size: 10px; font-weight: 800; color: var(--neutral-500); }
 
   .card-content {
     flex: 1;
-    padding: 16px;
+    padding: var(--space-4);
   }
 
   .jules-tokens-list {
@@ -585,91 +606,91 @@
   .setting-line {
     display: grid;
     grid-template-columns: 1fr auto;
-    gap: 12px;
-    margin-bottom: 16px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed #e2e8f0;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px dashed var(--neutral-200);
   }
 
   .token-info { display: flex; flex-direction: column; }
   .token-name-label { font-weight: 700; font-size: 14px; }
-  .token-info small { font-size: 10px; color: #94a3b8; text-transform: uppercase; }
+  .token-info small { font-size: 10px; color: var(--neutral-400); text-transform: uppercase; }
 
-  .input-group { display: flex; flex-direction: column; gap: 8px; }
-  .action-buttons { display: flex; gap: 4px; }
+  .input-group { display: flex; flex-direction: column; gap: var(--space-2); }
+  .action-buttons { display: flex; gap: var(--space-1); }
 
   .setting-line-simple {
-    margin-bottom: 16px;
+    margin-bottom: var(--space-4);
   }
 
-  .label-group { display: flex; flex-direction: column; margin-bottom: 6px; }
+  .label-group { display: flex; flex-direction: column; margin-bottom: var(--space-1); }
   .field-label { font-weight: 600; font-size: 14px; }
-  .label-group small { font-size: 10px; color: #94a3b8; font-weight: 700; }
+  .label-group small { font-size: 10px; color: var(--neutral-400); font-weight: 700; }
 
-  .input-row { display: flex; gap: 8px; }
+  .input-row { display: flex; gap: var(--space-2); }
 
   .mini-btn {
-    padding: 0 8px;
+    padding: 0 var(--space-2);
     min-height: 32px;
     font-size: 12px;
   }
 
   .card-footer {
-    padding: 12px 16px;
-    background: #f1f5f9;
-    border-top: 1px solid #e2e8f0;
+    padding: var(--space-3) var(--space-4);
+    background: var(--neutral-100);
+    border-top: 1px solid var(--neutral-200);
     border-radius: 0 0 10px 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
   }
 
-  .source-tag { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; }
-  .metric-tag { font-size: 12px; font-weight: 600; color: #475569; display: flex; align-items: center; gap: 6px; }
+  .source-tag { font-size: 11px; font-weight: 700; color: var(--neutral-400); text-transform: uppercase; }
+  .metric-tag { font-size: 12px; font-weight: 600; color: var(--neutral-600); display: flex; align-items: center; gap: var(--space-1); }
   .status-indicator { width: 8px; height: 8px; border-radius: 50%; }
-  .status-indicator.success { background: #10b981; }
+  .status-indicator.success { background: var(--success); }
 
   .add-token-section {
-    margin-top: 32px;
-    padding-top: 24px;
-    border-top: 2px solid #f1f5f9;
+    margin-top: var(--space-8);
+    padding-top: var(--space-6);
+    border-top: 2px solid var(--neutral-100);
   }
 
-  .add-token-section h3 { margin: 0 0 16px; font-size: 16px; color: #1e293b; }
+  .add-token-section h3 { margin: 0 0 var(--space-4); font-size: 16px; color: var(--neutral-800); }
 
   .add-token-grid {
     display: grid;
     grid-template-columns: 1fr 1fr auto;
-    gap: 16px;
+    gap: var(--space-4);
     align-items: flex-end;
   }
 
-  .input-box label { display: block; font-size: 12px; font-weight: 700; color: #64748b; margin-bottom: 6px; text-transform: uppercase; }
+  .input-box label { display: block; font-size: 12px; font-weight: 700; color: var(--neutral-500); margin-bottom: var(--space-1); text-transform: uppercase; }
 
-  .add-btn { background: #1e293b; }
+  .add-btn { background: var(--neutral-800); }
 
-  .account-summary { display: flex; gap: 12px; margin-bottom: 20px; }
+  .account-summary { display: flex; gap: var(--space-3); margin-bottom: var(--space-4); }
   .status-pill { padding: 6px 14px; border-radius: 6px; font-size: 13px; font-weight: 700; }
-  .status-pill.idle { background: #dcfce7; color: #166534; }
-  .status-pill.busy { background: #fef3c7; color: #92400e; }
-  .status-pill.offline { background: #fee2e2; color: #991b1b; }
+  .status-pill.idle { background: var(--success-bg); color: var(--success); }
+  .status-pill.busy { background: var(--warning-bg); color: var(--warning); }
+  .status-pill.offline { background: var(--error-bg); color: var(--error); }
 
-  .account-table-wrapper { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; }
+  .account-table-wrapper { overflow-x: auto; border: 1px solid var(--neutral-200); border-radius: 8px; }
   .account-table { width: 100%; border-collapse: collapse; text-align: left; }
-  .account-table th { padding: 12px 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 800; }
-  .account-table td { padding: 14px 16px; border-bottom: 1px solid #f1f5f9; font-size: 14px; }
+  .account-table th { padding: var(--space-3) var(--space-4); background: var(--neutral-50); border-bottom: 1px solid var(--neutral-200); font-size: 11px; color: var(--neutral-500); text-transform: uppercase; font-weight: 800; }
+  .account-table td { padding: 14px 16px; border-bottom: 1px solid var(--neutral-100); font-size: 14px; }
 
-  .capabilities-list { display: flex; flex-direction: column; gap: 4px; }
-  .cap-chip { background: #f1f5f9; color: #475569; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; width: fit-content; }
+  .capabilities-list { display: flex; flex-direction: column; gap: var(--space-1); }
+  .cap-chip { background: var(--neutral-100); color: var(--neutral-600); padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; width: fit-content; text-transform: none; }
 
-  .compact-footer { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; }
-  .summary-grid { display: flex; gap: 32px; }
-  .summary-item small { display: block; font-size: 10px; font-weight: 800; color: #94a3b8; margin-bottom: 2px; }
-  .summary-item p { font-size: 14px; font-weight: 700; color: #334155; }
+  .compact-footer { display: flex; justify-content: space-between; align-items: center; padding: var(--space-4) var(--space-6); }
+  .summary-grid { display: flex; gap: var(--space-8); }
+  .summary-item small { display: block; font-size: 10px; font-weight: 800; color: var(--neutral-400); margin-bottom: 2px; }
+  .summary-item p { font-size: 14px; font-weight: 700; color: var(--neutral-700); }
 
   .font-bold { font-weight: 700; }
   .text-xs { font-size: 12px; }
-  .text-muted { color: #64748b; }
+  .text-muted { color: var(--neutral-500); }
 
   @media (max-width: 1200px) {
     .integration-grid { grid-template-columns: repeat(2, 1fr); }
@@ -677,7 +698,7 @@
 
   @media (max-width: 768px) {
     .admin-grid.overview, .integration-grid, .add-token-grid { grid-template-columns: 1fr; }
-    .compact-footer { flex-direction: column; gap: 16px; align-items: flex-start; }
-    .summary-grid { flex-wrap: wrap; gap: 16px; }
+    .compact-footer { flex-direction: column; gap: var(--space-4); align-items: flex-start; }
+    .summary-grid { flex-wrap: wrap; gap: var(--space-4); }
   }
 </style>

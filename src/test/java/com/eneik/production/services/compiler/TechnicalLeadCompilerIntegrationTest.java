@@ -116,10 +116,10 @@ public class TechnicalLeadCompilerIntegrationTest {
     }
 
     @Test
-    public void testCreateTaskFromWishlistSuccessStep6Pending() {
-        // UI role WITH pending ref
+    public void testCreateTaskFromWishlistSuccessStep6DesignSystem() {
+        // UI role WITH design system ref (since docs/DESIGN_SYSTEM.md exists)
         compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
-                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: pending: design system not yet defined", "Given/When/Then");
+                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: must follow docs/DESIGN_SYSTEM.md", "Given/When/Then");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
