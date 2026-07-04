@@ -110,6 +110,9 @@ public class ProjectFlowService {
         saved.setWorkspacePath(factoryResult.workspacePath());
         saved.setFactoryStatus(factoryResult.factoryStatus());
         saved.setFactoryReport(factoryResult.factoryReport());
+        if ("waiting".equals(factoryResult.factoryStatus())) {
+            saved.setStatus(ProjectStatus.waiting);
+        }
         saved = projectRepository.save(saved);
 
         return toProjectDto(saved);

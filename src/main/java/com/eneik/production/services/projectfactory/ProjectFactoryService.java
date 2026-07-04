@@ -43,6 +43,9 @@ public class ProjectFactoryService {
     }
 
     private String factoryStatus(GitHubProvisioningResult github, LinearProvisioningResult linear) {
+        if (startsWith(github.status(), "waiting") || startsWith(linear.status(), "waiting")) {
+            return "waiting";
+        }
         if (startsWith(github.status(), "failed") || startsWith(linear.status(), "failed")) {
             return "ready_with_warnings";
         }

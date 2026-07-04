@@ -116,15 +116,15 @@
       <p class="eyebrow">Eneik Production System</p>
       <h1>Project Command Center</h1>
     </div>
-    <div class="nav-links" style="margin-left: 20px; display: flex; gap: 10px;">
-        <button on:click={() => activeView = 'main'} class:active={activeView === 'main'}>Main</button>
-        <button on:click={() => activeView = 'command'} class:active={activeView === 'command'}>Command V2</button>
-        <button on:click={() => activeView = 'client'} class:active={activeView === 'client'}>Delivery</button>
-        <button on:click={() => activeView = 'admin'} class:active={activeView === 'admin'}>Admin</button>
+    <div class="nav-links" style="margin-left: var(--space-4); display: flex; gap: var(--space-2);">
+        <button onclick={() => activeView = 'main'} class:active={activeView === 'main'}>Main</button>
+        <button onclick={() => activeView = 'command'} class:active={activeView === 'command'}>Command V2</button>
+        <button onclick={() => activeView = 'client'} class:active={activeView === 'client'}>Delivery</button>
+        <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>Admin</button>
     </div>
     <div class="create-project">
       <input bind:value={projectName} placeholder="New project name" aria-label="New project name" />
-      <button on:click={createProject}>Create</button>
+      <button onclick={createProject}>Create</button>
     </div>
   </section>
 
@@ -132,10 +132,10 @@
     {#each projects as project}
       <button
         class:active={dashboard?.project.id === project.id}
-        on:click={() => loadDashboard(project.id)}
+        onclick={() => loadDashboard(project.id)}
       >
         <strong>{project.name}</strong>
-        <span>{project.status}</span>
+        <span class={project.status}>{project.status}</span>
       </button>
     {/each}
   </section>
@@ -175,7 +175,7 @@
             <span>{dashboard.queue.totalQueued}</span>
             <p>queued tasks</p>
           </div>
-          <button class="accept" disabled={dashboard.project.status === 'accepted'} on:click={acceptProject}>
+          <button class="accept" disabled={dashboard.project.status === 'accepted'} onclick={acceptProject}>
             Project accepted
           </button>
         </section>
@@ -184,10 +184,10 @@
           <div class="panel intake">
             <div class="panel-head">
               <h2>Client Wishlist</h2>
-              <button on:click={orchestrate} disabled={dashboard.project.status === 'accepted'}>Orchestrate</button>
+              <button onclick={orchestrate} disabled={dashboard.project.status === 'accepted'}>Orchestrate</button>
             </div>
             <textarea bind:value={wishText} placeholder="Write anything the client wants. This is not a task yet."></textarea>
-            <button class="wide" on:click={addWish} disabled={dashboard.project.status === 'accepted'}>Add wish</button>
+            <button class="wide" onclick={addWish} disabled={dashboard.project.status === 'accepted'}>Add wish</button>
             <div class="feed">
               {#each dashboard.wishlist as item}
                 <article>
@@ -284,14 +284,15 @@
     }
 
     .nav-links button {
-        background: #eee;
+        background: var(--neutral-100);
+        color: var(--neutral-700);
         border: none;
         padding: 5px 15px;
         cursor: pointer;
         border-radius: 4px;
     }
     .nav-links button.active {
-        background: #333;
+        background: var(--neutral-800);
         color: white;
     }
 </style>
