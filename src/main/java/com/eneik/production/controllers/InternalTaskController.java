@@ -8,6 +8,8 @@ import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.Instant;
@@ -26,13 +28,16 @@ public class InternalTaskController {
     private final TaskRepository taskRepository;
     private final LinearIssueMetadataRepository metadataRepository;
     private final ClaimRepository claimRepository;
+    private final JdbcTemplate jdbcTemplate;
 
     public InternalTaskController(TaskRepository taskRepository,
                                   LinearIssueMetadataRepository metadataRepository,
-                                  ClaimRepository claimRepository) {
+                                  ClaimRepository claimRepository,
+                                  JdbcTemplate jdbcTemplate) {
         this.taskRepository = taskRepository;
         this.metadataRepository = metadataRepository;
         this.claimRepository = claimRepository;
+        this.jdbcTemplate = jdbcTemplate;
     }
 
     @GetMapping
@@ -83,35 +88,33 @@ public class InternalTaskController {
     }
 
     @PatchMapping("/{id}/metadata")
+    @Transactional
     public ResponseEntity<Void> updateMetadata(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
-        LinearIssueMetadataEntity metadata = metadataRepository.findById(id).orElseGet(() -> {
-            LinearIssueMetadataEntity newMetadata = new LinearIssueMetadataEntity();
-            TaskEntity task = taskRepository.findById(id).orElse(null);
-            if (task != null) {
-                newMetadata.setTask(task);
-            }
-            return newMetadata;
-        });
-
-        if (metadata.getTask() == null) {
+        if (!taskRepository.existsById(id)) {
             return ResponseEntity.notFound().build();
         }
 
-        if (updates.containsKey("linearIssueId")) {
-            metadata.setLinearIssueId((String) updates.get("linearIssueId"));
-        }
-        if (updates.containsKey("blockers")) {
-            metadata.setBlockers((String) updates.get("blockers"));
-        }
-        if (updates.containsKey("dodText")) {
-            metadata.setDodText((String) updates.get("dodText"));
-        }
-        if (updates.containsKey("prUrl")) {
-            metadata.setPrUrl((String) updates.get("prUrl"));
-        }
-        metadata.setLastSyncedAt(Instant.now());
+        jdbcTemplate.update(
+                """
+                MERGE INTO linear_issue_metadata (task_id, linear_issue_id, blockers, dod_text, pr_url, last_synced_at)
+                KEY (task_id)
+                VALUES (
+                    ?,
+                    COALESCE(?, (SELECT linear_issue_id FROM linear_issue_metadata WHERE task_id = ?)),
+                    COALESCE(?, (SELECT blockers FROM linear_issue_metadata WHERE task_id = ?)),
+                    COALESCE(?, (SELECT dod_text FROM linear_issue_metadata WHERE task_id = ?)),
+                    COALESCE(?, (SELECT pr_url FROM linear_issue_metadata WHERE task_id = ?)),
+                    ?
+                )
+                """,
+                id,
+                (String) updates.get("linearIssueId"), id,
+                (String) updates.get("blockers"), id,
+                (String) updates.get("dodText"), id,
+                (String) updates.get("prUrl"), id,
+                Instant.now()
+        );
 
-        metadataRepository.save(metadata);
         return ResponseEntity.ok().build();
     }
 }

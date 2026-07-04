@@ -72,8 +72,7 @@ def linear_api_call(query, variables=None):
 
     req = urllib.request.Request(url, data=payload, method="POST")
     req.add_header("Content-Type", "application/json")
-    auth_header = token if token.startswith("Bearer ") else f"Bearer {token}"
-    req.add_header("Authorization", auth_header)
+    req.add_header("Authorization", token)
 
     try:
         with urllib.request.urlopen(req, timeout=10) as res:
@@ -88,7 +87,7 @@ def linear_api_call(query, variables=None):
 
 def fetch_workflow_states(team_id):
     query = """
-    query WorkflowStates($teamId: ID!) {
+    query WorkflowStates($teamId: String!) {
       team(id: $teamId) {
         states {
           nodes {
@@ -107,8 +106,8 @@ def fetch_workflow_states(team_id):
 def map_status_to_linear_name(status: str) -> str:
     return {
         'queued': 'Backlog',
-        'claimed': 'In Progress',
-        'in_progress': 'In Progress',
+        'claimed': 'In Progress (MAX 2))',
+        'in_progress': 'In Progress (MAX 2))',
         'review': 'In Review',
         'done': 'Done',
         'failed': 'Backlog',
@@ -234,7 +233,7 @@ def process_polling():
 
 def fetch_issues(team_id):
     query = """
-    query Issues($teamId: ID!) {
+    query Issues($teamId: String!) {
       issues(filter: { team: { id: { eq: $teamId } } }) {
         nodes {
           id

@@ -14,7 +14,7 @@ class LinearIssueMapper:
 
         # Check if label exists
         query = """
-        query Labels($teamId: ID!) {
+        query Labels($teamId: String!) {
           team(id: $teamId) {
             labels {
               nodes {
