@@ -117,7 +117,7 @@
         on:click={() => loadDashboard(project.id)}
       >
         <strong>{project.name}</strong>
-        <span>{project.status}</span>
+        <span class={project.status}>{project.status}</span>
       </button>
     {/each}
   </section>
