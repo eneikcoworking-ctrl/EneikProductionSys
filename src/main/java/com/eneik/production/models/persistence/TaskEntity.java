@@ -41,6 +41,9 @@ public class TaskEntity {
     @Column(name = "quality_gate_passed")
     private boolean qualityGatePassed = false;
 
+    @Column(nullable = false)
+    private int priority = 0;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "quality_gate_report")
     private JsonNode qualityGateReport;
@@ -73,6 +76,8 @@ public class TaskEntity {
     public void setQualityGatePassed(boolean qualityGatePassed) { this.qualityGatePassed = qualityGatePassed; }
     public JsonNode getQualityGateReport() { return qualityGateReport; }
     public void setQualityGateReport(JsonNode qualityGateReport) { this.qualityGateReport = qualityGateReport; }
+    public int getPriority() { return priority; }
+    public void setPriority(int priority) { this.priority = priority; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
