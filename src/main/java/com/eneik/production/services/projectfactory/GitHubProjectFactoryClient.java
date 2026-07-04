@@ -1,6 +1,7 @@
 package com.eneik.production.services.projectfactory;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,6 +28,7 @@ public class GitHubProjectFactoryClient {
     private final String apiBaseUrl;
     private final String webhookUrl;
     private final SystemSettingsService settingsService;
+    private final AccountRepository accountRepository;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -34,11 +36,13 @@ public class GitHubProjectFactoryClient {
                                       @Value("${github.api-base-url:https://api.github.com}") String apiBaseUrl,
                                       @Value("${github.webhook-url:}") String webhookUrl,
                                       SystemSettingsService settingsService,
+                                      AccountRepository accountRepository,
                                       ObjectMapper objectMapper) {
         this.organization = organization;
         this.apiBaseUrl = apiBaseUrl;
         this.webhookUrl = webhookUrl;
         this.settingsService = settingsService;
+        this.accountRepository = accountRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -67,13 +71,18 @@ public class GitHubProjectFactoryClient {
                 String repoId = json.path("id").asText(null);
                 List<String> uploadErrors = uploadBootstrapFiles(project, artifacts);
                 List<String> configurationWarnings = configureRepository(project.getRepositoryName(), token);
+                List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaborators(project.getRepositoryName(), token);
                 List<String> warnings = new ArrayList<>();
                 warnings.addAll(uploadErrors);
                 warnings.addAll(configurationWarnings);
+                collaborators.stream()
+                        .filter(result -> !"invitation_sent".equals(result.status()) && !"already_has_access".equals(result.status()))
+                        .map(result -> "collaborator " + result.username() + " " + result.status() + " " + result.detail())
+                        .forEach(warnings::add);
                 String status = warnings.isEmpty()
                         ? "created repository and configured protections"
-                        : "created repository with configuration warnings: " + String.join("; ", warnings);
-                return new GitHubProvisioningResult(status, repoUrl, repoId);
+                        : "created repository with configuration warnings";
+                return new GitHubProvisioningResult(status, repoUrl, repoId, warnings, collaborators);
             }
 
             if (response.statusCode() == 422) {
@@ -105,6 +114,40 @@ public class GitHubProjectFactoryClient {
         registerWebhook(repositoryName, token, warnings);
         dispatchCiWorkflow(repositoryName, token, warnings);
         return warnings;
+    }
+
+    private List<CollaboratorProvisioningResult> inviteJulesCollaborators(String repositoryName, String token) {
+        return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
+                .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
+                .map(account -> inviteCollaborator(repositoryName, account.getGithubUsername().trim(), token))
+                .toList();
+    }
+
+    private CollaboratorProvisioningResult inviteCollaborator(String repositoryName, String username, String token) {
+        if (username.equalsIgnoreCase(organization)) {
+            return new CollaboratorProvisioningResult(username, "already_has_access", 0, "Repository owner already has access and cannot be invited as collaborator");
+        }
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("permission", "push");
+
+            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/collaborators/" + encode(username), token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return switch (response.statusCode()) {
+                case 201 -> new CollaboratorProvisioningResult(username, "invitation_sent", 201, "GitHub invitation email should be sent");
+                case 204 -> new CollaboratorProvisioningResult(username, "already_has_access", 204, "User already has repository access");
+                case 404 -> new CollaboratorProvisioningResult(username, "not_found", 404, preview(response.body()));
+                case 422 -> new CollaboratorProvisioningResult(username, "validation_failed_or_pending", 422, preview(response.body()));
+                default -> new CollaboratorProvisioningResult(username, "failed", response.statusCode(), preview(response.body()));
+            };
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new CollaboratorProvisioningResult(username, "interrupted", 0, "GitHub collaborator invitation interrupted");
+        } catch (IOException | IllegalArgumentException e) {
+            return new CollaboratorProvisioningResult(username, "failed", 0, e.getMessage());
+        }
     }
 
     private void protectMainBranch(String repositoryName, String token, List<String> warnings) {

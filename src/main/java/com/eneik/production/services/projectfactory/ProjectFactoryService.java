@@ -74,6 +74,16 @@ public class ProjectFactoryService {
         report.put("githubStatus", github.status());
         report.put("githubRepositoryUrl", github.repositoryUrl());
         report.put("githubRepositoryId", github.repositoryId());
+        var githubWarnings = report.putArray("githubWarnings");
+        github.warnings().forEach(githubWarnings::add);
+        var collaborators = report.putArray("collaborators");
+        github.collaborators().forEach(collaborator -> {
+            ObjectNode item = collaborators.addObject();
+            item.put("username", collaborator.username());
+            item.put("status", collaborator.status());
+            item.put("githubStatus", collaborator.githubStatus());
+            item.put("detail", collaborator.detail());
+        });
         report.put("linearStatus", linear.status());
         report.put("linearProjectId", linear.projectId());
         report.put("linearProjectUrl", linear.projectUrl());

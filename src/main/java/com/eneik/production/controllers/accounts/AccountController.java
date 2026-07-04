@@ -145,6 +145,7 @@ public class AccountController {
                 account.getLastHeartbeat(),
                 account.getCurrentProjectId(),
                 masked,
+                account.getGithubUsername(),
                 account.isEnabled()
         );
     }

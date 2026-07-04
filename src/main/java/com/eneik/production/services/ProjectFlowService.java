@@ -438,7 +438,7 @@ public class ProjectFlowService {
                 project.getStatus(),
                 project.getCreatedAt(),
                 project.getAcceptedAt(),
-                accountRepository.findByProjectIdOrderByNameAsc(project.getId()).size()
+                accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().size()
         );
     }
 

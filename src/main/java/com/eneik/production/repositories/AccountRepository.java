@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     List<AccountEntity> findByProjectIdOrderByNameAsc(UUID projectId);
 
+    List<AccountEntity> findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc();
+
     @Query("SELECT COUNT(a) > 0 FROM AccountEntity a WHERE " +
            "a.lastHeartbeat > :threshold AND " +
            "a.capabilities LIKE %:tag%")

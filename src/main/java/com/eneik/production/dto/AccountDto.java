@@ -12,5 +12,6 @@ public record AccountDto(
     Instant lastHeartbeat,
     UUID currentProjectId,
     String apiKeyMasked,
+    String githubUsername,
     boolean enabled
 ) {}

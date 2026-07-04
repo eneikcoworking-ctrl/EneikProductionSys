@@ -87,6 +87,7 @@ public class SystemStatusService {
         item.put("capabilities", account.getCapabilities());
         item.put("lastHeartbeat", account.getLastHeartbeat());
         item.put("apiKeyMasked", masked);
+        item.put("githubUsername", account.getGithubUsername());
         item.put("enabled", account.isEnabled());
         return item;
     }

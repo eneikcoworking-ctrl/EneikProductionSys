@@ -24,6 +24,7 @@
     capabilities: string;
     lastHeartbeat?: string;
     apiKeyMasked?: string;
+    githubUsername?: string;
     enabled: boolean;
   };
 
@@ -59,6 +60,29 @@
   let message = $state('Ready');
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
+
+  function activeFactoryReport() {
+    if (!activeProject?.factoryReport) return null;
+    try {
+      return JSON.parse(activeProject.factoryReport);
+    } catch {
+      return null;
+    }
+  }
+
+  function collaboratorStatusLabel(statusValue: string) {
+    if (statusValue === 'invitation_sent') return 'Invitation sent';
+    if (statusValue === 'already_has_access') return 'Already has access';
+    if (statusValue === 'validation_failed_or_pending') return 'Pending or validation warning';
+    if (statusValue === 'not_found') return 'GitHub user not found';
+    return statusValue || 'Unknown';
+  }
+
+  function collaboratorTone(statusValue: string) {
+    if (statusValue === 'invitation_sent' || statusValue === 'already_has_access') return 'idle';
+    if (statusValue === 'validation_failed_or_pending') return 'offline';
+    return 'busy';
+  }
 
   function upsertSetting(saved: Setting) {
     settings = settings.some((setting) => setting.key === saved.key)
@@ -285,6 +309,33 @@
     </div>
   </section>
 
+  <section class="admin-panel">
+    <div class="panel-head">
+      <h2>GitHub access for Jules</h2>
+      <span>{activeProject?.repositoryName || 'no active repository'}</span>
+    </div>
+    {#if activeFactoryReport()?.collaborators?.length}
+      <div class="collaborator-list">
+        {#each activeFactoryReport().collaborators as collaborator}
+          <div class="collaborator-row">
+            <strong>{collaborator.username}</strong>
+            <span class={`pill ${collaboratorTone(collaborator.status)}`}>
+              {collaboratorStatusLabel(collaborator.status)}
+            </span>
+            <small>GitHub HTTP {collaborator.githubStatus}</small>
+            <small>{collaborator.detail}</small>
+          </div>
+        {/each}
+      </div>
+    {:else if activeProject}
+      <p class="warning-text">
+        No collaborator invitation result is recorded for this project. Create a new project after the latest Project Factory fix.
+      </p>
+    {:else}
+      <p class="warning-text">No active project selected.</p>
+    {/if}
+  </section>
+
   <section class="admin-panel compact">
     <div>
       <h2>Общая картина</h2>
@@ -456,6 +507,28 @@
     display: grid;
     gap: 8px;
     overflow-x: auto;
+  }
+
+  .collaborator-list {
+    display: grid;
+    gap: 10px;
+    margin-top: 12px;
+  }
+
+  .collaborator-row {
+    align-items: center;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: 180px 190px 120px minmax(0, 1fr);
+    padding: 12px;
+  }
+
+  .warning-text {
+    color: #92400e;
+    margin: 0;
   }
 
   .table-head,

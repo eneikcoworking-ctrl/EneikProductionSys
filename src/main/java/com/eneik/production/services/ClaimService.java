@@ -85,8 +85,8 @@ public class ClaimService {
 
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
-        if (account.getProject() == null || !projectId.equals(account.getProject().getId())) {
-            throw new IllegalArgumentException("Account is not attached to project: " + projectId);
+        if (account.getProject() != null && !projectId.equals(account.getProject().getId())) {
+            throw new IllegalArgumentException("Account is attached to another project: " + account.getProject().getId());
         }
         if (task.getProject() == null || !projectId.equals(task.getProject().getId())) {
             throw new IllegalStateException("Task is not attached to project: " + projectId);
