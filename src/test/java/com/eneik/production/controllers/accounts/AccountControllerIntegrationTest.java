@@ -59,8 +59,12 @@ class AccountControllerIntegrationTest {
         claimRepository.deleteAll();
         taskRepository.deleteAll();
         accountRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM github_access_status");
         projectRepository.deleteAll();
     }
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     @Test
     void createListStatusHeartbeatAndDeleteAccount() {
