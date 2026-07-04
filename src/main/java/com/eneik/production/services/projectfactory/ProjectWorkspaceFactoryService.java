@@ -89,6 +89,7 @@ public class ProjectWorkspaceFactoryService {
                 name: Eneik Project CI
 
                 on:
+                  workflow_dispatch:
                   push:
                   pull_request:
 

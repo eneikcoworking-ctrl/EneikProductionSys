@@ -3,6 +3,8 @@ package com.eneik.production.services.github;
 import com.eneik.production.config.GithubConfig;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
@@ -10,6 +12,9 @@ import org.mockito.Mockito;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
 import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
@@ -77,5 +82,80 @@ class GithubAccessServiceTest {
 
         assertEquals(false, result.hasRepoAccess());
         assertEquals("skipped", result.ciStatus());
+    }
+
+    @Test
+    void checkAccessUsesRepositoryPermissionsForPrAccessAndActionsRunsForCi() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        String repoName = "factory-probe";
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", this::handleGithubAccessProbe);
+        server.start();
+
+        try {
+            when(settingsService.effectiveBoolean("github_enabled")).thenReturn(true);
+            when(settingsService.effectiveValue("github_token")).thenReturn("test-token");
+            when(githubConfig.getOrganization()).thenReturn("eneikcoworking-ctrl");
+            when(githubConfig.getApiBaseUrl()).thenReturn("http://localhost:" + server.getAddress().getPort());
+            when(githubConfig.getWebhookUrl()).thenReturn("https://example.test/github/webhook");
+            when(jdbcTemplate.queryForObject("SELECT repository_name FROM projects WHERE id = ?", String.class, projectId))
+                    .thenReturn(repoName);
+
+            GithubAccessService.GithubAccessResult result = githubAccessService.checkAccess(projectId);
+
+            assertEquals(true, result.hasRepoAccess());
+            assertEquals(true, result.prPermissionsOk());
+            assertEquals(true, result.branchProtectionOk());
+            assertEquals(true, result.webhooksOk());
+            assertEquals("passing", result.ciStatus());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private void handleGithubAccessProbe(HttpExchange exchange) throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        String query = exchange.getRequestURI().getQuery();
+        if ("/repos/eneikcoworking-ctrl/factory-probe".equals(path)) {
+            json(exchange, 200, """
+                    {"permissions":{"push":true,"admin":false}}
+                    """);
+            return;
+        }
+        if ("/repos/eneikcoworking-ctrl/factory-probe/branches/main/protection".equals(path)) {
+            json(exchange, 200, """
+                    {"required_pull_request_reviews":{},"required_status_checks":{}}
+                    """);
+            return;
+        }
+        if ("/repos/eneikcoworking-ctrl/factory-probe/hooks".equals(path)) {
+            json(exchange, 200, """
+                    [{"active":true,"events":["push","pull_request"],"config":{"url":"https://example.test/github/webhook"}}]
+                    """);
+            return;
+        }
+        if ("/repos/eneikcoworking-ctrl/factory-probe/commits/main/check-runs".equals(path)) {
+            json(exchange, 403, """
+                    {"message":"Resource not accessible by personal access token"}
+                    """);
+            return;
+        }
+        if ("/repos/eneikcoworking-ctrl/factory-probe/actions/runs".equals(path)
+                && "branch=main&per_page=10".equals(query)) {
+            json(exchange, 200, """
+                    {"workflow_runs":[{"status":"completed","conclusion":"success"}]}
+                    """);
+            return;
+        }
+        json(exchange, 404, "{}");
+    }
+
+    private void json(HttpExchange exchange, int status, String body) throws IOException {
+        byte[] bytes = body.getBytes();
+        exchange.getResponseHeaders().add("Content-Type", "application/json");
+        exchange.sendResponseHeaders(status, bytes.length);
+        try (OutputStream output = exchange.getResponseBody()) {
+            output.write(bytes);
+        }
     }
 }
