@@ -78,6 +78,15 @@ public class TechnicalLeadCompiler {
         ProjectEntity project = projectRepository.findById(wishlist.getProjectId())
                 .orElseThrow(() -> new IllegalStateException("Project not found: " + wishlist.getProjectId()));
 
+        if (project.getStatus() != ProjectStatus.active) {
+            throw new IllegalStateException("project is frozen, task compilation paused until reactivated");
+        }
+
+        ProjectGenerationStateEntity generationState = projectGenerationStateRepository.findById(project.getId()).orElse(null);
+        if (generationState != null && generationState.isGenerationStopped()) {
+            throw new IllegalStateException("Generation is stopped for this project");
+        }
+
         TaskEntity task = new TaskEntity();
         task.setProject(project);
         task.setDescription(wishlist.getContent());

@@ -19,17 +19,11 @@
   type AccountItem = {
     id: string;
     name: string;
-    status: 'idle' | 'busy' | 'offline';
+    status: 'idle' | 'busy' | 'offline' | 'decommissioned';
     currentProjectId?: string;
     capabilities: string;
     lastHeartbeat?: string;
-    julesConfigName?: string;
-  };
-
-  type JulesConfig = {
-    id: string;
-    name: string;
-    apiKeyMasked: string;
+    apiKeyMasked?: string;
     enabled: boolean;
   };
 
@@ -58,13 +52,11 @@
   ];
 
   let status = $state<SystemStatus | null>(null);
+  let activeProject = $state<any>(null);
   let settings = $state<Setting[]>([]);
-  let julesConfigs = $state<JulesConfig[]>([]);
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
   let message = $state('Ready');
-
-  let newJulesToken = $state({ name: '', apiKey: '' });
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
 
@@ -91,53 +83,29 @@
     }
     status = await response.json();
     settings = status?.integrations?.data || [];
-    await loadJulesConfigs();
+    await loadActiveProject();
     message = 'Updated';
   }
 
-  async function loadJulesConfigs() {
-    const response = await fetch(`${API_BASE}/api/jules-configs`);
+  async function loadActiveProject() {
+    const response = await fetch(`${API_BASE}/api/projects`);
     if (response.ok) {
-      julesConfigs = await response.json();
+      const projects = await response.json();
+      activeProject = projects.find((p: any) => p.status === 'active') || null;
     }
   }
 
-  async function addJulesConfig() {
-    if (!newJulesToken.name || !newJulesToken.apiKey) return;
-    const response = await fetch(`${API_BASE}/api/jules-configs`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newJulesToken)
-    });
-    if (response.ok) {
-      newJulesToken = { name: '', apiKey: '' };
-      await loadJulesConfigs();
-      message = 'Token added';
-    }
-  }
-
-  async function updateJulesConfig(config: JulesConfig, updates: Partial<JulesConfig & { apiKey?: string }>) {
-    const response = await fetch(`${API_BASE}/api/jules-configs/${config.id}`, {
-      method: 'PUT',
+  async function updateAccount(account: AccountItem, updates: any) {
+    const response = await fetch(`${API_BASE}/api/accounts/${account.id}`, {
+      method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updates)
     });
     if (response.ok) {
-      editing[`jules_${config.id}`] = false;
-      drafts[`jules_${config.id}`] = '';
-      await loadJulesConfigs();
-      message = 'Token updated';
-    }
-  }
-
-  async function deleteJulesConfig(id: string) {
-    if (!confirm('Are you sure?')) return;
-    const response = await fetch(`${API_BASE}/api/jules-configs/${id}`, {
-      method: 'DELETE'
-    });
-    if (response.ok) {
-      await loadJulesConfigs();
-      message = 'Token deleted';
+      editing[`acc_${account.id}`] = false;
+      drafts[`acc_${account.id}`] = '';
+      await loadStatus();
+      message = 'Account updated';
     }
   }
 
@@ -181,6 +149,10 @@
   </div>
 
   <section class="admin-grid overview">
+    <div class="stat primary">
+      <span class="text-lg">{activeProject?.name || 'No Active Project'}</span>
+      <p>Active Project</p>
+    </div>
     <div class="stat">
       <span>{status?.tasks?.data?.queued ?? 0}</span>
       <p>Queued tasks</p>
@@ -188,10 +160,6 @@
     <div class="stat">
       <span>{status?.julesSessions?.data?.running ?? 0}</span>
       <p>Jules running</p>
-    </div>
-    <div class="stat">
-      <span>{status?.julesSessions?.data?.failed ?? 0}</span>
-      <p>Jules failed</p>
     </div>
     <div class="stat">
       <span>{Math.round(status?.qualityGate?.data?.dpmo ?? 0)}</span>
@@ -205,7 +173,7 @@
       <span>{status?.integrations?.available ? 'online' : 'degraded'}</span>
     </div>
     <div class="integration-grid">
-      {#each integrations as integration}
+      {#each integrations.filter(i => i.name !== 'Jules') as integration}
         <article class="integration-row">
           <div class="integration-title">
             <h3>{integration.name}</h3>
@@ -218,37 +186,6 @@
               <span>enabled</span>
             </label>
           </div>
-
-          {#if integration.name === 'Jules'}
-            <div class="jules-tokens-list">
-              {#each julesConfigs as config}
-                <div class="setting-line">
-                  <span class="token-name-label">{config.name}</span>
-                  {#if editing[`jules_${config.id}`]}
-                    <input bind:value={drafts[`jules_${config.id}`]} placeholder="new api key" />
-                  {:else}
-                    <input value={config.apiKeyMasked} disabled />
-                  {/if}
-                  <button type="button" class="secondary" onclick={() => {
-                    editing[`jules_${config.id}`] = true;
-                    drafts[`jules_${config.id}`] = '';
-                  }}>Изменить</button>
-                  <button type="button" onclick={() => updateJulesConfig(config, { apiKey: drafts[`jules_${config.id}`] })} disabled={!editing[`jules_${config.id}`]}>
-                    Сохранить
-                  </button>
-                  <button type="button" class="danger" onclick={() => deleteJulesConfig(config.id)}>×</button>
-                  <label class="toggle mini">
-                    <input type="checkbox" checked={config.enabled} onchange={(e) => updateJulesConfig(config, { enabled: e.currentTarget.checked })} />
-                  </label>
-                </div>
-              {/each}
-              <div class="setting-line add-token">
-                <input bind:value={newJulesToken.name} placeholder="Account Name (e.g. Jules-01)" />
-                <input bind:value={newJulesToken.apiKey} placeholder="API Key" />
-                <button type="button" onclick={addJulesConfig} disabled={!newJulesToken.name || !newJulesToken.apiKey}>Add Token</button>
-              </div>
-            </div>
-          {:else}
             <div class="setting-line">
               <span>token</span>
               {#if editing[integration.secretKey]}
@@ -261,7 +198,6 @@
                 Сохранить
               </button>
             </div>
-          {/if}
 
           {#if integration.extraKey}
             <div class="setting-line">
@@ -295,32 +231,56 @@
 
   <section class="admin-panel">
     <div class="panel-head">
-      <h2>Аккаунты</h2>
-      <span>{status?.accounts?.data?.total ?? 0} total</span>
+      <h2>Account Pool (Jules)</h2>
+      <span>{status?.accounts?.data?.items?.filter(a => a.status !== 'decommissioned').length ?? 0} active pool</span>
     </div>
     <div class="account-summary">
-      <span class="idle">{status?.accounts?.data?.idle ?? 0} idle</span>
-      <span class="busy">{status?.accounts?.data?.busy ?? 0} busy</span>
-      <span class="offline">{status?.accounts?.data?.offline ?? 0} offline</span>
+      <span class="idle">{status?.accounts?.data?.items?.filter(a => a.status === 'idle').length ?? 0} idle</span>
+      <span class="busy">{status?.accounts?.data?.items?.filter(a => a.status === 'busy').length ?? 0} busy</span>
+      <span class="offline">{status?.accounts?.data?.items?.filter(a => a.status === 'offline').length ?? 0} offline</span>
     </div>
     <div class="account-table">
       <div class="table-head">
-        <span>Name</span>
+        <span>Account Name</span>
         <span>Status</span>
-        <span>Token</span>
-        <span>Project</span>
-        <span>Capabilities</span>
-        <span>Heartbeat</span>
+        <span>API Key (Jules)</span>
+        <span>Last Activity</span>
+        <span>Project Context</span>
+        <span>Actions</span>
       </div>
       {#each status?.accounts?.data?.items || [] as account}
-        <div class="table-row">
-          <strong>{account.name}</strong>
-          <span class={`pill ${account.status}`}>{account.status}</span>
-          <span class="text-xs">{account.julesConfigName || 'default'}</span>
-          <span>{account.currentProjectId || 'none'}</span>
-          <span>{account.capabilities}</span>
-          <span>{formatDate(account.lastHeartbeat)}</span>
-        </div>
+        {#if account.status !== 'decommissioned'}
+          <div class="table-row">
+            <div class="flex flex-col">
+              <strong>{account.name}</strong>
+              <small>{account.capabilities}</small>
+            </div>
+            <span class={`pill ${account.status}`}>{account.status}</span>
+            <div class="flex items-center gap-2">
+              {#if editing[`acc_${account.id}`]}
+                <input bind:value={drafts[`acc_${account.id}`]} placeholder="new api key" class="text-xs" />
+                <button type="button" class="mini-btn" onclick={() => updateAccount(account, { apiKey: drafts[`acc_${account.id}`] })}>Save</button>
+              {:else}
+                <span class="text-xs font-mono">{account.apiKeyMasked || '••••••••'}</span>
+                <button type="button" class="mini-btn secondary" onclick={() => {
+                  editing[`acc_${account.id}`] = true;
+                  drafts[`acc_${account.id}`] = '';
+                }}>Edit</button>
+              {/if}
+            </div>
+            <span>{formatDate(account.lastHeartbeat)}</span>
+            <span class="text-xs">{account.currentProjectId || 'Global Pool'}</span>
+            <div class="flex gap-2">
+               <label class="toggle mini">
+                  <input type="checkbox" checked={account.enabled} onchange={(e) => updateAccount(account, { enabled: e.currentTarget.checked })} />
+                  <span>Enabled</span>
+               </label>
+               <button type="button" class="mini-btn danger" onclick={() => {
+                 if(confirm('Decommission this account?')) updateAccount(account, { status: 'decommissioned' })
+               }}>Decommission</button>
+            </div>
+          </div>
+        {/if}
       {/each}
     </div>
   </section>
@@ -374,6 +334,29 @@
     font-size: 28px;
     font-weight: 800;
   }
+
+  .stat.primary {
+    border-color: #1d4ed8;
+    background: #eff6ff;
+  }
+
+  .text-lg { font-size: 1.125rem; }
+  .text-xs { font-size: 0.75rem; }
+  .font-mono { font-family: monospace; }
+  .flex { display: flex; }
+  .flex-col { flex-direction: column; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 0.5rem; }
+
+  .mini-btn {
+    padding: 2px 6px;
+    font-size: 10px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .mini-btn.secondary { background: #64748b; color: white; }
+  .mini-btn.danger { background: #ef4444; color: white; }
 
   .integration-grid {
     display: grid;
@@ -484,7 +467,7 @@
   .table-row {
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(160px, 1fr) 90px 100px minmax(150px, 1fr) minmax(220px, 1.4fr) minmax(160px, 1fr);
+    grid-template-columns: minmax(160px, 1fr) 90px 180px minmax(150px, 1fr) minmax(150px, 1fr) minmax(160px, 1fr);
     min-width: 1000px;
   }
 

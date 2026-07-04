@@ -40,10 +40,26 @@ class AccountControllerIntegrationTest {
     @Autowired
     private TaskRepository taskRepository;
 
+    @Autowired
+    private com.eneik.production.repositories.ProjectRepository projectRepository;
+
+    @Autowired
+    private com.eneik.production.repositories.ClaimRepository claimRepository;
+
+    @Autowired
+    private com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
+
+    @Autowired
+    private com.eneik.production.repositories.WishlistItemRepository wishlistItemRepository;
+
     @BeforeEach
     void setUp() {
+        wishlistItemRepository.deleteAll();
+        julesSessionRepository.deleteAll();
+        claimRepository.deleteAll();
         taskRepository.deleteAll();
         accountRepository.deleteAll();
+        projectRepository.deleteAll();
     }
 
     @Test
@@ -93,7 +109,15 @@ class AccountControllerIntegrationTest {
         AccountDto account = createAccount("backend-agent", "BARCAN-TAG-02");
         RoleEntity role = roleRepository.findById("BARCAN-TAG-02").orElseThrow();
 
+        com.eneik.production.models.persistence.ProjectEntity project = new com.eneik.production.models.persistence.ProjectEntity();
+        project.setName("Test Project");
+        project.setSlug("test-project");
+        project.setRepositoryName("test-repo");
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        projectRepository.saveAndFlush(project);
+
         TaskEntity task = new TaskEntity();
+        task.setProject(project);
         task.setRole(role);
         task.setDescription("Implement backend endpoint");
         task.setStatus(TaskStatus.queued);

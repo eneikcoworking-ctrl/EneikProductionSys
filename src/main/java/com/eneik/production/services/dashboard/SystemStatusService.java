@@ -74,6 +74,11 @@ public class SystemStatusService {
     }
 
     private Map<String, Object> accountItem(AccountEntity account) {
+        String masked = null;
+        if (account.getApiKey() != null && !account.getApiKey().isBlank()) {
+            String raw = account.getApiKey();
+            masked = raw.length() > 8 ? raw.substring(0, 4) + "..." + raw.substring(raw.length() - 4) : "****";
+        }
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("id", account.getId());
         item.put("name", account.getName());
@@ -81,7 +86,8 @@ public class SystemStatusService {
         item.put("currentProjectId", account.getCurrentProjectId());
         item.put("capabilities", account.getCapabilities());
         item.put("lastHeartbeat", account.getLastHeartbeat());
-        item.put("julesConfigName", account.getJulesConfig() != null ? account.getJulesConfig().getName() : null);
+        item.put("apiKeyMasked", masked);
+        item.put("enabled", account.isEnabled());
         return item;
     }
 

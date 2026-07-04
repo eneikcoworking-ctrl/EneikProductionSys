@@ -63,14 +63,23 @@ public class AccountController {
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody AccountRequestDto request) {
+    public ResponseEntity<?> update(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
         return accountRepository.findById(id)
                 .<ResponseEntity<?>>map(account -> {
-                    if (request.name() != null && !request.name().isBlank()) {
-                        account.setName(request.name().trim());
+                    if (updates.containsKey("name")) {
+                        account.setName(((String) updates.get("name")).trim());
                     }
-                    if (request.capabilities() != null && !request.capabilities().isBlank()) {
-                        account.setCapabilities(normalizeCapabilities(request.capabilities()));
+                    if (updates.containsKey("capabilities")) {
+                        account.setCapabilities(normalizeCapabilities((String) updates.get("capabilities")));
+                    }
+                    if (updates.containsKey("apiKey")) {
+                        account.setApiKey((String) updates.get("apiKey"));
+                    }
+                    if (updates.containsKey("enabled")) {
+                        account.setEnabled((Boolean) updates.get("enabled"));
+                    }
+                    if (updates.containsKey("status")) {
+                        account.setStatus(AccountStatus.valueOf((String) updates.get("status")));
                     }
                     return ResponseEntity.ok(toDto(accountRepository.save(account)));
                 })
@@ -123,6 +132,11 @@ public class AccountController {
     }
 
     private AccountDto toDto(AccountEntity account) {
+        String masked = null;
+        if (account.getApiKey() != null && !account.getApiKey().isBlank()) {
+            String raw = account.getApiKey();
+            masked = raw.length() > 8 ? raw.substring(0, 4) + "..." + raw.substring(raw.length() - 4) : "****";
+        }
         return new AccountDto(
                 account.getId(),
                 account.getName(),
@@ -130,7 +144,8 @@ public class AccountController {
                 account.getCapabilities(),
                 account.getLastHeartbeat(),
                 account.getCurrentProjectId(),
-                account.getJulesConfig() != null ? account.getJulesConfig().getName() : null
+                masked,
+                account.isEnabled()
         );
     }
 

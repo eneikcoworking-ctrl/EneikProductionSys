@@ -19,7 +19,12 @@
     if (response.ok) {
       projects = await response.json();
       if (!dashboard && projects.length > 0) {
-        await loadDashboard(projects[0].id);
+        const active = projects.find(p => p.status === 'active');
+        if (active) {
+            await loadDashboard(active.id);
+        } else {
+            await loadDashboard(projects[0].id);
+        }
       }
     }
   }
@@ -89,6 +94,19 @@
     }
   }
 
+  async function activateProject() {
+    if (!dashboard) return;
+    status = 'Activating project...';
+    const response = await fetch(`${API_BASE}/api/projects/${dashboard.project.id}/activate`, {
+      method: 'POST'
+    });
+    if (response.ok) {
+      await loadDashboard(dashboard.project.id);
+      await loadProjects();
+      status = 'Project activated.';
+    }
+  }
+
   onMount(loadProjects);
 </script>
 
@@ -125,6 +143,13 @@
   {#if activeView === 'admin'}
     <AdminDashboard />
   {:else if dashboard}
+    {#if dashboard.project.status === 'frozen'}
+        <div class="banner warning">
+            <p>Project <strong>{dashboard.project.name}</strong> is on pause, work is not progressing.</p>
+            <button on:click={activateProject}>Activate Project</button>
+        </div>
+    {/if}
+
     {#if activeView === 'main'}
         <section class="summary">
           <div>
@@ -235,6 +260,29 @@
 </main>
 
 <style>
+    .banner {
+        padding: 12px 20px;
+        margin-bottom: 20px;
+        border-radius: 8px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+    .banner.warning {
+        background: #fef3c7;
+        border: 1px solid #f59e0b;
+        color: #92400e;
+    }
+    .banner button {
+        background: #f59e0b;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-weight: 600;
+    }
+
     .nav-links button {
         background: #eee;
         border: none;

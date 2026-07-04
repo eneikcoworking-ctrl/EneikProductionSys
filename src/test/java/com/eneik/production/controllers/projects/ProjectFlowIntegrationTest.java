@@ -81,7 +81,15 @@ class ProjectFlowIntegrationTest {
         assertThat(Files.exists(workspace.resolve(".github").resolve("workflows").resolve("ci.yml"))).isTrue();
         assertThat(project.githubRepositoryStatus()).contains("skipped");
         assertThat(project.linearProjectStatus()).contains("skipped");
-        assertThat(accountRepository.findByProjectIdOrderByNameAsc(project.id())).hasSize(7);
+        // We stopped creating project-scoped accounts, so it should be 0 for the project.
+        assertThat(accountRepository.findByProjectIdOrderByNameAsc(project.id())).isEmpty();
+
+        // Create a global account for the test to use
+        com.eneik.production.models.persistence.AccountEntity globalAccount = new com.eneik.production.models.persistence.AccountEntity();
+        globalAccount.setName("test-agent");
+        globalAccount.setCapabilities("*");
+        globalAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
+        accountRepository.save(globalAccount);
 
         ResponseEntity<WishlistItemDto> wish = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/wishlist",
@@ -102,13 +110,15 @@ class ProjectFlowIntegrationTest {
                 "/api/projects/" + project.id() + "/dashboard",
                 ProjectDashboardDto.class
         );
-        assertThat(dashboard.agentCount()).isEqualTo(7);
         assertThat(dashboard.openWishlistCount()).isZero();
         assertThat(dashboard.queue().totalQueued()).isGreaterThan(0);
 
         ResponseEntity<ClaimDto> claim = restTemplate.postForEntity(
-                "/api/projects/" + project.id() + "/claim",
-                Map.of("accountId", dashboard.agents().get(0).accountId().toString()),
+                "/api/tasks/claim",
+                Map.of(
+                    "accountId", globalAccount.getId().toString(),
+                    "capableTags", new String[]{"BARCAN-TAG-09", "BARCAN-TAG-00", "BARCAN-TAG-02", "BARCAN-TAG-03", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-11"}
+                ),
                 ClaimDto.class
         );
         assertThat(claim.getStatusCode()).isEqualTo(HttpStatus.OK);

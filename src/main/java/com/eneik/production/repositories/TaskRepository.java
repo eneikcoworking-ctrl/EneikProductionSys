@@ -27,15 +27,17 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
             "GROUP BY t.role.tag")
     List<QueueDashboardDto.TagCountDto> queuedGroupedByTag();
 
-    @Query(value = "SELECT * FROM tasks " +
-            "WHERE status = 'queued' AND tag IN (:capableTags) " +
-            "ORDER BY priority DESC, created_at ASC " +
+    @Query(value = "SELECT t.* FROM tasks t " +
+            "JOIN projects p ON t.project_id = p.id " +
+            "WHERE t.status = 'queued' AND t.tag IN (:capableTags) AND p.status = 'active' " +
+            "ORDER BY t.priority DESC, t.created_at ASC " +
             "LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<TaskEntity> lockNextQueuedTask(@Param("capableTags") List<String> capableTags);
 
-    @Query(value = "SELECT * FROM tasks " +
-            "WHERE project_id = :projectId AND status = 'queued' " +
-            "ORDER BY priority DESC, created_at ASC " +
+    @Query(value = "SELECT t.* FROM tasks t " +
+            "JOIN projects p ON t.project_id = p.id " +
+            "WHERE t.project_id = :projectId AND t.status = 'queued' AND p.status = 'active' " +
+            "ORDER BY t.priority DESC, t.created_at ASC " +
             "LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<TaskEntity> lockNextQueuedTaskForProject(@Param("projectId") UUID projectId);
 
