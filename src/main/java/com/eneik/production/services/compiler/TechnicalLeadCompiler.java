@@ -66,12 +66,10 @@ public class TechnicalLeadCompiler {
             throw new IllegalStateException("Only Technical Lead (" + TECH_LEAD_ROLE_TAG + ") can compile tasks. Found: " + wishlist.getCompiledByRole());
         }
 
-        validateField(wishlist.getJtbd(), "jtbd");
-        validateField(wishlist.getLeanValue(), "lean_value");
-        validateField(wishlist.getTocConstraintRef(), "toc_constraint_ref");
-        validateField(wishlist.getSixSigmaMetric(), "six_sigma_metric");
-        validateField(wishlist.getDod(), "dod");
-        validateField(wishlist.getAcceptanceCriteria(), "acceptance_criteria");
+        java.util.List<String> errors = validateDefinitionOfReady(wishlist);
+        if (!errors.isEmpty()) {
+            throw new IllegalStateException("Definition of Ready not met:\n" + String.join("\n", errors));
+        }
 
         ProjectEntity project = projectRepository.findById(wishlist.getProjectId())
                 .orElseThrow(() -> new IllegalStateException("Project not found: " + wishlist.getProjectId()));
@@ -124,9 +122,61 @@ public class TechnicalLeadCompiler {
         projectGenerationStateRepository.save(state);
     }
 
-    private void validateField(Object value, String fieldName) {
-        if (value == null || (value instanceof String && ((String) value).trim().isEmpty())) {
-            throw new IllegalStateException("Field '" + fieldName + "' is required for task creation from wishlist");
+    private java.util.List<String> validateDefinitionOfReady(WishlistEntity w) {
+        java.util.List<String> errors = new java.util.ArrayList<>();
+
+        // Шаг 1 — Bottleneck Check (TOC)
+        if (w.getTocConstraintRef() == null || w.getTocConstraintRef().trim().isEmpty()) {
+            errors.add("Шаг 1 не пройден: отсутствует ссылка на bottleneck (toc_constraint_ref)");
         }
+
+        // Шаг 2 — Lean Classification
+        if (w.getLeanValue() == null) {
+            errors.add("Шаг 2 не пройден: lean_value не указан");
+        } else if (w.getLeanValue() == LeanValue.waste) {
+            errors.add("Шаг 2 не пройден: lean_value не может быть 'waste'");
+        }
+
+        // Шаг 3 — JTBD
+        if (w.getJtbd() == null || w.getJtbd().trim().isEmpty()) {
+            errors.add("Шаг 3 не пройден: jtbd не заполнен");
+        }
+
+        // Шаг 4 — Six Sigma Metric
+        if (w.getSixSigmaMetric() == null || w.getSixSigmaMetric().trim().isEmpty()) {
+            errors.add("Шаг 4 не пройден: six_sigma_metric не заполнен");
+        }
+
+        // Шаг 5 — Role-Grounded DoD
+        String dod = w.getDod();
+        if (dod == null || dod.trim().isEmpty()) {
+            errors.add("Шаг 5 не пройден: DoD не заполнен");
+        } else if (!dod.matches(".*BARCAN-TAG-\\d{2}.*")) {
+            errors.add("Шаг 5 не пройден: DoD не ссылается на Refusal Criteria роли (BARCAN-TAG-XX)");
+        } else {
+            // Шаг 6 — Design System Reference (для UI/design задач)
+            if (dod.contains("BARCAN-TAG-03") || dod.contains("BARCAN-TAG-11")) {
+                boolean hasDesignSystemRef = dod.contains("docs/DESIGN_SYSTEM.md");
+                boolean hasPendingRef = dod.contains("pending: design system not yet defined");
+
+                java.io.File designSystemFile = new java.io.File("docs/DESIGN_SYSTEM.md");
+                if (designSystemFile.exists()) {
+                    if (!hasDesignSystemRef) {
+                        errors.add("Шаг 6 не пройден: для UI-задач DoD обязан ссылаться на docs/DESIGN_SYSTEM.md");
+                    }
+                } else {
+                    if (!hasPendingRef) {
+                        errors.add("Шаг 6 не пройден: Design System не определена, DoD обязан содержать 'pending: design system not yet defined'");
+                    }
+                }
+            }
+        }
+
+        // Шаг 7 — Acceptance Criteria
+        if (w.getAcceptanceCriteria() == null || w.getAcceptanceCriteria().trim().isEmpty()) {
+            errors.add("Шаг 7 не пройден: acceptance_criteria не заполнен");
+        }
+
+        return errors;
     }
 }
