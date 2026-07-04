@@ -57,6 +57,8 @@
   let settings = $state<Setting[]>([]);
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
+  let newName = $state('');
+  let newCapabilities = $state('BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11');
   let message = $state('Ready');
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
@@ -72,7 +74,7 @@
 
   function collaboratorStatusLabel(statusValue: string) {
     if (statusValue === 'invitation_sent') return 'Invitation sent';
-    if (statusValue === 'already_has_access') return 'Already has access';
+    if (statusValue === 'already_has_access') return 'Collaborator';
     if (statusValue === 'validation_failed_or_pending') return 'Pending or validation warning';
     if (statusValue === 'not_found') return 'GitHub user not found';
     return statusValue || 'Unknown';
@@ -119,6 +121,20 @@
     }
   }
 
+  async function refreshCollaborators() {
+    if (!activeProject) return;
+    message = 'Refreshing collaborators...';
+    const response = await fetch(`${API_BASE}/api/projects/${activeProject.id}/collaborators/refresh`, {
+      method: 'POST'
+    });
+    if (response.ok) {
+      activeProject = await response.json();
+      message = 'Collaborators refreshed';
+    } else {
+      message = 'Refresh failed';
+    }
+  }
+
   async function updateAccount(account: AccountItem, updates: any) {
     const response = await fetch(`${API_BASE}/api/accounts/${account.id}`, {
       method: 'PATCH',
@@ -130,6 +146,23 @@
       drafts[`acc_${account.id}`] = '';
       await loadStatus();
       message = 'Account updated';
+    }
+  }
+
+  async function createAccount() {
+    if (!newName.trim()) return;
+    const response = await fetch(`${API_BASE}/api/accounts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName, capabilities: newCapabilities })
+    });
+    if (response.ok) {
+      newName = '';
+      await loadStatus();
+      message = 'Account created';
+    } else {
+        const err = await response.json();
+        message = `Create failed: ${err.error || response.status}`;
     }
   }
 
@@ -258,6 +291,19 @@
       <h2>Account Pool (Jules)</h2>
       <span>{status?.accounts?.data?.items?.filter(a => a.status !== 'decommissioned').length ?? 0} active pool</span>
     </div>
+
+    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; gap: 10px; align-items: flex-end;">
+      <div style="flex: 1;">
+        <p class="label">New Account Name</p>
+        <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px;" />
+      </div>
+      <div style="flex: 2;">
+        <p class="label">Capabilities (comma separated)</p>
+        <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px;" />
+      </div>
+      <button onclick={createAccount} style="height: 38px;">Add Account</button>
+    </div>
+
     <div class="account-summary">
       <span class="idle">{status?.accounts?.data?.items?.filter(a => a.status === 'idle').length ?? 0} idle</span>
       <span class="busy">{status?.accounts?.data?.items?.filter(a => a.status === 'busy').length ?? 0} busy</span>
@@ -312,7 +358,12 @@
   <section class="admin-panel">
     <div class="panel-head">
       <h2>GitHub access for Jules</h2>
-      <span>{activeProject?.repositoryName || 'no active repository'}</span>
+      <div class="flex items-center gap-2">
+        <span>{activeProject?.repositoryName || 'no active repository'}</span>
+        {#if activeProject}
+          <button onclick={refreshCollaborators} class="mini-btn">Refresh</button>
+        {/if}
+      </div>
     </div>
     {#if activeFactoryReport()?.collaborators?.length}
       <div class="collaborator-list">

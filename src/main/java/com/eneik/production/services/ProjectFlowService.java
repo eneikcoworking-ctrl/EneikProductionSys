@@ -11,6 +11,8 @@ import com.eneik.production.services.compiler.TechnicalLeadCompiler;
 import com.eneik.production.services.dashboard.ClientDeliveryService;
 import com.eneik.production.services.jules.JulesDispatchResult;
 import com.eneik.production.services.jules.JulesDispatchService;
+import com.eneik.production.services.projectfactory.CollaboratorProvisioningResult;
+import com.eneik.production.services.projectfactory.GitHubProjectFactoryClient;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +45,7 @@ public class ProjectFlowService {
     private final RoleRepository roleRepository;
     private final JulesDispatchService julesDispatchService;
     private final ProjectFactoryService projectFactoryService;
+    private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
     private final JdbcTemplate jdbcTemplate;
@@ -57,6 +60,7 @@ public class ProjectFlowService {
                               RoleRepository roleRepository,
                               JulesDispatchService julesDispatchService,
                               ProjectFactoryService projectFactoryService,
+                              GitHubProjectFactoryClient gitHubProjectFactoryClient,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
                               JdbcTemplate jdbcTemplate,
@@ -70,6 +74,7 @@ public class ProjectFlowService {
         this.roleRepository = roleRepository;
         this.julesDispatchService = julesDispatchService;
         this.projectFactoryService = projectFactoryService;
+        this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
         this.jdbcTemplate = jdbcTemplate;
@@ -301,6 +306,48 @@ public class ProjectFlowService {
     @Transactional(readOnly = true)
     public List<ProjectDto> listProjects() {
         return projectRepository.findAll().stream().map(this::toProjectDto).toList();
+    }
+
+    @Transactional
+    public ProjectDto refreshCollaborators(UUID projectId) {
+        ProjectEntity project = requireProject(projectId);
+        String reportJson = project.getFactoryReport();
+        if (reportJson == null || reportJson.isBlank()) {
+            return toProjectDto(project);
+        }
+
+        try {
+            ObjectNode report = (ObjectNode) objectMapper.readTree(reportJson);
+            var collaboratorsNode = report.get("collaborators");
+            if (collaboratorsNode != null && collaboratorsNode.isArray()) {
+                String token = (String) jdbcTemplate.queryForObject(
+                        "SELECT value FROM settings WHERE key = 'github_token'", String.class);
+
+                List<CollaboratorProvisioningResult> newResults = new ArrayList<>();
+                for (var node : collaboratorsNode) {
+                    String username = node.get("username").asText();
+                    CollaboratorProvisioningResult result = gitHubProjectFactoryClient.inviteCollaborator(
+                            project.getRepositoryName(), username, token);
+                    newResults.add(result);
+                }
+
+                report.remove("collaborators");
+                var newCollaboratorsNode = report.putArray("collaborators");
+                for (CollaboratorProvisioningResult res : newResults) {
+                    ObjectNode item = newCollaboratorsNode.addObject();
+                    item.put("username", res.username());
+                    item.put("status", res.status());
+                    item.put("githubStatus", res.githubStatus());
+                    item.put("detail", res.detail());
+                }
+                project.setFactoryReport(report.toString());
+                projectRepository.save(project);
+            }
+        } catch (Exception e) {
+            log.error("Failed to refresh collaborators for project {}", projectId, e);
+        }
+
+        return toProjectDto(project);
     }
 
     private ProjectEntity requireActiveProject(UUID projectId) {
