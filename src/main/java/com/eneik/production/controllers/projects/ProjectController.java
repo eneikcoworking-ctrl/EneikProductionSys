@@ -80,4 +80,13 @@ public class ProjectController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }
     }
+
+    @PostMapping("/{projectId}/activate")
+    public ResponseEntity<?> activate(@PathVariable UUID projectId) {
+        try {
+            return ResponseEntity.ok(projectFlowService.activateProject(projectId));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
 }

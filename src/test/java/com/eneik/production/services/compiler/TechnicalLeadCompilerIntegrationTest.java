@@ -39,6 +39,7 @@ public class TechnicalLeadCompilerIntegrationTest {
         ProjectEntity project = new ProjectEntity();
         project.setName("Test Project");
         project.setSlug("test-project");
+        project.setStatus(ProjectStatus.active);
         project.setRepositoryName("test-repo");
         project.setRepoUrl("http://github.com/test");
         project = projectRepository.save(project);
@@ -116,10 +117,10 @@ public class TechnicalLeadCompilerIntegrationTest {
     }
 
     @Test
-    public void testCreateTaskFromWishlistSuccessStep6Pending() {
-        // UI role WITH pending ref
+    public void testCreateTaskFromWishlistSuccessStep6WithDesignSystem() {
+        // UI role WITH docs/DESIGN_SYSTEM.md ref since it exists
         compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
-                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: pending: design system not yet defined", "Given/When/Then");
+                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: must follow docs/DESIGN_SYSTEM.md", "Given something, When action, Then result");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);

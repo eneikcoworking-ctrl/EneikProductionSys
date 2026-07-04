@@ -79,8 +79,7 @@ public class JulesDispatchService {
         String apiKey = null;
         if (accountId != null) {
             apiKey = accountRepository.findById(accountId)
-                    .map(com.eneik.production.models.persistence.AccountEntity::getJulesConfig)
-                    .map(com.eneik.production.models.persistence.JulesConfigEntity::getApiKey)
+                    .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
                     .orElse(null);
         }
 
@@ -114,8 +113,7 @@ public class JulesDispatchService {
         String apiKey = null;
         if (session.getAccountId() != null) {
             apiKey = accountRepository.findById(session.getAccountId())
-                    .map(com.eneik.production.models.persistence.AccountEntity::getJulesConfig)
-                    .map(com.eneik.production.models.persistence.JulesConfigEntity::getApiKey)
+                    .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
                     .orElse(null);
         }
 

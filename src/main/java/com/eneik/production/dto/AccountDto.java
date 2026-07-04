@@ -11,5 +11,6 @@ public record AccountDto(
     String capabilities,
     Instant lastHeartbeat,
     UUID currentProjectId,
-    String julesConfigName
+    String apiKeyMasked,
+    boolean enabled
 ) {}

@@ -47,7 +47,7 @@ export type PipelineData = {
   failed: number;
 };
 
-export type ProjectStatus = 'active' | 'accepted';
+export type ProjectStatus = 'active' | 'frozen' | 'accepted' | 'archived';
 
 export type ProjectSummary = {
   id: string;

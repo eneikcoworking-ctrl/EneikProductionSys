@@ -33,9 +33,14 @@ public class AccountEntity {
     @Column(name = "current_project_id")
     private UUID currentProjectId;
 
-    @ManyToOne
-    @JoinColumn(name = "jules_config_id")
-    private JulesConfigEntity julesConfig;
+    @Column(name = "api_key")
+    private String apiKey;
+
+    @Column(name = "github_username")
+    private String githubUsername;
+
+    @Column(nullable = false)
+    private boolean enabled = true;
 
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
@@ -53,6 +58,10 @@ public class AccountEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public UUID getCurrentProjectId() { return currentProjectId; }
     public void setCurrentProjectId(UUID currentProjectId) { this.currentProjectId = currentProjectId; }
-    public JulesConfigEntity getJulesConfig() { return julesConfig; }
-    public void setJulesConfig(JulesConfigEntity julesConfig) { this.julesConfig = julesConfig; }
+    public String getApiKey() { return apiKey; }
+    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
+    public String getGithubUsername() { return githubUsername; }
+    public void setGithubUsername(String githubUsername) { this.githubUsername = githubUsername; }
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
 }
