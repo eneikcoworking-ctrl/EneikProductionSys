@@ -146,7 +146,7 @@
     {#if dashboard.project.status === 'frozen'}
         <div class="banner warning">
             <p>Project <strong>{dashboard.project.name}</strong> is on pause, work is not progressing.</p>
-            <button on:click={activateProject}>Activate Project</button>
+            <button onclick={activateProject}>Activate Project</button>
         </div>
     {/if}
 

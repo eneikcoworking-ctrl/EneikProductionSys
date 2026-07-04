@@ -80,7 +80,7 @@
 
   {#if project.status === 'active'}
     <button
-      on:click={() => (showConfirm = true)}
+      onclick={() => (showConfirm = true)}
       class="w-full py-3 bg-accent text-white font-bold rounded hover:opacity-90 transition-opacity"
     >
       Проект принят
@@ -97,14 +97,14 @@
       </p>
       <div class="flex gap-4">
         <button
-          on:click={() => (showConfirm = false)}
+          onclick={() => (showConfirm = false)}
           class="flex-1 py-2 border border-gray-300 rounded font-medium hover:bg-gray-50"
           disabled={accepting}
         >
           Отмена
         </button>
         <button
-          on:click={handleAccept}
+          onclick={handleAccept}
           class="flex-1 py-2 bg-red-600 text-white rounded font-medium hover:bg-red-700"
           disabled={accepting}
         >

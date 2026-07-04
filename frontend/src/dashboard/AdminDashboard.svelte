@@ -391,11 +391,6 @@
     grid-template-columns: 44px minmax(0, 1fr) auto auto;
   }
 
-  .jules-tokens-list .setting-line {
-    grid-template-columns: 100px minmax(0, 1fr) auto auto auto auto;
-    margin-bottom: 8px;
-  }
-
   .token-name-label {
     font-weight: 600;
     font-size: 0.8rem;

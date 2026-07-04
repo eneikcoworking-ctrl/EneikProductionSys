@@ -13,7 +13,7 @@
 
 <div class="mt-8 border-t border-gray-200 pt-4">
   <button
-    on:click={() => (isOpen = !isOpen)}
+    onclick={() => (isOpen = !isOpen)}
     class="flex items-center gap-2 text-lg font-bold text-gray-700 hover:text-gray-900 transition-colors"
   >
     <span>История проектов</span>
