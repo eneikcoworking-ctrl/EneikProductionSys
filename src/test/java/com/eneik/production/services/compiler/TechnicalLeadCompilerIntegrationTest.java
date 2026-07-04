@@ -80,8 +80,8 @@ public class TechnicalLeadCompilerIntegrationTest {
 
     @Test
     public void testCreateTaskFromWishlistSuccess() {
-        compiler.compile(wishlistId, "BARCAN-TAG-09", "When situation, client wants motivation, so result",
-                         LeanValue.essential, "toc", "metric", "dod", "Given something, When action, Then result");
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+                         LeanValue.essential, "toc", "metric", "Выполнено согласно BARCAN-TAG-02 критерий 1", "Given something, When action, Then result");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
@@ -93,5 +93,35 @@ public class TechnicalLeadCompilerIntegrationTest {
 
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElseThrow();
         assertEquals(WishlistStatus.converted_to_task, wishlist.getStatus());
+    }
+
+    @Test
+    public void testCreateTaskFromWishlistRejectionStep5() {
+        // DoD without BARCAN-TAG reference
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+                LeanValue.essential, "toc", "metric", "Just some text", "Given/When/Then");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
+        assertTrue(ex.getMessage().contains("Шаг 5 не пройден: DoD не ссылается на Refusal Criteria роли (BARCAN-TAG-XX)"));
+    }
+
+    @Test
+    public void testCreateTaskFromWishlistRejectionStep6() {
+        // UI role without pending/design system ref
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: must follow rules", "Given/When/Then");
+
+        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
+        assertTrue(ex.getMessage().contains("Шаг 6 не пройден"));
+    }
+
+    @Test
+    public void testCreateTaskFromWishlistSuccessStep6Pending() {
+        // UI role WITH pending ref
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+                LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: pending: design system not yet defined", "Given/When/Then");
+
+        TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
+        assertNotNull(task);
     }
 }
