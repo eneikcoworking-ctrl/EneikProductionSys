@@ -2,6 +2,7 @@ package com.eneik.production.services.compiler;
 
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
+import com.eneik.production.services.BottleneckAwarePriorityService;
 import com.eneik.production.services.gate.GateOrchestrator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -20,6 +21,7 @@ public class TechnicalLeadCompiler {
     private final RoleRepository roleRepository;
     private final ProjectGenerationStateRepository projectGenerationStateRepository;
     private final GateOrchestrator gateOrchestrator;
+    private final BottleneckAwarePriorityService bottleneckAwarePriorityService;
     private final ObjectMapper objectMapper;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
@@ -30,6 +32,7 @@ public class TechnicalLeadCompiler {
                                  RoleRepository roleRepository,
                                  ProjectGenerationStateRepository projectGenerationStateRepository,
                                  GateOrchestrator gateOrchestrator,
+                                 BottleneckAwarePriorityService bottleneckAwarePriorityService,
                                  ObjectMapper objectMapper) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -37,6 +40,7 @@ public class TechnicalLeadCompiler {
         this.roleRepository = roleRepository;
         this.projectGenerationStateRepository = projectGenerationStateRepository;
         this.gateOrchestrator = gateOrchestrator;
+        this.bottleneckAwarePriorityService = bottleneckAwarePriorityService;
         this.objectMapper = objectMapper;
     }
 
@@ -101,6 +105,7 @@ public class TechnicalLeadCompiler {
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
+        task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
         TaskEntity savedTask = taskRepository.save(task);
         gateOrchestrator.runTaskSpecGate(savedTask);
 
