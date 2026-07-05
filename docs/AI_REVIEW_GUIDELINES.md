@@ -10,6 +10,7 @@ An AI Reviewer MUST reject any Pull Request that violates the following rules:
 - **No Business Logic in Frontend:** Any business logic computation, status interpretation, or decision-making logic inside Svelte templates or scripts is strictly forbidden.
 - **Data Representation Only:** Svelte components should only handle presentation logic (formatting, layout).
 - **Backend-Driven State:** Logic like "is this button enabled based on complex status" must be driven by a field calculated in the backend and provided via DTO.
+- **Pre-computed Tokens:** Components must consume pre-computed fields and tokens passed by backend DTOs (e.g., standard classes like `text-success`, `border-error`).
 
 ### Design System Compliance
 - **No Token Bypass:** Dynamic UI colors, styles, or spacing that bypass tokens defined in `docs/DESIGN_SYSTEM.md` are forbidden.

@@ -37,6 +37,8 @@ public class PrReviewEntity {
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    private Boolean merged = false;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getJulesSessionId() { return julesSessionId; }
@@ -61,4 +63,6 @@ public class PrReviewEntity {
     public void setScreenshotUrls(String screenshotUrls) { this.screenshotUrls = screenshotUrls; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public Boolean getMerged() { return merged; }
+    public void setMerged(Boolean merged) { this.merged = merged; }
 }

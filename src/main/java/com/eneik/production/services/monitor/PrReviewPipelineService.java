@@ -22,6 +22,11 @@ public class PrReviewPipelineService {
 
     @Transactional
     public PrReviewEntity onPrOpened(String prUrl, UUID sessionId, PrDataDto prData) {
+        return onPrOpened(prUrl, sessionId, prData, false);
+    }
+
+    @Transactional
+    public PrReviewEntity onPrOpened(String prUrl, UUID sessionId, PrDataDto prData, boolean merged) {
         boolean touchesCriticalPath = checkCriticalPath(prData.getChangedFiles());
 
         String riskLevel = riskLevelCalculator.calculate(
@@ -42,6 +47,7 @@ public class PrReviewPipelineService {
         review.setHasTestChanges(prData.isHasTestChanges());
         review.setTouchesCriticalPath(touchesCriticalPath);
         review.setRiskLevel(riskLevel);
+        review.setMerged(merged);
 
         return prReviewRepository.save(review);
     }

@@ -57,6 +57,11 @@ public class JulesDispatchService {
 
     @Transactional
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId) {
+        return dispatch(task, accountId, "IMPLEMENTER");
+    }
+
+    @Transactional
+    public JulesDispatchResult dispatch(TaskEntity task, UUID accountId, String mode) {
         List<JulesSessionEntity> existing = julesSessionRepository.findByTaskId(task.getId());
         for (JulesSessionEntity s : existing) {
             if ("running".equals(s.getStatus()) || "queued".equals(s.getStatus()) || "pr_opened".equals(s.getStatus())) {
@@ -65,7 +70,7 @@ public class JulesDispatchService {
             }
         }
 
-        JulesSessionEntity session = dispatchInternal(task, accountId);
+        JulesSessionEntity session = dispatchInternal(task, accountId, mode);
         return new JulesDispatchResult(
                 "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
                 session.getExternalSessionId(),
@@ -83,7 +88,7 @@ public class JulesDispatchService {
                 .findFirst().orElse(null);
     }
 
-    private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId) {
+    private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId, String mode) {
         JulesSessionEntity session = new JulesSessionEntity();
         session.setTaskId(task.getId());
         session.setAccountId(accountId);
@@ -97,6 +102,9 @@ public class JulesDispatchService {
 
         String repoUrl = sourcePrefix + project.getRepositoryName();
         String description = task.getDescription();
+        if ("REVIEWER".equalsIgnoreCase(mode)) {
+            description = "[REVIEWER MODE]\nAudit the following code changes against docs/AI_REVIEW_GUIDELINES.md.\n" + description;
+        }
 
         StringBuilder roleContextBuilder = new StringBuilder();
         roleContextBuilder.append("Role: ").append(task.getRole().getTag()).append("\n");
@@ -122,6 +130,15 @@ public class JulesDispatchService {
                 }
                 if (rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
                     roleContextBuilder.append("\n## Output Format / Definition of Done\n").append(rules.outputFormat()).append("\n");
+                }
+            }
+
+            if ("REVIEWER".equalsIgnoreCase(mode)) {
+                try {
+                    String guidelines = java.nio.file.Files.readString(java.nio.file.Paths.get("docs/AI_REVIEW_GUIDELINES.md"));
+                    roleContextBuilder.append("\n## AI REVIEW GUIDELINES\n").append(guidelines).append("\n");
+                } catch (Exception e) {
+                    log.warn("Could not load AI review guidelines: {}", e.getMessage());
                 }
             }
         } catch (Exception e) {
