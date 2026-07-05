@@ -22,6 +22,7 @@ class JulesDispatchServiceTest {
     private JulesSessionRepository julesSessionRepository;
     private com.eneik.production.repositories.AccountRepository accountRepository;
     private TaskRepository taskRepository;
+    private com.eneik.production.services.ClaimService claimService;
     private com.eneik.production.services.RoleCapabilityLoader roleCapabilityLoader;
     private JulesDispatchService julesDispatchService;
 
@@ -31,8 +32,9 @@ class JulesDispatchServiceTest {
         julesSessionRepository = mock(JulesSessionRepository.class);
         accountRepository = mock(com.eneik.production.repositories.AccountRepository.class);
         taskRepository = mock(TaskRepository.class);
+        claimService = mock(com.eneik.production.services.ClaimService.class);
         roleCapabilityLoader = mock(com.eneik.production.services.RoleCapabilityLoader.class);
-        julesDispatchService = new JulesDispatchService(julesApiClient, julesSessionRepository, accountRepository, taskRepository, roleCapabilityLoader, "prefix/");
+        julesDispatchService = new JulesDispatchService(julesApiClient, julesSessionRepository, accountRepository, taskRepository, claimService, roleCapabilityLoader, "prefix/");
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
     }
 
@@ -49,30 +51,10 @@ class JulesDispatchServiceTest {
 
     @Test
     void testDetectStuck() {
-        // Given
-        Instant now = Instant.now();
-        Instant thirtyOneMinutesAgo = now.minus(31, ChronoUnit.MINUTES);
-        Instant twentyNineMinutesAgo = now.minus(29, ChronoUnit.MINUTES);
-
-        JulesSessionEntity stuckSession = new JulesSessionEntity();
-        stuckSession.setId(UUID.randomUUID());
-        stuckSession.setStatus("running");
-        stuckSession.setUpdatedAt(thirtyOneMinutesAgo);
-
-        JulesSessionEntity activeSession = new JulesSessionEntity();
-        activeSession.setId(UUID.randomUUID());
-        activeSession.setStatus("running");
-        activeSession.setUpdatedAt(twentyNineMinutesAgo);
-
-        when(julesSessionRepository.findByStatus("running")).thenReturn(List.of(stuckSession, activeSession));
-
         // When
         julesDispatchService.detectStuck();
 
         // Then
-        assertEquals("stuck", stuckSession.getStatus());
-        assertEquals("running", activeSession.getStatus());
-        verify(julesSessionRepository, times(1)).save(stuckSession);
-        verify(julesSessionRepository, never()).save(activeSession);
+        verify(claimService, times(1)).detectStuckSessions(30);
     }
 }
