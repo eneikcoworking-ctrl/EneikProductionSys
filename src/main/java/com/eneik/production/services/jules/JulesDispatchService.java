@@ -1,10 +1,12 @@
 package com.eneik.production.services.jules;
 
+import com.eneik.production.dto.RoleRules;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.RoleCapabilityLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +28,7 @@ public class JulesDispatchService {
     private final JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.AccountRepository accountRepository;
     private final TaskRepository taskRepository;
+    private final RoleCapabilityLoader roleCapabilityLoader;
     private final String sourcePrefix;
 
     @Value("${jules.stuck-threshold-minutes:30}")
@@ -35,16 +38,26 @@ public class JulesDispatchService {
                                 JulesSessionRepository julesSessionRepository,
                                 com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
+                                RoleCapabilityLoader roleCapabilityLoader,
                                 @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
+        this.roleCapabilityLoader = roleCapabilityLoader;
         this.sourcePrefix = sourcePrefix;
     }
 
     @Transactional
     public JulesDispatchResult dispatch(TaskEntity task) {
+        List<JulesSessionEntity> existing = julesSessionRepository.findByTaskId(task.getId());
+        for (JulesSessionEntity s : existing) {
+            if ("running".equals(s.getStatus()) || "queued".equals(s.getStatus()) || "pr_opened".equals(s.getStatus())) {
+                log.info("Task {} already dispatched (status: {}), skipping duplicate", task.getId(), s.getStatus());
+                return new JulesDispatchResult(true, s.getExternalSessionId(), "already dispatched, skipping duplicate");
+            }
+        }
+
         JulesSessionEntity session = dispatchInternal(task, null);
         return new JulesDispatchResult(
                 "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
@@ -74,7 +87,35 @@ public class JulesDispatchService {
 
         String repoUrl = sourcePrefix + project.getRepositoryName();
         String description = task.getDescription();
-        String roleContext = "Role: " + task.getRole().getTag() + "\n" + task.getRole().getDescription();
+
+        StringBuilder roleContextBuilder = new StringBuilder();
+        roleContextBuilder.append("Role: ").append(task.getRole().getTag()).append("\n");
+        roleContextBuilder.append("Description: ").append(task.getRole().getDescription()).append("\n");
+
+        try {
+            RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
+            if (rules != null) {
+                if (rules.scope() != null && !rules.scope().isBlank()) {
+                    roleContextBuilder.append("\n## Scope & Priorities\n").append(rules.scope()).append("\n");
+                }
+                if (rules.forbidden() != null && !rules.forbidden().isEmpty()) {
+                    roleContextBuilder.append("\n## Forbidden (Запрещено)\n");
+                    for (String f : rules.forbidden()) {
+                        roleContextBuilder.append("- ").append(f).append("\n");
+                    }
+                }
+                // Refusal Criteria and Deontic sections are usually part of the markdown
+                // but if they are parsed into specific fields, we include them here.
+                // According to RoleRules record, it has tag, scope, forbidden, outputFormat, reviewRequiredBy.
+                if (rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
+                    roleContextBuilder.append("\n## Output Format / Definition of Done\n").append(rules.outputFormat()).append("\n");
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Could not load extended rules for role {}: {}", task.getRole().getTag(), e.getMessage());
+        }
+
+        String roleContext = roleContextBuilder.toString();
 
         String apiKey = null;
         if (accountId != null) {
