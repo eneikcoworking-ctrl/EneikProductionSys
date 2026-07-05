@@ -123,7 +123,7 @@ public class GitHubProjectFactoryClient {
                 .toList();
     }
 
-    private CollaboratorProvisioningResult inviteCollaborator(String repositoryName, String username, String token) {
+    public CollaboratorProvisioningResult inviteCollaborator(String repositoryName, String username, String token) {
         if (username.equalsIgnoreCase(organization)) {
             return new CollaboratorProvisioningResult(username, "already_has_access", 0, "Repository owner already has access and cannot be invited as collaborator");
         }

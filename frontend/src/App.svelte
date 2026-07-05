@@ -129,7 +129,7 @@
   </section>
 
   <section class="project-strip">
-    {#each projects as project}
+    {#each projects.filter(p => ['active', 'waiting', 'accepted'].includes(p.status)) as project}
       <button
         class:active={dashboard?.project.id === project.id}
         onclick={() => loadDashboard(project.id)}
@@ -138,6 +138,40 @@
         <span class={project.status}>{project.status}</span>
       </button>
     {/each}
+  </section>
+
+  <section class="project-filters">
+    {#if projects.some(p => p.status === 'frozen')}
+      <div class="filter-group">
+        <p class="label">Frozen Projects</p>
+        <select onchange={(e) => loadDashboard(e.currentTarget.value)}>
+          <option value="" disabled selected={!projects.filter(p => p.status === 'frozen').some(p => p.id === dashboard?.project.id)}>
+            Select from frozen...
+          </option>
+          {#each projects.filter(p => p.status === 'frozen') as project}
+            <option value={project.id} selected={dashboard?.project.id === project.id}>
+              {project.name}
+            </option>
+          {/each}
+        </select>
+      </div>
+    {/if}
+
+    {#if projects.some(p => p.status === 'archived')}
+      <div class="filter-group">
+        <p class="label">Archive</p>
+        <select onchange={(e) => loadDashboard(e.currentTarget.value)}>
+          <option value="" disabled selected={!projects.filter(p => p.status === 'archived').some(p => p.id === dashboard?.project.id)}>
+            Select from archive...
+          </option>
+          {#each projects.filter(p => p.status === 'archived') as project}
+            <option value={project.id} selected={dashboard?.project.id === project.id}>
+              {project.name}
+            </option>
+          {/each}
+        </select>
+      </div>
+    {/if}
   </section>
 
   {#if activeView === 'admin'}
@@ -260,6 +294,25 @@
 </main>
 
 <style>
+    .project-filters {
+        display: flex;
+        gap: var(--space-6);
+        margin-bottom: var(--space-6);
+        padding: 0 4px;
+    }
+    .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--space-1);
+    }
+    .filter-group select {
+        padding: 8px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--neutral-300);
+        background: white;
+        min-width: 240px;
+    }
+
     .banner {
         padding: 12px 20px;
         margin-bottom: 20px;

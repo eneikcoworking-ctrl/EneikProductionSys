@@ -89,4 +89,13 @@ public class ProjectController {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }
     }
+
+    @PostMapping("/{projectId}/collaborators/refresh")
+    public ResponseEntity<?> refreshCollaborators(@PathVariable UUID projectId) {
+        try {
+            return ResponseEntity.ok(projectFlowService.refreshCollaborators(projectId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
 }
