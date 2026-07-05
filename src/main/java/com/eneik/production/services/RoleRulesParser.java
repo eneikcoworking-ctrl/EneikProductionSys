@@ -13,18 +13,13 @@ public class RoleRulesParser {
 
     public RoleRules parse(String tag, String markdown) {
         String scope = extractSection(markdown, "Scope", "ПРИОРИТЕТЫ");
-        List<String> forbidden = extractList(markdown, "Forbidden", "Запрещено", "КРИТЕРИИ ОТКАЗА", "REFUSAL CRITERIA");
+        List<String> forbidden = extractList(markdown, "Forbidden", "Запрещено");
         String refusalCriteria = extractSection(markdown, "КРИТЕРИИ ОТКАЗА", "REFUSAL CRITERIA");
+        String deonticStatus = extractSection(markdown, "КРИТЕРИИ РЕВЬЮ", "DEONTIC STATUS");
         String outputFormat = extractSection(markdown, "Output", "Артефакт выхода", "Definition of Done", "КЛАССИФИКАЦИЯ", "CLASSIFICATION");
         String reviewRequiredBy = extractReviewRequiredBy(markdown);
 
-        // We'll append refusal criteria to forbidden for now as the DTO is limited
-        List<String> allForbidden = new ArrayList<>(forbidden);
-        if (!refusalCriteria.isEmpty()) {
-            allForbidden.add(refusalCriteria);
-        }
-
-        return new RoleRules(tag, scope, allForbidden, outputFormat, reviewRequiredBy);
+        return new RoleRules(tag, scope, forbidden, outputFormat, reviewRequiredBy, refusalCriteria, deonticStatus);
     }
 
     private String extractSection(String markdown, String... keywords) {

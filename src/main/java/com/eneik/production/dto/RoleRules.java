@@ -7,5 +7,7 @@ public record RoleRules(
     String scope,
     List<String> forbidden,
     String outputFormat,
-    String reviewRequiredBy
+    String reviewRequiredBy,
+    String refusalCriteria,
+    String deonticStatus
 ) {}

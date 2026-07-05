@@ -29,7 +29,7 @@ class RoleRulesControllerIntegrationTest {
     @Test
     void getRules_ReturnsRules() throws Exception {
         String tag = "BARCAN-TAG-03";
-        RoleRules rules = new RoleRules(tag, "UI Design", List.of("No DB access"), "Figma link", "TAG-00");
+        RoleRules rules = new RoleRules(tag, "UI Design", List.of("No DB access"), "Figma link", "TAG-00", "Refusal", "Deontic");
 
         when(roleCapabilityLoader.loadRules(tag)).thenReturn(rules);
 

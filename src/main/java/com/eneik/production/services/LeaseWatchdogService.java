@@ -23,7 +23,6 @@ public class LeaseWatchdogService {
      */
     @Scheduled(fixedRate = 60000)
     public void reapExpiredLeases() {
-        log.trace("Watchdog: Triggering lease maintenance");
         claimService.reapExpiredLeases();
     }
 }

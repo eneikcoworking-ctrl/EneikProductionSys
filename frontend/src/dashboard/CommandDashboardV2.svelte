@@ -40,8 +40,8 @@
   {:else if dashboardData}
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <!-- Acceptance Readiness -->
-      <div class="p-4 bg-white shadow rounded-lg border-t-4 {dashboardData.acceptanceReadiness.readiness === 'ready' ? 'border-green-500' : (dashboardData.acceptanceReadiness.readiness === 'unknown' ? 'border-yellow-500' : 'border-red-500')}">
-        <h2 class="text-xl font-bold mb-2">Acceptance Readiness: <span class="uppercase">{dashboardData.acceptanceReadiness.readiness}</span></h2>
+      <div class="p-4 bg-white shadow rounded-lg border-t-4 {dashboardData.acceptanceReadiness.uiColorToken}">
+        <h2 class="text-xl font-bold mb-2">Acceptance Readiness: <span class="uppercase">{dashboardData.acceptanceReadiness.statusLabel}</span></h2>
         {#if dashboardData.acceptanceReadiness.unmetConditions && dashboardData.acceptanceReadiness.unmetConditions.length > 0}
           <ul class="list-disc ml-5 text-red-600">
             {#each dashboardData.acceptanceReadiness.unmetConditions as condition}

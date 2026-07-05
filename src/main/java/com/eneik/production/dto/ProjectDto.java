@@ -2,6 +2,7 @@ package com.eneik.production.dto;
 
 import com.eneik.production.models.persistence.ProjectStatus;
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record ProjectDto(
@@ -22,6 +23,9 @@ public record ProjectDto(
         ProjectStatus status,
         Instant createdAt,
         Instant acceptedAt,
-        long accountCount
+        long accountCount,
+        String statusLabel,
+        String uiColorToken,
+        List<CollaboratorDto> collaborators
 ) {
 }

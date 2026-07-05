@@ -118,14 +118,22 @@ public class CommandDashboardService {
         if (Boolean.FALSE.equals(githubAccessHealthy)) unmetConditions.add("GitHub access or CI is unhealthy");
 
         String readiness;
+        String statusLabel;
+        String uiColorToken;
         if (allTasksDone == null || allQualityGatesPassed == null || allPrsMerged == null || githubAccessHealthy == null) {
             readiness = "unknown";
+            statusLabel = "UNKNOWN";
+            uiColorToken = "border-warning";
         } else if (allTasksDone && allQualityGatesPassed && allPrsMerged && githubAccessHealthy) {
             readiness = "ready";
+            statusLabel = "READY";
+            uiColorToken = "border-success";
         } else {
             readiness = "not ready";
+            statusLabel = "NOT READY";
+            uiColorToken = "border-error";
         }
 
-        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions);
+        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken);
     }
 }
