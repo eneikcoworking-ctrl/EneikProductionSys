@@ -85,11 +85,20 @@ public class ClaimService {
 
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
-        if (account.getProject() != null && !projectId.equals(account.getProject().getId())) {
-            throw new IllegalArgumentException("Account is attached to another project: " + account.getProject().getId());
+
+        return claimSpecificTask(task, account);
+    }
+
+    @Transactional
+    public ClaimDto claimSpecificTask(TaskEntity task, AccountEntity account) {
+        if (task.getProject() == null) {
+            throw new IllegalStateException("Task is not attached to a project");
         }
-        if (task.getProject() == null || !projectId.equals(task.getProject().getId())) {
-            throw new IllegalStateException("Task is not attached to project: " + projectId);
+        UUID projectId = task.getProject().getId();
+
+        if (account.getCurrentProjectId() != null && !projectId.equals(account.getCurrentProjectId())) {
+            // Check current_project_id instead of just project (which might be legacy)
+            throw new IllegalArgumentException("Account is assigned to another project: " + account.getCurrentProjectId());
         }
 
         ClaimEntity claim = new ClaimEntity();

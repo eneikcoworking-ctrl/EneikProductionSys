@@ -11,7 +11,7 @@ public class GithubConfig {
     @Value("${github.token:}")
     private String token;
 
-    @Value("${github.org:eneikcoworking-ctrl}")
+    @Value("${github.org:}")
     private String organization;
 
     @Value("${github.api-base-url:https://api.github.com}")

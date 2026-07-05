@@ -23,7 +23,7 @@ public class JulesSessionController {
 
     @PostMapping("/dispatch")
     public JulesSessionEntity dispatch(@RequestBody DispatchRequest request) {
-        return julesDispatchService.dispatch(request.taskId(), request.accountId());
+        return julesDispatchService.dispatchRaw(request.taskId(), request.accountId());
     }
 
     @GetMapping("/{id}")

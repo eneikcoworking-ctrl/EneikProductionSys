@@ -43,6 +43,7 @@ public class ProjectFlowService {
     private final TaskRepository taskRepository;
     private final ClaimRepository claimRepository;
     private final RoleRepository roleRepository;
+    private final ClaimService claimService;
     private final JulesDispatchService julesDispatchService;
     private final ProjectFactoryService projectFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
@@ -58,6 +59,7 @@ public class ProjectFlowService {
                               TaskRepository taskRepository,
                               ClaimRepository claimRepository,
                               RoleRepository roleRepository,
+                              ClaimService claimService,
                               JulesDispatchService julesDispatchService,
                               ProjectFactoryService projectFactoryService,
                               GitHubProjectFactoryClient gitHubProjectFactoryClient,
@@ -65,13 +67,14 @@ public class ProjectFlowService {
                               ClientDeliveryService clientDeliveryService,
                               JdbcTemplate jdbcTemplate,
                               ObjectMapper objectMapper,
-                              @Value("${github.org:eneikcoworking-ctrl}") String githubOrganization) {
+                              @Value("${github.org:}") String githubOrganization) {
         this.projectRepository = projectRepository;
         this.wishlistItemRepository = wishlistItemRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.claimRepository = claimRepository;
         this.roleRepository = roleRepository;
+        this.claimService = claimService;
         this.julesDispatchService = julesDispatchService;
         this.projectFactoryService = projectFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
@@ -190,9 +193,24 @@ public class ProjectFlowService {
                 task.setPayload(buildTaskPayload(project, item, tag, taskSpec));
 
                 TaskEntity savedTask = taskRepository.save(task);
-                JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask);
-                savedTask.setJulesSessionName(dispatch.sessionName());
-                savedTask.setJulesDispatchStatus(dispatch.reason());
+
+                // Attempt to find an idle account and claim it for this task
+                Optional<AccountEntity> idleAccount = accountRepository.lockNextIdleAccountForProject(projectId);
+                if (idleAccount.isPresent()) {
+                    AccountEntity account = idleAccount.get();
+                    claimService.claimSpecificTask(savedTask, account);
+
+                    // Explicitly flush to ensure the account is marked as BUSY in the database
+                    // for subsequent lockNextIdleAccountForProject calls within the same transaction.
+                    accountRepository.saveAndFlush(account);
+
+                    JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask.getId(), account.getId());
+                    savedTask.setJulesSessionName(dispatch.sessionName());
+                    savedTask.setJulesDispatchStatus(dispatch.reason());
+                } else {
+                    savedTask.setJulesDispatchStatus("No idle accounts available for dispatch");
+                }
+
                 savedTask = taskRepository.save(savedTask);
                 createdTasks.add(new TaskShortDto(savedTask.getId(), tag, savedTask.getDescription()));
             }

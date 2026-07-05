@@ -35,7 +35,7 @@ public class JulesDispatchService {
                                 JulesSessionRepository julesSessionRepository,
                                 com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
-                                @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
+                                @Value("${jules.source-prefix:sources/github/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
@@ -43,9 +43,10 @@ public class JulesDispatchService {
         this.sourcePrefix = sourcePrefix;
     }
 
+
     @Transactional
-    public JulesDispatchResult dispatch(TaskEntity task) {
-        JulesSessionEntity session = dispatchInternal(task, null);
+    public JulesDispatchResult dispatch(UUID taskId, UUID accountId) {
+        JulesSessionEntity session = dispatchRaw(taskId, accountId);
         return new JulesDispatchResult(
                 "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
                 session.getExternalSessionId(),
@@ -54,7 +55,7 @@ public class JulesDispatchService {
     }
 
     @Transactional
-    public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
+    public JulesSessionEntity dispatchRaw(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
         return dispatchInternal(task, accountId);
@@ -72,7 +73,14 @@ public class JulesDispatchService {
             return julesSessionRepository.save(session);
         }
 
-        String repoUrl = sourcePrefix + project.getRepositoryName();
+        String githubOwner = null;
+        if (accountId != null) {
+            githubOwner = accountRepository.findById(accountId)
+                    .map(com.eneik.production.models.persistence.AccountEntity::getGithubUsername)
+                    .orElse(null);
+        }
+
+        String repoUrl = (githubOwner != null ? sourcePrefix + githubOwner + "/" : sourcePrefix) + project.getRepositoryName();
         String description = task.getDescription();
         String roleContext = "Role: " + task.getRole().getTag() + "\n" + task.getRole().getDescription();
 
