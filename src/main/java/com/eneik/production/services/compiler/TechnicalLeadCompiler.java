@@ -119,10 +119,12 @@ public class TechnicalLeadCompiler {
         task.setStatus(TaskStatus.queued);
         task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
         TaskEntity savedTask = taskRepository.save(task);
-        gateOrchestrator.runTaskSpecGate(savedTask);
 
+        // Atomic update of wishlist status after task creation
         wishlist.setStatus(WishlistStatus.converted_to_task);
         wishlistRepository.save(wishlist);
+
+        gateOrchestrator.runTaskSpecGate(savedTask);
 
         return savedTask;
     }

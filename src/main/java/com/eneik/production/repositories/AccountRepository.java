@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -32,6 +33,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
            "WHERE a.currentProjectId IS NULL " +
            "OR a.currentProjectId IN (SELECT p.id FROM ProjectEntity p WHERE p.status = com.eneik.production.models.persistence.ProjectStatus.accepted)")
     void assignFreeAccountsToProject(@Param("newProjectId") UUID newProjectId);
+
+    @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
+            "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
+            "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<AccountEntity> lockNextIdleAccountForProject(@Param("projectId") UUID projectId);
 
     long countByCurrentProjectId(UUID currentProjectId);
 }

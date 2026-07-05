@@ -40,7 +40,7 @@ public class JulesDispatchService {
                                 TaskRepository taskRepository,
                                 ClaimService claimService,
                                 RoleCapabilityLoader roleCapabilityLoader,
-                                @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
+                                @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
@@ -52,6 +52,11 @@ public class JulesDispatchService {
 
     @Transactional
     public JulesDispatchResult dispatch(TaskEntity task) {
+        return dispatch(task, null);
+    }
+
+    @Transactional
+    public JulesDispatchResult dispatch(TaskEntity task, UUID accountId) {
         List<JulesSessionEntity> existing = julesSessionRepository.findByTaskId(task.getId());
         for (JulesSessionEntity s : existing) {
             if ("running".equals(s.getStatus()) || "queued".equals(s.getStatus()) || "pr_opened".equals(s.getStatus())) {
@@ -60,7 +65,7 @@ public class JulesDispatchService {
             }
         }
 
-        JulesSessionEntity session = dispatchInternal(task, null);
+        JulesSessionEntity session = dispatchInternal(task, accountId);
         return new JulesDispatchResult(
                 "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
                 session.getExternalSessionId(),
@@ -72,7 +77,10 @@ public class JulesDispatchService {
     public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
-        return dispatchInternal(task, accountId);
+        dispatch(task, accountId);
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(s -> accountId == null || accountId.equals(s.getAccountId()))
+                .findFirst().orElse(null);
     }
 
     private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId) {
@@ -106,9 +114,12 @@ public class JulesDispatchService {
                         roleContextBuilder.append("- ").append(f).append("\n");
                     }
                 }
-                // Refusal Criteria and Deontic sections are usually part of the markdown
-                // but if they are parsed into specific fields, we include them here.
-                // According to RoleRules record, it has tag, scope, forbidden, outputFormat, reviewRequiredBy.
+                if (rules.refusalCriteria() != null && !rules.refusalCriteria().isBlank()) {
+                    roleContextBuilder.append("\n").append(rules.refusalCriteria()).append("\n");
+                }
+                if (rules.deonticStatus() != null && !rules.deonticStatus().isBlank()) {
+                    roleContextBuilder.append("\n").append(rules.deonticStatus()).append("\n");
+                }
                 if (rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
                     roleContextBuilder.append("\n## Output Format / Definition of Done\n").append(rules.outputFormat()).append("\n");
                 }
@@ -206,7 +217,6 @@ public class JulesDispatchService {
      */
     @Scheduled(fixedRateString = "${jules.detect-stuck-rate-ms:60000}")
     public void detectStuck() {
-        log.trace("JulesDispatch: Triggering stuck session maintenance");
         claimService.detectStuckSessions(stuckThresholdMinutes);
     }
 }

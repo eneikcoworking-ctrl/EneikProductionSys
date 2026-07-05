@@ -32,7 +32,7 @@ public class GitHubProjectFactoryClient {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
-    public GitHubProjectFactoryClient(@Value("${github.org:eneikcoworking-ctrl}") String organization,
+    public GitHubProjectFactoryClient(@Value("${github.org}") String organization,
                                       @Value("${github.api-base-url:https://api.github.com}") String apiBaseUrl,
                                       @Value("${github.webhook-url:}") String webhookUrl,
                                       SystemSettingsService settingsService,

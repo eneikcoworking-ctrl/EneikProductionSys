@@ -23,11 +23,14 @@ public class BottleneckAwarePriorityService {
 
     private final BottleneckDetectionService bottleneckDetectionService;
     private final TaskRepository taskRepository;
+    private final ClaimService claimService;
 
     public BottleneckAwarePriorityService(BottleneckDetectionService bottleneckDetectionService,
-                                          TaskRepository taskRepository) {
+                                          TaskRepository taskRepository,
+                                          ClaimService claimService) {
         this.bottleneckDetectionService = bottleneckDetectionService;
         this.taskRepository = taskRepository;
+        this.claimService = claimService;
     }
 
     public int computePriority(String tocConstraintRef) {
@@ -57,7 +60,6 @@ public class BottleneckAwarePriorityService {
 
     @Transactional
     public void refreshQueuedTasksPriority() {
-        log.info("Refreshing priority for queued tasks based on current bottlenecks...");
         List<BottleneckDto> activeBottlenecks = bottleneckDetectionService.detect();
 
         Set<String> bottleneckRefs = activeBottlenecks.stream()
@@ -69,28 +71,6 @@ public class BottleneckAwarePriorityService {
             })
             .collect(Collectors.toSet());
 
-        List<TaskEntity> queuedTasks = taskRepository.findByStatus(TaskStatus.queued);
-
-        int updatedCount = 0;
-        for (TaskEntity task : queuedTasks) {
-            String tocRef = extractTocConstraintRef(task);
-            int newPriority = (tocRef != null && bottleneckRefs.contains(tocRef)) ? HIGH_PRIORITY : DEFAULT_PRIORITY;
-
-            if (task.getPriority() != newPriority) {
-                task.setPriority(newPriority);
-                updatedCount++;
-            }
-        }
-
-        if (updatedCount > 0) {
-            log.info("Updated priority for {} tasks", updatedCount);
-        }
-    }
-
-    private String extractTocConstraintRef(TaskEntity task) {
-        if (task.getPayload() != null && task.getPayload().has("toc_constraint_ref")) {
-            return task.getPayload().get("toc_constraint_ref").asText();
-        }
-        return null;
+        claimService.refreshQueuedTasksPriority(bottleneckRefs, HIGH_PRIORITY, DEFAULT_PRIORITY);
     }
 }

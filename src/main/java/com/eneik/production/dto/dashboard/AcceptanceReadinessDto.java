@@ -8,5 +8,7 @@ public record AcceptanceReadinessDto(
     Boolean allQualityGatesPassed,
     Boolean allPrsMerged,
     Boolean githubAccessHealthy,
-    List<String> unmetConditions
+    List<String> unmetConditions,
+    String statusLabel,
+    String uiColorToken
 ) {}

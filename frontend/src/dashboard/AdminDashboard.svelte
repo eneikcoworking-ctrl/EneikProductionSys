@@ -28,6 +28,25 @@
     enabled: boolean;
   };
 
+  type Collaborator = {
+    username: string;
+    status: string;
+    githubStatus: string;
+    detail: string;
+    statusLabel: string;
+    uiColorToken: string;
+  };
+
+  type ProjectDto = {
+    id: string;
+    name: string;
+    statusLabel: string;
+    uiColorToken: string;
+    repositoryName: string;
+    factoryReport?: string;
+    collaborators: Collaborator[];
+  };
+
   type AccountsData = {
     total: number;
     idle: number;
@@ -53,7 +72,7 @@
   ];
 
   let status = $state<SystemStatus | null>(null);
-  let activeProject = $state<any>(null);
+  let activeProject = $state<ProjectDto | null>(null);
   let settings = $state<Setting[]>([]);
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
@@ -63,28 +82,6 @@
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
 
-  function activeFactoryReport() {
-    if (!activeProject?.factoryReport) return null;
-    try {
-      return JSON.parse(activeProject.factoryReport);
-    } catch {
-      return null;
-    }
-  }
-
-  function collaboratorStatusLabel(statusValue: string) {
-    if (statusValue === 'invitation_sent') return 'Invitation sent';
-    if (statusValue === 'already_has_access') return 'Collaborator';
-    if (statusValue === 'validation_failed_or_pending') return 'Pending or validation warning';
-    if (statusValue === 'not_found') return 'GitHub user not found';
-    return statusValue || 'Unknown';
-  }
-
-  function collaboratorTone(statusValue: string) {
-    if (statusValue === 'invitation_sent' || statusValue === 'already_has_access') return 'idle';
-    if (statusValue === 'validation_failed_or_pending') return 'offline';
-    return 'busy';
-  }
 
   function upsertSetting(saved: Setting) {
     settings = settings.some((setting) => setting.key === saved.key)
@@ -207,8 +204,8 @@
 
   <section class="admin-grid overview">
     <div class="stat primary">
-      <span class="text-lg">{activeProject?.name || 'No Active Project'}</span>
-      <p>Active Project</p>
+      <span class="text-lg {activeProject?.uiColorToken}">{activeProject?.name || 'No Active Project'}</span>
+      <p>Active Project ({activeProject?.statusLabel || 'NONE'})</p>
     </div>
     <div class="stat">
       <span>{status?.tasks?.data?.queued ?? 0}</span>
@@ -365,13 +362,13 @@
         {/if}
       </div>
     </div>
-    {#if activeFactoryReport()?.collaborators?.length}
+    {#if activeProject?.collaborators?.length}
       <div class="collaborator-list">
-        {#each activeFactoryReport().collaborators as collaborator}
+        {#each activeProject.collaborators as collaborator}
           <div class="collaborator-row">
             <strong>{collaborator.username}</strong>
-            <span class={`pill ${collaboratorTone(collaborator.status)}`}>
-              {collaboratorStatusLabel(collaborator.status)}
+            <span class={`pill ${collaborator.uiColorToken}`}>
+              {collaborator.statusLabel}
             </span>
             <small>GitHub HTTP {collaborator.githubStatus}</small>
             <small>{collaborator.detail}</small>
@@ -441,6 +438,12 @@
     border-color: #1d4ed8;
     background: #eff6ff;
   }
+
+  .text-success { color: #0F766E; }
+  .text-warning { color: #B45309; }
+  .text-primary { color: #1D4ED8; }
+  .text-secondary { color: #64748B; }
+  .text-neutral-500 { color: #64748B; }
 
   .text-lg { font-size: 1.125rem; }
   .text-xs { font-size: 0.75rem; }

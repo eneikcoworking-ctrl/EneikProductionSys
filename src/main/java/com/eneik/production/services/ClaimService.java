@@ -16,6 +16,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -73,6 +74,41 @@ public class ClaimService {
         taskRepository.save(task);
 
         // 4. Update account status
+        account.setStatus(AccountStatus.busy);
+        accountRepository.save(account);
+
+        return new ClaimDto(
+                claim.getId(),
+                task.getId(),
+                task.getRole().getTag(),
+                task.getDescription(),
+                task.getPayload(),
+                claim.getLeaseExpiresAt()
+        );
+    }
+
+    @Transactional
+    public ClaimDto claimSpecificTask(UUID taskId, UUID accountId) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        AccountEntity account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+
+        if (task.getStatus() != TaskStatus.queued) {
+            throw new IllegalStateException("Task is not in queued status: " + task.getStatus());
+        }
+
+        ClaimEntity claim = new ClaimEntity();
+        claim.setTask(task);
+        claim.setAccount(account);
+        claim.setRole(task.getRole());
+        claim.setClaimedAt(Instant.now());
+        claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
+        claimRepository.save(claim);
+
+        task.setStatus(TaskStatus.claimed);
+        taskRepository.save(task);
+
         account.setStatus(AccountStatus.busy);
         accountRepository.save(account);
 
@@ -225,6 +261,30 @@ public class ClaimService {
                 session.setStatus("stuck");
                 julesSessionRepository.save(session);
             }
+        }
+    }
+
+    @Transactional
+    public void refreshQueuedTasksPriority(Set<String> bottleneckRefs, int highPriority, int defaultPriority) {
+        log.info("Refreshing priority for queued tasks based on current bottlenecks...");
+        List<TaskEntity> queuedTasks = taskRepository.findByStatus(TaskStatus.queued);
+
+        int updatedCount = 0;
+        for (TaskEntity task : queuedTasks) {
+            String tocRef = null;
+            if (task.getPayload() != null && task.getPayload().has("toc_constraint_ref")) {
+                tocRef = task.getPayload().get("toc_constraint_ref").asText();
+            }
+            int newPriority = (tocRef != null && bottleneckRefs.contains(tocRef)) ? highPriority : defaultPriority;
+
+            if (task.getPriority() != newPriority) {
+                task.setPriority(newPriority);
+                updatedCount++;
+            }
+        }
+
+        if (updatedCount > 0) {
+            log.info("Updated priority for {} tasks", updatedCount);
         }
     }
 }

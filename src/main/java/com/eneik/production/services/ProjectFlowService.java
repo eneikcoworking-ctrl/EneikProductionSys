@@ -15,6 +15,7 @@ import com.eneik.production.services.projectfactory.CollaboratorProvisioningResu
 import com.eneik.production.services.projectfactory.GitHubProjectFactoryClient;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -43,6 +44,7 @@ public class ProjectFlowService {
     private final TaskRepository taskRepository;
     private final ClaimRepository claimRepository;
     private final RoleRepository roleRepository;
+    private final ClaimService claimService;
     private final JulesDispatchService julesDispatchService;
     private final ProjectFactoryService projectFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
@@ -58,6 +60,7 @@ public class ProjectFlowService {
                               TaskRepository taskRepository,
                               ClaimRepository claimRepository,
                               RoleRepository roleRepository,
+                              ClaimService claimService,
                               JulesDispatchService julesDispatchService,
                               ProjectFactoryService projectFactoryService,
                               GitHubProjectFactoryClient gitHubProjectFactoryClient,
@@ -65,13 +68,14 @@ public class ProjectFlowService {
                               ClientDeliveryService clientDeliveryService,
                               JdbcTemplate jdbcTemplate,
                               ObjectMapper objectMapper,
-                              @Value("${github.org:eneikcoworking-ctrl}") String githubOrganization) {
+                              @Value("${github.org}") String githubOrganization) {
         this.projectRepository = projectRepository;
         this.wishlistItemRepository = wishlistItemRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.claimRepository = claimRepository;
         this.roleRepository = roleRepository;
+        this.claimService = claimService;
         this.julesDispatchService = julesDispatchService;
         this.projectFactoryService = projectFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
@@ -190,9 +194,19 @@ public class ProjectFlowService {
                 task.setPayload(buildTaskPayload(project, item, tag, taskSpec));
 
                 TaskEntity savedTask = taskRepository.save(task);
-                JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask);
-                savedTask.setJulesSessionName(dispatch.sessionName());
-                savedTask.setJulesDispatchStatus(dispatch.reason());
+
+                // Lock an account for this project/task
+                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProject(project.getId());
+                if (accountOpt.isPresent()) {
+                    AccountEntity account = accountOpt.get();
+                    claimService.claimSpecificTask(savedTask.getId(), account.getId());
+                    JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+                    savedTask.setJulesSessionName(dispatch.sessionName());
+                    savedTask.setJulesDispatchStatus(dispatch.reason());
+                } else {
+                    savedTask.setJulesDispatchStatus("No idle accounts available");
+                }
+
                 savedTask = taskRepository.save(savedTask);
                 createdTasks.add(new TaskShortDto(savedTask.getId(), tag, savedTask.getDescription()));
             }
@@ -467,6 +481,49 @@ public class ProjectFlowService {
     }
 
     private ProjectDto toProjectDto(ProjectEntity project) {
+        String statusLabel = project.getStatus().name().toUpperCase();
+        String uiColorToken = switch (project.getStatus()) {
+            case active -> "text-success";
+            case frozen -> "text-warning";
+            case accepted -> "text-primary";
+            case archived -> "text-secondary";
+            default -> "text-neutral-500";
+        };
+
+        List<CollaboratorDto> collaborators = new ArrayList<>();
+        if (project.getFactoryReport() != null) {
+            try {
+                ObjectNode report = (ObjectNode) objectMapper.readTree(project.getFactoryReport());
+                if (report.has("collaborators")) {
+                    for (JsonNode node : report.get("collaborators")) {
+                        String status = node.get("status").asText();
+                        String label = switch (status) {
+                            case "invitation_sent" -> "Invitation sent";
+                            case "already_has_access" -> "Collaborator";
+                            case "validation_failed_or_pending" -> "Pending or validation warning";
+                            case "not_found" -> "GitHub user not found";
+                            default -> status;
+                        };
+                        String tone = switch (status) {
+                            case "invitation_sent", "already_has_access" -> "idle";
+                            case "validation_failed_or_pending" -> "offline";
+                            default -> "busy";
+                        };
+                        collaborators.add(new CollaboratorDto(
+                                node.get("username").asText(),
+                                status,
+                                node.get("githubStatus").asText(),
+                                node.get("detail").asText(),
+                                label,
+                                tone
+                        ));
+                    }
+                }
+            } catch (Exception e) {
+                log.error("Failed to parse factory report for project {}", project.getId(), e);
+            }
+        }
+
         return new ProjectDto(
                 project.getId(),
                 project.getName(),
@@ -485,7 +542,10 @@ public class ProjectFlowService {
                 project.getStatus(),
                 project.getCreatedAt(),
                 project.getAcceptedAt(),
-                accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().size()
+                accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().size(),
+                statusLabel,
+                uiColorToken,
+                collaborators
         );
     }
 
