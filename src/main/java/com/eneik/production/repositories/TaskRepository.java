@@ -19,6 +19,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     long countByStatus(TaskStatus status);
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
+    Optional<TaskEntity> findByProjectIdAndDescription(UUID projectId, String description);
 
     @Query("SELECT new com.eneik.production.dto.dashboard.QueueDashboardDto$TagCountDto(" +
             "t.role.tag, COUNT(t), " +

@@ -87,6 +87,11 @@ public class TechnicalLeadCompiler {
             throw new IllegalStateException("Generation is stopped for this project");
         }
 
+        if (wishlist.getStatus() == WishlistStatus.converted_to_task) {
+            return taskRepository.findByProjectIdAndDescription(project.getId(), wishlist.getContent())
+                    .orElseThrow(() -> new IllegalStateException("Wishlist marked as converted but task not found"));
+        }
+
         TaskEntity task = new TaskEntity();
         task.setProject(project);
         task.setDescription(wishlist.getContent());
