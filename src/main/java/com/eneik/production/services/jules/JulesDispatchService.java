@@ -6,6 +6,7 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.RoleCapabilityLoader;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -15,9 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -28,6 +27,7 @@ public class JulesDispatchService {
     private final JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.AccountRepository accountRepository;
     private final TaskRepository taskRepository;
+    private final ClaimService claimService;
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final String sourcePrefix;
 
@@ -38,12 +38,14 @@ public class JulesDispatchService {
                                 JulesSessionRepository julesSessionRepository,
                                 com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
+                                ClaimService claimService,
                                 RoleCapabilityLoader roleCapabilityLoader,
                                 @Value("${jules.source-prefix:sources/github/eneikcoworking-ctrl/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
+        this.claimService = claimService;
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.sourcePrefix = sourcePrefix;
     }
@@ -199,18 +201,12 @@ public class JulesDispatchService {
         };
     }
 
+    /**
+     * Trigger for periodic maintenance of stuck Jules sessions.
+     */
     @Scheduled(fixedRateString = "${jules.detect-stuck-rate-ms:60000}")
-    @Transactional
     public void detectStuck() {
-        Instant threshold = Instant.now().minus(stuckThresholdMinutes, ChronoUnit.MINUTES);
-        List<JulesSessionEntity> runningSessions = julesSessionRepository.findByStatus("running");
-
-        for (JulesSessionEntity session : runningSessions) {
-            if (session.getUpdatedAt().isBefore(threshold)) {
-                log.warn("Session {} is stuck (no update for {} minutes)", session.getId(), stuckThresholdMinutes);
-                session.setStatus("stuck");
-                julesSessionRepository.save(session);
-            }
-        }
+        log.trace("JulesDispatch: Triggering stuck session maintenance");
+        claimService.detectStuckSessions(stuckThresholdMinutes);
     }
 }

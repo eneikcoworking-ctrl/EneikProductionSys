@@ -4,13 +4,17 @@ import com.eneik.production.dto.ClaimDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
+import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.gate.GateOrchestrator;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
 
@@ -19,21 +23,25 @@ import java.util.UUID;
  */
 @Service
 public class ClaimService {
+    private static final Logger log = LoggerFactory.getLogger(ClaimService.class);
 
     private static final Duration LEASE_TTL = Duration.ofHours(1);
 
     private final ClaimRepository claimRepository;
     private final TaskRepository taskRepository;
     private final AccountRepository accountRepository;
+    private final JulesSessionRepository julesSessionRepository;
     private final GateOrchestrator gateOrchestrator;
 
     public ClaimService(ClaimRepository claimRepository,
                             TaskRepository taskRepository,
                             AccountRepository accountRepository,
+                            JulesSessionRepository julesSessionRepository,
                             GateOrchestrator gateOrchestrator) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
+        this.julesSessionRepository = julesSessionRepository;
         this.gateOrchestrator = gateOrchestrator;
     }
 
@@ -170,6 +178,53 @@ public class ClaimService {
 
         if (hasActiveClaim) {
             throw new IllegalStateException("Task " + taskId + " already has an active claim.");
+        }
+    }
+
+    /**
+     * Maintenance: Periodically checks for expired claims and returns tasks to the queue.
+     */
+    @Transactional
+    public void reapExpiredLeases() {
+        List<ClaimEntity> expired = claimRepository.findByReleasedAtIsNullAndLeaseExpiresAtBefore(Instant.now());
+
+        for (ClaimEntity claim : expired) {
+            log.warn("Maintenance: Lease expired for task {} held by account {}",
+                claim.getTask().getId(), claim.getAccount().getId());
+
+            // 1. Release the claim as expired
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.expired);
+            claimRepository.save(claim);
+
+            // 2. Return task to the queue
+            TaskEntity task = claim.getTask();
+            task.setStatus(TaskStatus.queued);
+            taskRepository.save(task);
+
+            // 3. Mark the account as offline
+            accountRepository.updateStatus(claim.getAccount().getId(), AccountStatus.offline);
+        }
+
+        if (!expired.isEmpty()) {
+            log.warn("Maintenance: {} lease(s) expired and requeued", expired.size());
+        }
+    }
+
+    /**
+     * Maintenance: Detects and marks Jules sessions that are stuck.
+     */
+    @Transactional
+    public void detectStuckSessions(int stuckThresholdMinutes) {
+        Instant threshold = Instant.now().minus(stuckThresholdMinutes, ChronoUnit.MINUTES);
+        List<JulesSessionEntity> runningSessions = julesSessionRepository.findByStatus("running");
+
+        for (JulesSessionEntity session : runningSessions) {
+            if (session.getUpdatedAt().isBefore(threshold)) {
+                log.warn("Maintenance: Session {} is stuck (no update for {} minutes)", session.getId(), stuckThresholdMinutes);
+                session.setStatus("stuck");
+                julesSessionRepository.save(session);
+            }
         }
     }
 }

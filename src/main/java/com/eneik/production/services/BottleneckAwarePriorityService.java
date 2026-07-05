@@ -46,7 +46,15 @@ public class BottleneckAwarePriorityService {
         return DEFAULT_PRIORITY;
     }
 
+    /**
+     * Trigger for periodic priority refresh.
+     */
     @Scheduled(fixedRate = 300000) // Every 5 minutes
+    public void scheduledPriorityRefresh() {
+        log.trace("BottleneckAwarePriority: Triggering priority refresh");
+        refreshQueuedTasksPriority();
+    }
+
     @Transactional
     public void refreshQueuedTasksPriority() {
         log.info("Refreshing priority for queued tasks based on current bottlenecks...");
