@@ -56,6 +56,8 @@ public class AccountController {
         AccountEntity account = new AccountEntity();
         account.setName(request.name().trim());
         account.setCapabilities(normalizeCapabilities(request.capabilities()));
+        account.setGithubUsername(request.githubUsername());
+        account.setApiKey(request.apiKey());
         account.setStatus(AccountStatus.idle);
         account.setLastHeartbeat(Instant.now());
 
@@ -71,6 +73,9 @@ public class AccountController {
                     }
                     if (updates.containsKey("capabilities")) {
                         account.setCapabilities(normalizeCapabilities((String) updates.get("capabilities")));
+                    }
+                    if (updates.containsKey("githubUsername")) {
+                        account.setGithubUsername((String) updates.get("githubUsername"));
                     }
                     if (updates.containsKey("apiKey")) {
                         account.setApiKey((String) updates.get("apiKey"));

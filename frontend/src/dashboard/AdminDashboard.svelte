@@ -77,6 +77,8 @@
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
   let newName = $state('');
+  let newGitHubUsername = $state('');
+  let newApiKey = $state('');
   let newCapabilities = $state('BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11');
   let message = $state('Ready');
 
@@ -151,10 +153,17 @@
     const response = await fetch(`${API_BASE}/api/accounts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, capabilities: newCapabilities })
+      body: JSON.stringify({
+        name: newName,
+        capabilities: newCapabilities,
+        githubUsername: newGitHubUsername,
+        apiKey: newApiKey
+      })
     });
     if (response.ok) {
       newName = '';
+      newGitHubUsername = '';
+      newApiKey = '';
       await loadStatus();
       message = 'Account created';
     } else {
@@ -289,14 +298,22 @@
       <span>{status?.accounts?.data?.items?.filter(a => a.status !== 'decommissioned').length ?? 0} active pool</span>
     </div>
 
-    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; gap: 10px; align-items: flex-end;">
-      <div style="flex: 1;">
+    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end;">
+      <div style="flex: 1; min-width: 150px;">
         <p class="label">New Account Name</p>
-        <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px;" />
+        <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px; width: 100%;" />
       </div>
-      <div style="flex: 2;">
+      <div style="flex: 1; min-width: 150px;">
+        <p class="label">GitHub Username</p>
+        <input bind:value={newGitHubUsername} placeholder="username" style="padding: 8px; width: 100%;" />
+      </div>
+      <div style="flex: 1; min-width: 150px;">
+        <p class="label">Jules API Key</p>
+        <input type="password" bind:value={newApiKey} placeholder="key" style="padding: 8px; width: 100%;" />
+      </div>
+      <div style="flex: 2; min-width: 250px;">
         <p class="label">Capabilities (comma separated)</p>
-        <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px;" />
+        <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px; width: 100%;" />
       </div>
       <button onclick={createAccount} style="height: 38px;">Add Account</button>
     </div>
@@ -308,7 +325,7 @@
     </div>
     <div class="account-table">
       <div class="table-head">
-        <span>Account Name</span>
+        <span>Account / GitHub</span>
         <span>Status</span>
         <span>API Key (Jules)</span>
         <span>Last Activity</span>
@@ -320,19 +337,28 @@
           <div class="table-row">
             <div class="flex flex-col">
               <strong>{account.name}</strong>
-              <small>{account.capabilities}</small>
+              {#if editing[`acc_gh_${account.id}`]}
+                <input bind:value={drafts[`acc_gh_${account.id}`]} placeholder="github username" class="text-xs" />
+                <button type="button" class="mini-btn" onclick={() => updateAccount(account, { githubUsername: drafts[`acc_gh_${account.id}`] })}>Save GH</button>
+              {:else}
+                <small onclick={() => {
+                  editing[`acc_gh_${account.id}`] = true;
+                  drafts[`acc_gh_${account.id}`] = account.githubUsername || '';
+                }} class="cursor-pointer">GH: {account.githubUsername || 'not set'}</small>
+              {/if}
+              <small class="text-gray-400">{account.capabilities}</small>
             </div>
             <span class={`pill ${account.status}`}>{account.status}</span>
             <div class="flex items-center gap-2">
               {#if editing[`acc_${account.id}`]}
                 <input bind:value={drafts[`acc_${account.id}`]} placeholder="new api key" class="text-xs" />
-                <button type="button" class="mini-btn" onclick={() => updateAccount(account, { apiKey: drafts[`acc_${account.id}`] })}>Save</button>
+                <button type="button" class="mini-btn" onclick={() => updateAccount(account, { apiKey: drafts[`acc_${account.id}`] })}>Save Key</button>
               {:else}
                 <span class="text-xs font-mono">{account.apiKeyMasked || '••••••••'}</span>
                 <button type="button" class="mini-btn secondary" onclick={() => {
                   editing[`acc_${account.id}`] = true;
                   drafts[`acc_${account.id}`] = '';
-                }}>Edit</button>
+                }}>Edit Key</button>
               {/if}
             </div>
             <span>{formatDate(account.lastHeartbeat)}</span>
