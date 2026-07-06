@@ -47,7 +47,7 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody AccountRequestDto request) {
+    public ResponseEntity<?> create(@jakarta.validation.Valid @RequestBody AccountRequestDto request) {
         String validationError = validate(request);
         if (validationError != null) {
             return ResponseEntity.badRequest().body(Map.of("error", validationError, "code", 400));
@@ -58,6 +58,8 @@ public class AccountController {
         account.setCapabilities(normalizeCapabilities(request.capabilities()));
         account.setStatus(AccountStatus.idle);
         account.setLastHeartbeat(Instant.now());
+        account.setGithubUsername(request.githubUsername() != null ? request.githubUsername().trim() : null);
+        account.setApiKey(request.apiKey());
 
         if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
             account.setGithubUsername(account.getName());
