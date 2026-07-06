@@ -6,6 +6,8 @@ import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -24,6 +26,8 @@ import java.util.Arrays;
 
 @Component
 public class GitHubProjectFactoryClient {
+    private static final Logger log = LoggerFactory.getLogger(GitHubProjectFactoryClient.class);
+
     private final String organization;
     private final String apiBaseUrl;
     private final String webhookUrl;
@@ -91,9 +95,11 @@ public class GitHubProjectFactoryClient {
 
             return new GitHubProvisioningResult("failed: GitHub returned HTTP " + response.statusCode() + " " + preview(response.body()), fallbackUrl, null);
         } catch (InterruptedException e) {
+            log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {}", project.getName(), e);
             Thread.currentThread().interrupt();
             return new GitHubProvisioningResult("failed: GitHub provisioning interrupted", fallbackUrl, null);
         } catch (IOException | IllegalArgumentException e) {
+            log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {}", project.getName(), e);
             return new GitHubProvisioningResult("failed: " + e.getMessage(), fallbackUrl, null);
         }
     }
@@ -143,9 +149,11 @@ public class GitHubProjectFactoryClient {
                 default -> new CollaboratorProvisioningResult(username, "failed", response.statusCode(), preview(response.body()));
             };
         } catch (InterruptedException e) {
+            log.error("Failed to invite GitHub collaborator {} to repository {}", username, repositoryName, e);
             Thread.currentThread().interrupt();
             return new CollaboratorProvisioningResult(username, "interrupted", 0, "GitHub collaborator invitation interrupted");
         } catch (IOException | IllegalArgumentException e) {
+            log.error("Failed to invite GitHub collaborator {} to repository {}", username, repositoryName, e);
             return new CollaboratorProvisioningResult(username, "failed", 0, e.getMessage());
         }
     }

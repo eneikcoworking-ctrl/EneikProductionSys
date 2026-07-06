@@ -15,6 +15,7 @@ import com.eneik.production.services.projectfactory.CollaboratorProvisioningResu
 import com.eneik.production.services.projectfactory.GitHubProjectFactoryClient;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -48,6 +49,7 @@ public class ProjectFlowService {
     private final JulesDispatchService julesDispatchService;
     private final ProjectFactoryService projectFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
+    private final SystemSettingsService settingsService;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
     private final JdbcTemplate jdbcTemplate;
@@ -64,6 +66,7 @@ public class ProjectFlowService {
                               JulesDispatchService julesDispatchService,
                               ProjectFactoryService projectFactoryService,
                               GitHubProjectFactoryClient gitHubProjectFactoryClient,
+                              SystemSettingsService settingsService,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
                               JdbcTemplate jdbcTemplate,
@@ -79,6 +82,7 @@ public class ProjectFlowService {
         this.julesDispatchService = julesDispatchService;
         this.projectFactoryService = projectFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
+        this.settingsService = settingsService;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
         this.jdbcTemplate = jdbcTemplate;
@@ -334,8 +338,7 @@ public class ProjectFlowService {
             ObjectNode report = (ObjectNode) objectMapper.readTree(reportJson);
             var collaboratorsNode = report.get("collaborators");
             if (collaboratorsNode != null && collaboratorsNode.isArray()) {
-                String token = (String) jdbcTemplate.queryForObject(
-                        "SELECT \"value\" FROM settings WHERE key = 'github_token'", String.class);
+                String token = settingsService.effectiveValue("github_token");
 
                 List<CollaboratorProvisioningResult> newResults = new ArrayList<>();
                 for (var node : collaboratorsNode) {
