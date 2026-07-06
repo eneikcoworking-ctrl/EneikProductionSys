@@ -335,7 +335,7 @@ public class ProjectFlowService {
             var collaboratorsNode = report.get("collaborators");
             if (collaboratorsNode != null && collaboratorsNode.isArray()) {
                 String token = (String) jdbcTemplate.queryForObject(
-                        "SELECT \"value\" FROM settings WHERE key = 'github_token'", String.class);
+                        "SELECT \"value\" FROM system_settings WHERE \"key\" = 'github_token'", String.class);
 
                 List<CollaboratorProvisioningResult> newResults = new ArrayList<>();
                 for (var node : collaboratorsNode) {

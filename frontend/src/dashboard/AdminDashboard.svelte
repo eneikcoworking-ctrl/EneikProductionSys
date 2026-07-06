@@ -227,7 +227,7 @@
       <span>{status?.integrations?.available ? 'online' : 'degraded'}</span>
     </div>
     <div class="integration-grid">
-      {#each integrations.filter(i => i.name !== 'Jules') as integration}
+      {#each integrations as integration}
         <article class="integration-row">
           <div class="integration-title">
             <h3>{integration.name}</h3>
