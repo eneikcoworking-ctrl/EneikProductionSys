@@ -57,7 +57,7 @@ public class GitHubProjectFactoryClient {
             return new GitHubProvisioningResult("skipped: GitHub provisioning disabled", fallbackUrl, null);
         }
         if (token == null || token.isBlank()) {
-            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN or account pool API key is not configured", fallbackUrl, null);
+            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN is not configured", fallbackUrl, null);
         }
 
         try {
@@ -90,18 +90,31 @@ public class GitHubProjectFactoryClient {
             }
 
             if (response.statusCode() == 422) {
-                return new GitHubProvisioningResult("exists or blocked by GitHub validation: " + preview(response.body()), fallbackUrl, null);
+                String detail = preview(response.body());
+                List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("Repository exists or blocked: " + detail);
+                return new GitHubProvisioningResult("exists or blocked by GitHub validation: " + detail, fallbackUrl, null, List.of(detail), collaborators);
             }
 
-            return new GitHubProvisioningResult("failed: GitHub returned HTTP " + response.statusCode() + " " + preview(response.body()), fallbackUrl, null);
+            String detail = preview(response.body());
+            List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("GitHub error " + response.statusCode() + ": " + detail);
+            return new GitHubProvisioningResult("failed: GitHub returned HTTP " + response.statusCode() + " " + detail, fallbackUrl, null, List.of(detail), collaborators);
         } catch (InterruptedException e) {
-            log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {}", project.getName(), e);
+            log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {} due to interruption", project.getName(), e);
             Thread.currentThread().interrupt();
-            return new GitHubProvisioningResult("failed: GitHub provisioning interrupted", fallbackUrl, null);
-        } catch (IOException | IllegalArgumentException e) {
+            List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError("Interrupted");
+            return new GitHubProvisioningResult("failed: GitHub provisioning interrupted", fallbackUrl, null, List.of("interrupted"), collaborators);
+        } catch (Exception e) {
             log.error("SYSTEM CRITICAL: Failed to send GitHub invitations for project: {}", project.getName(), e);
-            return new GitHubProvisioningResult("failed: " + e.getMessage(), fallbackUrl, null);
+            List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaboratorsError(e.getMessage());
+            return new GitHubProvisioningResult("failed: " + e.getMessage(), fallbackUrl, null, List.of(e.getMessage()), collaborators);
         }
+    }
+
+    private List<CollaboratorProvisioningResult> inviteJulesCollaboratorsError(String detail) {
+        return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
+                .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
+                .map(account -> new CollaboratorProvisioningResult(account.getGithubUsername().trim(), "failed", 0, detail))
+                .toList();
     }
 
     private List<String> uploadBootstrapFiles(ProjectEntity project, WorkspaceArtifacts artifacts) {
@@ -137,10 +150,15 @@ public class GitHubProjectFactoryClient {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("permission", "push");
 
+            String url = trimBaseUrl() + "/repos/" + encode(organization) + "/" + encode(repositoryName) + "/collaborators/" + encode(username);
+            System.out.println("DEBUG: Sending PUT to " + url + " with token: " + (token != null ? token.substring(0, Math.min(token.length(), 4)) + "..." : "null"));
+
             HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/collaborators/" + encode(username), token)
                     .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            System.out.println("DEBUG: GitHub response for " + username + ": " + response.statusCode() + " " + response.body());
+
             return switch (response.statusCode()) {
                 case 201 -> new CollaboratorProvisioningResult(username, "invitation_sent", 201, "GitHub invitation email should be sent");
                 case 204 -> new CollaboratorProvisioningResult(username, "already_has_access", 204, "User already has repository access");
@@ -149,11 +167,11 @@ public class GitHubProjectFactoryClient {
                 default -> new CollaboratorProvisioningResult(username, "failed", response.statusCode(), preview(response.body()));
             };
         } catch (InterruptedException e) {
-            log.error("Failed to invite GitHub collaborator {} to repository {}", username, repositoryName, e);
+            log.error("SYSTEM CRITICAL: Failed to invite GitHub collaborator {} to repository {} due to interruption", username, repositoryName, e);
             Thread.currentThread().interrupt();
             return new CollaboratorProvisioningResult(username, "interrupted", 0, "GitHub collaborator invitation interrupted");
-        } catch (IOException | IllegalArgumentException e) {
-            log.error("Failed to invite GitHub collaborator {} to repository {}", username, repositoryName, e);
+        } catch (Exception e) {
+            log.error("SYSTEM CRITICAL: Failed to invite GitHub collaborator {} to repository {}", username, repositoryName, e);
             return new CollaboratorProvisioningResult(username, "failed", 0, e.getMessage());
         }
     }
@@ -239,10 +257,12 @@ public class GitHubProjectFactoryClient {
     }
 
     private HttpResponse<String> createRepository(String token, ObjectNode body) throws IOException, InterruptedException {
+        System.out.println("DEBUG: Creating repository with token: " + (token != null ? token.substring(0, Math.min(token.length(), 4)) + "..." : "null"));
         HttpRequest organizationRequest = baseRequest("/orgs/" + encode(organization) + "/repos", token)
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
         HttpResponse<String> response = httpClient.send(organizationRequest, HttpResponse.BodyHandlers.ofString());
+        System.out.println("DEBUG: GitHub create repo (org) response: " + response.statusCode() + " " + response.body());
         if (response.statusCode() != 404) {
             return response;
         }
@@ -250,7 +270,9 @@ public class GitHubProjectFactoryClient {
         HttpRequest userRequest = baseRequest("/user/repos", token)
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();
-        return httpClient.send(userRequest, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> userResponse = httpClient.send(userRequest, HttpResponse.BodyHandlers.ofString());
+        System.out.println("DEBUG: GitHub create repo (user) response: " + userResponse.statusCode() + " " + userResponse.body());
+        return userResponse;
     }
 
     private void upsertContent(String repositoryName, String path, String content, String token, List<String> errors) {
@@ -308,16 +330,7 @@ public class GitHubProjectFactoryClient {
     }
 
     private String selectGitHubToken() {
-        String globalToken = settingsService.effectiveValue("github_token");
-        if (globalToken != null && !globalToken.isBlank()) {
-            return globalToken;
-        }
-
-        return accountRepository.findAll().stream()
-                .filter(a -> a.isEnabled() && a.getApiKey() != null && !a.getApiKey().isBlank())
-                .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
-                .findFirst()
-                .orElse(null);
+        return settingsService.effectiveValue("github_token");
     }
 
     private String encode(String value) {
