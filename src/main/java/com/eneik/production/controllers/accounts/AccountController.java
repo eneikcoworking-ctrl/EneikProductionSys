@@ -6,8 +6,10 @@ import com.eneik.production.dto.AccountStatusRequestDto;
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.repositories.AccountRepository;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -47,10 +49,12 @@ public class AccountController {
     }
 
     @PostMapping
-    public ResponseEntity<?> create(@RequestBody AccountRequestDto request) {
-        String validationError = validate(request);
-        if (validationError != null) {
-            return ResponseEntity.badRequest().body(Map.of("error", validationError, "code", 400));
+    public ResponseEntity<?> create(@Valid @RequestBody AccountRequestDto request, BindingResult result) {
+        if (result.hasErrors()) {
+            return ResponseEntity.badRequest().body(Map.of(
+                    "error", result.getAllErrors().get(0).getDefaultMessage(),
+                    "code", 400
+            ));
         }
 
         AccountEntity account = new AccountEntity();
@@ -153,16 +157,6 @@ public class AccountController {
                 account.getGithubUsername(),
                 account.isEnabled()
         );
-    }
-
-    private String validate(AccountRequestDto request) {
-        if (request == null || request.name() == null || request.name().trim().isEmpty()) {
-            return "name is required";
-        }
-        if (request.capabilities() == null || request.capabilities().trim().isEmpty()) {
-            return "capabilities are required";
-        }
-        return null;
     }
 
     private String normalizeCapabilities(String capabilities) {

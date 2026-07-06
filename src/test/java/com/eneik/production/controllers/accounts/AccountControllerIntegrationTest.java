@@ -152,7 +152,7 @@ class AccountControllerIntegrationTest {
         );
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
-        assertThat(response.getBody()).containsEntry("error", "name is required");
+        assertThat(response.getBody().get("error").toString()).containsAnyOf("name is required", "capabilities are required");
     }
 
     private AccountDto createAccount(String name, String capabilities) {
