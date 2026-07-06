@@ -59,6 +59,10 @@ public class AccountController {
         account.setStatus(AccountStatus.idle);
         account.setLastHeartbeat(Instant.now());
 
+        if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
+            account.setGithubUsername(account.getName());
+        }
+
         return ResponseEntity.status(HttpStatus.CREATED).body(toDto(accountRepository.save(account)));
     }
 
@@ -68,6 +72,9 @@ public class AccountController {
                 .<ResponseEntity<?>>map(account -> {
                     if (updates.containsKey("name")) {
                         account.setName(((String) updates.get("name")).trim());
+                    }
+                    if (updates.containsKey("githubUsername")) {
+                        account.setGithubUsername((String) updates.get("githubUsername"));
                     }
                     if (updates.containsKey("capabilities")) {
                         account.setCapabilities(normalizeCapabilities((String) updates.get("capabilities")));
@@ -81,6 +88,11 @@ public class AccountController {
                     if (updates.containsKey("status")) {
                         account.setStatus(AccountStatus.valueOf((String) updates.get("status")));
                     }
+
+                    if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
+                        account.setGithubUsername(account.getName());
+                    }
+
                     return ResponseEntity.ok(toDto(accountRepository.save(account)));
                 })
                 .orElseGet(() -> ResponseEntity.notFound().build());
