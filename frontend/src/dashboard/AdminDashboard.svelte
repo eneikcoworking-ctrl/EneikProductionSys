@@ -78,6 +78,8 @@
   let editing = $state<Record<string, boolean>>({});
   let newName = $state('');
   let newCapabilities = $state('BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11');
+  let newGithubUsername = $state('');
+  let newApiKey = $state('');
   let message = $state('Ready');
 
   const settingByKey = (key: string) => settings.find((setting) => setting.key === key);
@@ -151,10 +153,17 @@
     const response = await fetch(`${API_BASE}/api/accounts`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: newName, capabilities: newCapabilities })
+      body: JSON.stringify({
+        name: newName,
+        capabilities: newCapabilities,
+        githubUsername: newGithubUsername,
+        apiKey: newApiKey
+      })
     });
     if (response.ok) {
       newName = '';
+      newGithubUsername = '';
+      newApiKey = '';
       await loadStatus();
       message = 'Account created';
     } else {
@@ -289,16 +298,28 @@
       <span>{status?.accounts?.data?.items?.filter(a => a.status !== 'decommissioned').length ?? 0} active pool</span>
     </div>
 
-    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; gap: 10px; align-items: flex-end;">
-      <div style="flex: 1;">
-        <p class="label">New Account Name</p>
-        <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px;" />
+    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; flex-direction: column; gap: 10px;">
+      <div style="display: flex; gap: 10px; align-items: flex-end;">
+        <div style="flex: 1;">
+          <p class="label">New Account Name</p>
+          <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px; width: 100%;" />
+        </div>
+        <div style="flex: 1;">
+          <p class="label">GitHub Username</p>
+          <input bind:value={newGithubUsername} placeholder="e.g. jules-bot" style="padding: 8px; width: 100%;" />
+        </div>
+        <div style="flex: 1;">
+          <p class="label">Jules API Key</p>
+          <input bind:value={newApiKey} type="password" placeholder="sk-..." style="padding: 8px; width: 100%;" />
+        </div>
       </div>
-      <div style="flex: 2;">
-        <p class="label">Capabilities (comma separated)</p>
-        <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px;" />
+      <div style="display: flex; gap: 10px; align-items: flex-end;">
+        <div style="flex: 1;">
+          <p class="label">Capabilities (comma separated)</p>
+          <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px; width: 100%;" />
+        </div>
+        <button onclick={createAccount} style="height: 38px; padding: 0 20px;">Add Account</button>
       </div>
-      <button onclick={createAccount} style="height: 38px;">Add Account</button>
     </div>
 
     <div class="account-summary">

@@ -22,7 +22,6 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -52,7 +51,7 @@ public class ProjectFlowService {
     private final SystemSettingsService settingsService;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
-    private final JdbcTemplate jdbcTemplate;
+    private final ProjectFinalReportRepository projectFinalReportRepository;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
 
@@ -69,7 +68,7 @@ public class ProjectFlowService {
                               SystemSettingsService settingsService,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
-                              JdbcTemplate jdbcTemplate,
+                              ProjectFinalReportRepository projectFinalReportRepository,
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization) {
         this.projectRepository = projectRepository;
@@ -85,7 +84,7 @@ public class ProjectFlowService {
         this.settingsService = settingsService;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
-        this.jdbcTemplate = jdbcTemplate;
+        this.projectFinalReportRepository = projectFinalReportRepository;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
     }
@@ -247,14 +246,12 @@ public class ProjectFlowService {
 
     private void saveFinalReport(UUID projectId, ClientDeliveryDto snapshot) {
         try {
-            int completedTasks = snapshot.delivered().size();
-            int totalWishlist = snapshot.requested().size();
-            String reportContentJson = objectMapper.writeValueAsString(snapshot);
-
-            jdbcTemplate.update(
-                "INSERT INTO project_final_reports (project_id, total_tasks_completed, total_wishlist_items, report_content) VALUES (?, ?, ?, ?)",
-                projectId, completedTasks, totalWishlist, reportContentJson
-            );
+            ProjectFinalReportEntity report = new ProjectFinalReportEntity();
+            report.setProjectId(projectId);
+            report.setTotalTasksCompleted(snapshot.delivered().size());
+            report.setTotalWishlistItems(snapshot.requested().size());
+            report.setReportContent(objectMapper.valueToTree(snapshot));
+            projectFinalReportRepository.save(report);
         } catch (Exception e) {
             log.error("Failed to save final report snapshot for project {}", projectId, e);
         }

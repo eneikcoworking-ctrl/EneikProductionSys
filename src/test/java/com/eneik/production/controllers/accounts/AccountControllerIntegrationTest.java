@@ -158,22 +158,28 @@ class AccountControllerIntegrationTest {
     @Test
     void automaticGithubUsernameFallback() {
         // Create account with only name
-        AccountDto created = createAccount("jules-agent", "BARCAN-TAG-01");
+        AccountDto created = createAccount("jules-agent", "BARCAN-TAG-01", null, null);
         assertThat(created.githubUsername()).isEqualTo("jules-agent");
 
-        // Update account with empty githubUsername should trigger fallback to name
-        // Using PATCH with Apache HttpClient or similar usually requires extra setup in TestRestTemplate,
-        // but for diagnostic/logic verification, the 'create' part already proves the fix.
-        // We'll focus on the 'create' part which is the primary reported issue.
-
-        AccountDto createdWithNull = createAccount("jules-null-gh", "BARCAN-TAG-01");
-        assertThat(createdWithNull.githubUsername()).isEqualTo("jules-null-gh");
+        AccountDto createdWithExplicit = createAccount("jules-explicit", "BARCAN-TAG-01", "gh-user", "sk-123");
+        assertThat(createdWithExplicit.githubUsername()).isEqualTo("gh-user");
+        assertThat(createdWithExplicit.apiKeyMasked()).isNotNull();
     }
 
     private AccountDto createAccount(String name, String capabilities) {
+        return createAccount(name, capabilities, null, null);
+    }
+
+    private AccountDto createAccount(String name, String capabilities, String githubUsername, String apiKey) {
+        java.util.Map<String, String> body = new java.util.HashMap<>();
+        body.put("name", name);
+        body.put("capabilities", capabilities);
+        if (githubUsername != null) body.put("githubUsername", githubUsername);
+        if (apiKey != null) body.put("apiKey", apiKey);
+
         ResponseEntity<AccountDto> response = restTemplate.postForEntity(
                 "/api/accounts",
-                Map.of("name", name, "capabilities", capabilities),
+                body,
                 AccountDto.class
         );
 

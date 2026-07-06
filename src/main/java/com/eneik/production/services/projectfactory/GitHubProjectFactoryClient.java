@@ -52,12 +52,12 @@ public class GitHubProjectFactoryClient {
 
     public GitHubProvisioningResult provision(ProjectEntity project, WorkspaceArtifacts artifacts) {
         String fallbackUrl = "https://github.com/" + organization + "/" + project.getRepositoryName();
-        String token = settingsService.effectiveValue("github_token");
+        String token = selectGitHubToken();
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return new GitHubProvisioningResult("skipped: GitHub provisioning disabled", fallbackUrl, null);
         }
         if (token == null || token.isBlank()) {
-            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN is not configured", fallbackUrl, null);
+            return new GitHubProvisioningResult("skipped: GITHUB_TOKEN or account pool API key is not configured", fallbackUrl, null);
         }
 
         try {
@@ -105,7 +105,7 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<String> uploadBootstrapFiles(ProjectEntity project, WorkspaceArtifacts artifacts) {
-        String token = settingsService.effectiveValue("github_token");
+        String token = selectGitHubToken();
         List<String> errors = new ArrayList<>();
         upsertContent(project.getRepositoryName(), "README.md", artifacts.readme(), token, errors);
         upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
@@ -305,6 +305,19 @@ public class GitHubProjectFactoryClient {
         return Arrays.stream(path.split("/"))
                 .map(this::encode)
                 .collect(Collectors.joining("/"));
+    }
+
+    private String selectGitHubToken() {
+        String globalToken = settingsService.effectiveValue("github_token");
+        if (globalToken != null && !globalToken.isBlank()) {
+            return globalToken;
+        }
+
+        return accountRepository.findAll().stream()
+                .filter(a -> a.isEnabled() && a.getApiKey() != null && !a.getApiKey().isBlank())
+                .map(com.eneik.production.models.persistence.AccountEntity::getApiKey)
+                .findFirst()
+                .orElse(null);
     }
 
     private String encode(String value) {
