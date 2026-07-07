@@ -82,6 +82,12 @@ public class JulesDispatchService {
     public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+
+        // Ensure task is claimed if being dispatched directly via controller
+        if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.queued && accountId != null) {
+            claimService.claimSpecificTask(taskId, accountId);
+        }
+
         dispatch(task, accountId);
         return julesSessionRepository.findByTaskId(taskId).stream()
                 .filter(s -> accountId == null || accountId.equals(s.getAccountId()))
@@ -89,6 +95,12 @@ public class JulesDispatchService {
     }
 
     private JulesSessionEntity dispatchInternal(TaskEntity task, UUID accountId, String mode) {
+        if (accountId != null) {
+            if ("REVIEWER".equalsIgnoreCase(mode)) {
+                claimService.claimReviewer(task.getId(), accountId);
+            }
+        }
+
         JulesSessionEntity session = new JulesSessionEntity();
         session.setTaskId(task.getId());
         session.setAccountId(accountId);
