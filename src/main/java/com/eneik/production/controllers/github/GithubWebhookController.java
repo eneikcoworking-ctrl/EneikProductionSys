@@ -4,6 +4,7 @@ import com.eneik.production.dto.monitor.PrDataDto;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.services.monitor.PrReviewPipelineService;
 import com.eneik.production.services.jules.JulesDispatchService;
+import com.eneik.production.services.ClaimService;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.models.persistence.TaskEntity;
@@ -26,17 +27,20 @@ public class GithubWebhookController {
     private final JulesDispatchService julesDispatchService;
     private final TaskRepository taskRepository;
     private final AccountRepository accountRepository;
+    private final ClaimService claimService;
     private final ObjectMapper objectMapper;
 
     public GithubWebhookController(PrReviewPipelineService prReviewPipelineService,
                                    JulesDispatchService julesDispatchService,
                                    TaskRepository taskRepository,
                                    AccountRepository accountRepository,
+                                   ClaimService claimService,
                                    ObjectMapper objectMapper) {
         this.prReviewPipelineService = prReviewPipelineService;
         this.julesDispatchService = julesDispatchService;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
+        this.claimService = claimService;
         this.objectMapper = objectMapper;
     }
 
@@ -76,6 +80,13 @@ public class GithubWebhookController {
                             .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed)
                             .findFirst()
                             .ifPresent(task -> {
+                                // Important: Before reviewer starts, the implementer's claim must be completed
+                                try {
+                                    claimService.complete(task.getId());
+                                } catch (Exception e) {
+                                    log.warn("Could not complete implementer claim for task {}: {}", task.getId(), e.getMessage());
+                                }
+
                                 accountRepository.lockNextIdleAccountForProject(task.getProject().getId())
                                         .ifPresent(account -> {
                                             julesDispatchService.dispatch(task, account.getId(), "REVIEWER");

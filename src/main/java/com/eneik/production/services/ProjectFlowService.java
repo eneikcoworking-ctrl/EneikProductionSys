@@ -203,6 +203,10 @@ public class ProjectFlowService {
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();
                     claimService.claimSpecificTask(savedTask.getId(), account.getId());
+
+                    // Refresh task state after claim to avoid overwriting claimed status with queued
+                    savedTask = taskRepository.findById(savedTask.getId()).orElse(savedTask);
+
                     JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
                     savedTask.setJulesSessionName(dispatch.sessionName());
                     savedTask.setJulesDispatchStatus(dispatch.reason());

@@ -175,11 +175,45 @@ public class ClaimService {
         claimRepository.save(claim);
 
         TaskEntity task = claim.getTask();
-        task.setStatus(TaskStatus.review);
+        // If it was already in review (AI Reviewer finished), then mark as done
+        if (task.getStatus() == TaskStatus.review) {
+            task.setStatus(TaskStatus.done);
+        } else {
+            // Implementer finished, move to review stage
+            task.setStatus(TaskStatus.review);
+            gateOrchestrator.runQualityGate(task);
+        }
         taskRepository.save(task);
-        gateOrchestrator.runQualityGate(task);
 
         updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+    }
+
+    @Transactional
+    public ClaimDto claimReviewer(UUID taskId, UUID accountId) {
+        TaskEntity task = taskRepository.findById(taskId)
+                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        AccountEntity account = accountRepository.findById(accountId)
+                .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
+
+        ClaimEntity claim = new ClaimEntity();
+        claim.setTask(task);
+        claim.setAccount(account);
+        claim.setRole(task.getRole());
+        claim.setClaimedAt(Instant.now());
+        claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
+        claimRepository.save(claim);
+
+        account.setStatus(AccountStatus.busy);
+        accountRepository.save(account);
+
+        return new ClaimDto(
+                claim.getId(),
+                task.getId(),
+                task.getRole().getTag(),
+                task.getDescription(),
+                task.getPayload(),
+                claim.getLeaseExpiresAt()
+        );
     }
 
     @Transactional

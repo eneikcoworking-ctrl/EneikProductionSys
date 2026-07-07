@@ -23,6 +23,7 @@ public class JulesSessionController {
 
     @PostMapping("/dispatch")
     public JulesSessionEntity dispatch(@RequestBody DispatchRequest request) {
+        // dispatch(UUID, UUID) inside service now handles ClaimService call correctly
         return julesDispatchService.dispatch(request.taskId(), request.accountId());
     }
 
