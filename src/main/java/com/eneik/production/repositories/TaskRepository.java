@@ -49,4 +49,6 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
            "AND t.status = com.eneik.production.models.persistence.TaskStatus.queued " +
            "GROUP BY t.role.tag")
     List<QueueDashboardDto.TagCountDto> queuedGroupedByProjectAndTag(@Param("projectId") UUID projectId);
+
+    List<TaskEntity> findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(UUID projectId, TaskStatus status);
 }

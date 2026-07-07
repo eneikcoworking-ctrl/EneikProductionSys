@@ -98,6 +98,13 @@ public class ClaimService {
             throw new IllegalStateException("Task is not in queued status: " + task.getStatus());
         }
 
+        String taskTag = task.getRole().getTag();
+        boolean isCapable = "*".equals(account.getCapabilities()) ||
+                java.util.Arrays.asList(account.getCapabilities().split(",")).contains(taskTag);
+        if (!isCapable) {
+            throw new IllegalArgumentException("Account " + accountId + " does not have capability for role " + taskTag);
+        }
+
         ClaimEntity claim = new ClaimEntity();
         claim.setTask(task);
         claim.setAccount(account);
@@ -274,6 +281,34 @@ public class ClaimService {
 
             // 3. Mark the account as offline
             accountRepository.updateStatus(claim.getAccount().getId(), AccountStatus.offline);
+        }
+
+        // Self-healing: If a task has status 'claimed' but the session is 'skipped' or failed or missing,
+        // requeue the task and release the claim so it can be re-dispatched.
+        List<ClaimEntity> activeClaims = claimRepository.findByReleasedAtIsNull();
+        for (ClaimEntity claim : activeClaims) {
+            TaskEntity task = claim.getTask();
+            List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
+            boolean isAlive = false;
+            for (JulesSessionEntity s : sessions) {
+                if (!"skipped".equals(s.getExternalSessionId()) && !"failed".equals(s.getStatus()) && !"stuck".equals(s.getStatus())) {
+                    isAlive = true;
+                }
+            }
+            if (!isAlive) {
+                log.warn("Self-healing: Releasing stuck claim for task {} because session is skipped, failed, or missing", task.getId());
+                claim.setReleasedAt(Instant.now());
+                claim.setResultStatus(ClaimResultStatus.failed);
+                claimRepository.save(claim);
+
+                task.setStatus(TaskStatus.queued);
+                taskRepository.save(task);
+
+                accountRepository.findById(claim.getAccount().getId()).ifPresent(acc -> {
+                    acc.setStatus(AccountStatus.idle);
+                    accountRepository.save(acc);
+                });
+            }
         }
 
         if (!expired.isEmpty()) {

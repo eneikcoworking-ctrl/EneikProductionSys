@@ -10,5 +10,6 @@ public record AcceptanceReadinessDto(
     Boolean githubAccessHealthy,
     List<String> unmetConditions,
     String statusLabel,
-    String uiColorToken
+    String uiColorToken,
+    String kanoRecommendation
 ) {}

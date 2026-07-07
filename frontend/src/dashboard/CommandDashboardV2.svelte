@@ -63,6 +63,14 @@
             GitHub Healthy: {dashboardData.acceptanceReadiness.githubAccessHealthy ?? 'unknown'}
           </div>
         </div>
+        {#if dashboardData.acceptanceReadiness.kanoRecommendation}
+          <div class="mt-4 p-3 bg-blue-50 text-blue-800 rounded border border-blue-200">
+            <h3 class="font-bold text-sm mb-1 flex items-center gap-1">
+              <span>🔍</span> Kano Model Evaluation
+            </h3>
+            <p class="text-xs leading-relaxed">{dashboardData.acceptanceReadiness.kanoRecommendation}</p>
+          </div>
+        {/if}
       </div>
 
       <!-- Data Sources Status -->

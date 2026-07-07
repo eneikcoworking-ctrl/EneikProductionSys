@@ -30,7 +30,7 @@ public class CommandDashboardService {
         List<Map<String, Object>> githubAccessStatus = fetchData(projectId, "github_access_status", dataSourcesStatus);
         List<Map<String, Object>> linearIssueMetadata = fetchData(projectId, "linear_issue_metadata", dataSourcesStatus);
 
-        AcceptanceReadinessDto readiness = calculateReadiness(projectId, tasks, prReviews, githubAccessStatus, dataSourcesStatus);
+        AcceptanceReadinessDto readiness = calculateReadiness(projectId, wishlist, tasks, prReviews, githubAccessStatus, dataSourcesStatus);
 
         return new CommandDashboardDto(
             wishlist, tasks, julesSessions, prReviews, githubAccessStatus, linearIssueMetadata,
@@ -74,6 +74,7 @@ public class CommandDashboardService {
     }
 
     private AcceptanceReadinessDto calculateReadiness(UUID projectId,
+                                                    List<Map<String, Object>> wishlist,
                                                     List<Map<String, Object>> tasks,
                                                     List<Map<String, Object>> prReviews,
                                                     List<Map<String, Object>> githubAccess,
@@ -117,6 +118,49 @@ public class CommandDashboardService {
         if (Boolean.FALSE.equals(allPrsMerged)) unmetConditions.add("Some PRs have pending or failing CI");
         if (Boolean.FALSE.equals(githubAccessHealthy)) unmetConditions.add("GitHub access or CI is unhealthy");
 
+        // Kano Model Analysis for Project Completion recommendation
+        String kanoRecommendation = "No outstanding requirements found.";
+        List<Map<String, Object>> pendingItems = new ArrayList<>();
+        if (wishlist != null) {
+            for (Map<String, Object> item : wishlist) {
+                String status = (String) item.get("status");
+                if (status != null && (status.equalsIgnoreCase("open") || status.equalsIgnoreCase("pending") || status.equalsIgnoreCase("approved"))) {
+                    pendingItems.add(item);
+                }
+            }
+        }
+        if (tasks != null) {
+            for (Map<String, Object> t : tasks) {
+                String status = (String) t.get("status");
+                if (status == null || !status.equalsIgnoreCase("done")) {
+                    pendingItems.add(t);
+                }
+            }
+        }
+
+        if (!pendingItems.isEmpty()) {
+            boolean hasHighValuePending = false;
+            for (Map<String, Object> item : pendingItems) {
+                String content = (String) item.get("content");
+                if (content == null) content = (String) item.get("text");
+                if (content == null) content = (String) item.get("description");
+
+                String kanoClass = classifyKano(content);
+                if ("Must-Be".equals(kanoClass) || "One-Dimensional".equals(kanoClass)) {
+                    hasHighValuePending = true;
+                    break;
+                }
+            }
+
+            if (hasHighValuePending) {
+                kanoRecommendation = "Recommendation: Keep working. There are pending Must-Be/One-Dimensional tasks (e.g. database, core logic) that must be implemented before project acceptance.";
+            } else {
+                kanoRecommendation = "Kano Model Suggestion: The remaining outstanding tasks/wishlist items represent low-value tweaks (Attractive/Indifferent). All Must-Be core functionality has been successfully implemented and approved. We highly recommend completing the project now to avoid diminishing returns.";
+            }
+        } else {
+            kanoRecommendation = "Kano Model Suggestion: All tasks completed! Ready to complete and accept the project.";
+        }
+
         String readiness;
         String statusLabel;
         String uiColorToken;
@@ -134,6 +178,24 @@ public class CommandDashboardService {
             uiColorToken = "border-error";
         }
 
-        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken);
+        return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken, kanoRecommendation);
+    }
+
+    private String classifyKano(String text) {
+        if (text == null) return "Indifferent";
+        String lower = text.toLowerCase(Locale.ROOT);
+        if (lower.contains("database") || lower.contains("api") || lower.contains("auth") ||
+            lower.contains("backend") || lower.contains("security") || lower.contains("logic") ||
+            lower.contains("core") || lower.contains("save") || lower.contains("create") ||
+            lower.contains("интегра") || lower.contains("база")) {
+            return "Must-Be";
+        }
+        if (lower.contains("tweak") || lower.contains("style") || lower.contains("color") ||
+            lower.contains("css") || lower.contains("layout") || lower.contains("text") ||
+            lower.contains("label") || lower.contains("optimization") || lower.contains("minor") ||
+            lower.contains("дизайн") || lower.contains("экран")) {
+            return "Attractive";
+        }
+        return "One-Dimensional";
     }
 }

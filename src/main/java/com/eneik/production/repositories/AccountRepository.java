@@ -39,5 +39,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProject(@Param("projectId") UUID projectId);
 
+    @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
+            "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
+            "AND (capabilities = '*' OR capabilities LIKE CONCAT('%', :tag, '%')) " +
+            "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+    Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
+
     long countByCurrentProjectId(UUID currentProjectId);
 }

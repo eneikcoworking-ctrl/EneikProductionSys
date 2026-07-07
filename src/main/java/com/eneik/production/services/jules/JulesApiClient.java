@@ -121,6 +121,54 @@ public class JulesApiClient {
         }
     }
 
+    public String getSessionPrUrl(String externalSessionId) {
+        String apiKey = settingsService.effectiveValue("jules_api_key");
+        return getSessionPrUrl(externalSessionId, apiKey);
+    }
+
+    public String getSessionPrUrl(String externalSessionId, String apiKey) {
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+            return null;
+        }
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBaseUrl + "/" + externalSessionId))
+                    .header("X-Goog-Api-Key", apiKey)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                return null;
+            }
+
+            JsonNode json = objectMapper.readTree(response.body());
+            return findPrUrl(json);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String findPrUrl(JsonNode node) {
+        if (node == null) return null;
+        if (node.isTextual()) {
+            String text = node.asText();
+            if (text.contains("github.com") && text.contains("/pull/")) {
+                return text;
+            }
+        }
+        if (node.isContainerNode()) {
+            for (JsonNode child : node) {
+                String found = findPrUrl(child);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
     public boolean isEnabled() {
         return settingsService.effectiveBoolean("jules_enabled");
     }

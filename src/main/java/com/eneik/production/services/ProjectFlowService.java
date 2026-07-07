@@ -52,6 +52,7 @@ public class ProjectFlowService {
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
     private final ProjectFinalReportRepository projectFinalReportRepository;
+    private final JulesSessionRepository julesSessionRepository;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
 
@@ -69,6 +70,7 @@ public class ProjectFlowService {
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
                               ProjectFinalReportRepository projectFinalReportRepository,
+                              JulesSessionRepository julesSessionRepository,
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization) {
         this.projectRepository = projectRepository;
@@ -85,6 +87,7 @@ public class ProjectFlowService {
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
         this.projectFinalReportRepository = projectFinalReportRepository;
+        this.julesSessionRepository = julesSessionRepository;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
     }
@@ -198,8 +201,8 @@ public class ProjectFlowService {
 
                 TaskEntity savedTask = taskRepository.save(task);
 
-                // Lock an account for this project/task
-                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProject(project.getId());
+                // Lock an account for this project/task checking capability
+                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), tag);
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();
                     claimService.claimSpecificTask(savedTask.getId(), account.getId());
@@ -225,6 +228,67 @@ public class ProjectFlowService {
                 ? "No business-necessary tasks found. Waiting for more wishlist input or project acceptance."
                 : "Created business-necessary tasks from wishlist.";
         return new OrchestrationResultDto(project.getId(), openItems.size(), createdTasks, message);
+    }
+
+    @Transactional
+    public void dispatchQueuedTasks(UUID projectId) {
+        ProjectEntity project = requireActiveProject(projectId);
+        List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
+
+        for (TaskEntity task : queuedTasks) {
+            String roleTag = task.getRole().getTag();
+            Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), roleTag);
+            if (accountOpt.isPresent()) {
+                AccountEntity account = accountOpt.get();
+                try {
+                    claimService.claimSpecificTask(task.getId(), account.getId());
+
+                    // Refresh task state after claim
+                    TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
+
+                    JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+                    savedTask.setJulesSessionName(dispatch.sessionName());
+                    savedTask.setJulesDispatchStatus(dispatch.reason());
+                    taskRepository.save(savedTask);
+                    log.info("Dispatched queued task {} of project {} to account {}", savedTask.getId(), project.getName(), account.getName());
+                } catch (Exception e) {
+                    log.error("Failed to claim/dispatch queued task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
+                }
+            } else {
+                task.setJulesDispatchStatus("No idle accounts with capability " + roleTag + " available");
+                taskRepository.save(task);
+            }
+        }
+    }
+
+    @Transactional
+    public void dispatchReviewTasks(UUID projectId) {
+        ProjectEntity project = requireActiveProject(projectId);
+        List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
+
+        for (TaskEntity task : reviewTasks) {
+            List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
+            boolean hasActiveReviewSession = sessions.stream()
+                    .anyMatch(s -> {
+                        String status = s.getStatus();
+                        return "running".equals(status) || "queued".equals(status);
+                    });
+
+            if (!hasActiveReviewSession) {
+                // Find any idle capable account to act as reviewer
+                String roleTag = task.getRole().getTag();
+                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), roleTag);
+                if (accountOpt.isPresent()) {
+                    AccountEntity account = accountOpt.get();
+                    try {
+                        julesDispatchService.dispatch(task, account.getId(), "REVIEWER");
+                        log.info("Auto-dispatched reviewer for task {} of project {} to account {}", task.getId(), project.getName(), account.getName());
+                    } catch (Exception e) {
+                        log.error("Failed to auto-dispatch reviewer for task {}: {}", task.getId(), e.getMessage());
+                    }
+                }
+            }
+        }
     }
 
     @Transactional
@@ -384,7 +448,6 @@ public class ProjectFlowService {
     private List<String> chooseBusinessNecessaryRoles(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
         LinkedHashSet<String> tags = new LinkedHashSet<>();
-        tags.add("BARCAN-TAG-09");
 
         if (containsAny(lower, "design", "ui", "ux", "frontend", "screen", "page", "site", "сайт", "дизайн", "экран")) {
             tags.add("BARCAN-TAG-11");
@@ -399,7 +462,9 @@ public class ProjectFlowService {
         if (containsAny(lower, "test", "bug", "fix", "qa", "ошиб", "провер")) {
             tags.add("BARCAN-TAG-06");
         }
-        tags.add("BARCAN-TAG-00");
+        if (tags.isEmpty()) {
+            tags.add("BARCAN-TAG-02");
+        }
         return List.copyOf(tags);
     }
 
