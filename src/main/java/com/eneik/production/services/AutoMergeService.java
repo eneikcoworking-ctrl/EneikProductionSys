@@ -28,17 +28,20 @@ public class AutoMergeService {
     private final com.eneik.production.repositories.TaskRepository taskRepository;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
+    private final com.eneik.production.services.advice.RoleAdviceLoopService roleAdviceLoopService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                             com.eneik.production.repositories.TaskRepository taskRepository,
                             SystemSettingsService settingsService,
-                            ObjectMapper objectMapper) {
+                            ObjectMapper objectMapper,
+                            com.eneik.production.services.advice.RoleAdviceLoopService roleAdviceLoopService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
+        this.roleAdviceLoopService = roleAdviceLoopService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -59,6 +62,8 @@ public class AutoMergeService {
     protected void executeMerge(PrReviewEntity review) {
         log.info("AutoMergeService: Merging PR {} due to valid approval token and green CI", review.getPrUrl());
         
+        boolean mergeSuccess = false;
+        
         // Execute real merge on GitHub if enabled
         if (settingsService.effectiveBoolean("github_enabled")) {
             String token = settingsService.effectiveValue("github_token");
@@ -77,16 +82,21 @@ public class AutoMergeService {
                         pullNumber = parts[3];
                     } else if (review.getJulesSessionId() != null) {
                         // If it's a mock URL, look up the repository from the task and find open PRs on GitHub
-                        owner = settingsService.effectiveValue("github.org");
-                        if (owner == null || owner.isBlank()) {
-                            owner = "eneikcoworking-ctrl";
-                        }
-                        
                         var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
                         if (sessionOpt.isPresent()) {
                             var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
                             if (taskOpt.isPresent()) {
-                                repoName = taskOpt.get().getProject().getRepositoryName();
+                                String prRepoUrl = taskOpt.get().getProject().getRepositoryUrl();
+                                if (prRepoUrl != null && prRepoUrl.replace("https://github.com/", "").split("/").length >= 2) {
+                                    String cleanRepoUrl = prRepoUrl.replace("https://github.com/", "");
+                                    String[] repoParts = cleanRepoUrl.split("/");
+                                    owner = repoParts[0];
+                                    repoName = repoParts[1];
+                                } else {
+                                    owner = "eneikcoworking-ctrl";
+                                    repoName = taskOpt.get().getProject().getRepositoryName();
+                                }
+                                
                                 String listUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls?state=open";
                                 HttpClient client = HttpClient.newHttpClient();
                                 HttpRequest listRequest = HttpRequest.newBuilder()
@@ -119,11 +129,12 @@ public class AutoMergeService {
                                 .PUT(HttpRequest.BodyPublishers.ofString("{}"))
                                 .build();
                         HttpResponse<String> mergeResponse = client.send(mergeRequest, HttpResponse.BodyHandlers.ofString());
-                        if (mergeResponse.statusCode() == 200) {
+                        if (mergeResponse.statusCode() >= 200 && mergeResponse.statusCode() < 300) {
                             log.info("GitHub API: Successfully merged real PR {} on GitHub!", prUrl);
                             if (prUrl != null) {
                                 review.setPrUrl(prUrl);
                             }
+                            mergeSuccess = true;
                         } else {
                             log.error("GitHub API: Failed to merge real PR {} on GitHub. Status: {}, Body: {}", prUrl, mergeResponse.statusCode(), mergeResponse.body());
                         }
@@ -131,22 +142,38 @@ public class AutoMergeService {
                 } catch (Exception e) {
                     log.error("Error executing real GitHub merge for PR {}: {}", review.getPrUrl(), e.getMessage(), e);
                 }
+            } else {
+                log.warn("GitHub integration is enabled but token is missing");
             }
+        } else {
+            // Local mock mode for tests
+            mergeSuccess = true;
+            log.info("AutoMergeService: GitHub integration is disabled, processing as local mock merge");
         }
 
-        review.setMerged(true);
-        prReviewRepository.save(review);
+        if (mergeSuccess) {
+            review.setMerged(true);
+            prReviewRepository.save(review);
 
-        // Also mark corresponding task as done
-        if (review.getJulesSessionId() != null) {
-            julesSessionRepository.findById(review.getJulesSessionId()).ifPresent(session -> {
-                UUID taskId = session.getTaskId();
-                taskRepository.findById(taskId).ifPresent(task -> {
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-                    taskRepository.save(task);
-                    log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
+            // Also mark corresponding task as done
+            if (review.getJulesSessionId() != null) {
+                julesSessionRepository.findById(review.getJulesSessionId()).ifPresent(session -> {
+                    UUID taskId = session.getTaskId();
+                    taskRepository.findById(taskId).ifPresent(task -> {
+                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                        taskRepository.save(task);
+                        log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
+                        
+                        // Call advice loop here upon successful merge
+                        try {
+                            roleAdviceLoopService.afterTaskComplete(taskId);
+                            log.info("AutoMergeService: Triggered role advice loop for task {}", taskId);
+                        } catch (Exception ex) {
+                            log.error("AutoMergeService: Failed to trigger role advice loop for task {}: {}", taskId, ex.getMessage(), ex);
+                        }
+                    });
                 });
-            });
+            }
         }
     }
 }

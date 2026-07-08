@@ -18,15 +18,21 @@ public class ContinuousOrchestrationService {
     private final ProjectFlowService projectFlowService;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.services.jules.JulesDispatchService julesDispatchService;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
+    private final com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
                                          com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
-                                         com.eneik.production.services.jules.JulesDispatchService julesDispatchService) {
+                                         com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
+                                         com.eneik.production.repositories.WishlistRepository wishlistRepository,
+                                         com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.julesSessionRepository = julesSessionRepository;
         this.julesDispatchService = julesDispatchService;
+        this.wishlistRepository = wishlistRepository;
+        this.technicalLeadCompiler = technicalLeadCompiler;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -38,6 +44,31 @@ public class ContinuousOrchestrationService {
                 projectFlowService.orchestrate(project.getId());
                 projectFlowService.dispatchQueuedTasks(project.getId());
                 projectFlowService.dispatchReviewTasks(project.getId());
+
+                // Auto-compile pending wishlists from the new wishlist table
+                try {
+                    List<com.eneik.production.models.persistence.WishlistEntity> pendingWishlists = wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
+                    for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingWishlists) {
+                        if (wishlist.getCompiledByRole() == null) {
+                            technicalLeadCompiler.compile(
+                                wishlist.getId(),
+                                "BARCAN-TAG-09",
+                                "Когда задача завершена, мы хотим получить совет роли, чтобы улучшить систему",
+                                com.eneik.production.models.persistence.LeanValue.essential,
+                                "TOC-CONSTRAINT-BARCAN-TAG-09",
+                                "Defect Rate <= 5%",
+                                "Выполнено согласно правилам роли BARCAN-TAG-09",
+                                "Given task merged, Then compile advice task"
+                            );
+                        }
+                        if (wishlist.getLeanValue() != com.eneik.production.models.persistence.LeanValue.waste) {
+                            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+                            log.info("ContinuousOrchestrationService: Automatically compiled wishlist {} into task", wishlist.getId());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("Failed to compile pending wishlists for project {}", project.getId(), e);
+                }
             } catch (Exception e) {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
             }

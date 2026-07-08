@@ -295,10 +295,10 @@ public class JulesDispatchService {
                     prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. " + remarks);
                     prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
 
-                    // Mark task as done
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                    // Move task to review stage so AutoMergeService can merge it
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
                     taskRepository.save(task);
-                    log.info("Local agent review passed for task {}. PR approved and task marked as DONE.", task.getId());
+                    log.info("Local agent review passed for task {}. PR approved and task moved to REVIEW status.", task.getId());
 
                     // Create new recommended tasks proposed by the review
                     List<Map<String, Object>> newTasks = (List<Map<String, Object>>) reviewResult.get("newTasks");
