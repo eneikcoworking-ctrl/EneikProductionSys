@@ -35,7 +35,12 @@ class JulesDispatchServiceTest {
         claimService = mock(com.eneik.production.services.ClaimService.class);
         roleCapabilityLoader = mock(com.eneik.production.services.RoleCapabilityLoader.class);
         com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService = mock(com.eneik.production.services.monitor.PrReviewPipelineService.class);
-        julesDispatchService = new JulesDispatchService(julesApiClient, julesSessionRepository, accountRepository, taskRepository, claimService, roleCapabilityLoader, prReviewPipelineService, "prefix/");
+        com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        com.eneik.production.repositories.RoleRepository roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
+        julesDispatchService = new JulesDispatchService(
+            julesApiClient, julesSessionRepository, accountRepository, taskRepository, claimService, roleCapabilityLoader,
+            prReviewPipelineService, mlPredictionServiceClient, roleRepository, "prefix/"
+        );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
     }
 

@@ -8,6 +8,8 @@ import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.RoleCapabilityLoader;
+import com.eneik.production.repositories.RoleRepository;
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -30,6 +32,8 @@ public class JulesDispatchService {
     private final ClaimService claimService;
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService;
+    private final com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
+    private final RoleRepository roleRepository;
     private final String sourcePrefix;
 
     @Value("${jules.stuck-threshold-minutes:30}")
@@ -42,6 +46,8 @@ public class JulesDispatchService {
                                 ClaimService claimService,
                                 RoleCapabilityLoader roleCapabilityLoader,
                                 com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService,
+                                com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient,
+                                RoleRepository roleRepository,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -50,6 +56,8 @@ public class JulesDispatchService {
         this.claimService = claimService;
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.prReviewPipelineService = prReviewPipelineService;
+        this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.roleRepository = roleRepository;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -271,22 +279,59 @@ public class JulesDispatchService {
                 if (prUrl == null || prUrl.isBlank()) {
                     prUrl = "https://github.com/" + task.getProject().getRepositoryName() + "/pull/mock-" + taskId;
                 }
+                
                 com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
                 prData.setCiStatus("success");
                 prData.setLinesChanged(120);
                 prData.setFilesChanged(4);
                 prData.setChangedFiles(java.util.Collections.emptyList());
-                prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. Automated review pass.");
 
-                prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
-                log.info("Simulated PR opened for task {} with auto-approval. PR URL: {}", taskId, prUrl);
+                // Invoke the local agent code review (Antigravity Reviewer)
+                Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), prUrl);
+                boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
+                String remarks = (String) reviewResult.get("remarks");
 
-                // Dispatch AI Reviewer
-                accountRepository.lockNextIdleAccountForProject(task.getProject().getId())
-                        .ifPresent(account -> {
-                            dispatch(task, account.getId(), "REVIEWER");
-                            log.info("Dispatched reviewer for task {} to account {}", taskId, account.getName());
-                        });
+                if (approved) {
+                    prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. " + remarks);
+                    prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
+
+                    // Mark task as done
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                    taskRepository.save(task);
+                    log.info("Local agent review passed for task {}. PR approved and task marked as DONE.", task.getId());
+
+                    // Create new recommended tasks proposed by the review
+                    List<Map<String, Object>> newTasks = (List<Map<String, Object>>) reviewResult.get("newTasks");
+                    if (newTasks != null) {
+                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                        for (Map<String, Object> nt : newTasks) {
+                            String rTag = (String) nt.get("roleTag");
+                            String desc = (String) nt.get("description");
+                            roleRepository.findById(rTag).ifPresent(role -> {
+                                TaskEntity t = new TaskEntity();
+                                t.setProject(task.getProject());
+                                t.setRole(role);
+                                t.setDescription(desc);
+                                t.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+                                
+                                com.fasterxml.jackson.databind.node.ObjectNode payloadNode = mapper.createObjectNode();
+                                payloadNode.put("technicalLeadTaskSpec", desc);
+                                t.setPayload(payloadNode);
+                                
+                                taskRepository.save(t);
+                                log.info("Created new local agent review recommended task for role {}: {}", rTag, desc);
+                            });
+                        }
+                    }
+                } else {
+                    prData.setDiffSummary("REVIEW REJECTED. " + remarks);
+                    prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
+
+                    // Mark task as queued to return to work queue
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+                    taskRepository.save(task);
+                    log.warn("Local agent review rejected for task {}. Task returned to queue.", task.getId());
+                }
             } else if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.review) {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
                 try {

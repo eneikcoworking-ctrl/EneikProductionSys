@@ -77,6 +77,8 @@ class IdempotencyTest {
             mock(ClaimService.class),
             mock(RoleCapabilityLoader.class),
             mock(com.eneik.production.services.monitor.PrReviewPipelineService.class),
+            mock(com.eneik.production.services.MLPredictionServiceClient.class),
+            mock(com.eneik.production.repositories.RoleRepository.class),
             "prefix/"
         );
 
