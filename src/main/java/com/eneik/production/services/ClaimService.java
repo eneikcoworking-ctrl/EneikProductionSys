@@ -243,7 +243,7 @@ public class ClaimService {
     }
 
     private void updateAccountStatus(AccountEntity account, AccountStatus status) {
-        account.setStatus(status);
+        accountRepository.updateStatus(account.getId(), status);
     }
 
     /**

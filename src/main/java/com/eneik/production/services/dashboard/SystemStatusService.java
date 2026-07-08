@@ -7,9 +7,13 @@ import com.eneik.production.models.persistence.LinearIssueMetadataEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.PrReviewRepository;
+import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -32,19 +36,25 @@ public class SystemStatusService {
     private final JulesSessionRepository julesSessionRepository;
     private final LinearIssueMetadataRepository linearIssueMetadataRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final PrReviewRepository prReviewRepository;
+    private final TaskConflictRepository taskConflictRepository;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
                                TaskRepository taskRepository,
                                JulesSessionRepository julesSessionRepository,
                                LinearIssueMetadataRepository linearIssueMetadataRepository,
-                               JdbcTemplate jdbcTemplate) {
+                               JdbcTemplate jdbcTemplate,
+                               PrReviewRepository prReviewRepository,
+                               TaskConflictRepository taskConflictRepository) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.linearIssueMetadataRepository = linearIssueMetadataRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.prReviewRepository = prReviewRepository;
+        this.taskConflictRepository = taskConflictRepository;
     }
 
     public Map<String, Object> getStatus() {
@@ -56,6 +66,7 @@ public class SystemStatusService {
         status.put("julesSessions", safeSection(this::julesSessions));
         status.put("qualityGate", safeSection(this::qualityGate));
         status.put("tasks", safeSection(this::tasks));
+        status.put("conflictDpmo", safeSection(this::conflictDpmo));
         return status;
     }
 
@@ -198,6 +209,53 @@ public class SystemStatusService {
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
         return section;
+    }
+
+    private Map<String, Object> conflictDpmo() {
+        List<PrReviewEntity> allReviews = prReviewRepository.findAll();
+        List<TaskConflictEntity> allConflicts = taskConflictRepository.findAll();
+
+        java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
+
+        long mergedAllTime = allReviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
+        long conflictsAllTime = allConflicts.size();
+        long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
+        double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
+
+        long mergedLast7Days = allReviews.stream()
+                .filter(r -> Boolean.TRUE.equals(r.getMerged()))
+                .filter(r -> r.getCreatedAt() != null && r.getCreatedAt().isAfter(sevenDaysAgo))
+                .count();
+        long conflictsLast7Days = allConflicts.stream()
+                .filter(c -> c.getDetectedAt() != null && c.getDetectedAt().isAfter(sevenDaysAgo))
+                .count();
+        long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
+        double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
+
+        List<TaskConflictEntity> activeConflicts = taskConflictRepository.findByResolutionStatusNot("auto_resolved");
+
+        List<Map<String, Object>> activeList = new java.util.ArrayList<>();
+        for (TaskConflictEntity conflict : activeConflicts) {
+            Map<String, Object> cMap = new java.util.LinkedHashMap<>();
+            cMap.put("id", conflict.getId());
+            cMap.put("taskId", conflict.getTask().getId());
+            cMap.put("taskDescription", conflict.getTask().getDescription());
+            cMap.put("prUrl", conflict.getPrUrl());
+            cMap.put("detectedAt", conflict.getDetectedAt());
+            cMap.put("conflictType", conflict.getConflictType());
+            cMap.put("resolutionAttempts", conflict.getResolutionAttempts());
+            cMap.put("resolutionStatus", conflict.getResolutionStatus());
+            cMap.put("conflictingFiles", conflict.getConflictingFiles());
+            activeList.add(cMap);
+        }
+
+        Map<String, Object> data = new java.util.LinkedHashMap<>();
+        data.put("dpmo", dpmoAllTime);
+        data.put("dpmoLast7Days", dpmoLast7Days);
+        data.put("totalMergeAttempts", totalAttemptsAllTime);
+        data.put("conflicts", conflictsAllTime);
+        data.put("activeConflicts", activeList);
+        return data;
     }
 
     private Object safeSection(SectionSupplier supplier) {

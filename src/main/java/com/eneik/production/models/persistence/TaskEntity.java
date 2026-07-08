@@ -44,6 +44,9 @@ public class TaskEntity {
     @Column(nullable = false)
     private int priority = 0;
 
+    @Column(name = "file_scope", columnDefinition = "TEXT")
+    private String fileScope;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "quality_gate_report")
     private JsonNode qualityGateReport;
@@ -78,6 +81,8 @@ public class TaskEntity {
     public void setQualityGateReport(JsonNode qualityGateReport) { this.qualityGateReport = qualityGateReport; }
     public int getPriority() { return priority; }
     public void setPriority(int priority) { this.priority = priority; }
+    public String getFileScope() { return fileScope; }
+    public void setFileScope(String fileScope) { this.fileScope = fileScope; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

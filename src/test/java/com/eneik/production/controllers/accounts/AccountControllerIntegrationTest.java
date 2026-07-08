@@ -57,6 +57,8 @@ class AccountControllerIntegrationTest {
         wishlistItemRepository.deleteAll();
         julesSessionRepository.deleteAll();
         claimRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM needs_human_review");
+        jdbcTemplate.update("DELETE FROM task_conflicts");
         taskRepository.deleteAll();
         accountRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM github_access_status");

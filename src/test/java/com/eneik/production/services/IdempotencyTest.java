@@ -74,6 +74,7 @@ class IdempotencyTest {
             apiClient, sessionRepository,
             mock(com.eneik.production.repositories.AccountRepository.class),
             mock(TaskRepository.class),
+            mock(com.eneik.production.repositories.TaskConflictRepository.class),
             mock(ClaimService.class),
             mock(RoleCapabilityLoader.class),
             mock(com.eneik.production.services.monitor.PrReviewPipelineService.class),

@@ -54,6 +54,9 @@ class ProjectFlowIntegrationTest {
     @BeforeEach
     void setUp() {
         claimRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM needs_human_review");
+        jdbcTemplate.update("DELETE FROM task_conflicts");
+        jdbcTemplate.update("DELETE FROM jules_sessions");
         taskRepository.deleteAll();
         wishlistItemRepository.deleteAll();
         accountRepository.deleteAll();

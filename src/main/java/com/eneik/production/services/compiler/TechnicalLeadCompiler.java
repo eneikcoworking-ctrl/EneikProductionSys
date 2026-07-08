@@ -210,9 +210,58 @@ public class TechnicalLeadCompiler {
 
         task.setStatus(TaskStatus.queued);
         task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
+        task.setFileScope(determineFileScope(roleTag, wishlist.getContent()));
         
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
+    }
+
+    private String determineFileScope(String roleTag, String wishContent) {
+        String lowerWish = (wishContent != null ? wishContent : "").toLowerCase(java.util.Locale.ROOT);
+        java.util.List<String> paths = new java.util.ArrayList<>();
+        
+        if ("BARCAN-TAG-03".equals(roleTag)) { // Design
+            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
+                paths.add("frontend/src/components/ChessBoard.svelte");
+            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
+                paths.add("frontend/src/components/Board.svelte");
+            } else {
+                paths.add("frontend/src/components/");
+            }
+            paths.add("src/main/resources/static/");
+        } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
+                paths.add("src/main/java/com/eneik/production/services/ChessService.java");
+                paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
+            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
+                paths.add("src/main/java/com/eneik/production/services/BoardService.java");
+            } else {
+                paths.add("src/main/java/com/eneik/production/services/");
+            }
+        } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
+            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
+                paths.add("frontend/src/components/ChessBoard.svelte");
+                paths.add("frontend/src/App.svelte");
+            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
+                paths.add("frontend/src/components/Board.svelte");
+            } else {
+                paths.add("frontend/src/components/");
+            }
+        } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
+            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
+                paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
+            } else {
+                paths.add("src/test/");
+            }
+        } else {
+            paths.add("src/main/java/com/eneik/production/");
+        }
+        
+        try {
+            return objectMapper.writeValueAsString(paths);
+        } catch (Exception e) {
+            return "[]";
+        }
     }
 
     @Transactional

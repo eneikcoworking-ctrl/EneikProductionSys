@@ -55,6 +55,26 @@
     items: AccountItem[];
   };
 
+  type ActiveConflict = {
+    id: string;
+    taskId: string;
+    taskDescription: string;
+    prUrl: string;
+    detectedAt: string;
+    conflictType: string;
+    resolutionAttempts: number;
+    resolutionStatus: string;
+    conflictingFiles?: string;
+  };
+
+  type ConflictDpmoData = {
+    dpmo: number;
+    dpmoLast7Days: number;
+    totalMergeAttempts: number;
+    conflicts: number;
+    activeConflicts: ActiveConflict[];
+  };
+
   type SystemStatus = {
     integrations: Section<Setting[]>;
     accounts: Section<AccountsData>;
@@ -63,6 +83,7 @@
     julesSessions: Section<Record<string, number>>;
     qualityGate: Section<Record<string, number>>;
     tasks: Section<Record<string, number>>;
+    conflictDpmo?: Section<ConflictDpmoData>;
   };
 
   const integrations = [
@@ -227,6 +248,10 @@
     <div class="stat">
       <span>{Math.round(status?.qualityGate?.data?.dpmo ?? 0)}</span>
       <p>Gate DPMO</p>
+    </div>
+    <div class="stat">
+      <span>{Math.round(status?.conflictDpmo?.data?.dpmo ?? 0)}</span>
+      <p>Conflict DPMO</p>
     </div>
   </section>
 
@@ -405,6 +430,59 @@
     {/if}
   </section>
 
+  <section class="admin-panel">
+    <div class="panel-head">
+      <h2>Conflict DPMO & Merge Failures</h2>
+      <span>{status?.conflictDpmo?.data?.conflicts ?? 0} total defects</span>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-bottom: 20px;">
+      <div style="background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <h4 style="margin: 0 0 5px 0; color: #64748b; font-size: 13px; text-transform: uppercase;">DPMO (All Time)</h4>
+        <span style="font-size: 24px; font-weight: 800; color: #b91c1c;">{Math.round(status?.conflictDpmo?.data?.dpmo ?? 0)}</span>
+        <p style="margin: 5px 0 0 0; font-size: 12px; color: #64748b;">
+          {status?.conflictDpmo?.data?.conflicts ?? 0} conflicts / {status?.conflictDpmo?.data?.totalMergeAttempts ?? 0} merge attempts
+        </p>
+      </div>
+      <div style="background: #f8fafc; padding: 15px; border-radius: 6px; border: 1px solid #e2e8f0;">
+        <h4 style="margin: 0 0 5px 0; color: #64748b; font-size: 13px; text-transform: uppercase;">DPMO (Last 7 Days)</h4>
+        <span style="font-size: 24px; font-weight: 800; color: #b91c1c;">{Math.round(status?.conflictDpmo?.data?.dpmoLast7Days ?? 0)}</span>
+        <p style="margin: 5px 0 0 0; font-size: 12px; color: #64748b;">
+          Trend: {Math.round(status?.conflictDpmo?.data?.dpmoLast7Days ?? 0) < Math.round(status?.conflictDpmo?.data?.dpmo ?? 0) ? '▼ Decreasing' : '▲ Increasing/Stable'}
+        </p>
+      </div>
+    </div>
+
+    <h3>Active Merge Conflicts</h3>
+    {#if status?.conflictDpmo?.data?.activeConflicts?.length}
+      <div style="display: grid; gap: 10px; margin-top: 10px;">
+        {#each status.conflictDpmo.data.activeConflicts as conflict}
+          <div style="background: #fffbeb; border: 1px solid #fef3c7; border-radius: 6px; padding: 12px; display: flex; flex-direction: column; gap: 5px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <strong style="color: #92400e;">Task ID: {conflict.taskId}</strong>
+              <span class={`pill ${conflict.resolutionStatus === 'escalated' ? 'offline' : 'busy'}`}>{conflict.resolutionStatus}</span>
+            </div>
+            <p style="margin: 0; font-size: 13px; color: #4b5563;">{conflict.taskDescription}</p>
+            {#if conflict.prUrl}
+              <a href={conflict.prUrl} target="_blank" style="font-size: 12px; color: #2563eb; text-decoration: underline;">
+                PR Link: {conflict.prUrl}
+              </a>
+            {/if}
+            <div style="display: flex; gap: 15px; font-size: 11px; color: #6b7280; margin-top: 5px;">
+              <span>Detected: {formatDate(conflict.detectedAt)}</span>
+              <span>Attempts: {conflict.resolutionAttempts}/3</span>
+              {#if conflict.conflictingFiles}
+                <span>Conflicting Files: {conflict.conflictingFiles}</span>
+              {/if}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <p style="color: #6b7280; font-size: 13px; margin: 10px 0 0 0;">No active merge conflicts detected.</p>
+    {/if}
+  </section>
+
   <section class="admin-panel compact">
     <div>
       <h2>Общая картина</h2>
@@ -438,7 +516,7 @@
   .admin-grid {
     display: grid;
     gap: 12px;
-    grid-template-columns: repeat(4, minmax(140px, 1fr));
+    grid-template-columns: repeat(5, minmax(140px, 1fr));
   }
 
   .admin-panel,

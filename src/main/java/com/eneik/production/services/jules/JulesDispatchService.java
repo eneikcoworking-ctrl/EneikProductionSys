@@ -6,6 +6,7 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.RoleCapabilityLoader;
 import com.eneik.production.repositories.RoleRepository;
@@ -29,6 +30,7 @@ public class JulesDispatchService {
     private final JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.AccountRepository accountRepository;
     private final TaskRepository taskRepository;
+    private final TaskConflictRepository taskConflictRepository;
     private final ClaimService claimService;
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService;
@@ -43,6 +45,7 @@ public class JulesDispatchService {
                                 JulesSessionRepository julesSessionRepository,
                                 com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
+                                TaskConflictRepository taskConflictRepository,
                                 ClaimService claimService,
                                 RoleCapabilityLoader roleCapabilityLoader,
                                 com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService,
@@ -53,6 +56,7 @@ public class JulesDispatchService {
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
+        this.taskConflictRepository = taskConflictRepository;
         this.claimService = claimService;
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.prReviewPipelineService = prReviewPipelineService;
@@ -129,7 +133,20 @@ public class JulesDispatchService {
 
         String repoUrl = sourcePrefix + project.getRepositoryName();
         String description = task.getDescription();
-        if ("REVIEWER".equalsIgnoreCase(mode)) {
+        var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
+        if (conflictOpt.isPresent()) {
+            var conflict = conflictOpt.get();
+            String dod = "";
+            if (task.getPayload() != null && task.getPayload().has("dod")) {
+                dod = task.getPayload().get("dod").asText();
+            }
+            String conflictingFiles = conflict.getConflictingFiles();
+            if (conflictingFiles == null || conflictingFiles.trim().isEmpty()) {
+                conflictingFiles = "[]";
+            }
+            description = "Rebase your branch onto the current main and resolve merge conflicts. Original task: [" + dod + "]. Conflict is in: " + conflictingFiles + ".";
+            log.info("Modified prompt for task {} because of merge conflict. New prompt: {}", task.getId(), description);
+        } else if ("REVIEWER".equalsIgnoreCase(mode)) {
             description = "[REVIEWER MODE]\nAudit the following code changes against docs/AI_REVIEW_GUIDELINES.md.\n" + description;
         }
 

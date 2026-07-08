@@ -5,12 +5,12 @@ import com.eneik.production.repositories.*;
 import com.eneik.production.services.compiler.TechnicalLeadCompiler;
 import com.eneik.production.services.monitor.PrReviewPipelineService;
 import com.eneik.production.dto.monitor.PrDataDto;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
-
 import java.util.Collections;
 import java.util.UUID;
 
@@ -48,6 +48,28 @@ class AutonomousPipelineIntegrationTest {
     @Autowired
     private AutoMergeService autoMergeService;
 
+    @Autowired
+    private ClaimRepository claimRepository;
+
+    @Autowired
+    private AccountRepository accountRepository;
+
+    @Autowired
+    private org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void setUp() {
+        claimRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM needs_human_review");
+        jdbcTemplate.update("DELETE FROM task_conflicts");
+        jdbcTemplate.update("DELETE FROM jules_sessions");
+        taskRepository.deleteAll();
+        wishlistItemRepository.deleteAll();
+        accountRepository.deleteAll();
+        jdbcTemplate.update("DELETE FROM github_access_status");
+        projectRepository.deleteAll();
+    }
+
     @Test
     void testFullAutonomousPipelineLoop() {
         // 1. Setup Project
@@ -75,7 +97,7 @@ class AutonomousPipelineIntegrationTest {
 
         UUID projectId = project.getId();
         TaskEntity task = taskRepository.findAll().stream()
-                .filter(t -> t.getProject().getId().equals(projectId))
+                .filter(t -> t.getProject() != null && t.getProject().getId().equals(projectId))
                 .findFirst().orElseThrow();
         assertThat(task.getStatus()).isEqualTo(TaskStatus.queued);
 

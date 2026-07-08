@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.EntityManager;
 
 import java.util.UUID;
 
@@ -37,6 +38,9 @@ public class OrchestrationStatusTest {
 
     @Autowired
     private JulesSessionRepository julesSessionRepository;
+
+    @Autowired
+    private EntityManager entityManager;
 
     @Test
     public void testFullTaskLifecycleWithReview() {
@@ -77,6 +81,7 @@ public class OrchestrationStatusTest {
         // 6. Complete implementer claim (Simulation of PR Open or manual completion)
         claimService.complete(taskId);
 
+        entityManager.clear();
         task = taskRepository.findById(taskId).orElseThrow();
         assertThat(task.getStatus()).isEqualTo(TaskStatus.review);
         assertThat(accountRepository.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.idle);
@@ -96,6 +101,7 @@ public class OrchestrationStatusTest {
         // 8. Complete reviewer claim
         claimService.complete(taskId);
 
+        entityManager.clear();
         task = taskRepository.findById(taskId).orElseThrow();
         assertThat(task.getStatus()).isEqualTo(TaskStatus.done);
         assertThat(accountRepository.findById(reviewerAccount.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.idle);
