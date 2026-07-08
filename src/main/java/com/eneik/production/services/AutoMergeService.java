@@ -4,9 +4,15 @@ import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.NeedsHumanReviewRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.jules.JulesDispatchService;
 import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.models.persistence.NeedsHumanReviewEntity;
+import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.models.persistence.LeanValue;
+import com.eneik.production.models.persistence.TaskStatus;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -24,6 +30,8 @@ import java.util.List;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.time.Instant;
+import java.util.Map;
+import java.util.HashMap;
 
 @Service
 public class AutoMergeService {
@@ -39,6 +47,9 @@ public class AutoMergeService {
     private final TaskConflictRepository taskConflictRepository;
     private final NeedsHumanReviewRepository needsHumanReviewRepository;
     private final JulesDispatchService julesDispatchService;
+    private final RoleCapabilityLoader roleCapabilityLoader;
+    private final WishlistRepository wishlistRepository;
+    private final MLPredictionServiceClient mlPredictionServiceClient;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -48,7 +59,10 @@ public class AutoMergeService {
                             com.eneik.production.services.advice.RoleAdviceLoopService roleAdviceLoopService,
                             TaskConflictRepository taskConflictRepository,
                             NeedsHumanReviewRepository needsHumanReviewRepository,
-                            JulesDispatchService julesDispatchService) {
+                            JulesDispatchService julesDispatchService,
+                            RoleCapabilityLoader roleCapabilityLoader,
+                            WishlistRepository wishlistRepository,
+                            MLPredictionServiceClient mlPredictionServiceClient) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -58,6 +72,9 @@ public class AutoMergeService {
         this.taskConflictRepository = taskConflictRepository;
         this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.julesDispatchService = julesDispatchService;
+        this.roleCapabilityLoader = roleCapabilityLoader;
+        this.wishlistRepository = wishlistRepository;
+        this.mlPredictionServiceClient = mlPredictionServiceClient;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -68,7 +85,20 @@ public class AutoMergeService {
                 .toList();
 
         for (PrReviewEntity review : pendingReviews) {
-            if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
+            boolean isChaotic = false;
+            if (review.getJulesSessionId() != null) {
+                var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
+                if (sessionOpt.isPresent()) {
+                    var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
+                    if (taskOpt.isPresent() && "chaotic".equalsIgnoreCase(taskOpt.get().getCynefinDomain())) {
+                        isChaotic = true;
+                    }
+                }
+            }
+
+            if (isChaotic) {
+                executeMerge(review);
+            } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
                 executeMerge(review);
             }
         }
@@ -78,6 +108,84 @@ public class AutoMergeService {
     protected void executeMerge(PrReviewEntity review) {
         log.info("AutoMergeService: Merging PR {} due to valid approval token and green CI", review.getPrUrl());
         
+        // 1. Check Cynefin complex domain spike handling and Role Philosophical Filter
+        if (review.getJulesSessionId() != null) {
+            var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
+            if (sessionOpt.isPresent()) {
+                var session = sessionOpt.get();
+                var taskOpt = taskRepository.findById(session.getTaskId());
+                if (taskOpt.isPresent()) {
+                    var task = taskOpt.get();
+                    
+                    if ("complex".equalsIgnoreCase(task.getCynefinDomain())) {
+                        log.info("Cynefin Domain complex: Task {} spike completed. Not merging branch.", task.getId());
+                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.spike_completed);
+                        taskRepository.save(task);
+                        
+                        review.setMerged(false);
+                        prReviewRepository.save(review);
+                        return;
+                    }
+
+                    // Role Philosophical Filter
+                    String refusalCriteria = "";
+                    String roleTag = task.getRole().getTag();
+                    try {
+                        com.eneik.production.dto.RoleRules rules = roleCapabilityLoader.loadRules(roleTag);
+                        if (rules != null) {
+                            refusalCriteria = rules.refusalCriteria();
+                        }
+                    } catch (Exception e) {
+                        log.warn("Could not load refusal criteria for role {}: {}", roleTag, e.getMessage());
+                    }
+
+                    if (refusalCriteria != null && !refusalCriteria.trim().isEmpty()) {
+                        String prDiff = "mock_diff";
+                        boolean isConflictSimulated = review.getPrUrl() != null && (review.getPrUrl().contains("conflict") || review.getPrUrl().contains("dirty"));
+                        if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
+                            String token = settingsService.effectiveValue("github_token");
+                            if (token != null && !token.isBlank()) {
+                                String prUrl = review.getPrUrl();
+                                String owner = null;
+                                String repoName = null;
+                                String pullNumber = null;
+                                if (prUrl != null && !prUrl.contains("/mock-") && prUrl.replace("https://github.com/", "").split("/").length >= 4) {
+                                    String cleanUrl = prUrl.replace("https://github.com/", "");
+                                    String[] parts = cleanUrl.split("/");
+                                    owner = parts[0];
+                                    repoName = parts[1];
+                                    pullNumber = parts[3];
+                                }
+                                if (owner != null && repoName != null && pullNumber != null) {
+                                    prDiff = fetchPrDiff(token, owner, repoName, pullNumber);
+                                }
+                            }
+                        } else {
+                            if (review.getDiffSummary() != null && (review.getDiffSummary().contains("refusal_violation") || review.getDiffSummary().contains("violates_criteria"))) {
+                                prDiff = "violates_criteria";
+                            }
+                        }
+
+                        Map<String, Object> rcResult = mlPredictionServiceClient.checkRefusalCriteria(prDiff, refusalCriteria);
+                        boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
+                        if (!isCompliant) {
+                            String reason = (String) rcResult.get("reason");
+                            log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
+                            
+                            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+                            wishlist.setProjectId(task.getProject().getId());
+                            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
+                            wishlist.setSourceRoleTag(roleTag);
+                            wishlist.setContent("Role mismatch cleanup required: " + reason);
+                            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                            wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+                            wishlistRepository.save(wishlist);
+                        }
+                    }
+                }
+            }
+        }
+
         boolean mergeSuccess = false;
         boolean isConflictSimulated = review.getPrUrl() != null && (review.getPrUrl().contains("conflict") || review.getPrUrl().contains("dirty"));
         
@@ -191,6 +299,20 @@ public class AutoMergeService {
                         taskRepository.save(task);
                         log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
                         
+                        // Create chaotic_debt wishlist entry if it was chaotic
+                        if ("chaotic".equalsIgnoreCase(task.getCynefinDomain())) {
+                            com.eneik.production.models.persistence.WishlistEntity debt = new com.eneik.production.models.persistence.WishlistEntity();
+                            debt.setProjectId(task.getProject().getId());
+                            debt.setSource(com.eneik.production.models.persistence.WishlistSource.chaotic_debt);
+                            debt.setSourceRoleTag(task.getRole().getTag());
+                            debt.setContent("Emergency chaotic debt cleanup: Refactor changes introduced in chaotic task " + task.getId());
+                            debt.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                            debt.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+                            debt.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                            wishlistRepository.save(debt);
+                            log.info("Created chaotic_debt wishlist item for refactoring.");
+                        }
+
                         // Call advice loop here upon successful merge
                         try {
                             roleAdviceLoopService.afterTaskComplete(taskId);
@@ -312,5 +434,25 @@ public class AutoMergeService {
             log.error("Failed to fetch PR files: {}", e.getMessage());
         }
         return List.of();
+    }
+
+    private String fetchPrDiff(String token, String owner, String repo, String pullNumber) {
+        try {
+            String url = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber;
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github.v3.diff")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return response.body();
+            }
+        } catch (Exception e) {
+            log.error("Failed to fetch PR diff: {}", e.getMessage());
+        }
+        return "";
     }
 }

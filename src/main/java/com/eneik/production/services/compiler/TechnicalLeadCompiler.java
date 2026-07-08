@@ -209,7 +209,22 @@ public class TechnicalLeadCompiler {
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
-        task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
+        
+        String cynefin = null;
+        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification) {
+            cynefin = "chaotic";
+        } else if (wishlist.getContent() != null && 
+                  (wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("spike") || 
+                   wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("complex"))) {
+            cynefin = "complex";
+        }
+        task.setCynefinDomain(cynefin);
+
+        int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
+        if ("chaotic".equalsIgnoreCase(cynefin)) {
+            priority = 1000;
+        }
+        task.setPriority(priority);
         task.setFileScope(determineFileScope(roleTag, wishlist.getContent()));
         
         TaskEntity saved = taskRepository.save(task);
