@@ -20,6 +20,7 @@ public class TechnicalLeadCompiler {
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
     private final ProjectGenerationStateRepository projectGenerationStateRepository;
+    private final ProjectHotspotFileRepository projectHotspotFileRepository;
     private final GateOrchestrator gateOrchestrator;
     private final BottleneckAwarePriorityService bottleneckAwarePriorityService;
     private final ObjectMapper objectMapper;
@@ -31,6 +32,7 @@ public class TechnicalLeadCompiler {
                                  ProjectRepository projectRepository,
                                  RoleRepository roleRepository,
                                  ProjectGenerationStateRepository projectGenerationStateRepository,
+                                 ProjectHotspotFileRepository projectHotspotFileRepository,
                                  GateOrchestrator gateOrchestrator,
                                  BottleneckAwarePriorityService bottleneckAwarePriorityService,
                                  ObjectMapper objectMapper) {
@@ -39,6 +41,7 @@ public class TechnicalLeadCompiler {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.projectGenerationStateRepository = projectGenerationStateRepository;
+        this.projectHotspotFileRepository = projectHotspotFileRepository;
         this.gateOrchestrator = gateOrchestrator;
         this.bottleneckAwarePriorityService = bottleneckAwarePriorityService;
         this.objectMapper = objectMapper;
@@ -104,65 +107,77 @@ public class TechnicalLeadCompiler {
         java.util.List<TaskEntity> createdTasks = new java.util.ArrayList<>();
 
         if (isChess) {
-            // Task 1: TAG-03 Design
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
+            // Task 1: TAG-03 Design (Parallel)
+            TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03",
                 "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.",
                 "Скриншот или ссылка на макет сцены с доской и фигурами в двух разрешениях (десктоп/мобайл). Reference: docs/DESIGN_SYSTEM.md",
-                createdTasks);
+                createdTasks, null, false);
 
-            // Task 2: TAG-02 Backend
+            // Task 2: TAG-02 Backend (Parallel)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
                 "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).",
                 "Юнит-тесты, показывающие разное качество и глубину хода ИИ в одной и той же позиции на 3 уровнях сложности. Роль: BARCAN-TAG-02",
-                createdTasks);
+                createdTasks, null, false);
 
-            // Task 3: TAG-11 Frontend
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
+            // Task 3: TAG-11 Frontend (Depends on Design)
+            TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11",
                 "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.",
                 "Интерактивное взаимодействие работает в интерфейсе, невалидные ходы блокируются визуально. Зависит от: TAG-03, TAG-02. Reference: docs/DESIGN_SYSTEM.md",
-                createdTasks);
+                createdTasks, designTask.getId(), false);
 
-            // Task 4: TAG-06 QA
+            // Task 4: TAG-00 Integration
+            TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
+                wishlist.getContent() + " - Integration",
+                "Все модули интегрированы, hotspot-файлы обновлены, конфликтов нет.",
+                createdTasks, frontendTask.getId(), true);
+
+            // Task 5: TAG-06 QA (Depends on Integration)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
                 "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.",
                 "Автотест успешно проходит полный цикл (Старт -> Ходы -> Окончание игры) на всех трёх уровнях сложности. Зависит от: TAG-11. Роль: BARCAN-TAG-06",
-                createdTasks);
+                createdTasks, integrationTask.getId(), false);
         } else if (uiExists) {
-            // Task 1: TAG-03 Design
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
+            // Task 1: TAG-03 Design (Parallel)
+            TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03",
                 wishlist.getContent(), 
                 "Figma-макет или скриншоты интерфейса функции. Ссылается на docs/DESIGN_SYSTEM.md или содержит 'pending: design system not yet defined'",
-                createdTasks);
+                createdTasks, null, false);
 
-            // Task 2: TAG-02 Backend
+            // Task 2: TAG-02 Backend (Parallel)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
                 wishlist.getContent() + " - Backend logic and API",
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
-                createdTasks);
+                createdTasks, null, false);
 
-            // Task 3: TAG-11 Frontend
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
+            // Task 3: TAG-11 Frontend (Depends on Design)
+            TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11",
                 wishlist.getContent() + " - Frontend integration",
                 "Интерактивный UI в браузере корректно взаимодействует с бэкенд API. Роль: BARCAN-TAG-11. Reference: docs/DESIGN_SYSTEM.md",
-                createdTasks);
+                createdTasks, designTask.getId(), false);
 
-            // Task 4: TAG-06 QA
+            // Task 4: TAG-00 Integration
+            TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
+                wishlist.getContent() + " - Integration",
+                "Все модули интегрированы, hotspot-файлы обновлены, конфликтов нет.",
+                createdTasks, frontendTask.getId(), true);
+
+            // Task 5: TAG-06 QA (Depends on Integration)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
                 wishlist.getContent() + " - QA E2E Testing",
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
-                createdTasks);
+                createdTasks, integrationTask.getId(), false);
         } else {
-            // Task 1: TAG-02 Backend
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
+            // Task 1: TAG-02 Backend (Parallel)
+            TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02",
                 wishlist.getContent(),
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
-                createdTasks);
+                createdTasks, null, false);
 
-            // Task 2: TAG-06 QA
+            // Task 2: TAG-06 QA (Depends on Backend)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
                 wishlist.getContent() + " - QA E2E Testing",
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
-                createdTasks);
+                createdTasks, backendTask.getId(), false);
         }
 
         // Atomic update of wishlist status after task creation
@@ -189,8 +204,8 @@ public class TechnicalLeadCompiler {
                lower.contains("дизайну") || lower.contains("фронтенд") || lower.contains("css");
     }
 
-    private void createAndSaveTask(ProjectEntity project, WishlistEntity wishlist, String roleTag, 
-                                   String description, String dod, java.util.List<TaskEntity> createdTasks) {
+    private TaskEntity createAndSaveTask(ProjectEntity project, WishlistEntity wishlist, String roleTag,
+                                   String description, String dod, java.util.List<TaskEntity> createdTasks, UUID dependsOn, boolean isIntegrationTask) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
         task.setDescription(description);
@@ -209,54 +224,100 @@ public class TechnicalLeadCompiler {
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
+        task.setDependsOn(dependsOn);
         task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
-        task.setFileScope(determineFileScope(roleTag, wishlist.getContent()));
+        task.setFileScope(determineFileScope(project, roleTag, wishlist.getContent(), isIntegrationTask));
         
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
+        return saved;
     }
 
-    private String determineFileScope(String roleTag, String wishContent) {
+    private String determineFileScope(ProjectEntity project, String roleTag, String wishContent, boolean isIntegrationTask) {
         String lowerWish = (wishContent != null ? wishContent : "").toLowerCase(java.util.Locale.ROOT);
         java.util.List<String> paths = new java.util.ArrayList<>();
         
-        if ("BARCAN-TAG-03".equals(roleTag)) { // Design
-            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
-                paths.add("frontend/src/components/ChessBoard.svelte");
-            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
-                paths.add("frontend/src/components/Board.svelte");
-            } else {
-                paths.add("frontend/src/components/");
+        // Extract keywords for search
+        java.util.List<String> keywords = new java.util.ArrayList<>();
+        String[] words = lowerWish.split("\\W+");
+        for (String w : words) {
+            if (w.length() > 3 && !w.equals("this") && !w.equals("that")) {
+                keywords.add(w);
             }
-            paths.add("src/main/resources/static/");
-        } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
-            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
-                paths.add("src/main/java/com/eneik/production/services/ChessService.java");
-                paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
-            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
-                paths.add("src/main/java/com/eneik/production/services/BoardService.java");
-            } else {
-                paths.add("src/main/java/com/eneik/production/services/");
-            }
-        } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
-            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
-                paths.add("frontend/src/components/ChessBoard.svelte");
-                paths.add("frontend/src/App.svelte");
-            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
-                paths.add("frontend/src/components/Board.svelte");
-            } else {
-                paths.add("frontend/src/components/");
-            }
-        } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
-            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
-                paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
-            } else {
-                paths.add("src/test/");
-            }
-        } else {
-            paths.add("src/main/java/com/eneik/production/");
         }
-        
+        if (keywords.isEmpty()) keywords.add("main");
+
+        // Determine target extension
+        final String finalExtension;
+        String defaultNewPath = "src/main/java/com/eneik/production/services/NewService.java";
+        if ("BARCAN-TAG-03".equals(roleTag) || "BARCAN-TAG-11".equals(roleTag)) {
+            finalExtension = ".svelte";
+            defaultNewPath = "frontend/src/components/NewComponent.svelte";
+        } else if ("BARCAN-TAG-06".equals(roleTag)) {
+            finalExtension = "Test.java";
+            defaultNewPath = "src/test/java/com/eneik/production/services/NewServiceTest.java";
+        } else {
+            finalExtension = ".java";
+        }
+
+        boolean found = false;
+        if (project.getWorkspacePath() != null) {
+            java.io.File workspace = new java.io.File(project.getWorkspacePath());
+            if (workspace.exists() && workspace.isDirectory()) {
+                try (java.util.stream.Stream<java.nio.file.Path> walkStream = java.nio.file.Files.walk(workspace.toPath())) {
+                    java.util.List<java.nio.file.Path> matchedPaths = walkStream
+                        .filter(java.nio.file.Files::isRegularFile)
+                        .filter(p -> p.toString().endsWith(finalExtension))
+                        .filter(p -> {
+                            String name = p.getFileName().toString().toLowerCase(java.util.Locale.ROOT);
+                            return keywords.stream().anyMatch(name::contains);
+                        })
+                        .limit(3)
+                        .toList();
+
+                    for (java.nio.file.Path p : matchedPaths) {
+                        paths.add(workspace.toPath().relativize(p).toString().replace("\\", "/"));
+                        found = true;
+                    }
+                } catch (Exception e) {
+                    // Ignore and fallback
+                }
+            }
+        }
+
+        if (!found) {
+            if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
+                if ("BARCAN-TAG-03".equals(roleTag) || "BARCAN-TAG-11".equals(roleTag)) {
+                    paths.add("frontend/src/components/ChessBoard.svelte");
+                } else if ("BARCAN-TAG-02".equals(roleTag)) {
+                    paths.add("src/main/java/com/eneik/production/services/ChessService.java");
+                } else if ("BARCAN-TAG-06".equals(roleTag)) {
+                    paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
+                } else {
+                    paths.add(defaultNewPath);
+                }
+            } else if (lowerWish.contains("board") || lowerWish.contains("доск")) {
+                if ("BARCAN-TAG-03".equals(roleTag) || "BARCAN-TAG-11".equals(roleTag)) {
+                    paths.add("frontend/src/components/Board.svelte");
+                } else if ("BARCAN-TAG-02".equals(roleTag)) {
+                    paths.add("src/main/java/com/eneik/production/services/BoardService.java");
+                } else {
+                    paths.add(defaultNewPath);
+                }
+            } else {
+                paths.add(defaultNewPath);
+            }
+        }
+
+        if (isIntegrationTask && project.getId() != null) {
+            java.util.List<ProjectHotspotFileEntity> hotspots = projectHotspotFileRepository.findByProjectId(project.getId());
+            for (ProjectHotspotFileEntity hotspot : hotspots) {
+                if (!paths.contains(hotspot.getFilePath())) {
+                    paths.add(hotspot.getFilePath());
+                }
+            }
+        }
+
         try {
             return objectMapper.writeValueAsString(paths);
         } catch (Exception e) {

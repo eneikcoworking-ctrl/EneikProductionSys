@@ -30,6 +30,7 @@ class IdempotencyTest {
         TechnicalLeadCompiler compiler = new TechnicalLeadCompiler(
             wishlistRepository, taskRepository, projectRepository,
             mock(RoleRepository.class), mock(ProjectGenerationStateRepository.class),
+            mock(ProjectHotspotFileRepository.class),
             mock(com.eneik.production.services.gate.GateOrchestrator.class),
             mock(BottleneckAwarePriorityService.class),
             new com.fasterxml.jackson.databind.ObjectMapper()

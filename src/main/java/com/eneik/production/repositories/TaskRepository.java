@@ -46,10 +46,22 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     @Query("SELECT t FROM TaskEntity t WHERE t.project.id = :projectId AND (t.status IN (com.eneik.production.models.persistence.TaskStatus.claimed, com.eneik.production.models.persistence.TaskStatus.in_progress, com.eneik.production.models.persistence.TaskStatus.review) OR t.julesDispatchStatus = 'pr_opened')")
     List<TaskEntity> findActiveTasksByProject(@Param("projectId") UUID projectId);
 
+    default boolean hasUnresolvedDependencies(TaskEntity candidate) {
+        if (candidate.getDependsOn() == null) {
+            return false;
+        }
+        Optional<TaskEntity> dependencyOpt = findById(candidate.getDependsOn());
+        if (dependencyOpt.isEmpty()) {
+            return false;
+        }
+        TaskEntity dependency = dependencyOpt.get();
+        return dependency.getStatus() != TaskStatus.done;
+    }
+
     default Optional<TaskEntity> lockNextQueuedTask(List<String> capableTags) {
         List<TaskEntity> candidates = findCandidatesByCapableTags(capableTags);
         for (TaskEntity candidate : candidates) {
-            if (hasFileScopeConflict(candidate)) {
+            if (hasUnresolvedDependencies(candidate) || hasFileScopeConflict(candidate)) {
                 continue;
             }
             Optional<TaskEntity> locked = lockTaskByIdForUpdate(candidate.getId());
@@ -63,7 +75,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     default Optional<TaskEntity> lockNextQueuedTaskForProject(UUID projectId) {
         List<TaskEntity> candidates = findCandidatesByProject(projectId);
         for (TaskEntity candidate : candidates) {
-            if (hasFileScopeConflict(candidate)) {
+            if (hasUnresolvedDependencies(candidate) || hasFileScopeConflict(candidate)) {
                 continue;
             }
             Optional<TaskEntity> locked = lockTaskByIdForUpdate(candidate.getId());

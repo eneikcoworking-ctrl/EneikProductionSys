@@ -31,6 +31,12 @@ public class TechnicalLeadCompilerIntegrationTest {
     @Autowired
     private ProjectGenerationStateRepository stateRepository;
 
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private RoleRepository roleRepository;
+
     private UUID projectId;
     private UUID wishlistId;
 
@@ -38,7 +44,7 @@ public class TechnicalLeadCompilerIntegrationTest {
     public void setup() {
         ProjectEntity project = new ProjectEntity();
         project.setName("Test Project");
-        project.setSlug("test-project");
+        project.setSlug("test-project-" + UUID.randomUUID().toString());
         project.setStatus(ProjectStatus.active);
         project.setRepositoryName("test-repo");
         project.setRepoUrl("http://github.com/test");
@@ -124,5 +130,79 @@ public class TechnicalLeadCompilerIntegrationTest {
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
+    }
+
+    @Test
+    public void testLockNextQueuedTaskDependencies() {
+        // Create parent task
+        TaskEntity parent = new TaskEntity();
+        parent.setProject(projectRepository.findById(projectId).orElseThrow());
+        parent.setDescription("Parent Task");
+        parent.setRole(roleRepository.findById("BARCAN-TAG-02").orElseThrow());
+        parent.setStatus(TaskStatus.queued);
+        parent = taskRepository.save(parent);
+
+        // Create dependent task
+        TaskEntity dependent = new TaskEntity();
+        dependent.setProject(projectRepository.findById(projectId).orElseThrow());
+        dependent.setDescription("Dependent Task");
+        dependent.setRole(roleRepository.findById("BARCAN-TAG-11").orElseThrow());
+        dependent.setStatus(TaskStatus.queued);
+        dependent.setDependsOn(parent.getId());
+        dependent = taskRepository.save(dependent);
+
+        // Attempt to lock tasks for project
+        java.util.Optional<TaskEntity> locked = taskRepository.lockNextQueuedTaskForProject(projectId);
+        assertTrue(locked.isPresent());
+        assertEquals(parent.getId(), locked.get().getId(), "Should lock parent task first because dependent has unresolved dependencies");
+
+        // Mark parent as done
+        parent.setStatus(TaskStatus.done);
+        taskRepository.save(parent);
+
+        // Attempt to lock again - should now lock dependent
+        java.util.Optional<TaskEntity> lockedNext = taskRepository.lockNextQueuedTaskForProject(projectId);
+        assertTrue(lockedNext.isPresent());
+        assertEquals(dependent.getId(), lockedNext.get().getId(), "Should lock dependent task now that parent is done");
+    }
+
+    @Test
+    public void testIntegrationTaskScopeAndDependencies() {
+        // Use a UI wishlist to trigger multiple tasks creation (Design, Backend, Frontend, Integration, QA)
+        WishlistEntity wish = new WishlistEntity();
+        wish.setProjectId(projectId);
+        wish.setSource(WishlistSource.client);
+        wish.setContent("Test wish with UI interface");
+        wish = wishlistRepository.save(wish);
+
+        compiler.compile(wish.getId(), "BARCAN-TAG-09", "jtbd", LeanValue.essential, "toc", "metric", "BARCAN-TAG-03 docs/DESIGN_SYSTEM.md", "ac");
+
+        TaskEntity resultTask = compiler.createTaskFromWishlist(wish.getId());
+        assertNotNull(resultTask);
+
+        java.util.List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        assertEquals(5, tasks.size(), "Should generate Design, Backend, Frontend, Integration, and QA tasks");
+
+        TaskEntity designTask = tasks.stream().filter(t -> t.getRole().getTag().equals("BARCAN-TAG-03")).findFirst().orElseThrow();
+        TaskEntity backendTask = tasks.stream().filter(t -> t.getRole().getTag().equals("BARCAN-TAG-02")).findFirst().orElseThrow();
+        TaskEntity frontendTask = tasks.stream().filter(t -> t.getRole().getTag().equals("BARCAN-TAG-11")).findFirst().orElseThrow();
+        TaskEntity integrationTask = tasks.stream().filter(t -> t.getRole().getTag().equals("BARCAN-TAG-00")).findFirst().orElseThrow();
+        TaskEntity qaTask = tasks.stream().filter(t -> t.getRole().getTag().equals("BARCAN-TAG-06")).findFirst().orElseThrow();
+
+        // Dependencies Check
+        assertNull(designTask.getDependsOn());
+        assertNull(backendTask.getDependsOn());
+        assertEquals(designTask.getId(), frontendTask.getDependsOn());
+        assertEquals(frontendTask.getId(), integrationTask.getDependsOn());
+        assertEquals(integrationTask.getId(), qaTask.getDependsOn());
+
+        // File Scope Check
+        // The file scope is a JSON array string containing paths.
+        // Even for specific files, the path contains '/', e.g., 'src/main/java/com/eneik/production/services/NewService.java'
+        assertTrue(backendTask.getFileScope().contains("NewService.java"));
+        assertFalse(backendTask.getFileScope().equals("[\"src/main/java/com/eneik/production/services/\"]"));
+
+        assertTrue(frontendTask.getFileScope().contains("NewComponent.svelte"));
+        assertFalse(frontendTask.getFileScope().equals("[\"frontend/src/components/\"]")); // Not just the generic directory
     }
 }

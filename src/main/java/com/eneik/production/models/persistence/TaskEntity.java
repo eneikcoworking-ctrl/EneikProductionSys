@@ -51,6 +51,9 @@ public class TaskEntity {
     @Column(name = "quality_gate_report")
     private JsonNode qualityGateReport;
 
+    @Column(name = "depends_on")
+    private UUID dependsOn;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -87,4 +90,6 @@ public class TaskEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public UUID getDependsOn() { return dependsOn; }
+    public void setDependsOn(UUID dependsOn) { this.dependsOn = dependsOn; }
 }

@@ -1,24 +1,31 @@
 package com.eneik.production.services.projectfactory;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectHotspotFileEntity;
+import com.eneik.production.repositories.ProjectHotspotFileRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
+
+import java.util.List;
 
 @Service
 public class ProjectFactoryService {
     private final ProjectWorkspaceFactoryService workspaceFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
     private final LinearProjectFactoryClient linearProjectFactoryClient;
+    private final ProjectHotspotFileRepository projectHotspotFileRepository;
     private final ObjectMapper objectMapper;
 
     public ProjectFactoryService(ProjectWorkspaceFactoryService workspaceFactoryService,
                                  GitHubProjectFactoryClient gitHubProjectFactoryClient,
                                  LinearProjectFactoryClient linearProjectFactoryClient,
+                                 ProjectHotspotFileRepository projectHotspotFileRepository,
                                  ObjectMapper objectMapper) {
         this.workspaceFactoryService = workspaceFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
         this.linearProjectFactoryClient = linearProjectFactoryClient;
+        this.projectHotspotFileRepository = projectHotspotFileRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -27,6 +34,20 @@ public class ProjectFactoryService {
         GitHubProvisioningResult github = gitHubProjectFactoryClient.provision(project, workspace.artifacts());
         String repositoryUrl = firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl());
         LinearProvisioningResult linear = linearProjectFactoryClient.provision(project, repositoryUrl);
+
+        // Setup standard hotspot files
+        List<String> defaultHotspots = List.of(
+            "frontend/src/App.svelte",
+            "package.json",
+            "application.properties",
+            "docker-compose.yml"
+        );
+        for (String file : defaultHotspots) {
+            ProjectHotspotFileEntity hotspot = new ProjectHotspotFileEntity();
+            hotspot.setProjectId(project.getId());
+            hotspot.setFilePath(file);
+            projectHotspotFileRepository.save(hotspot);
+        }
 
         String factoryStatus = factoryStatus(github, linear);
         String report = report(workspace, github, linear, factoryStatus);
