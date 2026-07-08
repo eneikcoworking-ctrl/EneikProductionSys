@@ -130,6 +130,16 @@ public class JulesDispatchService {
         roleContextBuilder.append("Description: ").append(task.getRole().getDescription()).append("\n");
 
         try {
+            String rulesPathStr = task.getRole().getRulesPath();
+            if (rulesPathStr != null) {
+                java.nio.file.Path rulesPath = java.nio.file.Paths.get(rulesPathStr);
+                if (java.nio.file.Files.exists(rulesPath)) {
+                    String fullMarkdown = java.nio.file.Files.readString(rulesPath);
+                    roleContextBuilder.append("\n## FULL ROLE CHARTER AND EXCELLENCE GUIDELINES:\n")
+                                      .append(fullMarkdown).append("\n");
+                }
+            }
+
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
             if (rules != null) {
                 if (rules.scope() != null && !rules.scope().isBlank()) {

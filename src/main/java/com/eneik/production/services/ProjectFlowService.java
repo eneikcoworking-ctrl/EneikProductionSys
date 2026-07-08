@@ -447,33 +447,70 @@ public class ProjectFlowService {
 
     private List<String> chooseBusinessNecessaryRoles(String text) {
         String lower = text.toLowerCase(Locale.ROOT);
-        LinkedHashSet<String> tags = new LinkedHashSet<>();
+        
+        // If it's a Chess project:
+        if (lower.contains("шахмат") || lower.contains("chess")) {
+            return List.of("BARCAN-TAG-03", "BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
+        }
 
-        if (containsAny(lower, "design", "ui", "ux", "frontend", "screen", "page", "site", "сайт", "дизайн", "экран")) {
-            tags.add("BARCAN-TAG-11");
-            tags.add("BARCAN-TAG-03");
+        // If it has UI components:
+        boolean hasUi = lower.contains("3d") || lower.contains("дизайн") || lower.contains("интерфейс") || 
+                        lower.contains("сцена") || lower.contains("управление") || lower.contains("экран") || 
+                        lower.contains("ui") || lower.contains("ux") || lower.contains("frontend") || 
+                        lower.contains("button") || lower.contains("click") || lower.contains("view") || 
+                        lower.contains("render") || lower.contains("figma") || lower.contains("дизайнер") || 
+                        lower.contains("дизайну") || lower.contains("фронтенд") || lower.contains("css");
+
+        if (hasUi) {
+            return List.of("BARCAN-TAG-03", "BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
+        } else {
+            return List.of("BARCAN-TAG-02", "BARCAN-TAG-06");
         }
-        if (containsAny(lower, "api", "backend", "database", "db", "login", "auth", "endpoint", "бекенд", "база")) {
-            tags.add("BARCAN-TAG-02");
+    }
+
+    private String getRoleSpecificAssignment(String wishlistText, String roleTag) {
+        boolean isChess = wishlistText.toLowerCase(Locale.ROOT).contains("шахмат") || 
+                          wishlistText.toLowerCase(Locale.ROOT).contains("chess");
+        
+        if (isChess) {
+            switch (roleTag) {
+                case "BARCAN-TAG-03":
+                    return "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.";
+                case "BARCAN-TAG-02":
+                    return "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).";
+                case "BARCAN-TAG-11":
+                    return "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.";
+                case "BARCAN-TAG-06":
+                    return "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.";
+            }
         }
-        if (containsAny(lower, "deploy", "docker", "ci", "linear", "github", "repo", "интегра", "деплой")) {
-            tags.add("BARCAN-TAG-05");
+        
+        switch (roleTag) {
+            case "BARCAN-TAG-03":
+                return "Спроектировать пользовательский интерфейс, макеты экранов и дизайн-элементы для функции: \"" + wishlistText + "\" согласно docs/DESIGN_SYSTEM.md.";
+            case "BARCAN-TAG-02":
+                return "Разработать серверную бизнес-логику, API эндпоинты, миграции базы данных и юнит-тесты для функции: \"" + wishlistText + "\".";
+            case "BARCAN-TAG-11":
+                return "Реализовать фронтенд-компоненты на Svelte, интерактивное взаимодействие и интеграцию с API для функции: \"" + wishlistText + "\" согласно docs/DESIGN_SYSTEM.md.";
+            case "BARCAN-TAG-06":
+                return "Написать автоматизированные E2E и интеграционные тесты для верификации функции: \"" + wishlistText + "\".";
+            case "BARCAN-TAG-05":
+                return "Настроить CI/CD пайплайн, Dockerfile, конфигурации сборки и окружения для деплоя функции: \"" + wishlistText + "\".";
+            default:
+                return "Реализовать технические требования для роли " + roleTag + " по пожеланию клиента: \"" + wishlistText + "\".";
         }
-        if (containsAny(lower, "test", "bug", "fix", "qa", "ошиб", "провер")) {
-            tags.add("BARCAN-TAG-06");
-        }
-        if (tags.isEmpty()) {
-            tags.add("BARCAN-TAG-02");
-        }
-        return List.copyOf(tags);
     }
 
     private String buildTechnicalLeadTaskSpec(ProjectEntity project, WishlistItemEntity item, String roleTag) {
         String roleName = roleRepository.findById(roleTag)
                 .map(RoleEntity::getDescription)
                 .orElse(roleTag);
+        String assignment = getRoleSpecificAssignment(item.getText(), roleTag);
         return """
                 [%s] Technical Lead Task
+
+                Technical Assignment:
+                %s
 
                 Client wish:
                 %s
@@ -507,7 +544,7 @@ public class ProjectFlowService {
                 - Business value is visible in the dashboard or product behavior.
                 - No new critical path blocker is introduced.
                 - The task can be reviewed without reading hidden context.
-                """.formatted(roleTag, item.getText(), project.getName(), roleName);
+                """.formatted(roleTag, assignment, item.getText(), project.getName(), roleName);
     }
 
     private ObjectNode buildTaskPayload(ProjectEntity project, WishlistItemEntity item, String roleTag, String taskSpec) {
