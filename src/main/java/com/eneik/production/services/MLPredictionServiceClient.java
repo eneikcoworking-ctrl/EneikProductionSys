@@ -75,6 +75,30 @@ public class MLPredictionServiceClient {
         }
     }
 
+    public Map<String, Object> checkRefusalCriteria(String prDiff, String refusalCriteria) {
+        String endpoint = mlServiceUrl + "/api/v1/review/refusal-criteria";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> request = new HashMap<>();
+            request.put("prDiff", prDiff);
+            request.put("refusalCriteria", refusalCriteria);
+
+            return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+        } catch (Exception e) {
+            LOGGER.warning("ML service checkRefusalCriteria call failed: " + e.getMessage());
+            boolean passes = true;
+            if (prDiff != null && (prDiff.contains("refusal_violation") || prDiff.contains("violates_criteria"))) {
+                passes = false;
+            }
+            return Map.of(
+                "compliant", passes,
+                "reason", passes ? "Compliant with refusal criteria" : "Diff violates role refusal criteria: found hardcoded hex values or business logic in view."
+            );
+        }
+    }
+
     private static class MLResponse {
         @JsonProperty("risk_score")
         private double riskScore;

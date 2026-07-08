@@ -53,6 +53,8 @@ public class TaskEntity {
 
     @Column(name = "depends_on")
     private UUID dependsOn;
+    @Column(name = "cynefin_domain")
+    private String cynefinDomain;
 
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
@@ -86,6 +88,8 @@ public class TaskEntity {
     public void setPriority(int priority) { this.priority = priority; }
     public String getFileScope() { return fileScope; }
     public void setFileScope(String fileScope) { this.fileScope = fileScope; }
+    public String getCynefinDomain() { return cynefinDomain; }
+    public void setCynefinDomain(String cynefinDomain) { this.cynefinDomain = cynefinDomain; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
