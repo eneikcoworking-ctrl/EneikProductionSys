@@ -228,23 +228,6 @@ public class TechnicalLeadCompiler {
         task.setPriority(bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef()));
         task.setFileScope(determineFileScope(project, roleTag, wishlist.getContent(), isIntegrationTask));
         
-        String cynefin = null;
-        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification) {
-            cynefin = "chaotic";
-        } else if (wishlist.getContent() != null && 
-                  (wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("spike") || 
-                   wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("complex"))) {
-            cynefin = "complex";
-        }
-        task.setCynefinDomain(cynefin);
-
-        int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
-        if ("chaotic".equalsIgnoreCase(cynefin)) {
-            priority = 1000;
-        }
-        task.setPriority(priority);
-        task.setFileScope(determineFileScope(roleTag, wishlist.getContent()));
-        
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
         return saved;
