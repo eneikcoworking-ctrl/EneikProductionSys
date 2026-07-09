@@ -52,6 +52,15 @@ public class ProjectEntity {
     @Column(nullable = false)
     private ProjectStatus status = ProjectStatus.active;
 
+    @Column(name = "onboarding_mode", nullable = false)
+    private String onboardingMode = "greenfield";
+
+    @Column(name = "default_branch", nullable = false)
+    private String defaultBranch = "main";
+
+    @Column(name = "baseline_commit_sha")
+    private String baselineCommitSha;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -87,6 +96,12 @@ public class ProjectEntity {
     public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }
+    public String getOnboardingMode() { return onboardingMode; }
+    public void setOnboardingMode(String onboardingMode) { this.onboardingMode = onboardingMode; }
+    public String getDefaultBranch() { return defaultBranch; }
+    public void setDefaultBranch(String defaultBranch) { this.defaultBranch = defaultBranch; }
+    public String getBaselineCommitSha() { return baselineCommitSha; }
+    public void setBaselineCommitSha(String baselineCommitSha) { this.baselineCommitSha = baselineCommitSha; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getAcceptedAt() { return acceptedAt; }

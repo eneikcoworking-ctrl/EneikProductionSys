@@ -12,6 +12,8 @@
   let projectName = '';
   let status = 'Ready';
   let activeView: 'dashboard' | 'client' | 'admin' = 'dashboard';
+  let showOnboardPrompt = false;
+  let conflictingProjectName = '';
 
   async function loadProjects() {
     const response = await fetch(`${API_BASE}/api/projects`);
@@ -35,20 +37,33 @@
     }
   }
 
-  async function createProject() {
+  async function createProject(onboardingMode?: string) {
     if (!projectName.trim()) return;
-    status = 'Creating isolated project workspace...';
+    status = onboardingMode === 'brownfield' ? 'Onboarding existing project...' : 'Creating isolated project workspace...';
     const response = await fetch(`${API_BASE}/api/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: projectName })
+      body: JSON.stringify({ name: projectName, onboardingMode: onboardingMode || 'greenfield' })
     });
     if (response.ok) {
       const project = await response.json();
       projectName = '';
+      showOnboardPrompt = false;
       await loadProjects();
       await loadDashboard(project.id);
-      status = 'Project created. Seven Jules accounts attached.';
+      status = onboardingMode === 'brownfield' ? 'Project onboarded. Analyzing Stack and Architecture.' : 'Project created. Seven Jules accounts attached.';
+    } else if (response.status === 409) {
+      const err = await response.json();
+      if (err.error === 'name_conflict') {
+        conflictingProjectName = projectName;
+        showOnboardPrompt = true;
+        status = 'Name conflict detected on GitHub.';
+      } else {
+        status = 'Error: ' + err.message;
+      }
+    } else {
+      const err = await response.json();
+      status = 'Error: ' + (err?.error || 'Failed to create project');
     }
   }
 
@@ -78,7 +93,7 @@
   <!-- Project Selector Strip -->
   {#if activeView !== 'admin'}
     <section class="project-strip">
-      {#each projects.filter(p => ['active', 'waiting', 'accepted'].includes(p.status)) as project}
+      {#each projects.filter(p => ['active', 'waiting', 'accepted', 'analyzing'].includes(p.status)) as project}
         <button
           class:active={dashboard?.project.id === project.id}
           onclick={() => loadDashboard(project.id)}
@@ -143,10 +158,77 @@
     </section>
   {/if}
 
+  {#if showOnboardPrompt}
+    <div class="modal-backdrop">
+      <div class="modal-content">
+        <h3>Repository Onboarding</h3>
+        <p>Репозиторий с именем <strong>{conflictingProjectName}</strong> уже существует на GitHub. Это существующий репозиторий, который нужно проанализировать?</p>
+        <div class="modal-actions">
+          <button class="btn btn-primary" onclick={() => createProject('brownfield')}>Да, анализировать</button>
+          <button class="btn btn-secondary" onclick={() => { showOnboardPrompt = false; projectName = ''; status = 'Ready'; }}>Нет, использовать другое имя</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <p class="status">{status}</p>
 </main>
 
 <style>
+  .modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  .modal-content {
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    border: 1px solid #e2e8f0;
+  }
+  .modal-content h3 {
+    margin-top: 0;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin-bottom: 12px;
+  }
+  .modal-content p {
+    color: #475569;
+    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+  }
+  .modal-actions button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+  }
+  .modal-actions .btn-primary {
+    background: #1e293b;
+    color: white;
+  }
+  .modal-actions .btn-secondary {
+    background: #f1f5f9;
+    color: #475569;
+  }
   .project-filters {
     display: flex;
     gap: var(--space-6);

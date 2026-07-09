@@ -12,6 +12,48 @@
   let wishText = '';
   let statusMsg = 'Ready';
 
+  let onboardingFindings: any[] = [];
+  let onboardingReport = '';
+
+  async function fetchOnboardingData() {
+    try {
+      const [resFindings, resReport] = await Promise.all([
+        fetch(`${API_BASE}/api/projects/${projectId}/onboarding-findings`),
+        fetch(`${API_BASE}/api/projects/${projectId}/onboarding-report`)
+      ]);
+      if (resFindings.ok) {
+        onboardingFindings = await resFindings.json();
+      }
+      if (resReport.ok) {
+        const reportData = await resReport.json();
+        onboardingReport = reportData.report;
+      }
+    } catch (e) {
+      console.error("Failed to fetch onboarding data:", e);
+    }
+  }
+
+  async function addFindingToWishlist(finding: any) {
+    statusMsg = 'Adding finding to wishlist...';
+    const response = await fetch(`${API_BASE}/api/wishlist`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        projectId: projectId,
+        source: 'onboarding_finding',
+        sourceRoleTag: finding.roleTag,
+        content: `Onboarding Finding (${finding.severity}): ${finding.findingText} [File: ${finding.filePath}]`
+      })
+    });
+    if (response.ok) {
+      statusMsg = `Added ${finding.roleTag} finding to wishlist successfully.`;
+      await fetchDashboard();
+    } else {
+      const err = await response.json();
+      statusMsg = 'Failed to add finding to wishlist: ' + (err.message || 'Error');
+    }
+  }
+
   async function fetchDashboard() {
     try {
       // Fetch both APIs in parallel
@@ -26,6 +68,10 @@
 
       dashboard = await res1.json();
       commandDashboard = await res2.json();
+
+      if (dashboard.project.status === 'analyzing') {
+        await fetchOnboardingData();
+      }
     } catch (e: any) {
       error = e.message;
     } finally {
@@ -142,8 +188,62 @@
       </div>
     </header>
 
-    <!-- Grid Columns -->
-    <div class="dashboard-grid">
+    {#if dashboard.project.status === 'analyzing'}
+      <!-- Onboarding Report View -->
+      <div class="onboarding-container">
+        <div class="onboarding-header-card">
+          <div class="onboarding-meta">
+            <h2 class="onboarding-title">Project Onboarding Audit</h2>
+            <p class="onboarding-subtitle">This repository is in analysis mode. Review the stack profile and the architectural findings below.</p>
+          </div>
+          <button class="btn btn-success" onclick={activateProject}>
+            Проект проанализирован, активировать
+          </button>
+        </div>
+
+        <div class="onboarding-content-grid">
+          <!-- Left pane: Markdown Report -->
+          <div class="report-pane card">
+            <h3>Audit Report Summary</h3>
+            <div class="markdown-body">
+              <pre class="report-pre">{onboardingReport || 'Analyzing codebase and generating report...'}</pre>
+            </div>
+          </div>
+
+          <!-- Right pane: Audit Findings list with interactive wishlist adding -->
+          <div class="findings-pane card">
+            <h3>Architectural Violations ({onboardingFindings.length})</h3>
+            <p class="section-desc">You can review the violations detected by the 12 system roles. Click 'Add to Wishlist' to queue a finding for fixing.</p>
+
+            <div class="findings-list">
+              {#if onboardingFindings.length === 0}
+                <p class="empty-state">No architectural violations found. Ready to activate!</p>
+              {:else}
+                {#each onboardingFindings as finding}
+                  <div class="finding-card {finding.severity}">
+                    <div class="finding-header">
+                      <span class="finding-badge {finding.severity}">{finding.severity}</span>
+                      <span class="role-tag">{finding.roleTag}</span>
+                    </div>
+                    <p class="finding-text">{finding.findingText}</p>
+                    {#if finding.filePath}
+                      <code class="file-path">{finding.filePath}{finding.lineNumber ? ` : L${finding.lineNumber}` : ''}</code>
+                    {/if}
+                    <div class="finding-actions">
+                      <button class="btn btn-secondary btn-sm" onclick={() => addFindingToWishlist(finding)}>
+                        Add to Wishlist
+                      </button>
+                    </div>
+                  </div>
+                {/each}
+              {/if}
+            </div>
+          </div>
+        </div>
+      </div>
+    {:else}
+      <!-- Grid Columns -->
+      <div class="dashboard-grid">
       
       <!-- COLUMN 1: Intake & Wishlist -->
       <section class="grid-col intake-col">
@@ -310,6 +410,7 @@
       </section>
 
     </div>
+    {/if}
 
     <!-- Status Bar -->
     <footer class="status-bar">
@@ -821,5 +922,148 @@
     background: var(--error-bg);
     border: 1px solid #fecaca;
     color: var(--error);
+  }
+
+  /* Onboarding Flow Styles */
+  .onboarding-container {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+    flex: 1;
+    min-height: 0;
+  }
+  .onboarding-header-card {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 12px;
+    padding: 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+  }
+  .onboarding-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #1e3a8a;
+    margin: 0 0 6px 0;
+  }
+  .onboarding-subtitle {
+    font-size: 14px;
+    color: #1e40af;
+    margin: 0;
+  }
+  .onboarding-content-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-6);
+    flex: 1;
+    min-height: 0;
+  }
+  .report-pane, .findings-pane {
+    padding: 20px;
+    background: white;
+    border: 1px solid var(--neutral-200);
+    border-radius: 12px;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .report-pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--neutral-700);
+    overflow-y: auto;
+    max-height: 500px;
+    padding: 12px;
+    background: #f8fafc;
+    border-radius: 6px;
+    border: 1px solid #e2e8f0;
+  }
+  .section-desc {
+    font-size: 13px;
+    color: var(--neutral-500);
+    margin: 0 0 16px 0;
+  }
+  .findings-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    flex: 1;
+    padding-right: 4px;
+  }
+  .finding-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .finding-card.critical {
+    border-left: 4px solid #ef4444;
+    background: #fff5f5;
+  }
+  .finding-card.major {
+    border-left: 4px solid #f59e0b;
+    background: #fffbeb;
+  }
+  .finding-card.minor {
+    border-left: 4px solid #3b82f6;
+    background: #eff6ff;
+  }
+  .finding-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .finding-badge {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .finding-badge.critical {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .finding-badge.major {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .finding-badge.minor {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .finding-text {
+    font-size: 13px;
+    color: var(--neutral-700);
+    margin: 0;
+    line-height: 1.4;
+  }
+  .file-path {
+    font-family: monospace;
+    font-size: 11px;
+    background: rgba(0,0,0,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    align-self: flex-start;
+  }
+  .finding-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .btn-sm {
+    height: 28px;
+    padding: 0 12px;
+    font-size: 11px;
   }
 </style>

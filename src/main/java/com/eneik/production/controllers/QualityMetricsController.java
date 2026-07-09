@@ -19,17 +19,20 @@ public class QualityMetricsController {
     private final JulesSessionRepository julesSessionRepository;
     private final TaskRepository taskRepository;
     private final ProjectRepository projectRepository;
+    private final OnboardingAuditFindingRepository onboardingAuditFindingRepository;
 
     public QualityMetricsController(PrReviewRepository prReviewRepository,
                                     TaskConflictRepository taskConflictRepository,
                                     JulesSessionRepository julesSessionRepository,
                                     TaskRepository taskRepository,
-                                    ProjectRepository projectRepository) {
+                                    ProjectRepository projectRepository,
+                                    OnboardingAuditFindingRepository onboardingAuditFindingRepository) {
         this.prReviewRepository = prReviewRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
+        this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
     }
 
     @GetMapping("/conflict-dpmo")
@@ -122,6 +125,63 @@ public class QualityMetricsController {
                         "dpmo", dpmoLast7Days
                 ),
                 "byProject", byProjectList
+        );
+    }
+
+    @GetMapping("/defect-summary")
+    public Map<String, Object> getDefectSummary() {
+        List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
+
+        List<TaskEntity> allTasks = taskRepository.findAll();
+        long qualityGateDefects = 0;
+        List<Map<String, Object>> qualityGateItems = new ArrayList<>();
+        for (TaskEntity task : allTasks) {
+            com.fasterxml.jackson.databind.JsonNode report = task.getQualityGateReport();
+            if (report != null && report.has("checks")) {
+                for (com.fasterxml.jackson.databind.JsonNode check : report.get("checks")) {
+                    if (!check.path("passed").asBoolean()) {
+                        qualityGateDefects++;
+                        qualityGateItems.add(Map.of(
+                                "taskId", task.getId(),
+                                "checkName", check.path("name").asText("unknown"),
+                                "description", check.path("description").asText("")
+                        ));
+                    }
+                }
+            }
+        }
+
+        List<OnboardingAuditFindingEntity> onboardingFindings = onboardingAuditFindingRepository.findAll();
+
+        long totalDefects = conflicts.size() + qualityGateDefects + onboardingFindings.size();
+
+        return Map.of(
+                "totalDefects", totalDefects,
+                "conflicts", Map.of(
+                        "total", conflicts.size(),
+                        "items", conflicts.stream().map(c -> Map.of(
+                                "id", c.getId(),
+                                "taskId", c.getTask() != null ? c.getTask().getId() : "",
+                                "conflictType", c.getConflictType() != null ? c.getConflictType() : "",
+                                "status", c.getResolutionStatus() != null ? c.getResolutionStatus() : ""
+                        )).toList()
+                ),
+                "qualityGate", Map.of(
+                        "total", qualityGateDefects,
+                        "items", qualityGateItems
+                ),
+                "onboarding", Map.of(
+                        "total", onboardingFindings.size(),
+                        "items", onboardingFindings.stream().map(f -> Map.of(
+                                "id", f.getId(),
+                                "projectId", f.getProject() != null ? f.getProject().getId() : "",
+                                "roleTag", f.getRoleTag(),
+                                "severity", f.getSeverity(),
+                                "filePath", f.getFilePath() != null ? f.getFilePath() : "",
+                                "lineNumber", f.getLineNumber() != null ? f.getLineNumber() : 0,
+                                "findingText", f.getFindingText()
+                        )).toList()
+                )
         );
     }
 }

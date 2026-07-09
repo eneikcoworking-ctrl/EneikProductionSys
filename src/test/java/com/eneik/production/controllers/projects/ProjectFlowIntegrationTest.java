@@ -10,6 +10,7 @@ import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistItemRepository;
+import com.eneik.production.repositories.OnboardingAuditFindingRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -41,6 +42,9 @@ class ProjectFlowIntegrationTest {
 
     @Autowired
     private WishlistItemRepository wishlistItemRepository;
+
+    @Autowired
+    private OnboardingAuditFindingRepository onboardingAuditFindingRepository;
 
     @Autowired
     private AccountRepository accountRepository;
@@ -143,5 +147,74 @@ class ProjectFlowIntegrationTest {
                 Map.class
         );
         assertThat(blockedWish.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+    }
+
+    @Test
+    void brownfieldOnboardingAuditAndActivationFlow() throws Exception {
+        ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
+                "/api/projects",
+                Map.of("name", "Legacy App", "onboardingMode", "brownfield"),
+                ProjectDto.class
+        );
+
+        assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        ProjectDto project = createProject.getBody();
+        assertThat(project).isNotNull();
+        assertThat(project.status()).isEqualTo(ProjectStatus.analyzing);
+        assertThat(project.onboardingMode()).isEqualTo("brownfield");
+
+        long findingsCount = onboardingAuditFindingRepository.countByProjectId(project.id());
+        assertThat(findingsCount).isGreaterThanOrEqualTo(3L);
+
+        Path reportFile = Path.of("docs/reports/onboarding-audit-" + project.slug() + ".md");
+        assertThat(Files.exists(reportFile)).isTrue();
+        String reportContent = Files.readString(reportFile);
+        assertThat(reportContent).contains("Stack Profile");
+        assertThat(reportContent).contains("Audit Findings");
+
+        ResponseEntity<Map> reportRes = restTemplate.getForEntity(
+                "/api/projects/" + project.id() + "/onboarding-report",
+                Map.class
+        );
+        assertThat(reportRes.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(reportRes.getBody().get("report")).isEqualTo(reportContent);
+
+        ResponseEntity<java.util.List> findingsRes = restTemplate.getForEntity(
+                "/api/projects/" + project.id() + "/onboarding-findings",
+                java.util.List.class
+        );
+        assertThat(findingsRes.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(findingsRes.getBody()).hasSize((int) findingsCount);
+
+        ResponseEntity<Map> blockedOrchestrate = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/orchestrate",
+                null,
+                Map.class
+        );
+        assertThat(blockedOrchestrate.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ResponseEntity<Map> blockedWish = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/wishlist",
+                Map.of("text", "Try to add wish to analyzing project", "type", "client_wish"),
+                Map.class
+        );
+        assertThat(blockedWish.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        ResponseEntity<ProjectDto> activated = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/activate",
+                null,
+                ProjectDto.class
+        );
+        assertThat(activated.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(activated.getBody().status()).isEqualTo(ProjectStatus.active);
+
+        ResponseEntity<WishlistItemDto> wish = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/wishlist",
+                Map.of("text", "Fix finding 1", "type", "client_wish"),
+                WishlistItemDto.class
+        );
+        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+
+        Files.deleteIfExists(reportFile);
     }
 }

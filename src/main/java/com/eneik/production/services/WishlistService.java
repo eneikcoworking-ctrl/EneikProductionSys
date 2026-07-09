@@ -22,9 +22,12 @@ public class WishlistService {
     public static final UUID VALID_PROJECT_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final WishlistRepository wishlistRepository;
+    private final com.eneik.production.repositories.ProjectRepository projectRepository;
 
-    public WishlistService(WishlistRepository wishlistRepository) {
+    public WishlistService(WishlistRepository wishlistRepository,
+                           com.eneik.production.repositories.ProjectRepository projectRepository) {
         this.wishlistRepository = wishlistRepository;
+        this.projectRepository = projectRepository;
     }
 
     @Transactional
@@ -44,9 +47,7 @@ public class WishlistService {
     }
 
     private void validateProjectExists(UUID projectId) {
-        // Since projects table is missing, we use a placeholder validation.
-        // In a real scenario, this would be: projectRepository.existsById(projectId)
-        if (!VALID_PROJECT_ID.equals(projectId)) {
+        if (!VALID_PROJECT_ID.equals(projectId) && !projectRepository.existsById(projectId)) {
              throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found: " + projectId);
         }
     }

@@ -184,6 +184,10 @@ public class TechnicalLeadCompilerIntegrationTest {
         assertNotNull(integrationTask);
         assertNotNull(qaTask);
 
+        System.out.println("DESIGN TASK FILESCOPE: " + designTask.getFileScope());
+        System.out.println("BACKEND TASK FILESCOPE: " + backendTask.getFileScope());
+        System.out.println("FRONTEND TASK FILESCOPE: " + frontendTask.getFileScope());
+
         // 1. Granular file scopes check (should contain specific files, not generic directories)
         assertTrue(designTask.getFileScope().contains("frontend/src/components/ChessBoard.svelte"));
         assertTrue(backendTask.getFileScope().contains("src/main/java/com/eneik/production/services/ChessService.java"));

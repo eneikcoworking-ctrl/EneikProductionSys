@@ -21,6 +21,7 @@ public record ProjectDto(
         String factoryStatus,
         String factoryReport,
         ProjectStatus status,
+        String onboardingMode,
         Instant createdAt,
         Instant acceptedAt,
         long accountCount,

@@ -29,11 +29,13 @@ public class ProjectWorkspaceFactoryService {
             Files.createDirectories(workspace.resolve(".github").resolve("workflows"));
             Files.createDirectories(workspace.resolve("docs"));
 
+            boolean isBrownfield = "brownfield".equalsIgnoreCase(project.getOnboardingMode());
+
             WorkspaceArtifacts artifacts = artifacts(project);
-            write(workspace.resolve("README.md"), artifacts.readme());
-            write(workspace.resolve(".env.example"), artifacts.envExample());
-            write(workspace.resolve(".github").resolve("workflows").resolve("ci.yml"), artifacts.ciWorkflow());
-            write(workspace.resolve("docs").resolve("PROJECT_BRIEF.md"), artifacts.projectBrief());
+            write(workspace.resolve("README.md"), artifacts.readme(), isBrownfield);
+            write(workspace.resolve(".env.example"), artifacts.envExample(), isBrownfield);
+            write(workspace.resolve(".github").resolve("workflows").resolve("ci.yml"), artifacts.ciWorkflow(), isBrownfield);
+            write(workspace.resolve("docs").resolve("PROJECT_BRIEF.md"), artifacts.projectBrief(), isBrownfield);
 
             return new WorkspaceProvisioningResult(workspace.toString(), artifacts, "workspace ready");
         } catch (IOException e) {
@@ -41,7 +43,10 @@ public class ProjectWorkspaceFactoryService {
         }
     }
 
-    private void write(Path path, String content) throws IOException {
+    private void write(Path path, String content, boolean isBrownfield) throws IOException {
+        if (isBrownfield && Files.exists(path)) {
+            return;
+        }
         Files.writeString(path, content, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING);
     }
 

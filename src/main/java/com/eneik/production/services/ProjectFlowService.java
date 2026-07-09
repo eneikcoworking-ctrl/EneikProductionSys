@@ -55,6 +55,7 @@ public class ProjectFlowService {
     private final JulesSessionRepository julesSessionRepository;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
+    private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
 
     public ProjectFlowService(ProjectRepository projectRepository,
                               WishlistItemRepository wishlistItemRepository,
@@ -72,7 +73,8 @@ public class ProjectFlowService {
                               ProjectFinalReportRepository projectFinalReportRepository,
                               JulesSessionRepository julesSessionRepository,
                               ObjectMapper objectMapper,
-                              @Value("${github.org}") String githubOrganization) {
+                              @Value("${github.org}") String githubOrganization,
+                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
         this.projectRepository = projectRepository;
         this.wishlistItemRepository = wishlistItemRepository;
         this.accountRepository = accountRepository;
@@ -90,30 +92,46 @@ public class ProjectFlowService {
         this.julesSessionRepository = julesSessionRepository;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
+        this.onboardingAuditService = onboardingAuditService;
     }
 
     @Transactional
     public ProjectDto createProject(String name) {
+        return createProject(name, "greenfield");
+    }
+
+    @Transactional
+    public ProjectDto createProject(String name, String onboardingMode) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Project name is required");
         }
 
-        // 1. Freeze current active project
-        projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active)
-                .ifPresent(p -> {
-                    p.setStatus(ProjectStatus.frozen);
-                    projectRepository.save(p);
-                });
+        String mode = onboardingMode != null ? onboardingMode.trim() : "greenfield";
 
-        // 2. Create new active project
+        // 1. Freeze current active project only if greenfield
+        if ("greenfield".equalsIgnoreCase(mode)) {
+            projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active)
+                    .ifPresent(p -> {
+                        p.setStatus(ProjectStatus.frozen);
+                        projectRepository.save(p);
+                    });
+        }
+
+        // 2. Create new project
         ProjectEntity project = new ProjectEntity();
         project.setName(name.trim());
         project.setSlug(uniqueSlug(name));
-        project.setStatus(ProjectStatus.active);
+        project.setOnboardingMode(mode);
+        if ("brownfield".equalsIgnoreCase(mode)) {
+            project.setStatus(ProjectStatus.analyzing);
+        } else {
+            project.setStatus(ProjectStatus.active);
+        }
         project.setRepositoryName(project.getSlug());
         project.setRepositoryUrl("https://github.com/" + githubOrganization + "/" + project.getSlug());
         project.setRepoUrl(project.getRepositoryUrl());
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
+        
         ProjectEntity saved = projectRepository.save(project);
         ProjectFactoryResult factoryResult = projectFactoryService.provision(saved);
         saved.setRepositoryUrl(factoryResult.repositoryUrl());
@@ -129,6 +147,15 @@ public class ProjectFlowService {
             saved.setStatus(ProjectStatus.waiting);
         }
         saved = projectRepository.save(saved);
+
+        // Run onboarding audit if brownfield
+        if ("brownfield".equalsIgnoreCase(mode)) {
+            try {
+                onboardingAuditService.runOnboardingAudit(saved);
+            } catch (Exception e) {
+                log.error("Failed to run onboarding audit for project {}", saved.getId(), e);
+            }
+        }
 
         return toProjectDto(saved);
     }
@@ -440,7 +467,7 @@ public class ProjectFlowService {
         return project;
     }
 
-    private ProjectEntity requireProject(UUID projectId) {
+    public ProjectEntity requireProject(UUID projectId) {
         return projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
     }
@@ -646,6 +673,7 @@ public class ProjectFlowService {
                 project.getFactoryStatus(),
                 project.getFactoryReport(),
                 project.getStatus(),
+                project.getOnboardingMode(),
                 project.getCreatedAt(),
                 project.getAcceptedAt(),
                 accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().size(),

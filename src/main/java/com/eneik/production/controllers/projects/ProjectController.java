@@ -16,10 +16,17 @@ import java.util.UUID;
 public class ProjectController {
     private final ProjectFlowService projectFlowService;
     private final ClaimService claimService;
+    private final com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository;
+    private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
 
-    public ProjectController(ProjectFlowService projectFlowService, ClaimService claimService) {
+    public ProjectController(ProjectFlowService projectFlowService,
+                             ClaimService claimService,
+                             com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
+                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
+        this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
+        this.onboardingAuditService = onboardingAuditService;
     }
 
     @GetMapping
@@ -30,9 +37,61 @@ public class ProjectController {
     @PostMapping
     public ResponseEntity<?> create(@RequestBody ProjectCreateRequestDto request) {
         try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(projectFlowService.createProject(request.name()));
+            return ResponseEntity.status(HttpStatus.CREATED).body(projectFlowService.createProject(request.name(), request.onboardingMode()));
         } catch (IllegalArgumentException e) {
+            if ("name_conflict".equals(e.getMessage())) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "name_conflict", "message", "Repository already exists on GitHub. Do you want to onboard it?"));
+            }
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
+
+    @GetMapping("/{projectId}/onboarding-report")
+    public ResponseEntity<?> getOnboardingReport(@PathVariable UUID projectId) {
+        try {
+            ProjectDto project = projectFlowService.listProjects().stream()
+                    .filter(p -> p.id().equals(projectId))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+
+            java.nio.file.Path reportFile = java.nio.file.Paths.get("docs/reports/onboarding-audit-" + project.slug() + ".md");
+            if (java.nio.file.Files.exists(reportFile)) {
+                String content = java.nio.file.Files.readString(reportFile);
+                return ResponseEntity.ok(Map.of("report", content));
+            }
+            return ResponseEntity.notFound().build();
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @GetMapping("/{projectId}/onboarding-findings")
+    public ResponseEntity<?> getOnboardingFindings(@PathVariable UUID projectId) {
+        try {
+            return ResponseEntity.ok(onboardingAuditFindingRepository.findByProjectIdOrderByCreatedAtAsc(projectId));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    @PostMapping("/{projectId}/onboarding-report/re-run")
+    public ResponseEntity<?> reRunOnboardingReport(
+            @PathVariable UUID projectId,
+            @RequestParam(required = false, defaultValue = "false") boolean force) {
+        try {
+            com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
+            List<com.eneik.production.models.persistence.OnboardingAuditFindingEntity> existing = onboardingAuditFindingRepository.findByProjectIdOrderByCreatedAtAsc(projectId);
+            if (!existing.isEmpty() && project.getStatus() != com.eneik.production.models.persistence.ProjectStatus.analyzing && !force) {
+                java.time.Instant date = existing.get(0).getCreatedAt();
+                return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                        "error", "audit_already_conducted",
+                        "message", "Аудит уже проводился " + date.toString() + ", повторить?"
+                ));
+            }
+            com.eneik.production.services.onboarding.StackProfile profile = onboardingAuditService.runOnboardingAudit(project, true);
+            return ResponseEntity.ok(profile);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }
     }
 

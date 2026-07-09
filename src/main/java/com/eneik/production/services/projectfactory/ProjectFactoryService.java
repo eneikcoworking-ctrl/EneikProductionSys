@@ -28,6 +28,13 @@ public class ProjectFactoryService {
     public ProjectFactoryResult provision(ProjectEntity project) {
         WorkspaceProvisioningResult workspace = workspaceFactoryService.provision(project);
         GitHubProvisioningResult github = gitHubProjectFactoryClient.provision(project, workspace.artifacts());
+
+        boolean repoExists = github.status() != null && (github.status().contains("exists") || github.status().contains("blocked by GitHub validation"));
+        boolean isBrownfield = "brownfield".equalsIgnoreCase(project.getOnboardingMode());
+        if (repoExists && !isBrownfield) {
+            throw new IllegalArgumentException("name_conflict");
+        }
+
         String repositoryUrl = firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl());
         LinearProvisioningResult linear = linearProjectFactoryClient.provision(project, repositoryUrl);
 
