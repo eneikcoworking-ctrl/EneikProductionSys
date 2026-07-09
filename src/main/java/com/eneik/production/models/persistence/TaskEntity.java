@@ -47,6 +47,10 @@ public class TaskEntity {
     @Column(name = "file_scope", columnDefinition = "TEXT")
     private String fileScope;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "depends_on")
+    private TaskEntity dependsOn;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "quality_gate_report")
     private JsonNode qualityGateReport;
@@ -86,6 +90,8 @@ public class TaskEntity {
     public void setPriority(int priority) { this.priority = priority; }
     public String getFileScope() { return fileScope; }
     public void setFileScope(String fileScope) { this.fileScope = fileScope; }
+    public TaskEntity getDependsOn() { return dependsOn; }
+    public void setDependsOn(TaskEntity dependsOn) { this.dependsOn = dependsOn; }
     public String getCynefinDomain() { return cynefinDomain; }
     public void setCynefinDomain(String cynefinDomain) { this.cynefinDomain = cynefinDomain; }
     public Instant getCreatedAt() { return createdAt; }

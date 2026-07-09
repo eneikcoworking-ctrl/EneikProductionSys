@@ -32,7 +32,8 @@ class IdempotencyTest {
             mock(RoleRepository.class), mock(ProjectGenerationStateRepository.class),
             mock(com.eneik.production.services.gate.GateOrchestrator.class),
             mock(BottleneckAwarePriorityService.class),
-            new com.fasterxml.jackson.databind.ObjectMapper()
+            new com.fasterxml.jackson.databind.ObjectMapper(),
+            mock(ProjectHotspotFileRepository.class)
         );
 
         UUID wishlistId = UUID.randomUUID();

@@ -31,6 +31,12 @@ public class TechnicalLeadCompilerIntegrationTest {
     @Autowired
     private ProjectGenerationStateRepository stateRepository;
 
+    @Autowired
+    private TaskRepository taskRepository;
+
+    @Autowired
+    private ProjectHotspotFileRepository projectHotspotFileRepository;
+
     private UUID projectId;
     private UUID wishlistId;
 
@@ -124,5 +130,86 @@ public class TechnicalLeadCompilerIntegrationTest {
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
+    }
+
+    @Test
+    public void testTaskDependenciesAndGranularScopesAndHotspots() {
+        // Register some project hotspot files
+        ProjectHotspotFileEntity hotspot = new ProjectHotspotFileEntity();
+        hotspot.setProjectId(projectId);
+        hotspot.setFilePath("frontend/src/App.svelte");
+        projectHotspotFileRepository.save(hotspot);
+
+        // Compile chess wish (which has UI and is Chess)
+        WishlistEntity chessWish = new WishlistEntity();
+        chessWish.setProjectId(projectId);
+        chessWish.setSource(WishlistSource.client);
+        chessWish.setContent("добавить шахматный ИИ с 3D доской");
+        chessWish = wishlistRepository.save(chessWish);
+
+        compiler.compile(chessWish.getId(), "BARCAN-TAG-09", "Хочу играть в шахматы",
+                LeanValue.essential, "toc", "metric", "Выполнено согласно BARCAN-TAG-03 критерий 1 и docs/DESIGN_SYSTEM.md", "Given something, When action, Then result");
+
+        // Convert to tasks
+        compiler.createTaskFromWishlist(chessWish.getId());
+
+        // Find all tasks of the project
+        java.util.List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+
+        // The chess wish is decomposed into 5 tasks: Design, Backend, Frontend, Integration, QA
+        // Let's filter tasks by roles
+        TaskEntity designTask = null;
+        TaskEntity backendTask = null;
+        TaskEntity frontendTask = null;
+        TaskEntity integrationTask = null;
+        TaskEntity qaTask = null;
+
+        for (TaskEntity t : tasks) {
+            if ("BARCAN-TAG-03".equals(t.getRole().getTag())) {
+                designTask = t;
+            } else if ("BARCAN-TAG-02".equals(t.getRole().getTag())) {
+                backendTask = t;
+            } else if ("BARCAN-TAG-11".equals(t.getRole().getTag())) {
+                frontendTask = t;
+            } else if ("BARCAN-TAG-00".equals(t.getRole().getTag())) {
+                integrationTask = t;
+            } else if ("BARCAN-TAG-06".equals(t.getRole().getTag())) {
+                qaTask = t;
+            }
+        }
+
+        assertNotNull(designTask);
+        assertNotNull(backendTask);
+        assertNotNull(frontendTask);
+        assertNotNull(integrationTask);
+        assertNotNull(qaTask);
+
+        // 1. Granular file scopes check (should contain specific files, not generic directories)
+        assertTrue(designTask.getFileScope().contains("frontend/src/components/ChessBoard.svelte"));
+        assertTrue(backendTask.getFileScope().contains("src/main/java/com/eneik/production/services/ChessService.java"));
+        assertTrue(frontendTask.getFileScope().contains("frontend/src/components/ChessBoard.svelte"));
+        // Hotspot files are NOT in frontend task since integration task exists
+        assertFalse(frontendTask.getFileScope().contains("frontend/src/App.svelte"));
+        // Integration task (TAG-00) gets hotspot files
+        assertTrue(integrationTask.getFileScope().contains("frontend/src/App.svelte"));
+
+        // 2. Explicit dependency graph check
+        assertEquals(designTask.getId(), frontendTask.getDependsOn().getId());
+        assertEquals(frontendTask.getId(), integrationTask.getDependsOn().getId());
+        assertEquals(integrationTask.getId(), qaTask.getDependsOn().getId());
+
+        // 3. lockNextQueuedTask testing
+        // Trying to claim frontendTask (TAG-11) when designTask (TAG-03) is queued: should fail/skip
+        java.util.Optional<TaskEntity> lockedFrontend = taskRepository.lockNextQueuedTask(java.util.List.of("BARCAN-TAG-11"));
+        assertFalse(lockedFrontend.isPresent());
+
+        // Now resolve dependency by marking designTask as done
+        designTask.setStatus(TaskStatus.done);
+        taskRepository.save(designTask);
+
+        // Try claiming again: should succeed
+        lockedFrontend = taskRepository.lockNextQueuedTask(java.util.List.of("BARCAN-TAG-11"));
+        assertTrue(lockedFrontend.isPresent());
+        assertEquals(frontendTask.getId(), lockedFrontend.get().getId());
     }
 }

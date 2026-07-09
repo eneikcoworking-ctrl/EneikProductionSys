@@ -49,7 +49,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     default Optional<TaskEntity> lockNextQueuedTask(List<String> capableTags) {
         List<TaskEntity> candidates = findCandidatesByCapableTags(capableTags);
         for (TaskEntity candidate : candidates) {
-            if (hasFileScopeConflict(candidate)) {
+            if (hasFileScopeConflict(candidate) || hasUnresolvedDependency(candidate)) {
                 continue;
             }
             Optional<TaskEntity> locked = lockTaskByIdForUpdate(candidate.getId());
@@ -63,7 +63,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     default Optional<TaskEntity> lockNextQueuedTaskForProject(UUID projectId) {
         List<TaskEntity> candidates = findCandidatesByProject(projectId);
         for (TaskEntity candidate : candidates) {
-            if (hasFileScopeConflict(candidate)) {
+            if (hasFileScopeConflict(candidate) || hasUnresolvedDependency(candidate)) {
                 continue;
             }
             Optional<TaskEntity> locked = lockTaskByIdForUpdate(candidate.getId());
@@ -72,6 +72,13 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
             }
         }
         return Optional.empty();
+    }
+
+    default boolean hasUnresolvedDependency(TaskEntity candidate) {
+        if (candidate.getDependsOn() != null) {
+            return candidate.getDependsOn().getStatus() != TaskStatus.done;
+        }
+        return false;
     }
 
     default boolean hasFileScopeConflict(TaskEntity candidate) {

@@ -11,15 +11,18 @@ public class ProjectFactoryService {
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
     private final LinearProjectFactoryClient linearProjectFactoryClient;
     private final ObjectMapper objectMapper;
+    private final com.eneik.production.repositories.ProjectHotspotFileRepository projectHotspotFileRepository;
 
     public ProjectFactoryService(ProjectWorkspaceFactoryService workspaceFactoryService,
                                  GitHubProjectFactoryClient gitHubProjectFactoryClient,
                                  LinearProjectFactoryClient linearProjectFactoryClient,
-                                 ObjectMapper objectMapper) {
+                                 ObjectMapper objectMapper,
+                                 com.eneik.production.repositories.ProjectHotspotFileRepository projectHotspotFileRepository) {
         this.workspaceFactoryService = workspaceFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
         this.linearProjectFactoryClient = linearProjectFactoryClient;
         this.objectMapper = objectMapper;
+        this.projectHotspotFileRepository = projectHotspotFileRepository;
     }
 
     public ProjectFactoryResult provision(ProjectEntity project) {
@@ -27,6 +30,8 @@ public class ProjectFactoryService {
         GitHubProvisioningResult github = gitHubProjectFactoryClient.provision(project, workspace.artifacts());
         String repositoryUrl = firstNonBlank(github.repositoryUrl(), project.getRepositoryUrl());
         LinearProvisioningResult linear = linearProjectFactoryClient.provision(project, repositoryUrl);
+
+        registerStandardHotspots(project.getId());
 
         String factoryStatus = factoryStatus(github, linear);
         String report = report(workspace, github, linear, factoryStatus);
@@ -40,6 +45,21 @@ public class ProjectFactoryService {
                 factoryStatus,
                 report
         );
+    }
+
+    private void registerStandardHotspots(java.util.UUID projectId) {
+        java.util.List<String> standards = java.util.List.of(
+            "frontend/src/App.svelte",
+            "package.json",
+            "src/main/resources/application.properties",
+            "docker-compose.yml"
+        );
+        for (String path : standards) {
+            com.eneik.production.models.persistence.ProjectHotspotFileEntity hotspot = new com.eneik.production.models.persistence.ProjectHotspotFileEntity();
+            hotspot.setProjectId(projectId);
+            hotspot.setFilePath(path);
+            projectHotspotFileRepository.save(hotspot);
+        }
     }
 
     private String factoryStatus(GitHubProvisioningResult github, LinearProvisioningResult linear) {

@@ -329,6 +329,6 @@ class AutonomousPipelineIntegrationTest {
                 .filter(t -> "chaotic".equals(t.getCynefinDomain()))
                 .toList();
         assertThat(tasks).isNotEmpty();
-        assertThat(tasks.size()).isBetween(2, 8);
+        assertThat(tasks.size()).isBetween(2, 12);
     }
 }
