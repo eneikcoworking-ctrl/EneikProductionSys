@@ -86,7 +86,7 @@
 
     <div class="create-project">
       <input bind:value={projectName} placeholder="New project name" aria-label="New project name" />
-      <button onclick={createProject}>Create</button>
+      <button onclick={() => createProject()}>Create</button>
     </div>
   </section>
 
