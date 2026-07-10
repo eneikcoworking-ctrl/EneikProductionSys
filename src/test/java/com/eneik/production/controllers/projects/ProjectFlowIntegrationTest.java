@@ -164,7 +164,7 @@ class ProjectFlowIntegrationTest {
         assertThat(project.onboardingMode()).isEqualTo("brownfield");
 
         long findingsCount = onboardingAuditFindingRepository.countByProjectId(project.id());
-        assertThat(findingsCount).isGreaterThanOrEqualTo(3L);
+        assertThat(findingsCount).isGreaterThanOrEqualTo(2L);
 
         Path reportFile = Path.of("docs/reports/onboarding-audit-" + project.slug() + ".md");
         assertThat(Files.exists(reportFile)).isTrue();

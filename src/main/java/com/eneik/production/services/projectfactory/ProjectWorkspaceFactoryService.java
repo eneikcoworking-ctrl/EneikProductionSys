@@ -26,12 +26,20 @@ public class ProjectWorkspaceFactoryService {
                 throw new IllegalStateException("Workspace path escaped configured root");
             }
 
+            if (!Files.exists(workspace)) {
+                workspace.toFile().mkdirs();
+            }
+
+            boolean isBrownfield = "brownfield".equalsIgnoreCase(project.getOnboardingMode());
+            WorkspaceArtifacts artifacts = artifacts(project);
+
+            if (isBrownfield) {
+                return new WorkspaceProvisioningResult(workspace.toString(), artifacts, "workspace ready");
+            }
+
             Files.createDirectories(workspace.resolve(".github").resolve("workflows"));
             Files.createDirectories(workspace.resolve("docs"));
 
-            boolean isBrownfield = "brownfield".equalsIgnoreCase(project.getOnboardingMode());
-
-            WorkspaceArtifacts artifacts = artifacts(project);
             write(workspace.resolve("README.md"), artifacts.readme(), isBrownfield);
             write(workspace.resolve(".env.example"), artifacts.envExample(), isBrownfield);
             write(workspace.resolve(".github").resolve("workflows").resolve("ci.yml"), artifacts.ciWorkflow(), isBrownfield);

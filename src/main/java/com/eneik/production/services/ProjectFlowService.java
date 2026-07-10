@@ -464,6 +464,9 @@ public class ProjectFlowService {
         if (project.getStatus() == ProjectStatus.accepted) {
             throw new IllegalStateException("Project is accepted and cannot receive new work");
         }
+        if (project.getStatus() == ProjectStatus.analyzing) {
+            throw new IllegalStateException("Project is analyzing and cannot receive new work");
+        }
         return project;
     }
 
