@@ -37,14 +37,32 @@ public class TechnicalLeadCompilerIntegrationTest {
     @Autowired
     private ProjectHotspotFileRepository projectHotspotFileRepository;
 
+    @Autowired
+    private ClaimRepository claimRepository;
+
+    @Autowired
+    private JulesSessionRepository julesSessionRepository;
+
+    @Autowired
+    private WishlistItemRepository wishlistItemRepository;
+
     private UUID projectId;
     private UUID wishlistId;
 
     @BeforeEach
     public void setup() {
+        julesSessionRepository.deleteAll();
+        claimRepository.deleteAll();
+        taskRepository.deleteAll();
+        wishlistItemRepository.deleteAll();
+        wishlistRepository.deleteAll();
+        projectHotspotFileRepository.deleteAll();
+        stateRepository.deleteAll();
+        projectRepository.deleteAll();
+
         ProjectEntity project = new ProjectEntity();
         project.setName("Test Project");
-        project.setSlug("test-project");
+        project.setSlug("test-project-" + UUID.randomUUID().toString().substring(0, 8));
         project.setStatus(ProjectStatus.active);
         project.setRepositoryName("test-repo");
         project.setRepoUrl("http://github.com/test");
