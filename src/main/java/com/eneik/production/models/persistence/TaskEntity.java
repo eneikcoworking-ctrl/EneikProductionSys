@@ -41,6 +41,9 @@ public class TaskEntity {
     @Column(name = "quality_gate_passed")
     private boolean qualityGatePassed = false;
 
+    @Column(name = "retry_count", nullable = false)
+    private int retryCount = 0;
+
     @Column(nullable = false)
     private int priority = 0;
 
@@ -84,6 +87,8 @@ public class TaskEntity {
     public void setJulesDispatchStatus(String julesDispatchStatus) { this.julesDispatchStatus = julesDispatchStatus; }
     public boolean isQualityGatePassed() { return qualityGatePassed; }
     public void setQualityGatePassed(boolean qualityGatePassed) { this.qualityGatePassed = qualityGatePassed; }
+    public int getRetryCount() { return retryCount; }
+    public void setRetryCount(int retryCount) { this.retryCount = retryCount; }
     public JsonNode getQualityGateReport() { return qualityGateReport; }
     public void setQualityGateReport(JsonNode qualityGateReport) { this.qualityGateReport = qualityGateReport; }
     public int getPriority() { return priority; }

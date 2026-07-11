@@ -177,22 +177,47 @@ public class ClaimService {
     @Transactional
     public void complete(UUID taskId) {
         ClaimEntity claim = findActiveClaimByTaskId(taskId);
-        claim.setReleasedAt(Instant.now());
-        claim.setResultStatus(ClaimResultStatus.done);
-        claimRepository.save(claim);
 
         TaskEntity task = claim.getTask();
         // If it was already in review (AI Reviewer finished), then mark as done
         if (task.getStatus() == TaskStatus.review) {
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.done);
+            claimRepository.save(claim);
+
             task.setStatus(TaskStatus.done);
+            taskRepository.save(task);
+            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
         } else {
             // Implementer finished, move to review stage
             task.setStatus(TaskStatus.review);
             gateOrchestrator.runQualityGate(task);
-        }
-        taskRepository.save(task);
 
-        updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            if (!task.isQualityGatePassed()) {
+                // Task failed the quality gate. Increment retry count.
+                task.setRetryCount(task.getRetryCount() + 1);
+                if (task.getRetryCount() >= 3) {
+                    task.setStatus(TaskStatus.blocked);
+                } else {
+                    task.setStatus(TaskStatus.queued);
+                }
+                taskRepository.save(task);
+
+                // Re-use logic similar to fail() to properly clean up the failed claim
+                claim.setReleasedAt(Instant.now());
+                claim.setResultStatus(ClaimResultStatus.failed);
+                claimRepository.save(claim);
+                updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            } else {
+                // Task passed the quality gate. Move to manual/AI review normally.
+                claim.setReleasedAt(Instant.now());
+                claim.setResultStatus(ClaimResultStatus.done);
+                claimRepository.save(claim);
+
+                taskRepository.save(task);
+                updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            }
+        }
     }
 
     @Transactional
