@@ -189,6 +189,9 @@ public class ClaimService {
             // Implementer finished, move to review stage
             task.setStatus(TaskStatus.review);
             gateOrchestrator.runQualityGate(task);
+            if (!task.isQualityGatePassed()) {
+                task.setStatus(TaskStatus.queued);
+            }
         }
         taskRepository.save(task);
 
