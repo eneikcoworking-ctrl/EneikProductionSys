@@ -140,8 +140,6 @@ public class SystemSettingsService {
         definitions.put("linear_team_id", new SettingDefinition("linear_team_id", "LINEAR_TEAM_ID", "linear.team-id", false));
         definitions.put("jules_enabled", new SettingDefinition("jules_enabled", "JULES_ENABLED", "JULES_ENABLED", true));
         definitions.put("jules_api_key", new SettingDefinition("jules_api_key", "JULES_API_KEY", "JULES_API_KEY", false));
-        definitions.put("gemini_enabled", new SettingDefinition("gemini_enabled", "GEMINI_ENABLED", "gemini.enabled", true));
-        definitions.put("gemini_api_key", new SettingDefinition("gemini_api_key", "GEMINI_API_KEY", "gemini.api-key", false));
         definitions.put("falsification_cycle_enabled", new SettingDefinition("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled", true));
         definitions.put("simulated_actuator_health", new SettingDefinition("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health", false));
         return definitions;

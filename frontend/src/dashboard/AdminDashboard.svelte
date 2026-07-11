@@ -89,8 +89,7 @@
   const integrations = [
     { name: 'GitHub', enabledKey: 'github_enabled', secretKey: 'github_token' },
     { name: 'Linear', enabledKey: 'linear_enabled', secretKey: 'linear_api_key', extraKey: 'linear_team_id' },
-    { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' },
-    { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' }
+    { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' }
   ];
 
   let status = $state<SystemStatus | null>(null);
