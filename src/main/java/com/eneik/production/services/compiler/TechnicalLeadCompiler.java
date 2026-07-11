@@ -91,97 +91,52 @@ public class TechnicalLeadCompiler {
         }
 
         if (wishlist.getStatus() == WishlistStatus.converted_to_task) {
-            boolean isChess = wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("шахмат") || 
-                             wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("chess");
-            String expectedDescription = isChess ? 
-                "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле." :
-                wishlist.getContent();
+            String expectedDescription = wishlist.getContent();
             return taskRepository.findByProjectIdAndDescription(project.getId(), expectedDescription)
                     .orElseGet(() -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream().findFirst().orElse(null));
         }
 
         boolean uiExists = hasUiComponent(wishlist);
-        boolean isChess = wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("шахмат") || 
-                         wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("chess");
-
         java.util.List<TaskEntity> createdTasks = new java.util.ArrayList<>();
 
-        if (isChess) {
-            // Task 1: TAG-03 Design
+        if (uiExists) {
             TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
-                "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.",
-                "Скриншот или ссылка на макет сцены с доской и фигурами в двух разрешениях (десктоп/мобайл). Reference: docs/DESIGN_SYSTEM.md",
-                null, false, true, createdTasks);
-
-            // Task 2: TAG-02 Backend
-            TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).",
-                "Юнит-тесты, показывающие разное качество и глубину хода ИИ в одной и той же позиции на 3 уровнях сложности. Роль: BARCAN-TAG-02",
-                null, false, true, createdTasks);
-
-            // Task 3: TAG-11 Frontend (depends on Design)
-            TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
-                "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.",
-                "Интерактивное взаимодействие работает в интерфейсе, невалидные ходы блокируются визуально. Зависит от: TAG-03, TAG-02. Reference: docs/DESIGN_SYSTEM.md",
-                designTask, false, true, createdTasks);
-
-            // Task 4: TAG-00 Integration (depends on Frontend)
-            TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                "Интегрировать и финализировать шахматную функциональность, проверить работу в общей точке входа и hotspot-файлах.",
-                "Код полностью собран и интегрирован в главном компоненте/роутинге. Роль: BARCAN-TAG-00",
-                frontendTask, true, true, createdTasks);
-
-            // Task 5: TAG-06 QA (depends on Integration)
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.",
-                "Автотест успешно проходит полный цикл (Старт -> Ходы -> Окончание игры) на всех трёх уровнях сложности. Зависит от: TAG-11. Роль: BARCAN-TAG-06",
-                integrationTask, false, true, createdTasks);
-        } else if (uiExists) {
-            // Task 1: TAG-03 Design
-            TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
-                wishlist.getContent(), 
+                "Design: " + wishlist.getContent(),
                 "Figma-макет или скриншоты интерфейса функции. Ссылается на docs/DESIGN_SYSTEM.md или содержит 'pending: design system not yet defined'",
                 null, false, true, createdTasks);
 
-            // Task 2: TAG-02 Backend
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                wishlist.getContent() + " - Backend logic and API",
+                "Backend API: " + wishlist.getContent(),
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
                 null, false, true, createdTasks);
 
-            // Task 3: TAG-11 Frontend (depends on Design)
             TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
-                wishlist.getContent() + " - Frontend integration",
+                "Frontend UI: " + wishlist.getContent(),
                 "Интерактивный UI в браузере корректно взаимодействует с бэкенд API. Роль: BARCAN-TAG-11. Reference: docs/DESIGN_SYSTEM.md",
                 designTask, false, true, createdTasks);
 
-            // Task 4: TAG-00 Integration (depends on Frontend)
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                wishlist.getContent() + " - Final Integration",
+                "Integration: " + wishlist.getContent(),
                 "Код полностью собран и интегрирован в главном компоненте/роутинге. Роль: BARCAN-TAG-00",
                 frontendTask, true, true, createdTasks);
 
-            // Task 5: TAG-06 QA (depends on Integration)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                wishlist.getContent() + " - QA E2E Testing",
+                "QA E2E: " + wishlist.getContent(),
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
                 integrationTask, false, true, createdTasks);
         } else {
-            // Task 1: TAG-02 Backend
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                wishlist.getContent(),
+                "Backend Logic: " + wishlist.getContent(),
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
                 null, false, true, createdTasks);
 
-            // Task 2: TAG-00 Integration (depends on Backend)
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                wishlist.getContent() + " - Backend Integration",
+                "Backend Integration: " + wishlist.getContent(),
                 "Бэкенд-модули полностью интегрированы. Роль: BARCAN-TAG-00",
                 backendTask, true, true, createdTasks);
 
-            // Task 3: TAG-06 QA (depends on Integration)
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                wishlist.getContent() + " - QA E2E Testing",
+                "QA E2E: " + wishlist.getContent(),
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
                 integrationTask, false, true, createdTasks);
         }

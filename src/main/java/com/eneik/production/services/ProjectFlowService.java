@@ -39,7 +39,7 @@ public class ProjectFlowService {
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
 
     private final ProjectRepository projectRepository;
-    private final WishlistItemRepository wishlistItemRepository;
+    private final WishlistRepository wishlistRepository;
     private final AccountRepository accountRepository;
     private final TaskRepository taskRepository;
     private final ClaimRepository claimRepository;
@@ -57,8 +57,10 @@ public class ProjectFlowService {
     private final String githubOrganization;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
 
+
+
     public ProjectFlowService(ProjectRepository projectRepository,
-                              WishlistItemRepository wishlistItemRepository,
+                              WishlistRepository wishlistRepository,
                               AccountRepository accountRepository,
                               TaskRepository taskRepository,
                               ClaimRepository claimRepository,
@@ -76,7 +78,7 @@ public class ProjectFlowService {
                               @Value("${github.org}") String githubOrganization,
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
         this.projectRepository = projectRepository;
-        this.wishlistItemRepository = wishlistItemRepository;
+        this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.claimRepository = claimRepository;
@@ -184,77 +186,32 @@ public class ProjectFlowService {
         return toProjectDto(projectRepository.save(project));
     }
 
+
+
     @Transactional
-    public WishlistItemDto addWishlistItem(UUID projectId, WishlistItemRequestDto request) {
+    public com.eneik.production.dto.WishlistResponseDto addWishlistItem(UUID projectId, com.eneik.production.dto.WishlistRequestDto request) {
         ProjectEntity project = requireActiveProject(projectId);
-        if (request == null || request.text() == null || request.text().isBlank()) {
+        if (project.getStatus() == com.eneik.production.models.persistence.ProjectStatus.analyzing) {
+            throw new IllegalStateException("Cannot add wishlist to a project in analyzing state");
+        }
+        if (request == null || request.content() == null || request.content().isBlank()) {
             throw new IllegalArgumentException("Wishlist text is required");
         }
+        com.eneik.production.models.persistence.WishlistEntity item = new com.eneik.production.models.persistence.WishlistEntity();
+        item.setProjectId(project.getId());
+        item.setContent(request.content().trim());
+        item.setSourceRoleTag(request.sourceRoleTag() != null ? request.sourceRoleTag() : "BARCAN-TAG-00");
+        item.setSource(request.source() != null ? request.source() : com.eneik.production.models.persistence.WishlistSource.client);
+        item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        item = wishlistRepository.save(item);
 
-        WishlistItemEntity item = new WishlistItemEntity();
-        item.setProject(project);
-        item.setText(request.text().trim());
-        item.setType(request.type() != null ? request.type() : WishlistItemType.client_wish);
-        item.setSourceRoleTag(request.sourceRoleTag());
-        item.setStatus(WishlistItemStatus.open);
-        return toWishlistDto(wishlistItemRepository.save(item));
+        return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt());
     }
 
-    @Transactional
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
-        List<WishlistItemEntity> openItems = wishlistItemRepository
-                .findByProjectIdAndStatusOrderByCreatedAtAsc(project.getId(), WishlistItemStatus.open);
-
-        List<TaskShortDto> createdTasks = new ArrayList<>();
-        for (WishlistItemEntity item : openItems) {
-            List<String> tags = chooseBusinessNecessaryRoles(item.getText());
-            if (tags.isEmpty()) {
-                item.setStatus(WishlistItemStatus.ignored);
-                wishlistItemRepository.save(item);
-                continue;
-            }
-
-            for (String tag : tags) {
-                RoleEntity role = roleRepository.findById(tag)
-                        .orElseThrow(() -> new IllegalStateException("Role not found: " + tag));
-                TaskEntity task = new TaskEntity();
-                task.setProject(project);
-                task.setRole(role);
-                String taskSpec = buildTechnicalLeadTaskSpec(project, item, tag);
-                task.setDescription(taskSpec);
-                task.setStatus(TaskStatus.queued);
-                task.setPayload(buildTaskPayload(project, item, tag, taskSpec));
-
-                TaskEntity savedTask = taskRepository.save(task);
-
-                // Lock an account for this project/task checking capability
-                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), tag);
-                if (accountOpt.isPresent()) {
-                    AccountEntity account = accountOpt.get();
-                    claimService.claimSpecificTask(savedTask.getId(), account.getId());
-
-                    // Refresh task state after claim to avoid overwriting claimed status with queued
-                    savedTask = taskRepository.findById(savedTask.getId()).orElse(savedTask);
-
-                    JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
-                    savedTask.setJulesSessionName(dispatch.sessionName());
-                    savedTask.setJulesDispatchStatus(dispatch.reason());
-                } else {
-                    savedTask.setJulesDispatchStatus("No idle accounts available");
-                }
-
-                savedTask = taskRepository.save(savedTask);
-                createdTasks.add(new TaskShortDto(savedTask.getId(), tag, savedTask.getDescription()));
-            }
-            item.setStatus(WishlistItemStatus.converted);
-            wishlistItemRepository.save(item);
-        }
-
-        String message = createdTasks.isEmpty()
-                ? "No business-necessary tasks found. Waiting for more wishlist input or project acceptance."
-                : "Created business-necessary tasks from wishlist.";
-        return new OrchestrationResultDto(project.getId(), openItems.size(), createdTasks, message);
+        java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems = wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
+        return new OrchestrationResultDto(project.getId(), pendingItems.size(), new java.util.ArrayList<>(), "Orchestration request received.");
     }
 
     @Transactional
@@ -385,9 +342,10 @@ public class ProjectFlowService {
                 taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.done),
                 taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.failed)
         );
-        List<WishlistItemDto> wishlist = wishlistItemRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+        List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistRepository.findByProjectId(projectId)
                 .stream()
-                .map(this::toWishlistDto)
+                .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+                .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt()))
                 .toList();
         List<TaskDto> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .map(task -> new TaskDto(
@@ -404,7 +362,7 @@ public class ProjectFlowService {
         return new ProjectDashboardDto(
                 toProjectDto(project),
                 agents.size(),
-                wishlistItemRepository.countByProjectIdAndStatus(projectId, WishlistItemStatus.open),
+                wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending).size(),
                 queue,
                 pipeline,
                 agents,
@@ -459,7 +417,7 @@ public class ProjectFlowService {
         return toProjectDto(project);
     }
 
-    private ProjectEntity requireActiveProject(UUID projectId) {
+    public ProjectEntity requireActiveProject(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
         if (project.getStatus() == ProjectStatus.accepted) {
             throw new IllegalStateException("Project is accepted and cannot receive new work");
@@ -475,28 +433,6 @@ public class ProjectFlowService {
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
     }
 
-    private List<String> chooseBusinessNecessaryRoles(String text) {
-        String lower = text.toLowerCase(Locale.ROOT);
-        
-        // If it's a Chess project:
-        if (lower.contains("шахмат") || lower.contains("chess")) {
-            return List.of("BARCAN-TAG-03", "BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
-        }
-
-        // If it has UI components:
-        boolean hasUi = lower.contains("3d") || lower.contains("дизайн") || lower.contains("интерфейс") || 
-                        lower.contains("сцена") || lower.contains("управление") || lower.contains("экран") || 
-                        lower.contains("ui") || lower.contains("ux") || lower.contains("frontend") || 
-                        lower.contains("button") || lower.contains("click") || lower.contains("view") || 
-                        lower.contains("render") || lower.contains("figma") || lower.contains("дизайнер") || 
-                        lower.contains("дизайну") || lower.contains("фронтенд") || lower.contains("css");
-
-        if (hasUi) {
-            return List.of("BARCAN-TAG-03", "BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
-        } else {
-            return List.of("BARCAN-TAG-02", "BARCAN-TAG-06");
-        }
-    }
 
     private String getRoleSpecificAssignment(String wishlistText, String roleTag) {
         boolean isChess = wishlistText.toLowerCase(Locale.ROOT).contains("шахмат") || 
@@ -531,70 +467,7 @@ public class ProjectFlowService {
         }
     }
 
-    private String buildTechnicalLeadTaskSpec(ProjectEntity project, WishlistItemEntity item, String roleTag) {
-        String roleName = roleRepository.findById(roleTag)
-                .map(RoleEntity::getDescription)
-                .orElse(roleTag);
-        String assignment = getRoleSpecificAssignment(item.getText(), roleTag);
-        return """
-                [%s] Technical Lead Task
 
-                Technical Assignment:
-                %s
-
-                Client wish:
-                %s
-
-                Business interpretation:
-                Transform the client wish into the smallest valuable product increment for project "%s".
-
-                JTBD:
-                When the client needs this project to create business value, they want this role to remove the next concrete delivery constraint, so the project moves closer to acceptance and payment.
-
-                Role responsibility:
-                %s must execute only the slice that belongs to this role, with analytical clarity and no speculative expansion.
-
-                Lean management:
-                Maximize delivered customer value, minimize work in progress, avoid handoff waste, and prefer the shortest path to validated learning.
-
-                TOC:
-                Identify the current constraint blocking project acceptance. The implementation must subordinate local choices to removing that constraint.
-
-                Six Sigma:
-                Define measurable defect criteria before implementation. Reduce ambiguity, prevent regressions, and verify the result with tests or an equivalent objective check.
-
-                Definition of Done:
-                - The change directly satisfies the business interpretation.
-                - Acceptance criteria are objective and testable.
-                - Existing behavior is preserved unless explicitly changed.
-                - Relevant tests/build/checks pass.
-                - The result is ready for PR review and client-visible delivery notes.
-
-                Acceptance metrics:
-                - Business value is visible in the dashboard or product behavior.
-                - No new critical path blocker is introduced.
-                - The task can be reviewed without reading hidden context.
-                """.formatted(roleTag, assignment, item.getText(), project.getName(), roleName);
-    }
-
-    private ObjectNode buildTaskPayload(ProjectEntity project, WishlistItemEntity item, String roleTag, String taskSpec) {
-        ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("projectId", project.getId().toString());
-        payload.put("repositoryName", project.getRepositoryName());
-        payload.put("repositoryUrl", project.getRepositoryUrl());
-        payload.put("linearProjectKey", project.getLinearProjectKey());
-        payload.put("wishlistItemId", item.getId().toString());
-        payload.put("clientWish", item.getText());
-        payload.put("orchestratedBy", ORCHESTRATOR_ROLE);
-        payload.put("selectedRoleTag", roleTag);
-        payload.put("technicalLeadTaskSpec", taskSpec);
-        payload.put("jtbd", "Remove the next concrete delivery constraint so the project moves closer to acceptance and payment.");
-        payload.put("leanValue", "Deliver the smallest valuable increment; minimize WIP and waste.");
-        payload.put("tocConstraint", "Current project acceptance blocker represented by this role-tagged task.");
-        payload.put("sixSigmaQualityTarget", "Objective acceptance criteria, regression prevention, and verified result.");
-        payload.put("definitionOfDone", "Business interpretation satisfied; tests/checks pass; PR-ready; client-visible result documented.");
-        return payload;
-    }
 
     private boolean containsAny(String text, String... needles) {
         return Arrays.stream(needles).anyMatch(text::contains);
@@ -686,15 +559,4 @@ public class ProjectFlowService {
         );
     }
 
-    private WishlistItemDto toWishlistDto(WishlistItemEntity item) {
-        return new WishlistItemDto(
-                item.getId(),
-                item.getProject().getId(),
-                item.getText(),
-                item.getType(),
-                item.getStatus(),
-                item.getSourceRoleTag(),
-                item.getCreatedAt()
-        );
-    }
 }

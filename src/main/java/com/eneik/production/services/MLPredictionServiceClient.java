@@ -99,6 +99,18 @@ public class MLPredictionServiceClient {
         }
     }
 
+
+    public java.util.Map<String, Object> generateTaskMetadata(String wishlistContent) {
+        String endpoint = mlServiceUrl + "/api/v1/predict/metadata";
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+        java.util.Map<String, Object> request = new java.util.HashMap<>();
+        request.put("content", wishlistContent);
+
+        return restTemplate.postForObject(endpoint, new org.springframework.http.HttpEntity<>(request, headers), java.util.Map.class);
+    }
+
     private static class MLResponse {
         @JsonProperty("risk_score")
         private double riskScore;

@@ -95,19 +95,22 @@ public class ProjectController {
         }
     }
 
+
+    @PostMapping("/{projectId}/wishlist")
+    public ResponseEntity<?> addWishlist(@PathVariable java.util.UUID projectId, @RequestBody com.eneik.production.dto.WishlistRequestDto request) {
+        try {
+            return ResponseEntity.ok(projectFlowService.addWishlistItem(projectId, request));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return ResponseEntity.badRequest().body(java.util.Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
+
     @GetMapping("/{projectId}/dashboard")
     public ProjectDashboardDto dashboard(@PathVariable UUID projectId) {
         return projectFlowService.dashboard(projectId);
     }
 
-    @PostMapping("/{projectId}/wishlist")
-    public ResponseEntity<?> addWishlist(@PathVariable UUID projectId, @RequestBody WishlistItemRequestDto request) {
-        try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(projectFlowService.addWishlistItem(projectId, request));
-        } catch (IllegalArgumentException | IllegalStateException e) {
-            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
-        }
-    }
+
 
     @PostMapping("/{projectId}/orchestrate")
     public ResponseEntity<?> orchestrate(@PathVariable UUID projectId) {
