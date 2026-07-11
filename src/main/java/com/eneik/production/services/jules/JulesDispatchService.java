@@ -344,10 +344,10 @@ public class JulesDispatchService {
                     prData.setDiffSummary("REVIEW REJECTED. " + remarks);
                     prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
 
-                    // Mark task as queued to return to work queue
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+                    // Fail-Safe: Transition task to needs_human_review instead of silent re-queue
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.needs_human_review);
                     taskRepository.save(task);
-                    log.warn("Local agent review rejected for task {}. Task returned to queue.", task.getId());
+                    log.warn("Local agent review rejected for task {}. Task transitioned to needs_human_review.", task.getId());
                 }
             } else if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.review) {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
