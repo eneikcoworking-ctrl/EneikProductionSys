@@ -2,7 +2,7 @@
   import { onMount } from 'svelte';
   import type { ProjectDashboard, ProjectSummary } from './lib/types';
   import CommandDashboardV2 from './dashboard/CommandDashboardV2.svelte';
-  import ClientDeliveryView from './client/ClientDeliveryView.svelte';
+  import MetricsView from './dashboard/MetricsView.svelte';
   import AdminDashboard from './dashboard/AdminDashboard.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
@@ -11,7 +11,7 @@
   let dashboard: ProjectDashboard | null = null;
   let projectName = '';
   let status = 'Ready';
-  let activeView: 'dashboard' | 'client' | 'admin' = 'dashboard';
+  let activeView: 'dashboard' | 'metrics' | 'admin' = 'dashboard';
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
 
@@ -79,9 +79,9 @@
     </div>
     
     <div class="nav-links">
-      <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Dashboard</button>
-      <button onclick={() => activeView = 'client'} class:active={activeView === 'client'}>Delivery</button>
-      <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>Admin</button>
+      <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Панель управления</button>
+      <button onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Метрики</button>
+      <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>Админка токенов</button>
     </div>
 
     <div class="create-project">
@@ -90,53 +90,15 @@
     </div>
   </section>
 
-  <!-- Project Selector Strip -->
-  {#if activeView !== 'admin'}
-    <section class="project-strip">
-      {#each projects.filter(p => ['active', 'waiting', 'accepted', 'analyzing'].includes(p.status)) as project}
-        <button
-          class:active={dashboard?.project.id === project.id}
-          onclick={() => loadDashboard(project.id)}
-        >
-          <strong>{project.name}</strong>
-          <span class="badge {project.status}">{project.status}</span>
-        </button>
-      {/each}
-    </section>
-
-    <!-- Archive & Frozen filters -->
-    <section class="project-filters">
-      {#if projects.some(p => p.status === 'frozen')}
-        <div class="filter-group">
-          <p class="label">Frozen Projects</p>
-          <select onchange={(e) => loadDashboard(e.currentTarget.value)}>
-            <option value="" disabled selected={!projects.filter(p => p.status === 'frozen').some(p => p.id === dashboard?.project.id)}>
-              Select from frozen...
-            </option>
-            {#each projects.filter(p => p.status === 'frozen') as project}
-              <option value={project.id} selected={dashboard?.project.id === project.id}>
-                {project.name}
-              </option>
-            {/each}
-          </select>
-        </div>
-      {/if}
-
-      {#if projects.some(p => p.status === 'archived')}
-        <div class="filter-group">
-          <p class="label">Archive</p>
-          <select onchange={(e) => loadDashboard(e.currentTarget.value)}>
-            <option value="" disabled selected={!projects.filter(p => p.status === 'archived').some(p => p.id === dashboard?.project.id)}>
-              Select from archive...
-            </option>
-            {#each projects.filter(p => p.status === 'archived') as project}
-              <option value={project.id} selected={dashboard?.project.id === project.id}>
-                {project.name}
-              </option>
-            {/each}
-          </select>
-        </div>
-      {/if}
+  <!-- Project Selector (Only Active Project Shown Prominently) -->
+  {#if activeView === 'dashboard' && dashboard}
+    <section class="active-project-hero">
+      <div class="active-project-card">
+        <p class="eyebrow">Активный проект в работе</p>
+        <h2>{dashboard.project.name}</h2>
+        <span class="badge active">{dashboard.project.status}</span>
+        <code class="path">{dashboard.project.repositoryName || 'no repo'}</code>
+      </div>
     </section>
   {/if}
 
@@ -146,10 +108,25 @@
   {:else if dashboard}
     {#if activeView === 'dashboard'}
       <CommandDashboardV2 projectId={dashboard.project.id} />
-    {:else if activeView === 'client'}
-      <section class="p-6">
-        <ClientDeliveryView projectId={dashboard.project.id} />
+
+      <!-- Collapsed non-active projects at the bottom of Dashboard view -->
+      <section class="other-projects-section">
+        <details class="collapsed-projects">
+          <summary class="toggle-title">🔍 Другие проекты и архив ({projects.filter(p => p.id !== dashboard?.project.id).length})</summary>
+          <div class="projects-details-grid">
+            {#each projects.filter(p => p.id !== dashboard?.project.id) as project}
+              <button class="project-details-item" onclick={() => loadDashboard(project.id)}>
+                <strong>{project.name}</strong>
+                <span class="badge {project.status}">{project.status}</span>
+              </button>
+            {:else}
+              <p class="empty-state">Нет других сохраненных проектов.</p>
+            {/each}
+          </div>
+        </details>
       </section>
+    {:else if activeView === 'metrics'}
+      <MetricsView />
     {/if}
   {:else}
     <section class="empty">
@@ -290,4 +267,85 @@
     background: #fef3c7;
     color: #92400e;
   }
+
+  .active-project-hero {
+    margin-bottom: var(--space-4);
+  }
+  .active-project-card {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 12px;
+    padding: var(--space-6);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+  }
+  .active-project-card h2 {
+    font-size: 24px;
+    margin: 0;
+    color: var(--neutral-800);
+  }
+  .active-project-card .badge {
+    text-transform: uppercase;
+    font-weight: 700;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+  }
+  .active-project-card .badge.active {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  .other-projects-section {
+    margin-top: var(--space-8);
+  }
+  .collapsed-projects {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-4);
+  }
+  .toggle-title {
+    font-weight: 700;
+    font-size: 15px;
+    cursor: pointer;
+    color: var(--neutral-600);
+    outline: none;
+  }
+  .projects-details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+  .project-details-item {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-200);
+    border-radius: 6px;
+    padding: var(--space-3);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
+    min-height: 48px;
+    cursor: pointer;
+    color: var(--neutral-800);
+  }
+  .project-details-item:hover {
+    border-color: var(--primary);
+  }
+  .project-details-item .badge {
+    font-size: 9px;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+  .project-details-item .badge.accepted { background: #dbeafe; color: #1e40af; }
+  .project-details-item .badge.waiting { background: #fef3c7; color: #92400e; }
+  .project-details-item .badge.frozen { background: #fee2e2; color: #b91c1c; }
+  .project-details-item .badge.analyzing { background: #eff6ff; color: #1e40af; }
+  .project-details-item .badge.archived { background: var(--neutral-200); color: var(--neutral-600); }
 </style>

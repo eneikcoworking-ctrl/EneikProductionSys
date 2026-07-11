@@ -142,6 +142,20 @@
     fetchDashboard();
   }
 
+  function getKanoCategory(tag: string): { label: string, colorClass: string } {
+    const normalizedTag = (tag || '').toUpperCase();
+    if (normalizedTag.includes('TAG-00') || normalizedTag.includes('TAG-05') || normalizedTag.includes('TAG-07')) {
+      return { label: 'Must-Be', colorClass: 'kano-must' };
+    }
+    if (normalizedTag.includes('TAG-02') || normalizedTag.includes('TAG-06') || normalizedTag.includes('TAG-08')) {
+      return { label: 'Linear', colorClass: 'kano-linear' };
+    }
+    if (normalizedTag.includes('TAG-03') || normalizedTag.includes('TAG-11')) {
+      return { label: 'Attractive', colorClass: 'kano-attractive' };
+    }
+    return { label: 'Indifferent', colorClass: 'kano-indifferent' };
+  }
+
   onMount(fetchDashboard);
 </script>
 
@@ -348,6 +362,7 @@
                 <article class="task-item">
                   <div class="item-header">
                     <span class="role-tag">{task.tag}</span>
+                    <span class="kano-badge {getKanoCategory(task.tag).colorClass}">{getKanoCategory(task.tag).label}</span>
                     <span class="badge-status {task.status}">{task.status}</span>
                   </div>
                   <p class="task-description">{task.description}</p>
@@ -719,6 +734,33 @@
     background: var(--neutral-100);
     color: var(--neutral-500);
   }
+
+  .kano-badge {
+    font-size: 10px;
+    font-weight: 800;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin: 0 var(--space-1);
+    display: inline-block;
+  }
+  .kano-badge.kano-must {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .kano-badge.kano-linear {
+    background: #dbeafe;
+    color: #1e40af;
+  }
+  .kano-badge.kano-attractive {
+    background: #ecfdf5;
+    color: #047857;
+  }
+  .kano-badge.kano-indifferent {
+    background: #f1f5f9;
+    color: #475569;
+  }
+
   .dispatch-status {
     color: var(--neutral-500);
     font-style: italic;
