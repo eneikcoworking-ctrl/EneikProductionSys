@@ -1,6 +1,8 @@
 package com.eneik.production.services.gate;
 
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskGateLogEntity;
+import com.eneik.production.repositories.TaskGateLogRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -8,6 +10,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
@@ -17,11 +20,13 @@ public class GateOrchestrator {
 
     private final List<GateCheck> gateChecks;
     private final TaskRepository taskRepository;
+    private final TaskGateLogRepository taskGateLogRepository;
     private final ObjectMapper objectMapper;
 
-    public GateOrchestrator(List<GateCheck> gateChecks, TaskRepository taskRepository, ObjectMapper objectMapper) {
+    public GateOrchestrator(List<GateCheck> gateChecks, TaskRepository taskRepository, TaskGateLogRepository taskGateLogRepository, ObjectMapper objectMapper) {
         this.gateChecks = gateChecks;
         this.taskRepository = taskRepository;
+        this.taskGateLogRepository = taskGateLogRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -59,5 +64,12 @@ public class GateOrchestrator {
         task.setQualityGatePassed(allPassed);
         task.setQualityGateReport(report);
         taskRepository.save(task);
+
+        TaskGateLogEntity logEntity = new TaskGateLogEntity();
+        logEntity.setTask(task);
+        logEntity.setPassed(allPassed);
+        logEntity.setReport(report);
+        logEntity.setCreatedAt(Instant.now());
+        taskGateLogRepository.save(logEntity);
     }
 }
