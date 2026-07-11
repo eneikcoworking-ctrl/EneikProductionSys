@@ -12,7 +12,7 @@ public record ProjectDashboardDto(
         QueueDashboardDto queue,
         PipelineDashboardDto pipeline,
         List<AgentDashboardDto> agents,
-        List<WishlistItemDto> wishlist,
+        List<WishlistResponseDto> wishlist,
         List<TaskDto> tasks
 ) {
 }

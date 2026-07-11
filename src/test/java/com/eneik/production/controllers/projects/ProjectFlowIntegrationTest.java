@@ -54,6 +54,10 @@ class ProjectFlowIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+    @Autowired
+    private com.eneik.production.services.ContinuousOrchestrationService continuousOrchestrationService;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
 
     @BeforeEach
     void setUp() {
@@ -66,7 +70,8 @@ class ProjectFlowIntegrationTest {
         accountRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM github_access_status");
         projectRepository.deleteAll();
-    }
+
+}
 
     @Test
     void clientProjectWishlistOrchestrationClaimAndAcceptanceFlow() {
@@ -98,12 +103,13 @@ class ProjectFlowIntegrationTest {
         globalAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
         accountRepository.save(globalAccount);
 
-        ResponseEntity<WishlistItemDto> wish = restTemplate.postForEntity(
+        com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Make the website beautiful and add backend API for leads");
+        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/wishlist",
-                Map.of("text", "Make the website beautiful and add backend API for leads", "type", "client_wish"),
-                WishlistItemDto.class
+                req,
+                com.eneik.production.dto.WishlistResponseDto.class
         );
-        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         ResponseEntity<Map> orchestration = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/orchestrate",
@@ -111,6 +117,20 @@ class ProjectFlowIntegrationTest {
                 Map.class
         );
         assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        // Trigger background compilation manually for test
+                java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
+        aiResponse.put("jtbd", "Automated UI Verification");
+        aiResponse.put("acceptanceCriteria", "Visuals match reference");
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(aiResponse);
+        continuousOrchestrationService.continuousOrchestrate();
+
+        org.awaitility.Awaitility.await()
+            .atMost(5, java.util.concurrent.TimeUnit.SECONDS)
+            .pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)
+            .until(() -> !taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id()).isEmpty());
+
         assertThat(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id())).isNotEmpty();
 
         ProjectDashboardDto dashboard = restTemplate.getForObject(
@@ -124,7 +144,9 @@ class ProjectFlowIntegrationTest {
                 "/api/tasks/claim",
                 Map.of(
                     "accountId", globalAccount.getId().toString(),
-                    "capableTags", new String[]{"BARCAN-TAG-09", "BARCAN-TAG-00", "BARCAN-TAG-02", "BARCAN-TAG-03", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-11"}
+                    "capableTags", new String[]{"BARCAN-TAG-09", "BARCAN-TAG-00", "BARCAN-TAG-02", "BARCAN-TAG-03", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-11"
+
+}
                 ),
                 ClaimDto.class
         );
@@ -208,13 +230,35 @@ class ProjectFlowIntegrationTest {
         assertThat(activated.getStatusCode()).isEqualTo(HttpStatus.OK);
         assertThat(activated.getBody().status()).isEqualTo(ProjectStatus.active);
 
-        ResponseEntity<WishlistItemDto> wish = restTemplate.postForEntity(
+        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/wishlist",
-                Map.of("text", "Fix finding 1", "type", "client_wish"),
-                WishlistItemDto.class
+                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Fix finding 1"),
+                com.eneik.production.dto.WishlistResponseDto.class
         );
-        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         Files.deleteIfExists(reportFile);
+    }
+
+    @Test
+    void testAiServiceFailureGracefulDegradation() {
+        ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
+                "/api/projects",
+                Map.of("name", "Failing AI App"),
+                ProjectDto.class
+        );
+        ProjectDto project = createProject.getBody();
+
+        com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Will fail in AI");
+        restTemplate.postForEntity("/api/projects/" + project.id() + "/wishlist", req, com.eneik.production.dto.WishlistResponseDto.class);
+
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
+            .thenThrow(new RuntimeException("Simulated AI Failure"));
+
+        continuousOrchestrationService.continuousOrchestrate();
+
+        ProjectDashboardDto dashboard = restTemplate.getForObject("/api/projects/" + project.id() + "/dashboard", ProjectDashboardDto.class);
+        assertThat(dashboard.openWishlistCount()).isEqualTo(1);
+        assertThat(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id())).isEmpty();
     }
 }

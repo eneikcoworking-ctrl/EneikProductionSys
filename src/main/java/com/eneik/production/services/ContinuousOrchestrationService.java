@@ -7,6 +7,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import com.eneik.production.services.MLPredictionServiceClient;
 
 import java.util.List;
 
@@ -20,19 +21,22 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.services.jules.JulesDispatchService julesDispatchService;
     private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
     private final com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler;
+    private final MLPredictionServiceClient mlPredictionServiceClient;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
                                          com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                          com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
                                          com.eneik.production.repositories.WishlistRepository wishlistRepository,
-                                         com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler) {
+                                         com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler,
+                                         MLPredictionServiceClient mlPredictionServiceClient) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.julesSessionRepository = julesSessionRepository;
         this.julesDispatchService = julesDispatchService;
         this.wishlistRepository = wishlistRepository;
         this.technicalLeadCompiler = technicalLeadCompiler;
+        this.mlPredictionServiceClient = mlPredictionServiceClient;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -49,17 +53,36 @@ public class ContinuousOrchestrationService {
                 try {
                     List<com.eneik.production.models.persistence.WishlistEntity> pendingWishlists = wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
                     for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingWishlists) {
+                        // Reload from repository to ensure we have the latest compiled data
+                        wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
+
                         if (wishlist.getCompiledByRole() == null) {
+                            java.util.Map<String, Object> aiMeta = new java.util.HashMap<>();
+                            if (mlPredictionServiceClient != null) {
+                                try {
+                                    aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
+                                } catch (Exception e) {
+                                    log.error("Failed to generate AI metadata for wishlist {}: {}", wishlist.getId(), e.getMessage());
+                                    // Skip this wishlist item so it can be retried later
+                                    continue;
+                                }
+                            }
+                            String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : "Automate and transform";
+                            String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : "Given task merged, Then verify feature";
+
                             technicalLeadCompiler.compile(
                                 wishlist.getId(),
                                 "BARCAN-TAG-09",
-                                "Когда задача завершена, мы хотим получить совет роли, чтобы улучшить систему",
+                                jtbd,
                                 com.eneik.production.models.persistence.LeanValue.essential,
-                                "TOC-CONSTRAINT-BARCAN-TAG-09",
+                                "TOC-CONSTRAINT-DECOMPOSITION",
                                 "Defect Rate <= 5%",
-                                "Выполнено согласно правилам роли BARCAN-TAG-09",
-                                "Given task merged, Then compile advice task"
+                                "Compiled automatically by technical lead. Ссылается на Refusal Criteria роли (BARCAN-TAG-09).",
+                                ac
                             );
+
+                            // Re-fetch after compile to get the updated entity
+                            wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
                         }
                         if (wishlist.getLeanValue() != com.eneik.production.models.persistence.LeanValue.waste) {
                             technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
@@ -67,7 +90,7 @@ public class ContinuousOrchestrationService {
                         }
                     }
                 } catch (Exception e) {
-                    log.error("Failed to compile pending wishlists for project {}", project.getId(), e);
+                    log.error("Failed to compile pending wishlists for project {}", project.getId(), e); throw new RuntimeException(e);
                 }
             } catch (Exception e) {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);

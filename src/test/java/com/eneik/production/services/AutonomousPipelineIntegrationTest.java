@@ -24,9 +24,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 class AutonomousPipelineIntegrationTest {
 
     @Autowired
-    private WishlistItemRepository wishlistItemRepository;
-
-    @Autowired
     private ProjectRepository projectRepository;
 
     @Autowired
@@ -43,6 +40,8 @@ class AutonomousPipelineIntegrationTest {
 
     @Autowired
     private ContinuousOrchestrationService continuousOrchestrationService;
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private MLPredictionServiceClient mlPredictionServiceClient;
 
     @Autowired
     private PrReviewPipelineService prReviewPipelineService;
@@ -83,7 +82,7 @@ class AutonomousPipelineIntegrationTest {
         prReviewRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM falsification_runs");
         taskRepository.deleteAll();
-        wishlistItemRepository.deleteAll();
+
         wishlistRepository.deleteAll();
         accountRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM github_access_status");
@@ -97,23 +96,31 @@ class AutonomousPipelineIntegrationTest {
         project.setName("Autonomous Verification");
         project.setSlug("auto-verify");
         project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
         project.setRepositoryName("auto-verify-repo");
         project = projectRepository.saveAndFlush(project);
 
         // 2. Add Verification Task to Wishlist
-        WishlistItemEntity item = new WishlistItemEntity();
-        item.setProject(project);
-        item.setText("Verification-Task-Alpha-2026");
-        item.setStatus(WishlistItemStatus.open);
-        item.setType(WishlistItemType.client_wish);
-        wishlistItemRepository.saveAndFlush(item);
+        com.eneik.production.models.persistence.WishlistEntity item = new com.eneik.production.models.persistence.WishlistEntity();
+        item.setProjectId(project.getId());
+        item.setContent("Verification-Task-Alpha-2026");
+        item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        item.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+        item.setSourceRoleTag("BARCAN-TAG-00");
+        wishlistRepository.saveAndFlush(item);
+
+                java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
+        aiResponse.put("jtbd", "Automated UI Verification");
+        aiResponse.put("acceptanceCriteria", "Visuals match reference");
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(aiResponse);
 
         // 3. Trigger Continuous Orchestration (Pick up from wishlist)
         continuousOrchestrationService.continuousOrchestrate();
 
         // 4. Verify Task Created and Wishlist Converted
-        WishlistItemEntity updatedItem = wishlistItemRepository.findById(item.getId()).orElseThrow();
-        assertThat(updatedItem.getStatus()).isEqualTo(WishlistItemStatus.converted);
+        com.eneik.production.models.persistence.WishlistEntity updatedItem = wishlistRepository.findById(item.getId()).orElseThrow();
+        assertThat(updatedItem.getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
 
         UUID projectId = project.getId();
         TaskEntity task = taskRepository.findAll().stream()
@@ -148,6 +155,7 @@ class AutonomousPipelineIntegrationTest {
         project.setName("Complex Project");
         project.setSlug("complex-project");
         project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
         project.setRepositoryName("complex-repo");
         project = projectRepository.saveAndFlush(project);
 
@@ -188,6 +196,7 @@ class AutonomousPipelineIntegrationTest {
         project.setName("Chaotic Project");
         project.setSlug("chaotic-project");
         project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
         project.setRepositoryName("chaotic-repo");
         project = projectRepository.saveAndFlush(project);
 
@@ -234,6 +243,7 @@ class AutonomousPipelineIntegrationTest {
         project.setName("Philosophical Filter Project");
         project.setSlug("philosophical-filter-project");
         project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
         project.setRepositoryName("philosophical-filter-repo");
         project = projectRepository.saveAndFlush(project);
 
@@ -282,6 +292,7 @@ class AutonomousPipelineIntegrationTest {
         project.setName("Falsification Project");
         project.setSlug("falsification-project");
         project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
         project.setRepositoryName("falsification-repo");
         project = projectRepository.saveAndFlush(project);
 
