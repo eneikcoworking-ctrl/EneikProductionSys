@@ -58,27 +58,38 @@ def ask_gemini(prompt: str, system_instruction: str) -> str:
 
     payload = {
         "contents": [{"parts": [{"text": prompt}]}],
-        "systemInstruction": {"parts": [{"text": system_instruction}]}
+        "systemInstruction": {"parts": [{"text": system_instruction}]},
+        "generationConfig": {"responseMimeType": "application/json"}
     }
 
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
 
-    with urllib.request.urlopen(req) as response:
+    with urllib.request.urlopen(req, timeout=30) as response:
         result = json.loads(response.read().decode("utf-8"))
-        # Парсим ответ Gemini (из result['candidates'][0]['content']['parts'][0]['text'])
-        # и возвращаем строковый JSON, который затем конвертируется в dict.
+        # Извлекаем JSON (гарантированный благодаря responseMimeType)
+        # из result['candidates'][0]['content']['parts'][0]['text']
         return extract_text_from_gemini(result)
 ```
 
-#### 2. Загрузка реального кода (PR Diff)
-В эндпоинте `/api/v1/review/pr` сервис должен получить реальный код:
+#### 2. Загрузка реального кода (PR Diff) с защитой от переполнения
+В эндпоинте `/api/v1/review/pr` сервис должен получить реальный код, ограничив его размер во избежание OOM или превышения квот Gemini (макс. 2МБ):
 ```python
 # Добавляем .diff к публичному URL Pull Request'а на GitHub
 diff_url = request.prUrl + ".diff"
 diff_req = urllib.request.Request(diff_url)
-with urllib.request.urlopen(diff_req) as response:
-    pr_diff = response.read().decode("utf-8")
+with urllib.request.urlopen(diff_req, timeout=30) as response:
+    # Читаем максимум 2 МБ (2 * 1024 * 1024 байт)
+    pr_diff_bytes = response.read(2097152)
+
+    # Если остались еще данные в потоке, значит файл слишком большой
+    if response.read(1):
+        return ReviewResponse(
+            approved=False,
+            remarks="PR is too large for automated review. Needs human review."
+        )
+
+    pr_diff = pr_diff_bytes.decode("utf-8")
 ```
 
 #### 3. Формирование промпта и возврат результата
