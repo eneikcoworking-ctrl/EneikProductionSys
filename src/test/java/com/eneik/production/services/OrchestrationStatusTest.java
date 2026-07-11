@@ -8,6 +8,8 @@ import org.awaitility.Awaitility;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
+import com.eneik.production.services.gate.GateOrchestrator;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import jakarta.persistence.EntityManager;
@@ -26,6 +28,9 @@ public class OrchestrationStatusTest {
     private ContinuousOrchestrationService continuousOrchestrationService;
     @org.springframework.boot.test.mock.mockito.MockBean
     private MLPredictionServiceClient mlPredictionServiceClient;
+
+    @MockBean
+    private GateOrchestrator gateOrchestrator;
 
     @Autowired
     private ProjectRepository projectRepository;
@@ -108,19 +113,14 @@ public class OrchestrationStatusTest {
         org.awaitility.Awaitility.await().atMost(2, java.util.concurrent.TimeUnit.SECONDS).until(() -> accountRepository.findById(finalAccId).get().getStatus() == AccountStatus.busy);
         assertThat(accountRepository.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.busy);
 
-        // Hack the task so that it passes the quality gate checks.
-        // Otherwise GateOrchestrator will set qualityGatePassed=false and task goes back to queued.
-        task.setQualityGatePassed(true);
-        taskRepository.save(task);
-
+                // Mock the GateOrchestrator so that tests can simulate a passed gate without real validation
+        org.mockito.Mockito.doAnswer(invocation -> {
+            TaskEntity t = invocation.getArgument(0);
+            t.setQualityGatePassed(true);
+            return null;
+        }).when(gateOrchestrator).runQualityGate(org.mockito.ArgumentMatchers.any());
         // 6. Complete implementer claim (Simulation of PR Open or manual completion)
         claimService.complete(taskId);
-
-        // Hack it again just in case the GateOrchestrator overrode our hack during complete()
-        task = taskRepository.findById(taskId).orElseThrow();
-        task.setQualityGatePassed(true);
-        task.setStatus(TaskStatus.review);
-        taskRepository.save(task);
 
         task = taskRepository.findById(taskId).orElseThrow();
         assertThat(task.getStatus()).isEqualTo(TaskStatus.review);
