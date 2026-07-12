@@ -56,6 +56,7 @@ public class ProjectFlowService {
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
+    private final MLPredictionServiceClient mlPredictionServiceClient;
 
 
 
@@ -76,7 +77,8 @@ public class ProjectFlowService {
                               JulesSessionRepository julesSessionRepository,
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization,
-                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
+                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
+                              MLPredictionServiceClient mlPredictionServiceClient) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -95,6 +97,7 @@ public class ProjectFlowService {
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
         this.onboardingAuditService = onboardingAuditService;
+        this.mlPredictionServiceClient = mlPredictionServiceClient;
     }
 
     @Transactional
@@ -208,10 +211,80 @@ public class ProjectFlowService {
         return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt());
     }
 
+    @Transactional
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
-        java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems = wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
-        return new OrchestrationResultDto(project.getId(), pendingItems.size(), new java.util.ArrayList<>(), "Orchestration request received.");
+
+        // 1. Record existing task IDs of this project
+        java.util.List<TaskEntity> existingTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        java.util.Set<UUID> existingIds = new java.util.HashSet<>();
+        for (TaskEntity t : existingTasks) {
+            existingIds.add(t.getId());
+        }
+
+        // 2. Fetch pending wishlists
+        java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
+                wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
+
+        int processedCount = 0;
+        for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingItems) {
+            try {
+                // Reload from repository to ensure we have the latest compiled data
+                wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
+
+                if (wishlist.getCompiledByRole() == null) {
+                    java.util.Map<String, Object> aiMeta = new java.util.HashMap<>();
+                    if (mlPredictionServiceClient != null) {
+                        try {
+                            aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
+                        } catch (Exception e) {
+                            log.error("Failed to generate AI metadata for wishlist {}: {}", wishlist.getId(), e.getMessage());
+                            // Skip this wishlist item so it can be retried later
+                            continue;
+                        }
+                    }
+                    String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : "Automate and transform";
+                    String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : "Given task merged, Then verify feature";
+
+                    technicalLeadCompiler.compile(
+                        wishlist.getId(),
+                        "BARCAN-TAG-09",
+                        jtbd,
+                        com.eneik.production.models.persistence.LeanValue.essential,
+                        "TOC-CONSTRAINT-DECOMPOSITION",
+                        "Defect Rate <= 5%",
+                        "Compiled automatically by technical lead. Ссылается на Refusal Criteria роли (BARCAN-TAG-09).",
+                        ac
+                    );
+
+                    // Re-fetch after compile to get the updated entity
+                    wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
+                }
+                if (wishlist.getLeanValue() != com.eneik.production.models.persistence.LeanValue.waste) {
+                    technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+                    processedCount++;
+                    log.info("ProjectFlowService: Synchronously compiled wishlist {} into task", wishlist.getId());
+                }
+            } catch (Exception e) {
+                log.error("Failed to compile pending wishlist {} for project {}", wishlist.getId(), project.getId(), e);
+            }
+        }
+
+        // 3. Find all newly created tasks
+        java.util.List<TaskEntity> currentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        java.util.List<TaskShortDto> createdTasks = new java.util.ArrayList<>();
+        for (TaskEntity t : currentTasks) {
+            if (!existingIds.contains(t.getId())) {
+                createdTasks.add(new TaskShortDto(t.getId(), t.getRole().getTag(), t.getDescription()));
+            }
+        }
+
+        return new OrchestrationResultDto(
+            project.getId(),
+            processedCount,
+            createdTasks,
+            "Orchestrated " + processedCount + " wishlist items. " + createdTasks.size() + " tasks created."
+        );
     }
 
     @Transactional

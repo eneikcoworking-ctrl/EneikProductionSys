@@ -111,20 +111,19 @@ class ProjectFlowIntegrationTest {
         );
         assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
+        // Setup mock for synchronous generateTaskMetadata
+        java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
+        aiResponse.put("jtbd", "Automated UI Verification");
+        aiResponse.put("acceptanceCriteria", "Visuals match reference");
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
+            .thenReturn(aiResponse);
+
         ResponseEntity<Map> orchestration = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/orchestrate",
                 null,
                 Map.class
         );
         assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
-
-        // Trigger background compilation manually for test
-                java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
-        aiResponse.put("jtbd", "Automated UI Verification");
-        aiResponse.put("acceptanceCriteria", "Visuals match reference");
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn(aiResponse);
-        continuousOrchestrationService.continuousOrchestrate();
 
         org.awaitility.Awaitility.await()
             .atMost(5, java.util.concurrent.TimeUnit.SECONDS)

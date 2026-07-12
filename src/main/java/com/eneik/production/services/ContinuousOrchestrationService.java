@@ -45,53 +45,9 @@ public class ContinuousOrchestrationService {
         for (ProjectEntity project : activeProjects) {
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
-                projectFlowService.orchestrate(project.getId());
                 projectFlowService.dispatchQueuedTasks(project.getId());
                 projectFlowService.dispatchReviewTasks(project.getId());
-
-                // Auto-compile pending wishlists from the new wishlist table
-                try {
-                    List<com.eneik.production.models.persistence.WishlistEntity> pendingWishlists = wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
-                    for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingWishlists) {
-                        // Reload from repository to ensure we have the latest compiled data
-                        wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
-
-                        if (wishlist.getCompiledByRole() == null) {
-                            java.util.Map<String, Object> aiMeta = new java.util.HashMap<>();
-                            if (mlPredictionServiceClient != null) {
-                                try {
-                                    aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
-                                } catch (Exception e) {
-                                    log.error("Failed to generate AI metadata for wishlist {}: {}", wishlist.getId(), e.getMessage());
-                                    // Skip this wishlist item so it can be retried later
-                                    continue;
-                                }
-                            }
-                            String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : "Automate and transform";
-                            String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : "Given task merged, Then verify feature";
-
-                            technicalLeadCompiler.compile(
-                                wishlist.getId(),
-                                "BARCAN-TAG-09",
-                                jtbd,
-                                com.eneik.production.models.persistence.LeanValue.essential,
-                                "TOC-CONSTRAINT-DECOMPOSITION",
-                                "Defect Rate <= 5%",
-                                "Compiled automatically by technical lead. Ссылается на Refusal Criteria роли (BARCAN-TAG-09).",
-                                ac
-                            );
-
-                            // Re-fetch after compile to get the updated entity
-                            wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
-                        }
-                        if (wishlist.getLeanValue() != com.eneik.production.models.persistence.LeanValue.waste) {
-                            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
-                            log.info("ContinuousOrchestrationService: Automatically compiled wishlist {} into task", wishlist.getId());
-                        }
-                    }
-                } catch (Exception e) {
-                    log.error("Failed to compile pending wishlists for project {}", project.getId(), e); throw new RuntimeException(e);
-                }
+                projectFlowService.orchestrate(project.getId());
             } catch (Exception e) {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
             }
