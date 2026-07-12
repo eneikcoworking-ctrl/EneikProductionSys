@@ -126,7 +126,7 @@
         </details>
       </section>
     {:else if activeView === 'metrics'}
-      <MetricsView />
+      <MetricsView projectId={dashboard.project.id} />
     {/if}
   {:else}
     <section class="empty">

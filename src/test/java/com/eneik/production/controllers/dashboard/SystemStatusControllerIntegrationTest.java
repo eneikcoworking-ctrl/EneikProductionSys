@@ -36,6 +36,24 @@ class SystemStatusControllerIntegrationTest {
         assertThat(section(response, "accounts")).containsEntry("available", true);
     }
 
+    @Test
+    void returnsStatusFilteredByProject() {
+        java.util.UUID projectId = java.util.UUID.randomUUID();
+        ResponseEntity<Map> response = restTemplate.getForEntity("/api/system-status?projectId=" + projectId, Map.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).containsKeys(
+                "integrations",
+                "accounts",
+                "githubAccess",
+                "linearCompleteness",
+                "julesSessions",
+                "qualityGate",
+                "tasks"
+        );
+        assertThat(section(response, "accounts")).containsEntry("available", true);
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> section(ResponseEntity<Map> response, String key) {
         return (Map<String, Object>) response.getBody().get(key);
