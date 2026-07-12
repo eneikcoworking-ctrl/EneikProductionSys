@@ -13,6 +13,53 @@ import urllib.request
 app = FastAPI(title="Eneik AI Prediction Service")
 
 
+def ask_gemini(prompt: str, system_instruction: str = "") -> str:
+    # Check if we have an API key configured or in env
+    api_key = os.getenv("GEMINI_API_KEY", "")
+
+    # If no key, or empty, return default mock JSON depending on the instruction/prompt
+    if not api_key:
+        if "satisfaction_probability" in system_instruction:
+            return '{"satisfaction_probability": 0.98, "modal_status": "Highly Probable (Mock)"}'
+        elif "risk_score" in system_instruction:
+            return '{"risk_score": 0.15, "is_bottleneck_predicted": false}'
+        elif "jtbd" in system_instruction:
+            return '{"jtbd": "Automate and transform", "acceptanceCriteria": "Given task merged, Then verify feature"}'
+        return "{}"
+
+    # If key exists, we can call the actual Gemini API
+    try:
+        # Standard Gemini API v1beta call via urllib
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        headers = {"Content-Type": "application/json"}
+
+        # Structure the payload for Gemini API
+        payload = {
+            "contents": [
+                {"parts": [{"text": f"{system_instruction}\n\nInput:\n{prompt}"}]}
+            ],
+            "generationConfig": {"responseMimeType": "application/json"},
+        }
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as response:
+            res_data = json.loads(response.read().decode("utf-8"))
+            text = res_data["candidates"][0]["content"]["parts"][0]["text"]
+            return text
+    except Exception as e:
+        print(f"Error calling Gemini API: {e}")
+        if "satisfaction_probability" in system_instruction:
+            return '{"satisfaction_probability": 0.98, "modal_status": "Highly Probable (Mock Fallback)"}'
+        elif "risk_score" in system_instruction:
+            return '{"risk_score": 0.15, "is_bottleneck_predicted": false}'
+        return "{}"
+
+
 class BottleneckRequest(BaseModel):
     wip_count: int
     avg_cycle_time: float
@@ -21,6 +68,15 @@ class BottleneckRequest(BaseModel):
 class BottleneckResponse(BaseModel):
     risk_score: float
     is_bottleneck_predicted: bool
+
+
+class MetadataRequest(BaseModel):
+    content: str
+
+
+class MetadataResponse(BaseModel):
+    jtbd: str
+    acceptanceCriteria: str
 
 
 class ReviewRequest(BaseModel):
@@ -49,10 +105,13 @@ class PredictionService:
             prompt = f"Evaluate satisfaction for this context: {user_context}"
             response_json = ask_gemini(prompt, system_instruction)
             import json
+
             parsed = json.loads(response_json)
             return {
-                "satisfaction_probability": parsed.get("satisfaction_probability", 0.98),
-                "modal_status": parsed.get("modal_status", "Highly Probable")
+                "satisfaction_probability": parsed.get(
+                    "satisfaction_probability", 0.98
+                ),
+                "modal_status": parsed.get("modal_status", "Highly Probable"),
             }
         except Exception as e:
             print(f"Satisfaction Prediction Fallback triggered due to: {e}")
@@ -67,8 +126,11 @@ class PredictionService:
             prompt = f"Current Metrics - WIP Count: {wip_count}, Avg Cycle Time: {avg_cycle_time} seconds. Calculate risk and bottleneck prediction."
             response_json = ask_gemini(prompt, system_instruction)
             import json
+
             parsed = json.loads(response_json)
-            return parsed.get("risk_score", 0.0), parsed.get("is_bottleneck_predicted", False)
+            return parsed.get("risk_score", 0.0), parsed.get(
+                "is_bottleneck_predicted", False
+            )
         except Exception as e:
             print(f"Bottleneck Prediction Fallback triggered due to: {e}")
             # Fallback to mathematical calculation
@@ -101,6 +163,31 @@ async def bottleneck_endpoint(request: BottleneckRequest):
     return BottleneckResponse(
         risk_score=risk_score, is_bottleneck_predicted=is_bottleneck
     )
+
+
+@app.post("/api/v1/predict/metadata", response_model=MetadataResponse)
+async def predict_metadata_endpoint(request: MetadataRequest):
+    try:
+        system_instruction = (
+            "You are a Product Owner AI. Based on the client wishlist text provided, "
+            "extract a Job To Be Done (JTBD) statement and Acceptance Criteria (Given/When/Then format). "
+            'Return ONLY JSON: {"jtbd": "string", "acceptanceCriteria": "string"}.'
+        )
+        response_json = ask_gemini(request.content, system_instruction)
+        parsed = json.loads(response_json)
+        return MetadataResponse(
+            jtbd=parsed.get("jtbd", f"Automate and transform: {request.content}"),
+            acceptanceCriteria=parsed.get(
+                "acceptanceCriteria",
+                f"Given task merged, Then verify feature: {request.content}",
+            ),
+        )
+    except Exception as e:
+        print(f"Metadata Prediction Fallback triggered due to: {e}")
+        return MetadataResponse(
+            jtbd=f"Automate and transform: {request.content}",
+            acceptanceCriteria=f"Given task merged, Then verify feature: {request.content}",
+        )
 
 
 @app.post("/api/v1/review/pr", response_model=ReviewResponse)
@@ -138,32 +225,36 @@ async def review_pr_endpoint(request: ReviewRequest):
 
     if is_chess:
         if role_tag == "BARCAN-TAG-11":
-            new_tasks.append({
-                "roleTag": "BARCAN-TAG-11",
-                "description": "Kano Refactoring: Optimize WebGL rendering context in Svelte for smoother chess piece animations"
-            })
+            new_tasks.append(
+                {
+                    "roleTag": "BARCAN-TAG-11",
+                    "description": "Kano Refactoring: Optimize WebGL rendering context in Svelte for smoother chess piece animations",
+                }
+            )
         elif role_tag == "BARCAN-TAG-02":
-            new_tasks.append({
-                "roleTag": "BARCAN-TAG-02",
-                "description": "Kano Refactoring: Implement alpha-beta pruning in the chess engine to improve search speed"
-            })
+            new_tasks.append(
+                {
+                    "roleTag": "BARCAN-TAG-02",
+                    "description": "Kano Refactoring: Implement alpha-beta pruning in the chess engine to improve search speed",
+                }
+            )
     else:
         if role_tag == "BARCAN-TAG-02":
-            new_tasks.append({
-                "roleTag": "BARCAN-TAG-02",
-                "description": f"Kano Refactoring: Implement Redis caching for API queries to optimize performance"
-            })
+            new_tasks.append(
+                {
+                    "roleTag": "BARCAN-TAG-02",
+                    "description": f"Kano Refactoring: Implement Redis caching for API queries to optimize performance",
+                }
+            )
         elif role_tag == "BARCAN-TAG-11":
-            new_tasks.append({
-                "roleTag": "BARCAN-TAG-11",
-                "description": f"Kano Refactoring: Add CSS skeleton loaders and accessibility tags"
-            })
+            new_tasks.append(
+                {
+                    "roleTag": "BARCAN-TAG-11",
+                    "description": f"Kano Refactoring: Add CSS skeleton loaders and accessibility tags",
+                }
+            )
 
-    return ReviewResponse(
-        approved=approved,
-        remarks=remarks,
-        newTasks=new_tasks
-    )
+    return ReviewResponse(approved=approved, remarks=remarks, newTasks=new_tasks)
 
 
 if __name__ == "__main__":

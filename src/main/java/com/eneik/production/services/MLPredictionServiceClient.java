@@ -24,8 +24,8 @@ public class MLPredictionServiceClient {
     public MLPredictionServiceClient(RestTemplateBuilder restTemplateBuilder,
                                      @Value("${ml.service.url}") String mlServiceUrl) {
         this.restTemplate = restTemplateBuilder
-                .setConnectTimeout(Duration.ofMillis(5000))
-                .setReadTimeout(Duration.ofMillis(5000))
+                .setConnectTimeout(Duration.ofMillis(500))
+                .setReadTimeout(Duration.ofMillis(500))
                 .build();
         this.mlServiceUrl = mlServiceUrl;
     }
@@ -108,7 +108,15 @@ public class MLPredictionServiceClient {
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("content", wishlistContent);
 
-        return restTemplate.postForObject(endpoint, new org.springframework.http.HttpEntity<>(request, headers), java.util.Map.class);
+        try {
+            return restTemplate.postForObject(endpoint, new org.springframework.http.HttpEntity<>(request, headers), java.util.Map.class);
+        } catch (Exception e) {
+            LOGGER.warning("ML service call to generateTaskMetadata failed: " + e.getMessage() + ". Using fallback.");
+            java.util.Map<String, Object> fallback = new java.util.HashMap<>();
+            fallback.put("jtbd", "Automate and transform: " + wishlistContent);
+            fallback.put("acceptanceCriteria", "Given task merged, Then verify feature: " + wishlistContent);
+            return fallback;
+        }
     }
 
     private static class MLResponse {
