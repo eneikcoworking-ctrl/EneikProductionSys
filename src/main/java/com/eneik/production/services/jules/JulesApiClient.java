@@ -150,6 +150,50 @@ public class JulesApiClient {
         }
     }
 
+    public boolean sendMessage(String externalSessionId, String message) {
+        String apiKey = settingsService.effectiveValue("jules_api_key");
+        return sendMessage(externalSessionId, message, apiKey);
+    }
+
+    public boolean sendMessage(String externalSessionId, String message, String apiKey) {
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+            return false;
+        }
+
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("prompt", message);
+
+            // Constructing URL for sessions/{session}:sendMessage
+            // Note: externalSessionId usually starts with "sessions/"
+            String url = apiBaseUrl + "/" + externalSessionId + ":sendMessage";
+            if (!externalSessionId.startsWith("sessions/")) {
+                url = apiBaseUrl + "/sessions/" + externalSessionId + ":sendMessage";
+            }
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(url))
+                    .header("Content-Type", "application/json")
+                    .header("X-Goog-Api-Key", apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("Jules send message failed: status={} body={}", response.statusCode(), response.body());
+                return false;
+            }
+
+            return true;
+        } catch (IOException | InterruptedException e) {
+            log.error("Error sending message to Jules session", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return false;
+        }
+    }
+
     private String findPrUrl(JsonNode node) {
         if (node == null) return null;
         if (node.isTextual()) {
