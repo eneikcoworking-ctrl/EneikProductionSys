@@ -248,8 +248,12 @@ public class TechnicalLeadCompiler {
             keywords.add("board");
         }
         String[] words = lowerWish.split("[^a-zA-Z0-9а-яА-Я]+");
+        java.util.Set<String> stopWords = java.util.Set.of(
+            "with", "from", "that", "this", "recommendation", "based", "task", "completion",
+            "kano", "refactoring", "description", "required", "cleanup", "рекомендация"
+        );
         for (String w : words) {
-            if (w.length() >= 4 && !w.equals("with") && !w.equals("from") && !w.equals("that") && !w.equals("this")) {
+            if (w.length() >= 4 && !stopWords.contains(w)) {
                 keywords.add(w);
             }
         }
@@ -273,33 +277,62 @@ public class TechnicalLeadCompiler {
         // 3. If no relevant files found, determine the predicted new path
         if (relevantPaths.isEmpty()) {
             String featureName = getFeatureName(wishContent);
-            if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
-                if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                    paths.add("src/main/java/com/eneik/production/services/ChessService.java");
-                    paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
-                } else {
-                    paths.add("src/main/java/com/eneik/production/services/" + featureName + "Service.java");
+
+            // Detect stack based on workspace contents
+            boolean isNextJsOrReact = false;
+            if (workspaceDir != null && workspaceDir.exists()) {
+                isNextJsOrReact = new java.io.File(workspaceDir, "next.config.ts").exists() ||
+                                  new java.io.File(workspaceDir, "next.config.js").exists() ||
+                                  new java.io.File(workspaceDir, "pnpm-workspace.yaml").exists() ||
+                                  new java.io.File(workspaceDir, "package.json").exists() && !new java.io.File(workspaceDir, "pom.xml").exists();
+            }
+
+            if (isNextJsOrReact) {
+                // Next.js/React structure fallback
+                if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+                    paths.add("src/app/api/" + featureName.toLowerCase(java.util.Locale.ROOT) + "/route.ts");
+                    paths.add("prisma/schema.prisma");
+                } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
+                    paths.add("src/components/landing/" + featureName + ".tsx");
+                    paths.add("src/app/globals.css");
+                } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
+                    paths.add("src/app/" + featureName.toLowerCase(java.util.Locale.ROOT) + "/page.tsx");
+                    paths.add("src/components/landing/" + featureName + ".tsx");
+                } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
+                    paths.add("src/__tests__/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".test.ts");
+                } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
+                    paths.add("src/app/layout.tsx");
                 }
-            } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
-                if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                    paths.add("frontend/src/components/ChessBoard.svelte");
-                } else {
-                    paths.add("frontend/src/components/" + featureName + ".svelte");
+            } else {
+                // Default Java Spring Boot structure fallback
+                if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                        paths.add("src/main/java/com/eneik/production/services/ChessService.java");
+                        paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
+                    } else {
+                        paths.add("src/main/java/com/eneik/production/services/" + featureName + "Service.java");
+                    }
+                } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
+                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                        paths.add("frontend/src/components/ChessBoard.svelte");
+                    } else {
+                        paths.add("frontend/src/components/" + featureName + ".svelte");
+                    }
+                } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
+                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                        paths.add("frontend/src/components/ChessBoard.svelte");
+                    } else {
+                        paths.add("frontend/src/components/" + featureName + ".svelte");
+                    }
+                } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
+                    if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
+                        paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
+                    } else {
+                        paths.add("src/test/java/com/eneik/production/services/" + featureName + "ServiceTest.java");
+                    }
+                } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
+                    paths.add("src/main/java/com/eneik/production/services/" + featureName + "IntegrationService.java");
                 }
-            } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
-                if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                    paths.add("frontend/src/components/ChessBoard.svelte");
-                } else {
-                    paths.add("frontend/src/components/" + featureName + ".svelte");
-                }
-            } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
-                if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
-                    paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
-                } else {
-                    paths.add("src/test/java/com/eneik/production/services/" + featureName + "ServiceTest.java");
-                }
-            } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
-                paths.add("src/main/java/com/eneik/production/services/" + featureName + "IntegrationService.java");
             }
         }
 
@@ -372,14 +405,35 @@ public class TechnicalLeadCompiler {
 
     private boolean isRelevantForRole(String roleTag, String relPath) {
         String lower = relPath.toLowerCase(java.util.Locale.ROOT);
+
+        // Exclude lock files, configs, and ignore files from regular role assignment
+        if (lower.endsWith("-lock.json") || lower.endsWith("package-lock.json") || lower.endsWith("pnpm-lock.yaml") ||
+            lower.endsWith(".gitignore") || lower.endsWith(".env.example") || lower.endsWith(".npmrc")) {
+            return false;
+        }
+
         if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
-            return lower.endsWith(".java") && !lower.contains("/test/");
+            // For Java Spring Boot
+            if (lower.endsWith(".java") && !lower.contains("/test/")) {
+                return true;
+            }
+            // For Node.js / Next.js / FastAPI
+            if ((lower.contains("api/") || lower.contains("/api") || lower.contains("server") || lower.endsWith(".prisma") || lower.endsWith(".py")) &&
+                !lower.contains("test") && !lower.endsWith(".svelte") && !lower.endsWith(".css")) {
+                return true;
+            }
+            return false;
         } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
-            return (lower.endsWith(".svelte") || lower.endsWith(".css")) && !lower.contains("/test/");
+            // Design resources: css, icons, mockups, svelte/tsx/jsx (only layout components)
+            return (lower.endsWith(".svelte") || lower.endsWith(".css") || lower.endsWith(".png") || lower.endsWith(".svg") || lower.endsWith(".html") || lower.contains("design/")) && !lower.contains("test");
         } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
-            return (lower.endsWith(".svelte") || lower.endsWith(".js") || lower.endsWith(".ts")) && !lower.contains("/test/");
+            // React, Svelte, Next.js page layouts
+            if (lower.contains("test") || lower.contains("/api/") || lower.endsWith(".prisma") || lower.endsWith(".py")) {
+                return false;
+            }
+            return lower.endsWith(".svelte") || lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".tsx") || lower.endsWith(".jsx") || lower.endsWith(".css") || lower.endsWith(".html");
         } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
-            return lower.contains("test") || lower.contains("/tests/");
+            return lower.contains("test") || lower.contains("/tests/") || lower.endsWith(".test.ts") || lower.endsWith(".test.js");
         }
         return false;
     }

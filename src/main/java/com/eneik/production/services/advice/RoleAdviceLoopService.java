@@ -30,6 +30,19 @@ public class RoleAdviceLoopService {
             // But the requirement just says "creates wishlist-entry source='role'".
         }
 
+        String description = task.getDescription();
+        if (description != null) {
+            String lower = description.toLowerCase(java.util.Locale.ROOT);
+            if (lower.contains("recommendation based on") ||
+                lower.contains("kano refactoring") ||
+                lower.contains("refactoring:") ||
+                lower.contains("рекомендация") ||
+                lower.contains("cleanup required")) {
+                // Skip recursive wishlist generation for recommendation/refactoring tasks
+                return;
+            }
+        }
+
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(task.getProject().getId());
         wishlist.setSource(WishlistSource.role);
