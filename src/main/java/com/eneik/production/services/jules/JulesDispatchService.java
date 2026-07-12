@@ -344,10 +344,26 @@ public class JulesDispatchService {
                     prData.setDiffSummary("REVIEW REJECTED. " + remarks);
                     prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
 
-                    // Mark task as queued to return to work queue
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
-                    taskRepository.save(task);
-                    log.warn("Local agent review rejected for task {}. Task returned to queue.", task.getId());
+                    // Instead of dropping the session, send a message back to Jules and keep it claimed
+                    String prompt = "что может быть не так с эти решением? Предложи варианты улучшения. Если предложения недкоративные - продлить сессию и разработать их. Если их можно сфальсифицировать - предложить свой вариант и выполнить.\n\nReview remarks: " + remarks;
+
+                    boolean sent = julesApiClient.sendMessage(session.getExternalSessionId(), prompt);
+                    if (sent) {
+                        log.info("Sent review rejection message to existing Jules session {} for task {}", session.getExternalSessionId(), task.getId());
+                        saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), prompt, remarks);
+
+                        // Keep task in 'claimed' status, set session status back to 'running' so it can be polled again
+                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+                        taskRepository.save(task);
+
+                        session.setStatus("running");
+                        julesSessionRepository.save(session);
+                    } else {
+                        // Mark task as queued to return to work queue if message sending failed or disabled
+                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+                        taskRepository.save(task);
+                        log.warn("Local agent review rejected for task {}. Failed to send message to Jules, task returned to queue.", task.getId());
+                    }
                 }
             } else if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.review) {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
@@ -382,6 +398,21 @@ public class JulesDispatchService {
             case "FAILED", "CANCELLED" -> "failed";
             default -> "running"; // Default to running if unknown but alive
         };
+    }
+
+    private void saveJulesDialogueLog(UUID taskId, String sessionId, String prompt, String remarks) {
+        try {
+            java.nio.file.Path dirPath = java.nio.file.Paths.get("docs/jules_dialogues");
+            if (!java.nio.file.Files.exists(dirPath)) {
+                java.nio.file.Files.createDirectories(dirPath);
+            }
+            java.nio.file.Path filePath = dirPath.resolve("task_" + taskId + ".log");
+            String logEntry = String.format("--- Session: %s at %s ---\nRemarks: %s\nPrompt Sent: %s\n\n",
+                                            sessionId, Instant.now().toString(), remarks, prompt);
+            java.nio.file.Files.writeString(filePath, logEntry, java.nio.file.StandardOpenOption.CREATE, java.nio.file.StandardOpenOption.APPEND);
+        } catch (Exception e) {
+            log.error("Failed to save Jules dialogue log for task {}: {}", taskId, e.getMessage());
+        }
     }
 
     /**
