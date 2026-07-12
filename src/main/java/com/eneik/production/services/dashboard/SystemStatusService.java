@@ -25,6 +25,8 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @Service
@@ -57,21 +59,30 @@ public class SystemStatusService {
         this.taskConflictRepository = taskConflictRepository;
     }
 
-    public Map<String, Object> getStatus() {
+    public Map<String, Object> getStatus(UUID projectId) {
         Map<String, Object> status = new LinkedHashMap<>();
         status.put("integrations", safeSection(() -> settingsService.listSettings()));
-        status.put("accounts", safeSection(this::accounts));
+        status.put("accounts", safeSection(() -> accounts(projectId)));
         status.put("githubAccess", safeSection(this::latestGithubAccess));
-        status.put("linearCompleteness", safeSection(this::linearCompleteness));
-        status.put("julesSessions", safeSection(this::julesSessions));
-        status.put("qualityGate", safeSection(this::qualityGate));
-        status.put("tasks", safeSection(this::tasks));
-        status.put("conflictDpmo", safeSection(this::conflictDpmo));
+        status.put("linearCompleteness", safeSection(() -> linearCompleteness(projectId)));
+        status.put("julesSessions", safeSection(() -> julesSessions(projectId)));
+        status.put("qualityGate", safeSection(() -> qualityGate(projectId)));
+        status.put("tasks", safeSection(() -> tasks(projectId)));
+        status.put("conflictDpmo", safeSection(() -> conflictDpmo(projectId)));
         return status;
     }
 
-    private Map<String, Object> accounts() {
+    public Map<String, Object> getStatus() {
+        return getStatus(null);
+    }
+
+    private Map<String, Object> accounts(UUID projectId) {
         List<AccountEntity> accounts = accountRepository.findAll();
+        if (projectId != null) {
+            accounts = accounts.stream()
+                    .filter(a -> projectId.equals(a.getCurrentProjectId()))
+                    .collect(Collectors.toList());
+        }
         Map<String, Long> summary = accounts.stream()
                 .collect(Collectors.groupingBy(account -> account.getStatus().name(), Collectors.counting()));
 
@@ -112,9 +123,10 @@ public class SystemStatusService {
         return section;
     }
 
-    private Map<String, Object> linearCompleteness() {
+    private Map<String, Object> linearCompleteness(UUID projectId) {
         List<TaskEntity> tasksWithLinear = taskRepository.findAll().stream()
                 .filter(task -> task.getLinearIssueId() != null && !task.getLinearIssueId().isBlank())
+                .filter(task -> projectId == null || (task.getProject() != null && projectId.equals(task.getProject().getId())))
                 .toList();
 
         List<Map<String, Object>> reports = new ArrayList<>();
@@ -159,8 +171,15 @@ public class SystemStatusService {
         return section;
     }
 
-    private Map<String, Object> julesSessions() {
+    private Map<String, Object> julesSessions(UUID projectId) {
         List<JulesSessionEntity> sessions = julesSessionRepository.findAll();
+        if (projectId != null) {
+            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+            Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
+            sessions = sessions.stream()
+                    .filter(s -> projectTaskIds.contains(s.getTaskId()))
+                    .collect(Collectors.toList());
+        }
         Map<String, Long> counts = sessions.stream()
                 .collect(Collectors.groupingBy(JulesSessionEntity::getStatus, Collectors.counting()));
 
@@ -174,12 +193,19 @@ public class SystemStatusService {
         return section;
     }
 
-    private Map<String, Object> qualityGate() {
+    private Map<String, Object> qualityGate(UUID projectId) {
         long totalAttempts = 0;
         long totalOpportunities = 0;
         long totalDefects = 0;
 
-        for (TaskEntity task : taskRepository.findAll()) {
+        List<TaskEntity> tasks = taskRepository.findAll();
+        if (projectId != null) {
+            tasks = tasks.stream()
+                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .collect(Collectors.toList());
+        }
+
+        for (TaskEntity task : tasks) {
             JsonNode report = task.getQualityGateReport();
             if (report != null && report.has("checks")) {
                 totalAttempts++;
@@ -201,19 +227,41 @@ public class SystemStatusService {
         return section;
     }
 
-    private Map<String, Object> tasks() {
+    private Map<String, Object> tasks(UUID projectId) {
         Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
         for (TaskStatus status : TaskStatus.values()) {
-            counts.put(status, taskRepository.countByStatus(status));
+            if (projectId != null) {
+                counts.put(status, taskRepository.countByProjectIdAndStatus(projectId, status));
+            } else {
+                counts.put(status, taskRepository.countByStatus(status));
+            }
         }
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
         return section;
     }
 
-    private Map<String, Object> conflictDpmo() {
+    private Map<String, Object> conflictDpmo(UUID projectId) {
         List<PrReviewEntity> allReviews = prReviewRepository.findAll();
         List<TaskConflictEntity> allConflicts = taskConflictRepository.findAll();
+
+        if (projectId != null) {
+            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+            Set<UUID> projectTaskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
+
+            List<JulesSessionEntity> projectSessions = julesSessionRepository.findAll().stream()
+                    .filter(s -> projectTaskIds.contains(s.getTaskId()))
+                    .collect(Collectors.toList());
+            Set<UUID> projectSessionIds = projectSessions.stream().map(JulesSessionEntity::getId).collect(Collectors.toSet());
+
+            allReviews = allReviews.stream()
+                    .filter(r -> projectSessionIds.contains(r.getJulesSessionId()))
+                    .collect(Collectors.toList());
+
+            allConflicts = allConflicts.stream()
+                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projectId.equals(c.getTask().getProject().getId()))
+                    .collect(Collectors.toList());
+        }
 
         java.time.Instant sevenDaysAgo = java.time.Instant.now().minus(7, java.time.temporal.ChronoUnit.DAYS);
 
@@ -232,7 +280,9 @@ public class SystemStatusService {
         long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
         double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
 
-        List<TaskConflictEntity> activeConflicts = taskConflictRepository.findByResolutionStatusNot("auto_resolved");
+        List<TaskConflictEntity> activeConflicts = allConflicts.stream()
+                .filter(c -> !"auto_resolved".equals(c.getResolutionStatus()))
+                .collect(Collectors.toList());
 
         List<Map<String, Object>> activeList = new java.util.ArrayList<>();
         for (TaskConflictEntity conflict : activeConflicts) {

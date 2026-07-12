@@ -1,6 +1,8 @@
 <script lang="ts">
   import { onMount } from 'svelte';
 
+  export let projectId: string = '';
+
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
   let metrics: any = null;
@@ -9,7 +11,8 @@
 
   async function fetchMetrics() {
     try {
-      const response = await fetch(`${API_BASE}/api/system-status`);
+      const url = projectId ? `${API_BASE}/api/system-status?projectId=${projectId}` : `${API_BASE}/api/system-status`;
+      const response = await fetch(url);
       if (!response.ok) throw new Error('Не удалось загрузить системные метрики');
       metrics = await response.json();
     } catch (e: any) {
@@ -17,6 +20,11 @@
     } finally {
       loading = false;
     }
+  }
+
+  $: if (projectId) {
+    loading = true;
+    fetchMetrics();
   }
 
   onMount(fetchMetrics);

@@ -85,7 +85,11 @@
     const response = await fetch(`${API_BASE}/api/projects/${projectId}/wishlist`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: wishText, type: 'client_wish' })
+      body: JSON.stringify({
+        projectId: projectId,
+        source: 'client',
+        content: wishText
+      })
     });
     if (response.ok) {
       wishText = '';
