@@ -171,7 +171,15 @@ public class TechnicalLeadCompiler {
                                          java.util.List<TaskEntity> createdTasks) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
-        task.setDescription(description);
+
+        String formattedDescription = description;
+        if (wishlist.getJtbd() != null && !wishlist.getJtbd().isBlank()) {
+            formattedDescription = description + "\n\n[JTBD Statement]:\n" + wishlist.getJtbd();
+        }
+        if (wishlist.getAcceptanceCriteria() != null && !wishlist.getAcceptanceCriteria().isBlank()) {
+            formattedDescription = formattedDescription + "\n\n[Acceptance Criteria (Given/When/Then)]:\n" + wishlist.getAcceptanceCriteria();
+        }
+        task.setDescription(formattedDescription);
 
         RoleEntity role = roleRepository.findById(roleTag)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleTag));
@@ -336,11 +344,13 @@ public class TechnicalLeadCompiler {
             }
         }
 
-        // Deduplicate paths
+        // Deduplicate paths and strictly enforce file scope boundaries based on role relevance
         java.util.List<String> deduped = new java.util.ArrayList<>();
         for (String p : paths) {
-            if (!deduped.contains(p)) {
-                deduped.add(p);
+            if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-05".equals(roleTag) || isRelevantForRole(roleTag, p)) {
+                if (!deduped.contains(p)) {
+                    deduped.add(p);
+                }
             }
         }
 
