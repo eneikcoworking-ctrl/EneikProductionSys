@@ -190,6 +190,21 @@ async def predict_metadata_endpoint(request: MetadataRequest):
         )
 
 
+def fetch_pr_diff(pr_url: str) -> str:
+    # Memory Directive: Python Gemini API integrations in the Prediction Service must enforce a 2MB size limit on downloaded .diff files
+    if not pr_url:
+        return ""
+    try:
+        diff_url = pr_url + ".diff" if not pr_url.endswith(".diff") else pr_url
+        req = urllib.request.Request(diff_url)
+        with urllib.request.urlopen(req, timeout=10) as response:
+            # Enforce 2MB limit
+            diff_content = response.read(2 * 1024 * 1024).decode('utf-8', errors='ignore')
+            return diff_content
+    except Exception as e:
+        print(f"Failed to fetch PR diff: {e}")
+        return ""
+
 @app.post("/api/v1/review/pr", response_model=ReviewResponse)
 async def review_pr_endpoint(request: ReviewRequest):
     role_tag = "BARCAN-TAG-02"
@@ -212,15 +227,54 @@ async def review_pr_endpoint(request: ReviewRequest):
     # Fetch corresponding charter rules
     charter = predictor.get_charter_rules(role_tag)
 
-    # Analyze files and simulate local test suite validation
-    # If the tests pass in the pipeline, the local agent accepts
-    approved = True
-    remarks = f"CORE ARCHITECTURE VERIFIED. APPROVED. Antigravity local agent review passed for role {role_tag}."
-    if charter:
-        remarks += f" Verified against compliance charter rule requirements."
+    # Fetch PR Diff
+    diff_content = fetch_pr_diff(request.prUrl)
 
-    # Propose new technical debt / Kano refactoring tasks based on the role context
+    falsification_prompt = "что может быть не так с эти решением? Предложи варианты улучшения. Если предложения недкоративные - продлить сессию и разработать их. Если их можно сфальсифицировать - предложить свой вариант и выполнить."
+
+    # Prompt Gemini for real review
+    approved = False
+    remarks = ""
     new_tasks = []
+    try:
+        system_instruction = f"""You are a Principal AI Engineer reviewing a pull request for role {role_tag}.
+Analyze the provided code diff against the role charter and general architectural best practices.
+Return ONLY JSON: {{"approved": bool, "remarks": "string", "newTasks": [{{"roleTag": "string", "description": "string"}}]}}.
+If there are any flaws, return approved=false and include this exact text in remarks to instruct the implementing agent: "{falsification_prompt}". Also explain the exact flaws.
+Charter Rules:
+{charter}
+"""
+        prompt = f"Task Description: {task_desc}\n\nPR Diff:\n{diff_content}"
+
+        response_json = ask_gemini(prompt, system_instruction)
+
+        # Clean markdown formatting if present
+        if response_json.strip().startswith("```json"):
+            response_json = response_json.strip()[7:]
+            if response_json.endswith("```"):
+                response_json = response_json[:-3]
+        elif response_json.strip().startswith("```"):
+            response_json = response_json.strip()[3:]
+            if response_json.endswith("```"):
+                response_json = response_json[:-3]
+
+        parsed = json.loads(response_json)
+
+        approved = parsed.get("approved", False)
+        remarks = parsed.get("remarks", "")
+        new_tasks = parsed.get("newTasks", [])
+
+        if not approved and falsification_prompt not in remarks:
+            remarks += f"\n\n{falsification_prompt}"
+
+        if approved and not remarks:
+            remarks = "CORE ARCHITECTURE VERIFIED. APPROVED."
+
+    except Exception as e:
+        print(f"ML Review Exception: {e}")
+        # Memory directive: API failures or crashes default to safe values (e.g., `approved = false`)
+        approved = False
+        remarks = f"ML_REVIEW_CONNECTION_FAILURE: Failed to reach ML model. {falsification_prompt}"
     is_chess = "шахмат" in task_desc.lower() or "chess" in task_desc.lower()
 
     if is_chess:
