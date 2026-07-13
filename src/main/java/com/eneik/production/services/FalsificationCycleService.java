@@ -112,37 +112,33 @@ public class FalsificationCycleService {
                     violationsFoundCount++;
                     log.warn("FalsificationCycleService: Code violation detected for role {} in project {}", roleTag, project.getName());
 
-                    if (hasCriticalRegression) {
-                        if (tasksCreatedCount < 2) {
-                            // Create self_falsification wishlist item
-                            WishlistEntity wishlist = new WishlistEntity();
-                            wishlist.setProjectId(project.getId());
-                            wishlist.setSource(WishlistSource.self_falsification);
-                            wishlist.setSourceRoleTag(roleTag);
-                            wishlist.setContent("Critical regression self-falsification cleanup required for role " + roleTag + ". Violates: " + rcResult.get("reason"));
-                            wishlist.setStatus(WishlistStatus.pending);
-                            wishlist.setLeanValue(LeanValue.essential);
-                            wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-                            wishlist.setCompiledByRole("BARCAN-TAG-09");
-                            wishlist.setJtbd("Fix critical regression detected by falsification cycle");
-                            wishlist.setSixSigmaMetric("falsification_run_rate");
-                            wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
-                            wishlist.setAcceptanceCriteria("Actuator health returns to UP");
-                            wishlist = wishlistRepository.save(wishlist);
+                    if (tasksCreatedCount < 2) {
+                        // Create self_falsification wishlist item
+                        WishlistEntity wishlist = new WishlistEntity();
+                        wishlist.setProjectId(project.getId());
+                        wishlist.setSource(WishlistSource.self_falsification);
+                        wishlist.setSourceRoleTag(roleTag);
+                        wishlist.setContent("Compliance violation detected for role " + roleTag + ". Violates: " + rcResult.get("reason"));
+                        wishlist.setStatus(WishlistStatus.pending);
+                        wishlist.setLeanValue(LeanValue.essential);
+                        wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                        wishlist.setCompiledByRole("BARCAN-TAG-09");
+                        wishlist.setJtbd("Fix role refusal criteria violation detected by falsification cycle");
+                        wishlist.setSixSigmaMetric("falsification_run_rate");
+                        wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
+                        wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
+                        wishlist = wishlistRepository.save(wishlist);
 
-                            // Compile to chaotic task
-                            try {
-                                technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
-                                tasksCreatedCount++;
-                                log.info("FalsificationCycleService: Created chaotic task from self_falsification wishlist item for role {}", roleTag);
-                            } catch (Exception e) {
-                                log.error("FalsificationCycleService: Failed to compile wishlist item to task: {}", e.getMessage(), e);
-                            }
-                        } else {
-                            log.info("FalsificationCycleService: Rate limit of 2 tasks per run reached, skipping task creation for role {}", roleTag);
+                        // Compile to chaotic task
+                        try {
+                            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+                            tasksCreatedCount++;
+                            log.info("FalsificationCycleService: Created chaotic task from self_falsification wishlist item for role {}", roleTag);
+                        } catch (Exception e) {
+                            log.error("FalsificationCycleService: Failed to compile wishlist item to task: {}", e.getMessage(), e);
                         }
                     } else {
-                        log.info("FalsificationCycleService: Violation found for role {} but no critical regression confirmed, skipping task creation.", roleTag);
+                        log.info("FalsificationCycleService: Rate limit of 2 tasks per run reached, skipping task creation for role {}", roleTag);
                     }
                 }
             }
