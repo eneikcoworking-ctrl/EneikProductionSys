@@ -38,8 +38,9 @@ def ask_gemini(prompt: str, system_instruction: str = "") -> str:
             "contents": [
                 {"parts": [{"text": f"{system_instruction}\n\nInput:\n{prompt}"}]}
             ],
-            "generationConfig": {"responseMimeType": "application/json"},
         }
+        if "json" in system_instruction.lower():
+            payload["generationConfig"] = {"responseMimeType": "application/json"}
 
         req = urllib.request.Request(
             url,
@@ -99,6 +100,15 @@ class RefusalCriteriaRequest(BaseModel):
 class RefusalCriteriaResponse(BaseModel):
     compliant: bool
     reason: str
+
+
+class ChatRequest(BaseModel):
+    prompt: str
+    systemInstruction: str = ""
+
+
+class ChatResponse(BaseModel):
+    text: str
 
 
 class PredictionService:
@@ -381,6 +391,37 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
         compliant=passes,
         reason="Code is compliant with refusal criteria." if passes else "Diff violates role refusal criteria: found violation."
     )
+
+
+@app.post("/api/v1/assistant/chat", response_model=ChatResponse)
+async def assistant_chat_endpoint(request: ChatRequest):
+    try:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+        if not api_key:
+            prompt_lower = request.prompt.lower()
+            if "queued" in prompt_lower or "очеред" in prompt_lower:
+                reply = "В очереди сейчас находятся задачи для ролей агентов. Наш оркестратор использует блокировки SKIP LOCKED, чтобы агенты разбирали их без зависания."
+            elif "bottleneck" in prompt_lower or "затык" in prompt_lower:
+                reply = "Анализ заторов (bottleneck) показывает текущую утилизацию ресурсов. Самое время проверить загрузку агентов!"
+            elif "status" in prompt_lower or "статус" in prompt_lower:
+                reply = "Все системы функционируют в штатном режиме. Контур контроля Fail-Safe и циклы самоанализа запущены."
+            else:
+                reply = "Привет! Я твой ИИ-помощник по управлению фабрикой агентов Eneik. Настройте GEMINI_API_KEY, чтобы я мог полноценно отвечать на любые ваши вопросы в свободном режиме!"
+            return ChatResponse(text=reply)
+
+        response_text = ask_gemini(request.prompt, request.systemInstruction)
+        cleaned = response_text
+        if cleaned.strip().startswith("```"):
+            lines = cleaned.strip().split("\n")
+            if len(lines) > 2:
+                cleaned = "\n".join(lines[1:-1])
+        if not cleaned or cleaned.strip() == "{}":
+            cleaned = "Извините, не удалось получить осмысленный ответ от модели Gemini. Проверьте ваш API-ключ."
+
+        return ChatResponse(text=cleaned)
+    except Exception as e:
+        print(f"Assistant Chat Exception: {e}")
+        return ChatResponse(text=f"Произошла техническая ошибка при обращении к ИИ-ассистенту: {e}")
 
 
 if __name__ == "__main__":

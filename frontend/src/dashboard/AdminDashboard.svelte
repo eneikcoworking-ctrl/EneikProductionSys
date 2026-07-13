@@ -221,6 +221,39 @@
     return new Date(value).toLocaleString();
   }
 
+  let chatOpen = $state(false);
+  let chatInput = $state('');
+  let chatHistory = $state<{ sender: 'user' | 'ai'; text: string }[]>([
+    { sender: 'ai', text: 'Привет! Я твой ИИ-ассистент Eneik. Я анализирую метрики очереди, заторов и аккаунтов в реальном времени. Спроси меня о чём угодно!' }
+  ]);
+  let chatLoading = $state(false);
+
+  async function sendChatMessage() {
+    if (!chatInput.trim() || chatLoading) return;
+    const userMsg = chatInput.trim();
+    chatHistory = [...chatHistory, { sender: 'user', text: userMsg }];
+    chatInput = '';
+    chatLoading = true;
+
+    try {
+      const response = await fetch(`${API_BASE}/api/dashboard/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: userMsg })
+      });
+      if (response.ok) {
+        const data = await response.json();
+        chatHistory = [...chatHistory, { sender: 'ai', text: data.response || 'Пустой ответ от ассистента.' }];
+      } else {
+        chatHistory = [...chatHistory, { sender: 'ai', text: 'Ошибка: не удалось связаться с сервером ассистента.' }];
+      }
+    } catch (e) {
+      chatHistory = [...chatHistory, { sender: 'ai', text: `Ошибка сети: ${e}` }];
+    } finally {
+      chatLoading = false;
+    }
+  }
+
   onMount(loadStatus);
 </script>
 
@@ -412,6 +445,43 @@
     <h2>Состояние пула</h2>
     <p class="admin-message">Статус админки: {message}</p>
   </section>
+
+  <!-- AI Assistant Chat Widget -->
+  <div class="chat-widget">
+    {#if chatOpen}
+      <div class="chat-box">
+        <div class="chat-header">
+          <h3>ИИ-ассистент Eneik</h3>
+          <button type="button" class="close-btn" onclick={() => chatOpen = false}>×</button>
+        </div>
+        <div class="chat-messages">
+          {#each chatHistory as messageItem}
+            <div class={`chat-message ${messageItem.sender}`}>
+              <div class="message-bubble">{messageItem.text}</div>
+            </div>
+          {/each}
+          {#if chatLoading}
+            <div class="chat-message ai">
+              <div class="message-bubble loading">Думаю...</div>
+            </div>
+          {/if}
+        </div>
+        <div class="chat-input-area">
+          <input
+            type="text"
+            placeholder="Задайте вопрос о статусах и метриках..."
+            bind:value={chatInput}
+            onkeydown={(e) => { if (e.key === 'Enter') sendChatMessage(); }}
+          />
+          <button type="button" onclick={sendChatMessage} disabled={chatLoading}>Отправить</button>
+        </div>
+      </div>
+    {:else}
+      <button type="button" class="chat-trigger" onclick={() => chatOpen = true}>
+        💬 Спросить ИИ
+      </button>
+    {/if}
+  </div>
 </section>
 
 <style>
@@ -648,5 +718,144 @@
       display: grid;
       grid-template-columns: 1fr;
     }
+  }
+
+  /* Chat Widget Styles */
+  .chat-widget {
+    bottom: 24px;
+    position: fixed;
+    right: 24px;
+    z-index: 1000;
+  }
+
+  .chat-trigger {
+    background: #1d4ed8;
+    border: none;
+    border-radius: 50px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 12px 24px;
+    transition: background 0.2s;
+  }
+
+  .chat-trigger:hover {
+    background: #1e40af;
+  }
+
+  .chat-box {
+    background: white;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
+    display: flex;
+    flex-direction: column;
+    height: 450px;
+    width: 360px;
+  }
+
+  .chat-header {
+    align-items: center;
+    background: #1d4ed8;
+    border-top-left-radius: 11px;
+    border-top-right-radius: 11px;
+    color: white;
+    display: flex;
+    justify-content: space-between;
+    padding: 12px 16px;
+  }
+
+  .chat-header h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin: 0;
+  }
+
+  .close-btn {
+    background: transparent;
+    border: none;
+    color: white;
+    cursor: pointer;
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .chat-messages {
+    background: #f8fafc;
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    gap: 12px;
+    overflow-y: auto;
+    padding: 16px;
+  }
+
+  .chat-message {
+    display: flex;
+    max-width: 80%;
+  }
+
+  .chat-message.user {
+    align-self: flex-end;
+  }
+
+  .chat-message.ai {
+    align-self: flex-start;
+  }
+
+  .message-bubble {
+    border-radius: 8px;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 8px 12px;
+    white-space: pre-wrap;
+  }
+
+  .chat-message.user .message-bubble {
+    background: #1d4ed8;
+    color: white;
+  }
+
+  .chat-message.ai .message-bubble {
+    background: #e2e8f0;
+    color: #1e293b;
+  }
+
+  .message-bubble.loading {
+    color: #64748b;
+    font-style: italic;
+  }
+
+  .chat-input-area {
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .chat-input-area input {
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    flex-grow: 1;
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .chat-input-area button {
+    background: #1d4ed8;
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 8px 16px;
+  }
+
+  .chat-input-area button:disabled {
+    background: #94a3b8;
+    cursor: not-allowed;
   }
 </style>

@@ -95,6 +95,27 @@ public class MLPredictionServiceClient {
         }
     }
 
+    public String chat(String prompt, String systemInstruction) {
+        String endpoint = mlServiceUrl + "/api/v1/assistant/chat";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> request = new HashMap<>();
+            request.put("prompt", prompt);
+            request.put("systemInstruction", systemInstruction);
+
+            Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            if (response != null && response.containsKey("text")) {
+                return (String) response.get("text");
+            }
+            return "Ошибка: Неверный формат ответа от ИИ-ассистента.";
+        } catch (Exception e) {
+            LOGGER.severe("ML service chat call failed: " + e.getMessage());
+            return "Ассистент временно недоступен. Ошибка подключения к ML-сервису: " + e.getMessage();
+        }
+    }
+
 
     public java.util.Map<String, Object> generateTaskMetadata(String wishlistContent) {
         String endpoint = mlServiceUrl + "/api/v1/predict/metadata";
