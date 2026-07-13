@@ -347,6 +347,8 @@ def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
     blocked_paths = [
         "playwright-report/",
         "test-results/",
+        "coverage/",
+        ".next/",
         ".last-run.json",
         "node_modules/",
         ".env",
@@ -357,7 +359,7 @@ def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
     ]
     for marker in blocked_paths:
         if marker in lower:
-            return False, f"Generated/local artifact detected in PR diff: {marker}. Remove generated artifacts from the PR and keep only source, config, and test files."
+            return False, generated_artifact_remediation(marker)
 
     secret_patterns = [
         r"(?i)aws_secret_access_key\s*=\s*['\"][a-zA-Z0-9+/]{20,}['\"]",
@@ -375,6 +377,23 @@ def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
             return False, "QA task PR does not appear to include test files. Add unit/integration/E2E tests that verify the Acceptance Criteria."
 
     return True, "CORE ARCHITECTURE VERIFIED. APPROVED. Static fallback review passed because Gemini quota was unavailable: non-empty diff, no generated artifact markers, no obvious hardcoded secrets, and role-specific minimum checks passed."
+
+
+def generated_artifact_remediation(marker: str) -> str:
+    return (
+        f"Generated/local artifact detected in PR diff: {marker}. "
+        "This is a binary repository-hygiene blocker, not a design/refinement question. "
+        "Remove generated artifacts from the PR and keep only source, config, tests, and docs.\n\n"
+        "Required remediation for Jules:\n"
+        "1. Remove generated artifacts from the branch and Git index:\n"
+        "   git rm -r --cached --ignore-unmatch playwright-report test-results coverage node_modules .next apps/web/playwright-report apps/web/test-results apps/web/coverage apps/web/.next\n"
+        "2. Ensure .gitignore contains: **/playwright-report/, **/test-results/, **/coverage/, **/.next/, node_modules/, *.trace, *.webm.\n"
+        "3. Verify before resubmitting:\n"
+        "   git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
+        "   The command must produce no artifact paths.\n"
+        "4. Commit only source/config/test/doc changes, update the existing PR branch, and resubmit.\n\n"
+        "Do not ask for additional product requirements until the artifact diff is clean."
+    )
 
 @app.post("/api/v1/review/pr", response_model=ReviewResponse)
 async def review_pr_endpoint(request: ReviewRequest):
@@ -401,7 +420,9 @@ async def review_pr_endpoint(request: ReviewRequest):
     # Fetch PR Diff
     diff_content = fetch_pr_diff(request.prUrl, request.githubToken)
 
-    falsification_prompt = "что может быть не так с эти решением? Предложи варианты улучшения. Если предложения недкоративные - продлить сессию и разработать их. Если их можно сфальсифицировать - предложить свой вариант и выполнить."
+    preflight_approved, preflight_remarks = static_pr_review(role_tag, task_desc, diff_content)
+    if not preflight_approved:
+        return ReviewResponse(approved=False, remarks=preflight_remarks, newTasks=[])
 
     # Prompt Gemini for real review
     approved = False
@@ -411,7 +432,9 @@ async def review_pr_endpoint(request: ReviewRequest):
         system_instruction = f"""You are a Principal AI Engineer reviewing a pull request for role {role_tag}.
 Analyze the provided code diff against the role charter and general architectural best practices.
 Return ONLY JSON: {{"approved": bool, "remarks": "string", "newTasks": [{{"roleTag": "string", "description": "string"}}]}}.
-If there are any flaws, return approved=false and include this exact text in remarks to instruct the implementing agent: "{falsification_prompt}". Also explain the exact flaws.
+If there are any flaws, return approved=false and explain the exact blocker plus concrete remediation steps for the implementing agent.
+Do not ask the implementing agent open-ended follow-up questions.
+Do not use generic critique prompts such as "what could be wrong with this solution"; make a binary review decision from the diff.
 Charter Rules:
 {charter}
 """
@@ -435,17 +458,12 @@ Charter Rules:
         remarks = parsed.get("remarks", "")
         new_tasks = parsed.get("newTasks", [])
 
-        if not approved and falsification_prompt not in remarks:
-            remarks += f"\n\n{falsification_prompt}"
-
         if approved and not remarks:
             remarks = "CORE ARCHITECTURE VERIFIED. APPROVED."
 
     except Exception as e:
         print(f"ML Review Exception: {e}")
         approved, remarks = static_pr_review(role_tag, task_desc, diff_content)
-        if not approved:
-            remarks = f"{remarks}\n\n{falsification_prompt}"
     is_chess = "шахмат" in task_desc.lower() or "chess" in task_desc.lower()
 
     if is_chess:

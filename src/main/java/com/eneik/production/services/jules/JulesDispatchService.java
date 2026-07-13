@@ -38,6 +38,7 @@ public class JulesDispatchService {
     private static final Logger log = LoggerFactory.getLogger(JulesDispatchService.class);
     private static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
+    private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -370,7 +371,8 @@ public class JulesDispatchService {
             }
 
             try {
-                String answer = buildJulesQuestionAnswer(task, question);
+                long previousSimilarQuestions = countPreviousSimilarQuestions(session.getId(), question);
+                String answer = buildJulesQuestionAnswer(task, question, previousSimilarQuestions);
                 boolean sent = julesApiClient.sendMessage(session.getExternalSessionId(), answer, apiKey);
 
                 JulesActivityResponseEntity record = existing.orElseGet(JulesActivityResponseEntity::new);
@@ -480,7 +482,47 @@ public class JulesDispatchService {
                 || lower.contains("есть ли требования");
     }
 
-    private String buildJulesQuestionAnswer(TaskEntity task, String question) {
+    private long countPreviousSimilarQuestions(UUID sessionId, String question) {
+        String normalized = normalizeQuestionForLoopDetection(question);
+        if (normalized.isBlank()) {
+            return 0L;
+        }
+        try {
+            return julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId).stream()
+                    .filter(record -> normalized.equals(normalizeQuestionForLoopDetection(record.getQuestion())))
+                    .count();
+        } catch (Exception e) {
+            log.warn("Could not load Jules activity response history for session {}: {}", sessionId, e.getMessage());
+            return 0L;
+        }
+    }
+
+    private String normalizeQuestionForLoopDetection(String text) {
+        if (text == null) {
+            return "";
+        }
+        String lower = text.toLowerCase(Locale.ROOT)
+                .replaceAll("\\s+", " ")
+                .trim();
+        if (mentionsGeneratedArtifact(lower)) {
+            return "generated-artifact-remediation";
+        }
+        if (lower.contains("specific requirements")
+                || lower.contains("business logic verification")
+                || lower.contains("do you have any")
+                || lower.contains("нужно ли")
+                || lower.contains("есть ли")) {
+            return "requirements-clarification";
+        }
+        return lower.length() <= 500 ? lower : lower.substring(0, 500);
+    }
+
+    private String buildJulesQuestionAnswer(TaskEntity task, String question, long previousSimilarQuestions) {
+        String deterministicAnswer = objectiveJulesResolution(task, question, previousSimilarQuestions);
+        if (deterministicAnswer != null && !deterministicAnswer.isBlank()) {
+            return deterministicAnswer;
+        }
+
         String fallback = fallbackJulesAnswer(task);
         String roleTag = task.getRole() != null ? task.getRole().getTag() : "unknown-role";
         String projectRepo = task.getProject() != null ? task.getProject().getRepositoryName() : "unknown-repo";
@@ -511,6 +553,59 @@ public class JulesDispatchService {
         }
 
         return fallback;
+    }
+
+    private String objectiveJulesResolution(TaskEntity task, String question, long previousSimilarQuestions) {
+        if (mentionsGeneratedArtifact(question)) {
+            return generatedArtifactRemediation(task, previousSimilarQuestions);
+        }
+        if (previousSimilarQuestions >= DESTRUCTIVE_LOOP_REPEAT_THRESHOLD) {
+            return repeatedQuestionCircuitBreaker(task, previousSimilarQuestions);
+        }
+        return null;
+    }
+
+    private boolean mentionsGeneratedArtifact(String text) {
+        if (text == null) {
+            return false;
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.contains("generated/local artifact")
+                || lower.contains("generated artifact")
+                || lower.contains("local artifact")
+                || lower.contains("playwright-report")
+                || lower.contains("test-results")
+                || lower.contains("node_modules")
+                || lower.contains("coverage/")
+                || lower.contains(".next/")
+                || lower.contains("trace.zip")
+                || lower.contains(".webm");
+    }
+
+    private String generatedArtifactRemediation(TaskEntity task, long previousSimilarQuestions) {
+        String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
+        String loopPrefix = previousSimilarQuestions >= DESTRUCTIVE_LOOP_REPEAT_THRESHOLD
+                ? "Circuit breaker: this blocker question has repeated. Stop the discussion loop and execute the remediation exactly.\n\n"
+                : "";
+        return loopPrefix
+                + "Objective decision for task " + taskId + ": the PR is blocked only because generated/local artifacts are still present in the GitHub diff. This is a binary repository-hygiene blocker, not a product/refinement question.\n\n"
+                + "Do not ask for more requirements and do not start new architecture/coverage/MVC work until the artifact diff is clean. Execute this checklist:\n"
+                + "1. Remove generated artifacts from the branch and the Git index:\n"
+                + "   git rm -r --cached --ignore-unmatch playwright-report test-results coverage node_modules .next apps/web/playwright-report apps/web/test-results apps/web/coverage apps/web/.next\n"
+                + "   Then delete any remaining local generated files only from those generated directories.\n"
+                + "2. Ensure .gitignore contains these patterns: **/playwright-report/, **/test-results/, **/coverage/, **/.next/, node_modules/, *.trace, *.webm.\n"
+                + "3. Verify the PR diff is clean before resubmitting:\n"
+                + "   git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
+                + "   The command must produce no artifact paths.\n"
+                + "4. Commit only source, config, tests, and docs. Update the existing PR branch and resubmit.\n\n"
+                + "Acceptance condition: the next PR diff contains zero generated artifact paths. If this command still reports artifacts after one cleanup pass, report the exact remaining paths in the PR summary and stop.";
+    }
+
+    private String repeatedQuestionCircuitBreaker(TaskEntity task, long previousSimilarQuestions) {
+        String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
+        return "Circuit breaker for task " + taskId + ": this is the same blocker/clarification loop for the "
+                + (previousSimilarQuestions + 1)
+                + "th time. Do not ask another open-ended question. Make one objective move from the task facts: if the latest review contains a concrete blocker, fix exactly that blocker and verify it with commands; otherwise proceed from the Acceptance Criteria and DoD, document the smallest safe assumption in the PR summary, and resubmit. If a fact is truly unverifiable after one attempt, mark the PR summary with BLOCKED and list the exact missing fact.";
     }
 
     private boolean isUsableAiAnswer(String answer) {
