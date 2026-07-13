@@ -14,20 +14,36 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.logging.Logger;
 
+import com.eneik.production.services.settings.SystemSettingsService;
+
 @Service
 public class MLPredictionServiceClient {
     private static final Logger LOGGER = Logger.getLogger(MLPredictionServiceClient.class.getName());
 
     private final RestTemplate restTemplate;
     private final String mlServiceUrl;
+    private final SystemSettingsService settingsService;
 
     public MLPredictionServiceClient(RestTemplateBuilder restTemplateBuilder,
-                                     @Value("${ml.service.url}") String mlServiceUrl) {
+                                     @Value("${ml.service.url}") String mlServiceUrl,
+                                     SystemSettingsService settingsService) {
         this.restTemplate = restTemplateBuilder
                 .setConnectTimeout(Duration.ofMillis(500))
                 .setReadTimeout(Duration.ofMillis(500))
                 .build();
         this.mlServiceUrl = mlServiceUrl;
+        this.settingsService = settingsService;
+    }
+
+    private String getGeminiApiKey() {
+        if (settingsService != null) {
+            try {
+                return settingsService.effectiveValue("gemini_api_key");
+            } catch (Exception e) {
+                // Ignore
+            }
+        }
+        return "";
     }
 
     public boolean checkSystemRisk(int activeTasks, double currentCycleTime) {
@@ -63,6 +79,7 @@ public class MLPredictionServiceClient {
             request.put("projectId", projectId.toString());
             request.put("taskId", taskId.toString());
             request.put("prUrl", prUrl);
+            request.put("apiKey", getGeminiApiKey());
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -84,6 +101,7 @@ public class MLPredictionServiceClient {
             Map<String, Object> request = new HashMap<>();
             request.put("prDiff", prDiff);
             request.put("refusalCriteria", refusalCriteria);
+            request.put("apiKey", getGeminiApiKey());
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -104,6 +122,7 @@ public class MLPredictionServiceClient {
             Map<String, Object> request = new HashMap<>();
             request.put("prompt", prompt);
             request.put("systemInstruction", systemInstruction);
+            request.put("apiKey", getGeminiApiKey());
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             if (response != null && response.containsKey("text")) {
@@ -124,6 +143,7 @@ public class MLPredictionServiceClient {
 
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("content", wishlistContent);
+        request.put("apiKey", getGeminiApiKey());
 
         try {
             return restTemplate.postForObject(endpoint, new org.springframework.http.HttpEntity<>(request, headers), java.util.Map.class);
