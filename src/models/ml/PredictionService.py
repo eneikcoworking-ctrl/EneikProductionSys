@@ -13,9 +13,10 @@ import urllib.request
 app = FastAPI(title="Eneik AI Prediction Service")
 
 
-def ask_gemini(prompt: str, system_instruction: str = "") -> str:
+def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> str:
     # Check if we have an API key configured or in env
-    api_key = os.getenv("GEMINI_API_KEY", "")
+    if not api_key:
+        api_key = os.getenv("GEMINI_API_KEY", "")
 
     # If no key, or empty, return default mock JSON depending on the instruction/prompt
     if not api_key:
@@ -73,6 +74,7 @@ class BottleneckResponse(BaseModel):
 
 class MetadataRequest(BaseModel):
     content: str
+    apiKey: str = ""
 
 
 class MetadataResponse(BaseModel):
@@ -84,6 +86,7 @@ class ReviewRequest(BaseModel):
     projectId: str
     taskId: str
     prUrl: str
+    apiKey: str = ""
 
 
 class ReviewResponse(BaseModel):
@@ -95,6 +98,7 @@ class ReviewResponse(BaseModel):
 class RefusalCriteriaRequest(BaseModel):
     prDiff: str
     refusalCriteria: str
+    apiKey: str = ""
 
 
 class RefusalCriteriaResponse(BaseModel):
@@ -105,6 +109,7 @@ class RefusalCriteriaResponse(BaseModel):
 class ChatRequest(BaseModel):
     prompt: str
     systemInstruction: str = ""
+    apiKey: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -193,7 +198,7 @@ async def predict_metadata_endpoint(request: MetadataRequest):
             "extract a Job To Be Done (JTBD) statement and Acceptance Criteria (Given/When/Then format). "
             'Return ONLY JSON: {"jtbd": "string", "acceptanceCriteria": "string"}.'
         )
-        response_json = ask_gemini(request.content, system_instruction)
+        response_json = ask_gemini(request.content, system_instruction, request.apiKey)
         parsed = json.loads(response_json)
         return MetadataResponse(
             jtbd=parsed.get("jtbd", f"Automate and transform: {request.content}"),
@@ -266,7 +271,7 @@ Charter Rules:
 """
         prompt = f"Task Description: {task_desc}\n\nPR Diff:\n{diff_content}"
 
-        response_json = ask_gemini(prompt, system_instruction)
+        response_json = ask_gemini(prompt, system_instruction, request.apiKey)
 
         # Clean markdown formatting if present
         if response_json.strip().startswith("```json"):
@@ -371,7 +376,7 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
             'Return ONLY JSON: {"compliant": bool, "reason": "string"}.'
         )
         prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
-        response_json = ask_gemini(prompt, system_instruction)
+        response_json = ask_gemini(prompt, system_instruction, request.apiKey)
 
         # Parse response if not empty or fallback default mock
         if response_json and response_json.strip() != "{}" and response_json.strip() != "":
@@ -396,7 +401,7 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
 @app.post("/api/v1/assistant/chat", response_model=ChatResponse)
 async def assistant_chat_endpoint(request: ChatRequest):
     try:
-        api_key = os.getenv("GEMINI_API_KEY", "")
+        api_key = request.apiKey or os.getenv("GEMINI_API_KEY", "")
         if not api_key:
             prompt_lower = request.prompt.lower()
             if "queued" in prompt_lower or "очеред" in prompt_lower:
@@ -409,7 +414,7 @@ async def assistant_chat_endpoint(request: ChatRequest):
                 reply = "Привет! Я твой ИИ-помощник по управлению фабрикой агентов Eneik. Настройте GEMINI_API_KEY, чтобы я мог полноценно отвечать на любые ваши вопросы в свободном режиме!"
             return ChatResponse(text=reply)
 
-        response_text = ask_gemini(request.prompt, request.systemInstruction)
+        response_text = ask_gemini(request.prompt, request.systemInstruction, api_key)
         cleaned = response_text
         if cleaned.strip().startswith("```"):
             lines = cleaned.strip().split("\n")
