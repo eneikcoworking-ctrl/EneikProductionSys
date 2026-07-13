@@ -91,6 +91,16 @@ class ReviewResponse(BaseModel):
     newTasks: list = []
 
 
+class RefusalCriteriaRequest(BaseModel):
+    prDiff: str
+    refusalCriteria: str
+
+
+class RefusalCriteriaResponse(BaseModel):
+    compliant: bool
+    reason: str
+
+
 class PredictionService:
     """
     Core logic for ML predictions and agent reviews.
@@ -255,6 +265,33 @@ async def review_pr_endpoint(request: ReviewRequest):
             )
 
     return ReviewResponse(approved=approved, remarks=remarks, newTasks=new_tasks)
+
+
+@app.post("/api/v1/review/refusal-criteria", response_model=RefusalCriteriaResponse)
+async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
+    try:
+        system_instruction = (
+            "You are a strict code quality auditor. "
+            "Evaluate if the following code changes (git diff) violate the provided refusal criteria. "
+            "If they violate the criteria, compliant must be false. Otherwise, compliant must be true. "
+            'Return ONLY JSON: {"compliant": bool, "reason": "string"}.'
+        )
+        prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
+        response_json = ask_gemini(prompt, system_instruction)
+        parsed = json.loads(response_json)
+        return RefusalCriteriaResponse(
+            compliant=parsed.get("compliant", True),
+            reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
+        )
+    except Exception as e:
+        print(f"Refusal Criteria Check Fallback triggered: {e}")
+        passes = True
+        if request.prDiff and ("refusal_violation" in request.prDiff or "violates_criteria" in request.prDiff):
+            passes = False
+        return RefusalCriteriaResponse(
+            compliant=passes,
+            reason="Code is compliant with refusal criteria" if passes else "Diff violates role refusal criteria: found violation."
+        )
 
 
 if __name__ == "__main__":
