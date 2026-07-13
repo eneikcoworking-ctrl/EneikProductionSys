@@ -73,6 +73,7 @@ class IdempotencyTest {
 
         JulesDispatchService dispatchService = new JulesDispatchService(
             apiClient, sessionRepository,
+            mock(com.eneik.production.repositories.JulesActivityResponseRepository.class),
             mock(com.eneik.production.repositories.AccountRepository.class),
             mock(TaskRepository.class),
             mock(com.eneik.production.repositories.TaskConflictRepository.class),
@@ -81,6 +82,7 @@ class IdempotencyTest {
             mock(com.eneik.production.services.monitor.PrReviewPipelineService.class),
             mock(com.eneik.production.services.MLPredictionServiceClient.class),
             mock(com.eneik.production.repositories.RoleRepository.class),
+            mock(com.eneik.production.services.github.GitHubPullRequestService.class),
             "prefix/"
         );
 

@@ -58,6 +58,9 @@ public class ProjectFlowService {
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
 
+    @Value("${jules.max-concurrent-sessions-per-account:3}")
+    private int maxConcurrentJulesSessionsPerAccount;
+
 
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -293,8 +296,30 @@ public class ProjectFlowService {
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
 
         for (TaskEntity task : queuedTasks) {
+            Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
+            if (existingSession.isPresent() && existingSession.get().getAccountId() != null) {
+                JulesSessionEntity session = existingSession.get();
+                try {
+                    claimService.claimSpecificTask(task.getId(), session.getAccountId());
+                    TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
+                    savedTask.setJulesSessionName(session.getExternalSessionId());
+                    savedTask.setJulesDispatchStatus("already dispatched, skipping duplicate");
+                    taskRepository.save(savedTask);
+                    log.info("Reconnected queued task {} of project {} to existing Jules session {}",
+                            savedTask.getId(), project.getName(), session.getExternalSessionId());
+                } catch (Exception e) {
+                    log.error("Failed to reconnect queued task {} to existing Jules session {}: {}",
+                            task.getId(), session.getId(), e.getMessage(), e);
+                }
+                continue;
+            }
+
             String roleTag = task.getRole().getTag();
-            Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), roleTag);
+            Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
+                    project.getId(),
+                    roleTag,
+                    maxConcurrentJulesSessionsPerAccount
+            );
             if (accountOpt.isPresent()) {
                 AccountEntity account = accountOpt.get();
                 try {
@@ -312,10 +337,24 @@ public class ProjectFlowService {
                     log.error("Failed to claim/dispatch queued task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
                 }
             } else {
-                task.setJulesDispatchStatus("No idle accounts with capability " + roleTag + " available");
+                task.setJulesDispatchStatus("No Jules account capacity with capability " + roleTag + " available");
                 taskRepository.save(task);
             }
         }
+    }
+
+    private Optional<JulesSessionEntity> findActiveJulesSession(UUID taskId) {
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(session -> session.getExternalSessionId() != null)
+                .filter(session -> !"skipped".equals(session.getExternalSessionId()))
+                .filter(session -> {
+                    String status = session.getStatus();
+                    return "queued".equals(status)
+                            || "running".equals(status)
+                            || "revising".equals(status)
+                            || "stuck".equals(status);
+                })
+                .findFirst();
     }
 
     @Transactional
@@ -334,7 +373,11 @@ public class ProjectFlowService {
             if (!hasActiveReviewSession) {
                 // Find any idle capable account to act as reviewer
                 String roleTag = task.getRole().getTag();
-                Optional<AccountEntity> accountOpt = accountRepository.lockNextIdleAccountForProjectAndCapability(project.getId(), roleTag);
+                Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
+                        project.getId(),
+                        roleTag,
+                        maxConcurrentJulesSessionsPerAccount
+                );
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();
                     try {

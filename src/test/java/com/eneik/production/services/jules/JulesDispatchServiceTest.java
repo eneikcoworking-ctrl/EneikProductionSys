@@ -38,9 +38,11 @@ class JulesDispatchServiceTest {
         com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
         com.eneik.production.repositories.RoleRepository roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
         com.eneik.production.repositories.TaskConflictRepository taskConflictRepository = mock(com.eneik.production.repositories.TaskConflictRepository.class);
+        com.eneik.production.repositories.JulesActivityResponseRepository julesActivityResponseRepository = mock(com.eneik.production.repositories.JulesActivityResponseRepository.class);
+        com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         julesDispatchService = new JulesDispatchService(
-            julesApiClient, julesSessionRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
-            prReviewPipelineService, mlPredictionServiceClient, roleRepository, "prefix/"
+            julesApiClient, julesSessionRepository, julesActivityResponseRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
+            prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
     }

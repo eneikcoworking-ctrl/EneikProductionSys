@@ -220,6 +220,11 @@ public class ClaimService {
         }
     }
 
+    @Transactional(readOnly = true)
+    public boolean hasActiveClaim(UUID taskId) {
+        return claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).isPresent();
+    }
+
     @Transactional
     public ClaimDto claimReviewer(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
@@ -291,6 +296,14 @@ public class ClaimService {
         List<ClaimEntity> expired = claimRepository.findByReleasedAtIsNullAndLeaseExpiresAtBefore(Instant.now());
 
         for (ClaimEntity claim : expired) {
+            if (hasActiveExternalJulesSession(claim.getTask().getId())) {
+                claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
+                claimRepository.save(claim);
+                log.info("Maintenance: Extended lease for task {} because Jules session is still active",
+                        claim.getTask().getId());
+                continue;
+            }
+
             log.warn("Maintenance: Lease expired for task {} held by account {}",
                 claim.getTask().getId(), claim.getAccount().getId());
 
@@ -316,7 +329,7 @@ public class ClaimService {
             List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
             boolean isAlive = false;
             for (JulesSessionEntity s : sessions) {
-                if (!"skipped".equals(s.getExternalSessionId()) && !"failed".equals(s.getStatus()) && !"stuck".equals(s.getStatus())) {
+                if (isActiveExternalJulesSession(s)) {
                     isAlive = true;
                 }
             }
@@ -356,6 +369,23 @@ public class ClaimService {
                 julesSessionRepository.save(session);
             }
         }
+    }
+
+    private boolean hasActiveExternalJulesSession(UUID taskId) {
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .anyMatch(this::isActiveExternalJulesSession);
+    }
+
+    private boolean isActiveExternalJulesSession(JulesSessionEntity session) {
+        if (session.getExternalSessionId() == null || "skipped".equals(session.getExternalSessionId())) {
+            return false;
+        }
+        String status = session.getStatus();
+        return "queued".equals(status)
+                || "running".equals(status)
+                || "revising".equals(status)
+                || "pr_opened".equals(status)
+                || "stuck".equals(status);
     }
 
     @Transactional

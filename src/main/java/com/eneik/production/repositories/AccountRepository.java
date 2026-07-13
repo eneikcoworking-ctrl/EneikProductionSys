@@ -45,5 +45,50 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
 
+    @Query(value = """
+            SELECT * FROM accounts a
+            WHERE a.enabled = true
+              AND a.status <> 'decommissioned'
+              AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
+              AND (a.capabilities = '*' OR a.capabilities LIKE CONCAT('%', :tag, '%'))
+              AND (
+                  SELECT COUNT(*)
+                  FROM jules_sessions s
+                  JOIN tasks t ON t.id = s.task_id
+                  WHERE s.account_id = a.id
+                    AND s.status IN ('queued', 'running', 'revising', 'stuck')
+                    AND t.status NOT IN ('done', 'failed')
+              ) < :maxSessions
+            ORDER BY (
+                  SELECT COUNT(*)
+                  FROM jules_sessions s
+                  JOIN tasks t ON t.id = s.task_id
+                  WHERE s.account_id = a.id
+                    AND s.status IN ('queued', 'running', 'revising', 'stuck')
+                    AND t.status NOT IN ('done', 'failed')
+              ) ASC, a.last_heartbeat DESC
+            LIMIT 1 FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    Optional<AccountEntity> lockNextJulesAccountWithCapacity(@Param("projectId") UUID projectId,
+                                                             @Param("tag") String tag,
+                                                             @Param("maxSessions") int maxSessions);
+
+    @Query(value = """
+            SELECT COUNT(*) > 0 FROM accounts a
+            WHERE a.enabled = true
+              AND a.status <> 'decommissioned'
+              AND (a.capabilities = '*' OR a.capabilities LIKE CONCAT('%', :tag, '%'))
+              AND (
+                  SELECT COUNT(*)
+                  FROM jules_sessions s
+                  JOIN tasks t ON t.id = s.task_id
+                  WHERE s.account_id = a.id
+                    AND s.status IN ('queued', 'running', 'revising', 'stuck')
+                    AND t.status NOT IN ('done', 'failed')
+              ) < :maxSessions
+            """, nativeQuery = true)
+    boolean existsJulesAccountWithCapacity(@Param("tag") String tag,
+                                           @Param("maxSessions") int maxSessions);
+
     long countByCurrentProjectId(UUID currentProjectId);
 }

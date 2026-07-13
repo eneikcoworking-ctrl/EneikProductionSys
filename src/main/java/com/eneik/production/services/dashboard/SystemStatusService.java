@@ -80,17 +80,27 @@ public class SystemStatusService {
         List<AccountEntity> accounts = accountRepository.findAll();
         if (projectId != null) {
             accounts = accounts.stream()
-                    .filter(a -> projectId.equals(a.getCurrentProjectId()))
+                    .filter(a -> a.getStatus() != AccountStatus.decommissioned)
+                    .filter(a -> a.getCurrentProjectId() == null || projectId.equals(a.getCurrentProjectId()))
                     .collect(Collectors.toList());
         }
         Map<String, Long> summary = accounts.stream()
                 .collect(Collectors.groupingBy(account -> account.getStatus().name(), Collectors.counting()));
+        long decommissioned = summary.getOrDefault(AccountStatus.decommissioned.name(), 0L);
+        long operational = accounts.size() - decommissioned;
+        long apiKeyConfigured = accounts.stream()
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> account.getApiKey() != null && !account.getApiKey().isBlank())
+                .count();
 
         Map<String, Object> section = new LinkedHashMap<>();
         section.put("total", accounts.size());
+        section.put("operational", operational);
+        section.put("apiKeyConfigured", apiKeyConfigured);
         section.put("idle", summary.getOrDefault(AccountStatus.idle.name(), 0L));
         section.put("busy", summary.getOrDefault(AccountStatus.busy.name(), 0L));
         section.put("offline", summary.getOrDefault(AccountStatus.offline.name(), 0L));
+        section.put("decommissioned", decommissioned);
         section.put("items", accounts.stream().map(this::accountItem).toList());
         return section;
     }

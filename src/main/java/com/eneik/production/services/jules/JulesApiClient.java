@@ -10,6 +10,8 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ByteArrayOutputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -18,6 +20,7 @@ import java.net.http.HttpResponse;
 @Component
 public class JulesApiClient {
     private static final Logger log = LoggerFactory.getLogger(JulesApiClient.class);
+    private static final int MAX_ACTIVITIES_RESPONSE_BYTES = 2 * 1024 * 1024;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -121,6 +124,55 @@ public class JulesApiClient {
         }
     }
 
+    public JsonNode getSessionActivities(String externalSessionId, String apiKey) {
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
+            return null;
+        }
+
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBaseUrl + "/" + normalizeSessionPath(externalSessionId) + "/activities"))
+                    .header("X-Goog-Api-Key", apiKey)
+                    .GET()
+                    .build();
+
+            HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("Jules activities fetch failed: status={}", response.statusCode());
+                return null;
+            }
+
+            byte[] body = readLimited(response.body(), MAX_ACTIVITIES_RESPONSE_BYTES);
+            if (body == null) {
+                log.warn("Jules activities response for session {} exceeded {} bytes; skipping activity scan to protect backend memory", externalSessionId, MAX_ACTIVITIES_RESPONSE_BYTES);
+                return null;
+            }
+            return objectMapper.readTree(body);
+        } catch (IOException | InterruptedException e) {
+            log.error("Error getting Jules session activities", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return null;
+        }
+    }
+
+    private byte[] readLimited(InputStream inputStream, int maxBytes) throws IOException {
+        try (InputStream in = inputStream; ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int total = 0;
+            int read;
+            while ((read = in.read(buffer)) != -1) {
+                total += read;
+                if (total > maxBytes) {
+                    return null;
+                }
+                out.write(buffer, 0, read);
+            }
+            return out.toByteArray();
+        }
+    }
+
     public String getSessionPrUrl(String externalSessionId) {
         String apiKey = settingsService.effectiveValue("jules_api_key");
         return getSessionPrUrl(externalSessionId, apiKey);
@@ -211,6 +263,12 @@ public class JulesApiClient {
             }
         }
         return null;
+    }
+
+    private String normalizeSessionPath(String externalSessionId) {
+        return externalSessionId.startsWith("sessions/")
+                ? externalSessionId
+                : "sessions/" + externalSessionId;
     }
 
     public boolean isEnabled() {

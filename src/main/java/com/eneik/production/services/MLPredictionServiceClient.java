@@ -28,8 +28,8 @@ public class MLPredictionServiceClient {
                                      @Value("${ml.service.url}") String mlServiceUrl,
                                      SystemSettingsService settingsService) {
         this.restTemplate = restTemplateBuilder
-                .setConnectTimeout(Duration.ofMillis(500))
-                .setReadTimeout(Duration.ofMillis(500))
+                .setConnectTimeout(Duration.ofSeconds(2))
+                .setReadTimeout(Duration.ofSeconds(60))
                 .build();
         this.mlServiceUrl = mlServiceUrl;
         this.settingsService = settingsService;
@@ -80,6 +80,7 @@ public class MLPredictionServiceClient {
             request.put("taskId", taskId.toString());
             request.put("prUrl", prUrl);
             request.put("apiKey", getGeminiApiKey());
+            request.put("githubToken", settingsService.effectiveValue("github_token"));
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -150,10 +151,37 @@ public class MLPredictionServiceClient {
         } catch (Exception e) {
             LOGGER.warning("ML service call to generateTaskMetadata failed: " + e.getMessage() + ". Using fallback.");
             java.util.Map<String, Object> fallback = new java.util.HashMap<>();
-            fallback.put("jtbd", "Automate and transform: " + wishlistContent);
-            fallback.put("acceptanceCriteria", "Given task merged, Then verify feature: " + wishlistContent);
+            fallback.put("jtbd", fallbackJtbd(wishlistContent));
+            fallback.put("acceptanceCriteria", fallbackAcceptanceCriteria(wishlistContent));
             return fallback;
         }
+    }
+
+    private String fallbackJtbd(String wishlistContent) {
+        String clean = compact(wishlistContent, 240);
+        return "When I use the requested product capability, I want the system to deliver this client need: "
+                + clean
+                + ", so that the result can be verified end-to-end without relying on subjective interpretation.";
+    }
+
+    private String fallbackAcceptanceCriteria(String wishlistContent) {
+        String clean = compact(wishlistContent, 180);
+        return "Given the implemented feature for \"" + clean + "\", When the primary user follows the intended happy path, Then the user can complete the core workflow without client-side or server-side errors.\n"
+                + "Given required input is missing or invalid, When the user submits the form or API request, Then the system returns a clear validation error and does not persist invalid data.\n"
+                + "Given an authorized administrator uses the relevant management surface, When content or settings for this feature are changed, Then the public/user-facing experience reflects the saved change.\n"
+                + "Given an unauthorized or unauthenticated user attempts a protected action, When the request is made, Then access is denied without exposing private data.\n"
+                + "Given the feature is complete, When automated verification runs, Then the relevant unit, integration, and critical E2E checks pass and generated test artifacts are not committed.";
+    }
+
+    private String compact(String value, int maxLength) {
+        if (value == null || value.isBlank()) {
+            return "the requested feature";
+        }
+        String compacted = value.replaceAll("\\s+", " ").trim();
+        if (compacted.length() <= maxLength) {
+            return compacted;
+        }
+        return compacted.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
 
     private static class MLResponse {

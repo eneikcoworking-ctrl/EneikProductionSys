@@ -179,6 +179,7 @@ public class TechnicalLeadCompiler {
         if (wishlist.getAcceptanceCriteria() != null && !wishlist.getAcceptanceCriteria().isBlank()) {
             formattedDescription = formattedDescription + "\n\n[Acceptance Criteria (Given/When/Then)]:\n" + wishlist.getAcceptanceCriteria();
         }
+        formattedDescription = formattedDescription + "\n\n[Execution Notes]:\n" + executionNotesForRole(roleTag);
         task.setDescription(formattedDescription);
 
         RoleEntity role = roleRepository.findById(roleTag)
@@ -467,6 +468,25 @@ public class TechnicalLeadCompiler {
             }
         }
         return "NewFeature";
+    }
+
+    private String executionNotesForRole(String roleTag) {
+        String common = "- Treat the task description, JTBD, Acceptance Criteria, DoD, and file scope as the source of truth.\n"
+                + "- Proceed with the smallest safe implementation assumption when details are ambiguous; document assumptions in the PR summary instead of waiting.\n"
+                + "- Ask a blocker question only for a concrete contradiction, security risk, or data-loss risk.\n"
+                + "- Keep generated local artifacts, reports, screenshots, trace zips, node_modules, and environment files out of the commit.";
+
+        if ("BARCAN-TAG-06".equals(roleTag)) {
+            return common + "\n"
+                    + "- QA default for business logic verification: use the listed Acceptance Criteria and DoD; continue deepening verification unless a specific contradiction is found.\n"
+                    + "- Maintain the intended test pyramid as closely as the codebase allows; prefer unit tests for pure logic, integration tests for API/data flows, and E2E tests for the critical user journeys.\n"
+                    + "- Do not commit playwright-report, test-results, trace archives, screenshots, or coverage artifacts.";
+        }
+        if ("BARCAN-TAG-00".equals(roleTag)) {
+            return common + "\n"
+                    + "- Integration default: reconcile the implemented pieces into a working branch, remove accidental generated artifacts, and verify build/test commands before opening the PR.";
+        }
+        return common;
     }
 
     private String capitalize(String s) {

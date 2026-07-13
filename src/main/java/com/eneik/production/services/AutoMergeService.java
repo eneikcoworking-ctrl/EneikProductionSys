@@ -13,6 +13,7 @@ import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -50,6 +51,7 @@ public class AutoMergeService {
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final WishlistRepository wishlistRepository;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final GitHubPullRequestService gitHubPullRequestService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -62,7 +64,8 @@ public class AutoMergeService {
                             JulesDispatchService julesDispatchService,
                             RoleCapabilityLoader roleCapabilityLoader,
                             WishlistRepository wishlistRepository,
-                            MLPredictionServiceClient mlPredictionServiceClient) {
+                            MLPredictionServiceClient mlPredictionServiceClient,
+                            GitHubPullRequestService gitHubPullRequestService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -75,6 +78,7 @@ public class AutoMergeService {
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.wishlistRepository = wishlistRepository;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -107,6 +111,7 @@ public class AutoMergeService {
     @Transactional
     protected void executeMerge(PrReviewEntity review) {
         log.info("AutoMergeService: Merging PR {} due to valid approval token and green CI", review.getPrUrl());
+        PullRequestTarget pullRequestTarget = null;
         
         // 1. Check Cynefin complex domain spike handling and Role Philosophical Filter
         if (review.getJulesSessionId() != null) {
@@ -145,19 +150,9 @@ public class AutoMergeService {
                         if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
                             String token = settingsService.effectiveValue("github_token");
                             if (token != null && !token.isBlank()) {
-                                String prUrl = review.getPrUrl();
-                                String owner = null;
-                                String repoName = null;
-                                String pullNumber = null;
-                                if (prUrl != null && !prUrl.contains("/mock-") && prUrl.replace("https://github.com/", "").split("/").length >= 4) {
-                                    String cleanUrl = prUrl.replace("https://github.com/", "");
-                                    String[] parts = cleanUrl.split("/");
-                                    owner = parts[0];
-                                    repoName = parts[1];
-                                    pullNumber = parts[3];
-                                }
-                                if (owner != null && repoName != null && pullNumber != null) {
-                                    prDiff = fetchPrDiff(token, owner, repoName, pullNumber);
+                                pullRequestTarget = resolvePullRequestTarget(review);
+                                if (pullRequestTarget != null) {
+                                    prDiff = fetchPrDiff(token, pullRequestTarget.owner(), pullRequestTarget.repo(), pullRequestTarget.pullNumber());
                                 }
                             }
                         } else {
@@ -194,57 +189,23 @@ public class AutoMergeService {
             String token = settingsService.effectiveValue("github_token");
             if (token != null && !token.isBlank()) {
                 try {
-                    String prUrl = review.getPrUrl();
-                    String owner = null;
-                    String repoName = null;
-                    String pullNumber = null;
-
-                    if (prUrl != null && !prUrl.contains("/mock-") && prUrl.replace("https://github.com/", "").split("/").length >= 4) {
-                        String cleanUrl = prUrl.replace("https://github.com/", "");
-                        String[] parts = cleanUrl.split("/");
-                        owner = parts[0];
-                        repoName = parts[1];
-                        pullNumber = parts[3];
-                    } else if (review.getJulesSessionId() != null) {
-                        // If it's a mock URL, look up the repository from the task and find open PRs on GitHub
-                        var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
-                        if (sessionOpt.isPresent()) {
-                            var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                            if (taskOpt.isPresent()) {
-                                String prRepoUrl = taskOpt.get().getProject().getRepositoryUrl();
-                                if (prRepoUrl != null && prRepoUrl.replace("https://github.com/", "").split("/").length >= 2) {
-                                    String cleanRepoUrl = prRepoUrl.replace("https://github.com/", "");
-                                    String[] repoParts = cleanRepoUrl.split("/");
-                                    owner = repoParts[0];
-                                    repoName = repoParts[1];
-                                } else {
-                                    owner = "eneikcoworking-ctrl";
-                                    repoName = taskOpt.get().getProject().getRepositoryName();
-                                }
-                                
-                                String listUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls?state=open";
-                                HttpClient client = HttpClient.newHttpClient();
-                                HttpRequest listRequest = HttpRequest.newBuilder()
-                                        .uri(URI.create(listUrl))
-                                        .header("Authorization", "Bearer " + token)
-                                        .header("Accept", "application/vnd.github+json")
-                                        .GET()
-                                        .build();
-                                HttpResponse<String> listResponse = client.send(listRequest, HttpResponse.BodyHandlers.ofString());
-                                if (listResponse.statusCode() == 200) {
-                                    JsonNode prs = objectMapper.readTree(listResponse.body());
-                                    if (prs.isArray() && prs.size() > 0) {
-                                        JsonNode targetPr = prs.get(0);
-                                        prUrl = targetPr.path("html_url").asText(prUrl);
-                                        pullNumber = targetPr.path("number").asText(null);
-                                    }
-                                }
-                            }
-                        }
+                    if (pullRequestTarget == null) {
+                        pullRequestTarget = resolvePullRequestTarget(review);
                     }
 
-                    if (owner != null && repoName != null && pullNumber != null) {
-                        String mergeUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls/" + pullNumber + "/merge";
+                    if (pullRequestTarget == null) {
+                        log.warn("AutoMergeService: Skipping merge for invalid or unresolved PR URL {}", review.getPrUrl());
+                        review.setCiStatus("invalid_pr");
+                        prReviewRepository.save(review);
+                        return;
+                    }
+
+                    String prUrl = pullRequestTarget.url();
+                    String owner = pullRequestTarget.owner();
+                    String repoName = pullRequestTarget.repo();
+                    String pullNumber = pullRequestTarget.pullNumber();
+
+                    String mergeUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls/" + pullNumber + "/merge";
                         HttpClient client = HttpClient.newHttpClient();
                         HttpRequest mergeRequest = HttpRequest.newBuilder()
                                 .uri(URI.create(mergeUrl))
@@ -267,7 +228,6 @@ public class AutoMergeService {
                                 handleMergeConflict(review, owner, repoName, pullNumber, token);
                             }
                         }
-                    }
                 } catch (Exception e) {
                     log.error("Error executing real GitHub merge for PR {}: {}", review.getPrUrl(), e.getMessage(), e);
                 }
@@ -455,4 +415,42 @@ public class AutoMergeService {
         }
         return "";
     }
+
+    private PullRequestTarget resolvePullRequestTarget(PrReviewEntity review) {
+        PullRequestTarget parsed = parseGithubPullRequestUrl(review.getPrUrl());
+        if (parsed != null) {
+            return parsed;
+        }
+
+        if (review.getJulesSessionId() == null) {
+            return null;
+        }
+
+        return julesSessionRepository.findById(review.getJulesSessionId())
+                .flatMap(session -> taskRepository.findById(session.getTaskId())
+                        .flatMap(task -> gitHubPullRequestService.findOpenPullRequestBySession(task.getProject(), session.getExternalSessionId())))
+                .map(pr -> parseGithubPullRequestUrl(pr.url()))
+                .orElse(null);
+    }
+
+    private PullRequestTarget parseGithubPullRequestUrl(String prUrl) {
+        if (prUrl == null || prUrl.isBlank() || prUrl.contains("/mock-")) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(prUrl);
+            if (!"github.com".equalsIgnoreCase(uri.getHost())) {
+                return null;
+            }
+            String[] parts = uri.getPath().replaceAll("^/+", "").split("/");
+            if (parts.length >= 4 && "pull".equals(parts[2]) && parts[3].matches("\\d+")) {
+                return new PullRequestTarget(prUrl, parts[0], parts[1], parts[3]);
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse GitHub pull request URL {}: {}", prUrl, e.getMessage());
+        }
+        return null;
+    }
+
+    private record PullRequestTarget(String url, String owner, String repo, String pullNumber) {}
 }

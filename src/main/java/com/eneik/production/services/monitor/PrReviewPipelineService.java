@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -37,7 +38,12 @@ public class PrReviewPipelineService {
                 touchesCriticalPath
         );
 
-        PrReviewEntity review = new PrReviewEntity();
+        Optional<PrReviewEntity> existing = prReviewRepository.findFirstByJulesSessionIdAndPrUrlOrderByCreatedAtDesc(sessionId, prUrl);
+        if (existing != null && existing.isPresent() && Boolean.TRUE.equals(existing.get().getMerged())) {
+            return existing.get();
+        }
+
+        PrReviewEntity review = existing == null ? new PrReviewEntity() : existing.orElseGet(PrReviewEntity::new);
         review.setJulesSessionId(sessionId);
         review.setPrUrl(prUrl);
         review.setCiStatus(prData.getCiStatus());

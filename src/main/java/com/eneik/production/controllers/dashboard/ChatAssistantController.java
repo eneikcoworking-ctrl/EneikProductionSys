@@ -1,77 +1,86 @@
 package com.eneik.production.controllers.dashboard;
 
-import com.eneik.production.models.persistence.TaskStatus;
-import com.eneik.production.repositories.AccountRepository;
-import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.MLPredictionServiceClient;
-import com.eneik.production.services.dashboard.BottleneckDetectionService;
-import org.springframework.web.bind.annotation.*;
+import com.eneik.production.services.dashboard.ProjectOperationalContextService;
+import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.UUID;
 
 /**
- * @file ChatAssistantController.java
- * @description Provides an interactive AI Assistant Chat Endpoint that connects with Gemini
- *              and analyzes the real-time project metrics, queue, and bottleneck data.
+ * Provides an interactive AI assistant endpoint grounded in backend metrics.
  */
 @RestController
 @RequestMapping("/api/dashboard")
 @CrossOrigin(origins = "http://localhost:3000")
 public class ChatAssistantController {
 
-    private final TaskRepository taskRepository;
-    private final BottleneckDetectionService bottleneckDetectionService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final ProjectOperationalContextService projectOperationalContextService;
 
-    public ChatAssistantController(TaskRepository taskRepository,
-                                   BottleneckDetectionService bottleneckDetectionService,
-                                   MLPredictionServiceClient mlPredictionServiceClient) {
-        this.taskRepository = taskRepository;
-        this.bottleneckDetectionService = bottleneckDetectionService;
+    public ChatAssistantController(MLPredictionServiceClient mlPredictionServiceClient,
+                                   ProjectOperationalContextService projectOperationalContextService) {
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.projectOperationalContextService = projectOperationalContextService;
     }
 
     @PostMapping("/chat")
     public Map<String, String> askAssistant(@RequestBody Map<String, String> payload) {
-        String userMessage = payload.getOrDefault("message", "");
-        if (userMessage.trim().isEmpty()) {
-            return Map.of("response", "Запрос пуст. Пожалуйста, задайте вопрос.");
+        String userMessage = payload.getOrDefault("message", "").trim();
+        if (userMessage.isEmpty()) {
+            return Map.of("response", "Запрос пуст. Задайте вопрос по текущему проекту.");
         }
 
-        // 1. Gather real-time pipeline state
-        long queued = taskRepository.countByStatus(TaskStatus.queued);
-        long claimed = taskRepository.countByStatus(TaskStatus.claimed);
-        long inProgress = taskRepository.countByStatus(TaskStatus.in_progress);
-        long review = taskRepository.countByStatus(TaskStatus.review);
-        long done = taskRepository.countByStatus(TaskStatus.done);
-        long failed = taskRepository.countByStatus(TaskStatus.failed);
+        UUID projectId = parseProjectId(payload.get("projectId"));
+        String projectName = payload.getOrDefault("projectName", "");
 
-        // 2. Gather bottlenecks state
-        String bottlenecksStr = bottleneckDetectionService.detect().stream()
-                .map(b -> b.type() + " (" + (b.tag() != null ? b.tag() : "аккаунт " + b.accountId()) + "): " + b.reason())
-                .collect(Collectors.joining(", "));
-
-        if (bottlenecksStr.isEmpty()) {
-            bottlenecksStr = "Заторов в системе не обнаружено.";
+        ProjectOperationalContext context;
+        try {
+            context = projectOperationalContextService.build(projectId, projectName);
+        } catch (Exception e) {
+            return Map.of("response", "Не удалось собрать данные по текущему проекту: " + e.getMessage());
         }
 
-        // 3. Construct System Instruction to ground Gemini in our actual dashboard state
-        String systemInstruction = "You are a professional Agile and Lean Product Coach managing an automated AI Agent Agency called Eneik.\n" +
-                "You are given real-time dashboard metrics and state:\n" +
-                "- Queue (задачи в очереди queued): " + queued + "\n" +
-                "- Claimed (задачи claimed): " + claimed + "\n" +
-                "- In Progress: " + inProgress + "\n" +
-                "- Review (на ревью): " + review + "\n" +
-                "- Done (выполнено): " + done + "\n" +
-                "- Failed (сбойные): " + failed + "\n" +
-                "- Bottleneck analysis: " + bottlenecksStr + "\n\n" +
-                "Use this exact dashboard state to explain the current statuses, bottlenecks, and project progress in detail.\n" +
-                "Respond in clear, helpful, and motivating Russian language. Keep your explanation aligned with Theory of Constraints (TOC) and Lean software development.";
+        if (projectOperationalContextService.isPrReviewQuestion(userMessage)) {
+            return Map.of("response", projectOperationalContextService.answerPrReviewQuestion(context));
+        }
 
-        // 4. Query Python ML service/Gemini
+        String systemInstruction = """
+                You answer as a factive project analyst for Eneik Command Center.
+
+                DATA CONTRACT:
+                - The only source of truth is PROJECT_FACT_PACK below.
+                - This is Williamson-style factive knowledge: assert only facts present in PROJECT_FACT_PACK.
+                - Scope is selected_project_only. No global system facts are provided. Do not mention global totals unless the user explicitly asks and the facts are present.
+                - Do not greet, do not introduce yourself, do not use Agile/Lean boilerplate unless the user explicitly asks for theory.
+                - First sentence must directly answer the user's question.
+                - If the fact is absent, say exactly that the fact is not in the project context.
+                - For current GitHub PR counts use githubPullRequestsLive.
+                - For PR review decisions and merge outcomes use databasePrReviews.
+                - For Jules execution and unanswered questions use julesSessions, accountsAvailableForProject, tasks, and conflicts.
+                - Never invent accounts, tags, PR counts, sessions, hidden workers, or failures.
+                - Respond in Russian, concise but with exact numbers and IDs when relevant.
+
+                PROJECT_FACT_PACK:
+                """ + context.promptJson();
+
         String aiResponse = mlPredictionServiceClient.chat(userMessage, systemInstruction);
-
         return Map.of("response", aiResponse);
+    }
+
+    private UUID parseProjectId(String rawProjectId) {
+        if (rawProjectId == null || rawProjectId.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(rawProjectId);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }

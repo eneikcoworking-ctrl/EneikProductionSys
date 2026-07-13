@@ -41,6 +41,8 @@ public class ContinuousOrchestrationService {
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
     public void continuousOrchestrate() {
+        pollActiveJulesSessions();
+
         List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
         for (ProjectEntity project : activeProjects) {
             try {
@@ -52,11 +54,15 @@ public class ContinuousOrchestrationService {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
             }
         }
+    }
 
-        // Poll all active Jules sessions to update status and handle PR transitions
+    private void pollActiveJulesSessions() {
         try {
             List<com.eneik.production.models.persistence.JulesSessionEntity> activeSessions = julesSessionRepository.findAll().stream()
-                    .filter(s -> "running".equals(s.getStatus()) || "queued".equals(s.getStatus()))
+                    .filter(s -> "running".equals(s.getStatus())
+                            || "queued".equals(s.getStatus())
+                            || "revising".equals(s.getStatus())
+                            || "stuck".equals(s.getStatus()))
                     .toList();
             for (com.eneik.production.models.persistence.JulesSessionEntity session : activeSessions) {
                 try {
