@@ -9,6 +9,7 @@ import os
 import glob
 import json
 import urllib.request
+import urllib.error
 
 app = FastAPI(title="Eneik AI Prediction Service")
 
@@ -17,6 +18,9 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
     # Check if we have an API key configured or in env
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY", "")
+
+    if api_key:
+        api_key = api_key.strip()
 
     # If no key, or empty, return default mock JSON depending on the instruction/prompt
     if not api_key:
@@ -37,9 +41,14 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
         # Structure the payload for Gemini API
         payload = {
             "contents": [
-                {"parts": [{"text": f"{system_instruction}\n\nInput:\n{prompt}"}]}
+                {"parts": [{"text": prompt}]}
             ],
         }
+        if system_instruction:
+            payload["systemInstruction"] = {
+                "parts": [{"text": system_instruction}]
+            }
+
         if "json" in system_instruction.lower():
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
@@ -49,17 +58,17 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
             headers=headers,
             method="POST",
         )
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with urllib.request.urlopen(req, timeout=30) as response:
             res_data = json.loads(response.read().decode("utf-8"))
             text = res_data["candidates"][0]["content"]["parts"][0]["text"]
             return text
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        print(f"HTTP Error calling Gemini API: {e.code} - {error_body}")
+        raise Exception(f"API Error {e.code}: {error_body}") from e
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
-        if "satisfaction_probability" in system_instruction:
-            return '{"satisfaction_probability": 0.98, "modal_status": "Highly Probable (Mock Fallback)"}'
-        elif "risk_score" in system_instruction:
-            return '{"risk_score": 0.15, "is_bottleneck_predicted": false}'
-        return "{}"
+        raise Exception(f"API Error: {str(e)}") from e
 
 
 class BottleneckRequest(BaseModel):
@@ -421,12 +430,12 @@ async def assistant_chat_endpoint(request: ChatRequest):
             if len(lines) > 2:
                 cleaned = "\n".join(lines[1:-1])
         if not cleaned or cleaned.strip() == "{}":
-            cleaned = "Извините, не удалось получить осмысленный ответ от модели Gemini. Проверьте ваш API-ключ."
+            cleaned = "Извините, не удалось получить осмысленный ответ от модели Gemini. Возможно, проблема с сетью или ключом."
 
         return ChatResponse(text=cleaned)
     except Exception as e:
         print(f"Assistant Chat Exception: {e}")
-        return ChatResponse(text=f"Произошла техническая ошибка при обращении к ИИ-ассистенту: {e}")
+        return ChatResponse(text=f"Произошла ошибка при обращении к Gemini: {str(e)}")
 
 
 if __name__ == "__main__":
