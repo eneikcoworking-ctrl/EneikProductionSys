@@ -35,7 +35,7 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
     # If key exists, we can call the actual Gemini API
     try:
         # Standard Gemini API v1beta call via urllib
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={api_key}"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key={api_key}"
         headers = {"Content-Type": "application/json"}
 
         # Structure the payload for Gemini API
