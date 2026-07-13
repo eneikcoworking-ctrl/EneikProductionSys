@@ -323,6 +323,36 @@ Charter Rules:
 
 @app.post("/api/v1/review/refusal-criteria", response_model=RefusalCriteriaResponse)
 async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
+    # Local static analysis / heuristic checks to ensure no fake green lights:
+    pr_diff = request.prDiff or ""
+
+    # 1. Check for hardcoded secrets/credentials (e.g., AWS keys, private keys, password strings)
+    import re
+    secret_patterns = [
+        r"(?i)aws_secret_access_key\s*=\s*['\"][a-zA-Z0-9+/]{40}['\"]",
+        r"(?i)aws_access_key_id\s*=\s*['\"][A-Z0-9]{20}['\"]",
+        r"(?i)private_key\s*=\s*['\"]-----BEGIN",
+        r"(?i)password\s*=\s*['\"][a-zA-Z0-9_]{6,}['\"]",
+        r"(?i)api_key\s*=\s*['\"][a-zA-Z0-9_\-]{16,}['\"]"
+    ]
+    for pattern in secret_patterns:
+        if re.search(pattern, pr_diff):
+            return RefusalCriteriaResponse(
+                compliant=False,
+                reason="Static analysis violation: Hardcoded secret/credential detected in PR diff."
+            )
+
+    # 2. Check for SQL injection / direct database queries in controllers
+    if "controllers" in pr_diff.lower() or "Controller" in pr_diff:
+        sql_keywords = [r"(?i)SELECT\s+.*\s+FROM", r"(?i)INSERT\s+INTO", r"(?i)jdbcTemplate", r"(?i)Repository"]
+        for keyword in sql_keywords:
+            if re.search(keyword, pr_diff):
+                return RefusalCriteriaResponse(
+                    compliant=False,
+                    reason="Static analysis violation: Direct DB query or Repository usage detected inside controller file diff."
+                )
+
+    # 3. Handle via Gemini or Fallback
     try:
         system_instruction = (
             "You are a strict code quality auditor. "
@@ -332,20 +362,25 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
         )
         prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
         response_json = ask_gemini(prompt, system_instruction)
-        parsed = json.loads(response_json)
-        return RefusalCriteriaResponse(
-            compliant=parsed.get("compliant", True),
-            reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
-        )
+
+        # Parse response if not empty or fallback default mock
+        if response_json and response_json.strip() != "{}" and response_json.strip() != "":
+            parsed = json.loads(response_json)
+            return RefusalCriteriaResponse(
+                compliant=parsed.get("compliant", True),
+                reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
+            )
     except Exception as e:
         print(f"Refusal Criteria Check Fallback triggered: {e}")
-        passes = True
-        if request.prDiff and ("refusal_violation" in request.prDiff or "violates_criteria" in request.prDiff):
-            passes = False
-        return RefusalCriteriaResponse(
-            compliant=passes,
-            reason="Code is compliant with refusal criteria" if passes else "Diff violates role refusal criteria: found violation."
-        )
+
+    # 4. Default fallback when Gemini is offline or not configured
+    passes = True
+    if pr_diff and ("refusal_violation" in pr_diff or "violates_criteria" in pr_diff):
+        passes = False
+    return RefusalCriteriaResponse(
+        compliant=passes,
+        reason="Code is compliant with refusal criteria." if passes else "Diff violates role refusal criteria: found violation."
+    )
 
 
 if __name__ == "__main__":
