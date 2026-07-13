@@ -110,7 +110,7 @@ public class TechnicalLeadCompilerIntegrationTest {
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
-        assertTrue(task.getDescription().startsWith("Backend Logic: Test wish"));
+        assertTrue(task.getDescription().startsWith("Backend Logic: Разработать серверную бизнес-логику"));
         assertEquals(TaskStatus.queued, task.getStatus());
         assertTrue(task.isQualityGatePassed());
         assertNotNull(task.getQualityGateReport());

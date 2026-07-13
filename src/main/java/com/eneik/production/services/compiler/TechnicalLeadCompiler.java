@@ -101,42 +101,42 @@ public class TechnicalLeadCompiler {
 
         if (uiExists) {
             TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
-                "Design: " + wishlist.getContent(),
+                "Design: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-03"),
                 "Figma-макет или скриншоты интерфейса функции. Ссылается на docs/DESIGN_SYSTEM.md или содержит 'pending: design system not yet defined'",
                 null, false, true, createdTasks);
 
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                "Backend API: " + wishlist.getContent(),
+                "Backend API: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-02"),
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
                 null, false, true, createdTasks);
 
             TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
-                "Frontend UI: " + wishlist.getContent(),
+                "Frontend UI: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-11"),
                 "Интерактивный UI в браузере корректно взаимодействует с бэкенд API. Роль: BARCAN-TAG-11. Reference: docs/DESIGN_SYSTEM.md",
                 designTask, false, true, createdTasks);
 
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                "Integration: " + wishlist.getContent(),
+                "Integration: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-00"),
                 "Код полностью собран и интегрирован в главном компоненте/роутинге. Роль: BARCAN-TAG-00",
                 frontendTask, true, true, createdTasks);
 
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                "QA E2E: " + wishlist.getContent(),
+                "QA E2E: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-06"),
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
                 integrationTask, false, true, createdTasks);
         } else {
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                "Backend Logic: " + wishlist.getContent(),
+                "Backend Logic: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-02"),
                 "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
                 null, false, true, createdTasks);
 
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                "Backend Integration: " + wishlist.getContent(),
+                "Backend Integration: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-00"),
                 "Бэкенд-модули полностью интегрированы. Роль: BARCAN-TAG-00",
                 backendTask, true, true, createdTasks);
 
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                "QA E2E: " + wishlist.getContent(),
+                "QA E2E: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-06"),
                 "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
                 integrationTask, false, true, createdTasks);
         }
@@ -544,5 +544,52 @@ public class TechnicalLeadCompiler {
         }
 
         return errors;
+    }
+
+    private String getRoleSpecificAssignment(WishlistEntity wishlist, String roleTag) {
+        String content = wishlist.getContent();
+        String jtbd = wishlist.getJtbd();
+        String taskSubject = (jtbd != null && !jtbd.isBlank() && !jtbd.toLowerCase(java.util.Locale.ROOT).contains("automate and transform")) ? jtbd : content;
+
+        // Truncate to a single concise sentence or 120 chars if taskSubject is still too long/raw
+        if (taskSubject != null && taskSubject.length() > 120) {
+            int dotIndex = taskSubject.indexOf('.');
+            if (dotIndex > 20 && dotIndex < 120) {
+                taskSubject = taskSubject.substring(0, dotIndex + 1);
+            } else {
+                taskSubject = taskSubject.substring(0, 117) + "...";
+            }
+        }
+
+        boolean isChess = content != null && (content.toLowerCase(java.util.Locale.ROOT).contains("шахмат") ||
+                          content.toLowerCase(java.util.Locale.ROOT).contains("chess"));
+
+        if (isChess) {
+            switch (roleTag) {
+                case "BARCAN-TAG-03":
+                    return "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.";
+                case "BARCAN-TAG-02":
+                    return "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).";
+                case "BARCAN-TAG-11":
+                    return "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.";
+                case "BARCAN-TAG-06":
+                    return "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.";
+            }
+        }
+
+        switch (roleTag) {
+            case "BARCAN-TAG-03":
+                return "Спроектировать пользовательский интерфейс, макеты экранов и дизайн-элементы для функции: \"" + taskSubject + "\" согласно docs/DESIGN_SYSTEM.md.";
+            case "BARCAN-TAG-02":
+                return "Разработать серверную бизнес-логику, API эндпоинты, миграции базы данных и юнит-тесты для функции: \"" + taskSubject + "\".";
+            case "BARCAN-TAG-11":
+                return "Реализовать фронтенд-компоненты на Svelte, интерактивное взаимодействие и интеграцию с API для функции: \"" + taskSubject + "\" согласно docs/DESIGN_SYSTEM.md.";
+            case "BARCAN-TAG-06":
+                return "Написать автоматизированные E2E и интеграционные тесты для верификации функции: \"" + taskSubject + "\".";
+            case "BARCAN-TAG-05":
+                return "Настроить CI/CD пайплайн, Dockerfile, конфигурации сборки и окружения для деплоя функции: \"" + taskSubject + "\".";
+            default:
+                return "Реализовать технические требования для роли " + roleTag + " по пожеланию клиента: \"" + taskSubject + "\".";
+        }
     }
 }
