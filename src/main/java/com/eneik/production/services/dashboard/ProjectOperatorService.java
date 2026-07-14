@@ -94,6 +94,7 @@ public class ProjectOperatorService {
                 - Never invent causal explanations. For "why" questions, separate VERIFIED observations from INFERRED hypotheses and say NOT AVAILABLE when the causal link is not in evidence.
                 - Every number about PRs, tasks, sessions, accounts, conflicts, Docker, or tests must be traceable to PROJECT_FACT_PACK or a named OPERATOR_EVIDENCE tool.
                 - If shared Jules slots are free, do not claim a Jules capacity shortage. Diagnose dispatch flow, stuck claims, API failures, conflicts, or unanswered activity handling instead.
+                - loop_closed Jules sessions are terminal local closures. Use closedAt and closureReason to explain why the session was stopped and which follow-up wishlist replaces the old branch.
                 - You may say you executed an action only when OPERATOR_EVIDENCE contains operator_action [ok].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.

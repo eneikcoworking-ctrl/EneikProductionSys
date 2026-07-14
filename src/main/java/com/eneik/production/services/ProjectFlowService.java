@@ -337,7 +337,7 @@ public class ProjectFlowService {
                     log.error("Failed to claim/dispatch queued task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
                 }
             } else {
-                task.setJulesDispatchStatus("No Jules account capacity with capability " + roleTag + " available");
+                task.setJulesDispatchStatus("No free Jules shared session slot available for role context " + roleTag);
                 taskRepository.save(task);
             }
         }

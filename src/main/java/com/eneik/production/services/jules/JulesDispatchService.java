@@ -5,10 +5,14 @@ import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.JulesActivityResponseRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.RoleCapabilityLoader;
 import com.eneik.production.services.github.GitHubPullRequestService;
@@ -39,10 +43,12 @@ public class JulesDispatchService {
     private static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
     private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
+    private static final int FOLLOW_UP_CONTENT_MAX_LENGTH = 7_500;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
     private final JulesActivityResponseRepository julesActivityResponseRepository;
+    private final WishlistRepository wishlistRepository;
     private final com.eneik.production.repositories.AccountRepository accountRepository;
     private final TaskRepository taskRepository;
     private final TaskConflictRepository taskConflictRepository;
@@ -57,9 +63,25 @@ public class JulesDispatchService {
     @Value("${jules.stuck-threshold-minutes:30}")
     private int stuckThresholdMinutes;
 
+    @Value("${jules.max-agent-dialog-responses:8}")
+    private int maxAgentDialogResponses;
+
+    @Value("${jules.loop-close-similar-threshold:3}")
+    private int loopCloseSimilarThreshold;
+
+    @Value("${jules.stuck-close-threshold-minutes:120}")
+    private int stuckCloseThresholdMinutes;
+
+    @Value("${jules.max-active-session-minutes:180}")
+    private int maxActiveSessionMinutes;
+
+    @Value("${jules.max-loop-closures-per-run:5}")
+    private int maxLoopClosuresPerRun;
+
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
                                 JulesActivityResponseRepository julesActivityResponseRepository,
+                                WishlistRepository wishlistRepository,
                                 com.eneik.production.repositories.AccountRepository accountRepository,
                                 TaskRepository taskRepository,
                                 TaskConflictRepository taskConflictRepository,
@@ -73,6 +95,7 @@ public class JulesDispatchService {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.julesActivityResponseRepository = julesActivityResponseRepository;
+        this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
@@ -179,6 +202,9 @@ public class JulesDispatchService {
         roleContextBuilder.append("- If a detail is ambiguous, use the smallest reversible implementation assumption, document it in the PR summary, and keep working.\n");
         roleContextBuilder.append("- Ask at most one concise blocker question only when continuing would create a concrete contradiction or security/data-loss risk.\n");
         roleContextBuilder.append("- Do not commit generated reports, screenshots, trace zips, test-results, playwright-report, node_modules, or local environment files.\n");
+        roleContextBuilder.append("- Keep this session atomic: deliver one small service/component/fix and open the PR. Do not expand into new features, broad architecture rewrites, or extra verification branches.\n");
+        roleContextBuilder.append("- If the work requires more than one atomic change, complete the smallest safe slice and describe the remaining slices in the PR summary instead of doing them in this branch.\n");
+        roleContextBuilder.append("- Hard stop: after repeated blocker feedback or eight back-and-forth replies, the orchestrator may close this session and create new short follow-up wishlist items.\n");
         if ("BARCAN-TAG-06".equals(task.getRole().getTag())) {
             roleContextBuilder.append("- QA default: if you ask whether to continue verification, continue with required test ratios and deeper AC verification; document assumptions instead of waiting.\n");
         }
@@ -350,8 +376,21 @@ public class JulesDispatchService {
         if (apiKey == null || apiKey.isBlank()) {
             return;
         }
+        if (isTerminalLocallyClosed(session)) {
+            return;
+        }
 
         JsonNode root = julesApiClient.getSessionActivities(session.getExternalSessionId(), apiKey);
+        if (root != null && root.path("activitiesOverflow").asBoolean(false)) {
+            closeLoopAndCreateFollowUps(
+                    session,
+                    task,
+                    "Jules activities payload exceeded the backend safety limit before Eneik could parse new agent questions.",
+                    List.of(),
+                    "activity_log_overflow: Jules activity log exceeded the safe scanner limit"
+            );
+            return;
+        }
         if (root == null || !root.path("activities").isArray()) {
             return;
         }
@@ -371,7 +410,29 @@ public class JulesDispatchService {
             }
 
             try {
-                long previousSimilarQuestions = countPreviousSimilarQuestions(session.getId(), question);
+                List<JulesActivityResponseEntity> responseHistory =
+                        julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+                long previousSimilarQuestions = countPreviousSimilarQuestions(responseHistory, question);
+                long previousResponses = responseHistory.stream()
+                        .filter(record -> record.getResponse() != null && !record.getResponse().isBlank())
+                        .count();
+
+                if (shouldCloseLoop(previousResponses, previousSimilarQuestions)) {
+                    JulesActivityResponseEntity record = existing.orElseGet(JulesActivityResponseEntity::new);
+                    record.setJulesSessionId(session.getId());
+                    record.setActivityName(truncate(activityName, 256));
+                    record.setActivityHash(activityHash);
+                    record.setQuestion(question);
+                    String closeReason = closeReason(previousResponses, previousSimilarQuestions, question);
+                    record.setResponse("Eneik circuit breaker closed this Jules session. " + closeReason);
+                    record.setSent(false);
+                    record.setRespondedAt(Instant.now());
+                    julesActivityResponseRepository.save(record);
+
+                    closeLoopAndCreateFollowUps(session, task, question, responseHistory, closeReason);
+                    break;
+                }
+
                 String answer = buildJulesQuestionAnswer(task, question, previousSimilarQuestions);
                 boolean sent = julesApiClient.sendMessage(session.getExternalSessionId(), answer, apiKey);
 
@@ -482,19 +543,14 @@ public class JulesDispatchService {
                 || lower.contains("есть ли требования");
     }
 
-    private long countPreviousSimilarQuestions(UUID sessionId, String question) {
+    private long countPreviousSimilarQuestions(List<JulesActivityResponseEntity> responseHistory, String question) {
         String normalized = normalizeQuestionForLoopDetection(question);
         if (normalized.isBlank()) {
             return 0L;
         }
-        try {
-            return julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId).stream()
-                    .filter(record -> normalized.equals(normalizeQuestionForLoopDetection(record.getQuestion())))
-                    .count();
-        } catch (Exception e) {
-            log.warn("Could not load Jules activity response history for session {}: {}", sessionId, e.getMessage());
-            return 0L;
-        }
+        return responseHistory.stream()
+                .filter(record -> normalized.equals(normalizeQuestionForLoopDetection(record.getQuestion())))
+                .count();
     }
 
     private String normalizeQuestionForLoopDetection(String text) {
@@ -606,6 +662,266 @@ public class JulesDispatchService {
         return "Circuit breaker for task " + taskId + ": this is the same blocker/clarification loop for the "
                 + (previousSimilarQuestions + 1)
                 + "th time. Do not ask another open-ended question. Make one objective move from the task facts: if the latest review contains a concrete blocker, fix exactly that blocker and verify it with commands; otherwise proceed from the Acceptance Criteria and DoD, document the smallest safe assumption in the PR summary, and resubmit. If a fact is truly unverifiable after one attempt, mark the PR summary with BLOCKED and list the exact missing fact.";
+    }
+
+    private boolean shouldCloseLoop(long previousResponses, long previousSimilarQuestions) {
+        return previousResponses >= maxAgentDialogResponses
+                || previousSimilarQuestions + 1 >= loopCloseSimilarThreshold;
+    }
+
+    private String closeReason(long previousResponses, long previousSimilarQuestions, String question) {
+        if (previousResponses >= maxAgentDialogResponses) {
+            return "dialog_limit_exceeded: " + previousResponses + " prior orchestrator replies; max is " + maxAgentDialogResponses;
+        }
+        if (previousSimilarQuestions + 1 >= loopCloseSimilarThreshold) {
+            return "repeated_blocker_loop: normalized blocker repeated " + (previousSimilarQuestions + 1) + " times";
+        }
+        if (mentionsGeneratedArtifact(question)) {
+            return "repository_hygiene_loop: generated/local artifacts remain in the PR diff";
+        }
+        return "destructive_dialog_loop";
+    }
+
+    private boolean isTerminalLocallyClosed(JulesSessionEntity session) {
+        return "loop_closed".equals(session.getStatus())
+                || "failed".equals(session.getStatus())
+                || "closed".equals(session.getStatus());
+    }
+
+    private void closeLoopAndCreateFollowUps(JulesSessionEntity session,
+                                             TaskEntity task,
+                                             String latestQuestion,
+                                             List<JulesActivityResponseEntity> responseHistory,
+                                             String closeReason) {
+        LoopDiagnosis diagnosis = diagnoseLoop(task, latestQuestion, closeReason);
+        String geminiAnalysis = geminiLoopAnalysis(task, latestQuestion, responseHistory, diagnosis, closeReason);
+
+        session.setStatus("loop_closed");
+        session.setClosedAt(Instant.now());
+        session.setClosureReason(closeReason + "\n\n" + diagnosis.toText() + "\n\nGemini analysis:\n" + geminiAnalysis);
+        julesSessionRepository.save(session);
+
+        claimService.closeTaskAsBlocked(task.getId(), "Jules circuit breaker: " + closeReason);
+        createCircuitBreakerWishlist(session, task, latestQuestion, diagnosis, geminiAnalysis, closeReason);
+        saveJulesDialogueLog(task.getId(), session.getExternalSessionId(),
+                diagnosis.toText() + "\n\nGemini analysis:\n" + geminiAnalysis,
+                "Jules loop closed by Eneik circuit breaker: " + closeReason);
+        log.warn("Closed Jules session {} for task {} due to {}. Follow-up wishlist generated.",
+                session.getExternalSessionId(), task.getId(), closeReason);
+    }
+
+    private LoopDiagnosis diagnoseLoop(TaskEntity task, String latestQuestion, String closeReason) {
+        String roleTag = task.getRole() != null ? task.getRole().getTag() : "unknown-role";
+        if (mentionsGeneratedArtifact(latestQuestion) || closeReason.contains("repository_hygiene")) {
+            return new LoopDiagnosis(
+                    "Repository hygiene blocker repeated; Jules kept committing generated/local artifacts instead of producing a clean PR diff.",
+                    "Must-Be",
+                    "clear",
+                    roleTag,
+                    "Clean generated artifacts from the PR branch only",
+                    generatedArtifactFollowUp(task)
+            );
+        }
+        if (closeReason.contains("activity_log_overflow")) {
+            return new LoopDiagnosis(
+                    "The Jules activity log exceeded the backend safety limit; the session became too noisy to inspect reliably and must not receive more prompts.",
+                    "Must-Be",
+                    "complex",
+                    roleTag,
+                    "Restart the work from the smallest observable implementation slice",
+                    activityOverflowFollowUp(task, latestQuestion)
+            );
+        }
+        if (closeReason.contains("dialog_limit")) {
+            return new LoopDiagnosis(
+                    "The session exceeded the safe dialogue budget for a weak coding model; the original task is too broad or ambiguous for one Jules branch.",
+                    "Must-Be",
+                    "complicated",
+                    roleTag,
+                    "Split the blocked task into one atomic implementation slice",
+                    atomicSliceFollowUp(task, latestQuestion)
+            );
+        }
+        if (closeReason.contains("stuck_session_timeout")) {
+            return new LoopDiagnosis(
+                    "The Jules session stayed stuck after recovery time; continuing the same external session would keep capacity blocked without objective progress.",
+                    "Must-Be",
+                    "complicated",
+                    roleTag,
+                    "Restart the blocked work as a fresh atomic session",
+                    atomicSliceFollowUp(task, latestQuestion)
+            );
+        }
+        if (closeReason.contains("active_session_age_limit")) {
+            return new LoopDiagnosis(
+                    "The Jules session exceeded the maximum safe age for a weak coding-model branch; poll updates were masking lack of production progress.",
+                    "Must-Be",
+                    "complicated",
+                    roleTag,
+                    "Restart the work as a fresh short session",
+                    atomicSliceFollowUp(task, latestQuestion)
+            );
+        }
+        return new LoopDiagnosis(
+                "The same blocker repeated and the session stopped making objective progress.",
+                "Must-Be",
+                "complicated",
+                roleTag,
+                "Resolve the repeated blocker as a new short Jules session",
+                repeatedBlockerFollowUp(task, latestQuestion)
+        );
+    }
+
+    private String geminiLoopAnalysis(TaskEntity task,
+                                      String latestQuestion,
+                                      List<JulesActivityResponseEntity> responseHistory,
+                                      LoopDiagnosis diagnosis,
+                                      String closeReason) {
+        String transcript = responseHistory.stream()
+                .limit(8)
+                .map(record -> "QUESTION: " + truncate(record.getQuestion(), 900) + "\nANSWER: " + truncate(record.getResponse(), 900))
+                .reduce("", (a, b) -> a + "\n---\n" + b);
+        String systemInstruction = """
+                You are Gemini acting as Eneik incident analyst for a failed Jules coding session.
+                Use Eneik Management System, Kano, and Cynefin.
+                Return concise factual analysis only. Do not suggest continuing the same Jules session.
+                Required fields:
+                - Root cause
+                - Kano classification
+                - Cynefin domain
+                - New short-session recommendation
+                - Definition of Done
+                """;
+        String prompt = "Task id: " + task.getId() + "\n"
+                + "Role: " + diagnosis.roleTag() + "\n"
+                + "Close reason: " + closeReason + "\n"
+                + "Deterministic Kano: " + diagnosis.kanoClass() + "\n"
+                + "Deterministic Cynefin: " + diagnosis.cynefinDomain() + "\n"
+                + "Task description:\n" + truncate(task.getDescription(), 2_000) + "\n\n"
+                + "Latest blocker/question:\n" + truncate(latestQuestion, 1_500) + "\n\n"
+                + "Recent dialogue evidence:\n" + transcript;
+        try {
+            String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
+            if (isUsableAiAnswer(response)) {
+                return truncate(response.trim(), 2_400);
+            }
+        } catch (Exception e) {
+            log.warn("Gemini loop analysis failed for Jules session task {}: {}", task.getId(), e.getMessage());
+        }
+        return "Root cause: " + diagnosis.rootCause()
+                + "\nKano classification: " + diagnosis.kanoClass()
+                + "\nCynefin domain: " + diagnosis.cynefinDomain()
+                + "\nNew short-session recommendation: " + diagnosis.followUpTitle()
+                + "\nDefinition of Done: " + firstLine(diagnosis.followUpBody());
+    }
+
+    private void createCircuitBreakerWishlist(JulesSessionEntity session,
+                                              TaskEntity task,
+                                              String latestQuestion,
+                                              LoopDiagnosis diagnosis,
+                                              String geminiAnalysis,
+                                              String closeReason) {
+        if (task.getProject() == null) {
+            return;
+        }
+        UUID projectId = task.getProject().getId();
+        String marker = "Circuit breaker source session: " + session.getId();
+        boolean alreadyExists = wishlistRepository.findByProjectId(projectId).stream()
+                .map(WishlistEntity::getContent)
+                .anyMatch(content -> content != null && content.contains(marker));
+        if (alreadyExists) {
+            return;
+        }
+
+        WishlistEntity followUp = new WishlistEntity();
+        followUp.setProjectId(projectId);
+        followUp.setSource(WishlistSource.role_mismatch_followup);
+        followUp.setSourceRoleTag(diagnosis.roleTag());
+        followUp.setStatus(WishlistStatus.pending);
+        followUp.setContent(truncate("""
+                [Auto follow-up from Jules circuit breaker]
+                Circuit breaker source session: %s
+                External Jules session: %s
+                Original task: %s
+                Closure reason: %s
+
+                Gemini/Kano/Cynefin analysis:
+                %s
+
+                Eneik classification:
+                - Kano: %s
+                - Cynefin: %s
+                - Root cause: %s
+
+                New short Jules session:
+                %s
+
+                Scope rule:
+                - One branch, one atomic result, no broad redesign.
+                - If more work is discovered, stop after the smallest verified slice and write the remaining work as another wishlist item.
+                - Dialogue budget: no more than 8 orchestrator replies; repeated blocker means close and re-plan.
+
+                Latest blocker evidence:
+                %s
+                """.formatted(
+                session.getId(),
+                valueOrUnset(session.getExternalSessionId()),
+                task.getId(),
+                closeReason,
+                geminiAnalysis,
+                diagnosis.kanoClass(),
+                diagnosis.cynefinDomain(),
+                diagnosis.rootCause(),
+                diagnosis.followUpBody(),
+                truncate(latestQuestion, 1_500)
+        ), FOLLOW_UP_CONTENT_MAX_LENGTH));
+        wishlistRepository.save(followUp);
+    }
+
+    private String generatedArtifactFollowUp(TaskEntity task) {
+        return "Goal: clean the existing PR branch so it contains zero generated/local artifacts.\n"
+                + "Do only repository hygiene, not product feature work.\n"
+                + "Required commands:\n"
+                + "1. git rm -r --cached --ignore-unmatch playwright-report test-results coverage node_modules .next apps/web/playwright-report apps/web/test-results apps/web/coverage apps/web/.next\n"
+                + "2. Ensure .gitignore contains **/playwright-report/, **/test-results/, **/coverage/, **/.next/, node_modules/, *.trace, *.webm.\n"
+                + "3. Verify: git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
+                + "DoD: the verification command prints no artifact paths, the PR contains only source/config/test/doc changes, and no new product scope is added.";
+    }
+
+    private String activityOverflowFollowUp(TaskEntity task, String latestQuestion) {
+        return "Goal: replace the unbounded Jules session with one observable implementation slice.\n"
+                + "First action: inspect the open PR/branch state, summarize what is actually present, and choose exactly one fix or one component to finish.\n"
+                + "Scope rule: no broad rewrite, no multi-feature platform work, no additional architecture documents unless they are required to make one code change.\n"
+                + "DoD: one small branch, one PR, at most two source areas, explicit verification command, and a concise handoff note.\n"
+                + "Original task summary: " + truncate(task.getDescription(), 1_200) + "\n"
+                + "Latest loop signal: " + truncate(latestQuestion, 800);
+    }
+
+    private String atomicSliceFollowUp(TaskEntity task, String latestQuestion) {
+        return "Goal: re-plan the blocked task into one atomic Jules implementation slice.\n"
+                + "Use the original task only as context; choose the smallest independently verifiable service/component/fix.\n"
+                + "DoD: one small branch, one PR, at most two tightly related source areas, explicit verification command, no generated artifacts.\n"
+                + "Original task summary: " + truncate(task.getDescription(), 1_200) + "\n"
+                + "Latest loop signal: " + truncate(latestQuestion, 800);
+    }
+
+    private String repeatedBlockerFollowUp(TaskEntity task, String latestQuestion) {
+        return "Goal: resolve only the repeated blocker from the failed Jules session.\n"
+                + "Do not continue the old branch conversation. Start a fresh short session with the blocker as the sole acceptance criterion.\n"
+                + "DoD: blocker is objectively gone, verification command is recorded, and any remaining feature work is written as a separate wishlist item.\n"
+                + "Repeated blocker: " + truncate(latestQuestion, 1_200);
+    }
+
+    private String firstLine(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String[] lines = value.strip().split("\\R", 2);
+        return lines.length == 0 ? value.strip() : lines[0];
+    }
+
+    private String valueOrUnset(String value) {
+        return value == null || value.isBlank() ? "<unset>" : value;
     }
 
     private boolean isUsableAiAnswer(String answer) {
@@ -849,11 +1165,127 @@ public class JulesDispatchService {
         }
     }
 
+    private record LoopDiagnosis(
+            String rootCause,
+            String kanoClass,
+            String cynefinDomain,
+            String roleTag,
+            String followUpTitle,
+            String followUpBody
+    ) {
+        String toText() {
+            return "Root cause: " + rootCause + "\n"
+                    + "Kano: " + kanoClass + "\n"
+                    + "Cynefin: " + cynefinDomain + "\n"
+                    + "Role: " + roleTag + "\n"
+                    + "Follow-up: " + followUpTitle + "\n"
+                    + followUpBody;
+        }
+    }
+
     /**
      * Trigger for periodic maintenance of stuck Jules sessions.
      */
     @Scheduled(fixedRateString = "${jules.detect-stuck-rate-ms:60000}")
     public void detectStuck() {
+        runSessionSafetyMaintenance();
+    }
+
+    public void runSessionSafetyMaintenance() {
         claimService.detectStuckSessions(stuckThresholdMinutes);
+        closeOverdueStuckSessions();
+        closeOverdueActiveSessions();
+    }
+
+    @Transactional
+    public void closeOverdueStuckSessions() {
+        Instant threshold = Instant.now().minus(Duration.ofMinutes(stuckCloseThresholdMinutes));
+        List<JulesSessionEntity> stuckSessions = julesSessionRepository.findByStatus("stuck");
+        if (stuckSessions == null || stuckSessions.isEmpty()) {
+            return;
+        }
+        int closed = 0;
+        for (JulesSessionEntity session : stuckSessions) {
+            if (closed >= maxLoopClosuresPerRun) {
+                break;
+            }
+            if (session.getUpdatedAt() == null || session.getUpdatedAt().isAfter(threshold)) {
+                continue;
+            }
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task == null) {
+                session.setStatus("loop_closed");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason("stuck_session_timeout: task no longer exists");
+                julesSessionRepository.save(session);
+                continue;
+            }
+            List<JulesActivityResponseEntity> responseHistory =
+                    julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+            String latestQuestion = responseHistory.stream()
+                    .findFirst()
+                    .map(JulesActivityResponseEntity::getQuestion)
+                    .filter(question -> question != null && !question.isBlank())
+                    .orElse("Jules session stayed stuck without new actionable activity.");
+            closeLoopAndCreateFollowUps(
+                    session,
+                    task,
+                    latestQuestion,
+                    responseHistory,
+                    "stuck_session_timeout: stuck for at least " + stuckCloseThresholdMinutes + " minutes"
+            );
+            closed++;
+        }
+    }
+
+    @Transactional
+    public void closeOverdueActiveSessions() {
+        Instant threshold = Instant.now().minus(Duration.ofMinutes(maxActiveSessionMinutes));
+        List<JulesSessionEntity> sessions = julesSessionRepository.findAll();
+        if (sessions == null || sessions.isEmpty()) {
+            return;
+        }
+        int closed = 0;
+        for (JulesSessionEntity session : sessions) {
+            if (closed >= maxLoopClosuresPerRun) {
+                break;
+            }
+            if (!isAgeLimitedActiveStatus(session.getStatus())) {
+                continue;
+            }
+            if (session.getCreatedAt() == null || session.getCreatedAt().isAfter(threshold)) {
+                continue;
+            }
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task == null) {
+                session.setStatus("loop_closed");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason("active_session_age_limit: task no longer exists");
+                julesSessionRepository.save(session);
+                continue;
+            }
+            List<JulesActivityResponseEntity> responseHistory =
+                    julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+            String latestQuestion = responseHistory.stream()
+                    .findFirst()
+                    .map(JulesActivityResponseEntity::getQuestion)
+                    .filter(question -> question != null && !question.isBlank())
+                    .orElse("Jules session exceeded the maximum safe active duration without completing the task.");
+            closeLoopAndCreateFollowUps(
+                    session,
+                    task,
+                    latestQuestion,
+                    responseHistory,
+                    "active_session_age_limit: active for at least " + maxActiveSessionMinutes + " minutes"
+            );
+            closed++;
+        }
+    }
+
+    private boolean isAgeLimitedActiveStatus(String status) {
+        return "queued".equals(status)
+                || "running".equals(status)
+                || "revising".equals(status)
+                || "stuck".equals(status);
     }
 }

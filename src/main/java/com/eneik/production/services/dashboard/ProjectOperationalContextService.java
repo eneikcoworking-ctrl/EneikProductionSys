@@ -311,6 +311,8 @@ public class ProjectOperationalContextService {
         fact.put("createdAt", text(session.getCreatedAt()));
         fact.put("updatedAt", text(session.getUpdatedAt()));
         fact.put("lastStatusCheckAt", text(session.getLastStatusCheckAt()));
+        fact.put("closedAt", text(session.getClosedAt()));
+        fact.put("closureReason", trim(session.getClosureReason(), 1200));
         return fact;
     }
 

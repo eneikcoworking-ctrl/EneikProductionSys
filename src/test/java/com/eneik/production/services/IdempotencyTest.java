@@ -74,6 +74,7 @@ class IdempotencyTest {
         JulesDispatchService dispatchService = new JulesDispatchService(
             apiClient, sessionRepository,
             mock(com.eneik.production.repositories.JulesActivityResponseRepository.class),
+            mock(WishlistRepository.class),
             mock(com.eneik.production.repositories.AccountRepository.class),
             mock(TaskRepository.class),
             mock(com.eneik.production.repositories.TaskConflictRepository.class),

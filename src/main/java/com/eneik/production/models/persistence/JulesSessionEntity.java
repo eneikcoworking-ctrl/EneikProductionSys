@@ -35,6 +35,13 @@ public class JulesSessionEntity {
     @Column(name = "last_status_check_at")
     private Instant lastStatusCheckAt;
 
+    @Column(name = "closed_at")
+    private Instant closedAt;
+
+    @Lob
+    @Column(name = "closure_reason")
+    private String closureReason;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -61,6 +68,12 @@ public class JulesSessionEntity {
 
     public Instant getLastStatusCheckAt() { return lastStatusCheckAt; }
     public void setLastStatusCheckAt(Instant lastStatusCheckAt) { this.lastStatusCheckAt = lastStatusCheckAt; }
+
+    public Instant getClosedAt() { return closedAt; }
+    public void setClosedAt(Instant closedAt) { this.closedAt = closedAt; }
+
+    public String getClosureReason() { return closureReason; }
+    public void setClosureReason(String closureReason) { this.closureReason = closureReason; }
 
     @PreUpdate
     public void preUpdate() {

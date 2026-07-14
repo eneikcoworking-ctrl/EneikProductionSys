@@ -77,6 +77,7 @@ public class ChatAssistantController {
                 - For current GitHub PR counts use githubPullRequestsLive.
                 - For PR review decisions and merge outcomes use databasePrReviews.
                 - For Jules execution and unanswered questions use julesSessions, accountsAvailableForProject, tasks, and conflicts.
+                - loop_closed Jules sessions are terminal local closures. Use closedAt and closureReason to explain why the session was stopped and what follow-up wishlist should replace it.
                 - Core Jules invariant: every enabled Jules account can take every BARCAN-TAG-00..11 role. Never say a role capability is missing when julesUniversalRoleCapacity.universalRolePool is true.
                 - If julesUniversalRoleCapacity.sharedSlotsFree > 0, do not call the issue a Jules capacity shortage.
                 - Never invent accounts, tags, PR counts, sessions, hidden workers, or failures.

@@ -145,7 +145,10 @@ public class JulesApiClient {
             byte[] body = readLimited(response.body(), MAX_ACTIVITIES_RESPONSE_BYTES);
             if (body == null) {
                 log.warn("Jules activities response for session {} exceeded {} bytes; skipping activity scan to protect backend memory", externalSessionId, MAX_ACTIVITIES_RESPONSE_BYTES);
-                return null;
+                ObjectNode overflow = objectMapper.createObjectNode();
+                overflow.put("activitiesOverflow", true);
+                overflow.put("maxBytes", MAX_ACTIVITIES_RESPONSE_BYTES);
+                return overflow;
             }
             return objectMapper.readTree(body);
         } catch (IOException | InterruptedException e) {

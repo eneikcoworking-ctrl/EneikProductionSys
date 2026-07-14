@@ -267,6 +267,22 @@ public class ClaimService {
         updateAccountStatus(claim.getAccount(), AccountStatus.idle);
     }
 
+    @Transactional
+    public void closeTaskAsBlocked(UUID taskId, String reason) {
+        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.failed);
+            claimRepository.save(claim);
+            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+        });
+
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setStatus(TaskStatus.blocked);
+            task.setJulesDispatchStatus(reason);
+            taskRepository.save(task);
+        });
+    }
+
     private ClaimEntity findActiveClaimByTaskId(UUID taskId) {
         return claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active claim for task " + taskId));

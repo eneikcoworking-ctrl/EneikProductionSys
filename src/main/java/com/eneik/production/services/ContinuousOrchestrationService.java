@@ -41,6 +41,12 @@ public class ContinuousOrchestrationService {
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
     public void continuousOrchestrate() {
+        try {
+            julesDispatchService.runSessionSafetyMaintenance();
+        } catch (Exception e) {
+            log.error("Continuous Orchestration: Failed to run Jules safety maintenance", e);
+        }
+
         pollActiveJulesSessions();
 
         List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);

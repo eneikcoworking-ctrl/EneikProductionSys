@@ -474,6 +474,8 @@ public class TechnicalLeadCompiler {
         String common = "- Treat the task description, JTBD, Acceptance Criteria, DoD, and file scope as the source of truth.\n"
                 + "- Proceed with the smallest safe implementation assumption when details are ambiguous; document assumptions in the PR summary instead of waiting.\n"
                 + "- Ask a blocker question only for a concrete contradiction, security risk, or data-loss risk.\n"
+                + "- Keep the Jules session short: one atomic result, one branch, one PR, preferably no more than two tightly related source areas.\n"
+                + "- Do not expand into new features, broad architecture rewrites, or extra verification work; write remaining slices as follow-up wishlist notes.\n"
                 + "- Keep generated local artifacts, reports, screenshots, trace zips, node_modules, and environment files out of the commit.";
 
         if ("BARCAN-TAG-06".equals(roleTag)) {
