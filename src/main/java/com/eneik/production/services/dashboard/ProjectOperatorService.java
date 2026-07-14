@@ -26,12 +26,16 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -48,9 +52,12 @@ public class ProjectOperatorService {
     private final ClaimService claimService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
+    private final Path memoryRoot;
     private final boolean allowMutatingTools;
     private final String dockerComposeProjectName;
     private final int stuckThresholdMinutes;
+    private final int maxToolRounds;
+    private final boolean answerCriticEnabled;
     private final ObjectMapper objectMapper;
 
     public ProjectOperatorService(ProjectRepository projectRepository,
@@ -60,9 +67,12 @@ public class ProjectOperatorService {
                                   ClaimService claimService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
+                                  @Value("${eneik.operator.memory-root:./data/operator-memory}") String memoryRoot,
                                   @Value("${eneik.operator.allow-mutating-tools:false}") boolean allowMutatingTools,
                                   @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName,
                                   @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes,
+                                  @Value("${eneik.operator.max-tool-rounds:3}") int maxToolRounds,
+                                  @Value("${eneik.operator.answer-critic-enabled:true}") boolean answerCriticEnabled,
                                   ObjectMapper objectMapper) {
         this.projectRepository = projectRepository;
         this.contextService = contextService;
@@ -73,9 +83,12 @@ public class ProjectOperatorService {
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
                 ? Paths.get(".").toAbsolutePath().normalize()
                 : Paths.get(systemRepoRoot).toAbsolutePath().normalize();
+        this.memoryRoot = Paths.get(memoryRoot).toAbsolutePath().normalize();
         this.allowMutatingTools = allowMutatingTools;
         this.dockerComposeProjectName = dockerComposeProjectName == null ? "" : dockerComposeProjectName.trim();
         this.stuckThresholdMinutes = stuckThresholdMinutes;
+        this.maxToolRounds = Math.max(1, Math.min(5, maxToolRounds));
+        this.answerCriticEnabled = answerCriticEnabled;
         this.objectMapper = objectMapper;
     }
 
@@ -91,6 +104,7 @@ public class ProjectOperatorService {
 
                 ENEIK MANAGEMENT SYSTEM IS PRIMARY:
                 - Truth is factive: assert only what is present in PROJECT_FACT_PACK or OPERATOR_EVIDENCE.
+                - Durable memory is subordinate to current evidence: use project memory as history, not as proof of current runtime state.
                 - Bivalence: a verification either passed, failed, or was not run. Do not say "probably" for tool results.
                 - Epistemic marking: label important claims as VERIFIED, INFERRED, or NOT AVAILABLE.
                 - Deontic clarity: separate Obligatory, Permitted, and Forbidden actions when giving operational instructions.
@@ -127,7 +141,7 @@ public class ProjectOperatorService {
         if (answer == null || answer.isBlank()) {
             return evidence.fallbackAnswer();
         }
-        return answer;
+        return reviewAnswerWithCritic(project, context, evidence, userMessage, answer);
     }
 
     private Optional<ProjectEntity> resolveProject(UUID projectId) {
@@ -137,23 +151,90 @@ public class ProjectOperatorService {
         return projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active);
     }
 
+    private String reviewAnswerWithCritic(ProjectEntity project,
+                                          ProjectOperationalContext context,
+                                          OperatorEvidence evidence,
+                                          String userMessage,
+                                          String answer) {
+        if (!answerCriticEnabled) {
+            return answer;
+        }
+        String systemInstruction = """
+                You are the Eneik Project Operator answer critic.
+                Return ONLY valid JSON. Do not include markdown.
+
+                Check whether the candidate answer is acceptable.
+                Reject or revise when:
+                - It contains a greeting, self-introduction, motivational filler, or generic agile boilerplate.
+                - It answers with global system noise when the user asked about the selected project.
+                - It uses numbers, PR facts, task/session/account counts, Docker status, commands, or test results not supported by evidence.
+                - It claims a mutating action was executed without matching tool evidence.
+                - It mentions hidden source names such as PROJECT_FACT_PACK, OPERATOR_EVIDENCE, prompt, or internal context.
+                - It fails to say NOT AVAILABLE when evidence is insufficient.
+
+                JSON schema:
+                {"verdict":"pass|revise","issues":["short issue"],"revisedAnswer":"required when verdict=revise"}
+                """;
+        String prompt = "Project: " + project.getName() + " (" + project.getId() + ")\n"
+                + "User request:\n" + userMessage + "\n\n"
+                + "Candidate answer:\n" + answer + "\n\n"
+                + "Selected project facts:\n" + trim(context.promptJson()) + "\n\n"
+                + "Tool evidence:\n" + evidence.toPrompt() + "\n\n"
+                + "If revising, keep the user's language and preserve only evidence-grounded claims.";
+        String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
+        if (response == null || response.isBlank()) {
+            return answer;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(extractJsonObject(response));
+            String verdict = textArg(root, "verdict", "pass");
+            String revisedAnswer = textArg(root, "revisedAnswer", "");
+            if ("revise".equalsIgnoreCase(verdict) && !revisedAnswer.isBlank()) {
+                return revisedAnswer;
+            }
+        } catch (Exception ignored) {
+            // Critic is a guardrail. If it fails to produce valid JSON, keep the original evidence-based answer.
+        }
+        return answer;
+    }
+
     private OperatorEvidence runGeminiToolLoop(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
         List<ToolObservation> observations = new ArrayList<>();
         observations.add(operatorScope(project, userMessage));
+        observations.add(projectMemoryRead(project));
+        Set<String> executedSignatures = new LinkedHashSet<>();
+        boolean executedPlannedTool = false;
 
-        OperatorToolPlan plan = planOperatorTools(project, context, userMessage);
-        observations.add(new ToolObservation(
-                "operator_tool_plan",
-                plan.valid() ? "ok" : "fallback",
-                plan.summary()
-        ));
-
-        if (plan.calls().isEmpty()) {
-            observations.addAll(defaultReadOnlyEvidence(project, context));
-        } else {
-            for (OperatorToolCall call : plan.calls().stream().limit(12).toList()) {
-                observations.add(executeToolCall(project, context, userMessage, call));
+        for (int round = 1; round <= maxToolRounds; round++) {
+            OperatorToolPlan plan = planOperatorTools(project, context, userMessage, observations, round);
+            observations.add(new ToolObservation(
+                    "operator_tool_plan_round_" + round,
+                    plan.valid() ? "ok" : "fallback",
+                    plan.summary()
+            ));
+            if (plan.calls().isEmpty()) {
+                break;
             }
+            int executedThisRound = 0;
+            for (OperatorToolCall call : plan.calls().stream().limit(12).toList()) {
+                String signature = toolSignature(call);
+                if (executedSignatures.contains(signature)) {
+                    observations.add(new ToolObservation(call.tool(), "skipped_duplicate",
+                            "Duplicate tool call skipped in round " + round + ": " + signature));
+                    continue;
+                }
+                executedSignatures.add(signature);
+                observations.add(executeToolCall(project, context, userMessage, call));
+                executedThisRound++;
+                executedPlannedTool = true;
+            }
+            if (executedThisRound == 0) {
+                break;
+            }
+        }
+
+        if (!executedPlannedTool) {
+            observations.addAll(defaultReadOnlyEvidence(project, context));
         }
 
         return new OperatorEvidence(observations);
@@ -169,11 +250,18 @@ public class ProjectOperatorService {
                 + ", workspace=" + projectWorkspace
                 + ", defaultRoot=" + primaryRoot
                 + ", dockerRoot=" + dockerRoot
+                + ", memoryRoot=" + memoryRoot
+                + ", maxToolRounds=" + maxToolRounds
+                + ", answerCriticEnabled=" + answerCriticEnabled
                 + ", mutatingTools=" + allowMutatingTools
                 + ", dockerComposeProjectName=" + valueOrUnset(dockerComposeProjectName));
     }
 
-    private OperatorToolPlan planOperatorTools(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
+    private OperatorToolPlan planOperatorTools(ProjectEntity project,
+                                               ProjectOperationalContext context,
+                                               String userMessage,
+                                               List<ToolObservation> observations,
+                                               int round) {
         String systemInstruction = """
                 You are Gemini Project Operator tool planner inside Eneik Production System.
                 Return ONLY valid JSON. Do not include markdown.
@@ -181,6 +269,8 @@ public class ProjectOperatorService {
                 Decide which backend tools are needed before answering the user.
                 Rules:
                 - Use tools aggressively when facts, code, Docker, Git, tests, PRs, sessions, or execution state may matter.
+                - Use already collected observations before asking for another tool.
+                - When observations are enough for a factual answer, return an empty toolCalls array.
                 - Do not request mutating tools for explanation questions. Explanation questions include "how does it work", "why", "what happened", "what do you see", "recommend".
                 - Request mutating tools only when the user explicitly asks to run, create, add, orchestrate, dispatch, start, build, pull, or execute.
                 - Prefer multiple narrow tools over one broad generic command.
@@ -198,8 +288,10 @@ public class ProjectOperatorService {
 
         String prompt = "Current project id: " + project.getId() + "\n"
                 + "Current project name: " + project.getName() + "\n"
+                + "Tool planning round: " + round + " of " + maxToolRounds + "\n"
                 + "User request:\n" + userMessage + "\n\n"
-                + "Selected project fact pack summary:\n" + trim(context.promptJson());
+                + "Selected project fact pack summary:\n" + trim(context.promptJson()) + "\n\n"
+                + "Already collected observations:\n" + observationsForPlanner(observations);
         String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
         try {
             JsonNode root = objectMapper.readTree(extractJsonObject(response));
@@ -232,6 +324,26 @@ public class ProjectOperatorService {
         }
     }
 
+    private String observationsForPlanner(List<ToolObservation> observations) {
+        if (observations == null || observations.isEmpty()) {
+            return "<none>";
+        }
+        StringBuilder builder = new StringBuilder();
+        int start = Math.max(0, observations.size() - 18);
+        for (int index = start; index < observations.size(); index++) {
+            ToolObservation observation = observations.get(index);
+            builder.append("## ").append(observation.tool()).append(" [").append(observation.status()).append("]\n")
+                    .append(compact(observation.output(), 1_600))
+                    .append("\n\n");
+        }
+        return trim(builder.toString());
+    }
+
+    private String toolSignature(OperatorToolCall call) {
+        String args = call.args() == null || call.args().isMissingNode() ? "{}" : call.args().toString();
+        return call.tool() + "::" + args;
+    }
+
     private String toolCatalog() {
         return """
                 Read-only project/data tools:
@@ -243,11 +355,15 @@ public class ProjectOperatorService {
                 - list_accounts {}
                 - list_conflicts {}
                 - list_bottlenecks {}
+                - project_memory_read {}
 
                 Repository/code tools:
+                - repo_profile {"root":"project|system"}
                 - workspace_tree {"root":"project|system","depth":4}
+                - find_files {"root":"project|system","glob":"optional glob like *.java","limit":80}
                 - read_file {"root":"project|system","path":"relative/path"}
-                - search_code {"root":"project|system","query":"literal or regex"}
+                - read_many_files {"root":"project|system","paths":["relative/path"],"maxBytesPerFile":8000}
+                - search_code {"root":"project|system","query":"literal text"}
 
                 Git tools:
                 - git_status {"root":"project|system"}
@@ -277,6 +393,7 @@ public class ProjectOperatorService {
                 - dispatch_project {} MUTATING
                 - maintenance_stuck {} MUTATING
                 - add_wishlist {"content":"English wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
+                - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
 
                 Generic tool:
                 - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
@@ -289,7 +406,10 @@ public class ProjectOperatorService {
                 contextFact(context, "list_tasks", "tasks"),
                 contextFact(context, "list_wishlist", "wishlist"),
                 contextFact(context, "list_jules_sessions", "julesSessions"),
-                contextFact(context, "list_pr_reviews", "databasePrReviews")
+                contextFact(context, "list_pr_reviews", "databasePrReviews"),
+                contextFact(context, "list_accounts", "accountsAvailableForProject"),
+                contextFact(context, "list_conflicts", "conflicts"),
+                contextFact(context, "list_bottlenecks", "bottlenecks")
         );
     }
 
@@ -309,10 +429,14 @@ public class ProjectOperatorService {
                 case "list_accounts" -> contextFact(context, tool, "accountsAvailableForProject");
                 case "list_conflicts" -> contextFact(context, tool, "conflicts");
                 case "list_bottlenecks" -> contextFact(context, tool, "bottlenecks");
+                case "project_memory_read" -> projectMemoryRead(project);
+                case "repo_profile" -> repoProfile(rootFor(project, args));
                 case "workspace_tree" -> tree(rootFor(project, args));
+                case "find_files" -> findFiles(rootFor(project, args), args);
                 case "read_file" -> readIfExists(rootFor(project, args), textArg(args, "path", ""));
+                case "read_many_files" -> readManyFiles(rootFor(project, args), args);
                 case "search_code" -> {
-                    String query = textArg(args, "query", "").toLowerCase(Locale.ROOT);
+                    String query = textArg(args, "query", "");
                     yield search(rootFor(project, args), query.isBlank() ? searchTerms(userMessage.toLowerCase(Locale.ROOT)) : List.of(query));
                 }
                 case "git_status" -> run("git_status", rootFor(project, args), Duration.ofSeconds(8), List.of("git", "status", "--short"));
@@ -334,6 +458,7 @@ public class ProjectOperatorService {
                 case "dispatch_project" -> mutating(userMessage, tool, () -> dispatchProject(project));
                 case "maintenance_stuck" -> mutating(userMessage, tool, this::maintenanceStuck);
                 case "add_wishlist" -> mutating(userMessage, tool, () -> addWishlist(project, args));
+                case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
                 default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
             };
@@ -342,12 +467,182 @@ public class ProjectOperatorService {
         }
     }
 
+    private ToolObservation projectMemoryRead(ProjectEntity project) {
+        Path file = projectMemoryFile(project);
+        if (!Files.isRegularFile(file)) {
+            return new ToolObservation("project_memory_read", "empty",
+                    "No durable project memory exists yet for project " + project.getId() + ".");
+        }
+        try {
+            byte[] bytes = Files.readAllBytes(file);
+            String text = new String(bytes, 0, Math.min(bytes.length, MAX_FILE_BYTES), StandardCharsets.UTF_8);
+            return new ToolObservation("project_memory_read", "ok", trim(text));
+        } catch (Exception e) {
+            return new ToolObservation("project_memory_read", "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation projectMemoryAppend(ProjectEntity project, JsonNode args) {
+        String note = textArg(args, "note", textArg(args, "content", ""));
+        if (note.isBlank()) {
+            return new ToolObservation("project_memory_append", "blocked", "note is required.");
+        }
+        Path file = projectMemoryFile(project);
+        if (!file.startsWith(memoryRoot)) {
+            return new ToolObservation("project_memory_append", "blocked", "Memory path escaped memory root.");
+        }
+        try {
+            Files.createDirectories(memoryRoot);
+            if (!Files.exists(file)) {
+                Files.writeString(file,
+                        "# Project Operator Memory\n\nProject: " + project.getName() + "\nProjectId: " + project.getId() + "\n",
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE_NEW);
+            }
+            String entry = "\n- " + Instant.now() + " - " + sanitizeMemoryNote(note) + "\n";
+            Files.writeString(file, entry, StandardCharsets.UTF_8, StandardOpenOption.APPEND);
+            return new ToolObservation("project_memory_append", "ok", "Appended durable memory note to " + file);
+        } catch (Exception e) {
+            return new ToolObservation("project_memory_append", "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation repoProfile(Path root) {
+        if (!Files.isDirectory(root)) {
+            return new ToolObservation("repo_profile", "missing", "Directory does not exist: " + root);
+        }
+        StringBuilder builder = new StringBuilder();
+        builder.append("root=").append(root).append("\n");
+        builder.append("composeFile=").append(hasComposeFile(root)).append("\n");
+        builder.append("manifestFiles:\n");
+        for (String file : List.of(
+                "README.md",
+                "package.json",
+                "pom.xml",
+                "build.gradle",
+                "settings.gradle",
+                "pyproject.toml",
+                "requirements.txt",
+                "docker-compose.yml",
+                "compose.yml",
+                "Dockerfile"
+        )) {
+            Path candidate = root.resolve(file);
+            if (Files.isRegularFile(candidate)) {
+                builder.append("- ").append(file).append("\n");
+                builder.append(compactFileSnippet(candidate, 2_500)).append("\n");
+            }
+        }
+        ToolObservation tree = tree(root);
+        builder.append("\nworkspace_tree:\n").append(tree.output());
+        return new ToolObservation("repo_profile", "ok", trim(builder.toString()));
+    }
+
+    private ToolObservation findFiles(Path root, JsonNode args) {
+        String glob = textArg(args, "glob", "");
+        int limit = intArg(args, "limit", 80, 1, 300);
+        List<String> command = new ArrayList<>(List.of(
+                "rg", "--files", "--hidden",
+                "--glob", "!.git",
+                "--glob", "!node_modules",
+                "--glob", "!target",
+                "--glob", "!build",
+                "--glob", "!dist"
+        ));
+        if (!glob.isBlank()) {
+            command.add("--glob");
+            command.add(glob);
+        }
+        ToolObservation raw = run("find_files", root, Duration.ofSeconds(12), command);
+        String[] lines = raw.output().split("\\R");
+        StringBuilder limited = new StringBuilder();
+        int count = 0;
+        for (String line : lines) {
+            if (line.startsWith("$ ") || line.isBlank()) {
+                continue;
+            }
+            limited.append(line).append('\n');
+            count++;
+            if (count >= limit) {
+                limited.append("... [limited to ").append(limit).append(" files]\n");
+                break;
+            }
+        }
+        String status = raw.status().equals("ok") || count > 0 ? "ok" : raw.status();
+        return new ToolObservation("find_files", status, trim(limited.length() == 0 ? raw.output() : limited.toString()));
+    }
+
+    private ToolObservation readManyFiles(Path root, JsonNode args) {
+        JsonNode paths = args.path("paths");
+        if (!paths.isArray() || paths.isEmpty()) {
+            return new ToolObservation("read_many_files", "blocked", "paths array is required.");
+        }
+        int maxBytesPerFile = intArg(args, "maxBytesPerFile", 8_000, 500, MAX_FILE_BYTES);
+        StringBuilder builder = new StringBuilder();
+        int count = 0;
+        for (JsonNode item : paths) {
+            if (count >= 12) {
+                builder.append("\n... [limited to 12 files]\n");
+                break;
+            }
+            String relativePath = item.asText("").trim();
+            if (relativePath.isBlank()) {
+                continue;
+            }
+            Path file = root.resolve(relativePath).normalize();
+            builder.append("\n## ").append(relativePath).append("\n");
+            if (!file.startsWith(root) || !Files.isRegularFile(file)) {
+                builder.append("missing\n");
+                count++;
+                continue;
+            }
+            try {
+                byte[] bytes = Files.readAllBytes(file);
+                builder.append(new String(bytes, 0, Math.min(bytes.length, maxBytesPerFile), StandardCharsets.UTF_8));
+                if (bytes.length > maxBytesPerFile) {
+                    builder.append("\n... [file truncated]\n");
+                }
+            } catch (Exception e) {
+                builder.append("error: ").append(e.getMessage()).append('\n');
+            }
+            count++;
+        }
+        return new ToolObservation("read_many_files", count == 0 ? "empty" : "ok", trim(builder.toString()));
+    }
+
     private ToolObservation contextFact(ProjectOperationalContext context, String tool, String section) {
         try {
             Object value = section == null ? context.facts() : context.facts().get(section);
             return new ToolObservation(tool, value == null ? "missing" : "ok", trim(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value)));
         } catch (Exception e) {
             return new ToolObservation(tool, "error", e.getMessage());
+        }
+    }
+
+    private Path projectMemoryFile(ProjectEntity project) {
+        String key = project.getId() == null ? sanitizeFileName(project.getName()) : project.getId().toString();
+        return memoryRoot.resolve(key + ".md").normalize();
+    }
+
+    private String sanitizeMemoryNote(String note) {
+        return note == null ? "" : note.replace('\r', ' ').replace('\n', ' ').strip();
+    }
+
+    private String sanitizeFileName(String value) {
+        if (value == null || value.isBlank()) {
+            return "unknown-project";
+        }
+        return value.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9._-]+", "-").replaceAll("^-+|-+$", "");
+    }
+
+    private String compactFileSnippet(Path file, int maxBytes) {
+        try {
+            byte[] bytes = Files.readAllBytes(file);
+            String text = new String(bytes, 0, Math.min(bytes.length, maxBytes), StandardCharsets.UTF_8);
+            String suffix = bytes.length > maxBytes ? "\n... [file truncated]" : "";
+            return "--- " + file.getFileName() + " ---\n" + compact(text, maxBytes) + suffix;
+        } catch (Exception e) {
+            return "--- " + file.getFileName() + " ---\nerror: " + e.getMessage();
         }
     }
 
@@ -525,11 +820,13 @@ public class ProjectOperatorService {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         return containsAny(lower,
                 "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
+                "remember", "save ", "persist ",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
                 "\u0441\u0434\u0435\u043b\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0442\u044c",
                 "\u0434\u043e\u0431\u0430\u0432\u044c", "\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c",
                 "\u043e\u0440\u043a\u0435\u0441\u0442\u0440", "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
-                "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0441\u0431\u0435\u0440\u0438", "\u0431\u0438\u043b\u0434");
+                "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0441\u0431\u0435\u0440\u0438", "\u0431\u0438\u043b\u0434",
+                "\u0437\u0430\u043f\u043e\u043c\u043d\u0438", "\u0441\u043e\u0445\u0440\u0430\u043d\u0438");
     }
 
     private boolean isAllowedOperatorCommand(List<String> command) {
@@ -608,30 +905,30 @@ public class ProjectOperatorService {
             return new ToolObservation("code_search", "missing", "Directory does not exist: " + root);
         }
         StringBuilder result = new StringBuilder();
-        try (Stream<Path> stream = Files.walk(root, 6)) {
-            List<Path> files = stream
-                    .filter(Files::isRegularFile)
-                    .filter(path -> !isExcluded(path))
-                    .filter(this::looksTextual)
-                    .limit(500)
-                    .toList();
-            for (Path file : files) {
-                String content = Files.readString(file, StandardCharsets.UTF_8);
-                String lower = content.toLowerCase(Locale.ROOT);
-                for (String term : terms) {
-                    if (lower.contains(term)) {
-                        result.append(root.relativize(file)).append(" contains ").append(term).append("\n");
-                        break;
-                    }
-                }
-                if (result.length() > MAX_TOOL_OUTPUT) {
-                    break;
-                }
+        int matchedTerms = 0;
+        for (String term : terms.stream().filter(value -> value != null && !value.isBlank()).limit(5).toList()) {
+            List<String> command = List.of(
+                    "rg", "-n", "--hidden",
+                    "--glob", "!.git",
+                    "--glob", "!node_modules",
+                    "--glob", "!target",
+                    "--glob", "!build",
+                    "--glob", "!dist",
+                    "--fixed-strings",
+                    "--",
+                    term
+            );
+            ToolObservation observation = run("code_search", root, Duration.ofSeconds(15), command);
+            if ("ok".equals(observation.status())) {
+                matchedTerms++;
             }
-            return new ToolObservation("code_search", result.isEmpty() ? "empty" : "ok", trim(result.toString()));
-        } catch (Exception e) {
-            return new ToolObservation("code_search", "error", e.getMessage());
+            result.append("## query: ").append(term).append(" [").append(observation.status()).append("]\n")
+                    .append(observation.output()).append("\n\n");
+            if (result.length() > MAX_TOOL_OUTPUT) {
+                break;
+            }
         }
+        return new ToolObservation("code_search", matchedTerms == 0 ? "empty" : "ok", trim(result.toString()));
     }
 
     private ToolObservation testPlan(Path root) {
@@ -754,24 +1051,6 @@ public class ProjectOperatorService {
                 || value.contains("/.next/");
     }
 
-    private boolean looksTextual(Path path) {
-        String name = path.getFileName().toString().toLowerCase(Locale.ROOT);
-        return name.endsWith(".java")
-                || name.endsWith(".ts")
-                || name.endsWith(".tsx")
-                || name.endsWith(".js")
-                || name.endsWith(".svelte")
-                || name.endsWith(".py")
-                || name.endsWith(".md")
-                || name.endsWith(".json")
-                || name.endsWith(".yml")
-                || name.endsWith(".yaml")
-                || name.endsWith(".xml")
-                || name.endsWith(".properties")
-                || name.endsWith(".html")
-                || name.endsWith(".css");
-    }
-
     private List<String> searchTerms(String lowerRequest) {
         List<String> terms = new ArrayList<>();
         for (String candidate : List.of(
@@ -798,15 +1077,19 @@ public class ProjectOperatorService {
         return value == null || value.isBlank() ? "<unset>" : value;
     }
 
-    private String trim(String value) {
+    private String compact(String value, int maxLength) {
         if (value == null) {
             return "";
         }
         String clean = value.strip();
-        if (clean.length() <= MAX_TOOL_OUTPUT) {
+        if (clean.length() <= maxLength) {
             return clean;
         }
-        return clean.substring(0, MAX_TOOL_OUTPUT) + "\n... [truncated]";
+        return clean.substring(0, maxLength) + "\n... [truncated]";
+    }
+
+    private String trim(String value) {
+        return compact(value, MAX_TOOL_OUTPUT);
     }
 
     private record ToolObservation(String tool, String status, String output) {}
