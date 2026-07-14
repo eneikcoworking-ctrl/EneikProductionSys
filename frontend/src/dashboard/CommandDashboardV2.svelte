@@ -211,6 +211,31 @@
     return { label: 'Indifferent', colorClass: 'kano-indifferent' };
   }
 
+  function percent(value: number | undefined | null): string {
+    return `${Math.round((value ?? 0) * 100)}%`;
+  }
+
+  function score(value: number | undefined | null): string {
+    return `${Math.round(value ?? 0)}`;
+  }
+
+  function width(value: number | undefined | null): string {
+    const clamped = Math.max(0, Math.min(100, Math.round((value ?? 0) * 100)));
+    return `${clamped}%`;
+  }
+
+  function scoreWidth(value: number | undefined | null): string {
+    const clamped = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+    return `${clamped}%`;
+  }
+
+  function compactNumber(value: number | undefined | null): string {
+    const n = value ?? 0;
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
+    return `${Math.round(n)}`;
+  }
+
   onMount(() => {
     loadOrchestrateCooldown();
     const timer = setInterval(() => {
@@ -272,6 +297,103 @@
         </button>
       </div>
     </header>
+
+    {#if dashboard.emsMetrics}
+      <section class="ems-panel">
+        <div class="ems-summary">
+          <div>
+            <span class="label-xs">EMS weighted progress</span>
+            <strong>{percent(dashboard.emsMetrics.flowChart.weightedProgress)}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Graph coverage</span>
+            <strong>{percent(dashboard.emsMetrics.graphHealth.graphCoverage)}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Dependency coverage</span>
+            <strong>{percent(dashboard.emsMetrics.graphHealth.dependencyCoverage)}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Open defect work</span>
+            <strong>{dashboard.emsMetrics.defectWork.openDefectWork}</strong>
+          </div>
+          <div>
+            <span class="label-xs">DPMO</span>
+            <strong>{compactNumber(dashboard.emsMetrics.defectWork.dpmo)}</strong>
+          </div>
+        </div>
+
+        <div class="ems-grid">
+          <div class="ems-box">
+            <div class="card-header compact">
+              <h2>Execution Flow</h2>
+              <span class="indicator">{dashboard.emsMetrics.flowChart.totalTasks} tasks</span>
+            </div>
+            <div class="flow-chart">
+              {#each dashboard.emsMetrics.flowChart.stages as stage}
+                <div class="flow-row">
+                  <div class="flow-label">
+                    <strong>{stage.label}</strong>
+                    <span>{stage.done}/{stage.total}</span>
+                  </div>
+                  <div class="bar-track">
+                    <div class="bar-fill flow" style={`width: ${width(stage.weightedScore)}`}></div>
+                  </div>
+                  <span class="bar-value">{percent(stage.weightedScore)}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="ems-box">
+            <div class="card-header compact">
+              <h2>Role KPI</h2>
+              <span class="indicator">{dashboard.emsMetrics.roleKpis.length} roles</span>
+            </div>
+            <div class="role-kpi-list">
+              {#each dashboard.emsMetrics.roleKpis as role}
+                <div class="role-kpi-row">
+                  <div class="flow-label">
+                    <strong>{role.roleTag}</strong>
+                    <span>{score(role.kpiScore)}/{score(role.kpiTarget)} / D:{role.defectWork}</span>
+                  </div>
+                  <div class="bar-track">
+                    <div class="bar-fill kpi {role.statusLabel}" style={`width: ${scoreWidth(role.kpiScore)}`}></div>
+                  </div>
+                  <span class="kpi-status {role.statusLabel}">{role.statusLabel}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="ems-box">
+            <div class="card-header compact">
+              <h2>Defects & Graph Health</h2>
+              <span class="indicator">CP {dashboard.emsMetrics.graphHealth.criticalPathLength}</span>
+            </div>
+            <div class="health-grid">
+              <div>
+                <span class="label-xs">Blocked by dependency</span>
+                <strong>{dashboard.emsMetrics.graphHealth.blockedByDependency}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Duplicate semantic keys</span>
+                <strong>{dashboard.emsMetrics.graphHealth.duplicateSemanticKeys}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Retry load</span>
+                <strong>{dashboard.emsMetrics.defectWork.retryLoad}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Defect pressure</span>
+                <strong>{percent(dashboard.emsMetrics.defectWork.defectPressure)}</strong>
+              </div>
+            </div>
+            <p class="ems-note">{dashboard.emsMetrics.graphHealth.interpretation}</p>
+          </div>
+        </div>
+      </section>
+    {/if}
 
     {#if dashboard.project.status === 'analyzing'}
       <!-- Onboarding Report View -->
@@ -573,6 +695,142 @@
   .actions-area {
     display: flex;
     gap: var(--space-3);
+  }
+
+  .ems-panel {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+  }
+  .ems-summary {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-3);
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+  }
+  .ems-summary > div,
+  .health-grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .ems-summary strong,
+  .health-grid strong {
+    font-size: 20px;
+    color: var(--neutral-800);
+    line-height: 1.1;
+  }
+  .ems-grid {
+    display: grid;
+    grid-template-columns: 1fr 1.15fr 0.85fr;
+    gap: var(--space-3);
+  }
+  .ems-box {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+    min-width: 0;
+  }
+  .card-header.compact {
+    margin-bottom: var(--space-3);
+    padding-bottom: var(--space-2);
+  }
+  .flow-chart,
+  .role-kpi-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .flow-row,
+  .role-kpi-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 1fr) 1.6fr minmax(44px, auto);
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 30px;
+  }
+  .flow-label {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .flow-label strong {
+    font-size: 11px;
+    color: var(--neutral-700);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .flow-label span,
+  .bar-value {
+    font-size: 10px;
+    color: var(--neutral-500);
+  }
+  .bar-track {
+    height: 8px;
+    background: var(--neutral-100);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .bar-fill {
+    height: 100%;
+    border-radius: inherit;
+    transition: width 0.2s ease;
+  }
+  .bar-fill.flow {
+    background: #2563eb;
+  }
+  .bar-fill.kpi.on_target {
+    background: #0d9488;
+  }
+  .bar-fill.kpi.watch {
+    background: #f59e0b;
+  }
+  .bar-fill.kpi.attention,
+  .bar-fill.kpi.behind {
+    background: #dc2626;
+  }
+  .kpi-status {
+    font-size: 9px;
+    font-weight: 800;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 2px 5px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .kpi-status.on_target {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .kpi-status.watch {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .kpi-status.attention,
+  .kpi-status.behind {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .health-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-3);
+  }
+  .ems-note {
+    margin: var(--space-3) 0 0;
+    color: var(--neutral-500);
+    font-size: 11px;
+    line-height: 1.4;
   }
 
   /* Dashboard Grid Layout */
@@ -1178,5 +1436,25 @@
     height: 28px;
     padding: 0 12px;
     font-size: 11px;
+  }
+
+  @media (max-width: 1100px) {
+    .dashboard-root {
+      height: auto;
+    }
+    .project-header,
+    .onboarding-header-card {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+    .ems-summary {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .ems-grid,
+    .dashboard-grid,
+    .onboarding-content-grid {
+      grid-template-columns: 1fr;
+    }
   }
 </style>

@@ -52,6 +52,7 @@ public class ProjectOperationalContextService {
     private final SystemStatusService systemStatusService;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final ObjectMapper objectMapper;
+    private final EmsMetricsService emsMetricsService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -66,7 +67,8 @@ public class ProjectOperationalContextService {
                                             BottleneckDetectionService bottleneckDetectionService,
                                             SystemStatusService systemStatusService,
                                             GitHubPullRequestService gitHubPullRequestService,
-                                            ObjectMapper objectMapper) {
+                                            ObjectMapper objectMapper,
+                                            EmsMetricsService emsMetricsService) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.julesSessionRepository = julesSessionRepository;
@@ -78,6 +80,7 @@ public class ProjectOperationalContextService {
         this.systemStatusService = systemStatusService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.objectMapper = objectMapper;
+        this.emsMetricsService = emsMetricsService;
     }
 
     @Transactional(readOnly = true)
@@ -124,6 +127,7 @@ public class ProjectOperationalContextService {
         factPack.put("project", projectFact(project, fallbackProjectName));
         factPack.put("githubPullRequestsLive", githubFact(pullRequests));
         factPack.put("tasks", taskFacts(tasks));
+        factPack.put("emsMetrics", emsMetricsService.build(tasks));
         factPack.put("julesSessions", sessionFacts(sessions, tasksById, accounts));
         factPack.put("databasePrReviews", reviewFacts(reviews, sessions, tasksById));
         factPack.put("wishlist", wishlistFacts(wishlist));

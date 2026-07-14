@@ -885,7 +885,7 @@ public class JulesDispatchService {
                 + "Latest blocker/question:\n" + truncate(latestQuestion, 1_500) + "\n\n"
                 + "Recent dialogue evidence:\n" + transcript;
         try {
-            String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
+            String response = mlPredictionServiceClient.chatCritical(prompt, systemInstruction);
             if (isUsableAiAnswer(response)) {
                 return truncate(response.trim(), 2_400);
             }

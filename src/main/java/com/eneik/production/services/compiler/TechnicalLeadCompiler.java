@@ -66,6 +66,16 @@ public class TechnicalLeadCompiler {
 
     @Transactional
     public TaskEntity createTaskFromWishlist(UUID wishlistId) {
+        return createTaskFromWishlist(wishlistId, null, null, 0, 0, "standalone");
+    }
+
+    @Transactional
+    public TaskEntity createTaskFromWishlist(UUID wishlistId,
+                                             TaskEntity dependsOn,
+                                             String emsGraphKey,
+                                             int graphOrder,
+                                             int graphSize,
+                                             String graphEdgeReason) {
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId)
                 .orElseThrow(() -> new IllegalArgumentException("Wishlist not found: " + wishlistId));
 
@@ -90,22 +100,33 @@ public class TechnicalLeadCompiler {
             throw new IllegalStateException("Generation is stopped for this project");
         }
 
+        String ownerRole = targetRoleForWishlist(wishlist);
+        String atomicGoal = roleAtomicGoal(wishlist, ownerRole);
+        String semanticKey = semanticKey(project.getId(), ownerRole, wishlist, atomicGoal);
+
         if (wishlist.getStatus() == WishlistStatus.converted_to_task) {
-            String expectedDescription = wishlist.getContent();
-            return taskRepository.findByProjectIdAndDescription(project.getId(), expectedDescription)
+            return findExistingSemanticTask(project.getId(), semanticKey)
+                    .or(() -> taskRepository.findByProjectIdAndDescription(project.getId(), wishlist.getContent()))
                     .orElseGet(() -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream().findFirst().orElse(null));
         }
 
+        java.util.Optional<TaskEntity> duplicate = findExistingSemanticTask(project.getId(), semanticKey);
+        if (duplicate.isPresent()) {
+            wishlist.setStatus(WishlistStatus.converted_to_task);
+            wishlistRepository.save(wishlist);
+            return duplicate.get();
+        }
+
         java.util.List<TaskEntity> createdTasks = new java.util.ArrayList<>();
-        String ownerRole = targetRoleForWishlist(wishlist);
         boolean isIntegrationTask = "BARCAN-TAG-00".equals(ownerRole);
         createAndSaveTask(project, wishlist, ownerRole,
-                roleAtomicGoal(wishlist, ownerRole),
+                atomicGoal,
                 roleSpecificDod(ownerRole, isRecoveryWork(wishlist)),
-                null,
+                dependsOn,
                 isIntegrationTask,
                 false,
-                createdTasks);
+                createdTasks,
+                new EmsTaskMetadata(semanticKey, emsGraphKey, graphOrder, graphSize, graphEdgeReason));
 
         // Atomic update of wishlist status after task creation
         wishlist.setStatus(WishlistStatus.converted_to_task);
@@ -134,7 +155,8 @@ public class TechnicalLeadCompiler {
     private TaskEntity createAndSaveTask(ProjectEntity project, WishlistEntity wishlist, String roleTag,
                                          String atomicGoal, String dod, TaskEntity dependsOn,
                                          boolean isIntegrationTask, boolean hasIntegrationTask,
-                                         java.util.List<TaskEntity> createdTasks) {
+                                         java.util.List<TaskEntity> createdTasks,
+                                         EmsTaskMetadata emsMetadata) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
 
@@ -158,6 +180,18 @@ public class TechnicalLeadCompiler {
         payload.put("six_sigma_metric", wishlist.getSixSigmaMetric());
         payload.put("dod", dod);
         payload.put("acceptance_criteria", englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist)));
+        payload.put("ems_management_system", "Eneik Management System");
+        payload.put("ems_semantic_key", emsMetadata.semanticKey());
+        payload.put("ems_graph_key", emsMetadata.graphKey() == null ? "" : emsMetadata.graphKey());
+        payload.put("ems_graph_order", emsMetadata.graphOrder());
+        payload.put("ems_graph_size", emsMetadata.graphSize());
+        payload.put("ems_graph_edge_reason", emsMetadata.edgeReason() == null ? "" : emsMetadata.edgeReason());
+        payload.put("ems_flow_stage", flowStage(roleTag));
+        payload.put("ems_defect_work", isDefectWork(wishlist));
+        payload.put("ems_defect_weight", defectWeight(wishlist, roleTag, cynefin));
+        payload.put("ems_kpi_weight", kpiWeight(wishlist, kano, cynefin));
+        payload.put("ems_criticality_score", criticalityScore(wishlist, roleTag, kano, cynefin));
+        payload.put("depends_on", dependsOn != null ? dependsOn.getId().toString() : "");
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
@@ -175,6 +209,130 @@ public class TechnicalLeadCompiler {
         createdTasks.add(saved);
         return saved;
     }
+
+    private java.util.Optional<TaskEntity> findExistingSemanticTask(UUID projectId, String semanticKey) {
+        if (semanticKey == null || semanticKey.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(task -> task.getPayload() != null)
+                .filter(task -> semanticKey.equals(task.getPayload().path("ems_semantic_key").asText("")))
+                .findFirst();
+    }
+
+    private String semanticKey(UUID projectId, String roleTag, WishlistEntity wishlist, String atomicGoal) {
+        String source = projectId + "|" + roleTag + "|"
+                + normalizeSemanticText(wishlist.getJtbd()) + "|"
+                + normalizeSemanticText(wishlist.getAcceptanceCriteria()) + "|"
+                + normalizeSemanticText(atomicGoal);
+        return "ems:" + sha256(source).substring(0, 24);
+    }
+
+    private String sha256(String value) {
+        try {
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder();
+            for (byte b : hash) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            return Integer.toHexString(value.hashCode());
+        }
+    }
+
+    private String normalizeSemanticText(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private String flowStage(String roleTag) {
+        return switch (roleTag) {
+            case "BARCAN-TAG-09" -> "decision";
+            case "BARCAN-TAG-01" -> "architecture";
+            case "BARCAN-TAG-02", "BARCAN-TAG-04", "BARCAN-TAG-07", "BARCAN-TAG-08" -> "implementation";
+            case "BARCAN-TAG-03", "BARCAN-TAG-11" -> "experience";
+            case "BARCAN-TAG-05" -> "operations";
+            case "BARCAN-TAG-06" -> "verification";
+            case "BARCAN-TAG-00" -> "integration";
+            case "BARCAN-TAG-10" -> "compliance";
+            default -> "implementation";
+        };
+    }
+
+    private boolean isDefectWork(WishlistEntity wishlist) {
+        if (isRecoveryWork(wishlist)) {
+            return true;
+        }
+        String text = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getTocConstraintRef() != null ? wishlist.getTocConstraintRef() : "") + " "
+                + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : ""))
+                .toLowerCase(java.util.Locale.ROOT);
+        return text.contains("defect")
+                || text.contains("bug")
+                || text.contains("blocker")
+                || text.contains("failure")
+                || text.contains("failed")
+                || text.contains("regression")
+                || text.contains("circuit breaker")
+                || text.contains("generated artifact");
+    }
+
+    private double defectWeight(WishlistEntity wishlist, String roleTag, String cynefin) {
+        double weight = isDefectWork(wishlist) ? 1.0 : 0.0;
+        if ("BARCAN-TAG-06".equals(roleTag) || "BARCAN-TAG-00".equals(roleTag)) {
+            weight += 0.25;
+        }
+        if ("chaotic".equalsIgnoreCase(cynefin) || "complex".equalsIgnoreCase(cynefin)) {
+            weight += 0.25;
+        }
+        return round(Math.min(1.5, weight));
+    }
+
+    private double kpiWeight(WishlistEntity wishlist, String kano, String cynefin) {
+        double weight = switch (kano == null ? "" : kano.toLowerCase(java.util.Locale.ROOT)) {
+            case "must-be", "mustbe" -> 1.25;
+            case "performance", "one-dimensional" -> 1.1;
+            case "attractive" -> 0.9;
+            default -> 1.0;
+        };
+        if ("complex".equalsIgnoreCase(cynefin)) {
+            weight += 0.15;
+        } else if ("chaotic".equalsIgnoreCase(cynefin)) {
+            weight += 0.35;
+        }
+        if (isDefectWork(wishlist)) {
+            weight += 0.2;
+        }
+        return round(weight);
+    }
+
+    private double criticalityScore(WishlistEntity wishlist, String roleTag, String kano, String cynefin) {
+        double score = kpiWeight(wishlist, kano, cynefin) * 10.0;
+        score += defectWeight(wishlist, roleTag, cynefin) * 5.0;
+        if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-06".equals(roleTag) || "BARCAN-TAG-07".equals(roleTag)) {
+            score += 2.0;
+        }
+        return round(score);
+    }
+
+    private double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
+    private record EmsTaskMetadata(
+            String semanticKey,
+            String graphKey,
+            int graphOrder,
+            int graphSize,
+            String edgeReason
+    ) {}
 
     private String determineFileScope(ProjectEntity project, String roleTag, String wishContent, boolean isIntegrationTask, boolean hasIntegrationTask) {
         java.util.List<String> paths = new java.util.ArrayList<>();

@@ -11,5 +11,9 @@ public record TaskDto(
     TaskStatus status,
     JsonNode payload,
     String julesSessionName,
-    String julesDispatchStatus
+    String julesDispatchStatus,
+    UUID dependsOn,
+    boolean qualityGatePassed,
+    int priority,
+    String cynefinDomain
 ) {}

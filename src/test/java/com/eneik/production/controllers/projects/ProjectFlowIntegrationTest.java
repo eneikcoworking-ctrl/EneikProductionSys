@@ -226,6 +226,109 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
+    void orchestrationCompilesWishlistIntoDependencyGraphAndDedupesSlices() {
+        ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
+                "/api/projects",
+                Map.of("name", "Graph Compiler Project"),
+                ProjectDto.class
+        );
+        assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        ProjectDto project = createProject.getBody();
+        assertThat(project).isNotNull();
+
+        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/wishlist",
+                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Build account settings with API, browser UI, and verification"),
+                com.eneik.production.dto.WishlistResponseDto.class
+        );
+        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata backend =
+                new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                        "Account settings API",
+                        "When an operator edits account settings, I want the API to persist the update, so that settings are saved reliably.",
+                        "Given valid settings, When the API receives an update, Then the values are persisted.",
+                        "BARCAN-TAG-02",
+                        com.eneik.production.models.persistence.LeanValue.essential,
+                        "Must-Be",
+                        "clear",
+                        "TOC-CONSTRAINT-API",
+                        "Escaped defects <= 5%",
+                        false
+                );
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskSlices(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of(
+                        backend,
+                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                                "Duplicate account settings API",
+                                backend.jtbd(),
+                                backend.acceptanceCriteria(),
+                                "BARCAN-TAG-02",
+                                com.eneik.production.models.persistence.LeanValue.essential,
+                                "Must-Be",
+                                "clear",
+                                "TOC-CONSTRAINT-API",
+                                "Escaped defects <= 5%",
+                                false
+                        ),
+                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                                "Account settings UI",
+                                "When an operator opens account settings, I want a browser form, so that settings can be edited safely.",
+                                "Given the settings page opens, When the form renders, Then editable fields and save feedback are visible.",
+                                "BARCAN-TAG-11",
+                                com.eneik.production.models.persistence.LeanValue.essential,
+                                "Performance",
+                                "complicated",
+                                "TOC-CONSTRAINT-UI",
+                                "UI defects <= 5%",
+                                true
+                        ),
+                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                                "Account settings verification",
+                                "When account settings are implemented, I want automated verification, so that regressions are caught.",
+                                "Given the implementation exists, When tests run, Then the primary account settings path is verified.",
+                                "BARCAN-TAG-06",
+                                com.eneik.production.models.persistence.LeanValue.essential,
+                                "Must-Be",
+                                "clear",
+                                "TOC-CONSTRAINT-QA",
+                                "Escaped defects <= 2%",
+                                false
+                        )
+                ));
+
+        ResponseEntity<Map> orchestration = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/orchestrate",
+                null,
+                Map.class
+        );
+
+        assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
+        java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
+                taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id()).stream()
+                        .sorted(java.util.Comparator.comparingInt(task -> task.getPayload().path("ems_graph_order").asInt()))
+                        .toList();
+
+        assertThat(tasks).hasSize(3);
+        assertThat(tasks).extracting(task -> task.getRole().getTag())
+                .containsExactly("BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
+        assertThat(tasks.get(0).getDependsOn()).isNull();
+        assertThat(tasks.get(1).getDependsOn().getId()).isEqualTo(tasks.get(0).getId());
+        assertThat(tasks.get(2).getDependsOn().getId()).isEqualTo(tasks.get(1).getId());
+        assertThat(tasks).extracting(task -> task.getPayload().path("ems_semantic_key").asText())
+                .doesNotHaveDuplicates();
+        assertThat(tasks.get(0).getPayload().path("ems_graph_key").asText()).startsWith("EMS-flow-");
+
+        ProjectDashboardDto dashboard = restTemplate.getForObject(
+                "/api/projects/" + project.id() + "/dashboard",
+                ProjectDashboardDto.class
+        );
+        assertThat(dashboard.emsMetrics().graphHealth().graphTasks()).isEqualTo(3);
+        assertThat(dashboard.emsMetrics().graphHealth().linkedEdges()).isEqualTo(2);
+        assertThat(dashboard.emsMetrics().graphHealth().duplicateSemanticKeys()).isZero();
+    }
+
+    @Test
     void brownfieldOnboardingAuditAndActivationFlow() throws Exception {
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",

@@ -82,6 +82,7 @@ public class MLPredictionServiceClient {
             request.put("prUrl", prUrl);
             request.put("apiKey", getGeminiApiKey());
             request.put("githubToken", settingsService.effectiveValue("github_token"));
+            request.put("modelTier", "pro");
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -116,6 +117,14 @@ public class MLPredictionServiceClient {
     }
 
     public String chat(String prompt, String systemInstruction) {
+        return chatWithTier(prompt, systemInstruction, "");
+    }
+
+    public String chatCritical(String prompt, String systemInstruction) {
+        return chatWithTier(prompt, systemInstruction, "pro");
+    }
+
+    private String chatWithTier(String prompt, String systemInstruction, String modelTier) {
         String endpoint = mlServiceUrl + "/api/v1/assistant/chat";
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -125,6 +134,9 @@ public class MLPredictionServiceClient {
             request.put("prompt", prompt);
             request.put("systemInstruction", systemInstruction);
             request.put("apiKey", getGeminiApiKey());
+            if (modelTier != null && !modelTier.isBlank()) {
+                request.put("modelTier", modelTier);
+            }
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             if (response != null && response.containsKey("text")) {

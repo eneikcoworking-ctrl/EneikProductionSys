@@ -90,10 +90,78 @@ export type Task = {
   id: string;
   tag: string;
   description: string;
-  status: 'queued' | 'claimed' | 'in_progress' | 'review' | 'done' | 'failed';
+  status: 'queued' | 'claimed' | 'in_progress' | 'review' | 'done' | 'failed' | 'blocked' | 'spike_completed';
   payload?: unknown;
   julesSessionName?: string;
   julesDispatchStatus?: string;
+  dependsOn?: string;
+  qualityGatePassed?: boolean;
+  priority?: number;
+  cynefinDomain?: string;
+};
+
+export type EmsFlowStage = {
+  stage: string;
+  label: string;
+  total: number;
+  queued: number;
+  active: number;
+  done: number;
+  blocked: number;
+  completionRate: number;
+  weightedScore: number;
+};
+
+export type EmsRoleKpi = {
+  roleTag: string;
+  total: number;
+  queued: number;
+  active: number;
+  done: number;
+  blocked: number;
+  failed: number;
+  defectWork: number;
+  retryLoad: number;
+  completionRate: number;
+  gatePassRate: number;
+  defectPressure: number;
+  flowEfficiency: number;
+  kpiScore: number;
+  kpiTarget: number;
+  statusLabel: 'on_target' | 'watch' | 'attention' | 'behind';
+};
+
+export type EmsDashboardMetrics = {
+  generatedAt: string;
+  flowChart: {
+    stages: EmsFlowStage[];
+    totalTasks: number;
+    completionRate: number;
+    weightedProgress: number;
+  };
+  roleKpis: EmsRoleKpi[];
+  defectWork: {
+    totalDefectWork: number;
+    openDefectWork: number;
+    blockedTasks: number;
+    failedTasks: number;
+    retryLoad: number;
+    defectPressure: number;
+    dpmo: number;
+    interpretation: string;
+  };
+  graphHealth: {
+    graphTasks: number;
+    uniqueGraphs: number;
+    linkedEdges: number;
+    blockedByDependency: number;
+    duplicateSemanticKeys: number;
+    graphCoverage: number;
+    dependencyCoverage: number;
+    criticalPathLength: number;
+    interpretation: string;
+  };
+  rules: string[];
 };
 
 export type ProjectDashboard = {
@@ -102,6 +170,7 @@ export type ProjectDashboard = {
   openWishlistCount: number;
   queue: QueueData;
   pipeline: PipelineData;
+  emsMetrics?: EmsDashboardMetrics;
   agents: Agent[];
   wishlist: WishlistItem[];
   tasks: Task[];

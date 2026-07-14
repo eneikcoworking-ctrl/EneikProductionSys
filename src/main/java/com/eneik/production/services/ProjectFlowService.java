@@ -7,6 +7,7 @@ import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
 import com.eneik.production.dto.dashboard.ClientDeliveryDto;
+import com.eneik.production.services.dashboard.EmsMetricsService;
 import com.eneik.production.services.compiler.TechnicalLeadCompiler;
 import com.eneik.production.services.dashboard.ClientDeliveryService;
 import com.eneik.production.services.jules.JulesDispatchResult;
@@ -60,6 +61,7 @@ public class ProjectFlowService {
     private final String githubOrganization;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final EmsMetricsService emsMetricsService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -85,7 +87,8 @@ public class ProjectFlowService {
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization,
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
-                              MLPredictionServiceClient mlPredictionServiceClient) {
+                              MLPredictionServiceClient mlPredictionServiceClient,
+                              EmsMetricsService emsMetricsService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -106,6 +109,7 @@ public class ProjectFlowService {
         this.githubOrganization = githubOrganization;
         this.onboardingAuditService = onboardingAuditService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.emsMetricsService = emsMetricsService;
     }
 
     @Transactional
@@ -357,15 +361,28 @@ public class ProjectFlowService {
             wishlist.setSourceRoleTag(ownerRole);
             wishlistRepository.save(wishlist);
             compileSliceMetadata(wishlist.getId(), slice, ownerRole);
-            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+            technicalLeadCompiler.createTaskFromWishlist(
+                    wishlist.getId(),
+                    null,
+                    emsGraphKey(wishlist, "recovery"),
+                    1,
+                    1,
+                    "circuit-breaker recovery starts a fresh one-node graph"
+            );
             return true;
         }
 
+        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices = emsGraphSlices(wishlist, slices);
+        if (graphSlices.isEmpty()) {
+            wishlist.setStatus(WishlistStatus.converted_to_task);
+            wishlistRepository.save(wishlist);
+            return false;
+        }
+
+        String graphKey = emsGraphKey(wishlist, "flow");
+        TaskEntity previousTask = null;
         int index = 1;
-        for (MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
-            if (slice.leanValue() == LeanValue.waste) {
-                continue;
-            }
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
             WishlistEntity sliceWishlist = new WishlistEntity();
             sliceWishlist.setProjectId(project.getId());
             sliceWishlist.setSource(wishlist.getSource());
@@ -375,13 +392,83 @@ public class ProjectFlowService {
             sliceWishlist.setStatus(WishlistStatus.pending);
             sliceWishlist = wishlistRepository.save(sliceWishlist);
             compileSliceMetadata(sliceWishlist.getId(), slice, ownerRole);
-            technicalLeadCompiler.createTaskFromWishlist(sliceWishlist.getId());
+            TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
+                    sliceWishlist.getId(),
+                    previousTask,
+                    graphKey,
+                    index,
+                    graphSlices.size(),
+                    dependencyEdgeReason(previousTask, ownerRole)
+            );
+            previousTask = createdTask != null ? createdTask : previousTask;
             index++;
         }
 
         wishlist.setStatus(WishlistStatus.converted_to_task);
         wishlistRepository.save(wishlist);
         return true;
+    }
+
+    private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> emsGraphSlices(
+            WishlistEntity wishlist,
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
+        java.util.Map<String, MLPredictionServiceClient.TaskSliceMetadata> unique = new java.util.LinkedHashMap<>();
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
+            if (slice.leanValue() == LeanValue.waste) {
+                continue;
+            }
+            String key = sliceSemanticKey(wishlist, slice);
+            unique.putIfAbsent(key, slice);
+        }
+        return unique.values().stream()
+                .sorted(java.util.Comparator
+                        .comparingInt((MLPredictionServiceClient.TaskSliceMetadata slice) -> emsStageOrder(targetRoleForSlice(wishlist, slice)))
+                        .thenComparing(slice -> normalizeForGraph(slice.title()))
+                        .thenComparing(slice -> normalizeForGraph(slice.jtbd())))
+                .toList();
+    }
+
+    private String sliceSemanticKey(WishlistEntity wishlist, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        return targetRoleForSlice(wishlist, slice) + "|"
+                + normalizeForGraph(slice.jtbd()) + "|"
+                + normalizeForGraph(slice.acceptanceCriteria());
+    }
+
+    private String normalizeForGraph(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(java.util.Locale.ROOT)
+                .replaceAll("[^a-z0-9]+", " ")
+                .replaceAll("\\s+", " ")
+                .trim();
+    }
+
+    private int emsStageOrder(String roleTag) {
+        return switch (roleTag) {
+            case "BARCAN-TAG-09" -> 10;
+            case "BARCAN-TAG-01" -> 20;
+            case "BARCAN-TAG-08", "BARCAN-TAG-07", "BARCAN-TAG-04", "BARCAN-TAG-02" -> 30;
+            case "BARCAN-TAG-03", "BARCAN-TAG-11" -> 40;
+            case "BARCAN-TAG-05" -> 50;
+            case "BARCAN-TAG-10" -> 55;
+            case "BARCAN-TAG-06" -> 60;
+            case "BARCAN-TAG-00" -> 70;
+            default -> 35;
+        };
+    }
+
+    private String dependencyEdgeReason(TaskEntity previousTask, String ownerRole) {
+        if (previousTask == null) {
+            return "graph root: first owner-role slice from the wishlist";
+        }
+        String previousRole = previousTask.getRole() != null ? previousTask.getRole().getTag() : "previous-role";
+        return "EMS ordered flow: " + ownerRole + " waits for " + previousRole + " to finish the previous verifiable slice";
+    }
+
+    private String emsGraphKey(WishlistEntity wishlist, String suffix) {
+        String id = wishlist.getId() == null ? UUID.randomUUID().toString() : wishlist.getId().toString();
+        return "EMS-" + suffix + "-" + id.substring(0, Math.min(8, id.length()));
     }
 
     private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> resolveTaskSlices(WishlistEntity wishlist) {
@@ -765,7 +852,8 @@ public class ProjectFlowService {
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt()))
                 .toList();
-        List<TaskDto> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+        List<TaskEntity> taskEntities = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<TaskDto> tasks = taskEntities.stream()
                 .map(task -> new TaskDto(
                         task.getId(),
                         task.getRole().getTag(),
@@ -773,7 +861,11 @@ public class ProjectFlowService {
                         task.getStatus(),
                         task.getPayload(),
                         task.getJulesSessionName(),
-                        task.getJulesDispatchStatus()
+                        task.getJulesDispatchStatus(),
+                        task.getDependsOn() != null ? task.getDependsOn().getId() : null,
+                        task.isQualityGatePassed(),
+                        task.getPriority(),
+                        task.getCynefinDomain()
                 ))
                 .toList();
 
@@ -783,6 +875,7 @@ public class ProjectFlowService {
                 wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending).size(),
                 queue,
                 pipeline,
+                emsMetricsService.build(taskEntities),
                 agents,
                 wishlist,
                 tasks

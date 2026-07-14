@@ -15,15 +15,25 @@ import socket
 
 app = FastAPI(title="Eneik AI Prediction Service")
 
-DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
-DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-3.1-flash-lite,gemini-2.5-flash"
+DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
+DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-2.5-flash-lite"
+DEFAULT_GEMINI_PRO_MODEL = "gemini-2.5-pro"
+DEFAULT_GEMINI_PRO_FALLBACK_MODELS = "gemini-2.5-flash,gemini-2.5-flash-lite"
 
 
-def gemini_candidate_models() -> list[str]:
-    primary = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
-    fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", DEFAULT_GEMINI_FALLBACK_MODELS)
-    candidates = [primary]
-    candidates.extend(model.strip() for model in fallbacks.split(",") if model.strip())
+def gemini_candidate_models(model_tier: str = "", model_override: str = "") -> list[str]:
+    if model_override:
+        candidates = [model.strip() for model in model_override.split(",") if model.strip()]
+    elif (model_tier or "").lower() == "pro":
+        primary = os.getenv("GEMINI_PRO_MODEL", DEFAULT_GEMINI_PRO_MODEL).strip() or DEFAULT_GEMINI_PRO_MODEL
+        fallbacks = os.getenv("GEMINI_PRO_FALLBACK_MODELS", DEFAULT_GEMINI_PRO_FALLBACK_MODELS)
+        candidates = [primary]
+        candidates.extend(model.strip() for model in fallbacks.split(",") if model.strip())
+    else:
+        primary = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
+        fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", DEFAULT_GEMINI_FALLBACK_MODELS)
+        candidates = [primary]
+        candidates.extend(model.strip() for model in fallbacks.split(",") if model.strip())
 
     unique = []
     for model in candidates:
@@ -47,7 +57,13 @@ def gemini_request_timeout() -> int:
         return 10
 
 
-def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> str:
+def ask_gemini(
+    prompt: str,
+    system_instruction: str = "",
+    api_key: str = "",
+    model_tier: str = "",
+    model_override: str = "",
+) -> str:
     # Check if we have an API key configured or in env
     if not api_key:
         api_key = os.getenv("GEMINI_API_KEY", "")
@@ -86,7 +102,7 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
         last_retryable_error = None
-        for model in gemini_candidate_models():
+        for model in gemini_candidate_models(model_tier, model_override):
             try:
                 req = urllib.request.Request(
                     gemini_generate_url(model, api_key),
@@ -130,6 +146,8 @@ class BottleneckResponse(BaseModel):
 class MetadataRequest(BaseModel):
     content: str
     apiKey: str = ""
+    modelTier: str = ""
+    modelOverride: str = ""
 
 
 class MetadataResponse(BaseModel):
@@ -160,6 +178,8 @@ class ReviewRequest(BaseModel):
     prUrl: str
     apiKey: str = ""
     githubToken: str = ""
+    modelTier: str = ""
+    modelOverride: str = ""
 
 
 class ReviewResponse(BaseModel):
@@ -172,6 +192,8 @@ class RefusalCriteriaRequest(BaseModel):
     prDiff: str
     refusalCriteria: str
     apiKey: str = ""
+    modelTier: str = ""
+    modelOverride: str = ""
 
 
 class RefusalCriteriaResponse(BaseModel):
@@ -183,6 +205,8 @@ class ChatRequest(BaseModel):
     prompt: str
     systemInstruction: str = ""
     apiKey: str = ""
+    modelTier: str = ""
+    modelOverride: str = ""
 
 
 class ChatResponse(BaseModel):
@@ -275,7 +299,7 @@ async def predict_metadata_endpoint(request: MetadataRequest):
             "unless you give a measurable threshold. Do not invent external services that are not implied by the wishlist. "
             'Return ONLY JSON: {"jtbd": "string", "acceptanceCriteria": "string"}.'
         )
-        response_json = ask_gemini(request.content, system_instruction, request.apiKey)
+        response_json = ask_gemini(request.content, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
         parsed = json.loads(response_json)
         return MetadataResponse(
             jtbd=parsed.get("jtbd", fallback_jtbd(request.content)),
@@ -307,7 +331,7 @@ async def predict_task_slices_endpoint(request: MetadataRequest):
             "Set hasUi=true only when this item needs visible browser UI/design work. Avoid broad platform epics; split them into smaller user/admin/data/API items. "
             'Return ONLY JSON: {"slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...\\nGiven...", "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive", "cynefinDomain": "clear|complicated|complex|chaotic", "tocConstraintRef": "short bottleneck reference", "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}'
         )
-        response_json = ask_gemini(request.content, system_instruction, request.apiKey)
+        response_json = ask_gemini(request.content, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
         parsed = json.loads(response_json)
         raw_slices = parsed.get("slices", [])
         slices = []
@@ -646,7 +670,7 @@ Charter Rules:
 """
         prompt = f"Task Description: {task_desc}\n\nPR Diff:\n{diff_content}"
 
-        response_json = ask_gemini(prompt, system_instruction, request.apiKey)
+        response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
 
         # Clean markdown formatting if present
         if response_json.strip().startswith("```json"):
@@ -746,7 +770,7 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
             'Return ONLY JSON: {"compliant": bool, "reason": "string"}.'
         )
         prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
-        response_json = ask_gemini(prompt, system_instruction, request.apiKey)
+        response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
 
         # Parse response if not empty or fallback default mock
         if response_json and response_json.strip() != "{}" and response_json.strip() != "":
@@ -778,7 +802,7 @@ async def assistant_chat_endpoint(request: ChatRequest):
                 "Backend project facts may be available, but free-form model answering is disabled."
             ))
 
-        response_text = ask_gemini(request.prompt, request.systemInstruction, api_key)
+        response_text = ask_gemini(request.prompt, request.systemInstruction, api_key, request.modelTier, request.modelOverride)
         cleaned = response_text
         if cleaned.strip().startswith("```"):
             lines = cleaned.strip().split("\n")
