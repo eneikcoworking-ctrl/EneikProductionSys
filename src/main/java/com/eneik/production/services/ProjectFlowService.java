@@ -26,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
 
@@ -37,6 +38,7 @@ public class ProjectFlowService {
     );
     private static final String UNIVERSAL_CAPABILITIES = "*";
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
+    private static final long ORCHESTRATION_COOLDOWN_SECONDS = 300L;
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -53,6 +55,7 @@ public class ProjectFlowService {
     private final ClientDeliveryService clientDeliveryService;
     private final ProjectFinalReportRepository projectFinalReportRepository;
     private final JulesSessionRepository julesSessionRepository;
+    private final ProjectGenerationStateRepository projectGenerationStateRepository;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
@@ -78,6 +81,7 @@ public class ProjectFlowService {
                               ClientDeliveryService clientDeliveryService,
                               ProjectFinalReportRepository projectFinalReportRepository,
                               JulesSessionRepository julesSessionRepository,
+                              ProjectGenerationStateRepository projectGenerationStateRepository,
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization,
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
@@ -97,6 +101,7 @@ public class ProjectFlowService {
         this.clientDeliveryService = clientDeliveryService;
         this.projectFinalReportRepository = projectFinalReportRepository;
         this.julesSessionRepository = julesSessionRepository;
+        this.projectGenerationStateRepository = projectGenerationStateRepository;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
         this.onboardingAuditService = onboardingAuditService;
@@ -141,6 +146,7 @@ public class ProjectFlowService {
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
         
         ProjectEntity saved = projectRepository.save(project);
+        ensureProjectGenerationState(saved.getId());
         ProjectFactoryResult factoryResult = projectFactoryService.provision(saved);
         saved.setRepositoryUrl(factoryResult.repositoryUrl());
         saved.setRepoUrl(factoryResult.repositoryUrl());
@@ -166,6 +172,15 @@ public class ProjectFlowService {
         }
 
         return toProjectDto(saved);
+    }
+
+    private void ensureProjectGenerationState(UUID projectId) {
+        if (projectGenerationStateRepository.existsById(projectId)) {
+            return;
+        }
+        ProjectGenerationStateEntity state = new ProjectGenerationStateEntity();
+        state.setProjectId(projectId);
+        projectGenerationStateRepository.save(state);
     }
 
     @Transactional
@@ -217,6 +232,7 @@ public class ProjectFlowService {
     @Transactional
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
+        recordOrchestrationStartOrThrow(projectId);
 
         // 1. Record existing task IDs of this project
         java.util.List<TaskEntity> existingTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
@@ -292,6 +308,27 @@ public class ProjectFlowService {
             createdTasks,
             "Orchestrated " + processedCount + " wishlist items. " + createdTasks.size() + " tasks created."
         );
+    }
+
+    private void recordOrchestrationStartOrThrow(UUID projectId) {
+        Instant now = Instant.now();
+        ProjectGenerationStateEntity state = projectGenerationStateRepository.findById(projectId)
+                .orElseGet(() -> {
+                    ProjectGenerationStateEntity newState = new ProjectGenerationStateEntity();
+                    newState.setProjectId(projectId);
+                    return newState;
+                });
+
+        Instant last = state.getLastOrchestratedAt();
+        if (last != null) {
+            long elapsedSeconds = Duration.between(last, now).getSeconds();
+            if (elapsedSeconds < ORCHESTRATION_COOLDOWN_SECONDS) {
+                throw new OrchestrationCooldownException(ORCHESTRATION_COOLDOWN_SECONDS - elapsedSeconds);
+            }
+        }
+
+        state.setLastOrchestratedAt(now);
+        projectGenerationStateRepository.saveAndFlush(state);
     }
 
     private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist) {

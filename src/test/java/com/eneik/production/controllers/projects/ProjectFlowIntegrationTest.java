@@ -125,6 +125,14 @@ class ProjectFlowIntegrationTest {
         );
         assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
 
+        ResponseEntity<Map> throttledOrchestration = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/orchestrate",
+                null,
+                Map.class
+        );
+        assertThat(throttledOrchestration.getStatusCode()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS);
+        assertThat(throttledOrchestration.getBody()).containsKey("retryAfterSeconds");
+
         org.awaitility.Awaitility.await()
             .atMost(5, java.util.concurrent.TimeUnit.SECONDS)
             .pollInterval(100, java.util.concurrent.TimeUnit.MILLISECONDS)

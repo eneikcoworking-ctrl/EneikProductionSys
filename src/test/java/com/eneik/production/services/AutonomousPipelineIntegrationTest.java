@@ -40,6 +40,10 @@ class AutonomousPipelineIntegrationTest {
 
     @Autowired
     private ContinuousOrchestrationService continuousOrchestrationService;
+
+    @Autowired
+    private ProjectFlowService projectFlowService;
+
     @org.springframework.boot.test.mock.mockito.MockBean
     private MLPredictionServiceClient mlPredictionServiceClient;
 
@@ -115,8 +119,8 @@ class AutonomousPipelineIntegrationTest {
         org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
             .thenReturn(aiResponse);
 
-        // 3. Trigger Continuous Orchestration (Pick up from wishlist)
-        continuousOrchestrationService.continuousOrchestrate();
+        // 3. Trigger manual orchestration (Pick up from wishlist)
+        projectFlowService.orchestrate(project.getId());
 
         // 4. Verify Task Created and Wishlist Converted
         com.eneik.production.models.persistence.WishlistEntity updatedItem = wishlistRepository.findById(item.getId()).orElseThrow();

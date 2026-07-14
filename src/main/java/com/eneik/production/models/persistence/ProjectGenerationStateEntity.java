@@ -17,6 +17,9 @@ public class ProjectGenerationStateEntity {
     @Column(name = "stopped_at")
     private Instant stoppedAt;
 
+    @Column(name = "last_orchestrated_at")
+    private Instant lastOrchestratedAt;
+
     public UUID getProjectId() {
         return projectId;
     }
@@ -39,5 +42,13 @@ public class ProjectGenerationStateEntity {
 
     public void setStoppedAt(Instant stoppedAt) {
         this.stoppedAt = stoppedAt;
+    }
+
+    public Instant getLastOrchestratedAt() {
+        return lastOrchestratedAt;
+    }
+
+    public void setLastOrchestratedAt(Instant lastOrchestratedAt) {
+        this.lastOrchestratedAt = lastOrchestratedAt;
     }
 }

@@ -11,9 +11,44 @@
   let error: string | null = null;
   let wishText = '';
   let statusMsg = 'Ready';
+  let orchestrating = false;
+  let orchestrateCooldownUntil = 0;
+  let nowMs = Date.now();
+
+  const ORCHESTRATE_COOLDOWN_SECONDS = 300;
+
+  $: orchestrateRemainingSeconds = Math.max(0, Math.ceil((orchestrateCooldownUntil - nowMs) / 1000));
+  $: orchestrateBlocked = dashboard?.project?.status === 'accepted' || orchestrating || orchestrateRemainingSeconds > 0;
 
   let onboardingFindings: any[] = [];
   let onboardingReport = '';
+
+  function orchestrateCooldownKey() {
+    return `eneik-orchestrate-cooldown:${projectId}`;
+  }
+
+  function loadOrchestrateCooldown() {
+    if (!projectId) return;
+    const raw = localStorage.getItem(orchestrateCooldownKey());
+    const parsed = raw ? Number(raw) : 0;
+    orchestrateCooldownUntil = Number.isFinite(parsed) ? parsed : 0;
+    nowMs = Date.now();
+    if (orchestrateCooldownUntil <= nowMs) {
+      localStorage.removeItem(orchestrateCooldownKey());
+    }
+  }
+
+  function startOrchestrateCooldown(seconds = ORCHESTRATE_COOLDOWN_SECONDS) {
+    orchestrateCooldownUntil = Date.now() + Math.max(1, seconds) * 1000;
+    localStorage.setItem(orchestrateCooldownKey(), String(orchestrateCooldownUntil));
+    nowMs = Date.now();
+  }
+
+  function clearOrchestrateCooldown() {
+    orchestrateCooldownUntil = 0;
+    localStorage.removeItem(orchestrateCooldownKey());
+    nowMs = Date.now();
+  }
 
   async function fetchOnboardingData() {
     try {
@@ -101,16 +136,31 @@
   }
 
   async function orchestrate() {
+    if (orchestrateBlocked) return;
+    orchestrating = true;
+    startOrchestrateCooldown();
     statusMsg = 'Technical Lead is turning wishes into business-necessary tasks...';
-    const response = await fetch(`${API_BASE}/api/projects/${projectId}/orchestrate`, {
-      method: 'POST'
-    });
-    if (response.ok) {
-      const result = await response.json();
-      await fetchDashboard();
-      statusMsg = `${result.message} Created: ${result.createdTasks?.length ?? 0}`;
-    } else {
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/orchestrate`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        const result = await response.json();
+        await fetchDashboard();
+        statusMsg = `${result.message} Created: ${result.createdTasks?.length ?? 0}`;
+      } else if (response.status === 429) {
+        const err = await response.json();
+        startOrchestrateCooldown(err.retryAfterSeconds ?? ORCHESTRATE_COOLDOWN_SECONDS);
+        statusMsg = `Orchestrate cooldown: retry in ${err.retryAfterSeconds ?? ORCHESTRATE_COOLDOWN_SECONDS}s.`;
+      } else {
+        clearOrchestrateCooldown();
+        statusMsg = 'Failed to orchestrate tasks.';
+      }
+    } catch (e) {
+      clearOrchestrateCooldown();
       statusMsg = 'Failed to orchestrate tasks.';
+    } finally {
+      orchestrating = false;
     }
   }
 
@@ -143,6 +193,7 @@
   // Refetch when projectId changes
   $: if (projectId) {
     loading = true;
+    loadOrchestrateCooldown();
     fetchDashboard();
   }
 
@@ -160,7 +211,17 @@
     return { label: 'Indifferent', colorClass: 'kano-indifferent' };
   }
 
-  onMount(fetchDashboard);
+  onMount(() => {
+    loadOrchestrateCooldown();
+    const timer = setInterval(() => {
+      nowMs = Date.now();
+      if (orchestrateCooldownUntil > 0 && orchestrateCooldownUntil <= nowMs) {
+        clearOrchestrateCooldown();
+      }
+    }, 1000);
+    fetchDashboard();
+    return () => clearInterval(timer);
+  });
 </script>
 
 <div class="dashboard-root">
@@ -197,8 +258,14 @@
         </p>
       </div>
       <div class="actions-area">
-        <button class="btn btn-secondary" onclick={orchestrate} disabled={dashboard.project.status === 'accepted'}>
-          Orchestrate
+        <button class="btn btn-secondary" onclick={orchestrate} disabled={orchestrateBlocked}>
+          {#if orchestrateRemainingSeconds > 0}
+            Orchestrate ({orchestrateRemainingSeconds}s)
+          {:else if orchestrating}
+            Orchestrating...
+          {:else}
+            Orchestrate
+          {/if}
         </button>
         <button class="btn btn-success" onclick={acceptProject} disabled={dashboard.project.status === 'accepted'}>
           Accept Project

@@ -55,7 +55,9 @@ public class ContinuousOrchestrationService {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
                 projectFlowService.dispatchQueuedTasks(project.getId());
                 projectFlowService.dispatchReviewTasks(project.getId());
-                projectFlowService.orchestrate(project.getId());
+            } catch (OrchestrationCooldownException e) {
+                log.info("Continuous Orchestration: Skipping project {} for {} seconds because orchestration is on cooldown",
+                        project.getId(), e.getRetryAfterSeconds());
             } catch (Exception e) {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
             }

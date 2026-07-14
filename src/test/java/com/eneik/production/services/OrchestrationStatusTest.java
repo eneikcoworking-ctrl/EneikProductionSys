@@ -88,12 +88,12 @@ public class OrchestrationStatusTest {
         project.setFactoryStatus("ready_local");
         projectRepository.save(project);
 
-        // 1. First run creates the task
-        continuousOrchestrationService.continuousOrchestrate();
+        // 1. Manual orchestration creates the task
+        projectFlowService.orchestrate(project.getId());
 
         Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> !taskRepository.findAll().isEmpty());
 
-        // 2. Second run dispatches the task
+        // 2. Continuous loop dispatches existing queued work, but does not create new tasks.
         continuousOrchestrationService.continuousOrchestrate();
 
         Awaitility.await()

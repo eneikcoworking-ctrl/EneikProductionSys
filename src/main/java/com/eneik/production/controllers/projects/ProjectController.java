@@ -2,6 +2,7 @@ package com.eneik.production.controllers.projects;
 
 import com.eneik.production.dto.*;
 import com.eneik.production.services.ClaimService;
+import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -116,6 +117,12 @@ public class ProjectController {
     public ResponseEntity<?> orchestrate(@PathVariable UUID projectId) {
         try {
             return ResponseEntity.ok(projectFlowService.orchestrate(projectId));
+        } catch (OrchestrationCooldownException e) {
+            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(Map.of(
+                    "error", e.getMessage(),
+                    "code", 429,
+                    "retryAfterSeconds", e.getRetryAfterSeconds()
+            ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }
