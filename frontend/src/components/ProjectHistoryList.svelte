@@ -16,14 +16,14 @@
     onclick={() => (isOpen = !isOpen)}
     class="flex items-center gap-2 text-lg font-bold text-gray-700 hover:text-gray-900 transition-colors"
   >
-    <span>История проектов</span>
+    <span>Project History</span>
     <span class="transform transition-transform {isOpen ? 'rotate-180' : ''}">▾</span>
   </button>
 
   {#if isOpen}
     <div transition:slide class="mt-4 space-y-2">
       {#if history.length === 0}
-        <p class="text-gray-500 italic">Нет завершенных проектов</p>
+        <p class="text-gray-500 italic">No completed projects</p>
       {:else}
         <div class="bg-white shadow overflow-hidden rounded-md">
           <ul class="divide-y divide-gray-200">
@@ -31,7 +31,7 @@
               <li class="px-6 py-4 flex justify-between items-center hover:bg-gray-50 transition-colors">
                 <div class="font-medium text-gray-900">{project.name}</div>
                 <div class="text-sm text-gray-500">
-                  Принят: {project.acceptedAt ? new Date(project.acceptedAt).toLocaleDateString() : 'Н/Д'}
+                  Accepted: {project.acceptedAt ? new Date(project.acceptedAt).toLocaleDateString() : 'N/A'}
                 </div>
               </li>
             {/each}

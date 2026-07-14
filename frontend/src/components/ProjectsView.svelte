@@ -33,7 +33,7 @@
 <div class="max-w-4xl mx-auto space-y-8">
   {#if loading}
     <div class="text-center py-10">
-      <p class="text-gray-500 animate-pulse">Загрузка проектов...</p>
+      <p class="text-gray-500 animate-pulse">Loading projects...</p>
     </div>
   {:else}
     {#if !activeProject}

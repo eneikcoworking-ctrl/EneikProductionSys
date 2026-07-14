@@ -126,15 +126,19 @@
   }
 
   async function loadStatus() {
-    const response = await fetch(`${API_BASE}/api/system-status`);
-    if (!response.ok) {
-      message = `System status failed: ${response.status}`;
-      return;
+    try {
+      const response = await fetch(`${API_BASE}/api/system-status`);
+      if (!response.ok) {
+        message = `System status failed: ${response.status}`;
+        return;
+      }
+      status = await response.json();
+      settings = status?.integrations?.data || [];
+      await loadActiveProject();
+      message = 'Updated';
+    } catch (e) {
+      message = `Network error while loading system status: ${e}`;
     }
-    status = await response.json();
-    settings = status?.integrations?.data || [];
-    await loadActiveProject();
-    message = 'Updated';
   }
 
   async function loadActiveProject() {
@@ -224,6 +228,42 @@
     return new Date(value).toLocaleString();
   }
 
+  function capabilityList(value?: string) {
+    return (value || '')
+      .split(',')
+      .map((capability) => capability.trim())
+      .filter(Boolean);
+  }
+
+  function capabilitySummary(value?: string) {
+    const capabilities = capabilityList(value);
+    if (capabilities.length === 0) return 'No capabilities';
+    if (capabilities.length >= 12) return 'All 12 BARCAN roles';
+    if (capabilities.length === 1) return capabilities[0];
+    return `${capabilities.length} roles`;
+  }
+
+  function collaboratorRank(collaborator: Collaborator) {
+    const label = `${collaborator.status || ''} ${collaborator.statusLabel || ''}`.toLowerCase();
+    if (label.includes('collaborator')) return 4;
+    if (label.includes('sent')) return 3;
+    if (label.includes('pending')) return 2;
+    if (label.includes('failed') || label.includes('error')) return 1;
+    return 0;
+  }
+
+  function uniqueCollaborators(collaborators: Collaborator[] = []) {
+    const byUsername = new Map<string, Collaborator>();
+    for (const collaborator of collaborators) {
+      const key = collaborator.username.toLowerCase();
+      const existing = byUsername.get(key);
+      if (!existing || collaboratorRank(collaborator) > collaboratorRank(existing)) {
+        byUsername.set(key, collaborator);
+      }
+    }
+    return Array.from(byUsername.values()).sort((a, b) => a.username.localeCompare(b.username));
+  }
+
   let chatOpen = $state(false);
   let chatInput = $state('');
   let chatHistory = $state<{ sender: 'user' | 'ai'; text: string }[]>([]);
@@ -249,12 +289,12 @@
       });
       if (response.ok) {
         const data = await response.json();
-        chatHistory = [...chatHistory, { sender: 'ai', text: data.response || 'Пустой ответ от ассистента.' }];
+        chatHistory = [...chatHistory, { sender: 'ai', text: data.response || 'Empty assistant response.' }];
       } else {
-        chatHistory = [...chatHistory, { sender: 'ai', text: 'Ошибка: не удалось связаться с сервером ассистента.' }];
+        chatHistory = [...chatHistory, { sender: 'ai', text: 'Error: assistant server is not reachable.' }];
       }
     } catch (e) {
-      chatHistory = [...chatHistory, { sender: 'ai', text: `Ошибка сети: ${e}` }];
+      chatHistory = [...chatHistory, { sender: 'ai', text: `Network error: ${e}` }];
     } finally {
       chatLoading = false;
     }
@@ -269,12 +309,19 @@
       <p class="eyebrow">Local Administrator</p>
       <h2>Technical System Dashboard</h2>
     </div>
-    <button type="button" onclick={loadStatus}>Refresh</button>
+    <div class="admin-header-actions">
+      <button type="button" onclick={loadStatus}>Refresh</button>
+      {#if !chatOpen}
+        <button type="button" class="chat-trigger inline" onclick={() => chatOpen = true}>
+          Ask AI
+        </button>
+      {/if}
+    </div>
   </div>
 
   <section class="admin-panel">
     <div class="panel-head">
-      <h2>Интеграции</h2>
+      <h2>Integrations</h2>
       <span>{status?.integrations?.available ? 'online' : 'degraded'}</span>
     </div>
     <div class="integration-grid">
@@ -298,9 +345,9 @@
             {:else}
               <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
             {/if}
-            <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Изменить</button>
+            <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Edit</button>
               <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
-                Сохранить
+                Save
               </button>
             </div>
 
@@ -312,9 +359,9 @@
               {:else}
                 <input value={settingByKey(integration.extraKey)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
-              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey)}>Изменить</button>
+              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey)}>Edit</button>
               <button type="button" onclick={() => saveSetting(integration.extraKey, drafts[integration.extraKey] || '')} disabled={!editing[integration.extraKey]}>
-                Сохранить
+                Save
               </button>
             </div>
           {/if}
@@ -340,28 +387,24 @@
       <span>{status?.accounts?.data?.items?.filter(a => a.status !== 'decommissioned').length ?? 0} active pool</span>
     </div>
 
-    <div class="create-account-form" style="margin-bottom: 20px; padding: 15px; background: #f1f5f9; border-radius: 6px; display: flex; flex-direction: column; gap: 10px;">
-      <div style="display: flex; gap: 10px; align-items: flex-end;">
-        <div style="flex: 1;">
-          <p class="label">New Account Name</p>
-          <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px; width: 100%;" />
-        </div>
-        <div style="flex: 1;">
-          <p class="label">GitHub Username</p>
-          <input bind:value={newGithubUsername} placeholder="e.g. jules-bot" style="padding: 8px; width: 100%;" />
-        </div>
-        <div style="flex: 1;">
-          <p class="label">Jules API Key</p>
-          <input bind:value={newApiKey} type="password" placeholder="sk-..." style="padding: 8px; width: 100%;" />
-        </div>
+    <div class="create-account-form">
+      <div class="form-field">
+        <p class="label">New Account Name</p>
+        <input bind:value={newName} placeholder="e.g. Jules-08" />
       </div>
-      <div style="display: flex; gap: 10px; align-items: flex-end;">
-        <div style="flex: 1;">
-          <p class="label">Capabilities (comma separated)</p>
-          <input value={allBarcanCapabilities} disabled style="padding: 8px; width: 100%;" />
-        </div>
-        <button onclick={createAccount} style="height: 38px; padding: 0 20px;">Add Account</button>
+      <div class="form-field">
+        <p class="label">GitHub Username</p>
+        <input bind:value={newGithubUsername} placeholder="e.g. jules-bot" />
       </div>
+      <div class="form-field">
+        <p class="label">Jules API Key</p>
+        <input bind:value={newApiKey} type="password" placeholder="sk-..." />
+      </div>
+      <div class="form-field capabilities-field">
+        <p class="label">Capabilities</p>
+        <input value="All 12 BARCAN roles" title={allBarcanCapabilities} disabled />
+      </div>
+      <button class="add-account-btn" onclick={createAccount}>Add Account</button>
     </div>
 
     <div class="account-summary">
@@ -381,12 +424,12 @@
       {#each status?.accounts?.data?.items || [] as account}
         {#if account.status !== 'decommissioned'}
           <div class="table-row">
-            <div class="flex flex-col">
+            <div class="account-name-cell">
               <strong>{account.name}</strong>
-              <small>{account.capabilities}</small>
+              <small title={account.capabilities}>{capabilitySummary(account.capabilities)}</small>
             </div>
             <span class={`pill ${account.status}`}>{account.status}</span>
-            <div class="flex items-center gap-2">
+            <div class="key-cell">
               {#if editing[`acc_${account.id}`]}
                 <input bind:value={drafts[`acc_${account.id}`]} placeholder="new api key" class="text-xs" />
                 <button type="button" class="mini-btn" onclick={() => updateAccount(account, { apiKey: drafts[`acc_${account.id}`] })}>Save</button>
@@ -400,7 +443,7 @@
             </div>
             <span>{formatDate(account.lastHeartbeat)}</span>
             <span class="text-xs">{account.currentProjectId || 'Global Pool'}</span>
-            <div class="flex gap-2">
+            <div class="actions-cell">
                <label class="toggle mini">
                   <input type="checkbox" checked={account.enabled} onchange={(e) => updateAccount(account, { enabled: e.currentTarget.checked })} />
                   <span>Enabled</span>
@@ -427,7 +470,7 @@
     </div>
     {#if activeProject?.collaborators?.length}
       <div class="collaborator-list">
-        {#each activeProject.collaborators as collaborator}
+        {#each uniqueCollaborators(activeProject.collaborators) as collaborator}
           <div class="collaborator-row">
             <strong>{collaborator.username}</strong>
             <span class={`pill ${collaborator.uiColorToken}`}>
@@ -448,13 +491,13 @@
   </section>
 
   <section class="admin-panel compact">
-    <h2>Состояние пула</h2>
-    <p class="admin-message">Статус админки: {message}</p>
+    <h2>Pool Status</h2>
+    <p class="admin-message">Admin status: {message}</p>
   </section>
 
   <!-- AI Assistant Chat Widget -->
-  <div class="chat-widget">
-    {#if chatOpen}
+  {#if chatOpen}
+    <div class="chat-widget">
       <div class="chat-box">
         <div class="chat-header">
           <h3>Project Operator Eneik</h3>
@@ -468,32 +511,29 @@
           {/each}
           {#if chatLoading}
             <div class="chat-message ai">
-              <div class="message-bubble loading">Думаю...</div>
+              <div class="message-bubble loading">Thinking...</div>
             </div>
           {/if}
         </div>
         <div class="chat-input-area">
           <input
             type="text"
-            placeholder="Спросить по текущему проекту..."
+            placeholder="Ask about the current project..."
             bind:value={chatInput}
             onkeydown={(e) => { if (e.key === 'Enter') sendChatMessage(); }}
           />
-          <button type="button" onclick={sendChatMessage} disabled={chatLoading}>Отправить</button>
+          <button type="button" onclick={sendChatMessage} disabled={chatLoading}>Send</button>
         </div>
       </div>
-    {:else}
-      <button type="button" class="chat-trigger" onclick={() => chatOpen = true}>
-        💬 Спросить ИИ
-      </button>
-    {/if}
-  </div>
+    </div>
+  {/if}
 </section>
 
 <style>
   .admin-shell {
     display: grid;
     gap: 18px;
+    padding-bottom: 96px;
   }
 
   .admin-header,
@@ -508,6 +548,13 @@
     justify-content: space-between;
   }
 
+  .admin-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
   .admin-grid {
     display: grid;
     gap: 12px;
@@ -520,12 +567,6 @@
     border: 1px solid #dbe3ef;
     border-radius: 8px;
     padding: 18px;
-  }
-
-  .stat span {
-    display: block;
-    font-size: 28px;
-    font-weight: 800;
   }
 
   .stat.primary {
@@ -621,6 +662,35 @@
     color: #64748b;
   }
 
+  .create-account-form {
+    align-items: end;
+    background: #f1f5f9;
+    border-radius: 8px;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(3, minmax(150px, 1fr)) minmax(160px, 0.8fr) auto;
+    margin-bottom: 20px;
+    padding: 15px;
+  }
+
+  .form-field {
+    min-width: 0;
+  }
+
+  .form-field input {
+    min-height: 42px;
+  }
+
+  .capabilities-field input {
+    color: #475569;
+    font-weight: 700;
+  }
+
+  .add-account-btn {
+    height: 42px;
+    white-space: nowrap;
+  }
+
   .account-summary {
     justify-content: flex-start;
     margin: 12px 0;
@@ -655,6 +725,7 @@
     display: grid;
     gap: 8px;
     overflow-x: auto;
+    padding-bottom: 4px;
   }
 
   .collaborator-list {
@@ -674,6 +745,14 @@
     padding: 12px;
   }
 
+  .collaborator-row strong,
+  .collaborator-row small {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   .warning-text {
     color: #92400e;
     margin: 0;
@@ -683,8 +762,8 @@
   .table-row {
     display: grid;
     gap: 12px;
-    grid-template-columns: minmax(160px, 1fr) 90px 180px minmax(150px, 1fr) minmax(150px, 1fr) minmax(160px, 1fr);
-    min-width: 1000px;
+    grid-template-columns: minmax(180px, 1fr) 92px minmax(190px, 0.8fr) minmax(150px, 0.85fr) minmax(140px, 0.8fr) minmax(210px, 1fr);
+    min-width: 1120px;
   }
 
   .table-head {
@@ -700,6 +779,37 @@
     border: 1px solid #e2e8f0;
     border-radius: 6px;
     padding: 10px;
+  }
+
+  .account-name-cell,
+  .key-cell,
+  .actions-cell {
+    align-items: center;
+    display: flex;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .account-name-cell {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .account-name-cell small {
+    color: #64748b;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .key-cell input {
+    min-width: 0;
+  }
+
+  .actions-cell {
+    justify-content: flex-start;
   }
 
   .compact {
@@ -718,19 +828,73 @@
       grid-template-columns: 1fr;
     }
 
+    .admin-shell {
+      padding-bottom: 84px;
+    }
+
+    .admin-header,
+    .panel-head,
+    .integration-title,
+    .source-line,
+    .account-summary {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .create-account-form {
+      grid-template-columns: 1fr;
+    }
+
+    .account-table {
+      overflow-x: visible;
+    }
+
+    .table-head {
+      display: none;
+    }
+
+    .table-row {
+      grid-template-columns: 1fr;
+      min-width: 0;
+    }
+
+    .key-cell,
+    .actions-cell {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .collaborator-row {
+      grid-template-columns: 1fr;
+    }
+
     .setting-line,
     .compact {
       align-items: stretch;
       display: grid;
       grid-template-columns: 1fr;
     }
+
+    .chat-widget {
+      bottom: 14px;
+      right: 14px;
+    }
+
+    .chat-box {
+      height: min(520px, calc(100vh - 88px));
+      width: calc(100vw - 28px);
+    }
+
+    .chat-input-area {
+      flex-direction: column;
+    }
   }
 
   /* Chat Widget Styles */
   .chat-widget {
-    bottom: 24px;
+    bottom: 20px;
     position: fixed;
-    right: 24px;
+    right: 20px;
     z-index: 1000;
   }
 
@@ -743,12 +907,18 @@
     cursor: pointer;
     font-size: 14px;
     font-weight: 700;
-    padding: 12px 24px;
+    min-height: 44px;
+    padding: 10px 18px;
     transition: background 0.2s;
   }
 
   .chat-trigger:hover {
     background: #1e40af;
+  }
+
+  .chat-trigger.inline {
+    border-radius: 6px;
+    box-shadow: none;
   }
 
   .chat-box {
@@ -758,8 +928,8 @@
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
     display: flex;
     flex-direction: column;
-    height: 450px;
-    width: 360px;
+    height: min(520px, calc(100vh - 96px));
+    width: min(420px, calc(100vw - 40px));
   }
 
   .chat-header {
@@ -863,5 +1033,30 @@
   .chat-input-area button:disabled {
     background: #94a3b8;
     cursor: not-allowed;
+  }
+
+  @media (max-width: 900px) {
+    .admin-header-actions {
+      justify-content: flex-start;
+      width: 100%;
+    }
+
+    .admin-header-actions button {
+      flex: 1 1 120px;
+    }
+
+    .chat-widget {
+      bottom: 14px;
+      right: 14px;
+    }
+
+    .chat-box {
+      height: min(520px, calc(100vh - 88px));
+      width: calc(100vw - 28px);
+    }
+
+    .chat-input-area {
+      flex-direction: column;
+    }
   }
 </style>

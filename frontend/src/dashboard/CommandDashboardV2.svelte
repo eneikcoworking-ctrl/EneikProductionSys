@@ -14,6 +14,7 @@
   let orchestrating = false;
   let orchestrateCooldownUntil = 0;
   let nowMs = Date.now();
+  let loadedProjectId = '';
 
   const ORCHESTRATE_COOLDOWN_SECONDS = 300;
 
@@ -192,9 +193,13 @@
 
   // Refetch when projectId changes
   $: if (projectId) {
-    loading = true;
-    loadOrchestrateCooldown();
-    fetchDashboard();
+    if (projectId !== loadedProjectId) {
+      loadedProjectId = projectId;
+      loading = true;
+      error = null;
+      loadOrchestrateCooldown();
+      fetchDashboard();
+    }
   }
 
   function getKanoCategory(tag: string): { label: string, colorClass: string } {
@@ -244,7 +249,10 @@
         clearOrchestrateCooldown();
       }
     }, 1000);
-    fetchDashboard();
+    if (projectId && projectId !== loadedProjectId) {
+      loadedProjectId = projectId;
+      fetchDashboard();
+    }
     return () => clearInterval(timer);
   });
 </script>
@@ -257,7 +265,7 @@
     </div>
   {:else if error}
     <div class="banner error">
-      <p>⚠️ {error}</p>
+      <p>Warning: {error}</p>
     </div>
   {:else if dashboard && commandDashboard}
     <!-- Project Banner if frozen -->
@@ -404,7 +412,7 @@
             <p class="onboarding-subtitle">This repository is in analysis mode. Review the stack profile and the architectural findings below.</p>
           </div>
           <button class="btn btn-success" onclick={activateProject}>
-            Проект проанализирован, активировать
+            Project analyzed, activate it
           </button>
         </div>
 
@@ -485,7 +493,7 @@
                     <span class="badge-tag">{item.source || 'client'}</span>
                     <span class="badge-status {item.status}">{item.status}</span>
                   </div>
-                  <p>{item.text || item.content}</p>
+                  <p title={item.text || item.content}>{item.text || item.content}</p>
                 </article>
               {/each}
             {/if}
@@ -507,7 +515,7 @@
           {#if commandDashboard.acceptanceReadiness.kanoRecommendation}
             <div class="kano-box">
               <div class="kano-title">
-                <span>🔍</span> Kano Model Evaluation
+                <span>Kano</span> Model Evaluation
               </div>
               <p>{commandDashboard.acceptanceReadiness.kanoRecommendation}</p>
             </div>
@@ -558,7 +566,7 @@
                     <span class="kano-badge {getKanoCategory(task.tag).colorClass}">{getKanoCategory(task.tag).label}</span>
                     <span class="badge-status {task.status}">{task.status}</span>
                   </div>
-                  <p class="task-description">{task.description}</p>
+                  <p class="task-description" title={task.description}>{task.description}</p>
                   <div class="task-footer">
                     <span class="gate-badge {task.qualityGatePassed ? 'pass' : 'fail'}">
                       Gate: {task.qualityGatePassed ? 'Passed' : 'Pending'}
@@ -632,7 +640,7 @@
     display: flex;
     flex-direction: column;
     gap: var(--space-6);
-    height: calc(100vh - 200px);
+    min-height: calc(100vh - 200px);
     font-family: inherit;
   }
 
@@ -836,9 +844,10 @@
   /* Dashboard Grid Layout */
   .dashboard-grid {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: minmax(300px, 0.95fr) minmax(360px, 1fr) minmax(300px, 0.95fr);
     gap: var(--space-6);
     flex: 1;
+    align-items: start;
     min-height: 0; /* Important for inner scrollable components */
   }
 
@@ -896,11 +905,21 @@
   /* Scrollable containers */
   .scrollable {
     overflow-y: auto;
-    flex: 1;
+    flex: 0 1 auto;
     display: flex;
     flex-direction: column;
     gap: var(--space-3);
     padding-right: var(--space-1);
+  }
+
+  .feed.scrollable,
+  .agent-list.scrollable {
+    max-height: 280px;
+  }
+
+  .tasks.scrollable {
+    max-height: 360px;
+    min-height: 180px;
   }
   /* Custom scrollbar */
   .scrollable::-webkit-scrollbar {
@@ -943,11 +962,18 @@
   }
   .wish-item p {
     color: var(--neutral-700);
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 7;
+    line-clamp: 7;
+    overflow: hidden;
   }
   .item-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-1);
     margin-bottom: var(--space-2);
   }
   .badge-tag {
@@ -965,6 +991,8 @@
     border-radius: 8px;
     padding: var(--space-3);
     margin-bottom: var(--space-4);
+    max-height: 180px;
+    overflow: auto;
   }
   .kano-title {
     font-weight: 700;
@@ -1032,12 +1060,18 @@
     border-radius: 8px;
     padding: var(--space-3);
     box-shadow: 0 1px 2px rgba(0,0,0,0.01);
+    min-width: 0;
   }
   .task-description {
     font-size: 13px;
     color: var(--neutral-700);
     margin: var(--space-2) 0;
     line-height: 1.4;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+    line-clamp: 4;
+    overflow: hidden;
   }
   .task-footer {
     display: flex;
@@ -1047,6 +1081,8 @@
     border-top: 1px solid var(--neutral-100);
     padding-top: var(--space-2);
     margin-top: var(--space-2);
+    gap: var(--space-2);
+    min-width: 0;
   }
   .gate-badge {
     padding: 1px 6px;
@@ -1093,6 +1129,9 @@
   .dispatch-status {
     color: var(--neutral-500);
     font-style: italic;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   /* Agent list pool */
@@ -1125,6 +1164,7 @@
     margin-top: 2px;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

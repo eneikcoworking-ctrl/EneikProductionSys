@@ -95,7 +95,7 @@ textarea {
 
 .topbar {
   align-items: end;
-  grid-template-columns: minmax(0, 1fr) minmax(320px, 440px);
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 .eyebrow,
@@ -126,6 +126,7 @@ h2 {
 .create-project {
   display: grid;
   gap: 10px;
+  grid-column: 1 / -1;
   grid-template-columns: 1fr auto;
 }
 
@@ -294,6 +295,15 @@ article span.offline {
 
   .create-project {
     grid-template-columns: 1fr;
+  }
+
+  .nav-links {
+    justify-content: stretch;
+  }
+
+  .nav-links button {
+    flex: 1 1 0;
+    padding-inline: 10px;
   }
 
   .metric {

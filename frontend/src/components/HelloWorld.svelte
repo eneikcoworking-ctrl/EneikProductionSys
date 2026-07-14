@@ -64,7 +64,7 @@
   }
 
   function formatLeadTime(seconds: number): string {
-    return `Обработано за ${seconds} сек`;
+    return `Processed in ${seconds}s`;
   }
 
   onMount(() => {
@@ -72,9 +72,9 @@
   });
 
   const stages = [
-    { key: 'RECEIVED', label: 'Принято' },
-    { key: 'IN_PROGRESS', label: 'В работе' },
-    { key: 'COMPLETED', label: 'Готово' }
+    { key: 'RECEIVED', label: 'Received' },
+    { key: 'IN_PROGRESS', label: 'In Progress' },
+    { key: 'COMPLETED', label: 'Completed' }
   ];
 
 </script>
@@ -83,9 +83,9 @@
   <h1>Value Stream Pipeline</h1>
 
   {#if isLoading}
-    <div class="loading">Загрузка...</div>
+    <div class="loading">Loading...</div>
   {:else if errorMessage}
-    <div class="error">Ошибка: {errorMessage}</div>
+    <div class="error">Error: {errorMessage}</div>
   {/if}
 
   {#if data}
@@ -103,24 +103,24 @@
       </div>
 
       <div class="greeting-details">
-        <p><strong>Сообщение:</strong> {data.message}</p>
-        <p><strong>Статус:</strong> {data.currentStatus}</p>
+        <p><strong>Message:</strong> {data.message}</p>
+        <p><strong>Status:</strong> {data.currentStatus}</p>
         <p class="lead-time">{formatLeadTime(data.leadTimeSeconds)}</p>
       </div>
     </div>
   {:else if !isLoading}
-    <p>Нет активных данных.</p>
+    <p>No active data.</p>
   {/if}
 
   <form on:submit|preventDefault={sendGreeting} class="greeting-form">
     <input
       type="text"
       bind:value={newMessage}
-      placeholder="Введите пожелание..."
+      placeholder="Enter a wish..."
       disabled={isSubmitting}
     />
     <button type="submit" disabled={isSubmitting || !newMessage.trim()}>
-      {isSubmitting ? 'Отправка...' : 'Отправить'}
+      {isSubmitting ? 'Sending...' : 'Send'}
     </button>
   </form>
 </div>

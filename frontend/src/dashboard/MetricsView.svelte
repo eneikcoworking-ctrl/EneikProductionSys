@@ -8,12 +8,13 @@
   let metrics: any = null;
   let loading = true;
   let error: string | null = null;
+  let loadedProjectId = '';
 
   async function fetchMetrics() {
     try {
       const url = projectId ? `${API_BASE}/api/system-status?projectId=${projectId}` : `${API_BASE}/api/system-status`;
       const response = await fetch(url);
-      if (!response.ok) throw new Error('Не удалось загрузить системные метрики');
+      if (!response.ok) throw new Error('Failed to load system metrics');
       metrics = await response.json();
     } catch (e: any) {
       error = e.message;
@@ -23,11 +24,19 @@
   }
 
   $: if (projectId) {
-    loading = true;
-    fetchMetrics();
+    if (projectId !== loadedProjectId) {
+      loadedProjectId = projectId;
+      loading = true;
+      error = null;
+      fetchMetrics();
+    }
   }
 
-  onMount(fetchMetrics);
+  onMount(() => {
+    if (!projectId) {
+      fetchMetrics();
+    }
+  });
 
   const roles = [
     { tag: 'BARCAN-TAG-00', name: 'Code Guardian / Tech Lead', metric: 'God-file detection limit', value: '< 1000 LOC', status: 'Compliant' },
@@ -47,93 +56,93 @@
 
 <div class="metrics-root">
   <header class="section-title">
-    <h2>Системный мониторинг и метрики (Structured Metrics)</h2>
-    <p class="section-desc">Абсолютно все реальные метрики системы, сгруппированные по блокам и ролям. Никаких заглушек.</p>
+    <h2>System Monitoring And Structured Metrics</h2>
+    <p class="section-desc">Production metrics grouped by pipeline, quality, and role controls.</p>
   </header>
 
   {#if loading}
     <div class="loader-container">
       <div class="loader-spinner"></div>
-      <p>Загрузка реальных системных метрик...</p>
+      <p>Loading live system metrics...</p>
     </div>
   {:else if error}
     <div class="banner error">
-      <p>⚠️ Ошибка: {error}</p>
+      <p>Warning: {error}</p>
     </div>
   {:else if metrics}
     <div class="metrics-grid">
 
-      <!-- BLOCK 1: Системный конвейер -->
+      <!-- BLOCK 1: System Pipeline -->
       <section class="metric-card shadow">
-        <h3>📊 Системный конвейер (System Pipeline)</h3>
-        <p class="card-subtitle">Статусы выполнения задач и сессий ИИ-агентов</p>
+        <h3>System Pipeline</h3>
+        <p class="card-subtitle">Execution status for tasks and AI-agent sessions</p>
 
         <div class="stats-subgrid">
           <div class="stat-item">
             <span class="stat-number">{metrics.tasks?.data?.queued ?? 0}</span>
-            <span class="stat-label">Задач в очереди (Queued)</span>
+            <span class="stat-label">Queued Tasks</span>
           </div>
           <div class="stat-item">
             <span class="stat-number text-blue">{metrics.tasks?.data?.claimed ?? 0}</span>
-            <span class="stat-label">Заявлено агентами (Claimed)</span>
+            <span class="stat-label">Claimed By Agents</span>
           </div>
           <div class="stat-item">
             <span class="stat-number text-indigo">{metrics.tasks?.data?.in_progress ?? 0}</span>
-            <span class="stat-label">В работе (In Progress)</span>
+            <span class="stat-label">In Progress</span>
           </div>
           <div class="stat-item">
             <span class="stat-number text-yellow">{metrics.tasks?.data?.review ?? 0}</span>
-            <span class="stat-label">На код-ревью (Review)</span>
+            <span class="stat-label">Code Review</span>
           </div>
           <div class="stat-item">
             <span class="stat-number text-green">{metrics.tasks?.data?.done ?? 0}</span>
-            <span class="stat-label">Завершено (Done)</span>
+            <span class="stat-label">Done</span>
           </div>
           <div class="stat-item">
             <span class="stat-number text-red">{metrics.tasks?.data?.failed ?? 0}</span>
-            <span class="stat-label">Сбои задач (Failed)</span>
+            <span class="stat-label">Failed Tasks</span>
           </div>
         </div>
 
         <div class="linear-completeness-box">
-          <h4>Синхронизация Linear</h4>
-          <p>Всего Linear задач: <strong>{metrics.linearCompleteness?.data?.totalIssues ?? 0}</strong></p>
+          <h4>Linear Synchronization</h4>
+          <p>Total Linear issues: <strong>{metrics.linearCompleteness?.data?.totalIssues ?? 0}</strong></p>
           <div class="progress-bar-container">
             <div class="progress-bar-fill" style="width: {Math.round((metrics.linearCompleteness?.data?.completeness_rate ?? 0) * 100)}%"></div>
           </div>
-          <p class="text-xs text-right mt-1">{Math.round((metrics.linearCompleteness?.data?.completeness_rate ?? 0) * 100)}% заполнено по DoD стандартам</p>
+          <p class="text-xs text-right mt-1">{Math.round((metrics.linearCompleteness?.data?.completeness_rate ?? 0) * 100)}% complete against DoD standards</p>
         </div>
       </section>
 
-      <!-- BLOCK 2: Качество и дефекты -->
+      <!-- BLOCK 2: Quality And Defects -->
       <section class="metric-card shadow">
-        <h3>🛡️ Качество и дефекты (Quality & Defects)</h3>
-        <p class="card-subtitle">Интегральные показатели качества ворот (Gate DPMO)</p>
+        <h3>Quality And Defects</h3>
+        <p class="card-subtitle">Quality gate and merge conflict DPMO</p>
 
         <div class="dpmo-subgrid">
           <div class="dpmo-box">
             <span class="stat-number text-red">{Math.round(metrics.qualityGate?.data?.dpmo ?? 0)}</span>
             <span class="stat-label">Quality Gate DPMO</span>
-            <small class="text-xs">{metrics.qualityGate?.data?.defects ?? 0} дефектов на {metrics.qualityGate?.data?.totalOpportunities ?? 0} проверок</small>
+            <small class="text-xs">{metrics.qualityGate?.data?.defects ?? 0} defects across {metrics.qualityGate?.data?.totalOpportunities ?? 0} checks</small>
           </div>
           <div class="dpmo-box">
             <span class="stat-number text-red">{Math.round(metrics.conflictDpmo?.data?.dpmo ?? 0)}</span>
             <span class="stat-label">Merge Conflict DPMO</span>
-            <small class="text-xs">{metrics.conflictDpmo?.data?.conflicts ?? 0} конфликтов на {metrics.conflictDpmo?.data?.totalMergeAttempts ?? 0} слияний</small>
+            <small class="text-xs">{metrics.conflictDpmo?.data?.conflicts ?? 0} conflicts across {metrics.conflictDpmo?.data?.totalMergeAttempts ?? 0} merge attempts</small>
           </div>
         </div>
 
         <div class="active-conflicts-section">
-          <h4>Активные конфликты слияния ({metrics.conflictDpmo?.data?.activeConflicts?.length ?? 0})</h4>
+          <h4>Active Merge Conflicts ({metrics.conflictDpmo?.data?.activeConflicts?.length ?? 0})</h4>
           <div class="conflicts-list">
             {#each metrics.conflictDpmo?.data?.activeConflicts || [] as conflict}
               <div class="conflict-item">
-                <p class="conflict-desc"><strong>Задание:</strong> {conflict.taskDescription}</p>
-                <code class="conflict-files">Файлы: {conflict.conflictingFiles || 'неизвестно'}</code>
+                <p class="conflict-desc"><strong>Task:</strong> {conflict.taskDescription}</p>
+                <code class="conflict-files">Files: {conflict.conflictingFiles || 'unknown'}</code>
                 <span class="badge offline text-xs mt-1">{conflict.resolutionStatus}</span>
               </div>
             {:else}
-              <p class="empty-state">Нет активных конфликтов слияния.</p>
+              <p class="empty-state">No active merge conflicts.</p>
             {/each}
           </div>
         </div>
@@ -141,10 +150,10 @@
 
     </div>
 
-    <!-- BLOCK 3: Ролевые метрики по 12 BARCAN ролям -->
+    <!-- BLOCK 3: Role Metrics -->
     <section class="roles-metrics-section">
-      <h3>👥 Профессиональные ролевые метрики (12 BARCAN Roles)</h3>
-      <p class="section-desc">Автоматические контрольные показатели специалистов в реальном времени</p>
+      <h3>Professional Role Metrics (12 BARCAN Roles)</h3>
+      <p class="section-desc">Live role-level control indicators for each production specialty</p>
 
       <div class="roles-grid">
         {#each roles as role}
@@ -155,9 +164,9 @@
             </div>
             <h4>{role.name}</h4>
             <div class="role-body">
-              <p class="label-xs">Контролируемый параметр:</p>
+              <p class="label-xs">Controlled parameter:</p>
               <p class="role-metric-name">{role.metric}</p>
-              <p class="label-xs mt-2">Текущее реальное значение:</p>
+              <p class="label-xs mt-2">Current live value:</p>
               <p class="role-metric-value">{role.value}</p>
             </div>
           </article>
