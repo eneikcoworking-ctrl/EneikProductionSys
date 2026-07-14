@@ -15,11 +15,16 @@
   let orchestrateCooldownUntil = 0;
   let nowMs = Date.now();
   let loadedProjectId = '';
+  let showAcceptConfirm = false;
+  let acceptConfirmationText = '';
+  let acceptingProject = false;
 
   const ORCHESTRATE_COOLDOWN_SECONDS = 300;
 
   $: orchestrateRemainingSeconds = Math.max(0, Math.ceil((orchestrateCooldownUntil - nowMs) / 1000));
   $: orchestrateBlocked = dashboard?.project?.status === 'accepted' || orchestrating || orchestrateRemainingSeconds > 0;
+  $: acceptConfirmationTarget = dashboard?.project?.name ?? '';
+  $: acceptConfirmationMatches = acceptConfirmationText.trim() === acceptConfirmationTarget;
 
   let onboardingFindings: any[] = [];
   let onboardingReport = '';
@@ -165,16 +170,36 @@
     }
   }
 
+  function openAcceptConfirmation() {
+    acceptConfirmationText = '';
+    showAcceptConfirm = true;
+  }
+
+  function closeAcceptConfirmation() {
+    if (acceptingProject) return;
+    showAcceptConfirm = false;
+    acceptConfirmationText = '';
+  }
+
   async function acceptProject() {
+    if (!acceptConfirmationMatches || dashboard?.project?.status === 'accepted') return;
+    acceptingProject = true;
     statusMsg = 'Accepting project and stopping new work...';
-    const response = await fetch(`${API_BASE}/api/projects/${projectId}/accept`, {
-      method: 'POST'
-    });
-    if (response.ok) {
-      await fetchDashboard();
-      statusMsg = 'Project accepted. New orchestration is stopped.';
-    } else {
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${projectId}/accept`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        await fetchDashboard();
+        statusMsg = 'Project accepted. New orchestration is stopped.';
+        closeAcceptConfirmation();
+      } else {
+        statusMsg = 'Failed to accept project.';
+      }
+    } catch (e) {
       statusMsg = 'Failed to accept project.';
+    } finally {
+      acceptingProject = false;
     }
   }
 
@@ -299,9 +324,6 @@
           {:else}
             Orchestrate
           {/if}
-        </button>
-        <button class="btn btn-success" onclick={acceptProject} disabled={dashboard.project.status === 'accepted'}>
-          Accept Project
         </button>
       </div>
     </header>
@@ -546,6 +568,23 @@
               <span>{commandDashboard.acceptanceReadiness.githubAccessHealthy ? '✓' : '✗'}</span> GitHub Access
             </div>
           </div>
+
+          <div class="final-acceptance-zone">
+            <div>
+              <h3>Final Delivery Acceptance</h3>
+              <p>
+                Use this only as the last project action. It marks the project as accepted,
+                stops new orchestration, and closes production work.
+              </p>
+            </div>
+            {#if dashboard.project.status === 'accepted'}
+              <span class="badge accepted">Accepted</span>
+            {:else}
+              <button class="btn btn-danger-outline" onclick={openAcceptConfirmation}>
+                Open Final Acceptance
+              </button>
+            {/if}
+          </div>
         </div>
 
         <!-- Tasks List -->
@@ -632,6 +671,49 @@
     <footer class="status-bar">
       <span class="status-dot"></span> {statusMsg}
     </footer>
+
+    {#if showAcceptConfirm}
+      <div class="modal-backdrop" role="presentation">
+        <section class="accept-modal" role="dialog" aria-modal="true" aria-labelledby="accept-modal-title">
+          <div class="modal-header">
+            <div>
+              <span class="label-xs danger-label">Final action</span>
+              <h2 id="accept-modal-title">Accept and Close Project</h2>
+            </div>
+            <button class="modal-close" type="button" onclick={closeAcceptConfirmation} aria-label="Close final acceptance dialog" disabled={acceptingProject}>
+              ×
+            </button>
+          </div>
+
+          <div class="modal-warning">
+            <strong>This action finishes the project.</strong>
+            <p>After acceptance, Eneik stops new orchestration for this project. Use it only after tasks, quality gates, and PRs are truly complete.</p>
+          </div>
+
+          <label class="confirm-label" for="accept-confirm-input">
+            Type the project name to confirm:
+            <code>{acceptConfirmationTarget}</code>
+          </label>
+          <input
+            id="accept-confirm-input"
+            class="confirm-input"
+            type="text"
+            bind:value={acceptConfirmationText}
+            placeholder={acceptConfirmationTarget}
+            disabled={acceptingProject}
+          />
+
+          <div class="modal-actions">
+            <button class="btn btn-secondary" type="button" onclick={closeAcceptConfirmation} disabled={acceptingProject}>
+              Cancel
+            </button>
+            <button class="btn btn-danger" type="button" onclick={acceptProject} disabled={!acceptConfirmationMatches || acceptingProject}>
+              {acceptingProject ? 'Accepting...' : 'Accept and Close Project'}
+            </button>
+          </div>
+        </section>
+      </div>
+    {/if}
   {/if}
 </div>
 
@@ -1052,6 +1134,30 @@
   .indicator-item.fail {
     color: var(--neutral-500);
   }
+  .final-acceptance-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+  }
+  .final-acceptance-zone h3 {
+    margin: 0 0 4px;
+    color: #991b1b;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .final-acceptance-zone p {
+    margin: 0;
+    color: var(--neutral-600);
+    font-size: 12px;
+    line-height: 1.45;
+  }
 
   /* Tasks items */
   .task-item {
@@ -1302,6 +1408,123 @@
   }
   .btn-success:hover {
     background: #0d9488;
+  }
+  .btn-danger-outline {
+    background: var(--surface);
+    border: 1px solid #dc2626;
+    color: #b91c1c;
+    white-space: nowrap;
+  }
+  .btn-danger-outline:hover {
+    background: #fee2e2;
+  }
+  .btn-danger {
+    background: #dc2626;
+    color: var(--surface);
+  }
+  .btn-danger:hover {
+    background: #b91c1c;
+  }
+  .btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+  .modal-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 80;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-4);
+    background: rgba(15, 23, 42, 0.55);
+  }
+  .accept-modal {
+    width: min(520px, 100%);
+    background: var(--surface);
+    border-radius: 12px;
+    border: 1px solid var(--neutral-200);
+    box-shadow: 0 24px 70px rgba(15, 23, 42, 0.28);
+    padding: var(--space-5);
+  }
+  .modal-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .modal-header h2 {
+    margin: 2px 0 0;
+    color: var(--neutral-800);
+    font-size: 20px;
+    font-weight: 800;
+  }
+  .danger-label {
+    color: #b91c1c;
+  }
+  .modal-close {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--neutral-100);
+    color: var(--neutral-600);
+    font-size: 22px;
+    line-height: 1;
+  }
+  .modal-warning {
+    margin-bottom: var(--space-4);
+    padding: var(--space-3);
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+    color: #7f1d1d;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .modal-warning p {
+    margin: 4px 0 0;
+  }
+  .confirm-label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    color: var(--neutral-700);
+    font-size: 13px;
+    font-weight: 700;
+  }
+  .confirm-label code {
+    width: fit-content;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: var(--neutral-100);
+    border-radius: 4px;
+    color: var(--neutral-800);
+    font-size: 12px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .confirm-input {
+    width: 100%;
+    height: 40px;
+    margin-top: var(--space-2);
+    border: 1px solid var(--neutral-300);
+    border-radius: 8px;
+    color: var(--neutral-800);
+    font-size: 14px;
+    padding: 0 12px;
+  }
+  .confirm-input:focus {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+    outline: none;
+  }
+  .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: var(--space-5);
   }
   .wide {
     width: 100%;

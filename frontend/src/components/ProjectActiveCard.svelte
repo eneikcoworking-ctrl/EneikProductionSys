@@ -9,6 +9,9 @@
   let interval: number;
   let showConfirm = false;
   let accepting = false;
+  let acceptConfirmationText = '';
+
+  $: acceptConfirmationMatches = acceptConfirmationText.trim() === project.name;
 
   async function pollProject() {
     if (project.status === 'accepted') return;
@@ -28,6 +31,7 @@
   });
 
   async function handleAccept() {
+    if (!acceptConfirmationMatches) return;
     accepting = true;
     try {
       const updated = await projectsApi.acceptProject(project.id);
@@ -38,7 +42,19 @@
     } finally {
       accepting = false;
       showConfirm = false;
+      acceptConfirmationText = '';
     }
+  }
+
+  function openConfirm() {
+    acceptConfirmationText = '';
+    showConfirm = true;
+  }
+
+  function closeConfirm() {
+    if (accepting) return;
+    showConfirm = false;
+    acceptConfirmationText = '';
   }
 </script>
 
@@ -79,25 +95,36 @@
   </div>
 
   {#if project.status === 'active'}
-    <button
-      onclick={() => (showConfirm = true)}
-      class="w-full py-3 bg-accent text-white font-bold rounded hover:opacity-90 transition-opacity"
-    >
-      Accept Project
-    </button>
+    <div class="legacy-final-zone">
+      <div>
+        <h3>Final Delivery Acceptance</h3>
+        <p>Use only after the project is ready to close. Acceptance stops further generation.</p>
+      </div>
+      <button onclick={openConfirm} class="legacy-final-button">
+        Open Final Acceptance
+      </button>
+    </div>
   {/if}
 </div>
 
 {#if showConfirm}
   <div class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
     <div class="bg-white p-6 rounded-lg max-w-sm w-full shadow-xl">
-      <h3 class="text-lg font-bold mb-2">Confirmation</h3>
+      <h3 class="text-lg font-bold mb-2">Accept and Close Project</h3>
       <p class="text-gray-600 mb-6">
-        Are you sure? After acceptance, the project will be closed.
+        This is the final project action. Type the project name to confirm:
       </p>
+      <code class="confirm-target">{project.name}</code>
+      <input
+        class="confirm-input"
+        type="text"
+        bind:value={acceptConfirmationText}
+        placeholder={project.name}
+        disabled={accepting}
+      />
       <div class="flex gap-4">
         <button
-          onclick={() => (showConfirm = false)}
+          onclick={closeConfirm}
           class="flex-1 py-2 border border-gray-300 rounded font-medium hover:bg-gray-50"
           disabled={accepting}
         >
@@ -106,9 +133,9 @@
         <button
           onclick={handleAccept}
           class="flex-1 py-2 bg-red-600 text-white rounded font-medium hover:bg-red-700"
-          disabled={accepting}
+          disabled={accepting || !acceptConfirmationMatches}
         >
-          {accepting ? 'Accepting...' : 'Yes, accept'}
+          {accepting ? 'Accepting...' : 'Accept and Close'}
         </button>
       </div>
     </div>
@@ -116,7 +143,62 @@
 {/if}
 
 <style>
-  .bg-accent {
-    background-color: var(--accent);
+  .legacy-final-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    background: #fff7f7;
+    padding: 12px;
+  }
+  .legacy-final-zone h3 {
+    margin: 0 0 4px;
+    color: #991b1b;
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .legacy-final-zone p {
+    margin: 0;
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .legacy-final-button {
+    border: 1px solid #dc2626;
+    border-radius: 8px;
+    color: #b91c1c;
+    font-weight: 700;
+    min-height: 36px;
+    padding: 0 14px;
+    white-space: nowrap;
+  }
+  .confirm-target {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    background: #f1f5f9;
+    border-radius: 4px;
+    color: #0f172a;
+    font-size: 12px;
+    margin-bottom: 8px;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .confirm-input {
+    width: 100%;
+    height: 40px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    padding: 0 12px;
+  }
+  .confirm-input:focus {
+    border-color: #dc2626;
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+    outline: none;
   }
 </style>
