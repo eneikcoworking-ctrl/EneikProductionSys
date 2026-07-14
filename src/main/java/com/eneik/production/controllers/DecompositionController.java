@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/requirements")
-@CrossOrigin(origins = "http://localhost:3000")
 public class DecompositionController {
 
     private final DecompositionService decompositionService;

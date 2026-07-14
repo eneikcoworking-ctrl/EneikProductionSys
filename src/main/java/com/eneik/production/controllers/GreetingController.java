@@ -8,7 +8,6 @@ import com.eneik.production.repositories.GreetingRepository;
 import com.eneik.production.services.MLPredictionServiceClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -19,7 +18,6 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/greetings")
-@CrossOrigin(origins = "http://localhost:3000")
 public class GreetingController {
     private final GreetingRepository greetingRepository;
     private final GreetingMapper greetingMapper;

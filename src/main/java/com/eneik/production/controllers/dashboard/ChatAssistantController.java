@@ -4,7 +4,6 @@ import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.dashboard.ProjectOperatorService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -19,7 +18,6 @@ import java.util.UUID;
  */
 @RestController
 @RequestMapping("/api/dashboard")
-@CrossOrigin(origins = "http://localhost:3000")
 public class ChatAssistantController {
 
     private final MLPredictionServiceClient mlPredictionServiceClient;
