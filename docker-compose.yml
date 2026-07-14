@@ -26,6 +26,9 @@ services:
       ML_SERVICE_URL: http://ml:8000
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
+      ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system
+      ENEIK_OPERATOR_ALLOW_MUTATING_TOOLS: ${ENEIK_OPERATOR_ALLOW_MUTATING_TOOLS:-true}
+      ENEIK_OPERATOR_DOCKER_COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-eneikproductionsys}
       GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}
@@ -38,6 +41,9 @@ services:
       JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT: ${JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT:-3}
     volumes:
       - ./data:/app/data
+      - ./project-workspaces:/app/project-workspaces
+      - .:/app/eneik-system:ro
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"
     depends_on:

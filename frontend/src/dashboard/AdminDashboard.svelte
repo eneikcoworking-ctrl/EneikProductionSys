@@ -243,7 +243,8 @@
         body: JSON.stringify({
           message: userMsg,
           projectId: activeProject?.id || '',
-          projectName: activeProject?.name || ''
+          projectName: activeProject?.name || '',
+          mode: 'operator'
         })
       });
       if (response.ok) {
@@ -290,14 +291,14 @@
               <span>enabled</span>
             </label>
           </div>
-            <div class="setting-line">
-              <span>token</span>
-              {#if editing[integration.secretKey]}
-            placeholder="Спросить по текущему проекту..."
-              {:else}
-            placeholder="Спросить по текущему проекту..."
-              {/if}
-              <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Изменить</button>
+          <div class="setting-line">
+            <span>token</span>
+            {#if editing[integration.secretKey]}
+              <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
+            {:else}
+              <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
+            {/if}
+            <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Изменить</button>
               <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
                 Сохранить
               </button>
@@ -307,9 +308,9 @@
             <div class="setting-line">
               <span>team</span>
               {#if editing[integration.extraKey]}
-            placeholder="Спросить по текущему проекту..."
+                <input bind:value={drafts[integration.extraKey]} placeholder="Linear team id" />
               {:else}
-            placeholder="Спросить по текущему проекту..."
+                <input value={settingByKey(integration.extraKey)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
               <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey)}>Изменить</button>
               <button type="button" onclick={() => saveSetting(integration.extraKey, drafts[integration.extraKey] || '')} disabled={!editing[integration.extraKey]}>
@@ -343,21 +344,21 @@
       <div style="display: flex; gap: 10px; align-items: flex-end;">
         <div style="flex: 1;">
           <p class="label">New Account Name</p>
-            placeholder="Спросить по текущему проекту..."
+          <input bind:value={newName} placeholder="e.g. Jules-08" style="padding: 8px; width: 100%;" />
         </div>
         <div style="flex: 1;">
           <p class="label">GitHub Username</p>
-            placeholder="Спросить по текущему проекту..."
+          <input bind:value={newGithubUsername} placeholder="e.g. jules-bot" style="padding: 8px; width: 100%;" />
         </div>
         <div style="flex: 1;">
           <p class="label">Jules API Key</p>
-            placeholder="Спросить по текущему проекту..."
+          <input bind:value={newApiKey} type="password" placeholder="sk-..." style="padding: 8px; width: 100%;" />
         </div>
       </div>
       <div style="display: flex; gap: 10px; align-items: flex-end;">
         <div style="flex: 1;">
           <p class="label">Capabilities (comma separated)</p>
-            placeholder="Спросить по текущему проекту..."
+          <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px; width: 100%;" />
         </div>
         <button onclick={createAccount} style="height: 38px; padding: 0 20px;">Add Account</button>
       </div>
@@ -387,7 +388,7 @@
             <span class={`pill ${account.status}`}>{account.status}</span>
             <div class="flex items-center gap-2">
               {#if editing[`acc_${account.id}`]}
-            placeholder="Спросить по текущему проекту..."
+                <input bind:value={drafts[`acc_${account.id}`]} placeholder="new api key" class="text-xs" />
                 <button type="button" class="mini-btn" onclick={() => updateAccount(account, { apiKey: drafts[`acc_${account.id}`] })}>Save</button>
               {:else}
                 <span class="text-xs font-mono">{account.apiKeyMasked || '••••••••'}</span>
@@ -456,7 +457,7 @@
     {#if chatOpen}
       <div class="chat-box">
         <div class="chat-header">
-          <h3>ИИ-ассистент Eneik</h3>
+          <h3>Project Operator Eneik</h3>
           <button type="button" class="close-btn" onclick={() => chatOpen = false}>×</button>
         </div>
         <div class="chat-messages">

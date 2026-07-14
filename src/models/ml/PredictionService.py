@@ -79,7 +79,8 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
                 "parts": [{"text": system_instruction}]
             }
 
-        if "json" in system_instruction.lower():
+        lower_instruction = system_instruction.lower()
+        if "return only json" in lower_instruction or "return valid json" in lower_instruction:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
         last_retryable_error = None

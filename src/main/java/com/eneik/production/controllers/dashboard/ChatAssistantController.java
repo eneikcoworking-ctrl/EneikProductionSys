@@ -1,6 +1,7 @@
 package com.eneik.production.controllers.dashboard;
 
 import com.eneik.production.services.MLPredictionServiceClient;
+import com.eneik.production.services.dashboard.ProjectOperatorService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import org.springframework.web.bind.annotation.CrossOrigin;
@@ -9,6 +10,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -22,18 +24,21 @@ public class ChatAssistantController {
 
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final ProjectOperationalContextService projectOperationalContextService;
+    private final ProjectOperatorService projectOperatorService;
 
     public ChatAssistantController(MLPredictionServiceClient mlPredictionServiceClient,
-                                   ProjectOperationalContextService projectOperationalContextService) {
+                                   ProjectOperationalContextService projectOperationalContextService,
+                                   ProjectOperatorService projectOperatorService) {
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.projectOperationalContextService = projectOperationalContextService;
+        this.projectOperatorService = projectOperatorService;
     }
 
     @PostMapping("/chat")
     public Map<String, String> askAssistant(@RequestBody Map<String, String> payload) {
         String userMessage = payload.getOrDefault("message", "").trim();
         if (userMessage.isEmpty()) {
-            return Map.of("response", "Запрос пуст. Задайте вопрос по текущему проекту.");
+            return Map.of("response", "\u0417\u0430\u043f\u0440\u043e\u0441 \u043f\u0443\u0441\u0442. \u0417\u0430\u0434\u0430\u0439\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u043e \u0442\u0435\u043a\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u043e\u0435\u043a\u0442\u0443.");
         }
 
         UUID projectId = parseProjectId(payload.get("projectId"));
@@ -43,11 +48,19 @@ public class ChatAssistantController {
         try {
             context = projectOperationalContextService.build(projectId, projectName);
         } catch (Exception e) {
-            return Map.of("response", "Не удалось собрать данные по текущему проекту: " + e.getMessage());
+            return Map.of("response", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0431\u0440\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043f\u043e \u0442\u0435\u043a\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u043e\u0435\u043a\u0442\u0443: " + e.getMessage());
         }
 
         if (projectOperationalContextService.isPrReviewQuestion(userMessage)) {
             return Map.of("response", projectOperationalContextService.answerPrReviewQuestion(context));
+        }
+
+        if (isOperatorQuestion(userMessage) || "operator".equalsIgnoreCase(payload.getOrDefault("mode", ""))) {
+            try {
+                return Map.of("response", projectOperatorService.answer(projectId, projectName, userMessage));
+            } catch (Exception e) {
+                return Map.of("response", "Project Operator \u043d\u0435 \u0441\u043c\u043e\u0433 \u0441\u043e\u0431\u0440\u0430\u0442\u044c evidence: " + e.getMessage());
+            }
         }
 
         String systemInstruction = """
@@ -82,5 +95,30 @@ public class ChatAssistantController {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    private boolean isOperatorQuestion(String message) {
+        String lower = message == null ? "" : message.toLowerCase(Locale.ROOT);
+        return lower.contains("\u043a\u043e\u0434")
+                || lower.contains("repo")
+                || lower.contains("\u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440")
+                || lower.contains("docker")
+                || lower.contains("\u0434\u043e\u043a\u0435\u0440")
+                || lower.contains("compose")
+                || lower.contains("\u043b\u043e\u0433")
+                || lower.contains("logs")
+                || lower.contains("\u0442\u0435\u0441\u0442")
+                || lower.contains("test")
+                || lower.contains("\u0441\u0431\u043e\u0440\u043a")
+                || lower.contains("build")
+                || lower.contains("git")
+                || lower.contains("diff")
+                || lower.contains("\u043f\u0440\u043e\u0430\u043d\u0430\u043b\u0438\u0437\u0438\u0440\u0443\u0439")
+                || lower.contains("\u043f\u0440\u043e\u0432\u0435\u0440\u044c")
+                || lower.contains("\u043f\u043e\u0434\u043d\u0438\u043c\u0438")
+                || lower.contains("\u0437\u0430\u043f\u0443\u0441\u0442\u0438")
+                || lower.contains("\u043f\u043e\u0447\u0435\u043c\u0443")
+                || lower.contains("\u0437\u0430\u0432\u0438\u0441")
+                || lower.contains("\u043d\u0435 \u043e\u0442\u0432\u0435\u0447");
     }
 }
