@@ -44,6 +44,7 @@ public class JulesDispatchService {
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
     private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
     private static final int FOLLOW_UP_CONTENT_MAX_LENGTH = 7_500;
+    private static final String REVIEW_REJECTION_ACTIVITY_NAME = "system-pr-review-rejection";
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -66,7 +67,7 @@ public class JulesDispatchService {
     @Value("${jules.max-agent-dialog-responses:8}")
     private int maxAgentDialogResponses;
 
-    @Value("${jules.loop-close-similar-threshold:3}")
+    @Value("${jules.loop-close-similar-threshold:2}")
     private int loopCloseSimilarThreshold;
 
     @Value("${jules.stuck-close-threshold-minutes:120}")
@@ -209,36 +210,28 @@ public class JulesDispatchService {
             roleContextBuilder.append("- QA default: if you ask whether to continue verification, continue with required test ratios and deeper AC verification; document assumptions instead of waiting.\n");
         }
 
-        try {
-            String rulesPathStr = task.getRole().getRulesPath();
-            if (rulesPathStr != null) {
-                java.nio.file.Path rulesPath = java.nio.file.Paths.get(rulesPathStr);
-                if (java.nio.file.Files.exists(rulesPath)) {
-                    String fullMarkdown = java.nio.file.Files.readString(rulesPath);
-                    roleContextBuilder.append("\n## FULL ROLE CHARTER AND EXCELLENCE GUIDELINES:\n")
-                                      .append(fullMarkdown).append("\n");
-                }
-            }
+        appendCompactRoleGuide(roleContextBuilder, task.getRole().getTag());
 
+        try {
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
             if (rules != null) {
-                if (rules.scope() != null && !rules.scope().isBlank()) {
-                    roleContextBuilder.append("\n## Scope & Priorities\n").append(rules.scope()).append("\n");
-                }
-                if (rules.forbidden() != null && !rules.forbidden().isEmpty()) {
+                if (shouldIncludeVerboseRoleRuleSections() && rules.forbidden() != null && !rules.forbidden().isEmpty()) {
                     roleContextBuilder.append("\n## Forbidden (Запрещено)\n");
                     for (String f : rules.forbidden()) {
                         roleContextBuilder.append("- ").append(f).append("\n");
                     }
                 }
-                if (rules.refusalCriteria() != null && !rules.refusalCriteria().isBlank()) {
+                if (shouldIncludeVerboseRoleRuleSections() && rules.refusalCriteria() != null && !rules.refusalCriteria().isBlank()) {
                     roleContextBuilder.append("\n").append(rules.refusalCriteria()).append("\n");
                 }
-                if (rules.deonticStatus() != null && !rules.deonticStatus().isBlank()) {
+                if (shouldIncludeVerboseRoleRuleSections() && rules.deonticStatus() != null && !rules.deonticStatus().isBlank()) {
                     roleContextBuilder.append("\n").append(rules.deonticStatus()).append("\n");
                 }
-                if (rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
+                if (shouldIncludeVerboseRoleRuleSections() && rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
                     roleContextBuilder.append("\n## Output Format / Definition of Done\n").append(rules.outputFormat()).append("\n");
+                }
+                if (rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {
+                    roleContextBuilder.append("\n## Mandatory Review By\n").append(rules.reviewRequiredBy()).append("\n");
                 }
             }
 
@@ -278,6 +271,37 @@ public class JulesDispatchService {
         }
 
         return julesSessionRepository.save(session);
+    }
+
+    private void appendCompactRoleGuide(StringBuilder roleContextBuilder, String roleTag) {
+        roleContextBuilder.append("\n## Compact Role Guide\n");
+        roleContextBuilder.append("- Use English only in code comments, PR text, and dialogue.\n");
+        roleContextBuilder.append("- Treat the task JTBD, Acceptance Criteria, DoD, and file scope as stronger than role lore.\n");
+        roleContextBuilder.append("- Apply Kano as a scope guard: Must-Be first, Performance only when explicit, Delighters only as follow-up wishlist.\n");
+        roleContextBuilder.append("- Apply Cynefin as a delivery guard: clear/complicated work needs a direct implementation path, complex work needs one safe probe.\n");
+        roleContextBuilder.append("- Role focus: ").append(compactRoleFocus(roleTag)).append("\n");
+    }
+
+    private boolean shouldIncludeVerboseRoleRuleSections() {
+        return false;
+    }
+
+    private String compactRoleFocus(String roleTag) {
+        return switch (roleTag) {
+            case "BARCAN-TAG-00" -> "protect architecture, code quality, and merge safety for the smallest requested slice.";
+            case "BARCAN-TAG-01" -> "define or adjust solution structure only where the current slice requires it.";
+            case "BARCAN-TAG-02" -> "implement backend API/data behavior with focused tests and no frontend expansion.";
+            case "BARCAN-TAG-03" -> "produce only the UI/UX design decision, interaction state, or design-system adjustment required by this slice.";
+            case "BARCAN-TAG-04" -> "implement or verify the ML/data-science logic required by this slice with reproducible checks.";
+            case "BARCAN-TAG-05" -> "change only deployment, runtime, CI, or observability items required to run the slice.";
+            case "BARCAN-TAG-06" -> "verify acceptance criteria with the smallest useful unit/integration/E2E coverage; do not create broad test suites.";
+            case "BARCAN-TAG-07" -> "check and fix concrete security risks without broad compliance rewrites.";
+            case "BARCAN-TAG-08" -> "change only the database, schema, or data pipeline behavior required by this slice.";
+            case "BARCAN-TAG-09" -> "decompose wishlist context into short, role-owned, dependency-aware work only.";
+            case "BARCAN-TAG-10" -> "verify explicit legal, fiscal, privacy, or policy constraints with cited assumptions.";
+            case "BARCAN-TAG-11" -> "implement the smallest Svelte/browser UI interaction required by the task and follow docs/DESIGN_SYSTEM.md.";
+            default -> "complete one atomic, verifiable implementation slice and stop.";
+        };
     }
 
 
@@ -320,7 +344,10 @@ public class JulesDispatchService {
                 }
             }
 
-            if (taskForSession != null && !"pr_opened".equals(mappedStatus)) {
+            if (taskForSession != null
+                    && !"pr_opened".equals(mappedStatus)
+                    && (session.getPrUrl() == null || session.getPrUrl().isBlank())
+                    && !"revising".equals(oldStatus)) {
                 Optional<GitHubPullRequestService.GitHubPullRequest> detectedPr = detectOpenPullRequestFromGitHub(session, taskForSession);
                 if (detectedPr.isPresent()) {
                     GitHubPullRequestService.GitHubPullRequest pr = detectedPr.get();
@@ -640,21 +667,78 @@ public class JulesDispatchService {
 
     private String generatedArtifactRemediation(TaskEntity task, long previousSimilarQuestions) {
         String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
+        String marker = detectedGeneratedArtifactMarker(task != null ? task.getDescription() : null);
         String loopPrefix = previousSimilarQuestions >= DESTRUCTIVE_LOOP_REPEAT_THRESHOLD
                 ? "Circuit breaker: this blocker question has repeated. Stop the discussion loop and execute the remediation exactly.\n\n"
                 : "";
         return loopPrefix
-                + "Objective decision for task " + taskId + ": the PR is blocked only because generated/local artifacts are still present in the GitHub diff. This is a binary repository-hygiene blocker, not a product/refinement question.\n\n"
-                + "Do not ask for more requirements and do not start new architecture/coverage/MVC work until the artifact diff is clean. Execute this checklist:\n"
-                + "1. Remove generated artifacts from the branch and the Git index:\n"
-                + "   git rm -r --cached --ignore-unmatch playwright-report test-results coverage node_modules .next apps/web/playwright-report apps/web/test-results apps/web/coverage apps/web/.next\n"
-                + "   Then delete any remaining local generated files only from those generated directories.\n"
-                + "2. Ensure .gitignore contains these patterns: **/playwright-report/, **/test-results/, **/coverage/, **/.next/, node_modules/, *.trace, *.webm.\n"
-                + "3. Verify the PR diff is clean before resubmitting:\n"
-                + "   git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
-                + "   The command must produce no artifact paths.\n"
-                + "4. Commit only source, config, tests, and docs. Update the existing PR branch and resubmit.\n\n"
-                + "Acceptance condition: the next PR diff contains zero generated artifact paths. If this command still reports artifacts after one cleanup pass, report the exact remaining paths in the PR summary and stop.";
+                + "Task " + taskId + " is blocked by Git hygiene only: generated/local artifacts are in the PR diff"
+                + ("generated/local artifacts".equals(marker) ? "." : " (" + marker + ").") + "\n"
+                + "Do not change product scope. Clean the same branch, update .gitignore if needed, run this check, and resubmit:\n"
+                + "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
+                + "Acceptance: the command prints no artifact paths and the PR contains only source/config/test/doc changes.";
+    }
+
+    private String buildReviewRejectionMessage(TaskEntity task, String remarks) {
+        String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
+        if (mentionsGeneratedArtifact(remarks)) {
+            String marker = detectedGeneratedArtifactMarker(remarks);
+            return "PR review for task " + taskId + " is blocked by repository hygiene, not by product requirements.\n"
+                    + "Detected generated/local artifact in the diff: " + marker + ".\n"
+                    + "Fix only this blocker on the same PR branch: untrack generated artifact folders, add missing .gitignore entries, then verify:\n"
+                    + "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
+                    + "Stop after cleanup. Do not add new feature, design, architecture, or test-expansion work.";
+        }
+        return truncate("PR review for task " + taskId + " is blocked. Fix only the specific review blocker below, update the same PR branch, and resubmit. Do not expand product scope.\n\n"
+                + remarks, 1_600);
+    }
+
+    private void recordSystemReviewRejection(JulesSessionEntity session, String reviewSignal, String response, boolean sent) {
+        String normalized = normalizeQuestionForLoopDetection(reviewSignal);
+        String activityHash = sha256(REVIEW_REJECTION_ACTIVITY_NAME + "\n" + normalized);
+        Optional<JulesActivityResponseEntity> existing =
+                julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(session.getId(), activityHash);
+        if (existing.isPresent()) {
+            return;
+        }
+        JulesActivityResponseEntity record = new JulesActivityResponseEntity();
+        record.setJulesSessionId(session.getId());
+        record.setActivityName(REVIEW_REJECTION_ACTIVITY_NAME);
+        record.setActivityHash(activityHash);
+        record.setQuestion(reviewSignal);
+        record.setResponse(response);
+        record.setSent(sent);
+        record.setRespondedAt(sent ? Instant.now() : null);
+        try {
+            julesActivityResponseRepository.save(record);
+        } catch (DataIntegrityViolationException e) {
+            log.info("PR review rejection for session {} was already recorded by another poller", session.getExternalSessionId());
+        }
+    }
+
+    private String detectedGeneratedArtifactMarker(String text) {
+        if (text == null) {
+            return "generated/local artifacts";
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        for (String marker : List.of(
+                "playwright-report/",
+                "test-results/",
+                "coverage/",
+                "node_modules/",
+                ".next/",
+                ".last-run.json",
+                ".env",
+                ".zip",
+                ".png",
+                ".webm",
+                ".trace",
+                "trace.zip")) {
+            if (lower.contains(marker)) {
+                return marker;
+            }
+        }
+        return "generated/local artifacts";
     }
 
     private String repeatedQuestionCircuitBreaker(TaskEntity task, long previousSimilarQuestions) {
@@ -996,6 +1080,9 @@ public class JulesDispatchService {
                 Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), prUrl);
                 boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
                 String remarks = (String) reviewResult.get("remarks");
+                if (remarks == null || remarks.isBlank()) {
+                    remarks = "PR review rejected without detailed remarks.";
+                }
 
                 if (approved) {
                     prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. " + remarks);
@@ -1033,8 +1120,19 @@ public class JulesDispatchService {
                     prData.setDiffSummary("REVIEW REJECTED. " + remarks);
                     prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
 
-                    // The prompt is now dynamically generated by the ML service (in 'remarks').
-                    // Keep task in 'claimed' status, set session status to 'revising' to avoid polling loops.
+                    List<JulesActivityResponseEntity> responseHistory =
+                            julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+                    String reviewSignal = "PR review rejection: " + remarks;
+                    long previousSimilarReviewRejections = countPreviousSimilarQuestions(responseHistory, reviewSignal);
+                    String julesReviewMessage = buildReviewRejectionMessage(task, remarks);
+                    recordSystemReviewRejection(session, reviewSignal, julesReviewMessage, false);
+
+                    if (previousSimilarReviewRejections > 0) {
+                        String closeReason = "repository_hygiene_review_repeated: same PR blocker persisted after prior remediation";
+                        closeLoopAndCreateFollowUps(session, task, reviewSignal, responseHistory, closeReason);
+                        return;
+                    }
+
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
                     taskRepository.save(task);
 
@@ -1042,7 +1140,7 @@ public class JulesDispatchService {
                     julesSessionRepository.save(session);
 
                     log.info("Review rejected. Transitioning session {} to revising for task {}", session.getExternalSessionId(), task.getId());
-                    saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), remarks, "System generated rejection");
+                    saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), julesReviewMessage, "System generated rejection");
 
                     // Decouple the HTTP call to prevent holding the DB transaction
                     String externalSessionId = session.getExternalSessionId();
@@ -1050,8 +1148,8 @@ public class JulesDispatchService {
                     UUID finalTaskId = task.getId();
                     java.util.concurrent.CompletableFuture.runAsync(() -> {
                         boolean sent = sessionApiKey != null
-                                ? julesApiClient.sendMessage(externalSessionId, remarks, sessionApiKey)
-                                : julesApiClient.sendMessage(externalSessionId, remarks);
+                                ? julesApiClient.sendMessage(externalSessionId, julesReviewMessage, sessionApiKey)
+                                : julesApiClient.sendMessage(externalSessionId, julesReviewMessage);
                         if (sent) {
                             log.info("Successfully sent review rejection message asynchronously to Jules session {} for task {}", externalSessionId, finalTaskId);
                         } else {

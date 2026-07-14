@@ -19,10 +19,12 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class JulesDispatchServiceTest {
@@ -214,6 +216,107 @@ class JulesDispatchServiceTest {
                 item instanceof WishlistEntity
                         && ((WishlistEntity) item).getContent().contains("Cynefin: complex")
                         && ((WishlistEntity) item).getContent().contains("activities payload exceeded")
+        ));
+    }
+
+    @Test
+    void dispatchUsesCompactEnglishRoleGuideInsteadOfFullCharter() {
+        UUID taskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+        role.setDescription("Frontend Engineer");
+        role.setRulesPath("BARCAN-TAG-11_CLIENT-PERCEPTION.md");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Implement one dashboard UI slice.");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(julesApiClient.createSession(eq("prefix/repo"), eq("Implement one dashboard UI slice."), anyString()))
+                .thenReturn("sessions/new");
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+        verify(julesApiClient).createSession(eq("prefix/repo"), eq("Implement one dashboard UI slice."), argThat(context ->
+                context.contains("## Compact Role Guide")
+                        && context.contains("Use English only")
+                        && context.contains("docs/DESIGN_SYSTEM.md")
+                        && !context.contains("FULL ROLE CHARTER")
+                        && !context.contains("REFUSAL CRITERIA")
+        ));
+    }
+
+    @Test
+    void repeatedPrReviewArtifactBlockerClosesLoopInsteadOfSpammingJules() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-11");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Implement a personal dashboard UI slice.");
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/review-loop");
+        session.setPrUrl("https://github.com/org/repo/pull/12");
+        session.setStatus("pr_opened");
+
+        com.eneik.production.models.persistence.JulesActivityResponseEntity previous =
+                new com.eneik.production.models.persistence.JulesActivityResponseEntity();
+        previous.setJulesSessionId(sessionId);
+        previous.setActivityName("system-pr-review-rejection");
+        previous.setActivityHash("hash");
+        previous.setQuestion("PR review rejection: Generated/local artifact detected in PR diff: playwright-report/.");
+        previous.setResponse("Clean artifacts");
+        previous.setSent(true);
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/12"))
+                .thenReturn(Map.of(
+                        "approved", false,
+                        "remarks", "Generated/local artifact detected in PR diff: playwright-report/.",
+                        "newTasks", List.of()
+                ));
+        when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of(previous));
+        when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
+        when(mlPredictionServiceClient.chat(anyString(), anyString()))
+                .thenReturn("Root cause: repeated artifact blocker\nKano classification: Must-Be\nCynefin domain: clear");
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        assertEquals("loop_closed", session.getStatus());
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString());
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
+        verify(claimService).closeTaskAsBlocked(eq(taskId), contains("repository_hygiene_review_repeated"));
+        verify(wishlistRepository).save(argThat(item ->
+                item instanceof WishlistEntity
+                        && ((WishlistEntity) item).getContent().contains("Kano: Must-Be")
+                        && ((WishlistEntity) item).getContent().contains("clean the existing PR branch")
         ));
     }
 }

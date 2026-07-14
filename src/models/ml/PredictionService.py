@@ -595,17 +595,10 @@ def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
 def generated_artifact_remediation(marker: str) -> str:
     return (
         f"Generated/local artifact detected in PR diff: {marker}. "
-        "This is a binary repository-hygiene blocker, not a design/refinement question. "
-        "Remove generated artifacts from the PR and keep only source, config, tests, and docs.\n\n"
-        "Required remediation for Jules:\n"
-        "1. Remove generated artifacts from the branch and Git index:\n"
-        "   git rm -r --cached --ignore-unmatch playwright-report test-results coverage node_modules .next apps/web/playwright-report apps/web/test-results apps/web/coverage apps/web/.next\n"
-        "2. Ensure .gitignore contains: **/playwright-report/, **/test-results/, **/coverage/, **/.next/, node_modules/, *.trace, *.webm.\n"
-        "3. Verify before resubmitting:\n"
-        "   git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
-        "   The command must produce no artifact paths.\n"
-        "4. Commit only source/config/test/doc changes, update the existing PR branch, and resubmit.\n\n"
-        "Do not ask for additional product requirements until the artifact diff is clean."
+        "This is a repository-hygiene blocker only. "
+        "Clean the same branch, keep only source/config/test/doc changes, update .gitignore if needed, and verify: "
+        "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true. "
+        "The command must print no artifact paths. Do not add product scope."
     )
 
 @app.post("/api/v1/review/pr", response_model=ReviewResponse)
