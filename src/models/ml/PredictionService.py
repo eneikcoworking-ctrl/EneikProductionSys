@@ -141,6 +141,7 @@ class TaskSlice(BaseModel):
     title: str
     jtbd: str
     acceptanceCriteria: str
+    roleTag: str = "BARCAN-TAG-02"
     leanValue: str = "essential"
     kanoClass: str = "Must-Be"
     cynefinDomain: str = "clear"
@@ -295,13 +296,16 @@ async def predict_metadata_endpoint(request: MetadataRequest):
 async def predict_task_slices_endpoint(request: MetadataRequest):
     try:
         system_instruction = (
-            "You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose the client wishlist into executable JTBD slices. "
+            "You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose the client wishlist into executable work items. "
             "All output must be in English, even when the source wishlist is written in another language. Translate and normalize intent; never copy the raw wish. "
-            "Return 1-6 slices. Each slice must be short, atomic, role-ready, and independently reviewable by a weak Jules coding agent. "
-            "Each JTBD must be one sentence. Each acceptanceCriteria field must contain 3-5 concrete Given/When/Then lines. "
+            "Return 1-6 work items. Each item must have exactly one owner role, exactly one executor, one branch, one PR, and one concrete result. "
+            "Do not multiply one JTBD across roles. Do not create QA or integration items unless the wishlist explicitly asks to verify existing code, fix merge hygiene, or review an already implemented slice. "
+            "For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01 spike/decision item instead of implementation. "
+            "Each JTBD must be one sentence. Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines for that role only. "
             "Classify each slice with Kano: Must-Be, Performance, or Attractive. Classify implementation uncertainty with Cynefin: clear, complicated, complex, or chaotic. "
-            "Set hasUi=true only when this slice needs visible browser UI/design work. Avoid broad platform epics; split them into smaller user/admin/data/API/test slices. "
-            'Return ONLY JSON: {"slices": [{"title": "short English title", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...\\nGiven...", "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive", "cynefinDomain": "clear|complicated|complex|chaotic", "tocConstraintRef": "short bottleneck reference", "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}'
+            "Choose roleTag from: BARCAN-TAG-00 integration/merge hygiene only; BARCAN-TAG-01 architecture; BARCAN-TAG-02 backend/API; BARCAN-TAG-03 UI/UX design; BARCAN-TAG-04 AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing existing implementation only; BARCAN-TAG-07 security/auth/access; BARCAN-TAG-08 data/schema/storage/parsing; BARCAN-TAG-09 delivery/spike/decision; BARCAN-TAG-10 compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation. "
+            "Set hasUi=true only when this item needs visible browser UI/design work. Avoid broad platform epics; split them into smaller user/admin/data/API items. "
+            'Return ONLY JSON: {"slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...\\nGiven...", "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive", "cynefinDomain": "clear|complicated|complex|chaotic", "tocConstraintRef": "short bottleneck reference", "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}'
         )
         response_json = ask_gemini(request.content, system_instruction, request.apiKey)
         parsed = json.loads(response_json)
@@ -318,9 +322,11 @@ async def predict_task_slices_endpoint(request: MetadataRequest):
                 fallback.acceptanceCriteria,
                 1000,
             )
+            has_ui = bool(raw.get("hasUi", fallback.hasUi)) or looks_like_ui(f"{title} {jtbd} {acceptance}")
             slices.append(
                 TaskSlice(
                     title=title,
+                    roleTag=normalize_role_tag(raw.get("roleTag"), f"{title} {jtbd} {acceptance}", has_ui),
                     jtbd=jtbd,
                     acceptanceCriteria=acceptance,
                     leanValue=normalize_enum(raw.get("leanValue"), {"essential", "valuable", "waste"}, "essential"),
@@ -328,7 +334,7 @@ async def predict_task_slices_endpoint(request: MetadataRequest):
                     cynefinDomain=normalize_enum(raw.get("cynefinDomain"), {"clear", "complicated", "complex", "chaotic"}, "clear"),
                     tocConstraintRef=english_safe_metadata(raw.get("tocConstraintRef"), "TOC-CONSTRAINT-DECOMPOSITION", 120),
                     sixSigmaMetric=english_safe_metadata(raw.get("sixSigmaMetric"), "Escaped defects <= 5%", 120),
-                    hasUi=bool(raw.get("hasUi", fallback.hasUi)) or looks_like_ui(f"{title} {jtbd} {acceptance}"),
+                    hasUi=has_ui,
                 )
             )
         if not slices:
@@ -360,6 +366,7 @@ def fallback_task_slice(content: str, index: int) -> TaskSlice:
     label = feature_label(content)
     return TaskSlice(
         title=f"{label} slice {index}",
+        roleTag=infer_role_tag(content, looks_like_ui(content)),
         jtbd=fallback_jtbd(content),
         acceptanceCriteria=fallback_acceptance_criteria(content),
         leanValue="essential",
@@ -398,6 +405,39 @@ def normalize_enum(value, allowed: set[str], fallback: str) -> str:
         if candidate.lower() == text.lower():
             return candidate
     return fallback
+
+
+def normalize_role_tag(value, text: str, has_ui: bool) -> str:
+    role = str(value or "").strip()
+    allowed = {f"BARCAN-TAG-{i:02d}" for i in range(12)}
+    if role in allowed:
+        return role
+    return infer_role_tag(text, has_ui)
+
+
+def infer_role_tag(text: str, has_ui: bool) -> str:
+    lower = (text or "").lower()
+    if any(marker in lower for marker in ["merge", "integration", "repository hygiene", "generated artifact", "pr diff"]):
+        return "BARCAN-TAG-00"
+    if any(marker in lower for marker in ["architecture", "mvc", "microservice", "service boundary", "adr"]):
+        return "BARCAN-TAG-01"
+    if any(marker in lower for marker in ["security", "auth", "credential", "permission", "access-control", "login"]):
+        return "BARCAN-TAG-07"
+    if any(marker in lower for marker in ["database", "schema", "migration", "storage", "csv", "pdf", "parse", "upload"]):
+        return "BARCAN-TAG-08"
+    if any(marker in lower for marker in ["ai", "llm", "model", "prompt", "rag", "embedding"]):
+        return "BARCAN-TAG-04"
+    if any(marker in lower for marker in ["legal", "tax law", "compliance", "regulatory", "disclaimer"]):
+        return "BARCAN-TAG-10"
+    if any(marker in lower for marker in ["test", "qa", "verify", "verification", "e2e"]):
+        return "BARCAN-TAG-06"
+    if any(marker in lower for marker in ["docker", "deploy", "ci", "build", "pipeline"]):
+        return "BARCAN-TAG-05"
+    if any(marker in lower for marker in ["design", "mockup", "wireframe", "ux"]):
+        return "BARCAN-TAG-03"
+    if has_ui or any(marker in lower for marker in ["frontend", "svelte", "browser", "screen", "page", "button", "form", "ui"]):
+        return "BARCAN-TAG-11"
+    return "BARCAN-TAG-02"
 
 
 def feature_label(content: str) -> str:

@@ -221,8 +221,14 @@ public class ProjectFlowService {
         com.eneik.production.models.persistence.WishlistEntity item = new com.eneik.production.models.persistence.WishlistEntity();
         item.setProjectId(project.getId());
         item.setContent(request.content().trim());
-        item.setSourceRoleTag(request.sourceRoleTag() != null ? request.sourceRoleTag() : "BARCAN-TAG-00");
-        item.setSource(request.source() != null ? request.source() : com.eneik.production.models.persistence.WishlistSource.client);
+        com.eneik.production.models.persistence.WishlistSource source =
+                request.source() != null ? request.source() : com.eneik.production.models.persistence.WishlistSource.client;
+        if (source == com.eneik.production.models.persistence.WishlistSource.role
+                && (request.sourceRoleTag() == null || request.sourceRoleTag().isBlank())) {
+            throw new IllegalArgumentException("sourceRoleTag is required when source is 'role'");
+        }
+        item.setSource(source);
+        item.setSourceRoleTag(source == com.eneik.production.models.persistence.WishlistSource.client ? null : request.sourceRoleTag());
         item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
         item = wishlistRepository.save(item);
 
@@ -347,7 +353,10 @@ public class ProjectFlowService {
 
         if (wishlist.getSource() == WishlistSource.role_mismatch_followup) {
             MLPredictionServiceClient.TaskSliceMetadata slice = slices.get(0);
-            compileSliceMetadata(wishlist.getId(), slice);
+            String ownerRole = targetRoleForSlice(wishlist, slice);
+            wishlist.setSourceRoleTag(ownerRole);
+            wishlistRepository.save(wishlist);
+            compileSliceMetadata(wishlist.getId(), slice, ownerRole);
             technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
             return true;
         }
@@ -360,11 +369,12 @@ public class ProjectFlowService {
             WishlistEntity sliceWishlist = new WishlistEntity();
             sliceWishlist.setProjectId(project.getId());
             sliceWishlist.setSource(wishlist.getSource());
-            sliceWishlist.setSourceRoleTag(wishlist.getSourceRoleTag() != null ? wishlist.getSourceRoleTag() : "BARCAN-TAG-00");
+            String ownerRole = targetRoleForSlice(wishlist, slice);
+            sliceWishlist.setSourceRoleTag(ownerRole);
             sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
             sliceWishlist.setStatus(WishlistStatus.pending);
             sliceWishlist = wishlistRepository.save(sliceWishlist);
-            compileSliceMetadata(sliceWishlist.getId(), slice);
+            compileSliceMetadata(sliceWishlist.getId(), slice, ownerRole);
             technicalLeadCompiler.createTaskFromWishlist(sliceWishlist.getId());
             index++;
         }
@@ -388,7 +398,7 @@ public class ProjectFlowService {
         return java.util.List.of(legacyMetadataSlice(wishlist.getContent(), aiMeta));
     }
 
-    private void compileSliceMetadata(UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice) {
+    private void compileSliceMetadata(UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
         technicalLeadCompiler.compile(
                 wishlistId,
                 ORCHESTRATOR_ROLE,
@@ -396,16 +406,87 @@ public class ProjectFlowService {
                 slice.leanValue() != null ? slice.leanValue() : LeanValue.essential,
                 defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
                 defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
-                "Compiled from English JTBD slice by Eneik Management System. Role refusal criteria: BARCAN-TAG-09. Kano: "
+                "Compiled from English JTBD work item by Eneik Management System. Owner role: "
+                        + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. Kano: "
                         + defaultText(slice.kanoClass(), "Must-Be") + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ".",
                 defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria())
         );
     }
 
+    private String targetRoleForSlice(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        if (parent.getSource() == WishlistSource.role_mismatch_followup
+                || parent.getSource() == WishlistSource.self_falsification
+                || parent.getSource() == WishlistSource.chaotic_debt) {
+            return normalizeRoleTag(parent.getSourceRoleTag(), slice);
+        }
+        return normalizeRoleTag(slice.roleTag(), slice);
+    }
+
+    private String normalizeRoleTag(String value, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        if (value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-1])")) {
+            return value;
+        }
+        return inferRoleTag(slice);
+    }
+
+    private String inferRoleTag(MLPredictionServiceClient.TaskSliceMetadata slice) {
+        String source = ((slice.title() != null ? slice.title() : "") + " "
+                + (slice.jtbd() != null ? slice.jtbd() : "") + " "
+                + (slice.acceptanceCriteria() != null ? slice.acceptanceCriteria() : ""));
+        return inferRoleTag(source, slice.hasUi());
+    }
+
+    private String inferRoleTag(String sourceText, boolean hasUi) {
+        String source = sourceText == null ? "" : sourceText.toLowerCase(Locale.ROOT);
+        if (source.contains("merge") || source.contains("integration") || source.contains("repository hygiene")
+                || source.contains("generated artifact") || source.contains("pr diff")) {
+            return "BARCAN-TAG-00";
+        }
+        if (source.contains("architecture") || source.contains("mvc") || source.contains("microservice")
+                || source.contains("service boundary") || source.contains("adr")) {
+            return "BARCAN-TAG-01";
+        }
+        if (source.contains("security") || source.contains("auth") || source.contains("credential")
+                || source.contains("permission") || source.contains("access-control") || source.contains("login")) {
+            return "BARCAN-TAG-07";
+        }
+        if (source.contains("database") || source.contains("schema") || source.contains("migration")
+                || source.contains("storage") || source.contains("csv") || source.contains("pdf")
+                || source.contains("parse") || source.contains("upload")) {
+            return "BARCAN-TAG-08";
+        }
+        if (source.contains("ai") || source.contains("llm") || source.contains("model")
+                || source.contains("prompt") || source.contains("rag") || source.contains("embedding")) {
+            return "BARCAN-TAG-04";
+        }
+        if (source.contains("legal") || source.contains("tax law") || source.contains("compliance")
+                || source.contains("regulatory") || source.contains("disclaimer")) {
+            return "BARCAN-TAG-10";
+        }
+        if (source.contains("test") || source.contains("qa") || source.contains("verify")
+                || source.contains("verification") || source.contains("e2e")) {
+            return "BARCAN-TAG-06";
+        }
+        if (source.contains("docker") || source.contains("deploy") || source.contains("ci")
+                || source.contains("build") || source.contains("pipeline")) {
+            return "BARCAN-TAG-05";
+        }
+        if (source.contains("design") || source.contains("mockup") || source.contains("wireframe")
+                || source.contains("ux")) {
+            return "BARCAN-TAG-03";
+        }
+        if (hasUi || source.contains("frontend") || source.contains("svelte") || source.contains("browser")
+                || source.contains("screen") || source.contains("page") || source.contains("button")
+                || source.contains("form") || source.contains("ui")) {
+            return "BARCAN-TAG-11";
+        }
+        return "BARCAN-TAG-02";
+    }
+
     private String internalSliceContent(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice, int index) {
         String uiMarker = (slice.hasUi()
                 || looksLikeUi(slice.title() + " " + slice.jtbd() + " " + slice.acceptanceCriteria())) ? "UI " : "";
-        return "Internal " + uiMarker + "slice " + index + " from wishlist " + parent.getId()
+        return "Internal " + uiMarker + "work item " + index + " (" + targetRoleForSlice(parent, slice) + ") from wishlist " + parent.getId()
                 + ": " + safeSliceTitle(slice.title());
     }
 
@@ -431,6 +512,7 @@ public class ProjectFlowService {
                 featureLabel(wishlistContent),
                 jtbd,
                 ac,
+                inferRoleTag(featureLabel(wishlistContent) + " " + jtbd + " " + ac, looksLikeUi(wishlistContent)),
                 LeanValue.essential,
                 "Must-Be",
                 looksLikeUi(wishlistContent) ? "complicated" : "clear",
@@ -448,6 +530,7 @@ public class ProjectFlowService {
                 "Given this slice is implemented, When the primary happy path is exercised, Then it completes without client-side or server-side errors.\n"
                         + "Given invalid or missing input is submitted, When validation runs, Then the system rejects the request without persisting invalid data.\n"
                         + "Given the PR is ready, When verification runs, Then the relevant command passes and no generated artifacts are committed.",
+                inferRoleTag(label + " " + wishlistContent, looksLikeUi(wishlistContent)),
                 LeanValue.essential,
                 "Must-Be",
                 "clear",

@@ -97,54 +97,15 @@ public class TechnicalLeadCompiler {
         }
 
         java.util.List<TaskEntity> createdTasks = new java.util.ArrayList<>();
-
-        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup) {
-            String recoveryRole = normalizeRoleTag(wishlist.getSourceRoleTag());
-            createAndSaveTask(project, wishlist, recoveryRole,
-                roleAtomicGoal(wishlist, recoveryRole),
-                roleSpecificDod(recoveryRole, true),
-                null, false, false, createdTasks);
-        } else if (hasUiComponent(wishlist)) {
-            TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-03"),
-                roleSpecificDod("BARCAN-TAG-03", false),
-                null, false, true, createdTasks);
-
-            TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-02"),
-                roleSpecificDod("BARCAN-TAG-02", false),
-                null, false, true, createdTasks);
-
-            TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-11"),
-                roleSpecificDod("BARCAN-TAG-11", false),
-                designTask, false, true, createdTasks);
-
-            TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                roleAtomicGoal(wishlist, "BARCAN-TAG-00"),
-                roleSpecificDod("BARCAN-TAG-00", false),
-                frontendTask, true, true, createdTasks);
-
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-06"),
-                roleSpecificDod("BARCAN-TAG-06", false),
-                integrationTask, false, true, createdTasks);
-        } else {
-            TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-02"),
-                roleSpecificDod("BARCAN-TAG-02", false),
-                null, false, true, createdTasks);
-
-            TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                roleAtomicGoal(wishlist, "BARCAN-TAG-00"),
-                roleSpecificDod("BARCAN-TAG-00", false),
-                backendTask, true, true, createdTasks);
-
-            createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                roleAtomicGoal(wishlist, "BARCAN-TAG-06"),
-                roleSpecificDod("BARCAN-TAG-06", false),
-                integrationTask, false, true, createdTasks);
-        }
+        String ownerRole = targetRoleForWishlist(wishlist);
+        boolean isIntegrationTask = "BARCAN-TAG-00".equals(ownerRole);
+        createAndSaveTask(project, wishlist, ownerRole,
+                roleAtomicGoal(wishlist, ownerRole),
+                roleSpecificDod(ownerRole, isRecoveryWork(wishlist)),
+                null,
+                isIntegrationTask,
+                false,
+                createdTasks);
 
         // Atomic update of wishlist status after task creation
         wishlist.setStatus(WishlistStatus.converted_to_task);
@@ -293,23 +254,41 @@ public class TechnicalLeadCompiler {
 
             if (isNextJsOrReact) {
                 // Next.js/React structure fallback
-                if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+                if ("BARCAN-TAG-01".equals(roleTag)) {
+                    paths.add("docs/architecture/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
+                } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
                     paths.add("src/app/api/" + featureName.toLowerCase(java.util.Locale.ROOT) + "/route.ts");
                     paths.add("prisma/schema.prisma");
                 } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
                     paths.add("src/components/landing/" + featureName + ".tsx");
                     paths.add("src/app/globals.css");
+                } else if ("BARCAN-TAG-04".equals(roleTag)) {
+                    paths.add("src/lib/ai/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".ts");
                 } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
                     paths.add("src/app/" + featureName.toLowerCase(java.util.Locale.ROOT) + "/page.tsx");
                     paths.add("src/components/landing/" + featureName + ".tsx");
+                } else if ("BARCAN-TAG-05".equals(roleTag)) {
+                    paths.add("Dockerfile");
+                    paths.add(".github/workflows/ci.yml");
                 } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
                     paths.add("src/__tests__/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".test.ts");
+                } else if ("BARCAN-TAG-07".equals(roleTag)) {
+                    paths.add("src/lib/security/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".ts");
+                } else if ("BARCAN-TAG-08".equals(roleTag)) {
+                    paths.add("prisma/schema.prisma");
+                    paths.add("src/lib/data/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".ts");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
                     paths.add("src/app/layout.tsx");
+                } else if ("BARCAN-TAG-09".equals(roleTag)) {
+                    paths.add("docs/delivery/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
+                } else if ("BARCAN-TAG-10".equals(roleTag)) {
+                    paths.add("docs/compliance/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
                 }
             } else {
                 // Default Java Spring Boot structure fallback
-                if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+                if ("BARCAN-TAG-01".equals(roleTag)) {
+                    paths.add("docs/architecture/" + featureName + ".md");
+                } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
                         paths.add("src/main/java/com/eneik/production/services/ChessService.java");
                         paths.add("src/main/java/com/eneik/production/services/ChessEngine.java");
@@ -322,20 +301,36 @@ public class TechnicalLeadCompiler {
                     } else {
                         paths.add("frontend/src/components/" + featureName + ".svelte");
                     }
+                } else if ("BARCAN-TAG-04".equals(roleTag)) {
+                    paths.add("src/main/java/com/eneik/production/services/" + featureName + "AiService.java");
+                    paths.add("src/models/ml/" + featureName + "Model.py");
                 } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
                         paths.add("frontend/src/components/ChessBoard.svelte");
                     } else {
                         paths.add("frontend/src/components/" + featureName + ".svelte");
                     }
+                } else if ("BARCAN-TAG-05".equals(roleTag)) {
+                    paths.add("Dockerfile.backend");
+                    paths.add("docker-compose.yml");
+                    paths.add(".github/workflows/ci.yml");
                 } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
                     if ("Chess".equals(featureName) || "ChessAi".equals(featureName)) {
                         paths.add("src/test/java/com/eneik/production/services/ChessServiceTest.java");
                     } else {
                         paths.add("src/test/java/com/eneik/production/services/" + featureName + "ServiceTest.java");
                     }
+                } else if ("BARCAN-TAG-07".equals(roleTag)) {
+                    paths.add("src/main/java/com/eneik/production/services/security/" + featureName + "SecurityService.java");
+                } else if ("BARCAN-TAG-08".equals(roleTag)) {
+                    paths.add("src/main/resources/db/migration/V_NEXT__" + featureName.toLowerCase(java.util.Locale.ROOT) + ".sql");
+                    paths.add("src/main/java/com/eneik/production/models/persistence/" + featureName + "Entity.java");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
                     paths.add("src/main/java/com/eneik/production/services/" + featureName + "IntegrationService.java");
+                } else if ("BARCAN-TAG-09".equals(roleTag)) {
+                    paths.add("docs/delivery/" + featureName + ".md");
+                } else if ("BARCAN-TAG-10".equals(roleTag)) {
+                    paths.add("docs/compliance/" + featureName + ".md");
                 }
             }
         }
@@ -343,7 +338,9 @@ public class TechnicalLeadCompiler {
         // Deduplicate paths and strictly enforce file scope boundaries based on role relevance
         java.util.List<String> deduped = new java.util.ArrayList<>();
         for (String p : paths) {
-            if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-05".equals(roleTag) || isRelevantForRole(roleTag, p)) {
+            if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-01".equals(roleTag)
+                    || "BARCAN-TAG-05".equals(roleTag) || "BARCAN-TAG-09".equals(roleTag)
+                    || "BARCAN-TAG-10".equals(roleTag) || isRelevantForRole(roleTag, p)) {
                 if (!deduped.contains(p)) {
                     deduped.add(p);
                 }
@@ -418,7 +415,9 @@ public class TechnicalLeadCompiler {
             return false;
         }
 
-        if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
+        if ("BARCAN-TAG-01".equals(roleTag)) {
+            return lower.endsWith(".md") || lower.contains("architecture") || lower.contains("adr");
+        } else if ("BARCAN-TAG-02".equals(roleTag)) { // Backend
             // For Java Spring Boot
             if (lower.endsWith(".java") && !lower.contains("/test/")) {
                 return true;
@@ -432,14 +431,31 @@ public class TechnicalLeadCompiler {
         } else if ("BARCAN-TAG-03".equals(roleTag)) { // Design
             // Design resources: css, icons, mockups, svelte/tsx/jsx (only layout components)
             return (lower.endsWith(".svelte") || lower.endsWith(".css") || lower.endsWith(".png") || lower.endsWith(".svg") || lower.endsWith(".html") || lower.contains("design/")) && !lower.contains("test");
+        } else if ("BARCAN-TAG-04".equals(roleTag)) { // AI/ML
+            return lower.contains("ai") || lower.contains("ml") || lower.contains("model")
+                    || lower.contains("prompt") || lower.endsWith(".py");
         } else if ("BARCAN-TAG-11".equals(roleTag)) { // Frontend
             // React, Svelte, Next.js page layouts
             if (lower.contains("test") || lower.contains("/api/") || lower.endsWith(".prisma") || lower.endsWith(".py")) {
                 return false;
             }
             return lower.endsWith(".svelte") || lower.endsWith(".js") || lower.endsWith(".ts") || lower.endsWith(".tsx") || lower.endsWith(".jsx") || lower.endsWith(".css") || lower.endsWith(".html");
+        } else if ("BARCAN-TAG-05".equals(roleTag)) { // DevOps
+            return lower.contains("docker") || lower.contains(".github/workflows") || lower.contains("compose")
+                    || lower.contains("build") || lower.endsWith(".yml") || lower.endsWith(".yaml");
         } else if ("BARCAN-TAG-06".equals(roleTag)) { // QA
             return lower.contains("test") || lower.contains("/tests/") || lower.endsWith(".test.ts") || lower.endsWith(".test.js");
+        } else if ("BARCAN-TAG-07".equals(roleTag)) { // Security
+            return lower.contains("security") || lower.contains("auth") || lower.contains("credential")
+                    || lower.contains("permission") || lower.contains("config");
+        } else if ("BARCAN-TAG-08".equals(roleTag)) { // Data
+            return lower.contains("migration") || lower.contains("schema") || lower.contains("entity")
+                    || lower.contains("repository") || lower.endsWith(".sql") || lower.endsWith(".prisma");
+        } else if ("BARCAN-TAG-09".equals(roleTag)) { // Delivery management
+            return lower.endsWith(".md") || lower.contains("delivery") || lower.contains("plan");
+        } else if ("BARCAN-TAG-10".equals(roleTag)) { // Compliance
+            return lower.endsWith(".md") || lower.contains("compliance") || lower.contains("legal")
+                    || lower.contains("policy");
         }
         return false;
     }
@@ -594,24 +610,37 @@ public class TechnicalLeadCompiler {
     }
 
     private String roleAtomicGoal(WishlistEntity wishlist, String roleTag) {
-        boolean recovery = wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup;
+        boolean recovery = isRecoveryWork(wishlist);
         if (recovery) {
             return switch (roleTag) {
+                case "BARCAN-TAG-01" -> "Resolve the smallest architecture or service-boundary blocker from the follow-up wishlist item.";
                 case "BARCAN-TAG-03" -> "Resolve the smallest design blocker from the closed Jules session and leave a precise handoff note.";
                 case "BARCAN-TAG-02" -> "Resolve the smallest backend/API blocker from the closed Jules session and verify the affected path.";
+                case "BARCAN-TAG-04" -> "Resolve the smallest AI/model/context blocker from the follow-up wishlist item and verify the affected path.";
+                case "BARCAN-TAG-05" -> "Resolve the smallest build, Docker, CI, or deployment blocker from the follow-up wishlist item.";
                 case "BARCAN-TAG-11" -> "Resolve the smallest frontend/browser blocker from the closed Jules session and verify the affected interaction.";
                 case "BARCAN-TAG-06" -> "Resolve the smallest verification blocker from the closed Jules session and add or adjust the relevant test only.";
+                case "BARCAN-TAG-07" -> "Resolve the smallest security, credential, or access-control blocker from the follow-up wishlist item.";
+                case "BARCAN-TAG-08" -> "Resolve the smallest data, schema, migration, or parsing blocker from the follow-up wishlist item.";
                 case "BARCAN-TAG-00" -> "Resolve the smallest integration or repository-hygiene blocker from the closed Jules session.";
+                case "BARCAN-TAG-09" -> "Clarify the smallest delivery decision needed to unblock the follow-up wishlist item.";
+                case "BARCAN-TAG-10" -> "Resolve the smallest compliance, legal wording, or policy blocker from the follow-up wishlist item.";
                 default -> "Resolve the smallest role-specific blocker from the closed Jules session without expanding scope.";
             };
         }
         return switch (roleTag) {
+            case "BARCAN-TAG-01" -> "Define the smallest architecture or service-boundary decision needed for this JTBD slice.";
             case "BARCAN-TAG-03" -> "Define the smallest UI/design decision needed for this JTBD slice.";
             case "BARCAN-TAG-02" -> "Implement the smallest backend/API/data change needed for this JTBD slice.";
+            case "BARCAN-TAG-04" -> "Implement the smallest AI/model/context change needed for this JTBD slice.";
             case "BARCAN-TAG-11" -> "Implement the smallest Svelte/browser interaction needed for this JTBD slice.";
             case "BARCAN-TAG-06" -> "Verify this JTBD slice with the smallest meaningful automated test set.";
             case "BARCAN-TAG-05" -> "Adjust only the build, Docker, or deployment setting needed for this JTBD slice.";
+            case "BARCAN-TAG-07" -> "Implement the smallest security, credential, or access-control change needed for this JTBD slice.";
+            case "BARCAN-TAG-08" -> "Implement the smallest data, schema, storage, migration, or parsing change needed for this JTBD slice.";
             case "BARCAN-TAG-00" -> "Integrate the completed slice, remove accidental artifacts, and verify the branch is merge-ready.";
+            case "BARCAN-TAG-09" -> "Produce the smallest delivery decision, sequencing note, or spike result needed for this JTBD slice.";
+            case "BARCAN-TAG-10" -> "Implement the smallest compliance, legal-disclaimer, policy, or regulatory-content change needed for this JTBD slice.";
             default -> "Complete the smallest role-specific implementation step needed for this JTBD slice.";
         };
     }
@@ -621,12 +650,18 @@ public class TechnicalLeadCompiler {
             return "The role blocker is either fixed and verified, or replaced with one precise follow-up wishlist item. Role: " + roleTag;
         }
         return switch (roleTag) {
+            case "BARCAN-TAG-01" -> "Architecture decision, service boundary, or ADR-style note exists and names the next implementation owner. Role: BARCAN-TAG-01";
             case "BARCAN-TAG-03" -> "Design artifact, UI state description, or screenshots exist. Reference docs/DESIGN_SYSTEM.md or state 'pending: design system not yet defined'. Role: BARCAN-TAG-03";
             case "BARCAN-TAG-02" -> "Backend/API/data behavior is implemented and covered by focused unit or integration tests. Role: BARCAN-TAG-02";
+            case "BARCAN-TAG-04" -> "AI/model/context behavior is implemented or configured, with deterministic fallback behavior documented and verified. Role: BARCAN-TAG-04";
             case "BARCAN-TAG-11" -> "The browser UI implements the slice, integrates with the API where needed, and follows docs/DESIGN_SYSTEM.md. Role: BARCAN-TAG-11";
             case "BARCAN-TAG-06" -> "Automated tests verify the listed Acceptance Criteria and no generated test artifacts are committed. Role: BARCAN-TAG-06";
             case "BARCAN-TAG-05" -> "Build/deployment configuration is updated and the relevant local verification command passes. Role: BARCAN-TAG-05";
+            case "BARCAN-TAG-07" -> "Security, credentials, permissions, or access-control behavior is verified without exposing secrets. Role: BARCAN-TAG-07";
+            case "BARCAN-TAG-08" -> "Data model, migration, storage, parsing, or retention behavior is implemented and verified with focused tests. Role: BARCAN-TAG-08";
             case "BARCAN-TAG-00" -> "The slice is integrated across touched components, repository hygiene is clean, and the merge path is verified. Role: BARCAN-TAG-00";
+            case "BARCAN-TAG-09" -> "Delivery decision is recorded as a concise handoff note with one concrete next owner role and no implementation scope expansion. Role: BARCAN-TAG-09";
+            case "BARCAN-TAG-10" -> "Compliance/legal/policy behavior or content is implemented with clear disclaimer boundaries and verification notes. Role: BARCAN-TAG-10";
             default -> "The role-specific change is complete, verified, and documented in the PR summary. Role: " + roleTag;
         };
     }
@@ -638,13 +673,108 @@ public class TechnicalLeadCompiler {
         return "BARCAN-TAG-00";
     }
 
+    private boolean isValidRoleTag(String value) {
+        return value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-1])");
+    }
+
+    private String targetRoleForWishlist(WishlistEntity wishlist) {
+        if (isValidRoleTag(wishlist.getSourceRoleTag())) {
+            return wishlist.getSourceRoleTag();
+        }
+
+        String explicitRole = firstNonTechLeadRole(wishlist.getDod());
+        if (explicitRole != null) {
+            return explicitRole;
+        }
+
+        return inferRoleFromWishlist(wishlist);
+    }
+
+    private String firstNonTechLeadRole(String value) {
+        if (value == null) {
+            return null;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern
+                .compile("BARCAN-TAG-(0[0-9]|1[0-1])")
+                .matcher(value);
+        while (matcher.find()) {
+            String role = matcher.group();
+            if (!TECH_LEAD_ROLE_TAG.equals(role)) {
+                return role;
+            }
+        }
+        return null;
+    }
+
+    private boolean isRecoveryWork(WishlistEntity wishlist) {
+        return wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup
+                || wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification
+                || wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.chaotic_debt;
+    }
+
+    private String inferRoleFromWishlist(WishlistEntity wishlist) {
+        String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
+                + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : "") + " "
+                + (wishlist.getDod() != null ? wishlist.getDod() : "")).toLowerCase(java.util.Locale.ROOT);
+        if (source.contains("merge") || source.contains("integration") || source.contains("repository hygiene")
+                || source.contains("artifact") || source.contains("pr diff")) {
+            return "BARCAN-TAG-00";
+        }
+        if (source.contains("architecture") || source.contains("mvc") || source.contains("microservice")
+                || source.contains("service boundary") || source.contains("adr")) {
+            return "BARCAN-TAG-01";
+        }
+        if (source.contains("security") || source.contains("auth") || source.contains("credential")
+                || source.contains("permission") || source.contains("access-control") || source.contains("login")) {
+            return "BARCAN-TAG-07";
+        }
+        if (source.contains("database") || source.contains("schema") || source.contains("migration")
+                || source.contains("storage") || source.contains("csv") || source.contains("pdf")
+                || source.contains("parse") || source.contains("upload")) {
+            return "BARCAN-TAG-08";
+        }
+        if (source.contains("ai") || source.contains("llm") || source.contains("model")
+                || source.contains("prompt") || source.contains("rag") || source.contains("embedding")) {
+            return "BARCAN-TAG-04";
+        }
+        if (source.contains("legal") || source.contains("tax law") || source.contains("compliance")
+                || source.contains("regulatory") || source.contains("disclaimer")) {
+            return "BARCAN-TAG-10";
+        }
+        if (source.contains("test") || source.contains("qa") || source.contains("verify")
+                || source.contains("verification") || source.contains("e2e")) {
+            return "BARCAN-TAG-06";
+        }
+        if (source.contains("docker") || source.contains("deploy") || source.contains("ci")
+                || source.contains("build") || source.contains("pipeline")) {
+            return "BARCAN-TAG-05";
+        }
+        if (source.contains("design") || source.contains("mockup") || source.contains("wireframe")
+                || source.contains("ux")) {
+            return "BARCAN-TAG-03";
+        }
+        if (source.contains("frontend") || source.contains("svelte") || source.contains("browser")
+                || source.contains("screen") || source.contains("page") || source.contains("button")
+                || source.contains("form") || source.contains("ui")) {
+            return "BARCAN-TAG-11";
+        }
+        return "BARCAN-TAG-02";
+    }
+
     private String roleLabel(String roleTag) {
         return switch (roleTag) {
             case "BARCAN-TAG-00" -> "Integration Guardian";
+            case "BARCAN-TAG-01" -> "Architecture";
             case "BARCAN-TAG-02" -> "Backend API";
             case "BARCAN-TAG-03" -> "Product Design";
+            case "BARCAN-TAG-04" -> "AI/ML";
             case "BARCAN-TAG-05" -> "DevOps";
             case "BARCAN-TAG-06" -> "QA Verification";
+            case "BARCAN-TAG-07" -> "Security";
+            case "BARCAN-TAG-08" -> "Data";
+            case "BARCAN-TAG-09" -> "Delivery Management";
+            case "BARCAN-TAG-10" -> "Compliance";
             case "BARCAN-TAG-11" -> "Frontend UI";
             default -> "Role Worker";
         };
@@ -652,7 +782,8 @@ public class TechnicalLeadCompiler {
 
     private String kanoClass(WishlistEntity wishlist) {
         String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
-                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "")).toLowerCase(java.util.Locale.ROOT);
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
+                + (wishlist.getDod() != null ? wishlist.getDod() : "")).toLowerCase(java.util.Locale.ROOT);
         if (source.contains("kano: attractive") || source.contains("delight") || source.contains("wow")) {
             return "Attractive";
         }
@@ -670,7 +801,8 @@ public class TechnicalLeadCompiler {
 
     private String cynefinDomain(WishlistEntity wishlist) {
         String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
-                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "")).toLowerCase(java.util.Locale.ROOT);
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
+                + (wishlist.getDod() != null ? wishlist.getDod() : "")).toLowerCase(java.util.Locale.ROOT);
         if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification
                 || source.contains("cynefin: chaotic")) {
             return "chaotic";
@@ -687,7 +819,10 @@ public class TechnicalLeadCompiler {
 
     private String sliceTitle(WishlistEntity wishlist) {
         String content = wishlist.getContent();
-        if (content != null && (content.startsWith("Internal slice ") || content.startsWith("Internal UI slice "))) {
+        if (content != null && (content.startsWith("Internal slice ")
+                || content.startsWith("Internal UI slice ")
+                || content.startsWith("Internal work item ")
+                || content.startsWith("Internal UI work item "))) {
             return compactLines(englishMetadata(content, "Compiled JTBD slice " + shortId(wishlist.getId())), 140);
         }
         return "Compiled JTBD slice " + shortId(wishlist.getId());

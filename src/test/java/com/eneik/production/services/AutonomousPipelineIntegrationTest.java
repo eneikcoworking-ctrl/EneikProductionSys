@@ -334,8 +334,8 @@ class AutonomousPipelineIntegrationTest {
         FalsificationRunEntity run = runs.get(0);
         assertThat(run.getRolesCheckedCount()).isEqualTo(12);
 
-        // 2. Tasks created count should be capped at 2
-        assertThat(run.getTasksCreatedCount()).isEqualTo(2);
+        // 2. Falsification creates wishlist follow-ups only; task creation is reserved for Orchestrate.
+        assertThat(run.getTasksCreatedCount()).isEqualTo(0);
         assertThat(run.getViolationsFoundCount()).isEqualTo(12);
 
         final UUID targetProjectId = project.getId();
@@ -343,7 +343,10 @@ class AutonomousPipelineIntegrationTest {
                 .filter(t -> t.getProject() != null && t.getProject().getId().equals(targetProjectId))
                 .filter(t -> "chaotic".equals(t.getCynefinDomain()))
                 .toList();
-        assertThat(tasks).isNotEmpty();
-        assertThat(tasks.size()).isBetween(2, 12);
+        assertThat(tasks).isEmpty();
+        List<WishlistEntity> followUps = wishlistRepository.findByProjectId(project.getId()).stream()
+                .filter(w -> w.getSource() == WishlistSource.self_falsification)
+                .toList();
+        assertThat(followUps).hasSize(2);
     }
 }

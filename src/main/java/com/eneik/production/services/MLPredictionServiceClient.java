@@ -202,10 +202,16 @@ public class MLPredictionServiceClient {
                     String metric = mapValue(map, "sixSigmaMetric", "Escaped defects <= 5%");
                     boolean hasUi = booleanMapValue(map, "hasUi", false)
                             || looksLikeUi(title + " " + jtbd + " " + acceptance);
+                    String roleTag = normalizeRoleTag(
+                            mapValue(map, "roleTag", ""),
+                            title + " " + jtbd + " " + acceptance,
+                            hasUi
+                    );
                     result.add(new TaskSliceMetadata(
                             englishSafeSource(title, 90),
                             englishSafeMetadata(jtbd, fallbackJtbd(wishlistContent), 420),
                             englishSafeMetadata(acceptance, fallbackAcceptanceCriteria(wishlistContent), 1_000),
+                            roleTag,
                             leanValue(mapValue(map, "leanValue", "essential")),
                             englishSafeSource(kanoClass, 40),
                             englishSafeSource(cynefinDomain, 40),
@@ -222,6 +228,7 @@ public class MLPredictionServiceClient {
                     featureLabel(wishlistContent),
                     englishSafeMetadata(String.valueOf(response.get("jtbd")), fallbackJtbd(wishlistContent), 420),
                     englishSafeMetadata(String.valueOf(response.getOrDefault("acceptanceCriteria", "")), fallbackAcceptanceCriteria(wishlistContent), 1_000),
+                    inferRoleTag(wishlistContent, looksLikeUi(wishlistContent)),
                     LeanValue.essential,
                     "Must-Be",
                     "clear",
@@ -269,6 +276,7 @@ public class MLPredictionServiceClient {
                 featureLabel(wishlistContent),
                 fallbackJtbd(wishlistContent),
                 fallbackAcceptanceCriteria(wishlistContent),
+                inferRoleTag(wishlistContent, looksLikeUi(wishlistContent)),
                 LeanValue.essential,
                 "Must-Be",
                 looksLikeUncertain(wishlistContent) ? "complex" : "clear",
@@ -347,6 +355,60 @@ public class MLPredictionServiceClient {
                 || lower.contains("explore") || lower.contains("unclear");
     }
 
+    private String normalizeRoleTag(String requestedRole, String text, boolean hasUi) {
+        if (requestedRole != null && requestedRole.matches("BARCAN-TAG-(0[0-9]|1[0-1])")) {
+            return requestedRole;
+        }
+        return inferRoleTag(text, hasUi);
+    }
+
+    private String inferRoleTag(String text, boolean hasUi) {
+        String lower = text == null ? "" : text.toLowerCase(java.util.Locale.ROOT);
+        if (lower.contains("merge") || lower.contains("integration") || lower.contains("repository hygiene")
+                || lower.contains("generated artifact") || lower.contains("pr diff")) {
+            return "BARCAN-TAG-00";
+        }
+        if (lower.contains("architecture") || lower.contains("mvc") || lower.contains("microservice")
+                || lower.contains("service boundary") || lower.contains("adr")) {
+            return "BARCAN-TAG-01";
+        }
+        if (lower.contains("security") || lower.contains("auth") || lower.contains("credential")
+                || lower.contains("permission") || lower.contains("access-control") || lower.contains("login")) {
+            return "BARCAN-TAG-07";
+        }
+        if (lower.contains("database") || lower.contains("schema") || lower.contains("migration")
+                || lower.contains("storage") || lower.contains("csv") || lower.contains("pdf")
+                || lower.contains("parse") || lower.contains("upload")) {
+            return "BARCAN-TAG-08";
+        }
+        if (lower.contains("ai") || lower.contains("llm") || lower.contains("model")
+                || lower.contains("prompt") || lower.contains("rag") || lower.contains("embedding")) {
+            return "BARCAN-TAG-04";
+        }
+        if (lower.contains("legal") || lower.contains("tax law") || lower.contains("compliance")
+                || lower.contains("regulatory") || lower.contains("disclaimer")) {
+            return "BARCAN-TAG-10";
+        }
+        if (lower.contains("test") || lower.contains("qa") || lower.contains("verify")
+                || lower.contains("verification") || lower.contains("e2e")) {
+            return "BARCAN-TAG-06";
+        }
+        if (lower.contains("docker") || lower.contains("deploy") || lower.contains("ci")
+                || lower.contains("build") || lower.contains("pipeline")) {
+            return "BARCAN-TAG-05";
+        }
+        if (lower.contains("design") || lower.contains("mockup") || lower.contains("wireframe")
+                || lower.contains("ux")) {
+            return "BARCAN-TAG-03";
+        }
+        if (hasUi || lower.contains("frontend") || lower.contains("svelte") || lower.contains("browser")
+                || lower.contains("screen") || lower.contains("page") || lower.contains("button")
+                || lower.contains("form") || lower.contains("ui")) {
+            return "BARCAN-TAG-11";
+        }
+        return "BARCAN-TAG-02";
+    }
+
     private boolean containsNonEnglishSignal(String value) {
         if (value == null) {
             return false;
@@ -371,6 +433,7 @@ public class MLPredictionServiceClient {
             String title,
             String jtbd,
             String acceptanceCriteria,
+            String roleTag,
             LeanValue leanValue,
             String kanoClass,
             String cynefinDomain,

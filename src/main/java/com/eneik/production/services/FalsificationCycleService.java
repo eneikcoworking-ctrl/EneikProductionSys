@@ -2,7 +2,6 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
-import com.eneik.production.services.compiler.TechnicalLeadCompiler;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +28,6 @@ public class FalsificationCycleService {
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final WishlistRepository wishlistRepository;
-    private final TechnicalLeadCompiler technicalLeadCompiler;
     private final FalsificationRunRepository falsificationRunRepository;
     private final SystemSettingsService settingsService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
@@ -39,7 +37,6 @@ public class FalsificationCycleService {
                                      RoleCapabilityLoader roleCapabilityLoader,
                                      MLPredictionServiceClient mlPredictionServiceClient,
                                      WishlistRepository wishlistRepository,
-                                     TechnicalLeadCompiler technicalLeadCompiler,
                                      FalsificationRunRepository falsificationRunRepository,
                                      SystemSettingsService settingsService,
                                      org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
@@ -48,7 +45,6 @@ public class FalsificationCycleService {
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.wishlistRepository = wishlistRepository;
-        this.technicalLeadCompiler = technicalLeadCompiler;
         this.falsificationRunRepository = falsificationRunRepository;
         this.settingsService = settingsService;
         this.jdbcTemplate = jdbcTemplate;
@@ -85,7 +81,7 @@ public class FalsificationCycleService {
 
         int rolesCheckedCount = activeRoles.size(); // Should be 12
         int violationsFoundCount = 0;
-        int tasksCreatedCount = 0;
+        int followUpsCreatedCount = 0;
 
         // Check if there is a critical regression
         boolean hasCriticalRegression = !checkActuatorHealth(project);
@@ -112,8 +108,8 @@ public class FalsificationCycleService {
                     violationsFoundCount++;
                     log.warn("FalsificationCycleService: Code violation detected for role {} in project {}", roleTag, project.getName());
 
-                    if (tasksCreatedCount < 2) {
-                        // Create self_falsification wishlist item
+                    if (followUpsCreatedCount < 2) {
+                        // Create self_falsification wishlist item. Orchestrate converts it later via the single smart compiler path.
                         WishlistEntity wishlist = new WishlistEntity();
                         wishlist.setProjectId(project.getId());
                         wishlist.setSource(WishlistSource.self_falsification);
@@ -128,17 +124,10 @@ public class FalsificationCycleService {
                         wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
                         wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
                         wishlist = wishlistRepository.save(wishlist);
-
-                        // Compile to chaotic task
-                        try {
-                            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
-                            tasksCreatedCount++;
-                            log.info("FalsificationCycleService: Created chaotic task from self_falsification wishlist item for role {}", roleTag);
-                        } catch (Exception e) {
-                            log.error("FalsificationCycleService: Failed to compile wishlist item to task: {}", e.getMessage(), e);
-                        }
+                        followUpsCreatedCount++;
+                        log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
                     } else {
-                        log.info("FalsificationCycleService: Rate limit of 2 tasks per run reached, skipping task creation for role {}", roleTag);
+                        log.info("FalsificationCycleService: Rate limit of 2 follow-up wishlist items per run reached, skipping role {}", roleTag);
                     }
                 }
             }
@@ -149,11 +138,11 @@ public class FalsificationCycleService {
         run.setRunAt(Instant.now());
         run.setRolesCheckedCount(rolesCheckedCount);
         run.setViolationsFoundCount(violationsFoundCount);
-        run.setTasksCreatedCount(tasksCreatedCount);
+        run.setTasksCreatedCount(0);
         falsificationRunRepository.save(run);
 
-        log.info("FalsificationCycleService: Completed check for project {}. Checked roles: {}, Violations: {}, Tasks created: {}",
-                project.getName(), rolesCheckedCount, violationsFoundCount, tasksCreatedCount);
+        log.info("FalsificationCycleService: Completed check for project {}. Checked roles: {}, Violations: {}, Follow-up wishlist items created: {}",
+                project.getName(), rolesCheckedCount, violationsFoundCount, followUpsCreatedCount);
     }
 
     private boolean checkActuatorHealth(ProjectEntity project) {
