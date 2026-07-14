@@ -105,12 +105,16 @@ public class TechnicalLeadCompilerIntegrationTest {
 
     @Test
     public void testCreateTaskFromWishlistSuccess() {
-        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
-                         LeanValue.essential, "toc", "metric", "Выполнено согласно BARCAN-TAG-02 критерий 1", "Given something, When action, Then result");
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When a client submits a request, they want the platform to process it reliably so the result can be verified.",
+                         LeanValue.essential, "toc", "metric", "Completed according to BARCAN-TAG-02 refusal criteria", "Given something, When action, Then result");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
-        assertTrue(task.getDescription().startsWith("Backend Logic: Разработать серверную бизнес-логику"));
+        assertTrue(task.getDescription().startsWith("Role: BARCAN-TAG-02 - Backend API"));
+        assertTrue(task.getDescription().contains("Atomic Goal: Implement the smallest backend/API/data change needed for this JTBD slice."));
+        assertTrue(task.getDescription().contains("Kano: Must-Be"));
+        assertTrue(task.getDescription().contains("Cynefin: clear"));
+        assertFalse(task.getDescription().matches(".*[\\p{IsCyrillic}].*"));
         assertEquals(TaskStatus.queued, task.getStatus());
         assertTrue(task.isQualityGatePassed());
         assertNotNull(task.getQualityGateReport());
@@ -123,31 +127,54 @@ public class TechnicalLeadCompilerIntegrationTest {
     @Test
     public void testCreateTaskFromWishlistRejectionStep5() {
         // DoD without BARCAN-TAG reference
-        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When a client submits a request, they want the platform to process it reliably so the result can be verified.",
                 LeanValue.essential, "toc", "metric", "Just some text", "Given/When/Then");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
-        assertTrue(ex.getMessage().contains("Шаг 5 не пройден: DoD не ссылается на Refusal Criteria роли (BARCAN-TAG-XX)"));
+        assertTrue(ex.getMessage().contains("Step 5 failed: DoD does not reference role refusal criteria (BARCAN-TAG-XX)"));
     }
 
     @Test
     public void testCreateTaskFromWishlistRejectionStep6() {
         // UI role without pending/design system ref
-        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When a client submits a request, they want the platform to process it reliably so the result can be verified.",
                 LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: must follow rules", "Given/When/Then");
 
         IllegalStateException ex = assertThrows(IllegalStateException.class, () -> compiler.createTaskFromWishlist(wishlistId));
-        assertTrue(ex.getMessage().contains("Шаг 6 не пройден"));
+        assertTrue(ex.getMessage().contains("Step 6 failed"));
     }
 
     @Test
     public void testCreateTaskFromWishlistSuccessStep6WithDesignSystem() {
         // UI role WITH docs/DESIGN_SYSTEM.md ref since it exists
-        compiler.compile(wishlistId, "BARCAN-TAG-09", "Когда ситуация, клиент хочет мотивация, чтобы результат",
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When a client submits a request, they want the platform to process it reliably so the result can be verified.",
                 LeanValue.essential, "toc", "metric", "BARCAN-TAG-03: must follow docs/DESIGN_SYSTEM.md", "Given something, When action, Then result");
 
         TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
         assertNotNull(task);
+    }
+
+    @Test
+    public void testNonEnglishWishlistDoesNotLeakIntoTaskDescription() {
+        WishlistEntity localWish = new WishlistEntity();
+        localWish.setProjectId(projectId);
+        localWish.setSource(WishlistSource.client);
+        localWish.setContent("\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043b\u0438\u0447\u043d\u044b\u0439 \u043a\u0430\u0431\u0438\u043d\u0435\u0442");
+        localWish = wishlistRepository.save(localWish);
+
+        compiler.compile(localWish.getId(), "BARCAN-TAG-09",
+                "\u041a\u043b\u0438\u0435\u043d\u0442 \u0445\u043e\u0447\u0435\u0442 \u043b\u0438\u0447\u043d\u044b\u0439 \u043a\u0430\u0431\u0438\u043d\u0435\u0442",
+                LeanValue.essential,
+                "toc",
+                "metric",
+                "Completed according to BARCAN-TAG-02 refusal criteria",
+                "Given something, When action, Then result");
+
+        TaskEntity task = compiler.createTaskFromWishlist(localWish.getId());
+
+        assertFalse(task.getDescription().matches(".*[\\p{IsCyrillic}].*"));
+        assertTrue(task.getDescription().contains("When this slice is delivered"));
+        assertTrue(task.getDescription().contains("Do not paste, translate, or re-interpret the original client wish"));
     }
 
     @Test
@@ -162,11 +189,11 @@ public class TechnicalLeadCompilerIntegrationTest {
         WishlistEntity chessWish = new WishlistEntity();
         chessWish.setProjectId(projectId);
         chessWish.setSource(WishlistSource.client);
-        chessWish.setContent("добавить шахматный ИИ с 3D доской");
+        chessWish.setContent("Add a chess AI with a 3D board");
         chessWish = wishlistRepository.save(chessWish);
 
-        compiler.compile(chessWish.getId(), "BARCAN-TAG-09", "Хочу играть в шахматы",
-                LeanValue.essential, "toc", "metric", "Выполнено согласно BARCAN-TAG-03 критерий 1 и docs/DESIGN_SYSTEM.md", "Given something, When action, Then result");
+        compiler.compile(chessWish.getId(), "BARCAN-TAG-09", "When I play chess, I want a 3D board and a computer opponent so I can play a complete game.",
+                LeanValue.essential, "toc", "metric", "Completed according to BARCAN-TAG-03 refusal criteria and docs/DESIGN_SYSTEM.md", "Given something, When action, Then result");
 
         // Convert to tasks
         compiler.createTaskFromWishlist(chessWish.getId());

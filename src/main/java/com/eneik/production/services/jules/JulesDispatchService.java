@@ -592,7 +592,7 @@ public class JulesDispatchService {
                 + "- Make a concrete decision from the supplied task facts. If information is missing, choose the safest minimal assumption and tell Jules to document it in the PR.\n"
                 + "- If Jules asks whether to proceed, tell Jules to proceed with the task DoD and Acceptance Criteria unless a concrete contradiction exists.\n"
                 + "- For QA tasks, keep the test pyramid target, deepen Acceptance Criteria verification, avoid committing generated reports/test-results/playwright-report, and run the relevant checks.\n"
-                + "- Keep the answer concise, practical, and in the same language as Jules' question.\n\n"
+                + "- Keep the answer concise, practical, and in English only, even if Jules' question uses another language.\n\n"
                 + "Task id: " + task.getId() + "\n"
                 + "Project repository: " + projectRepo + "\n"
                 + "Role: " + roleTag + "\n"
@@ -1125,7 +1125,7 @@ public class JulesDispatchService {
             try {
                 String aiPrompt = "Create a concise direct recovery message for a Google Jules coding session that is stuck. "
                         + "Role: " + roleTag + "\nTask: " + taskDescription;
-                String aiSystem = "Return only the message to send to Jules. Do not include analysis or markdown.";
+                String aiSystem = "Return only the English-language message to send to Jules. Do not include analysis or markdown.";
                 String aiResponse = mlPredictionServiceClient.chat(aiPrompt, aiSystem);
                 if (aiResponse != null
                         && !aiResponse.isBlank()

@@ -61,8 +61,10 @@ def ask_gemini(prompt: str, system_instruction: str = "", api_key: str = "") -> 
             return '{"satisfaction_probability": 0.98, "modal_status": "Highly Probable (Mock)"}'
         elif "risk_score" in system_instruction:
             return '{"risk_score": 0.15, "is_bottleneck_predicted": false}'
+        elif "slices" in system_instruction:
+            return '{"slices": []}'
         elif "jtbd" in system_instruction:
-            return '{"jtbd": "Automate and transform", "acceptanceCriteria": "Given task merged, Then verify feature"}'
+            return '{"jtbd": "When I use the client-requested capability slice, I want one small verifiable capability completed, so project progress can be validated without a long Jules session.", "acceptanceCriteria": "Given this slice is implemented, When the primary happy path is exercised, Then it completes without errors.\\nGiven invalid input is submitted, When validation runs, Then invalid data is rejected.\\nGiven verification runs, When the PR is ready, Then the relevant command passes."}'
         return "{}"
 
     try:
@@ -133,6 +135,22 @@ class MetadataRequest(BaseModel):
 class MetadataResponse(BaseModel):
     jtbd: str
     acceptanceCriteria: str
+
+
+class TaskSlice(BaseModel):
+    title: str
+    jtbd: str
+    acceptanceCriteria: str
+    leanValue: str = "essential"
+    kanoClass: str = "Must-Be"
+    cynefinDomain: str = "clear"
+    tocConstraintRef: str = "TOC-CONSTRAINT-DECOMPOSITION"
+    sixSigmaMetric: str = "Escaped defects <= 5%"
+    hasUi: bool = False
+
+
+class TaskSlicesResponse(BaseModel):
+    slices: list[TaskSlice]
 
 
 class ReviewRequest(BaseModel):
@@ -249,6 +267,7 @@ async def predict_metadata_endpoint(request: MetadataRequest):
     try:
         system_instruction = (
             "You are Eneik Technical Lead and Product Owner. Convert the client wishlist into executable task metadata. "
+            "All output must be in English, even when the source wishlist is written in another language. Translate and normalize the intent; do not copy non-English source text into the output. "
             "The JTBD must be one concrete user/business job. Acceptance Criteria must be 5-8 testable Given/When/Then items. "
             "Cover the primary user journey, auth/access if relevant, admin/content management if relevant, data validation, "
             "failure/negative cases, and one verification/non-functional criterion. Avoid vague words like good, beautiful, fast, robust "
@@ -272,28 +291,181 @@ async def predict_metadata_endpoint(request: MetadataRequest):
         )
 
 
+@app.post("/api/v1/predict/task-slices", response_model=TaskSlicesResponse)
+async def predict_task_slices_endpoint(request: MetadataRequest):
+    try:
+        system_instruction = (
+            "You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose the client wishlist into executable JTBD slices. "
+            "All output must be in English, even when the source wishlist is written in another language. Translate and normalize intent; never copy the raw wish. "
+            "Return 1-6 slices. Each slice must be short, atomic, role-ready, and independently reviewable by a weak Jules coding agent. "
+            "Each JTBD must be one sentence. Each acceptanceCriteria field must contain 3-5 concrete Given/When/Then lines. "
+            "Classify each slice with Kano: Must-Be, Performance, or Attractive. Classify implementation uncertainty with Cynefin: clear, complicated, complex, or chaotic. "
+            "Set hasUi=true only when this slice needs visible browser UI/design work. Avoid broad platform epics; split them into smaller user/admin/data/API/test slices. "
+            'Return ONLY JSON: {"slices": [{"title": "short English title", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...\\nGiven...", "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive", "cynefinDomain": "clear|complicated|complex|chaotic", "tocConstraintRef": "short bottleneck reference", "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}'
+        )
+        response_json = ask_gemini(request.content, system_instruction, request.apiKey)
+        parsed = json.loads(response_json)
+        raw_slices = parsed.get("slices", [])
+        slices = []
+        for index, raw in enumerate(raw_slices[:6], start=1):
+            if not isinstance(raw, dict):
+                continue
+            fallback = fallback_task_slice(request.content, index)
+            title = english_safe_metadata(raw.get("title"), fallback.title, 90)
+            jtbd = english_safe_metadata(raw.get("jtbd"), fallback.jtbd, 420)
+            acceptance = english_safe_metadata(
+                raw.get("acceptanceCriteria"),
+                fallback.acceptanceCriteria,
+                1000,
+            )
+            slices.append(
+                TaskSlice(
+                    title=title,
+                    jtbd=jtbd,
+                    acceptanceCriteria=acceptance,
+                    leanValue=normalize_enum(raw.get("leanValue"), {"essential", "valuable", "waste"}, "essential"),
+                    kanoClass=normalize_enum(raw.get("kanoClass"), {"Must-Be", "Performance", "Attractive"}, "Must-Be"),
+                    cynefinDomain=normalize_enum(raw.get("cynefinDomain"), {"clear", "complicated", "complex", "chaotic"}, "clear"),
+                    tocConstraintRef=english_safe_metadata(raw.get("tocConstraintRef"), "TOC-CONSTRAINT-DECOMPOSITION", 120),
+                    sixSigmaMetric=english_safe_metadata(raw.get("sixSigmaMetric"), "Escaped defects <= 5%", 120),
+                    hasUi=bool(raw.get("hasUi", fallback.hasUi)) or looks_like_ui(f"{title} {jtbd} {acceptance}"),
+                )
+            )
+        if not slices:
+            slices = [fallback_task_slice(request.content, 1)]
+        return TaskSlicesResponse(slices=slices)
+    except Exception as e:
+        print(f"Task Slice Prediction Fallback triggered due to: {e}")
+        return TaskSlicesResponse(slices=[fallback_task_slice(request.content, 1)])
+
+
 def fallback_jtbd(content: str) -> str:
-    clean = " ".join((content or "").split())
-    if len(clean) > 240:
-        clean = clean[:237] + "..."
+    label = feature_label(content)
     return (
-        "When I use the requested product capability, I want the system to deliver this client need: "
-        f"{clean}, so that the result can be verified end-to-end without relying on subjective interpretation."
+        f"When I use the {label} slice, I want one small verifiable capability completed, "
+        "so project progress can be validated without a long Jules session."
     )
 
 
 def fallback_acceptance_criteria(content: str) -> str:
-    clean = " ".join((content or "").split())
-    if len(clean) > 180:
-        clean = clean[:177] + "..."
+    label = feature_label(content)
     return (
-        f"Given the implemented feature for \"{clean}\", When the primary user follows the intended happy path, "
-        "Then the user can complete the core workflow without client-side or server-side errors.\n"
-        "Given required input is missing or invalid, When the user submits the form or API request, Then the system returns a clear validation error and does not persist invalid data.\n"
-        "Given an authorized administrator uses the relevant management surface, When content or settings for this feature are changed, Then the public/user-facing experience reflects the saved change.\n"
-        "Given an unauthorized or unauthenticated user attempts a protected action, When the request is made, Then access is denied without exposing private data.\n"
-        "Given the feature is complete, When automated verification runs, Then the relevant unit, integration, and critical E2E checks pass and generated test artifacts are not committed."
+        f"Given the {label} slice is implemented, When the primary happy path is exercised, Then it completes without client-side or server-side errors.\n"
+        "Given invalid or missing input is submitted, When validation runs, Then the system rejects the request without persisting invalid data.\n"
+        "Given the PR is ready, When verification runs, Then the relevant unit, integration, or E2E command passes and no generated artifacts are committed."
     )
+
+
+def fallback_task_slice(content: str, index: int) -> TaskSlice:
+    label = feature_label(content)
+    return TaskSlice(
+        title=f"{label} slice {index}",
+        jtbd=fallback_jtbd(content),
+        acceptanceCriteria=fallback_acceptance_criteria(content),
+        leanValue="essential",
+        kanoClass="Must-Be",
+        cynefinDomain="complex" if looks_like_uncertain(content) else "clear",
+        tocConstraintRef="TOC-CONSTRAINT-DECOMPOSITION",
+        sixSigmaMetric="Escaped defects <= 5%",
+        hasUi=looks_like_ui(content),
+    )
+
+
+def english_safe_source(content: str, max_len: int) -> str:
+    clean = " ".join((content or "").split())
+    if len(clean) > max_len:
+        clean = clean[: max_len - 3] + "..."
+    if contains_non_english_signal(clean):
+        return "the client-provided wishlist translated and normalized into English task metadata"
+    return clean or "the requested feature"
+
+
+def english_safe_metadata(content, fallback: str, max_len: int) -> str:
+    clean = english_safe_source("" if content is None else str(content), max_len)
+    if clean in {
+        "the client-provided wishlist translated and normalized into English task metadata",
+        "the requested feature",
+    }:
+        return fallback
+    return clean
+
+
+def normalize_enum(value, allowed: set[str], fallback: str) -> str:
+    if value is None:
+        return fallback
+    text = str(value).strip()
+    for candidate in allowed:
+        if candidate.lower() == text.lower():
+            return candidate
+    return fallback
+
+
+def feature_label(content: str) -> str:
+    clean = " ".join((content or "").split())
+    if contains_non_english_signal(clean):
+        return "client-requested capability"
+    words = []
+    stop_words = {
+        "the",
+        "and",
+        "for",
+        "with",
+        "that",
+        "this",
+        "from",
+        "into",
+        "need",
+        "want",
+        "make",
+        "create",
+        "build",
+        "add",
+        "implement",
+        "please",
+        "system",
+        "feature",
+    }
+    import re
+
+    for word in re.split(r"[^a-zA-Z0-9]+", clean.lower()):
+        if len(word) >= 3 and word not in stop_words:
+            words.append(word)
+        if len(words) == 4:
+            break
+    return " ".join(words) if words else "client-requested capability"
+
+
+def looks_like_ui(content: str) -> bool:
+    lower = (content or "").lower()
+    return any(
+        marker in lower
+        for marker in [
+            "ui",
+            "ux",
+            "frontend",
+            "screen",
+            "page",
+            "form",
+            "button",
+            "browser",
+            "svelte",
+            "design",
+            "admin",
+            "panel",
+            "portal",
+            "dashboard",
+            "public",
+        ]
+    )
+
+
+def looks_like_uncertain(content: str) -> bool:
+    lower = (content or "").lower()
+    return any(marker in lower for marker in ["research", "unknown", "spike", "explore", "unclear"])
+
+
+def contains_non_english_signal(value: str) -> bool:
+    return any("\u0400" <= ch <= "\u04ff" for ch in value) or "Ð" in value or "Ñ" in value
 
 
 def fetch_pr_diff(pr_url: str, github_token: str = "") -> str:

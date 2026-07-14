@@ -235,7 +235,11 @@ public class ProjectFlowService {
                 // Reload from repository to ensure we have the latest compiled data
                 wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
 
-                if (wishlist.getCompiledByRole() == null) {
+                if (compileWishlistIntoAtomicSlices(project, wishlist)) {
+                    processedCount++;
+                    log.info("ProjectFlowService: Synchronously compiled wishlist {} into atomic task slices", wishlist.getId());
+                    continue;
+                } else if (wishlist.getCompiledByRole() == null) {
                     java.util.Map<String, Object> aiMeta = new java.util.HashMap<>();
                     if (mlPredictionServiceClient != null) {
                         try {
@@ -246,8 +250,8 @@ public class ProjectFlowService {
                             continue;
                         }
                     }
-                    String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : "Automate and transform";
-                    String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : "Given task merged, Then verify feature";
+                    String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : fallbackTaskSlice(wishlist.getContent()).jtbd();
+                    String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : fallbackTaskSlice(wishlist.getContent()).acceptanceCriteria();
 
                     technicalLeadCompiler.compile(
                         wishlist.getId(),
@@ -256,7 +260,7 @@ public class ProjectFlowService {
                         com.eneik.production.models.persistence.LeanValue.essential,
                         "TOC-CONSTRAINT-DECOMPOSITION",
                         "Defect Rate <= 5%",
-                        "Compiled automatically by technical lead. Ссылается на Refusal Criteria роли (BARCAN-TAG-09).",
+                        "Compiled from English JTBD slice by Eneik Management System. Role refusal criteria: BARCAN-TAG-09.",
                         ac
                     );
 
@@ -288,6 +292,174 @@ public class ProjectFlowService {
             createdTasks,
             "Orchestrated " + processedCount + " wishlist items. " + createdTasks.size() + " tasks created."
         );
+    }
+
+    private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist) {
+        if (wishlist.getCompiledByRole() != null) {
+            if (wishlist.getLeanValue() != LeanValue.waste) {
+                technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+                return true;
+            }
+            return false;
+        }
+
+        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = resolveTaskSlices(wishlist);
+        if (slices.isEmpty()) {
+            return false;
+        }
+
+        if (wishlist.getSource() == WishlistSource.role_mismatch_followup) {
+            MLPredictionServiceClient.TaskSliceMetadata slice = slices.get(0);
+            compileSliceMetadata(wishlist.getId(), slice);
+            technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
+            return true;
+        }
+
+        int index = 1;
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
+            if (slice.leanValue() == LeanValue.waste) {
+                continue;
+            }
+            WishlistEntity sliceWishlist = new WishlistEntity();
+            sliceWishlist.setProjectId(project.getId());
+            sliceWishlist.setSource(wishlist.getSource());
+            sliceWishlist.setSourceRoleTag(wishlist.getSourceRoleTag() != null ? wishlist.getSourceRoleTag() : "BARCAN-TAG-00");
+            sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
+            sliceWishlist.setStatus(WishlistStatus.pending);
+            sliceWishlist = wishlistRepository.save(sliceWishlist);
+            compileSliceMetadata(sliceWishlist.getId(), slice);
+            technicalLeadCompiler.createTaskFromWishlist(sliceWishlist.getId());
+            index++;
+        }
+
+        wishlist.setStatus(WishlistStatus.converted_to_task);
+        wishlistRepository.save(wishlist);
+        return true;
+    }
+
+    private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> resolveTaskSlices(WishlistEntity wishlist) {
+        if (mlPredictionServiceClient == null) {
+            return java.util.List.of(fallbackTaskSlice(wishlist.getContent()));
+        }
+
+        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = mlPredictionServiceClient.generateTaskSlices(wishlist.getContent());
+        if (slices != null && !slices.isEmpty()) {
+            return slices.stream().limit(6).toList();
+        }
+
+        java.util.Map<String, Object> aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
+        return java.util.List.of(legacyMetadataSlice(wishlist.getContent(), aiMeta));
+    }
+
+    private void compileSliceMetadata(UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        technicalLeadCompiler.compile(
+                wishlistId,
+                ORCHESTRATOR_ROLE,
+                defaultText(slice.jtbd(), fallbackTaskSlice("").jtbd()),
+                slice.leanValue() != null ? slice.leanValue() : LeanValue.essential,
+                defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
+                defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
+                "Compiled from English JTBD slice by Eneik Management System. Role refusal criteria: BARCAN-TAG-09. Kano: "
+                        + defaultText(slice.kanoClass(), "Must-Be") + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ".",
+                defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria())
+        );
+    }
+
+    private String internalSliceContent(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice, int index) {
+        String uiMarker = (slice.hasUi()
+                || looksLikeUi(slice.title() + " " + slice.jtbd() + " " + slice.acceptanceCriteria())) ? "UI " : "";
+        return "Internal " + uiMarker + "slice " + index + " from wishlist " + parent.getId()
+                + ": " + safeSliceTitle(slice.title());
+    }
+
+    private String safeSliceTitle(String title) {
+        if (title == null || title.isBlank() || containsNonEnglishSignal(title)) {
+            return "client-requested capability";
+        }
+        String compact = title.replaceAll("\\s+", " ").trim();
+        if (compact.length() <= 90) {
+            return compact;
+        }
+        return compact.substring(0, 87) + "...";
+    }
+
+    private MLPredictionServiceClient.TaskSliceMetadata legacyMetadataSlice(String wishlistContent, java.util.Map<String, Object> aiMeta) {
+        String jtbd = aiMeta != null && aiMeta.containsKey("jtbd")
+                ? String.valueOf(aiMeta.get("jtbd"))
+                : fallbackTaskSlice(wishlistContent).jtbd();
+        String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria")
+                ? String.valueOf(aiMeta.get("acceptanceCriteria"))
+                : fallbackTaskSlice(wishlistContent).acceptanceCriteria();
+        return new MLPredictionServiceClient.TaskSliceMetadata(
+                featureLabel(wishlistContent),
+                jtbd,
+                ac,
+                LeanValue.essential,
+                "Must-Be",
+                looksLikeUi(wishlistContent) ? "complicated" : "clear",
+                "TOC-CONSTRAINT-DECOMPOSITION",
+                "Escaped defects <= 5%",
+                looksLikeUi(wishlistContent)
+        );
+    }
+
+    private MLPredictionServiceClient.TaskSliceMetadata fallbackTaskSlice(String wishlistContent) {
+        String label = featureLabel(wishlistContent);
+        return new MLPredictionServiceClient.TaskSliceMetadata(
+                label,
+                "When I use the " + label + " slice, I want one small verifiable capability completed, so project progress can be validated without a long Jules session.",
+                "Given this slice is implemented, When the primary happy path is exercised, Then it completes without client-side or server-side errors.\n"
+                        + "Given invalid or missing input is submitted, When validation runs, Then the system rejects the request without persisting invalid data.\n"
+                        + "Given the PR is ready, When verification runs, Then the relevant command passes and no generated artifacts are committed.",
+                LeanValue.essential,
+                "Must-Be",
+                "clear",
+                "TOC-CONSTRAINT-DECOMPOSITION",
+                "Escaped defects <= 5%",
+                looksLikeUi(wishlistContent)
+        );
+    }
+
+    private String featureLabel(String wishlistContent) {
+        if (wishlistContent == null || wishlistContent.isBlank() || containsNonEnglishSignal(wishlistContent)) {
+            return "client-requested capability";
+        }
+        java.util.Set<String> stopWords = java.util.Set.of(
+                "the", "and", "for", "with", "that", "this", "from", "into", "need", "want",
+                "make", "create", "build", "add", "implement", "please", "system", "feature"
+        );
+        java.util.List<String> words = new java.util.ArrayList<>();
+        for (String word : wishlistContent.toLowerCase(java.util.Locale.ROOT).split("[^a-z0-9]+")) {
+            if (word.length() >= 3 && !stopWords.contains(word)) {
+                words.add(word);
+            }
+            if (words.size() == 4) {
+                break;
+            }
+        }
+        return words.isEmpty() ? "client-requested capability" : String.join(" ", words);
+    }
+
+    private boolean looksLikeUi(String value) {
+        String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("ui") || lower.contains("ux") || lower.contains("frontend")
+                || lower.contains("screen") || lower.contains("page") || lower.contains("form")
+                || lower.contains("button") || lower.contains("browser") || lower.contains("svelte")
+                || lower.contains("design") || lower.contains("admin") || lower.contains("panel")
+                || lower.contains("portal") || lower.contains("dashboard") || lower.contains("public");
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private boolean containsNonEnglishSignal(String value) {
+        if (value == null) {
+            return false;
+        }
+        return value.matches(".*[\\p{IsCyrillic}].*")
+                || value.contains("\u00d0")
+                || value.contains("\u00d1");
     }
 
     @Transactional

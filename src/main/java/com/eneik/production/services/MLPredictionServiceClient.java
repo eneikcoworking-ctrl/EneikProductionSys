@@ -1,6 +1,7 @@
 package com.eneik.production.services;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import com.eneik.production.models.persistence.LeanValue;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpEntity;
@@ -129,10 +130,10 @@ public class MLPredictionServiceClient {
             if (response != null && response.containsKey("text")) {
                 return (String) response.get("text");
             }
-            return "Ошибка: Неверный формат ответа от ИИ-ассистента.";
+            return "ERROR: Invalid AI assistant response format.";
         } catch (Exception e) {
             LOGGER.severe("ML service chat call failed: " + e.getMessage());
-            return "Ассистент временно недоступен. Ошибка подключения к ML-сервису: " + e.getMessage();
+            return "The assistant is temporarily unavailable. ML service connection error: " + e.getMessage();
         }
     }
 
@@ -157,20 +158,202 @@ public class MLPredictionServiceClient {
         }
     }
 
+    public java.util.List<TaskSliceMetadata> generateTaskSlices(String wishlistContent) {
+        String endpoint = mlServiceUrl + "/api/v1/predict/task-slices";
+        org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+
+        java.util.Map<String, Object> request = new java.util.HashMap<>();
+        request.put("content", wishlistContent);
+        request.put("apiKey", getGeminiApiKey());
+
+        try {
+            java.util.Map<String, Object> response = restTemplate.postForObject(
+                    endpoint,
+                    new org.springframework.http.HttpEntity<>(request, headers),
+                    java.util.Map.class
+            );
+            java.util.List<TaskSliceMetadata> slices = normalizeTaskSlices(response, wishlistContent);
+            if (!slices.isEmpty()) {
+                return slices;
+            }
+        } catch (Exception e) {
+            LOGGER.warning("ML service call to generateTaskSlices failed: " + e.getMessage() + ". Using safe fallback slice.");
+        }
+        return java.util.List.of(fallbackSlice(wishlistContent));
+    }
+
+    private java.util.List<TaskSliceMetadata> normalizeTaskSlices(java.util.Map<String, Object> response, String wishlistContent) {
+        if (response == null) {
+            return java.util.Collections.emptyList();
+        }
+        Object rawSlices = response.get("slices");
+        java.util.List<TaskSliceMetadata> result = new java.util.ArrayList<>();
+        if (rawSlices instanceof java.util.List<?> list) {
+            int index = 1;
+            for (Object item : list) {
+                if (item instanceof java.util.Map<?, ?> map) {
+                    String title = mapValue(map, "title", "Slice " + index);
+                    String jtbd = mapValue(map, "jtbd", fallbackJtbd(wishlistContent));
+                    String acceptance = mapValue(map, "acceptanceCriteria", fallbackAcceptanceCriteria(wishlistContent));
+                    String kanoClass = mapValue(map, "kanoClass", "Must-Be");
+                    String cynefinDomain = mapValue(map, "cynefinDomain", "clear");
+                    String toc = mapValue(map, "tocConstraintRef", "TOC-CONSTRAINT-DECOMPOSITION");
+                    String metric = mapValue(map, "sixSigmaMetric", "Escaped defects <= 5%");
+                    boolean hasUi = booleanMapValue(map, "hasUi", false)
+                            || looksLikeUi(title + " " + jtbd + " " + acceptance);
+                    result.add(new TaskSliceMetadata(
+                            englishSafeSource(title, 90),
+                            englishSafeMetadata(jtbd, fallbackJtbd(wishlistContent), 420),
+                            englishSafeMetadata(acceptance, fallbackAcceptanceCriteria(wishlistContent), 1_000),
+                            leanValue(mapValue(map, "leanValue", "essential")),
+                            englishSafeSource(kanoClass, 40),
+                            englishSafeSource(cynefinDomain, 40),
+                            englishSafeSource(toc, 120),
+                            englishSafeSource(metric, 120),
+                            hasUi
+                    ));
+                    index++;
+                }
+            }
+        }
+        if (result.isEmpty() && response.containsKey("jtbd")) {
+            result.add(new TaskSliceMetadata(
+                    featureLabel(wishlistContent),
+                    englishSafeMetadata(String.valueOf(response.get("jtbd")), fallbackJtbd(wishlistContent), 420),
+                    englishSafeMetadata(String.valueOf(response.getOrDefault("acceptanceCriteria", "")), fallbackAcceptanceCriteria(wishlistContent), 1_000),
+                    LeanValue.essential,
+                    "Must-Be",
+                    "clear",
+                    "TOC-CONSTRAINT-DECOMPOSITION",
+                    "Escaped defects <= 5%",
+                    looksLikeUi(wishlistContent)
+            ));
+        }
+        return result;
+    }
+
+    private String mapValue(java.util.Map<?, ?> map, String key, String fallback) {
+        Object value = map.get(key);
+        if (value == null) {
+            return fallback;
+        }
+        String text = String.valueOf(value).trim();
+        return text.isEmpty() ? fallback : text;
+    }
+
+    private boolean booleanMapValue(java.util.Map<?, ?> map, String key, boolean fallback) {
+        Object value = map.get(key);
+        if (value instanceof Boolean bool) {
+            return bool;
+        }
+        if (value != null) {
+            return Boolean.parseBoolean(String.valueOf(value));
+        }
+        return fallback;
+    }
+
+    private LeanValue leanValue(String value) {
+        if (value == null) {
+            return LeanValue.essential;
+        }
+        try {
+            return LeanValue.valueOf(value.trim().toLowerCase(java.util.Locale.ROOT));
+        } catch (Exception ignored) {
+            return LeanValue.essential;
+        }
+    }
+
+    private TaskSliceMetadata fallbackSlice(String wishlistContent) {
+        return new TaskSliceMetadata(
+                featureLabel(wishlistContent),
+                fallbackJtbd(wishlistContent),
+                fallbackAcceptanceCriteria(wishlistContent),
+                LeanValue.essential,
+                "Must-Be",
+                looksLikeUncertain(wishlistContent) ? "complex" : "clear",
+                "TOC-CONSTRAINT-DECOMPOSITION",
+                "Escaped defects <= 5%",
+                looksLikeUi(wishlistContent)
+        );
+    }
+
     private String fallbackJtbd(String wishlistContent) {
-        String clean = compact(wishlistContent, 240);
-        return "When I use the requested product capability, I want the system to deliver this client need: "
-                + clean
-                + ", so that the result can be verified end-to-end without relying on subjective interpretation.";
+        String label = featureLabel(wishlistContent);
+        return "When I use the " + label + " slice, I want one small verifiable capability completed, so project progress can be validated without a long Jules session.";
     }
 
     private String fallbackAcceptanceCriteria(String wishlistContent) {
-        String clean = compact(wishlistContent, 180);
-        return "Given the implemented feature for \"" + clean + "\", When the primary user follows the intended happy path, Then the user can complete the core workflow without client-side or server-side errors.\n"
-                + "Given required input is missing or invalid, When the user submits the form or API request, Then the system returns a clear validation error and does not persist invalid data.\n"
-                + "Given an authorized administrator uses the relevant management surface, When content or settings for this feature are changed, Then the public/user-facing experience reflects the saved change.\n"
-                + "Given an unauthorized or unauthenticated user attempts a protected action, When the request is made, Then access is denied without exposing private data.\n"
-                + "Given the feature is complete, When automated verification runs, Then the relevant unit, integration, and critical E2E checks pass and generated test artifacts are not committed.";
+        String label = featureLabel(wishlistContent);
+        return "Given the " + label + " slice is implemented, When the primary happy path is exercised, Then it completes without client-side or server-side errors.\n"
+                + "Given invalid or missing input is submitted, When validation runs, Then the system rejects the request without persisting invalid data.\n"
+                + "Given the PR is ready, When verification runs, Then the relevant unit, integration, or E2E command passes and no generated artifacts are committed.";
+    }
+
+    private String englishSafeMetadata(String value, String fallback, int maxLength) {
+        String safe = englishSafeSource(value, maxLength);
+        if ("the client-provided wishlist translated and normalized into English task metadata".equals(safe)
+                || "the requested feature".equals(safe)) {
+            return fallback;
+        }
+        return safe;
+    }
+
+    private String englishSafeSource(String value, int maxLength) {
+        String compacted = compact(value, maxLength);
+        if (containsNonEnglishSignal(compacted)) {
+            return "the client-provided wishlist translated and normalized into English task metadata";
+        }
+        return compacted;
+    }
+
+    private String featureLabel(String wishlistContent) {
+        String compacted = compact(wishlistContent, 160);
+        if (containsNonEnglishSignal(compacted)) {
+            return "client-requested capability";
+        }
+        String lower = compacted.toLowerCase(java.util.Locale.ROOT);
+        java.util.List<String> words = new java.util.ArrayList<>();
+        java.util.Set<String> stopWords = java.util.Set.of(
+                "the", "and", "for", "with", "that", "this", "from", "into", "need", "want",
+                "make", "create", "build", "add", "implement", "please", "system", "feature"
+        );
+        for (String word : lower.split("[^a-z0-9]+")) {
+            if (word.length() >= 3 && !stopWords.contains(word)) {
+                words.add(word);
+            }
+            if (words.size() == 4) {
+                break;
+            }
+        }
+        if (words.isEmpty()) {
+            return "client-requested capability";
+        }
+        return String.join(" ", words);
+    }
+
+    private boolean looksLikeUi(String value) {
+        String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("ui") || lower.contains("ux") || lower.contains("frontend")
+                || lower.contains("screen") || lower.contains("page") || lower.contains("form")
+                || lower.contains("button") || lower.contains("browser") || lower.contains("svelte")
+                || lower.contains("design") || lower.contains("admin") || lower.contains("panel")
+                || lower.contains("portal") || lower.contains("dashboard") || lower.contains("public");
+    }
+
+    private boolean looksLikeUncertain(String value) {
+        String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
+        return lower.contains("research") || lower.contains("unknown") || lower.contains("spike")
+                || lower.contains("explore") || lower.contains("unclear");
+    }
+
+    private boolean containsNonEnglishSignal(String value) {
+        if (value == null) {
+            return false;
+        }
+        return value.matches(".*[\\p{IsCyrillic}].*")
+                || value.contains("\u00d0")
+                || value.contains("\u00d1");
     }
 
     private String compact(String value, int maxLength) {
@@ -183,6 +366,18 @@ public class MLPredictionServiceClient {
         }
         return compacted.substring(0, Math.max(0, maxLength - 3)) + "...";
     }
+
+    public record TaskSliceMetadata(
+            String title,
+            String jtbd,
+            String acceptanceCriteria,
+            LeanValue leanValue,
+            String kanoClass,
+            String cynefinDomain,
+            String tocConstraintRef,
+            String sixSigmaMetric,
+            boolean hasUi
+    ) {}
 
     private static class MLResponse {
         @JsonProperty("risk_score")

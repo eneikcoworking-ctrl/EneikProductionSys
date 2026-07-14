@@ -38,7 +38,7 @@ public class ChatAssistantController {
     public Map<String, String> askAssistant(@RequestBody Map<String, String> payload) {
         String userMessage = payload.getOrDefault("message", "").trim();
         if (userMessage.isEmpty()) {
-            return Map.of("response", "\u0417\u0430\u043f\u0440\u043e\u0441 \u043f\u0443\u0441\u0442. \u0417\u0430\u0434\u0430\u0439\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u043f\u043e \u0442\u0435\u043a\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u043e\u0435\u043a\u0442\u0443.");
+            return Map.of("response", "The request is empty. Ask a question about the current project.");
         }
 
         UUID projectId = parseProjectId(payload.get("projectId"));
@@ -48,7 +48,7 @@ public class ChatAssistantController {
         try {
             context = projectOperationalContextService.build(projectId, projectName);
         } catch (Exception e) {
-            return Map.of("response", "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u0441\u043e\u0431\u0440\u0430\u0442\u044c \u0434\u0430\u043d\u043d\u044b\u0435 \u043f\u043e \u0442\u0435\u043a\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u043e\u0435\u043a\u0442\u0443: " + e.getMessage());
+            return Map.of("response", "Could not collect data for the current project: " + e.getMessage());
         }
 
         if (projectOperationalContextService.isPrReviewQuestion(userMessage)) {
@@ -59,7 +59,7 @@ public class ChatAssistantController {
             try {
                 return Map.of("response", projectOperatorService.answer(projectId, projectName, userMessage));
             } catch (Exception e) {
-                return Map.of("response", "Project Operator \u043d\u0435 \u0441\u043c\u043e\u0433 \u0441\u043e\u0431\u0440\u0430\u0442\u044c evidence: " + e.getMessage());
+                return Map.of("response", "Project Operator could not collect evidence: " + e.getMessage());
             }
         }
 
@@ -81,7 +81,8 @@ public class ChatAssistantController {
                 - Core Jules invariant: every enabled Jules account can take every BARCAN-TAG-00..11 role. Never say a role capability is missing when julesUniversalRoleCapacity.universalRolePool is true.
                 - If julesUniversalRoleCapacity.sharedSlotsFree > 0, do not call the issue a Jules capacity shortage.
                 - Never invent accounts, tags, PR counts, sessions, hidden workers, or failures.
-                - Respond in Russian, concise but with exact numbers and IDs when relevant.
+                - Respond in English only, concise but with exact numbers and IDs when relevant.
+                - If the user writes in another language, answer in English anyway.
 
                 PROJECT_FACT_PACK:
                 """ + context.promptJson();

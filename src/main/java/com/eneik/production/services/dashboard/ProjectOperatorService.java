@@ -100,7 +100,7 @@ public class ProjectOperatorService {
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
                 - Prefer short operational recommendations grounded in evidence.
                 - Use selected project facts only unless the user explicitly asks about the Eneik system itself.
-                - Respond in Russian.
+                - Respond in English only. If the user writes in another language, answer in English anyway.
 
                 PROJECT_FACT_PACK:
                 """ + context.promptJson() + "\n\nOPERATOR_EVIDENCE:\n" + evidence.toPrompt();

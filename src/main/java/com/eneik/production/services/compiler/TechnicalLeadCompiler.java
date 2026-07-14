@@ -96,48 +96,53 @@ public class TechnicalLeadCompiler {
                     .orElseGet(() -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream().findFirst().orElse(null));
         }
 
-        boolean uiExists = hasUiComponent(wishlist);
         java.util.List<TaskEntity> createdTasks = new java.util.ArrayList<>();
 
-        if (uiExists) {
+        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup) {
+            String recoveryRole = normalizeRoleTag(wishlist.getSourceRoleTag());
+            createAndSaveTask(project, wishlist, recoveryRole,
+                roleAtomicGoal(wishlist, recoveryRole),
+                roleSpecificDod(recoveryRole, true),
+                null, false, false, createdTasks);
+        } else if (hasUiComponent(wishlist)) {
             TaskEntity designTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-03", 
-                "Design: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-03"),
-                "Figma-макет или скриншоты интерфейса функции. Ссылается на docs/DESIGN_SYSTEM.md или содержит 'pending: design system not yet defined'",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-03"),
+                roleSpecificDod("BARCAN-TAG-03", false),
                 null, false, true, createdTasks);
 
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                "Backend API: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-02"),
-                "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-02"),
+                roleSpecificDod("BARCAN-TAG-02", false),
                 null, false, true, createdTasks);
 
             TaskEntity frontendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-11", 
-                "Frontend UI: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-11"),
-                "Интерактивный UI в браузере корректно взаимодействует с бэкенд API. Роль: BARCAN-TAG-11. Reference: docs/DESIGN_SYSTEM.md",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-11"),
+                roleSpecificDod("BARCAN-TAG-11", false),
                 designTask, false, true, createdTasks);
 
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                "Integration: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-00"),
-                "Код полностью собран и интегрирован в главном компоненте/роутинге. Роль: BARCAN-TAG-00",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-00"),
+                roleSpecificDod("BARCAN-TAG-00", false),
                 frontendTask, true, true, createdTasks);
 
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                "QA E2E: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-06"),
-                "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-06"),
+                roleSpecificDod("BARCAN-TAG-06", false),
                 integrationTask, false, true, createdTasks);
         } else {
             TaskEntity backendTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-02", 
-                "Backend Logic: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-02"),
-                "Unit-тесты, покрывающие бизнес-сценарии и логику обработки данных для этой роли. Роль: BARCAN-TAG-02",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-02"),
+                roleSpecificDod("BARCAN-TAG-02", false),
                 null, false, true, createdTasks);
 
             TaskEntity integrationTask = createAndSaveTask(project, wishlist, "BARCAN-TAG-00",
-                "Backend Integration: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-00"),
-                "Бэкенд-модули полностью интегрированы. Роль: BARCAN-TAG-00",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-00"),
+                roleSpecificDod("BARCAN-TAG-00", false),
                 backendTask, true, true, createdTasks);
 
             createAndSaveTask(project, wishlist, "BARCAN-TAG-06", 
-                "QA E2E: " + getRoleSpecificAssignment(wishlist, "BARCAN-TAG-06"),
-                "Автотесты успешно проходят для всех основных бизнес-сценариев. Роль: BARCAN-TAG-06",
+                roleAtomicGoal(wishlist, "BARCAN-TAG-06"),
+                roleSpecificDod("BARCAN-TAG-06", false),
                 integrationTask, false, true, createdTasks);
         }
 
@@ -165,46 +170,36 @@ public class TechnicalLeadCompiler {
                lower.contains("дизайну") || lower.contains("фронтенд") || lower.contains("css");
     }
 
-    private TaskEntity createAndSaveTask(ProjectEntity project, WishlistEntity wishlist, String roleTag, 
-                                         String description, String dod, TaskEntity dependsOn,
+    private TaskEntity createAndSaveTask(ProjectEntity project, WishlistEntity wishlist, String roleTag,
+                                         String atomicGoal, String dod, TaskEntity dependsOn,
                                          boolean isIntegrationTask, boolean hasIntegrationTask,
                                          java.util.List<TaskEntity> createdTasks) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
 
-        String formattedDescription = description;
-        if (wishlist.getJtbd() != null && !wishlist.getJtbd().isBlank()) {
-            formattedDescription = description + "\n\n[JTBD Statement]:\n" + wishlist.getJtbd();
-        }
-        if (wishlist.getAcceptanceCriteria() != null && !wishlist.getAcceptanceCriteria().isBlank()) {
-            formattedDescription = formattedDescription + "\n\n[Acceptance Criteria (Given/When/Then)]:\n" + wishlist.getAcceptanceCriteria();
-        }
-        formattedDescription = formattedDescription + "\n\n[Execution Notes]:\n" + executionNotesForRole(roleTag);
-        task.setDescription(formattedDescription);
+        String cynefin = cynefinDomain(wishlist);
+        String kano = kanoClass(wishlist);
+        task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin));
 
         RoleEntity role = roleRepository.findById(roleTag)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleTag));
         task.setRole(role);
 
         ObjectNode payload = objectMapper.createObjectNode();
-        payload.put("jtbd", wishlist.getJtbd());
+        payload.put("source_wishlist_id", wishlist.getId().toString());
+        payload.put("slice_title", sliceTitle(wishlist));
+        payload.put("role_atomic_goal", atomicGoal);
+        payload.put("jtbd", englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist)));
         payload.put("lean_value", wishlist.getLeanValue().name());
+        payload.put("kano_class", kano);
+        payload.put("cynefin_domain", cynefin);
         payload.put("toc_constraint_ref", wishlist.getTocConstraintRef());
         payload.put("six_sigma_metric", wishlist.getSixSigmaMetric());
         payload.put("dod", dod);
-        payload.put("acceptance_criteria", wishlist.getAcceptanceCriteria());
+        payload.put("acceptance_criteria", englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist)));
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
-        
-        String cynefin = null;
-        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification) {
-            cynefin = "chaotic";
-        } else if (wishlist.getContent() != null && 
-                  (wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("spike") || 
-                   wishlist.getContent().toLowerCase(java.util.Locale.ROOT).contains("complex"))) {
-            cynefin = "complex";
-        }
         task.setCynefinDomain(cynefin);
 
         int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
@@ -213,7 +208,7 @@ public class TechnicalLeadCompiler {
         }
         task.setPriority(priority);
         task.setDependsOn(dependsOn);
-        task.setFileScope(determineFileScope(project, roleTag, wishlist.getContent(), isIntegrationTask, hasIntegrationTask));
+        task.setFileScope(determineFileScope(project, roleTag, fileScopeSource(wishlist), isIntegrationTask, hasIntegrationTask));
         
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
@@ -513,36 +508,36 @@ public class TechnicalLeadCompiler {
     private java.util.List<String> validateDefinitionOfReady(WishlistEntity w) {
         java.util.List<String> errors = new java.util.ArrayList<>();
 
-        // Шаг 1 — Bottleneck Check (TOC)
+        // Step 1 - Bottleneck Check (TOC)
         if (w.getTocConstraintRef() == null || w.getTocConstraintRef().trim().isEmpty()) {
-            errors.add("Шаг 1 не пройден: отсутствует ссылка на bottleneck (toc_constraint_ref)");
+            errors.add("Step 1 failed: missing bottleneck reference (toc_constraint_ref)");
         }
 
-        // Шаг 2 — Lean Classification
+        // Step 2 - Lean Classification
         if (w.getLeanValue() == null) {
-            errors.add("Шаг 2 не пройден: lean_value не указан");
+            errors.add("Step 2 failed: lean_value is missing");
         } else if (w.getLeanValue() == LeanValue.waste) {
-            errors.add("Шаг 2 не пройден: lean_value не может быть 'waste'");
+            errors.add("Step 2 failed: lean_value cannot be 'waste'");
         }
 
-        // Шаг 3 — JTBD
+        // Step 3 - JTBD
         if (w.getJtbd() == null || w.getJtbd().trim().isEmpty()) {
-            errors.add("Шаг 3 не пройден: jtbd не заполнен");
+            errors.add("Step 3 failed: jtbd is missing");
         }
 
-        // Шаг 4 — Six Sigma Metric
+        // Step 4 - Six Sigma Metric
         if (w.getSixSigmaMetric() == null || w.getSixSigmaMetric().trim().isEmpty()) {
-            errors.add("Шаг 4 не пройден: six_sigma_metric не заполнен");
+            errors.add("Step 4 failed: six_sigma_metric is missing");
         }
 
-        // Шаг 5 — Role-Grounded DoD
+        // Step 5 - Role-Grounded DoD
         String dod = w.getDod();
         if (dod == null || dod.trim().isEmpty()) {
-            errors.add("Шаг 5 не пройден: DoD не заполнен");
+            errors.add("Step 5 failed: DoD is missing");
         } else if (!dod.matches(".*BARCAN-TAG-\\d{2}.*")) {
-            errors.add("Шаг 5 не пройден: DoD не ссылается на Refusal Criteria роли (BARCAN-TAG-XX)");
+            errors.add("Step 5 failed: DoD does not reference role refusal criteria (BARCAN-TAG-XX)");
         } else {
-            // Шаг 6 — Design System Reference (для UI/design задач)
+            // Step 6 - Design System Reference for UI/design tasks
             if (dod.contains("BARCAN-TAG-03") || dod.contains("BARCAN-TAG-11")) {
                 boolean hasDesignSystemRef = dod.contains("docs/DESIGN_SYSTEM.md");
                 boolean hasPendingRef = dod.contains("pending: design system not yet defined");
@@ -550,28 +545,208 @@ public class TechnicalLeadCompiler {
                 java.io.File designSystemFile = new java.io.File("docs/DESIGN_SYSTEM.md");
                 if (designSystemFile.exists()) {
                     if (!hasDesignSystemRef) {
-                        errors.add("Шаг 6 не пройден: для UI-задач DoD обязан ссылаться на docs/DESIGN_SYSTEM.md");
+                        errors.add("Step 6 failed: UI task DoD must reference docs/DESIGN_SYSTEM.md");
                     }
                 } else {
                     if (!hasPendingRef) {
-                        errors.add("Шаг 6 не пройден: Design System не определена, DoD обязан содержать 'pending: design system not yet defined'");
+                        errors.add("Step 6 failed: design system is missing, so DoD must contain 'pending: design system not yet defined'");
                     }
                 }
             }
         }
 
-        // Шаг 7 — Acceptance Criteria
+        // Step 7 - Acceptance Criteria
         if (w.getAcceptanceCriteria() == null || w.getAcceptanceCriteria().trim().isEmpty()) {
-            errors.add("Шаг 7 не пройден: acceptance_criteria не заполнен");
+            errors.add("Step 7 failed: acceptance_criteria is missing");
         }
 
         return errors;
+    }
+
+    private String buildTaskDescription(WishlistEntity wishlist, String roleTag, String atomicGoal,
+                                        String dod, String kano, String cynefin) {
+        String jtbd = englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist));
+        String acceptanceCriteria = englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("Role: ").append(roleTag).append(" - ").append(roleLabel(roleTag)).append("\n");
+        sb.append("Slice: ").append(sliceTitle(wishlist)).append("\n");
+        sb.append("Atomic Goal: ").append(atomicGoal).append("\n");
+        sb.append("Kano: ").append(kano).append("\n");
+        sb.append("Cynefin: ").append(cynefin).append("\n");
+        sb.append("JTBD: ").append(jtbd).append("\n\n");
+        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup) {
+            sb.append("Operational Trigger: ")
+                    .append(englishMetadata(wishlist.getContent(), "Circuit-breaker recovery for a previous Jules session."))
+                    .append("\n\n");
+        }
+        sb.append("Definition of Done:\n");
+        sb.append("- ").append(dod).append("\n");
+        sb.append("- One branch and one PR are opened for this role only.\n");
+        sb.append("- The PR summary includes the exact verification command and result.\n\n");
+        sb.append("Acceptance Criteria:\n").append(compactLines(acceptanceCriteria, 900)).append("\n\n");
+        sb.append("Boundaries:\n");
+        sb.append("- Do not paste, translate, or re-interpret the original client wish in the PR narrative.\n");
+        sb.append("- Do not implement adjacent slices or other roles.\n");
+        sb.append("- If the session reaches 8 back-and-forth messages, stop with a concrete blocker instead of looping.\n\n");
+        sb.append("Execution Notes:\n").append(executionNotesForRole(roleTag));
+        return sb.toString();
+    }
+
+    private String roleAtomicGoal(WishlistEntity wishlist, String roleTag) {
+        boolean recovery = wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup;
+        if (recovery) {
+            return switch (roleTag) {
+                case "BARCAN-TAG-03" -> "Resolve the smallest design blocker from the closed Jules session and leave a precise handoff note.";
+                case "BARCAN-TAG-02" -> "Resolve the smallest backend/API blocker from the closed Jules session and verify the affected path.";
+                case "BARCAN-TAG-11" -> "Resolve the smallest frontend/browser blocker from the closed Jules session and verify the affected interaction.";
+                case "BARCAN-TAG-06" -> "Resolve the smallest verification blocker from the closed Jules session and add or adjust the relevant test only.";
+                case "BARCAN-TAG-00" -> "Resolve the smallest integration or repository-hygiene blocker from the closed Jules session.";
+                default -> "Resolve the smallest role-specific blocker from the closed Jules session without expanding scope.";
+            };
+        }
+        return switch (roleTag) {
+            case "BARCAN-TAG-03" -> "Define the smallest UI/design decision needed for this JTBD slice.";
+            case "BARCAN-TAG-02" -> "Implement the smallest backend/API/data change needed for this JTBD slice.";
+            case "BARCAN-TAG-11" -> "Implement the smallest Svelte/browser interaction needed for this JTBD slice.";
+            case "BARCAN-TAG-06" -> "Verify this JTBD slice with the smallest meaningful automated test set.";
+            case "BARCAN-TAG-05" -> "Adjust only the build, Docker, or deployment setting needed for this JTBD slice.";
+            case "BARCAN-TAG-00" -> "Integrate the completed slice, remove accidental artifacts, and verify the branch is merge-ready.";
+            default -> "Complete the smallest role-specific implementation step needed for this JTBD slice.";
+        };
+    }
+
+    private String roleSpecificDod(String roleTag, boolean recovery) {
+        if (recovery) {
+            return "The role blocker is either fixed and verified, or replaced with one precise follow-up wishlist item. Role: " + roleTag;
+        }
+        return switch (roleTag) {
+            case "BARCAN-TAG-03" -> "Design artifact, UI state description, or screenshots exist. Reference docs/DESIGN_SYSTEM.md or state 'pending: design system not yet defined'. Role: BARCAN-TAG-03";
+            case "BARCAN-TAG-02" -> "Backend/API/data behavior is implemented and covered by focused unit or integration tests. Role: BARCAN-TAG-02";
+            case "BARCAN-TAG-11" -> "The browser UI implements the slice, integrates with the API where needed, and follows docs/DESIGN_SYSTEM.md. Role: BARCAN-TAG-11";
+            case "BARCAN-TAG-06" -> "Automated tests verify the listed Acceptance Criteria and no generated test artifacts are committed. Role: BARCAN-TAG-06";
+            case "BARCAN-TAG-05" -> "Build/deployment configuration is updated and the relevant local verification command passes. Role: BARCAN-TAG-05";
+            case "BARCAN-TAG-00" -> "The slice is integrated across touched components, repository hygiene is clean, and the merge path is verified. Role: BARCAN-TAG-00";
+            default -> "The role-specific change is complete, verified, and documented in the PR summary. Role: " + roleTag;
+        };
+    }
+
+    private String normalizeRoleTag(String value) {
+        if (value != null && value.matches("BARCAN-TAG-\\d{2}")) {
+            return value;
+        }
+        return "BARCAN-TAG-00";
+    }
+
+    private String roleLabel(String roleTag) {
+        return switch (roleTag) {
+            case "BARCAN-TAG-00" -> "Integration Guardian";
+            case "BARCAN-TAG-02" -> "Backend API";
+            case "BARCAN-TAG-03" -> "Product Design";
+            case "BARCAN-TAG-05" -> "DevOps";
+            case "BARCAN-TAG-06" -> "QA Verification";
+            case "BARCAN-TAG-11" -> "Frontend UI";
+            default -> "Role Worker";
+        };
+    }
+
+    private String kanoClass(WishlistEntity wishlist) {
+        String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "")).toLowerCase(java.util.Locale.ROOT);
+        if (source.contains("kano: attractive") || source.contains("delight") || source.contains("wow")) {
+            return "Attractive";
+        }
+        if (source.contains("kano: performance") || source.contains("faster") || source.contains("optimize")) {
+            return "Performance";
+        }
+        if (wishlist.getLeanValue() == LeanValue.valuable) {
+            return "Performance";
+        }
+        if (wishlist.getLeanValue() == LeanValue.waste) {
+            return "Reverse/Waste";
+        }
+        return "Must-Be";
+    }
+
+    private String cynefinDomain(WishlistEntity wishlist) {
+        String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "")).toLowerCase(java.util.Locale.ROOT);
+        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.self_falsification
+                || source.contains("cynefin: chaotic")) {
+            return "chaotic";
+        }
+        if (source.contains("cynefin: complex") || source.contains("spike") || source.contains("research") || source.contains("unknown")) {
+            return "complex";
+        }
+        if (wishlist.getSource() == com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup
+                || source.contains("cynefin: complicated") || source.contains("integration") || source.contains("migration")) {
+            return "complicated";
+        }
+        return "clear";
+    }
+
+    private String sliceTitle(WishlistEntity wishlist) {
+        String content = wishlist.getContent();
+        if (content != null && (content.startsWith("Internal slice ") || content.startsWith("Internal UI slice "))) {
+            return compactLines(englishMetadata(content, "Compiled JTBD slice " + shortId(wishlist.getId())), 140);
+        }
+        return "Compiled JTBD slice " + shortId(wishlist.getId());
+    }
+
+    private String fileScopeSource(WishlistEntity wishlist) {
+        return ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
+                + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : "")).trim();
+    }
+
+    private String englishMetadata(String value, String fallback) {
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        String compact = compactLines(value, 1_000);
+        String lower = compact.toLowerCase(java.util.Locale.ROOT);
+        if (containsNonEnglishSignal(compact)
+                || "automate and transform".equals(lower)
+                || "given task merged, then verify feature".equals(lower)) {
+            return fallback;
+        }
+        return compact;
+    }
+
+    private String fallbackJtbd(WishlistEntity wishlist) {
+        return "When this slice is delivered, the user can complete one small verifiable capability safely, so project progress is measurable without a long Jules session.";
+    }
+
+    private String fallbackAcceptanceCriteria(WishlistEntity wishlist) {
+        return "Given this role completes the Atomic Goal, When the relevant verification command runs, Then the change passes without unrelated scope.\n"
+                + "Given the change is reviewed, When the PR diff is inspected, Then it contains only source, config, test, or documentation files needed for this slice.\n"
+                + "Given a blocker remains after one objective attempt, When the Jules session would otherwise loop, Then the agent stops and records one concrete blocker or follow-up.";
+    }
+
+    private String compactLines(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        String compact = value.replaceAll("[ \\t\\x0B\\f\\r]+", " ").trim();
+        compact = compact.replaceAll("\\n{3,}", "\n\n");
+        if (compact.length() <= maxLength) {
+            return compact;
+        }
+        return compact.substring(0, Math.max(0, maxLength - 3)) + "...";
+    }
+
+    private String shortId(UUID id) {
+        if (id == null) {
+            return "unknown";
+        }
+        return id.toString().substring(0, 8);
     }
 
     private String getRoleSpecificAssignment(WishlistEntity wishlist, String roleTag) {
         String content = wishlist.getContent();
         String jtbd = wishlist.getJtbd();
         String taskSubject = (jtbd != null && !jtbd.isBlank() && !jtbd.toLowerCase(java.util.Locale.ROOT).contains("automate and transform")) ? jtbd : content;
+        taskSubject = englishTaskSubject(wishlist, taskSubject);
 
         // Truncate to a single concise sentence or 120 chars if taskSubject is still too long/raw
         if (taskSubject != null && taskSubject.length() > 120) {
@@ -589,29 +764,52 @@ public class TechnicalLeadCompiler {
         if (isChess) {
             switch (roleTag) {
                 case "BARCAN-TAG-03":
-                    return "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.";
+                    return "Design the 3D chessboard scene, including piece materials, camera parameters, and lighting in one coherent visual style.";
                 case "BARCAN-TAG-02":
-                    return "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).";
+                    return "Implement chess rules and a computer-opponent algorithm with three difficulty levels using search depth or an evaluation function.";
                 case "BARCAN-TAG-11":
-                    return "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.";
+                    return "Connect the 3D visualization to game logic: piece selection, legal-move highlighting, and move submission to the engine.";
                 case "BARCAN-TAG-06":
-                    return "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.";
+                    return "Create an automated E2E test for the end-to-end game flow against the computer opponent.";
             }
         }
 
         switch (roleTag) {
             case "BARCAN-TAG-03":
-                return "Спроектировать пользовательский интерфейс, макеты экранов и дизайн-элементы для функции: \"" + taskSubject + "\" согласно docs/DESIGN_SYSTEM.md.";
+                return "Design the user interface, screen states, and visual interaction elements for: \"" + taskSubject + "\" using docs/DESIGN_SYSTEM.md.";
             case "BARCAN-TAG-02":
-                return "Разработать серверную бизнес-логику, API эндпоинты, миграции базы данных и юнит-тесты для функции: \"" + taskSubject + "\".";
+                return "Implement backend business logic, API endpoints, database migrations, and unit tests for: \"" + taskSubject + "\".";
             case "BARCAN-TAG-11":
-                return "Реализовать фронтенд-компоненты на Svelte, интерактивное взаимодействие и интеграцию с API для функции: \"" + taskSubject + "\" согласно docs/DESIGN_SYSTEM.md.";
+                return "Implement Svelte frontend components, browser interactions, and API integration for: \"" + taskSubject + "\" using docs/DESIGN_SYSTEM.md.";
             case "BARCAN-TAG-06":
-                return "Написать автоматизированные E2E и интеграционные тесты для верификации функции: \"" + taskSubject + "\".";
+                return "Write automated E2E and integration tests to verify: \"" + taskSubject + "\".";
             case "BARCAN-TAG-05":
-                return "Настроить CI/CD пайплайн, Dockerfile, конфигурации сборки и окружения для деплоя функции: \"" + taskSubject + "\".";
+                return "Configure the CI/CD pipeline, Dockerfile, build settings, and deployment environment for: \"" + taskSubject + "\".";
             default:
-                return "Реализовать технические требования для роли " + roleTag + " по пожеланию клиента: \"" + taskSubject + "\".";
+                return "Implement the technical requirements for role " + roleTag + " for: \"" + taskSubject + "\".";
         }
+    }
+
+    private String englishTaskSubject(WishlistEntity wishlist, String rawSubject) {
+        if (rawSubject == null || rawSubject.isBlank()) {
+            return "the requested product capability from wishlist item " + wishlist.getId();
+        }
+        String compact = rawSubject.replaceAll("\\s+", " ").trim();
+        if (containsNonEnglishSignal(compact)) {
+            return "the client-requested capability from wishlist item " + wishlist.getId()
+                    + "; use the English JTBD and Acceptance Criteria as the source of truth";
+        }
+        return compact;
+    }
+
+    private boolean containsNonEnglishSignal(String value) {
+        if (value == null) {
+            return false;
+        }
+        return value.matches(".*[\\p{IsCyrillic}].*")
+                || value.contains("Ð")
+                || value.contains("Ñ")
+                || value.contains("Р")
+                || value.contains("С");
     }
 }
