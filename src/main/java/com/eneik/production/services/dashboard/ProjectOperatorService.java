@@ -12,6 +12,7 @@ import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,6 +56,7 @@ public class ProjectOperatorService {
     private final Path memoryRoot;
     private final boolean allowMutatingTools;
     private final String dockerComposeProjectName;
+    private final String githubOrganization;
     private final int stuckThresholdMinutes;
     private final int maxToolRounds;
     private final boolean answerCriticEnabled;
@@ -70,6 +72,7 @@ public class ProjectOperatorService {
                                   @Value("${eneik.operator.memory-root:./data/operator-memory}") String memoryRoot,
                                   @Value("${eneik.operator.allow-mutating-tools:false}") boolean allowMutatingTools,
                                   @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName,
+                                  @Value("${github.org:eneikcoworking-ctrl}") String githubOrganization,
                                   @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes,
                                   @Value("${eneik.operator.max-tool-rounds:3}") int maxToolRounds,
                                   @Value("${eneik.operator.answer-critic-enabled:true}") boolean answerCriticEnabled,
@@ -86,6 +89,9 @@ public class ProjectOperatorService {
         this.memoryRoot = Paths.get(memoryRoot).toAbsolutePath().normalize();
         this.allowMutatingTools = allowMutatingTools;
         this.dockerComposeProjectName = dockerComposeProjectName == null ? "" : dockerComposeProjectName.trim();
+        this.githubOrganization = githubOrganization == null || githubOrganization.isBlank()
+                ? "eneikcoworking-ctrl"
+                : githubOrganization.trim();
         this.stuckThresholdMinutes = stuckThresholdMinutes;
         this.maxToolRounds = Math.max(1, Math.min(5, maxToolRounds));
         this.answerCriticEnabled = answerCriticEnabled;
@@ -121,11 +127,11 @@ public class ProjectOperatorService {
                 - Every number about PRs, tasks, sessions, accounts, conflicts, Docker, or tests must be traceable to PROJECT_FACT_PACK or a named OPERATOR_EVIDENCE tool.
                 - If shared Jules slots are free, do not claim a Jules capacity shortage. Diagnose dispatch flow, stuck claims, API failures, conflicts, or unanswered activity handling instead.
                 - loop_closed Jules sessions are terminal local closures. Use closedAt and closureReason to explain why the session was stopped and which follow-up wishlist replaces the old branch.
-                - You may say you executed an action only when OPERATOR_EVIDENCE contains operator_action [ok].
+                - You may say you executed an action only when a named mutating tool in OPERATOR_EVIDENCE has status [ok] or [partial].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
-                - If operator_action is ok, report the completed action and do not ask for confirmation.
-                - Do not say the Technical Lead must convert wishlist items when operator_action has already run orchestration.
+                - If a requested mutating tool is ok or partial, report exactly what completed and what did not complete; do not ask for confirmation for the completed part.
+                - Do not say the Technical Lead must convert wishlist items when orchestrate_project or start_testing_stream has already run orchestration.
                 - Never ask the user to confirm an action that was already requested in the current message.
                 - Prefer short operational recommendations grounded in evidence.
                 - Use selected project facts only unless the user explicitly asks about the Eneik system itself.
@@ -141,7 +147,7 @@ public class ProjectOperatorService {
         if (answer == null || answer.isBlank()) {
             return evidence.fallbackAnswer();
         }
-        return reviewAnswerWithCritic(project, context, evidence, userMessage, answer);
+        return sanitizeFinalAnswer(reviewAnswerWithCritic(project, context, evidence, userMessage, answer));
     }
 
     private Optional<ProjectEntity> resolveProject(UUID projectId) {
@@ -198,12 +204,35 @@ public class ProjectOperatorService {
         return answer;
     }
 
+    private String sanitizeFinalAnswer(String answer) {
+        if (answer == null || answer.isBlank()) {
+            return answer;
+        }
+        String sanitized = answer.strip()
+                .replace("PROJECT_FACT_PACK", "the selected project facts")
+                .replace("OPERATOR_EVIDENCE", "the collected operator evidence")
+                .replace("Project Fact Pack", "selected project facts")
+                .replace("Operator Evidence", "collected operator evidence");
+        sanitized = sanitized.replaceFirst("(?iu)^(hello|hi|hey|привет|приветствую)[!,.\\s:-]+", "");
+        sanitized = sanitized.replaceFirst("(?iu)^я\\s+[-—]?\\s*(твой|ваш)?\\s*ии[-\\s]?ассистент[^.?!]*[.?!]\\s*", "");
+        return sanitized.strip();
+    }
+
     private OperatorEvidence runGeminiToolLoop(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
         List<ToolObservation> observations = new ArrayList<>();
         observations.add(operatorScope(project, userMessage));
         observations.add(projectMemoryRead(project));
         Set<String> executedSignatures = new LinkedHashSet<>();
         boolean executedPlannedTool = false;
+
+        for (OperatorToolCall call : routeOperatorIntents(project, userMessage)) {
+            String signature = toolSignature(call);
+            executedSignatures.add(signature);
+            observations.add(new ToolObservation("intent_router", "ok",
+                    "Routed user request to deterministic operator tool: " + signature));
+            observations.add(executeToolCall(project, context, userMessage, call));
+            executedPlannedTool = true;
+        }
 
         for (int round = 1; round <= maxToolRounds; round++) {
             OperatorToolPlan plan = planOperatorTools(project, context, userMessage, observations, round);
@@ -273,6 +302,8 @@ public class ProjectOperatorService {
                 - When observations are enough for a factual answer, return an empty toolCalls array.
                 - Do not request mutating tools for explanation questions. Explanation questions include "how does it work", "why", "what happened", "what do you see", "recommend".
                 - Request mutating tools only when the user explicitly asks to run, create, add, orchestrate, dispatch, start, build, pull, or execute.
+                - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
+                - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
                 - Prefer multiple narrow tools over one broad generic command.
                 - Max 12 tool calls.
 
@@ -344,6 +375,37 @@ public class ProjectOperatorService {
         return call.tool() + "::" + args;
     }
 
+    private List<OperatorToolCall> routeOperatorIntents(ProjectEntity project, String userMessage) {
+        String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
+        List<OperatorToolCall> calls = new ArrayList<>();
+        if (looksLikeWorkspaceRepairIntent(project, lower)) {
+            calls.add(new OperatorToolCall("ensure_project_workspace", objectMapper.createObjectNode(),
+                    "User asked to repair the project workspace or the workspace is not a Git repository."));
+        }
+        if (looksLikeStartTestingIntent(lower)) {
+            calls.add(new OperatorToolCall("start_testing_stream", objectMapper.createObjectNode(),
+                    "User explicitly asked to start project testing tasks."));
+        }
+        return calls;
+    }
+
+    private boolean looksLikeWorkspaceRepairIntent(ProjectEntity project, String lower) {
+        if (!containsAny(lower, "fix", "repair", "clone", "workspace", "not a git", "git repo",
+                "\u0438\u0441\u043f\u0440\u0430\u0432", "\u043f\u043e\u0447\u0438\u043d", "\u0441\u043a\u043b\u043e\u043d\u0438\u0440",
+                "\u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440", "\u0432\u043e\u0440\u043a\u0441\u043f\u0435\u0439\u0441")) {
+            return false;
+        }
+        Path workspace = resolveProjectWorkspace(project);
+        return !Files.isDirectory(workspace.resolve(".git"));
+    }
+
+    private boolean looksLikeStartTestingIntent(String lower) {
+        boolean testing = containsAny(lower, "test", "testing", "qa", "\u0442\u0435\u0441\u0442", "\u0442\u0435\u0441\u0442\u0438\u0440", "\u043a\u0443\u0430");
+        boolean start = containsAny(lower, "start", "begin", "create", "add", "run", "launch",
+                "\u043d\u0430\u0447\u043d", "\u0437\u0430\u043f\u0443\u0441\u0442", "\u0441\u043e\u0437\u0434", "\u0434\u043e\u0431\u0430\u0432");
+        return testing && start;
+    }
+
     private String toolCatalog() {
         return """
                 Read-only project/data tools:
@@ -394,6 +456,8 @@ public class ProjectOperatorService {
                 - maintenance_stuck {} MUTATING
                 - add_wishlist {"content":"English wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
                 - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
+                - ensure_project_workspace {} MUTATING
+                - start_testing_stream {} MUTATING
 
                 Generic tool:
                 - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
@@ -459,6 +523,8 @@ public class ProjectOperatorService {
                 case "maintenance_stuck" -> mutating(userMessage, tool, this::maintenanceStuck);
                 case "add_wishlist" -> mutating(userMessage, tool, () -> addWishlist(project, args));
                 case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
+                case "ensure_project_workspace" -> mutating(userMessage, tool, () -> ensureProjectWorkspace(project));
+                case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
                 default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
             };
@@ -730,6 +796,113 @@ public class ProjectOperatorService {
                 "wishlistId=" + response.id() + ", status=" + response.status() + ", sourceRoleTag=" + response.sourceRoleTag());
     }
 
+    private ToolObservation ensureProjectWorkspace(ProjectEntity project) {
+        Path workspace = resolveProjectWorkspace(project);
+        String repoUrl = projectRepositoryUrl(project);
+        if (repoUrl.isBlank()) {
+            return new ToolObservation("ensure_project_workspace", "blocked",
+                    "Repository URL is not available for project " + project.getId()
+                            + ". repositoryName=" + valueOrUnset(project.getRepositoryName()));
+        }
+        if (!workspace.startsWith(workspaceRoot)) {
+            return new ToolObservation("ensure_project_workspace", "blocked",
+                    "Workspace path is outside the configured workspace root: " + workspace);
+        }
+        try {
+            Files.createDirectories(workspaceRoot);
+            StringBuilder output = new StringBuilder();
+            output.append("repoUrl=").append(repoUrl).append('\n');
+            output.append("workspace=").append(workspace).append('\n');
+
+            if (Files.isDirectory(workspace.resolve(".git"))) {
+                ToolObservation fetch = run("ensure_project_workspace_fetch", workspace, Duration.ofSeconds(45),
+                        List.of("git", "fetch", "--all", "--prune"));
+                ToolObservation status = run("ensure_project_workspace_status", workspace, Duration.ofSeconds(10),
+                        List.of("git", "status", "--short"));
+                project.setWorkspacePath(workspace.toString());
+                projectRepository.save(project);
+                return new ToolObservation("ensure_project_workspace", "ok",
+                        output + "Workspace already contains .git. Refreshed remotes.\n"
+                                + fetch.output() + "\n" + status.output());
+            }
+
+            if (Files.exists(workspace) && !isDirectoryEmpty(workspace)) {
+                Path backup = workspace.resolveSibling(workspace.getFileName() + "-nongit-backup-" + Instant.now().toString().replaceAll("[^0-9T]", ""));
+                if (!backup.startsWith(workspaceRoot)) {
+                    return new ToolObservation("ensure_project_workspace", "blocked", "Backup path escaped workspace root: " + backup);
+                }
+                Files.move(workspace, backup);
+                output.append("Moved non-git workspace to backup=").append(backup).append('\n');
+            } else if (Files.exists(workspace) && isDirectoryEmpty(workspace)) {
+                Files.delete(workspace);
+                output.append("Removed empty non-git workspace directory.\n");
+            }
+
+            Path parent = workspace.getParent();
+            Files.createDirectories(parent);
+            ToolObservation clone = run("ensure_project_workspace_clone", parent, Duration.ofSeconds(120),
+                    List.of("git", "clone", repoUrl, workspace.getFileName().toString()));
+            if (!"ok".equals(clone.status())) {
+                return new ToolObservation("ensure_project_workspace", clone.status(), output + clone.output());
+            }
+            project.setWorkspacePath(workspace.toString());
+            projectRepository.save(project);
+            ToolObservation status = run("ensure_project_workspace_status", workspace, Duration.ofSeconds(10),
+                    List.of("git", "status", "--short"));
+            return new ToolObservation("ensure_project_workspace", "ok",
+                    output + "Cloned repository into project workspace and saved workspacePath.\n"
+                            + clone.output() + "\n" + status.output());
+        } catch (Exception e) {
+            return new ToolObservation("ensure_project_workspace", "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation startTestingStream(ProjectEntity project) {
+        StringBuilder output = new StringBuilder();
+        ToolObservation workspace = ensureProjectWorkspace(project);
+        output.append("## ensure_project_workspace [").append(workspace.status()).append("]\n")
+                .append(workspace.output()).append("\n\n");
+
+        Path root = resolveProjectWorkspace(project);
+        ToolObservation checks = testPlan(root);
+        output.append("## detected_checks [").append(checks.status()).append("]\n")
+                .append(checks.output()).append("\n\n");
+
+        String content = testingStreamWishlist(project, checks);
+        try {
+            var wishlist = projectFlowService.addWishlistItem(
+                    project.getId(),
+                    new WishlistRequestDto(project.getId(), WishlistSource.role, "BARCAN-TAG-06", content)
+            );
+            output.append("Created QA wishlist item: ").append(wishlist.id())
+                    .append(" status=").append(wishlist.status()).append('\n');
+
+            try {
+                OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+                output.append("Ran orchestration: processedWishlistItems=")
+                        .append(orchestration.processedWishlistItems())
+                        .append(", createdTasks=").append(orchestration.createdTasks().size())
+                        .append(", message=").append(orchestration.message()).append('\n');
+            } catch (Exception e) {
+                output.append("Orchestration was not completed: ").append(e.getMessage()).append('\n');
+                return new ToolObservation("start_testing_stream", "partial", trim(output.toString()));
+            }
+
+            try {
+                projectFlowService.dispatchQueuedTasks(project.getId());
+                projectFlowService.dispatchReviewTasks(project.getId());
+                output.append("Ran dispatchQueuedTasks + dispatchReviewTasks.\n");
+            } catch (Exception e) {
+                output.append("Dispatch was not completed: ").append(e.getMessage()).append('\n');
+                return new ToolObservation("start_testing_stream", "partial", trim(output.toString()));
+            }
+            return new ToolObservation("start_testing_stream", "ok", trim(output.toString()));
+        } catch (Exception e) {
+            output.append("Failed to create QA wishlist item: ").append(e.getMessage()).append('\n');
+            return new ToolObservation("start_testing_stream", "error", trim(output.toString()));
+        }
+    }
+
     private ToolObservation runGenericCommand(ProjectEntity project, JsonNode args, String userMessage) {
         Path root = rootFor(project, args);
         JsonNode rawCommand = args.path("command");
@@ -766,6 +939,62 @@ public class ProjectOperatorService {
         } catch (Exception e) {
             return new ToolObservation(tool, "error", e.getMessage());
         }
+    }
+
+    private String projectRepositoryUrl(ProjectEntity project) {
+        String direct = firstNonBlank(project.getRepositoryUrl(), project.getRepoUrl());
+        if (!direct.isBlank()) {
+            return direct;
+        }
+        String repositoryName = project.getRepositoryName();
+        if (repositoryName == null || repositoryName.isBlank()) {
+            repositoryName = project.getSlug();
+        }
+        if (repositoryName == null || repositoryName.isBlank()) {
+            return "";
+        }
+        if (repositoryName.contains("/")) {
+            return "https://github.com/" + repositoryName;
+        }
+        return "https://github.com/" + githubOrganization + "/" + repositoryName;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
+    }
+
+    private boolean isDirectoryEmpty(Path directory) throws java.io.IOException {
+        if (!Files.isDirectory(directory)) {
+            return false;
+        }
+        try (Stream<Path> stream = Files.list(directory)) {
+            return stream.findAny().isEmpty();
+        }
+    }
+
+    private String testingStreamWishlist(ProjectEntity project, ToolObservation checks) {
+        boolean hasRunnableChecks = "ok".equals(checks.status());
+        String readinessClause = hasRunnableChecks
+                ? "Use the detected test/build commands as verification anchors."
+                : "If frontend/backend code is not present yet, create only repository-aware test readiness, smoke harness, and QA checklist tasks; do not invent unimplemented product behavior.";
+        return """
+                Start a risk-based QA testing stream for the current project.
+                Decompose this wishlist into short English Jules tasks owned primarily by BARCAN-TAG-06, with supporting DevOps or frontend/backend roles only when the task truly belongs there.
+                Each task must be atomic, role-owned, and finishable in one short Jules session.
+                Use ISTQB's seven testing principles pragmatically: testing shows defects, exhaustive testing is impossible, early testing, defect clustering, pesticide paradox, context dependence, and absence-of-errors fallacy.
+                Required slices:
+                1. Inspect the repository and define the minimum test strategy for implemented behavior only.
+                2. Add or verify a smoke test command that can run in CI.
+                3. Add API contract tests only for implemented backend endpoints.
+                4. Add UI happy-path or E2E tests only for implemented frontend flows.
+                5. Add a regression checklist and document the exact verification command.
+                For every task include JTBD, Kano, Cynefin, DoD, acceptance criteria, and a concrete verification command or NOT AVAILABLE when no code exists yet.
+                """ + "\nProject: " + project.getName() + "\n" + readinessClause;
     }
 
     private Path rootFor(ProjectEntity project, JsonNode args) {
@@ -820,13 +1049,14 @@ public class ProjectOperatorService {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         return containsAny(lower,
                 "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
-                "remember", "save ", "persist ",
+                "remember", "save ", "persist ", "fix", "repair", "clone",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
                 "\u0441\u0434\u0435\u043b\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0442\u044c",
                 "\u0434\u043e\u0431\u0430\u0432\u044c", "\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c",
                 "\u043e\u0440\u043a\u0435\u0441\u0442\u0440", "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
                 "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0441\u0431\u0435\u0440\u0438", "\u0431\u0438\u043b\u0434",
-                "\u0437\u0430\u043f\u043e\u043c\u043d\u0438", "\u0441\u043e\u0445\u0440\u0430\u043d\u0438");
+                "\u0437\u0430\u043f\u043e\u043c\u043d\u0438", "\u0441\u043e\u0445\u0440\u0430\u043d\u0438",
+                "\u0438\u0441\u043f\u0440\u0430\u0432", "\u043f\u043e\u0447\u0438\u043d", "\u0441\u043a\u043b\u043e\u043d\u0438\u0440");
     }
 
     private boolean isAllowedOperatorCommand(List<String> command) {
