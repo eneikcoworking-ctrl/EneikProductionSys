@@ -15,10 +15,10 @@ import socket
 
 app = FastAPI(title="Eneik AI Prediction Service")
 
-DEFAULT_GEMINI_MODEL = "gemini-2.5-flash"
-DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-2.5-flash-lite"
-DEFAULT_GEMINI_PRO_MODEL = "gemini-2.5-pro"
-DEFAULT_GEMINI_PRO_FALLBACK_MODELS = "gemini-2.5-flash,gemini-2.5-flash-lite"
+DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
+DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-3.1-flash-lite,gemini-2.5-flash"
+DEFAULT_GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
+DEFAULT_GEMINI_PRO_FALLBACK_MODELS = "gemini-3.5-flash,gemini-2.5-flash"
 
 
 def gemini_candidate_models(model_tier: str = "", model_override: str = "") -> list[str]:
@@ -101,7 +101,7 @@ def ask_gemini(
         if "return only json" in lower_instruction or "return valid json" in lower_instruction:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-        last_retryable_error = None
+        retryable_errors = []
         for model in gemini_candidate_models(model_tier, model_override):
             try:
                 req = urllib.request.Request(
@@ -118,16 +118,16 @@ def ask_gemini(
                 error_body = e.read().decode("utf-8")
                 print(f"HTTP Error calling Gemini API model {model}: {e.code} - {error_body}")
                 if e.code in (404, 429, 503):
-                    last_retryable_error = Exception(f"API Error {e.code} for model {model}: {error_body}")
+                    retryable_errors.append(f"{model}: HTTP {e.code} {error_body}")
                     continue
                 raise Exception(f"API Error {e.code}: {error_body}") from e
             except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
                 print(f"Transient error calling Gemini API model {model}: {e}")
-                last_retryable_error = Exception(f"API transient error for model {model}: {e}")
+                retryable_errors.append(f"{model}: transient {e}")
                 continue
 
-        if last_retryable_error is not None:
-            raise last_retryable_error
+        if retryable_errors:
+            raise Exception("All Gemini candidate models failed: " + " | ".join(retryable_errors))
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         raise Exception(f"API Error: {str(e)}") from e
