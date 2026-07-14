@@ -406,11 +406,21 @@ public class ProjectFlowService {
                 slice.leanValue() != null ? slice.leanValue() : LeanValue.essential,
                 defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
                 defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
-                "Compiled from English JTBD work item by Eneik Management System. Owner role: "
-                        + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. Kano: "
-                        + defaultText(slice.kanoClass(), "Must-Be") + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ".",
+                compiledDod(ownerRole, slice),
                 defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria())
         );
+    }
+
+    private String compiledDod(String ownerRole, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        String roleSpecificReadiness = switch (ownerRole) {
+            case "BARCAN-TAG-03" -> "UI/design readiness: follow docs/DESIGN_SYSTEM.md for layout, visual states, and interaction evidence.";
+            case "BARCAN-TAG-11" -> "Frontend readiness: implement browser UI according to docs/DESIGN_SYSTEM.md and verify the user-visible interaction.";
+            default -> "Role readiness: complete the smallest owner-role result without expanding scope.";
+        };
+        return "Compiled from English JTBD work item by Eneik Management System. Owner role: "
+                + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. Kano: "
+                + defaultText(slice.kanoClass(), "Must-Be") + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ". "
+                + roleSpecificReadiness;
     }
 
     private String targetRoleForSlice(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice) {

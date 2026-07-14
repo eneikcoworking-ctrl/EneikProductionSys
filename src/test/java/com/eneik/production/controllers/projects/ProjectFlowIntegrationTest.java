@@ -179,6 +179,53 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
+    void orchestrationAddsDesignSystemReadinessForUiSlices() {
+        ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
+                "/api/projects",
+                Map.of("name", "UI Ready Project"),
+                ProjectDto.class
+        );
+
+        assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
+        ProjectDto project = createProject.getBody();
+        assertThat(project).isNotNull();
+
+        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/wishlist",
+                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Create a visible portal homepage"),
+                com.eneik.production.dto.WishlistResponseDto.class
+        );
+        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskSlices(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(java.util.List.of(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                        "Portal homepage UI",
+                        "When a visitor opens the portal, I want a visible homepage, so that the product can be inspected.",
+                        "Given the homepage loads, When the visitor opens the root page, Then the main portal content is visible.",
+                        "BARCAN-TAG-11",
+                        com.eneik.production.models.persistence.LeanValue.essential,
+                        "Must-Be",
+                        "clear",
+                        "TOC-CONSTRAINT-DECOMPOSITION",
+                        "Escaped defects <= 5%",
+                        true
+                )));
+
+        ResponseEntity<Map> orchestration = restTemplate.postForEntity(
+                "/api/projects/" + project.id() + "/orchestrate",
+                null,
+                Map.class
+        );
+
+        assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
+        java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
+                taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id());
+        assertThat(tasks).hasSize(1);
+        assertThat(tasks.get(0).getRole().getTag()).isEqualTo("BARCAN-TAG-11");
+        assertThat(tasks.get(0).getPayload().get("dod").asText()).contains("docs/DESIGN_SYSTEM.md");
+    }
+
+    @Test
     void brownfieldOnboardingAuditAndActivationFlow() throws Exception {
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",

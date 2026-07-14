@@ -1,8 +1,11 @@
 package com.eneik.production.services.dashboard;
 
+import com.eneik.production.dto.OrchestrationResultDto;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
@@ -33,6 +36,7 @@ public class ProjectOperatorService {
     private static final int MAX_FILE_BYTES = 24_000;
 
     private final ProjectRepository projectRepository;
+    private final WishlistRepository wishlistRepository;
     private final ProjectOperationalContextService contextService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final ProjectFlowService projectFlowService;
@@ -44,6 +48,7 @@ public class ProjectOperatorService {
     private final int stuckThresholdMinutes;
 
     public ProjectOperatorService(ProjectRepository projectRepository,
+                                  WishlistRepository wishlistRepository,
                                   ProjectOperationalContextService contextService,
                                   MLPredictionServiceClient mlPredictionServiceClient,
                                   ProjectFlowService projectFlowService,
@@ -54,6 +59,7 @@ public class ProjectOperatorService {
                                   @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName,
                                   @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes) {
         this.projectRepository = projectRepository;
+        this.wishlistRepository = wishlistRepository;
         this.contextService = contextService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.projectFlowService = projectFlowService;
@@ -72,6 +78,10 @@ public class ProjectOperatorService {
         ProjectEntity project = resolveProject(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
         OperatorEvidence evidence = collectEvidence(project, userMessage);
+        Optional<String> deterministicActionAnswer = evidence.deterministicActionAnswer();
+        if (deterministicActionAnswer.isPresent()) {
+            return deterministicActionAnswer.get();
+        }
         ProjectOperationalContext context = contextService.build(project.getId(), fallbackProjectName);
 
         String systemInstruction = """
@@ -98,6 +108,9 @@ public class ProjectOperatorService {
                 - You may say you executed an action only when OPERATOR_EVIDENCE contains operator_action [ok].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
+                - If operator_action is ok, report the completed action and do not ask for confirmation.
+                - Do not say the Technical Lead must convert wishlist items when operator_action has already run orchestration.
+                - Never ask the user to confirm an action that was already requested in the current message.
                 - Prefer short operational recommendations grounded in evidence.
                 - Use selected project facts only unless the user explicitly asks about the Eneik system itself.
                 - Respond in English only. If the user writes in another language, answer in English anyway.
@@ -144,7 +157,7 @@ public class ProjectOperatorService {
 
         Path projectWorkspace = resolveProjectWorkspace(project);
         Path primaryRoot = wantsSystem ? systemRepoRoot : projectWorkspace;
-        Path dockerRoot = Files.isDirectory(primaryRoot) ? primaryRoot : systemRepoRoot;
+        Path dockerRoot = hasComposeFile(primaryRoot) ? primaryRoot : systemRepoRoot;
         List<ToolObservation> observations = new ArrayList<>();
 
         observations.add(new ToolObservation("operator_scope", "ok", "project="
@@ -213,11 +226,37 @@ public class ProjectOperatorService {
     }
 
     private Optional<ToolObservation> runRequestedOperatorAction(ProjectEntity project, String lower) {
-        boolean wantsDispatch = containsAny(lower,
+        boolean wantsOrchestration = containsAny(lower,
+                "orchestrate",
+                "\u043e\u0440\u043a\u0435\u0441\u0442\u0440",
+                "wishlist",
+                "\u0432\u0438\u0448\u043b\u0438\u0441\u0442",
+                "\u0432\u0438\u0448\u043b\u0438\u0441\u0442\u0430",
+                "\u043e\u0446\u0435\u043d\u0438 \u0432\u0438\u0448\u043b\u0438\u0441\u0442",
+                "\u0440\u0430\u0437\u0431\u0435\u0439",
+                "\u0434\u0435\u043a\u043e\u043c\u043f\u043e\u0437",
+                "\u0441\u043e\u0437\u0434\u0430\u0439 \u0437\u0430\u0434\u0430\u0447",
+                "\u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
+                "\u0441\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0439 \u0437\u0430\u0434\u0430\u0447",
+                "\u0441\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u0434\u0430\u0447",
+                "\u043d\u0430\u0447\u043d\u0438 \u0437\u0430\u0434\u0430\u0447",
+                "\u043d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
+                "task breakdown",
+                "technical breakdown",
+                "compile wishlist",
+                "create tasks",
+                "generate tasks",
+                "start tasks")
+                || isConfirmationForPendingWishlist(project, lower);
+
+        boolean wantsDispatch = wantsOrchestration || containsAny(lower,
                 "\u043d\u0430\u0437\u043d\u0430\u0447\u044c",
                 "\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0438",
                 "\u0440\u0430\u0437\u0434\u0430\u0439",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u0434\u0430\u0447",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 queued",
                 "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
                 "dispatch queued",
@@ -231,17 +270,28 @@ public class ProjectOperatorService {
                 "detect stuck",
                 "reap expired");
 
-        if (!wantsDispatch && !wantsMaintenance) {
+        if (!wantsOrchestration && !wantsDispatch && !wantsMaintenance) {
             return Optional.empty();
         }
         if (!allowMutatingTools) {
             return Optional.of(new ToolObservation("operator_action", "blocked",
-                    "Mutating operator tools are disabled. Requested dispatch=" + wantsDispatch
+                    "Mutating operator tools are disabled. Requested orchestration=" + wantsOrchestration
+                            + ", dispatch=" + wantsDispatch
                             + ", maintenance=" + wantsMaintenance));
         }
 
         StringBuilder output = new StringBuilder();
         try {
+            if (wantsOrchestration) {
+                OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+                output.append("Ran orchestration: processedWishlistItems=")
+                        .append(orchestration.processedWishlistItems())
+                        .append(", createdTasks=")
+                        .append(orchestration.createdTasks().size())
+                        .append(", message=")
+                        .append(orchestration.message())
+                        .append(".\n");
+            }
             if (wantsMaintenance) {
                 claimService.reapExpiredLeases();
                 claimService.detectStuckSessions(stuckThresholdMinutes);
@@ -262,6 +312,28 @@ public class ProjectOperatorService {
         }
     }
 
+    private boolean isConfirmationForPendingWishlist(ProjectEntity project, String lower) {
+        String compact = lower == null ? "" : lower.trim();
+        if (!List.of(
+                "\u0434\u0430",
+                "\u043e\u043a",
+                "ok",
+                "yes",
+                "confirm",
+                "\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e",
+                "\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439",
+                "\u0434\u0435\u043b\u0430\u0439",
+                "\u043d\u0430\u0447\u0438\u043d\u0430\u0439"
+        ).contains(compact)) {
+            return false;
+        }
+        try {
+            return !wishlistRepository.findByProjectIdAndStatus(project.getId(), WishlistStatus.pending).isEmpty();
+        } catch (Exception ignored) {
+            return false;
+        }
+    }
+
     private Path resolveProjectWorkspace(ProjectEntity project) {
         if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
             Path fromDb = Paths.get(project.getWorkspacePath()).toAbsolutePath().normalize();
@@ -276,6 +348,15 @@ public class ProjectOperatorService {
     private ToolObservation describePath(String name, Path path) {
         return new ToolObservation(name, Files.exists(path) ? "ok" : "missing",
                 "path=" + path + ", directory=" + Files.isDirectory(path) + ", readable=" + Files.isReadable(path));
+    }
+
+    private boolean hasComposeFile(Path root) {
+        return root != null
+                && Files.isDirectory(root)
+                && (Files.exists(root.resolve("docker-compose.yml"))
+                || Files.exists(root.resolve("compose.yml"))
+                || Files.exists(root.resolve("docker-compose.yaml"))
+                || Files.exists(root.resolve("compose.yaml")));
     }
 
     private ToolObservation tree(Path root) {
@@ -523,6 +604,23 @@ public class ProjectOperatorService {
     private record ToolObservation(String tool, String status, String output) {}
 
     private record OperatorEvidence(List<ToolObservation> observations) {
+        Optional<String> deterministicActionAnswer() {
+            Optional<ToolObservation> action = observations.stream()
+                    .filter(observation -> "operator_action".equals(observation.tool()))
+                    .findFirst();
+            if (action.isEmpty()) {
+                return Optional.empty();
+            }
+            ToolObservation observation = action.get();
+            if ("ok".equals(observation.status())) {
+                return Optional.of("VERIFIED: I ran the requested operator action.\n\n" + observation.output());
+            }
+            if ("blocked".equals(observation.status())) {
+                return Optional.of("VERIFIED: I did not run the requested operator action because it is blocked.\n\n" + observation.output());
+            }
+            return Optional.of("VERIFIED: The requested operator action failed.\n\n" + observation.output());
+        }
+
         String toPrompt() {
             StringBuilder builder = new StringBuilder();
             for (ToolObservation observation : observations) {
