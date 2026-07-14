@@ -1,21 +1,27 @@
 package com.eneik.production.services.dashboard;
 
 import com.eneik.production.dto.OrchestrationResultDto;
+import com.eneik.production.dto.WishlistRequestDto;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
-import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.repositories.ProjectRepository;
-import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -36,7 +42,6 @@ public class ProjectOperatorService {
     private static final int MAX_FILE_BYTES = 24_000;
 
     private final ProjectRepository projectRepository;
-    private final WishlistRepository wishlistRepository;
     private final ProjectOperationalContextService contextService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final ProjectFlowService projectFlowService;
@@ -46,9 +51,9 @@ public class ProjectOperatorService {
     private final boolean allowMutatingTools;
     private final String dockerComposeProjectName;
     private final int stuckThresholdMinutes;
+    private final ObjectMapper objectMapper;
 
     public ProjectOperatorService(ProjectRepository projectRepository,
-                                  WishlistRepository wishlistRepository,
                                   ProjectOperationalContextService contextService,
                                   MLPredictionServiceClient mlPredictionServiceClient,
                                   ProjectFlowService projectFlowService,
@@ -57,9 +62,9 @@ public class ProjectOperatorService {
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
                                   @Value("${eneik.operator.allow-mutating-tools:false}") boolean allowMutatingTools,
                                   @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName,
-                                  @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes) {
+                                  @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes,
+                                  ObjectMapper objectMapper) {
         this.projectRepository = projectRepository;
-        this.wishlistRepository = wishlistRepository;
         this.contextService = contextService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.projectFlowService = projectFlowService;
@@ -71,18 +76,15 @@ public class ProjectOperatorService {
         this.allowMutatingTools = allowMutatingTools;
         this.dockerComposeProjectName = dockerComposeProjectName == null ? "" : dockerComposeProjectName.trim();
         this.stuckThresholdMinutes = stuckThresholdMinutes;
+        this.objectMapper = objectMapper;
     }
 
     @Transactional
     public String answer(UUID projectId, String fallbackProjectName, String userMessage) {
         ProjectEntity project = resolveProject(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
-        OperatorEvidence evidence = collectEvidence(project, userMessage);
-        Optional<String> deterministicActionAnswer = evidence.deterministicActionAnswer();
-        if (deterministicActionAnswer.isPresent()) {
-            return deterministicActionAnswer.get();
-        }
         ProjectOperationalContext context = contextService.build(project.getId(), fallbackProjectName);
+        OperatorEvidence evidence = runGeminiToolLoop(project, context, userMessage);
 
         String systemInstruction = """
                 You are Gemini Project Operator inside Eneik Production System.
@@ -113,13 +115,14 @@ public class ProjectOperatorService {
                 - Never ask the user to confirm an action that was already requested in the current message.
                 - Prefer short operational recommendations grounded in evidence.
                 - Use selected project facts only unless the user explicitly asks about the Eneik system itself.
-                - Respond in English only. If the user writes in another language, answer in English anyway.
+                - Answer in the user's language unless the user asks for Jules task text or PR/task artifacts; those artifacts must be English.
 
                 PROJECT_FACT_PACK:
                 """ + context.promptJson() + "\n\nOPERATOR_EVIDENCE:\n" + evidence.toPrompt();
 
         String prompt = "User request:\n" + userMessage + "\n\n"
-                + "Answer from the evidence above. If the user asked for code/Docker/test analysis, explicitly cite the relevant tool observations.";
+                + "Answer from the evidence above. If a tool was run, cite the tool name and result. "
+                + "If a mutating tool was not run, say it was not run. Do not claim any action that is absent from OPERATOR_EVIDENCE.";
         String answer = mlPredictionServiceClient.chat(prompt, systemInstruction);
         if (answer == null || answer.isBlank()) {
             return evidence.fallbackAnswer();
@@ -134,204 +137,414 @@ public class ProjectOperatorService {
         return projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active);
     }
 
-    private OperatorEvidence collectEvidence(ProjectEntity project, String userMessage) {
-        String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
-        boolean baselineEvidence = true;
-        boolean askedDocker = containsAny(lower, "docker", "\u0434\u043e\u043a\u0435\u0440", "compose",
-                "\u043a\u043e\u043d\u0442\u0435\u0439\u043d\u0435\u0440", "container", "\u043b\u043e\u0433", "logs");
-        boolean wantsCode = baselineEvidence || containsAny(lower, "\u043a\u043e\u0434", "code", "\u0444\u0430\u0439\u043b",
-                "repo", "\u0440\u0435\u043f\u043e\u0437\u0438\u0442\u043e\u0440", "\u0430\u0440\u0445\u0438\u0442\u0435\u043a\u0442",
-                "\u0430\u043d\u0430\u043b\u0438\u0437");
-        boolean wantsDocker = baselineEvidence || askedDocker;
-        boolean wantsDockerLogs = askedDocker || containsAny(lower, "error", "exception", "\u043e\u0448\u0438\u0431",
-                "\u0437\u0430\u0432\u0438\u0441", "\u043d\u0435 \u043e\u0442\u0432\u0435\u0447");
-        boolean wantsTests = containsAny(lower, "test", "\u0442\u0435\u0441\u0442", "verify", "\u043f\u0440\u043e\u0432\u0435\u0440",
-                "\u0441\u0431\u043e\u0440\u043a", "build");
-        boolean wantsGit = baselineEvidence || wantsCode || containsAny(lower, "git", "diff", "pr", "pull request",
-                "\u0432\u0435\u0442\u043a", "commit");
-        boolean wantsSystem = containsAny(lower,
-                "eneik", "\u044d\u0442\u043e\u0442 \u0441\u043e\u0444\u0442", "\u044d\u0442\u043e\u0433\u043e \u0441\u043e\u0444\u0442\u0430",
-                "\u0441\u043e\u0444\u0442", "production system", "management system",
-                "\u0441\u0430\u043c \u0441\u043e\u0444\u0442", "\u0441\u0438\u0441\u0442\u0435\u043c",
-                "\u043a\u043e\u0434 \u044d\u0442\u043e\u0433\u043e");
-
-        Path projectWorkspace = resolveProjectWorkspace(project);
-        Path primaryRoot = wantsSystem ? systemRepoRoot : projectWorkspace;
-        Path dockerRoot = hasComposeFile(primaryRoot) ? primaryRoot : systemRepoRoot;
+    private OperatorEvidence runGeminiToolLoop(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
         List<ToolObservation> observations = new ArrayList<>();
+        observations.add(operatorScope(project, userMessage));
 
-        observations.add(new ToolObservation("operator_scope", "ok", "project="
-                + project.getName()
-                + ", role=Eneik Management System Lead"
-                + ", workspace=" + projectWorkspace
-                + ", targetRoot=" + primaryRoot
-                + ", dockerRoot=" + dockerRoot
-                + ", mutatingTools=" + allowMutatingTools
-                + ", dockerComposeProjectName=" + valueOrUnset(dockerComposeProjectName)));
+        OperatorToolPlan plan = planOperatorTools(project, context, userMessage);
+        observations.add(new ToolObservation(
+                "operator_tool_plan",
+                plan.valid() ? "ok" : "fallback",
+                plan.summary()
+        ));
 
-        observations.add(describePath("project_workspace", projectWorkspace));
-        if (wantsSystem) {
-            observations.add(describePath("system_repo_root", systemRepoRoot));
-        }
-
-        Optional<ToolObservation> operatorAction = runRequestedOperatorAction(project, lower);
-        operatorAction.ifPresent(observations::add);
-
-        if (wantsCode || wantsSystem) {
-            observations.add(tree(primaryRoot));
-            observations.add(readIfExists(primaryRoot, "README.md"));
-            observations.add(readIfExists(primaryRoot, "package.json"));
-            observations.add(readIfExists(primaryRoot, "pom.xml"));
-            observations.add(readIfExists(primaryRoot, "docker-compose.yml"));
-            observations.add(readIfExists(primaryRoot, "Dockerfile"));
-            observations.add(search(primaryRoot, searchTerms(lower)));
-        }
-
-        if (wantsGit) {
-            observations.add(run("git_status", primaryRoot, Duration.ofSeconds(8), List.of("git", "status", "--short")));
-            observations.add(run("git_diff_stat", primaryRoot, Duration.ofSeconds(8), List.of("git", "diff", "--stat")));
-            observations.add(run("git_recent_commits", primaryRoot, Duration.ofSeconds(8), List.of("git", "log", "--oneline", "-5")));
-        }
-
-        if (wantsDocker) {
-            observations.add(run("docker_version", dockerRoot, Duration.ofSeconds(8), List.of("docker", "--version")));
-            observations.add(run("docker_ps", dockerRoot, Duration.ofSeconds(15),
-                    List.of("docker", "ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}")));
-            observations.add(run("docker_compose_ps", dockerRoot, Duration.ofSeconds(15), dockerComposeCommand(dockerRoot, "ps")));
-            if (wantsDockerLogs) {
-                observations.add(run("docker_compose_logs", dockerRoot, Duration.ofSeconds(20),
-                        dockerComposeCommand(dockerRoot, "logs", "--tail", "80")));
-            }
-            if (containsAny(lower, "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 docker",
-                    "docker up", "compose up", "\u043f\u043e\u0434\u043d\u044f\u0442\u044c \u0434\u043e\u043a\u0435\u0440")) {
-                if (allowMutatingTools) {
-                    observations.add(run("docker_compose_up", dockerRoot, Duration.ofSeconds(60),
-                            dockerComposeCommand(dockerRoot, "up", "-d")));
-                } else {
-                    observations.add(new ToolObservation("docker_compose_up", "blocked", "Mutating operator tools are disabled by configuration."));
-                }
-            }
-        }
-
-        if (wantsTests) {
-            observations.add(testPlan(primaryRoot));
-            if (containsAny(lower, "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0442\u0435\u0441\u0442", "run tests",
-                    "\u043f\u0440\u043e\u0432\u0435\u0440\u044c \u0442\u0435\u0441\u0442", "verify",
-                    "\u0441\u0431\u043e\u0440\u043a", "build")) {
-                observations.add(runDetectedChecks(primaryRoot));
+        if (plan.calls().isEmpty()) {
+            observations.addAll(defaultReadOnlyEvidence(project, context));
+        } else {
+            for (OperatorToolCall call : plan.calls().stream().limit(12).toList()) {
+                observations.add(executeToolCall(project, context, userMessage, call));
             }
         }
 
         return new OperatorEvidence(observations);
     }
 
-    private Optional<ToolObservation> runRequestedOperatorAction(ProjectEntity project, String lower) {
-        boolean wantsOrchestration = containsAny(lower,
-                "orchestrate",
-                "\u043e\u0440\u043a\u0435\u0441\u0442\u0440",
-                "wishlist",
-                "\u0432\u0438\u0448\u043b\u0438\u0441\u0442",
-                "\u0432\u0438\u0448\u043b\u0438\u0441\u0442\u0430",
-                "\u043e\u0446\u0435\u043d\u0438 \u0432\u0438\u0448\u043b\u0438\u0441\u0442",
-                "\u0440\u0430\u0437\u0431\u0435\u0439",
-                "\u0434\u0435\u043a\u043e\u043c\u043f\u043e\u0437",
-                "\u0441\u043e\u0437\u0434\u0430\u0439 \u0437\u0430\u0434\u0430\u0447",
-                "\u0441\u043e\u0437\u0434\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
-                "\u0441\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u0443\u0439 \u0437\u0430\u0434\u0430\u0447",
-                "\u0441\u0433\u0435\u043d\u0435\u0440\u0438\u0440\u043e\u0432\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
-                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
-                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u0434\u0430\u0447",
-                "\u043d\u0430\u0447\u043d\u0438 \u0437\u0430\u0434\u0430\u0447",
-                "\u043d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
-                "task breakdown",
-                "technical breakdown",
-                "compile wishlist",
-                "create tasks",
-                "generate tasks",
-                "start tasks")
-                || isConfirmationForPendingWishlist(project, lower);
+    private ToolObservation operatorScope(ProjectEntity project, String userMessage) {
+        Path projectWorkspace = resolveProjectWorkspace(project);
+        boolean wantsSystem = wantsSystemRoot(userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT));
+        Path primaryRoot = wantsSystem ? systemRepoRoot : projectWorkspace;
+        Path dockerRoot = hasComposeFile(primaryRoot) ? primaryRoot : systemRepoRoot;
+        return new ToolObservation("operator_scope", "ok", "project="
+                + project.getName()
+                + ", workspace=" + projectWorkspace
+                + ", defaultRoot=" + primaryRoot
+                + ", dockerRoot=" + dockerRoot
+                + ", mutatingTools=" + allowMutatingTools
+                + ", dockerComposeProjectName=" + valueOrUnset(dockerComposeProjectName));
+    }
 
-        boolean wantsDispatch = wantsOrchestration || containsAny(lower,
-                "\u043d\u0430\u0437\u043d\u0430\u0447\u044c",
-                "\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0438",
-                "\u0440\u0430\u0437\u0434\u0430\u0439",
-                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u0434\u0430\u0447",
-                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c \u0437\u0430\u0434\u0430\u0447",
-                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 queued",
-                "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
-                "dispatch queued",
-                "dispatch tasks",
-                "\u0440\u0430\u0437\u0431\u043b\u043e\u043a\u0438\u0440\u0443\u0439 \u043e\u0447\u0435\u0440\u0435\u0434\u044c",
-                "\u043f\u0440\u043e\u0433\u043e\u043d\u0438 \u043e\u0447\u0435\u0440\u0435\u0434\u044c");
-        boolean wantsMaintenance = wantsDispatch || containsAny(lower,
-                "\u043f\u0440\u043e\u0432\u0435\u0440\u044c \u0437\u0430\u0432\u0438\u0441",
-                "\u043e\u0447\u0438\u0441\u0442\u0438 \u0437\u0430\u0432\u0438\u0441",
-                "\u0437\u0430\u0432\u0435\u0440\u0448\u0438 \u0437\u0430\u0432\u0438\u0441",
-                "detect stuck",
-                "reap expired");
+    private OperatorToolPlan planOperatorTools(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
+        String systemInstruction = """
+                You are Gemini Project Operator tool planner inside Eneik Production System.
+                Return ONLY valid JSON. Do not include markdown.
 
-        if (!wantsOrchestration && !wantsDispatch && !wantsMaintenance) {
-            return Optional.empty();
-        }
-        if (!allowMutatingTools) {
-            return Optional.of(new ToolObservation("operator_action", "blocked",
-                    "Mutating operator tools are disabled. Requested orchestration=" + wantsOrchestration
-                            + ", dispatch=" + wantsDispatch
-                            + ", maintenance=" + wantsMaintenance));
-        }
+                Decide which backend tools are needed before answering the user.
+                Rules:
+                - Use tools aggressively when facts, code, Docker, Git, tests, PRs, sessions, or execution state may matter.
+                - Do not request mutating tools for explanation questions. Explanation questions include "how does it work", "why", "what happened", "what do you see", "recommend".
+                - Request mutating tools only when the user explicitly asks to run, create, add, orchestrate, dispatch, start, build, pull, or execute.
+                - Prefer multiple narrow tools over one broad generic command.
+                - Max 12 tool calls.
 
-        StringBuilder output = new StringBuilder();
+                JSON schema:
+                {
+                  "toolCalls": [
+                    {"tool": "tool_name", "reason": "short reason", "args": {"key": "value"}}
+                  ]
+                }
+
+                Available tools:
+                """ + toolCatalog();
+
+        String prompt = "Current project id: " + project.getId() + "\n"
+                + "Current project name: " + project.getName() + "\n"
+                + "User request:\n" + userMessage + "\n\n"
+                + "Selected project fact pack summary:\n" + trim(context.promptJson());
+        String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
         try {
-            if (wantsOrchestration) {
-                OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
-                output.append("Ran orchestration: processedWishlistItems=")
-                        .append(orchestration.processedWishlistItems())
-                        .append(", createdTasks=")
-                        .append(orchestration.createdTasks().size())
-                        .append(", message=")
-                        .append(orchestration.message())
-                        .append(".\n");
+            JsonNode root = objectMapper.readTree(extractJsonObject(response));
+            List<OperatorToolCall> calls = new ArrayList<>();
+            JsonNode toolCalls = root.path("toolCalls");
+            if (toolCalls.isArray()) {
+                for (JsonNode item : toolCalls) {
+                    String tool = textArg(item, "tool", "");
+                    if (tool.isBlank()) {
+                        continue;
+                    }
+                    calls.add(new OperatorToolCall(
+                            tool,
+                            item.path("args"),
+                            textArg(item, "reason", "")
+                    ));
+                    if (calls.size() >= 12) {
+                        break;
+                    }
+                }
             }
-            if (wantsMaintenance) {
-                claimService.reapExpiredLeases();
-                claimService.detectStuckSessions(stuckThresholdMinutes);
-                output.append("Ran maintenance: reapExpiredLeases + detectStuckSessions(")
-                        .append(stuckThresholdMinutes)
-                        .append(" minutes).\n");
-            }
-            if (wantsDispatch) {
-                projectFlowService.dispatchQueuedTasks(project.getId());
-                projectFlowService.dispatchReviewTasks(project.getId());
-                output.append("Ran dispatch: dispatchQueuedTasks + dispatchReviewTasks for project ")
-                        .append(project.getId())
-                        .append(".\n");
-            }
-            return Optional.of(new ToolObservation("operator_action", "ok", trim(output.toString())));
+            return new OperatorToolPlan(true, calls, calls.isEmpty()
+                    ? "Gemini returned no tool calls; using default read-only evidence."
+                    : "Gemini requested " + calls.size() + " tool call(s): "
+                    + calls.stream().map(OperatorToolCall::tool).reduce((a, b) -> a + ", " + b).orElse(""));
         } catch (Exception e) {
-            return Optional.of(new ToolObservation("operator_action", "error", e.getMessage()));
+            return new OperatorToolPlan(false, List.of(),
+                    "Tool planning failed; using default read-only evidence. Error: " + e.getMessage()
+                            + "\nRaw planner response: " + trim(response));
         }
     }
 
-    private boolean isConfirmationForPendingWishlist(ProjectEntity project, String lower) {
-        String compact = lower == null ? "" : lower.trim();
-        if (!List.of(
-                "\u0434\u0430",
-                "\u043e\u043a",
-                "ok",
-                "yes",
-                "confirm",
-                "\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e",
-                "\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439",
-                "\u0434\u0435\u043b\u0430\u0439",
-                "\u043d\u0430\u0447\u0438\u043d\u0430\u0439"
-        ).contains(compact)) {
-            return false;
+    private String toolCatalog() {
+        return """
+                Read-only project/data tools:
+                - project_context {}
+                - list_tasks {}
+                - list_wishlist {}
+                - list_jules_sessions {}
+                - list_pr_reviews {}
+                - list_accounts {}
+                - list_conflicts {}
+                - list_bottlenecks {}
+
+                Repository/code tools:
+                - workspace_tree {"root":"project|system","depth":4}
+                - read_file {"root":"project|system","path":"relative/path"}
+                - search_code {"root":"project|system","query":"literal or regex"}
+
+                Git tools:
+                - git_status {"root":"project|system"}
+                - git_diff_stat {"root":"project|system"}
+                - git_diff {"root":"project|system","path":"optional/relative/path"}
+                - git_log {"root":"project|system","limit":5}
+                - git_show {"root":"project|system","ref":"HEAD"}
+                - git_fetch {"root":"project|system"} MUTATING
+                - git_pull_ff_only {"root":"project|system"} MUTATING
+
+                Docker/runtime tools:
+                - docker_ps {}
+                - docker_compose_ps {"root":"project|system"}
+                - docker_compose_logs {"root":"project|system","service":"optional","tail":120}
+                - docker_compose_up {"root":"project|system"} MUTATING
+                - docker_compose_build {"root":"project|system","service":"optional"} MUTATING
+
+                HTTP/local service tools:
+                - http_get_local {"service":"backend|ml","path":"/health or /api/... or /docs"}
+
+                Verification tools:
+                - detected_checks {"root":"project|system"}
+                - run_detected_checks {"root":"project|system"} MUTATING/EXECUTION
+
+                Eneik production tools:
+                - orchestrate_project {} MUTATING
+                - dispatch_project {} MUTATING
+                - maintenance_stuck {} MUTATING
+                - add_wishlist {"content":"English wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
+
+                Generic tool:
+                - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
+                """;
+    }
+
+    private List<ToolObservation> defaultReadOnlyEvidence(ProjectEntity project, ProjectOperationalContext context) {
+        return List.of(
+                contextFact(context, "project_context", null),
+                contextFact(context, "list_tasks", "tasks"),
+                contextFact(context, "list_wishlist", "wishlist"),
+                contextFact(context, "list_jules_sessions", "julesSessions"),
+                contextFact(context, "list_pr_reviews", "databasePrReviews")
+        );
+    }
+
+    private ToolObservation executeToolCall(ProjectEntity project,
+                                            ProjectOperationalContext context,
+                                            String userMessage,
+                                            OperatorToolCall call) {
+        String tool = call.tool();
+        JsonNode args = call.args();
+        try {
+            return switch (tool) {
+                case "project_context" -> contextFact(context, tool, null);
+                case "list_tasks" -> contextFact(context, tool, "tasks");
+                case "list_wishlist" -> contextFact(context, tool, "wishlist");
+                case "list_jules_sessions" -> contextFact(context, tool, "julesSessions");
+                case "list_pr_reviews" -> contextFact(context, tool, "databasePrReviews");
+                case "list_accounts" -> contextFact(context, tool, "accountsAvailableForProject");
+                case "list_conflicts" -> contextFact(context, tool, "conflicts");
+                case "list_bottlenecks" -> contextFact(context, tool, "bottlenecks");
+                case "workspace_tree" -> tree(rootFor(project, args));
+                case "read_file" -> readIfExists(rootFor(project, args), textArg(args, "path", ""));
+                case "search_code" -> {
+                    String query = textArg(args, "query", "").toLowerCase(Locale.ROOT);
+                    yield search(rootFor(project, args), query.isBlank() ? searchTerms(userMessage.toLowerCase(Locale.ROOT)) : List.of(query));
+                }
+                case "git_status" -> run("git_status", rootFor(project, args), Duration.ofSeconds(8), List.of("git", "status", "--short"));
+                case "git_diff_stat" -> run("git_diff_stat", rootFor(project, args), Duration.ofSeconds(8), List.of("git", "diff", "--stat"));
+                case "git_diff" -> gitDiff(project, args);
+                case "git_log" -> run("git_log", rootFor(project, args), Duration.ofSeconds(8), List.of("git", "log", "--oneline", "-" + intArg(args, "limit", 5, 1, 30)));
+                case "git_show" -> run("git_show", rootFor(project, args), Duration.ofSeconds(12), List.of("git", "show", "--stat", "--oneline", textArg(args, "ref", "HEAD")));
+                case "git_fetch" -> mutating(userMessage, tool, () -> run("git_fetch", rootFor(project, args), Duration.ofSeconds(30), List.of("git", "fetch", "--all", "--prune")));
+                case "git_pull_ff_only" -> mutating(userMessage, tool, () -> run("git_pull_ff_only", rootFor(project, args), Duration.ofSeconds(45), List.of("git", "pull", "--ff-only")));
+                case "docker_ps" -> run("docker_ps", systemRepoRoot, Duration.ofSeconds(15), List.of("docker", "ps", "--format", "table {{.Names}}\t{{.Status}}\t{{.Ports}}"));
+                case "docker_compose_ps" -> run("docker_compose_ps", dockerRoot(project, args), Duration.ofSeconds(15), dockerComposeCommand(dockerRoot(project, args), "ps"));
+                case "docker_compose_logs" -> dockerComposeLogs(project, args);
+                case "docker_compose_up" -> mutating(userMessage, tool, () -> run("docker_compose_up", dockerRoot(project, args), Duration.ofSeconds(90), dockerComposeCommand(dockerRoot(project, args), "up", "-d")));
+                case "docker_compose_build" -> mutating(userMessage, tool, () -> dockerComposeBuild(project, args));
+                case "http_get_local" -> httpGetLocal(args);
+                case "detected_checks" -> testPlan(rootFor(project, args));
+                case "run_detected_checks" -> mutating(userMessage, tool, () -> runDetectedChecks(rootFor(project, args)));
+                case "orchestrate_project" -> mutating(userMessage, tool, () -> orchestrateProject(project));
+                case "dispatch_project" -> mutating(userMessage, tool, () -> dispatchProject(project));
+                case "maintenance_stuck" -> mutating(userMessage, tool, this::maintenanceStuck);
+                case "add_wishlist" -> mutating(userMessage, tool, () -> addWishlist(project, args));
+                case "run_command" -> runGenericCommand(project, args, userMessage);
+                default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
+            };
+        } catch (Exception e) {
+            return new ToolObservation(tool, "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation contextFact(ProjectOperationalContext context, String tool, String section) {
+        try {
+            Object value = section == null ? context.facts() : context.facts().get(section);
+            return new ToolObservation(tool, value == null ? "missing" : "ok", trim(objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(value)));
+        } catch (Exception e) {
+            return new ToolObservation(tool, "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation gitDiff(ProjectEntity project, JsonNode args) {
+        Path root = rootFor(project, args);
+        String path = textArg(args, "path", "");
+        if (path.isBlank()) {
+            return run("git_diff", root, Duration.ofSeconds(15), List.of("git", "diff"));
+        }
+        return run("git_diff", root, Duration.ofSeconds(15), List.of("git", "diff", "--", path));
+    }
+
+    private ToolObservation dockerComposeLogs(ProjectEntity project, JsonNode args) {
+        Path root = dockerRoot(project, args);
+        String tail = String.valueOf(intArg(args, "tail", 120, 20, 500));
+        String service = textArg(args, "service", "");
+        List<String> command = new ArrayList<>(dockerComposeCommand(root, "logs", "--tail", tail));
+        if (!service.isBlank()) {
+            command.add(service);
+        }
+        return run("docker_compose_logs", root, Duration.ofSeconds(30), command);
+    }
+
+    private ToolObservation dockerComposeBuild(ProjectEntity project, JsonNode args) {
+        Path root = dockerRoot(project, args);
+        String service = textArg(args, "service", "");
+        List<String> command = new ArrayList<>(dockerComposeCommand(root, "build"));
+        if (!service.isBlank()) {
+            command.add(service);
+        }
+        return run("docker_compose_build", root, Duration.ofSeconds(240), command);
+    }
+
+    private ToolObservation httpGetLocal(JsonNode args) {
+        String service = textArg(args, "service", "backend");
+        String path = textArg(args, "path", "/health");
+        if (!(path.equals("/health") || path.equals("/docs") || path.startsWith("/api/") || path.startsWith("/internal/"))) {
+            return new ToolObservation("http_get_local", "blocked", "Only /health, /docs, /api/*, and /internal/* paths are allowed.");
+        }
+        String base = "ml".equalsIgnoreCase(service) ? "http://ml:8000" : "http://localhost:8080";
+        try {
+            HttpClient client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(4)).build();
+            HttpRequest request = HttpRequest.newBuilder(URI.create(base + path)).timeout(Duration.ofSeconds(12)).GET().build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return new ToolObservation("http_get_local", response.statusCode() >= 200 && response.statusCode() < 300 ? "ok" : "http_" + response.statusCode(),
+                    "GET " + base + path + "\n" + trim(response.body()));
+        } catch (Exception e) {
+            return new ToolObservation("http_get_local", "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation orchestrateProject(ProjectEntity project) {
+        OrchestrationResultDto result = projectFlowService.orchestrate(project.getId());
+        return new ToolObservation("orchestrate_project", "ok",
+                "processedWishlistItems=" + result.processedWishlistItems()
+                        + ", createdTasks=" + result.createdTasks().size()
+                        + ", message=" + result.message());
+    }
+
+    private ToolObservation dispatchProject(ProjectEntity project) {
+        projectFlowService.dispatchQueuedTasks(project.getId());
+        projectFlowService.dispatchReviewTasks(project.getId());
+        return new ToolObservation("dispatch_project", "ok",
+                "Ran dispatchQueuedTasks + dispatchReviewTasks for project " + project.getId());
+    }
+
+    private ToolObservation maintenanceStuck() {
+        claimService.reapExpiredLeases();
+        claimService.detectStuckSessions(stuckThresholdMinutes);
+        return new ToolObservation("maintenance_stuck", "ok",
+                "Ran reapExpiredLeases + detectStuckSessions(" + stuckThresholdMinutes + " minutes).");
+    }
+
+    private ToolObservation addWishlist(ProjectEntity project, JsonNode args) {
+        String content = textArg(args, "content", "");
+        if (content.isBlank()) {
+            return new ToolObservation("add_wishlist", "blocked", "content is required.");
+        }
+        String sourceRoleTag = textArg(args, "sourceRoleTag", "BARCAN-TAG-09");
+        var response = projectFlowService.addWishlistItem(
+                project.getId(),
+                new WishlistRequestDto(project.getId(), WishlistSource.role, sourceRoleTag, content)
+        );
+        return new ToolObservation("add_wishlist", "ok",
+                "wishlistId=" + response.id() + ", status=" + response.status() + ", sourceRoleTag=" + response.sourceRoleTag());
+    }
+
+    private ToolObservation runGenericCommand(ProjectEntity project, JsonNode args, String userMessage) {
+        Path root = rootFor(project, args);
+        JsonNode rawCommand = args.path("command");
+        if (!rawCommand.isArray() || rawCommand.isEmpty()) {
+            return new ToolObservation("run_command", "blocked", "command array is required.");
+        }
+        List<String> command = new ArrayList<>();
+        rawCommand.forEach(node -> command.add(node.asText("")));
+        command.removeIf(String::isBlank);
+        if (command.isEmpty()) {
+            return new ToolObservation("run_command", "blocked", "command array is empty.");
+        }
+        if (!isAllowedOperatorCommand(command)) {
+            return new ToolObservation("run_command", "blocked", "Command is outside the allowlist: " + String.join(" ", command));
+        }
+        if (isMutatingCommand(command)) {
+            return mutating(userMessage, "run_command", () -> run("run_command", root,
+                    Duration.ofSeconds(intArg(args, "timeoutSeconds", 30, 1, 240)),
+                    command));
+        }
+        return run("run_command", root, Duration.ofSeconds(intArg(args, "timeoutSeconds", 30, 1, 240)), command);
+    }
+
+    private ToolObservation mutating(String userMessage, String tool, ToolAction action) {
+        if (!allowMutatingTools) {
+            return new ToolObservation(tool, "blocked", "Mutating operator tools are disabled by configuration.");
+        }
+        if (!isExplicitMutatingRequest(userMessage)) {
+            return new ToolObservation(tool, "blocked",
+                    "Mutating tool was not run because the user request was not an explicit action command.");
         }
         try {
-            return !wishlistRepository.findByProjectIdAndStatus(project.getId(), WishlistStatus.pending).isEmpty();
-        } catch (Exception ignored) {
+            return action.run();
+        } catch (Exception e) {
+            return new ToolObservation(tool, "error", e.getMessage());
+        }
+    }
+
+    private Path rootFor(ProjectEntity project, JsonNode args) {
+        String root = textArg(args, "root", "project");
+        if ("system".equalsIgnoreCase(root)) {
+            return systemRepoRoot;
+        }
+        return resolveProjectWorkspace(project);
+    }
+
+    private Path dockerRoot(ProjectEntity project, JsonNode args) {
+        Path requested = rootFor(project, args);
+        return hasComposeFile(requested) ? requested : systemRepoRoot;
+    }
+
+    private String textArg(JsonNode node, String field, String fallback) {
+        if (node == null || node.isMissingNode() || !node.has(field) || node.get(field).isNull()) {
+            return fallback;
+        }
+        return node.get(field).asText(fallback).trim();
+    }
+
+    private int intArg(JsonNode node, String field, int fallback, int min, int max) {
+        int value = node != null && node.has(field) ? node.get(field).asInt(fallback) : fallback;
+        return Math.max(min, Math.min(max, value));
+    }
+
+    private String extractJsonObject(String value) {
+        if (value == null || value.isBlank()) {
+            return "{}";
+        }
+        String clean = value.trim();
+        if (clean.startsWith("```")) {
+            clean = clean.replaceFirst("(?s)^```[a-zA-Z]*\\s*", "").replaceFirst("(?s)\\s*```$", "").trim();
+        }
+        int start = clean.indexOf('{');
+        int end = clean.lastIndexOf('}');
+        if (start >= 0 && end > start) {
+            return clean.substring(start, end + 1);
+        }
+        return clean;
+    }
+
+    private boolean wantsSystemRoot(String lower) {
+        return containsAny(lower,
+                "eneik", "production system", "management system", "this software",
+                "\u044d\u0442\u043e\u0442 \u0441\u043e\u0444\u0442", "\u044d\u0442\u043e\u0433\u043e \u0441\u043e\u0444\u0442\u0430",
+                "\u0441\u0430\u043c \u0441\u043e\u0444\u0442", "\u0441\u0438\u0441\u0442\u0435\u043c");
+    }
+
+    private boolean isExplicitMutatingRequest(String userMessage) {
+        String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
+        return containsAny(lower,
+                "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
+                "\u0441\u0434\u0435\u043b\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0442\u044c",
+                "\u0434\u043e\u0431\u0430\u0432\u044c", "\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c",
+                "\u043e\u0440\u043a\u0435\u0441\u0442\u0440", "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
+                "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0441\u0431\u0435\u0440\u0438", "\u0431\u0438\u043b\u0434");
+    }
+
+    private boolean isAllowedOperatorCommand(List<String> command) {
+        String first = command.get(0);
+        return List.of("git", "docker", "npm", "node", "mvn", "./mvnw", "python", "python3", "pytest", "rg", "ls", "pwd").contains(first);
+    }
+
+    private boolean isMutatingCommand(List<String> command) {
+        String joined = String.join(" ", command).toLowerCase(Locale.ROOT);
+        if (joined.contains(" status") || joined.contains(" diff") || joined.contains(" log")
+                || joined.contains(" show") || joined.contains(" ps") || joined.contains(" logs")
+                || joined.startsWith("rg ") || joined.equals("pwd") || joined.startsWith("ls")) {
             return false;
         }
+        return true;
     }
 
     private Path resolveProjectWorkspace(ProjectEntity project) {
@@ -343,11 +556,6 @@ public class ProjectOperatorService {
         }
         String slug = project.getSlug() == null ? project.getRepositoryName() : project.getSlug();
         return workspaceRoot.resolve(slug == null ? "unknown-project" : slug).normalize();
-    }
-
-    private ToolObservation describePath(String name, Path path) {
-        return new ToolObservation(name, Files.exists(path) ? "ok" : "missing",
-                "path=" + path + ", directory=" + Files.isDirectory(path) + ", readable=" + Files.isReadable(path));
     }
 
     private boolean hasComposeFile(Path root) {
@@ -603,24 +811,16 @@ public class ProjectOperatorService {
 
     private record ToolObservation(String tool, String status, String output) {}
 
-    private record OperatorEvidence(List<ToolObservation> observations) {
-        Optional<String> deterministicActionAnswer() {
-            Optional<ToolObservation> action = observations.stream()
-                    .filter(observation -> "operator_action".equals(observation.tool()))
-                    .findFirst();
-            if (action.isEmpty()) {
-                return Optional.empty();
-            }
-            ToolObservation observation = action.get();
-            if ("ok".equals(observation.status())) {
-                return Optional.of("VERIFIED: I ran the requested operator action.\n\n" + observation.output());
-            }
-            if ("blocked".equals(observation.status())) {
-                return Optional.of("VERIFIED: I did not run the requested operator action because it is blocked.\n\n" + observation.output());
-            }
-            return Optional.of("VERIFIED: The requested operator action failed.\n\n" + observation.output());
-        }
+    private record OperatorToolPlan(boolean valid, List<OperatorToolCall> calls, String summary) {}
 
+    private record OperatorToolCall(String tool, JsonNode args, String reason) {}
+
+    @FunctionalInterface
+    private interface ToolAction {
+        ToolObservation run() throws Exception;
+    }
+
+    private record OperatorEvidence(List<ToolObservation> observations) {
         String toPrompt() {
             StringBuilder builder = new StringBuilder();
             for (ToolObservation observation : observations) {
