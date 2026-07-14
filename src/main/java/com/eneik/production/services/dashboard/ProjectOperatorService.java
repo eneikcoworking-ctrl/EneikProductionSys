@@ -10,6 +10,7 @@ import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
+import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -32,9 +33,11 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -51,6 +54,7 @@ public class ProjectOperatorService {
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final ProjectFlowService projectFlowService;
     private final ClaimService claimService;
+    private final SystemSettingsService settingsService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
     private final Path memoryRoot;
@@ -67,6 +71,7 @@ public class ProjectOperatorService {
                                   MLPredictionServiceClient mlPredictionServiceClient,
                                   ProjectFlowService projectFlowService,
                                   ClaimService claimService,
+                                  SystemSettingsService settingsService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
                                   @Value("${eneik.operator.memory-root:./data/operator-memory}") String memoryRoot,
@@ -82,6 +87,7 @@ public class ProjectOperatorService {
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
+        this.settingsService = settingsService;
         this.workspaceRoot = Paths.get(workspaceRoot).toAbsolutePath().normalize();
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
                 ? Paths.get(".").toAbsolutePath().normalize()
@@ -813,10 +819,14 @@ public class ProjectOperatorService {
             StringBuilder output = new StringBuilder();
             output.append("repoUrl=").append(repoUrl).append('\n');
             output.append("workspace=").append(workspace).append('\n');
+            Optional<String> githubToken = githubToken();
+            if (repoUrl.startsWith("https://github.com/")) {
+                output.append("githubAuth=").append(githubToken.isPresent() ? "token configured" : "token missing").append('\n');
+            }
 
             if (Files.isDirectory(workspace.resolve(".git"))) {
-                ToolObservation fetch = run("ensure_project_workspace_fetch", workspace, Duration.ofSeconds(45),
-                        List.of("git", "fetch", "--all", "--prune"));
+                ToolObservation fetch = runGitWithOptionalToken("ensure_project_workspace_fetch", workspace, Duration.ofSeconds(45),
+                        List.of("git", "fetch", "--all", "--prune"), githubToken);
                 ToolObservation status = run("ensure_project_workspace_status", workspace, Duration.ofSeconds(10),
                         List.of("git", "status", "--short"));
                 project.setWorkspacePath(workspace.toString());
@@ -840,8 +850,8 @@ public class ProjectOperatorService {
 
             Path parent = workspace.getParent();
             Files.createDirectories(parent);
-            ToolObservation clone = run("ensure_project_workspace_clone", parent, Duration.ofSeconds(120),
-                    List.of("git", "clone", repoUrl, workspace.getFileName().toString()));
+            ToolObservation clone = runGitWithOptionalToken("ensure_project_workspace_clone", parent, Duration.ofSeconds(120),
+                    List.of("git", "clone", repoUrl, workspace.getFileName().toString()), githubToken);
             if (!"ok".equals(clone.status())) {
                 return new ToolObservation("ensure_project_workspace", clone.status(), output + clone.output());
             }
@@ -1198,6 +1208,15 @@ public class ProjectOperatorService {
     }
 
     private ToolObservation run(String name, Path cwd, Duration timeout, List<String> command) {
+        return run(name, cwd, timeout, command, Map.of(), List.of());
+    }
+
+    private ToolObservation run(String name,
+                                Path cwd,
+                                Duration timeout,
+                                List<String> command,
+                                Map<String, String> environment,
+                                List<String> redactions) {
         if (!Files.isDirectory(cwd)) {
             return new ToolObservation(name, "missing", "Working directory does not exist: " + cwd);
         }
@@ -1207,6 +1226,9 @@ public class ProjectOperatorService {
         try {
             ProcessBuilder builder = new ProcessBuilder(command);
             builder.directory(cwd.toFile());
+            if (environment != null && !environment.isEmpty()) {
+                builder.environment().putAll(environment);
+            }
             builder.redirectErrorStream(true);
             Process process = builder.start();
             StringBuilder output = new StringBuilder();
@@ -1219,19 +1241,111 @@ public class ProjectOperatorService {
             if (!finished) {
                 process.destroyForcibly();
                 readerThread.join(1_000);
-                return new ToolObservation(name, "timeout", "Command timed out after " + timeout.toSeconds() + "s: " + String.join(" ", command)
-                        + "\nPartial output:\n" + trim(output.toString()));
+                return new ToolObservation(name, "timeout",
+                        redact("Command timed out after " + timeout.toSeconds() + "s: " + String.join(" ", command)
+                                + "\nPartial output:\n" + trim(output.toString()), redactions));
             }
             readerThread.join(1_000);
             String status = process.exitValue() == 0 ? "ok" : "failed_exit_" + process.exitValue();
-            String renderedOutput = trim(output.toString());
+            String renderedOutput = redact(trim(output.toString()), redactions);
             if (truncated[0]) {
                 renderedOutput += "\n... [truncated]";
             }
-            return new ToolObservation(name, status, "$ " + String.join(" ", command) + "\n" + renderedOutput);
+            return new ToolObservation(name, status,
+                    "$ " + redact(String.join(" ", command), redactions) + "\n" + renderedOutput);
         } catch (Exception e) {
-            return new ToolObservation(name, "error", "$ " + String.join(" ", command) + "\n" + e.getMessage());
+            return new ToolObservation(name, "error",
+                    "$ " + redact(String.join(" ", command), redactions) + "\n" + redact(e.getMessage(), redactions));
         }
+    }
+
+    private ToolObservation runGitWithOptionalToken(String name,
+                                                    Path cwd,
+                                                    Duration timeout,
+                                                    List<String> command,
+                                                    Optional<String> githubToken) {
+        if (githubToken.isEmpty()) {
+            return run(name, cwd, timeout, command);
+        }
+
+        Path askPass = null;
+        try {
+            askPass = Files.createTempFile("eneik-git-askpass-", isWindowsHost() ? ".cmd" : ".sh");
+            Files.writeString(askPass, askPassScript(), StandardCharsets.UTF_8, StandardOpenOption.TRUNCATE_EXISTING);
+            askPass.toFile().setExecutable(true, true);
+
+            Map<String, String> environment = new HashMap<>();
+            environment.put("GIT_ASKPASS", askPass.toString());
+            environment.put("GIT_TERMINAL_PROMPT", "0");
+            environment.put("GIT_USERNAME", "x-access-token");
+            environment.put("GIT_PASSWORD", githubToken.get());
+
+            return run(name, cwd, timeout, command, environment, List.of(githubToken.get()));
+        } catch (Exception e) {
+            return new ToolObservation(name, "error",
+                    "$ " + String.join(" ", command) + "\nUnable to configure authenticated Git command: " + e.getMessage());
+        } finally {
+            if (askPass != null) {
+                try {
+                    Files.deleteIfExists(askPass);
+                } catch (Exception ignored) {
+                    // Temporary askpass cleanup is best-effort.
+                }
+            }
+        }
+    }
+
+    private Optional<String> githubToken() {
+        if (settingsService == null) {
+            return Optional.empty();
+        }
+        try {
+            String token = settingsService.effectiveValue("github_token");
+            if (token == null || token.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(token.trim());
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    private String askPassScript() {
+        if (isWindowsHost()) {
+            return """
+                    @echo off
+                    echo %* | findstr /i "Username" >nul
+                    if %ERRORLEVEL%==0 (
+                      echo %GIT_USERNAME%
+                    ) else (
+                      echo %GIT_PASSWORD%
+                    )
+                    """;
+        }
+        return """
+                #!/bin/sh
+                case "$1" in
+                  *Username*) printf '%s\\n' "${GIT_USERNAME:-x-access-token}" ;;
+                  *) printf '%s\\n' "$GIT_PASSWORD" ;;
+                esac
+                """;
+    }
+
+    private boolean isWindowsHost() {
+        return System.getProperty("os.name", "").toLowerCase(Locale.ROOT).contains("win");
+    }
+
+    private String redact(String value, List<String> redactions) {
+        if (value == null || redactions == null || redactions.isEmpty()) {
+            return value;
+        }
+        String result = value;
+        for (String secret : redactions) {
+            if (secret != null && !secret.isBlank()) {
+                result = result.replace(secret, "<redacted>");
+            }
+        }
+        return result;
     }
 
     private void readProcessOutput(Process process, StringBuilder output, boolean[] truncated) {
