@@ -29,7 +29,7 @@ export type QueueData = {
 };
 
 export type Bottleneck = {
-  type: 'no_capable_agent' | 'expired_lease_spike';
+  type: 'no_free_jules_slot' | 'expired_lease_spike';
   tag?: string;
   accountId?: string;
   queuedCount?: number;

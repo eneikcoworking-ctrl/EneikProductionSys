@@ -9,6 +9,7 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.jules.JulesRoleCapabilities;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -75,7 +76,7 @@ class AccountControllerIntegrationTest {
         assertThat(created.id()).isNotNull();
         assertThat(created.name()).isEqualTo("agent-api");
         assertThat(created.status()).isEqualTo(AccountStatus.idle);
-        assertThat(created.capabilities()).isEqualTo("BARCAN-TAG-02,BARCAN-TAG-11");
+        assertThat(created.capabilities()).isEqualTo(JulesRoleCapabilities.ALL_CAPABILITIES);
         assertThat(created.lastHeartbeat()).isNotNull();
 
         ResponseEntity<AccountDto[]> listResponse = restTemplate.getForEntity("/api/accounts", AccountDto[].class);

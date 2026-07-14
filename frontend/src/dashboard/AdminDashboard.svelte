@@ -102,7 +102,7 @@
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
   let newName = $state('');
-  let newCapabilities = $state('BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11');
+  const allBarcanCapabilities = 'BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11';
   let newGithubUsername = $state('');
   let newApiKey = $state('');
   let message = $state('Ready');
@@ -180,7 +180,7 @@
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: newName,
-        capabilities: newCapabilities,
+        capabilities: allBarcanCapabilities,
         githubUsername: newGithubUsername,
         apiKey: newApiKey
       })
@@ -358,7 +358,7 @@
       <div style="display: flex; gap: 10px; align-items: flex-end;">
         <div style="flex: 1;">
           <p class="label">Capabilities (comma separated)</p>
-          <input bind:value={newCapabilities} placeholder="BARCAN-TAG-01,..." style="padding: 8px; width: 100%;" />
+          <input value={allBarcanCapabilities} disabled style="padding: 8px; width: 100%;" />
         </div>
         <button onclick={createAccount} style="height: 38px; padding: 0 20px;">Add Account</button>
       </div>

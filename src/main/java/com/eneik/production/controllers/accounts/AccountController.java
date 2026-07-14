@@ -6,6 +6,7 @@ import com.eneik.production.dto.AccountStatusRequestDto;
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.repositories.AccountRepository;
+import com.eneik.production.services.jules.JulesRoleCapabilities;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -18,7 +19,6 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Instant;
-import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,7 +55,7 @@ public class AccountController {
 
         AccountEntity account = new AccountEntity();
         account.setName(request.name().trim());
-        account.setCapabilities(normalizeCapabilities(request.capabilities()));
+        account.setCapabilities(JulesRoleCapabilities.canonicalCapabilities());
         account.setStatus(AccountStatus.idle);
         account.setLastHeartbeat(Instant.now());
         account.setGithubUsername(request.githubUsername() != null ? request.githubUsername().trim() : null);
@@ -79,7 +79,7 @@ public class AccountController {
                         account.setGithubUsername((String) updates.get("githubUsername"));
                     }
                     if (updates.containsKey("capabilities")) {
-                        account.setCapabilities(normalizeCapabilities((String) updates.get("capabilities")));
+                        account.setCapabilities(JulesRoleCapabilities.canonicalCapabilities());
                     }
                     if (updates.containsKey("apiKey")) {
                         account.setApiKey((String) updates.get("apiKey"));
@@ -168,18 +168,6 @@ public class AccountController {
         if (request == null || request.name() == null || request.name().trim().isEmpty()) {
             return "name is required";
         }
-        if (request.capabilities() == null || request.capabilities().trim().isEmpty()) {
-            return "capabilities are required";
-        }
         return null;
-    }
-
-    private String normalizeCapabilities(String capabilities) {
-        return String.join(",",
-                Arrays.stream(capabilities.split(","))
-                        .map(String::trim)
-                        .filter(value -> !value.isEmpty())
-                        .distinct()
-                        .toList());
     }
 }

@@ -21,7 +21,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query("SELECT COUNT(a) > 0 FROM AccountEntity a WHERE " +
            "a.lastHeartbeat > :threshold AND " +
-           "a.capabilities LIKE %:tag%")
+           "(:tag IS NULL OR :tag IS NOT NULL)")
     boolean existsOnlineWithCapability(@Param("tag") String tag, @Param("threshold") Instant threshold);
 
     @Modifying
@@ -41,7 +41,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
-            "AND (capabilities = '*' OR capabilities LIKE CONCAT('%', :tag, '%')) " +
+            "AND (:tag IS NULL OR :tag IS NOT NULL) " +
             "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
 
@@ -50,7 +50,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             WHERE a.enabled = true
               AND a.status <> 'decommissioned'
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
-              AND (a.capabilities = '*' OR a.capabilities LIKE CONCAT('%', :tag, '%'))
+              AND (:tag IS NULL OR :tag IS NOT NULL)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -77,7 +77,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             SELECT COUNT(*) > 0 FROM accounts a
             WHERE a.enabled = true
               AND a.status <> 'decommissioned'
-              AND (a.capabilities = '*' OR a.capabilities LIKE CONCAT('%', :tag, '%'))
+              AND (:tag IS NULL OR :tag IS NOT NULL)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s

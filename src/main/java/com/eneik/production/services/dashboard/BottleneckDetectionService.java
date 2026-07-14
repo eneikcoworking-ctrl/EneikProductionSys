@@ -51,11 +51,11 @@ public class BottleneckDetectionService {
             );
             if (!hasCapacity && row.oldestWaitingMinutes() > WAITING_THRESHOLD_MINUTES) {
                 result.add(new BottleneckDto(
-                        "no_capable_agent",
+                        "no_free_jules_slot",
                         row.tag(),
                         row.count(),
                         row.oldestWaitingMinutes(),
-                        "No Jules account has free capacity for capability " + row.tag()
+                        "All Jules accounts are universal role-capable; the shared account pool has no free session slot for queued " + row.tag() + " work"
                 ));
             }
         });

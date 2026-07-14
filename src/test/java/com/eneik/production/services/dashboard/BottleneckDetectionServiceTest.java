@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -38,18 +39,19 @@ class BottleneckDetectionServiceTest {
     }
 
     @Test
-    void detectNoCapableAgent() {
+    void detectNoFreeJulesSlot() {
         String tag = "BARCAN-TAG-08";
         QueueDashboardDto.TagCountDto row = new QueueDashboardDto.TagCountDto(tag, 4L, 23L);
         when(taskRepository.queuedGroupedByTag()).thenReturn(List.of(row));
-        when(accountRepository.existsOnlineWithCapability(eq(tag), any(Instant.class))).thenReturn(false);
+        when(accountRepository.existsJulesAccountWithCapacity(eq(tag), anyInt())).thenReturn(false);
 
         List<BottleneckDto> bottlenecks = service.detect();
 
         assertEquals(1, bottlenecks.size());
-        assertEquals("no_capable_agent", bottlenecks.get(0).type());
+        assertEquals("no_free_jules_slot", bottlenecks.get(0).type());
         assertEquals(tag, bottlenecks.get(0).tag());
         assertEquals(4L, bottlenecks.get(0).queuedCount());
+        assertTrue(bottlenecks.get(0).reason().contains("universal role-capable"));
     }
 
     @Test

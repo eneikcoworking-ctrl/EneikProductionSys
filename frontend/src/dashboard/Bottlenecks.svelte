@@ -11,7 +11,7 @@
     <ul>
       {#each bottlenecks as bottleneck}
         <li class="mb-4 p-3 border-l-4 border-red-500 bg-red-50">
-          <div class="font-bold">{bottleneck.type === 'no_capable_agent' ? 'Missing Capabilities' : 'Agent Reliability Issue'}</div>
+          <div class="font-bold">{bottleneck.type === 'no_free_jules_slot' ? 'No Free Jules Slot' : 'Agent Reliability Issue'}</div>
           <p class="text-sm">{bottleneck.reason}</p>
           {#if bottleneck.tag}
              <div class="text-xs text-gray-600 mt-1">Tag: {bottleneck.tag} | Queued: {bottleneck.queuedCount}</div>

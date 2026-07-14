@@ -3,7 +3,9 @@ package com.eneik.production.services.dashboard;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
+import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -33,35 +35,44 @@ public class ProjectOperatorService {
     private final ProjectRepository projectRepository;
     private final ProjectOperationalContextService contextService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final ProjectFlowService projectFlowService;
+    private final ClaimService claimService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
     private final boolean allowMutatingTools;
     private final String dockerComposeProjectName;
+    private final int stuckThresholdMinutes;
 
     public ProjectOperatorService(ProjectRepository projectRepository,
                                   ProjectOperationalContextService contextService,
                                   MLPredictionServiceClient mlPredictionServiceClient,
+                                  ProjectFlowService projectFlowService,
+                                  ClaimService claimService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
                                   @Value("${eneik.operator.allow-mutating-tools:false}") boolean allowMutatingTools,
-                                  @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName) {
+                                  @Value("${eneik.operator.docker-compose-project-name:}") String dockerComposeProjectName,
+                                  @Value("${jules.stuck-threshold-minutes:30}") int stuckThresholdMinutes) {
         this.projectRepository = projectRepository;
         this.contextService = contextService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.projectFlowService = projectFlowService;
+        this.claimService = claimService;
         this.workspaceRoot = Paths.get(workspaceRoot).toAbsolutePath().normalize();
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
                 ? Paths.get(".").toAbsolutePath().normalize()
                 : Paths.get(systemRepoRoot).toAbsolutePath().normalize();
         this.allowMutatingTools = allowMutatingTools;
         this.dockerComposeProjectName = dockerComposeProjectName == null ? "" : dockerComposeProjectName.trim();
+        this.stuckThresholdMinutes = stuckThresholdMinutes;
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public String answer(UUID projectId, String fallbackProjectName, String userMessage) {
         ProjectEntity project = resolveProject(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
-        ProjectOperationalContext context = contextService.build(project.getId(), fallbackProjectName);
         OperatorEvidence evidence = collectEvidence(project, userMessage);
+        ProjectOperationalContext context = contextService.build(project.getId(), fallbackProjectName);
 
         String systemInstruction = """
                 You are Gemini Project Operator inside Eneik Production System.
@@ -73,13 +84,17 @@ public class ProjectOperatorService {
                 - Deontic clarity: separate Obligatory, Permitted, and Forbidden actions when giving operational instructions.
                 - Lean / TOC / Six Sigma are management lenses, not decorative boilerplate. Use them only when they improve the concrete decision.
                 - Roles are lenses. You may speak as TAG-00..TAG-11 when useful, but Eneik Management System overrides role style.
+                - CORE JULES INVARIANT: every enabled Jules account is capable of every BARCAN-TAG-00..11 role. Never diagnose missing role capability unless PROJECT_FACT_PACK says universalRolePool=false.
 
                 OPERATOR RULES:
                 - First sentence directly answers the user.
                 - No greeting, no self-introduction, no motivational filler.
+                - PROJECT_FACT_PACK and OPERATOR_EVIDENCE are internal data sources. Never mention their names, the prompt, or hidden context to the user.
                 - Never invent files, commands, Docker status, PR facts, account counts, or test results.
                 - Never invent causal explanations. For "why" questions, separate VERIFIED observations from INFERRED hypotheses and say NOT AVAILABLE when the causal link is not in evidence.
                 - Every number about PRs, tasks, sessions, accounts, conflicts, Docker, or tests must be traceable to PROJECT_FACT_PACK or a named OPERATOR_EVIDENCE tool.
+                - If shared Jules slots are free, do not claim a Jules capacity shortage. Diagnose dispatch flow, stuck claims, API failures, conflicts, or unanswered activity handling instead.
+                - You may say you executed an action only when OPERATOR_EVIDENCE contains operator_action [ok].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
                 - Prefer short operational recommendations grounded in evidence.
@@ -145,6 +160,9 @@ public class ProjectOperatorService {
             observations.add(describePath("system_repo_root", systemRepoRoot));
         }
 
+        Optional<ToolObservation> operatorAction = runRequestedOperatorAction(project, lower);
+        operatorAction.ifPresent(observations::add);
+
         if (wantsCode || wantsSystem) {
             observations.add(tree(primaryRoot));
             observations.add(readIfExists(primaryRoot, "README.md"));
@@ -191,6 +209,56 @@ public class ProjectOperatorService {
         }
 
         return new OperatorEvidence(observations);
+    }
+
+    private Optional<ToolObservation> runRequestedOperatorAction(ProjectEntity project, String lower) {
+        boolean wantsDispatch = containsAny(lower,
+                "\u043d\u0430\u0437\u043d\u0430\u0447\u044c",
+                "\u0440\u0430\u0441\u043f\u0440\u0435\u0434\u0435\u043b\u0438",
+                "\u0440\u0430\u0437\u0434\u0430\u0439",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 \u0437\u0430\u0434\u0430\u0447",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438 queued",
+                "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
+                "dispatch queued",
+                "dispatch tasks",
+                "\u0440\u0430\u0437\u0431\u043b\u043e\u043a\u0438\u0440\u0443\u0439 \u043e\u0447\u0435\u0440\u0435\u0434\u044c",
+                "\u043f\u0440\u043e\u0433\u043e\u043d\u0438 \u043e\u0447\u0435\u0440\u0435\u0434\u044c");
+        boolean wantsMaintenance = wantsDispatch || containsAny(lower,
+                "\u043f\u0440\u043e\u0432\u0435\u0440\u044c \u0437\u0430\u0432\u0438\u0441",
+                "\u043e\u0447\u0438\u0441\u0442\u0438 \u0437\u0430\u0432\u0438\u0441",
+                "\u0437\u0430\u0432\u0435\u0440\u0448\u0438 \u0437\u0430\u0432\u0438\u0441",
+                "detect stuck",
+                "reap expired");
+
+        if (!wantsDispatch && !wantsMaintenance) {
+            return Optional.empty();
+        }
+        if (!allowMutatingTools) {
+            return Optional.of(new ToolObservation("operator_action", "blocked",
+                    "Mutating operator tools are disabled. Requested dispatch=" + wantsDispatch
+                            + ", maintenance=" + wantsMaintenance));
+        }
+
+        StringBuilder output = new StringBuilder();
+        try {
+            if (wantsMaintenance) {
+                claimService.reapExpiredLeases();
+                claimService.detectStuckSessions(stuckThresholdMinutes);
+                output.append("Ran maintenance: reapExpiredLeases + detectStuckSessions(")
+                        .append(stuckThresholdMinutes)
+                        .append(" minutes).\n");
+            }
+            if (wantsDispatch) {
+                projectFlowService.dispatchQueuedTasks(project.getId());
+                projectFlowService.dispatchReviewTasks(project.getId());
+                output.append("Ran dispatch: dispatchQueuedTasks + dispatchReviewTasks for project ")
+                        .append(project.getId())
+                        .append(".\n");
+            }
+            return Optional.of(new ToolObservation("operator_action", "ok", trim(output.toString())));
+        } catch (Exception e) {
+            return Optional.of(new ToolObservation("operator_action", "error", e.getMessage()));
+        }
     }
 
     private Path resolveProjectWorkspace(ProjectEntity project) {

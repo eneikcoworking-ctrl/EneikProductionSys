@@ -17,8 +17,10 @@ import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.github.GitHubPullRequestService;
+import com.eneik.production.services.jules.JulesRoleCapabilities;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -50,6 +52,9 @@ public class ProjectOperationalContextService {
     private final SystemStatusService systemStatusService;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final ObjectMapper objectMapper;
+
+    @Value("${jules.max-concurrent-sessions-per-account:3}")
+    private int maxConcurrentJulesSessionsPerAccount;
 
     public ProjectOperationalContextService(ProjectRepository projectRepository,
                                             TaskRepository taskRepository,
@@ -123,11 +128,14 @@ public class ProjectOperationalContextService {
         factPack.put("databasePrReviews", reviewFacts(reviews, sessions, tasksById));
         factPack.put("wishlist", wishlistFacts(wishlist));
         factPack.put("accountsAvailableForProject", accountFacts(accounts, sessions));
+        factPack.put("julesUniversalRoleCapacity", julesCapacityFacts(tasks, accounts, sessions));
         factPack.put("conflicts", conflictFacts(conflicts));
         factPack.put("bottlenecks", bottleneckFacts(project.getId()));
         factPack.put("systemStatusProjectOnly", systemStatusService.getStatus(project.getId()));
         factPack.put("rules", List.of(
                 "No global system data is included in this fact pack.",
+                "Every enabled Jules account is universal-role capable for all BARCAN-TAG-00..11 roles.",
+                "Do not diagnose missing role capability for Jules accounts; diagnose shared session slots, account enabled/status, stuck sessions, API errors, or dispatch failures instead.",
                 "Use githubPullRequestsLive for current GitHub open/closed PR counts.",
                 "Use databasePrReviews for review decisions and merge results.",
                 "If a fact is absent from this pack, say it is not available instead of guessing."
@@ -374,7 +382,11 @@ public class ProjectOperationalContextService {
     }
 
     private Map<String, Object> accountFacts(List<AccountEntity> accounts, List<JulesSessionEntity> sessions) {
-        Map<UUID, Long> activeSessionsByAccount = sessions.stream()
+        Map<UUID, Long> activeCapacitySessionsByAccount = sessions.stream()
+                .filter(session -> session.getAccountId() != null)
+                .filter(session -> List.of("queued", "running", "revising", "stuck").contains(session.getStatus()))
+                .collect(Collectors.groupingBy(JulesSessionEntity::getAccountId, Collectors.counting()));
+        Map<UUID, Long> trackedSessionsByAccount = sessions.stream()
                 .filter(session -> session.getAccountId() != null)
                 .filter(session -> List.of("queued", "running", "revising", "stuck", "pr_opened").contains(session.getStatus()))
                 .collect(Collectors.groupingBy(JulesSessionEntity::getAccountId, Collectors.counting()));
@@ -384,11 +396,16 @@ public class ProjectOperationalContextService {
         Map<String, Object> fact = new LinkedHashMap<>();
         fact.put("total", accounts.size());
         fact.put("countsByStatus", counts);
-        fact.put("items", accounts.stream().map(account -> accountFact(account, activeSessionsByAccount)).toList());
+        fact.put("universalRoleInvariant", "Every enabled Jules account is capable of every BARCAN-TAG-00..11 role.");
+        fact.put("maxConcurrentSessionsPerAccount", maxConcurrentJulesSessionsPerAccount);
+        fact.put("items", accounts.stream().map(account -> accountFact(account, activeCapacitySessionsByAccount, trackedSessionsByAccount)).toList());
         return fact;
     }
 
-    private Map<String, Object> accountFact(AccountEntity account, Map<UUID, Long> activeSessionsByAccount) {
+    private Map<String, Object> accountFact(AccountEntity account,
+                                           Map<UUID, Long> activeCapacitySessionsByAccount,
+                                           Map<UUID, Long> trackedSessionsByAccount) {
+        long capacitySessions = activeCapacitySessionsByAccount.getOrDefault(account.getId(), 0L);
         Map<String, Object> fact = new LinkedHashMap<>();
         fact.put("id", account.getId());
         fact.put("name", account.getName());
@@ -397,8 +414,52 @@ public class ProjectOperationalContextService {
         fact.put("currentProjectId", account.getCurrentProjectId());
         fact.put("githubUsername", account.getGithubUsername());
         fact.put("capabilities", account.getCapabilities());
-        fact.put("activeProjectSessions", activeSessionsByAccount.getOrDefault(account.getId(), 0L));
+        fact.put("effectiveCapabilities", JulesRoleCapabilities.ALL_ROLE_TAGS);
+        fact.put("activeCapacitySessions", capacitySessions);
+        fact.put("trackedActiveProjectSessions", trackedSessionsByAccount.getOrDefault(account.getId(), 0L));
+        fact.put("maxConcurrentSessions", maxConcurrentJulesSessionsPerAccount);
+        fact.put("freeSessionSlots", Math.max(0, maxConcurrentJulesSessionsPerAccount - capacitySessions));
         fact.put("lastHeartbeat", text(account.getLastHeartbeat()));
+        return fact;
+    }
+
+    private Map<String, Object> julesCapacityFacts(List<TaskEntity> tasks,
+                                                   List<AccountEntity> accounts,
+                                                   List<JulesSessionEntity> sessions) {
+        List<AccountEntity> enabledAccounts = accounts.stream()
+                .filter(AccountEntity::isEnabled)
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .toList();
+        Map<UUID, AccountEntity> enabledById = enabledAccounts.stream()
+                .filter(account -> account.getId() != null)
+                .collect(Collectors.toMap(AccountEntity::getId, Function.identity(), (a, b) -> a));
+        long activeCapacitySessions = sessions.stream()
+                .filter(session -> session.getAccountId() != null)
+                .filter(session -> enabledById.containsKey(session.getAccountId()))
+                .filter(session -> List.of("queued", "running", "revising", "stuck").contains(session.getStatus()))
+                .count();
+        long sharedSlotsTotal = (long) enabledAccounts.size() * maxConcurrentJulesSessionsPerAccount;
+        long sharedSlotsFree = Math.max(0, sharedSlotsTotal - activeCapacitySessions);
+        Map<String, Long> queuedByRole = tasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.queued)
+                .filter(task -> task.getRole() != null)
+                .collect(Collectors.groupingBy(task -> task.getRole().getTag(), LinkedHashMap::new, Collectors.counting()));
+
+        Map<String, Object> fact = new LinkedHashMap<>();
+        fact.put("universalRolePool", true);
+        fact.put("rule", "Every enabled Jules account can take every BARCAN role; role tag is execution context, not account eligibility.");
+        fact.put("allRoleTags", JulesRoleCapabilities.ALL_ROLE_TAGS);
+        fact.put("maxConcurrentSessionsPerAccount", maxConcurrentJulesSessionsPerAccount);
+        fact.put("enabledAccounts", enabledAccounts.size());
+        fact.put("sharedSlotsTotal", sharedSlotsTotal);
+        fact.put("sharedSlotsUsed", activeCapacitySessions);
+        fact.put("sharedSlotsFree", sharedSlotsFree);
+        fact.put("queuedTasksByRole", queuedByRole);
+        fact.put("interpretationRules", List.of(
+                "If sharedSlotsFree > 0, do not claim a Jules capacity shortage.",
+                "If queuedTasksByRole is non-empty and sharedSlotsFree > 0, the next diagnostic target is dispatch flow, stuck claims, API errors, or project/task conflict rules.",
+                "Never diagnose missing BARCAN capability unless universalRolePool is false."
+        ));
         return fact;
     }
 
