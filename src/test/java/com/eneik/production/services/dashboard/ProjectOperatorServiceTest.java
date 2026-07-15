@@ -6,6 +6,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
+import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -35,6 +36,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
+        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -44,6 +46,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
+                antigravityDiagnosticService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -112,6 +115,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
+        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -121,6 +125,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
+                antigravityDiagnosticService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -188,6 +193,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
+        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -197,6 +203,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
+                antigravityDiagnosticService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -254,5 +261,95 @@ class ProjectOperatorServiceTest {
         String answer = service.answer(projectId, "test-project", "What can you test?");
 
         assertEquals("current project evidence and operator evidence show no runnable tests.", answer);
+    }
+
+    @Test
+    void antigravityIntentRunsDiagnosticWorkerTool() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        ProjectOperationalContextService contextService = mock(ProjectOperationalContextService.class);
+        MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
+        ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
+        ClaimService claimService = mock(ClaimService.class);
+        GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
+        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+
+        ProjectOperatorService service = new ProjectOperatorService(
+                projectRepository,
+                contextService,
+                mlPredictionServiceClient,
+                projectFlowService,
+                claimService,
+                gitHubPullRequestService,
+                antigravityDiagnosticService,
+                settingsService,
+                "project-workspaces",
+                ".",
+                "target/operator-memory-test",
+                true,
+                "eneikproductionsys",
+                "eneikcoworking-ctrl",
+                30,
+                1,
+                true,
+                new ObjectMapper()
+        );
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setName("test-project");
+        project.setSlug("test-project");
+        project.setStatus(ProjectStatus.active);
+        project.setRepositoryName("test-project");
+
+        ProjectOperationalContextService.ProjectOperationalContext context =
+                new ProjectOperationalContextService.ProjectOperationalContext(
+                        projectId,
+                        "test-project",
+                        Map.of("project", Map.of("name", "test-project")),
+                        "{\"project\":{\"name\":\"test-project\"}}",
+                        new ProjectOperationalContextService.PrStats(
+                                false,
+                                0,
+                                0,
+                                "",
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                0,
+                                List.of(),
+                                List.of(),
+                                List.of(),
+                                List.of()
+                        )
+                );
+
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(contextService.build(projectId, "test-project")).thenReturn(context);
+        when(antigravityDiagnosticService.runDiagnostic(any(), any(), anyString()))
+                .thenReturn(new AntigravityDiagnosticService.DiagnosticResult(
+                        false,
+                        "unavailable",
+                        "",
+                        false,
+                        false,
+                        "",
+                        "Antigravity integration is disabled."
+                ));
+        when(mlPredictionServiceClient.chat(anyString(), contains("tool planner")))
+                .thenReturn("{\"toolCalls\":[]}");
+        when(mlPredictionServiceClient.chat(anyString(), contains("PROJECT_FACT_PACK")))
+                .thenReturn("Antigravity diagnostic worker was checked and is disabled.");
+        when(mlPredictionServiceClient.chat(anyString(), contains("answer critic")))
+                .thenReturn("{\"verdict\":\"pass\",\"issues\":[]}");
+
+        String answer = service.answer(projectId, "test-project", "Use Antigravity diagnostic branch for this project.");
+
+        assertEquals("Antigravity diagnostic worker was checked and is disabled.", answer);
+        verify(antigravityDiagnosticService).runDiagnostic(any(), any(), anyString());
+        verify(projectFlowService, never()).orchestrate(any());
     }
 }

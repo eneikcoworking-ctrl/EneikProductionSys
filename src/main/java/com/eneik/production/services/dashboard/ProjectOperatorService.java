@@ -10,6 +10,7 @@ import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
+import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
@@ -56,6 +57,7 @@ public class ProjectOperatorService {
     private final ProjectFlowService projectFlowService;
     private final ClaimService claimService;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final AntigravityDiagnosticService antigravityDiagnosticService;
     private final SystemSettingsService settingsService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
@@ -74,6 +76,7 @@ public class ProjectOperatorService {
                                   ProjectFlowService projectFlowService,
                                   ClaimService claimService,
                                   GitHubPullRequestService gitHubPullRequestService,
+                                  AntigravityDiagnosticService antigravityDiagnosticService,
                                   SystemSettingsService settingsService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
@@ -91,6 +94,7 @@ public class ProjectOperatorService {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.antigravityDiagnosticService = antigravityDiagnosticService;
         this.settingsService = settingsService;
         this.workspaceRoot = Paths.get(workspaceRoot).toAbsolutePath().normalize();
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
@@ -140,6 +144,7 @@ public class ProjectOperatorService {
                 - Missing repository, empty workspace, absent .git, unknown setup commands, or unclear backend/frontend boundaries are bootstrap work. Treat them as one of the first project tasks, not as a human operator problem.
                 - Recorded failed attempts are internal defect counter evidence only. Do not present them as active project work. Do not mention those totals unless the user explicitly asks for production defect accounting.
                 - Closed-but-unmerged PRs are historical scrap/COPQ evidence, not open work. Never tell the user to close closed PRs again. Only live open PRs are actionable.
+                - Antigravity Diagnostic Worker is the deep engineering executor for bounded code diagnostics. Use it for repository-level investigation, local/build/test repair, and diagnostic branch artifacts; never treat it as a chat answer substitute.
                 - For project planning, focus on current project state: workspace, live open PRs, queued/review work, active sessions, API/account availability, and the next dispatchable task.
                 - Open unmerged PRs are WIP/integration debt, not proof of forward progress. When the user explicitly asks to close stale PRs or restart the flow, use the PR cleanup tool and then recover/dispatch fresh work.
                 - Do not say you lack analytical tools while project facts contain tasks, sessions, wishlist, accounts, PRs, conflicts, or EMS metrics. If bottleneck detection is empty, analyze queue/review/done balance, session age, PR review state, account API state, and dispatchability instead.
@@ -454,6 +459,7 @@ public class ProjectOperatorService {
                 - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
                 - If repository setup, local environment, .git, workspace, backend/frontend boundary, or setup commands are missing and the user asks to fix/start/continue, request ensure_project_workspace and ensure_environment_bootstrap_work.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
+                - If the user asks for Antigravity, deep repository diagnostics, local code repair, root-cause investigation, or a diagnostic branch, request antigravity_diagnostic_worker.
                 - If the user asks to resume, continue, unblock, recover, replace failed work, or create new corrected tasks after failed Jules work, request recover_blocked_flow. Do not ask the user to choose task IDs.
                 - If the next step is described only as "waiting for tasks" and no concrete task/owner/role exists, request add_wishlist with a short English atomic work item, then orchestrate_project and dispatch_project when the user explicitly asked to act.
                 - Do not use Six Sigma alone as a reason to stop project work; it is production telemetry for the EMS makers, not the project operator's execution concern.
@@ -535,6 +541,10 @@ public class ProjectOperatorService {
         if (looksLikeOperatorExecutionIntent(lower)) {
             addRoutedCall(calls, "autonomous_flow_steward",
                     "User confirmed or asked to continue execution; run the project recovery/dispatch sequence without asking for another confirmation.");
+        }
+        if (looksLikeAntigravityIntent(lower)) {
+            addRoutedCall(calls, "antigravity_diagnostic_worker",
+                    "User asked for deep Antigravity engineering diagnostics or a diagnostic branch artifact.");
         }
         if (looksLikeWorkspaceRepairIntent(project, lower)) {
             addRoutedCall(calls, "ensure_project_workspace",
@@ -690,6 +700,16 @@ public class ProjectOperatorService {
                 "\u043a\u0440\u0443\u0433", "\u043d\u0435 \u043e\u0442\u0432\u0435\u0447", "\u043d\u0438\u043a\u0442\u043e \u043d\u0435 \u043e\u0442\u0432\u0435\u0447");
     }
 
+    private boolean looksLikeAntigravityIntent(String lower) {
+        return containsAny(lower,
+                "antigravity", "anti-gravity", "diagnostic branch", "deep diagnostic", "deep diagnose",
+                "root cause branch", "engineering executor", "run local repair", "push diagnostic branch",
+                "\u0430\u043d\u0442\u0438\u0433\u0440\u0430\u0432\u0438\u0442", "\u0433\u043b\u0443\u0431\u043e\u043a\u0430\u044f \u0434\u0438\u0430\u0433\u043d\u043e\u0441",
+                "\u0434\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u0447\u0435\u0441\u043a", "\u0441\u043f\u0435\u0446\u0438\u0430\u043b\u044c\u043d\u0443\u044e \u0432\u0435\u0442\u043a",
+                "\u0441\u043f\u0435\u0446 \u0432\u0435\u0442\u043a", "\u043b\u043e\u043a\u0430\u043b\u044c\u043d\u043e \u0438\u0441\u043f\u0440\u0430\u0432",
+                "\u043f\u0443\u0448\u0438\u0442\u044c \u0432\u0435\u0442\u043a", "\u043f\u0440\u0438\u0447\u0438\u043d\u0443 \u0432 \u043a\u043e\u0434\u0435");
+    }
+
     private String toolCatalog() {
         return """
                 Read-only project/data tools:
@@ -758,6 +778,7 @@ public class ProjectOperatorService {
                 - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
                 - ensure_project_workspace {} MUTATING
                 - start_testing_stream {} MUTATING
+                - antigravity_diagnostic_worker {"mission":"optional English bounded diagnostic mission"} MUTATING/REMOTE_EXECUTION
 
                 Generic tool:
                 - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
@@ -841,6 +862,7 @@ public class ProjectOperatorService {
                 case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
                 case "ensure_project_workspace" -> mutating(userMessage, tool, () -> ensureProjectWorkspace(project));
                 case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
+                case "antigravity_diagnostic_worker" -> mutating(userMessage, tool, () -> antigravityDiagnosticWorker(project, context, userMessage, args));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
                 default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
             };
@@ -1584,6 +1606,31 @@ public class ProjectOperatorService {
         }
     }
 
+    private ToolObservation antigravityDiagnosticWorker(ProjectEntity project,
+                                                        ProjectOperationalContext context,
+                                                        String userMessage,
+                                                        JsonNode args) {
+        String mission = textArg(args, "mission", "");
+        String request = mission.isBlank() ? userMessage : mission;
+        var result = antigravityDiagnosticService.runDiagnostic(project, context, request);
+
+        StringBuilder output = new StringBuilder();
+        output.append("Antigravity Diagnostic Worker result\n")
+                .append("status=").append(result.status()).append('\n')
+                .append("branch=").append(result.branchName().isBlank() ? "NOT_CREATED" : result.branchName()).append('\n')
+                .append("pushRequested=").append(result.branchPushRequested()).append('\n')
+                .append("branchVerified=").append(result.branchVerified()).append('\n');
+        if (!result.commitSha().isBlank()) {
+            output.append("commit=").append(result.commitSha()).append('\n');
+        }
+        output.append('\n').append(result.output());
+
+        String status = result.available()
+                ? result.branchVerified() ? "ok" : "partial"
+                : "missing";
+        return new ToolObservation("antigravity_diagnostic_worker", status, trim(output.toString()));
+    }
+
     private ToolObservation runGenericCommand(ProjectEntity project, JsonNode args, String userMessage) {
         Path root = rootFor(project, args);
         JsonNode rawCommand = args.path("command");
@@ -1741,6 +1788,9 @@ public class ProjectOperatorService {
     private boolean isExplicitMutatingRequest(String userMessage) {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         if (looksLikeOperatorExecutionIntent(lower)) {
+            return true;
+        }
+        if (looksLikeAntigravityIntent(lower)) {
             return true;
         }
         return containsAny(lower,

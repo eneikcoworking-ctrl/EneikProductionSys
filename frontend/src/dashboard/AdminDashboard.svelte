@@ -89,11 +89,20 @@
     conflictDpmo?: Section<ConflictDpmoData>;
   };
 
-  const integrations = [
+  type IntegrationConfig = {
+    name: string;
+    enabledKey: string;
+    secretKey: string;
+    extraKey?: string;
+    pushKey?: string;
+  };
+
+  const integrations: IntegrationConfig[] = [
     { name: 'GitHub', enabledKey: 'github_enabled', secretKey: 'github_token' },
     { name: 'Linear', enabledKey: 'linear_enabled', secretKey: 'linear_api_key', extraKey: 'linear_team_id' },
     { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' },
-    { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' }
+    { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' },
+    { name: 'Antigravity', enabledKey: 'antigravity_enabled', secretKey: 'antigravity_api_key', extraKey: 'antigravity_agent', pushKey: 'antigravity_push_enabled' }
   ];
 
   let status = $state<SystemStatus | null>(null);
@@ -353,9 +362,9 @@
 
           {#if integration.extraKey}
             <div class="setting-line">
-              <span>team</span>
+              <span>{integration.name === 'Antigravity' ? 'agent' : 'team'}</span>
               {#if editing[integration.extraKey]}
-                <input bind:value={drafts[integration.extraKey]} placeholder="Linear team id" />
+                <input bind:value={drafts[integration.extraKey]} placeholder={integration.name === 'Antigravity' ? 'antigravity-preview-05-2026' : 'Linear team id'} />
               {:else}
                 <input value={settingByKey(integration.extraKey)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
@@ -366,12 +375,28 @@
             </div>
           {/if}
 
+          {#if integration.pushKey}
+            <div class="setting-line">
+              <span>branch push</span>
+              <label class="toggle inline-toggle">
+                <input
+                  type="checkbox"
+                  checked={settingByKey(integration.pushKey)?.enabled === true}
+                  onchange={(event) => saveSetting(integration.pushKey, String((event.currentTarget as HTMLInputElement).checked))}
+                />
+                <span>diagnostic branches only</span>
+              </label>
+            </div>
+          {/if}
+
           <div class="source-line">
             <small>{settingByKey(integration.secretKey)?.source || 'none'}</small>
             {#if integration.name === 'GitHub'}
               <small>{status?.githubAccess?.data?.latest?.ci_status || 'no check yet'}</small>
             {:else if integration.name === 'Linear'}
               <small>{status?.linearCompleteness?.data?.totalIssues ?? 0} issues</small>
+            {:else if integration.name === 'Antigravity'}
+              <small>{settingByKey(integration.pushKey || '')?.enabled ? 'branch push enabled' : 'diagnostic only'}</small>
             {:else}
               <small>{status?.julesSessions?.data?.total ?? 0} sessions</small>
             {/if}
@@ -628,7 +653,7 @@
 
   .setting-line {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto auto;
+    grid-template-columns: 96px minmax(0, 1fr) auto auto;
   }
 
   .token-name-label {
