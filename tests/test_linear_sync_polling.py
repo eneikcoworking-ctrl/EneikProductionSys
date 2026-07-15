@@ -17,8 +17,8 @@ class TestLinearSyncPolling(unittest.TestCase):
     def test_sync_tasks_polling(self, mock_update_id, mock_get_tasks, mock_api_call):
         # Mock tasks list
         mock_get_tasks.return_value = [
-            {'id': 'task-1', 'description': 'Task 1', 'status': 'queued', 'linearIssueId': None},
-            {'id': 'task-2', 'description': 'Task 2', 'status': 'done', 'linearIssueId': 'linear-2'}
+            {'id': 'task-1', 'description': 'Task 1', 'status': 'queued', 'linearIssueId': None, 'role': {'tag': 'BARCAN-TAG-02'}},
+            {'id': 'task-2', 'description': 'Task 2', 'status': 'done', 'linearIssueId': 'linear-2', 'role': {'tag': 'BARCAN-TAG-02'}}
         ]
 
         # Mock API responses
@@ -36,7 +36,7 @@ class TestLinearSyncPolling(unittest.TestCase):
 
         mock_api_call.side_effect = side_effect
 
-        with patch.dict(os.environ, {"LINEAR_API_TOKEN": "test-token"}):
+        with patch.dict(os.environ, {"LINEAR_API_TOKEN": "test-token", "LINEAR_ENABLED": "true"}):
             linear_sync.process_polling()
 
         # Verify workflow states fetched

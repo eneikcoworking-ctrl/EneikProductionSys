@@ -52,7 +52,7 @@ class TestLinearSyncFull(unittest.TestCase):
         def side_effect(query, variables):
             if 'WorkflowStates' in query:
                 return {'team': {'states': {'nodes': [
-                    {'id': 'state-ip', 'name': 'In Progress'}
+                    {'id': 'state-ip', 'name': 'In Progress (MAX 2))'}
                 ]}}}
             if 'Labels' in query:
                 return {'team': {'labels': {'nodes': []}}}
