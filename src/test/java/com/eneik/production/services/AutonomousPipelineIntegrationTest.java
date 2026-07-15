@@ -284,6 +284,54 @@ class AutonomousPipelineIntegrationTest {
     }
 
     @Test
+    void testBlockedWorkIsRecoveredIntoFreshAtomicTaskWithoutOperatorSelectingTaskId() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Blocked Recovery Project");
+        project.setSlug("blocked-recovery-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("blocked-recovery-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        AccountEntity account = new AccountEntity();
+        account.setName("Recovery Jules");
+        account.setCapabilities("*");
+        account.setStatus(AccountStatus.idle);
+        account.setEnabled(true);
+        account = accountRepository.saveAndFlush(account);
+
+        TaskEntity blockedTask = new TaskEntity();
+        blockedTask.setProject(project);
+        blockedTask.setRole(roleRepository.findById("BARCAN-TAG-11").orElseThrow());
+        blockedTask.setDescription("Oversized frontend task that exceeded the Jules session dialogue budget.");
+        blockedTask.setStatus(TaskStatus.blocked);
+        blockedTask.setRetryCount(3);
+        blockedTask.setJulesDispatchStatus("Jules circuit breaker: dialog_limit_exceeded");
+        blockedTask = taskRepository.saveAndFlush(blockedTask);
+        UUID projectId = project.getId();
+        UUID blockedTaskId = blockedTask.getId();
+
+        continuousOrchestrationService.continuousOrchestrate();
+
+        TaskEntity oldTask = taskRepository.findById(blockedTaskId).orElseThrow();
+        assertThat(oldTask.getStatus()).isEqualTo(TaskStatus.blocked);
+
+        List<WishlistEntity> recoveryWishlist = wishlistRepository.findByProjectId(projectId).stream()
+                .filter(w -> w.getSource() == WishlistSource.role_mismatch_followup)
+                .toList();
+        assertThat(recoveryWishlist).hasSize(1);
+        assertThat(recoveryWishlist.get(0).getStatus()).isEqualTo(WishlistStatus.converted_to_task);
+        assertThat(recoveryWishlist.get(0).getContent()).contains("Auto recovery source task: " + blockedTaskId);
+
+        List<TaskEntity> replacementTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(task -> !task.getId().equals(blockedTaskId))
+                .toList();
+        assertThat(replacementTasks).hasSize(1);
+        assertThat(replacementTasks.get(0).getStatus()).isIn(TaskStatus.queued, TaskStatus.claimed);
+        assertThat(replacementTasks.get(0).getDescription()).contains("Role: BARCAN-TAG-11");
+    }
+
+    @Test
     void testFalsificationCycleRateLimitAndRunRecord() throws java.io.IOException {
         // Enable falsification cycle
         settingsService.save("falsification_cycle_enabled", "true");

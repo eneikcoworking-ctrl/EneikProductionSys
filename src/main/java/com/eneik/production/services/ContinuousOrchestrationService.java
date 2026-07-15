@@ -53,6 +53,11 @@ public class ContinuousOrchestrationService {
         for (ProjectEntity project : activeProjects) {
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
+                int recovered = projectFlowService.recoverBlockedWork(project.getId());
+                if (recovered > 0) {
+                    log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
+                            recovered, project.getName());
+                }
                 projectFlowService.dispatchQueuedTasks(project.getId());
                 projectFlowService.dispatchReviewTasks(project.getId());
             } catch (OrchestrationCooldownException e) {

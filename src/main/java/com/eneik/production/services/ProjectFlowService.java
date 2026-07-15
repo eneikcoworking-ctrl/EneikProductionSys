@@ -66,6 +66,9 @@ public class ProjectFlowService {
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
 
+    @Value("${orchestration.max-recovery-items-per-run:3}")
+    private int maxRecoveryItemsPerRun;
+
 
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -339,6 +342,163 @@ public class ProjectFlowService {
 
         state.setLastOrchestratedAt(now);
         projectGenerationStateRepository.saveAndFlush(state);
+    }
+
+    @Transactional
+    public int recoverBlockedWork(UUID projectId) {
+        ProjectEntity project = requireActiveProject(projectId);
+        int budget = Math.max(1, maxRecoveryItemsPerRun);
+        int created = compilePendingRecoveryWishlist(project, budget);
+
+        int remaining = budget - created;
+        if (remaining > 0) {
+            int wishlistCreated = createRecoveryWishlistForOrphanedBlockedTasks(project, remaining);
+            if (wishlistCreated > 0) {
+                created += compilePendingRecoveryWishlist(project, remaining);
+            }
+        }
+
+        if (created > 0) {
+            log.info("ProjectFlowService: recovered {} blocked work item(s) for project {}", created, project.getName());
+        }
+        return created;
+    }
+
+    private int compilePendingRecoveryWishlist(ProjectEntity project, int limit) {
+        if (limit <= 0) {
+            return 0;
+        }
+        List<WishlistEntity> pendingRecovery = wishlistRepository
+                .findByProjectIdAndStatus(project.getId(), WishlistStatus.pending)
+                .stream()
+                .filter(this::isAutonomousRecoveryWishlist)
+                .limit(limit)
+                .toList();
+
+        int created = 0;
+        for (WishlistEntity wishlist : pendingRecovery) {
+            try {
+                List<UUID> before = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
+                        .stream()
+                        .map(TaskEntity::getId)
+                        .toList();
+                if (compileWishlistIntoAtomicSlices(project, wishlist)) {
+                    long newTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
+                            .stream()
+                            .map(TaskEntity::getId)
+                            .filter(id -> !before.contains(id))
+                            .count();
+                    created += Math.max(1, (int) newTasks);
+                }
+            } catch (Exception e) {
+                log.error("ProjectFlowService: failed to compile recovery wishlist {} for project {}",
+                        wishlist.getId(), project.getName(), e);
+            }
+        }
+        return created;
+    }
+
+    private boolean isAutonomousRecoveryWishlist(WishlistEntity wishlist) {
+        return wishlist.getSource() == WishlistSource.role_mismatch_followup;
+    }
+
+    private int createRecoveryWishlistForOrphanedBlockedTasks(ProjectEntity project, int limit) {
+        if (limit <= 0) {
+            return 0;
+        }
+        List<TaskEntity> blockedTasks = taskRepository
+                .findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.blocked);
+        if (blockedTasks.isEmpty()) {
+            return 0;
+        }
+
+        List<String> existingRecoveryContent = wishlistRepository.findByProjectId(project.getId())
+                .stream()
+                .filter(this::isAutonomousRecoveryWishlist)
+                .map(WishlistEntity::getContent)
+                .filter(Objects::nonNull)
+                .toList();
+
+        int created = 0;
+        for (TaskEntity task : blockedTasks) {
+            if (created >= limit) {
+                break;
+            }
+            if (hasActiveJulesSession(task.getId())) {
+                continue;
+            }
+            String taskId = task.getId().toString();
+            boolean alreadyCovered = existingRecoveryContent.stream().anyMatch(content -> content.contains(taskId));
+            if (alreadyCovered) {
+                continue;
+            }
+
+            WishlistEntity followUp = new WishlistEntity();
+            followUp.setProjectId(project.getId());
+            followUp.setSource(WishlistSource.role_mismatch_followup);
+            followUp.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : ORCHESTRATOR_ROLE);
+            followUp.setStatus(WishlistStatus.pending);
+            followUp.setContent(truncate("""
+                    [Auto recovery from blocked task]
+                    Auto recovery source task: %s
+                    Original role: %s
+                    Previous dispatch status: %s
+                    Previous retry count: %s
+
+                    Goal:
+                    Replace the blocked attempt with one fresh, short Jules session.
+
+                    Scope rule:
+                    - Do not continue the old branch conversation.
+                    - Do not revive the old oversized task as-is.
+                    - Start one atomic slice with one objective acceptance criterion.
+                    - If more work is discovered, write it as a separate wishlist item.
+
+                    Original task:
+                    %s
+
+                    DoD:
+                    One small branch, one PR, at most two tightly related source areas, explicit verification command, no generated artifacts.
+                    """.formatted(
+                    taskId,
+                    task.getRole() != null ? task.getRole().getTag() : "unknown-role",
+                    valueOrUnset(task.getJulesDispatchStatus()),
+                    task.getRetryCount(),
+                    task.getDescription()
+            ), 7_500));
+            wishlistRepository.save(followUp);
+            existingRecoveryContent = new ArrayList<>(existingRecoveryContent);
+            existingRecoveryContent.add(followUp.getContent());
+            created++;
+            log.info("ProjectFlowService: created recovery wishlist for blocked task {} in project {}",
+                    task.getId(), project.getName());
+        }
+        return created;
+    }
+
+    private boolean hasActiveJulesSession(UUID taskId) {
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .anyMatch(session -> {
+                    String status = session.getStatus();
+                    return session.getExternalSessionId() != null
+                            && !"skipped".equals(session.getExternalSessionId())
+                            && ("queued".equals(status)
+                            || "running".equals(status)
+                            || "revising".equals(status)
+                            || "pr_opened".equals(status)
+                            || "stuck".equals(status));
+                });
+    }
+
+    private String valueOrUnset(String value) {
+        return value == null || value.isBlank() ? "<unset>" : value;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, Math.max(0, maxLength));
     }
 
     private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist) {

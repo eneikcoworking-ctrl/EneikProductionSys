@@ -310,6 +310,7 @@ public class ProjectOperatorService {
                 - Request mutating tools only when the user explicitly asks to run, create, add, orchestrate, dispatch, start, build, pull, or execute.
                 - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
+                - If the user asks to resume, continue, unblock, recover, replace blocked work, or create new corrected tasks after blocked/failed Jules work, request recover_blocked_flow. Do not ask the user to choose blocked task IDs.
                 - Prefer multiple narrow tools over one broad generic command.
                 - Max 12 tool calls.
 
@@ -392,6 +393,10 @@ public class ProjectOperatorService {
             calls.add(new OperatorToolCall("start_testing_stream", objectMapper.createObjectNode(),
                     "User explicitly asked to start project testing tasks."));
         }
+        if (looksLikeBlockedRecoveryIntent(lower)) {
+            calls.add(new OperatorToolCall("recover_blocked_flow", objectMapper.createObjectNode(),
+                    "User explicitly asked to resume or replace blocked Jules work without manual task selection."));
+        }
         return calls;
     }
 
@@ -410,6 +415,16 @@ public class ProjectOperatorService {
         boolean start = containsAny(lower, "start", "begin", "create", "add", "run", "launch",
                 "\u043d\u0430\u0447\u043d", "\u0437\u0430\u043f\u0443\u0441\u0442", "\u0441\u043e\u0437\u0434", "\u0434\u043e\u0431\u0430\u0432");
         return testing && start;
+    }
+
+    private boolean looksLikeBlockedRecoveryIntent(String lower) {
+        boolean blocked = containsAny(lower, "blocked", "stuck", "failed", "rejected", "loop", "circuit",
+                "\u0437\u0430\u0431\u043b\u043e\u043a", "\u0437\u0430\u0432\u0438\u0441", "\u0437\u0430\u0441\u0442\u0440",
+                "\u043e\u0442\u043a\u043b\u043e\u043d", "\u0442\u0443\u043f\u0438\u043a", "\u043a\u0440\u0443\u0433");
+        boolean recover = containsAny(lower, "resume", "continue", "recover", "unblock", "restart", "replace", "new task", "new tasks",
+                "\u043f\u0440\u043e\u0434\u043e\u043b\u0436", "\u0432\u043e\u0437\u043e\u0431\u043d", "\u0440\u0430\u0437\u0431\u043b\u043e\u043a",
+                "\u043f\u0435\u0440\u0435\u0437\u0430\u043f", "\u043d\u043e\u0432\u044b", "\u0437\u0430\u0434\u0430\u0447");
+        return blocked && recover;
     }
 
     private String toolCatalog() {
@@ -459,6 +474,7 @@ public class ProjectOperatorService {
                 Eneik production tools:
                 - orchestrate_project {} MUTATING
                 - dispatch_project {} MUTATING
+                - recover_blocked_flow {} MUTATING
                 - maintenance_stuck {} MUTATING
                 - add_wishlist {"content":"English wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
                 - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
@@ -526,6 +542,7 @@ public class ProjectOperatorService {
                 case "run_detected_checks" -> mutating(userMessage, tool, () -> runDetectedChecks(rootFor(project, args)));
                 case "orchestrate_project" -> mutating(userMessage, tool, () -> orchestrateProject(project));
                 case "dispatch_project" -> mutating(userMessage, tool, () -> dispatchProject(project));
+                case "recover_blocked_flow" -> mutating(userMessage, tool, () -> recoverBlockedFlow(project));
                 case "maintenance_stuck" -> mutating(userMessage, tool, this::maintenanceStuck);
                 case "add_wishlist" -> mutating(userMessage, tool, () -> addWishlist(project, args));
                 case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
@@ -779,6 +796,17 @@ public class ProjectOperatorService {
         projectFlowService.dispatchReviewTasks(project.getId());
         return new ToolObservation("dispatch_project", "ok",
                 "Ran dispatchQueuedTasks + dispatchReviewTasks for project " + project.getId());
+    }
+
+    private ToolObservation recoverBlockedFlow(ProjectEntity project) {
+        int recovered = projectFlowService.recoverBlockedWork(project.getId());
+        projectFlowService.dispatchQueuedTasks(project.getId());
+        projectFlowService.dispatchReviewTasks(project.getId());
+        return new ToolObservation("recover_blocked_flow", "ok",
+                "Recovered " + recovered
+                        + " blocked work item(s), then ran dispatchQueuedTasks + dispatchReviewTasks for project "
+                        + project.getId()
+                        + ". Existing blocked tasks remain as evidence; replacement work is created as fresh atomic recovery tasks.");
     }
 
     private ToolObservation maintenanceStuck() {

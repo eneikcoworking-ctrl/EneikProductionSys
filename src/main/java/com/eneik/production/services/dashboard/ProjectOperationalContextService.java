@@ -140,6 +140,7 @@ public class ProjectOperationalContextService {
                 "No global system data is included in this fact pack.",
                 "Every enabled Jules account is universal-role capable for all BARCAN-TAG-00..11 roles.",
                 "Do not diagnose missing role capability for Jules accounts; diagnose shared session slots, account enabled/status, stuck sessions, API errors, or dispatch failures instead.",
+                "Blocked tasks are terminal evidence for failed attempts, not a request for the human operator to choose IDs. If sharedSlotsFree > 0, the recovery path is to create/compile fresh atomic recovery work and dispatch it.",
                 "Use githubPullRequestsLive for current GitHub open/closed PR counts.",
                 "Use databasePrReviews for review decisions and merge results.",
                 "If a fact is absent from this pack, say it is not available instead of guessing."
