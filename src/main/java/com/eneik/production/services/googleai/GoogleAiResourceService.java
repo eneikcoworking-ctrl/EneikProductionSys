@@ -124,8 +124,8 @@ public class GoogleAiResourceService {
                 veoEnabled && googleKey,
                 "video_generation",
                 model("veo_model", "veo-3.1-generate-preview"),
-                "demo/promo video planning",
-                veoEnabled ? googleKey ? "configured; execution endpoint not wired in phase 1" : "missing Gemini API key" : "disabled"
+                "demo, promo, onboarding, walkthrough video assets",
+                veoEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "antigravity",
@@ -270,11 +270,14 @@ public class GoogleAiResourceService {
                         "",
                         "",
                         "",
+                        "",
+                        "",
                         "Interactions API HTTP " + response.statusCode() + ": " + preview(redacted, 1_500)
                 );
             }
             JsonNode root = objectMapper.readTree(response.body());
             ImageBlock image = findImage(root);
+            ImageBlock video = findVideo(root);
             return new InteractionResult(
                     true,
                     "ok",
@@ -282,13 +285,15 @@ public class GoogleAiResourceService {
                     outputText(root, redacted),
                     image.data(),
                     image.mimeType(),
+                    video.data(),
+                    video.mimeType(),
                     preview(redacted, 4_000)
             );
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new InteractionResult(false, "interrupted", model, "", "", "", "Interaction interrupted.");
+            return new InteractionResult(false, "interrupted", model, "", "", "", "", "", "Interaction interrupted.");
         } catch (Exception e) {
-            return new InteractionResult(false, "error", model, "", "", "", e.getMessage());
+            return new InteractionResult(false, "error", model, "", "", "", "", "", e.getMessage());
         }
     }
 
@@ -366,6 +371,18 @@ public class GoogleAiResourceService {
         return findImageRecursive(root);
     }
 
+    private ImageBlock findVideo(JsonNode root) {
+        ImageBlock direct = videoAt(root.path("output_video"));
+        if (!direct.data().isBlank()) {
+            return direct;
+        }
+        direct = videoAt(root.path("outputVideo"));
+        if (!direct.data().isBlank()) {
+            return direct;
+        }
+        return findVideoRecursive(root);
+    }
+
     private ImageBlock findImageRecursive(JsonNode node) {
         if (node == null || node.isMissingNode() || node.isNull()) {
             return ImageBlock.empty();
@@ -393,11 +410,43 @@ public class GoogleAiResourceService {
         return ImageBlock.empty();
     }
 
+    private ImageBlock findVideoRecursive(JsonNode node) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return ImageBlock.empty();
+        }
+        ImageBlock here = videoAt(node);
+        if (!here.data().isBlank()) {
+            return here;
+        }
+        if (node.isObject()) {
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                ImageBlock found = findVideoRecursive(fields.next().getValue());
+                if (!found.data().isBlank()) {
+                    return found;
+                }
+            }
+        } else if (node.isArray()) {
+            for (JsonNode child : node) {
+                ImageBlock found = findVideoRecursive(child);
+                if (!found.data().isBlank()) {
+                    return found;
+                }
+            }
+        }
+        return ImageBlock.empty();
+    }
+
     private ImageBlock imageAt(JsonNode node) {
         if (node == null || !node.isObject()) {
             return ImageBlock.empty();
         }
-        String data = firstNonBlank(node.path("data").asText(""), node.path("imageData").asText(""));
+        String data = firstNonBlank(
+                node.path("data").asText(""),
+                node.path("imageData").asText(""),
+                node.path("base64Data").asText(""),
+                node.path("bytesBase64Encoded").asText("")
+        );
         String mimeType = firstNonBlank(
                 node.path("mime_type").asText(""),
                 node.path("mimeType").asText(""),
@@ -405,6 +454,27 @@ public class GoogleAiResourceService {
         );
         if (data.length() > 200 && (blank(mimeType) || mimeType.toLowerCase().startsWith("image/"))) {
             return new ImageBlock(data, blank(mimeType) ? "image/png" : mimeType);
+        }
+        return ImageBlock.empty();
+    }
+
+    private ImageBlock videoAt(JsonNode node) {
+        if (node == null || !node.isObject()) {
+            return ImageBlock.empty();
+        }
+        String data = firstNonBlank(
+                node.path("data").asText(""),
+                node.path("videoData").asText(""),
+                node.path("base64Data").asText(""),
+                node.path("bytesBase64Encoded").asText("")
+        );
+        String mimeType = firstNonBlank(
+                node.path("mime_type").asText(""),
+                node.path("mimeType").asText(""),
+                node.path("mediaType").asText("")
+        );
+        if (data.length() > 200 && !blank(mimeType) && mimeType.toLowerCase().startsWith("video/")) {
+            return new ImageBlock(data, mimeType);
         }
         return ImageBlock.empty();
     }
@@ -460,10 +530,12 @@ public class GoogleAiResourceService {
             String outputText,
             String outputImageBase64,
             String outputImageMimeType,
+            String outputVideoBase64,
+            String outputVideoMimeType,
             String rawPreview
     ) {
         static InteractionResult unavailable(String reason) {
-            return new InteractionResult(false, "unavailable", "", reason, "", "", reason);
+            return new InteractionResult(false, "unavailable", "", reason, "", "", "", "", reason);
         }
     }
 }

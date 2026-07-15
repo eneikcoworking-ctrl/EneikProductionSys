@@ -11,6 +11,7 @@ import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.video.VideoAssetService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
@@ -41,6 +42,7 @@ class ProjectOperatorServiceTest {
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
+        VideoAssetService videoAssetService = mock(VideoAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -53,6 +55,7 @@ class ProjectOperatorServiceTest {
                 antigravityDiagnosticService,
                 googleAiResourceService,
                 designAssetService,
+                videoAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -124,6 +127,7 @@ class ProjectOperatorServiceTest {
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
+        VideoAssetService videoAssetService = mock(VideoAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -136,6 +140,7 @@ class ProjectOperatorServiceTest {
                 antigravityDiagnosticService,
                 googleAiResourceService,
                 designAssetService,
+                videoAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -206,6 +211,7 @@ class ProjectOperatorServiceTest {
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
+        VideoAssetService videoAssetService = mock(VideoAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -218,6 +224,7 @@ class ProjectOperatorServiceTest {
                 antigravityDiagnosticService,
                 googleAiResourceService,
                 designAssetService,
+                videoAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -288,6 +295,7 @@ class ProjectOperatorServiceTest {
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
+        VideoAssetService videoAssetService = mock(VideoAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -300,6 +308,7 @@ class ProjectOperatorServiceTest {
                 antigravityDiagnosticService,
                 googleAiResourceService,
                 designAssetService,
+                videoAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",

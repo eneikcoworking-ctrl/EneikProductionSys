@@ -16,6 +16,7 @@ import com.eneik.production.services.dashboard.ProjectOperationalContextService.
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.video.VideoAssetService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -62,6 +63,7 @@ public class ProjectOperatorService {
     private final AntigravityDiagnosticService antigravityDiagnosticService;
     private final GoogleAiResourceService googleAiResourceService;
     private final DesignAssetService designAssetService;
+    private final VideoAssetService videoAssetService;
     private final SystemSettingsService settingsService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
@@ -83,6 +85,7 @@ public class ProjectOperatorService {
                                   AntigravityDiagnosticService antigravityDiagnosticService,
                                   GoogleAiResourceService googleAiResourceService,
                                   DesignAssetService designAssetService,
+                                  VideoAssetService videoAssetService,
                                   SystemSettingsService settingsService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
@@ -103,6 +106,7 @@ public class ProjectOperatorService {
         this.antigravityDiagnosticService = antigravityDiagnosticService;
         this.googleAiResourceService = googleAiResourceService;
         this.designAssetService = designAssetService;
+        this.videoAssetService = videoAssetService;
         this.settingsService = settingsService;
         this.workspaceRoot = Paths.get(workspaceRoot).toAbsolutePath().normalize();
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
@@ -377,6 +381,13 @@ public class ProjectOperatorService {
             executedPlannedTool = true;
         }
 
+        ToolObservation roleToolRouting = routeRoleDrivenTools(project, context);
+        if (!"idle".equals(roleToolRouting.status())) {
+            observations.add(roleToolRouting);
+            executedSignatures.add("role_tool_router::{}");
+            executedPlannedTool = true;
+        }
+
         for (OperatorToolCall call : routeOperatorIntents(project, userMessage)) {
             String signature = toolSignature(call);
             if (executedSignatures.contains(signature)) {
@@ -473,6 +484,7 @@ public class ProjectOperatorService {
                 - If the user asks for current external facts, market/legal/technical research, competitor context, or fresh documentation, request google_search_research.
                 - If the user gives a URL and asks to analyze it, request url_context_research.
                 - If the user explicitly asks to generate, create, or produce a visual asset, banner, hero image, mockup, icon, or site image, request design_asset_generate. If the brief is vague, first request create_atomic_wishlist for BARCAN-TAG-03 content planning.
+                - If the user explicitly asks to generate, create, or produce a demo video, promo video, onboarding video, walkthrough, product tour, or explainer video, request video_asset_generate.
                 - If the user asks to resume, continue, unblock, recover, replace failed work, or create new corrected tasks after failed Jules work, request recover_blocked_flow. Do not ask the user to choose task IDs.
                 - If the next step is described only as "waiting for tasks" and no concrete task/owner/role exists, request add_wishlist with a short English atomic work item, then orchestrate_project and dispatch_project when the user explicitly asked to act.
                 - Do not use Six Sigma alone as a reason to stop project work; it is production telemetry for the EMS makers, not the project operator's execution concern.
@@ -585,6 +597,15 @@ public class ProjectOperatorService {
             calls.add(new OperatorToolCall("design_asset_generate", args,
                     "User explicitly asked to generate a visual design asset."));
         }
+        if (looksLikeVideoAssetIntent(lower)) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("brief", userMessage == null ? "" : userMessage);
+            args.put("assetType", "project_video");
+            args.put("quality", containsAny(lower, "pro", "brand", "premium", "cinematic") ? "pro" : "standard");
+            args.put("useGoogleSearch", containsAny(lower, "current", "fresh", "google", "market", "competitor"));
+            calls.add(new OperatorToolCall("video_asset_generate", args,
+                    "User explicitly asked to generate a video asset."));
+        }
         if (looksLikeWorkspaceRepairIntent(project, lower)) {
             addRoutedCall(calls, "ensure_project_workspace",
                     "User asked to repair the project workspace or the workspace is not a Git repository.");
@@ -624,6 +645,256 @@ public class ProjectOperatorService {
                     "User explicitly asked to resume or replace failed Jules work without manual task selection.");
         }
         return calls;
+    }
+
+    private ToolObservation routeRoleDrivenTools(ProjectEntity project, ProjectOperationalContext context) {
+        if (!allowMutatingTools) {
+            return new ToolObservation("role_tool_router", "idle", "Role-driven tool routing is idle because mutating operator tools are disabled.");
+        }
+        JsonNode roles = factNode(context, "emsMetrics").path("roleDoctrineReadiness").path("roles");
+        if (!roles.isArray() || roles.isEmpty()) {
+            return new ToolObservation("role_tool_router", "idle", "No role doctrine readiness evidence is available.");
+        }
+
+        StringBuilder output = new StringBuilder();
+        output.append("Role-driven tool router engaged.\n")
+                .append("Script: role doctrine demand -> Kano/Cynefin pressure -> tool choice -> bounded action.\n")
+                .append("Tool rules:\n")
+                .append("- BARCAN-TAG-03/11 visual evidence demand -> Nano Banana design asset.\n")
+                .append("- BARCAN-TAG-03/09/11 demo, promo, onboarding, walkthrough demand -> Veo video asset.\n")
+                .append("- BARCAN-TAG-00/01/02/05/06/07/08/10 technical refusal, defect, or chaotic/complicated root-cause demand -> Antigravity autonomous branch.\n")
+                .append("- Unknown role doctrine evidence -> short English role attack wishlist, then dependency compilation.\n")
+                .append("- Existing source-role pending wishlist without owner work -> compile dependency graph and dispatch next best task.\n\n");
+
+        int actions = 0;
+        int maxActions = 3;
+        boolean compileAndDispatch = false;
+
+        for (JsonNode role : roles) {
+            if (actions >= maxActions) {
+                break;
+            }
+            String stance = role.path("stance").asText("");
+            if (!Set.of("refuses", "objects", "unknown").contains(stance)) {
+                continue;
+            }
+            String roleTag = role.path("roleTag").asText("");
+            String demand = roleDemandText(context, role);
+            String demandLower = demand.toLowerCase(Locale.ROOT);
+            long ownerOpen = role.path("ownerTasksOpen").asLong(0);
+            long sourcePending = role.path("sourceWishlistPending").asLong(0);
+            long sourceTotal = role.path("sourceWishlistTotal").asLong(0);
+            long ownerTotal = role.path("ownerTasksTotal").asLong(0);
+
+            if ("unknown".equals(stance) && sourceTotal == 0 && ownerTotal == 0) {
+                String routeKey = routeKey(project, roleTag, "role_attack", demand);
+                if (!alreadyRouted(project, routeKey)) {
+                    ObjectNode args = objectMapper.createObjectNode();
+                    args.put("sourceRoleTag", roleTag);
+                    args.put("content", roleAttackWishlist(role));
+                    appendObservation(output, createAtomicWishlist(project, args));
+                    rememberRoute(project, routeKey, "Created missing-evidence role attack wishlist for " + roleTag);
+                    compileAndDispatch = true;
+                    actions++;
+                }
+                continue;
+            }
+
+            if (sourcePending > 0 && ownerOpen == 0) {
+                String routeKey = routeKey(project, roleTag, "compile_pending_role_wishlist", demand);
+                if (!alreadyRouted(project, routeKey)) {
+                    output.append("## role_compile_route [ok]\n")
+                            .append("Role ").append(roleTag)
+                            .append(" has source-role pending wishlist and no owner-role open work. Dependency graph compilation is required.\n\n");
+                    rememberRoute(project, routeKey, "Compiled pending source-role wishlist for " + roleTag);
+                    compileAndDispatch = true;
+                    actions++;
+                }
+            }
+
+            if (shouldRouteVideoAsset(roleTag, demandLower)) {
+                String routeKey = routeKey(project, roleTag, "video_asset_generate", demand);
+                if (!alreadyRouted(project, routeKey)) {
+                    ObjectNode args = objectMapper.createObjectNode();
+                    args.put("brief", roleToolBrief(role, demand, "Produce a short useful project video asset."));
+                    args.put("assetType", "project_video");
+                    args.put("quality", "standard");
+                    args.put("useGoogleSearch", shouldUseSearchForDemand(demandLower));
+                    appendObservation(output, videoAssetGenerate(project, context, args, roleToolBrief(role, demand, "Produce a video asset.")));
+                    rememberRoute(project, routeKey, "Routed " + roleTag + " demand to Veo video asset generation.");
+                    actions++;
+                    continue;
+                }
+            }
+
+            if (shouldRouteDesignAsset(roleTag, demandLower)) {
+                String routeKey = routeKey(project, roleTag, "design_asset_generate", demand);
+                if (!alreadyRouted(project, routeKey)) {
+                    ObjectNode args = objectMapper.createObjectNode();
+                    args.put("brief", roleToolBrief(role, demand, "Produce visual evidence or a UI asset that resolves this role objection."));
+                    args.put("assetType", inferredAssetType(demandLower));
+                    args.put("quality", "refuses".equals(stance) || containsAny(demandLower, "brand", "premium") ? "pro" : "fast");
+                    args.put("useGoogleSearch", shouldUseSearchForDemand(demandLower));
+                    appendObservation(output, designAssetGenerate(project, context, args, roleToolBrief(role, demand, "Produce a visual asset.")));
+                    rememberRoute(project, routeKey, "Routed " + roleTag + " demand to Nano Banana design asset generation.");
+                    actions++;
+                    continue;
+                }
+            }
+
+            if (shouldRouteAntigravity(role, demandLower)) {
+                String routeKey = routeKey(project, roleTag, "antigravity_diagnostic_worker", demand);
+                if (!alreadyRouted(project, routeKey)) {
+                    ObjectNode args = objectMapper.createObjectNode();
+                    args.put("mission", roleToolBrief(role, demand,
+                            "Diagnose and repair the smallest root cause in an autonomous branch. Run available tests and open/push the branch when possible."));
+                    appendObservation(output, antigravityDiagnosticWorker(project, context, args.path("mission").asText(), args));
+                    rememberRoute(project, routeKey, "Routed " + roleTag + " demand to Antigravity autonomous engineering.");
+                    actions++;
+                }
+            }
+        }
+
+        if (compileAndDispatch) {
+            appendObservation(output, compileDependencyGraph(project));
+            appendObservation(output, dispatchNextBestTask(project));
+        }
+
+        if (actions == 0) {
+            return new ToolObservation("role_tool_router", "idle", "No new role-driven tool action was required or all matching routes were already handled.");
+        }
+        return new ToolObservation("role_tool_router", "ok", trim(output.toString()));
+    }
+
+    private String roleDemandText(ProjectOperationalContext context, JsonNode role) {
+        String roleTag = role.path("roleTag").asText("");
+        StringBuilder builder = new StringBuilder();
+        builder.append("role=").append(roleTag)
+                .append(", doctrine=").append(role.path("doctrineName").asText(""))
+                .append(", focus=").append(role.path("doctrineFocus").asText(""))
+                .append(", stance=").append(role.path("stance").asText(""))
+                .append(", kano=").append(role.path("kanoPressure").asText(""))
+                .append(", cynefin=").append(role.path("cynefinBias").asText(""))
+                .append(", topObjection=").append(role.path("topObjection").asText(""));
+        for (JsonNode evidence : role.path("evidence")) {
+            builder.append("; evidence=").append(evidence.asText(""));
+        }
+        JsonNode wishlist = factNode(context, "wishlist").path("items");
+        if (wishlist.isArray()) {
+            int count = 0;
+            for (JsonNode item : wishlist) {
+                if (!roleTag.equals(item.path("sourceRoleTag").asText(""))) {
+                    continue;
+                }
+                builder.append("\nsourceWishlist status=").append(item.path("status").asText(""))
+                        .append(" content=").append(item.path("content").asText(""))
+                        .append(" jtbd=").append(item.path("jtbd").asText(""))
+                        .append(" dod=").append(item.path("dod").asText(""));
+                count++;
+                if (count >= 3) {
+                    break;
+                }
+            }
+        }
+        return compact(builder.toString(), 3_000);
+    }
+
+    private String roleAttackWishlist(JsonNode role) {
+        return """
+                Role council attack: %s (%s).
+                JTBD: When the current project lacks evidence for this doctrine, I want the role to falsify the smallest risky assumption, so the project cannot be accepted without role-specific proof.
+                Kano: %s.
+                Cynefin: %s.
+                DoD: one short English finding exists with evidence, owner role, and the smallest next project action; no duplicate role fan-out.
+                Verification: role stance can move from unknown to object/satisfied based on concrete project evidence.
+                """.formatted(
+                role.path("roleTag").asText("BARCAN-TAG-09"),
+                role.path("doctrineName").asText("role doctrine"),
+                role.path("kanoPressure").asText("performance"),
+                role.path("cynefinBias").asText("complex")
+        ).trim();
+    }
+
+    private String roleToolBrief(JsonNode role, String demand, String mission) {
+        return """
+                EMS role-driven tool request.
+                Role: %s
+                Doctrine: %s
+                Focus: %s
+                Stance: %s
+                Kano pressure: %s
+                Cynefin: %s
+                Mission: %s
+                Demand evidence:
+                %s
+                """.formatted(
+                role.path("roleTag").asText(""),
+                role.path("doctrineName").asText(""),
+                role.path("doctrineFocus").asText(""),
+                role.path("stance").asText(""),
+                role.path("kanoPressure").asText(""),
+                role.path("cynefinBias").asText(""),
+                mission,
+                compact(demand, 2_000)
+        ).trim();
+    }
+
+    private boolean shouldRouteVideoAsset(String roleTag, String demandLower) {
+        return Set.of("BARCAN-TAG-03", "BARCAN-TAG-09", "BARCAN-TAG-11").contains(roleTag)
+                && containsAny(demandLower,
+                "video", "veo", "demo", "promo", "walkthrough", "onboarding", "storyboard", "motion",
+                "screen recording", "product tour", "explainer");
+    }
+
+    private boolean shouldRouteDesignAsset(String roleTag, String demandLower) {
+        return Set.of("BARCAN-TAG-03", "BARCAN-TAG-11").contains(roleTag)
+                && containsAny(demandLower,
+                "visual", "banner", "hero", "image", "icon", "mockup", "wireframe", "layout", "contrast",
+                "accessibility", "ui", "ux", "screen", "perception", "design", "asset");
+    }
+
+    private boolean shouldRouteAntigravity(JsonNode role, String demandLower) {
+        String roleTag = role.path("roleTag").asText("");
+        boolean technicalRole = Set.of(
+                "BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-05",
+                "BARCAN-TAG-06", "BARCAN-TAG-07", "BARCAN-TAG-08", "BARCAN-TAG-10"
+        ).contains(roleTag);
+        boolean hardSignal = "refuses".equals(role.path("stance").asText(""))
+                || role.path("ownerTasksBlocked").asLong(0) > 0
+                || role.path("defectWork").asLong(0) > 0
+                || containsAny(demandLower,
+                "root cause", "repository", "workspace", "environment", "build", "test", "security",
+                "contract", "api", "migration", "database", "auth", "compliance", "failing");
+        return technicalRole && hardSignal;
+    }
+
+    private boolean shouldUseSearchForDemand(String demandLower) {
+        return containsAny(demandLower,
+                "current", "fresh", "latest", "market", "competitor", "law", "legal", "compliance",
+                "regulation", "documentation", "external");
+    }
+
+    private String routeKey(ProjectEntity project, String roleTag, String tool, String demand) {
+        String hash = Integer.toHexString(Math.abs(compact(demand, 800).hashCode()));
+        return "role-tool-router:" + project.getId() + ":" + roleTag + ":" + tool + ":" + hash;
+    }
+
+    private boolean alreadyRouted(ProjectEntity project, String routeKey) {
+        Path file = projectMemoryFile(project);
+        if (!Files.isRegularFile(file)) {
+            return false;
+        }
+        try {
+            return Files.readString(file, StandardCharsets.UTF_8).contains(routeKey);
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    private void rememberRoute(ProjectEntity project, String routeKey, String summary) {
+        ObjectNode args = objectMapper.createObjectNode();
+        args.put("note", routeKey + " - " + summary);
+        projectMemoryAppend(project, args);
     }
 
     private void addRoutedCall(List<OperatorToolCall> calls, String tool, String reason) {
@@ -784,6 +1055,19 @@ public class ProjectOperatorService {
         return visual && action;
     }
 
+    private boolean looksLikeVideoAssetIntent(String lower) {
+        boolean video = containsAny(lower,
+                "video", "veo", "demo video", "promo video", "onboarding video", "walkthrough",
+                "product tour", "explainer", "motion", "storyboard",
+                "\u0432\u0438\u0434\u0435\u043e", "\u0440\u043e\u043b\u0438\u043a", "\u0434\u0435\u043c\u043e", "\u043f\u0440\u043e\u043c\u043e",
+                "\u043e\u043d\u0431\u043e\u0440\u0434", "\u0442\u0443\u0440", "\u0441\u0446\u0435\u043d\u0430\u0440");
+        boolean action = containsAny(lower,
+                "generate", "create", "produce", "make", "render",
+                "\u0441\u0433\u0435\u043d\u0435\u0440", "\u0441\u043e\u0437\u0434", "\u0441\u0434\u0435\u043b", "\u043d\u0430\u0440\u0438\u0441",
+                "\u0441\u043c\u043e\u043d\u0442\u0438\u0440", "\u0441\u0434\u0435\u043b\u0430\u0439");
+        return video && action;
+    }
+
     private String firstUrl(String value) {
         if (value == null || value.isBlank()) {
             return "";
@@ -884,6 +1168,7 @@ public class ProjectOperatorService {
                 - start_testing_stream {} MUTATING
                 - antigravity_diagnostic_worker {"mission":"optional English bounded diagnostic mission"} MUTATING/REMOTE_EXECUTION
                 - design_asset_generate {"brief":"English visual brief","assetType":"hero|banner|mockup|icon|visual_asset","quality":"fast|pro","useGoogleSearch":false} MUTATING/REMOTE_EXECUTION
+                - video_asset_generate {"brief":"English video brief","assetType":"demo|promo|onboarding|walkthrough|project_video","quality":"standard|pro","useGoogleSearch":false} MUTATING/REMOTE_EXECUTION
 
                 Generic tool:
                 - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
@@ -972,6 +1257,7 @@ public class ProjectOperatorService {
                 case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
                 case "antigravity_diagnostic_worker" -> mutating(userMessage, tool, () -> antigravityDiagnosticWorker(project, context, userMessage, args));
                 case "design_asset_generate" -> mutating(userMessage, tool, () -> designAssetGenerate(project, context, args, userMessage));
+                case "video_asset_generate" -> mutating(userMessage, tool, () -> videoAssetGenerate(project, context, args, userMessage));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
                 default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
             };
@@ -1806,6 +2092,30 @@ public class ProjectOperatorService {
                 .append(result.message());
         return new ToolObservation(
                 "design_asset_generate",
+                result.available() ? result.status() : "missing",
+                trim(output.toString())
+        );
+    }
+
+    private ToolObservation videoAssetGenerate(ProjectEntity project,
+                                               ProjectOperationalContext context,
+                                               JsonNode args,
+                                               String userMessage) {
+        String brief = textArg(args, "brief", userMessage == null ? "" : userMessage);
+        String assetType = textArg(args, "assetType", "project_video");
+        String quality = textArg(args, "quality", "standard");
+        boolean useGoogleSearch = args != null && args.has("useGoogleSearch") && args.get("useGoogleSearch").asBoolean(false);
+        var result = videoAssetService.generateAsset(project, context, brief, assetType, quality, useGoogleSearch);
+        StringBuilder output = new StringBuilder();
+        output.append("Video Asset Service result\n")
+                .append("status=").append(result.status()).append('\n')
+                .append("model=").append(valueOrUnset(result.model())).append('\n')
+                .append("videoPath=").append(valueOrUnset(result.videoPath())).append('\n')
+                .append("metadataPath=").append(valueOrUnset(result.metadataPath())).append('\n')
+                .append("mimeType=").append(valueOrUnset(result.mimeType())).append("\n\n")
+                .append(result.message());
+        return new ToolObservation(
+                "video_asset_generate",
                 result.available() ? result.status() : "missing",
                 trim(output.toString())
         );

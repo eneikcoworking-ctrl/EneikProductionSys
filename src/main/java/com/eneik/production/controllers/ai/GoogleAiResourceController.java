@@ -5,6 +5,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
+import com.eneik.production.services.video.VideoAssetService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -21,15 +22,18 @@ import java.util.UUID;
 public class GoogleAiResourceController {
     private final GoogleAiResourceService googleAiResourceService;
     private final DesignAssetService designAssetService;
+    private final VideoAssetService videoAssetService;
     private final ProjectOperationalContextService contextService;
     private final ProjectRepository projectRepository;
 
     public GoogleAiResourceController(GoogleAiResourceService googleAiResourceService,
                                       DesignAssetService designAssetService,
+                                      VideoAssetService videoAssetService,
                                       ProjectOperationalContextService contextService,
                                       ProjectRepository projectRepository) {
         this.googleAiResourceService = googleAiResourceService;
         this.designAssetService = designAssetService;
+        this.videoAssetService = videoAssetService;
         this.contextService = contextService;
         this.projectRepository = projectRepository;
     }
@@ -66,7 +70,34 @@ public class GoogleAiResourceController {
         return ResponseEntity.ok(result);
     }
 
+    @PostMapping("/video-assets")
+    public ResponseEntity<?> generateVideoAsset(@RequestParam UUID projectId,
+                                                @RequestBody VideoAssetRequest request) {
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        if (project == null) {
+            return ResponseEntity.notFound().build();
+        }
+        var context = contextService.build(project.getId(), project.getName());
+        var result = videoAssetService.generateAsset(
+                project,
+                context,
+                request == null ? "" : request.brief(),
+                request == null ? "video" : request.assetType(),
+                request == null ? "standard" : request.quality(),
+                request != null && request.useGoogleSearch()
+        );
+        return ResponseEntity.ok(result);
+    }
+
     public record DesignAssetRequest(
+            String brief,
+            String assetType,
+            String quality,
+            boolean useGoogleSearch
+    ) {
+    }
+
+    public record VideoAssetRequest(
             String brief,
             String assetType,
             String quality,

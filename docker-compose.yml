@@ -46,8 +46,9 @@ services:
       NANO_BANANA_ENABLED: ${NANO_BANANA_ENABLED:-true}
       NANO_BANANA_MODEL: ${NANO_BANANA_MODEL:-gemini-3.1-flash-image}
       NANO_BANANA_PRO_MODEL: ${NANO_BANANA_PRO_MODEL:-gemini-3-pro-image}
-      VEO_ENABLED: ${VEO_ENABLED:-false}
+      VEO_ENABLED: ${VEO_ENABLED:-true}
       VEO_MODEL: ${VEO_MODEL:-veo-3.1-generate-preview}
+      VIDEO_ASSET_ROOT: /app/data/video-assets
       ANTIGRAVITY_ENABLED: ${ANTIGRAVITY_ENABLED:-true}
       ANTIGRAVITY_PUSH_ENABLED: ${ANTIGRAVITY_PUSH_ENABLED:-true}
       ANTIGRAVITY_AGENT: ${ANTIGRAVITY_AGENT:-antigravity-preview-05-2026}
