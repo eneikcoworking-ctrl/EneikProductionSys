@@ -19,6 +19,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     List<AccountEntity> findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc();
 
+    @Query("SELECT a FROM AccountEntity a WHERE " +
+            "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned AND " +
+            "(a.currentProjectId IS NULL OR a.currentProjectId = :projectId) " +
+            "ORDER BY LOWER(a.name) ASC")
+    List<AccountEntity> findAvailableForProjectOrderByNameAsc(@Param("projectId") UUID projectId);
+
     @Query("SELECT COUNT(a) > 0 FROM AccountEntity a WHERE " +
            "a.lastHeartbeat > :threshold AND " +
            "(:tag IS NULL OR :tag IS NOT NULL)")

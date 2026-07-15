@@ -120,6 +120,7 @@ public class ProjectOperationalContextService {
 
         GitHubPullRequestService.PullRequestSnapshot pullRequests = gitHubPullRequestService.pullRequestSnapshot(project);
         PrStats prStats = prStats(pullRequests, reviews);
+        Map<String, Object> systemStatus = systemStatusService.getStatus(project.getId());
 
         Map<String, Object> factPack = new LinkedHashMap<>();
         factPack.put("scope", "selected_project_only");
@@ -135,11 +136,16 @@ public class ProjectOperationalContextService {
         factPack.put("julesUniversalRoleCapacity", julesCapacityFacts(tasks, accounts, sessions));
         factPack.put("conflicts", conflictFacts(conflicts));
         factPack.put("bottlenecks", bottleneckFacts(project.getId()));
-        factPack.put("systemStatusProjectOnly", systemStatusService.getStatus(project.getId()));
+        factPack.put("sixSigmaControl", systemStatus.get("sixSigma"));
+        factPack.put("systemStatusProjectOnly", systemStatus);
         factPack.put("rules", List.of(
                 "No global system data is included in this fact pack.",
                 "Every enabled Jules account is universal-role capable for all BARCAN-TAG-00..11 roles.",
+                "BARCAN roles are thinking lenses and ownership tags, not permission boundaries. Never use a role as an excuse to avoid necessary Eneik Management System action.",
                 "Do not diagnose missing role capability for Jules accounts; diagnose shared session slots, account enabled/status, stuck sessions, API errors, or dispatch failures instead.",
+                "If the operator cannot name a concrete task, owner, and role for the next step, the correct action is to create or compile a precise English wishlist/work item and then orchestrate or dispatch when the user asked to act.",
+                "Repository/environment boundary work is mandatory early project bootstrap work. Missing .git, empty workspace, unknown setup commands, or unclear frontend/backend boundaries are system work, not a human operator chore.",
+                "If sixSigmaControl.statusLabel is critical or COPQ is high, stop expanding feature scope and prioritize the top CTQ defects, active merge conflicts, recovery work, and verification tasks.",
                 "Blocked tasks are terminal evidence for failed attempts, not a request for the human operator to choose IDs. If sharedSlotsFree > 0, the recovery path is to create/compile fresh atomic recovery work and dispatch it.",
                 "Use githubPullRequestsLive for current GitHub open/closed PR counts.",
                 "Use databasePrReviews for review decisions and merge results.",

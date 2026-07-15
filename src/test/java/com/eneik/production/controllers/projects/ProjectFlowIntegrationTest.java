@@ -146,6 +146,9 @@ class ProjectFlowIntegrationTest {
         );
         assertThat(dashboard.openWishlistCount()).isZero();
         assertThat(dashboard.queue().totalQueued()).isGreaterThan(0);
+        assertThat(dashboard.agentCount()).isEqualTo(1);
+        assertThat(dashboard.agents()).extracting(com.eneik.production.dto.dashboard.AgentDashboardDto::name)
+                .contains("test-agent");
 
         ResponseEntity<ClaimDto> claim = restTemplate.postForEntity(
                 "/api/tasks/claim",
@@ -220,9 +223,16 @@ class ProjectFlowIntegrationTest {
         assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
                 taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id());
-        assertThat(tasks).hasSize(1);
-        assertThat(tasks.get(0).getRole().getTag()).isEqualTo("BARCAN-TAG-11");
-        assertThat(tasks.get(0).getPayload().get("dod").asText()).contains("docs/DESIGN_SYSTEM.md");
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks).anySatisfy(task -> {
+            assertThat(task.getRole().getTag()).isEqualTo("BARCAN-TAG-01");
+            assertThat(task.getPayload().path("toc_constraint_ref").asText()).isEqualTo("BOOTSTRAP-ENVIRONMENT-BOUNDARY");
+        });
+        com.eneik.production.models.persistence.TaskEntity uiTask = tasks.stream()
+                .filter(task -> "BARCAN-TAG-11".equals(task.getRole().getTag()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(uiTask.getPayload().get("dod").asText()).contains("docs/DESIGN_SYSTEM.md");
     }
 
     @Test
@@ -306,6 +316,7 @@ class ProjectFlowIntegrationTest {
         assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
                 taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id()).stream()
+                        .filter(task -> !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(task.getPayload().path("toc_constraint_ref").asText()))
                         .sorted(java.util.Comparator.comparingInt(task -> task.getPayload().path("ems_graph_order").asInt()))
                         .toList();
 
@@ -323,7 +334,7 @@ class ProjectFlowIntegrationTest {
                 "/api/projects/" + project.id() + "/dashboard",
                 ProjectDashboardDto.class
         );
-        assertThat(dashboard.emsMetrics().graphHealth().graphTasks()).isEqualTo(3);
+        assertThat(dashboard.emsMetrics().graphHealth().graphTasks()).isEqualTo(4);
         assertThat(dashboard.emsMetrics().graphHealth().linkedEdges()).isEqualTo(2);
         assertThat(dashboard.emsMetrics().graphHealth().duplicateSemanticKeys()).isZero();
     }

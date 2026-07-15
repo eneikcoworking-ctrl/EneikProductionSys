@@ -8,6 +8,7 @@ import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
+import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import com.eneik.production.services.settings.SystemSettingsService;
@@ -121,7 +122,7 @@ public class ProjectOperatorService {
                 - Epistemic marking: label important claims as VERIFIED, INFERRED, or NOT AVAILABLE.
                 - Deontic clarity: separate Obligatory, Permitted, and Forbidden actions when giving operational instructions.
                 - Lean / TOC / Six Sigma are management lenses, not decorative boilerplate. Use them only when they improve the concrete decision.
-                - Roles are lenses. You may speak as TAG-00..TAG-11 when useful, but Eneik Management System overrides role style.
+                - Roles are lenses and ownership tags. They help choose the next expert perspective; they never limit doing necessary Eneik Management System work.
                 - CORE JULES INVARIANT: every enabled Jules account is capable of every BARCAN-TAG-00..11 role. Never diagnose missing role capability unless PROJECT_FACT_PACK says universalRolePool=false.
 
                 OPERATOR RULES:
@@ -133,6 +134,10 @@ public class ProjectOperatorService {
                 - Every number about PRs, tasks, sessions, accounts, conflicts, Docker, or tests must be traceable to PROJECT_FACT_PACK or a named OPERATOR_EVIDENCE tool.
                 - If shared Jules slots are free, do not claim a Jules capacity shortage. Diagnose dispatch flow, stuck claims, API failures, conflicts, or unanswered activity handling instead.
                 - loop_closed Jules sessions are terminal local closures. Use closedAt and closureReason to explain why the session was stopped and which follow-up wishlist replaces the old branch.
+                - Do not say "waiting for tasks" as an operational answer unless you can name the exact task, owner account, and role. If the next step has no concrete task, create or recommend the precise English wishlist/work item that should be compiled next.
+                - Missing repository, empty workspace, absent .git, unknown setup commands, or unclear backend/frontend boundaries are bootstrap work. Treat them as one of the first project tasks, not as a human operator problem.
+                - When Six Sigma status is critical or COPQ is high, prioritize top CTQ defects, active merge conflicts, recovery work, and verification before expanding feature scope.
+                - Do not say you lack analytical tools while project facts contain tasks, sessions, wishlist, accounts, PRs, conflicts, EMS metrics, or Six Sigma facts. If bottleneck detection is empty, analyze WIP, CTQ Pareto, queue/claimed/done balance, session age, PR review state, role doctrine readiness, and COPQ instead.
                 - You may say you executed an action only when a named mutating tool in OPERATOR_EVIDENCE has status [ok] or [partial].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
@@ -183,6 +188,9 @@ public class ProjectOperatorService {
                 - It claims a mutating action was executed without matching tool evidence.
                 - It mentions hidden source names such as PROJECT_FACT_PACK, OPERATOR_EVIDENCE, prompt, or internal context.
                 - It fails to say NOT AVAILABLE when evidence is insufficient.
+                - It says the system is waiting for tasks without naming a task, owner account, and role, or without proposing/using a concrete wishlist/orchestration action.
+                - It treats BARCAN roles as permission limits instead of thinking lenses and ownership tags.
+                - It claims analytical capability is missing while available project facts or tool observations include tasks, sessions, PRs, accounts, EMS metrics, Six Sigma, conflicts, or wishlist evidence.
 
                 JSON schema:
                 {"verdict":"pass|revise","issues":["short issue"],"revisedAnswer":"required when verdict=revise"}
@@ -306,11 +314,18 @@ public class ProjectOperatorService {
                 - Use tools aggressively when facts, code, Docker, Git, tests, PRs, sessions, or execution state may matter.
                 - Use already collected observations before asking for another tool.
                 - When observations are enough for a factual answer, return an empty toolCalls array.
+                - For project health, defects, waste, DPMO, quality, COPQ, or Six Sigma questions, request six_sigma_pareto and operator_waste_guard.
+                - For PR review, merge readiness, conflicts, or "what can be merged" questions, request pr_review_and_merge_plan.
+                - For Jules loops, repeated questions, stale sessions, unanswered activity, or "why nobody answers" questions, request jules_activity_triage. If the user asks to fix it, request close_bad_session or recover_blocked_flow.
+                - For "waiting for tasks" or no concrete next task, create_atomic_wishlist then compile_dependency_graph; dispatch_next_best_task when the user asked to start/continue work.
                 - Do not request mutating tools for explanation questions. Explanation questions include "how does it work", "why", "what happened", "what do you see", "recommend".
                 - Request mutating tools only when the user explicitly asks to run, create, add, orchestrate, dispatch, start, build, pull, or execute.
                 - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
+                - If repository setup, local environment, .git, workspace, backend/frontend boundary, or setup commands are missing and the user asks to fix/start/continue, request ensure_project_workspace and ensure_environment_bootstrap_work.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
                 - If the user asks to resume, continue, unblock, recover, replace blocked work, or create new corrected tasks after blocked/failed Jules work, request recover_blocked_flow. Do not ask the user to choose blocked task IDs.
+                - If the next step is described only as "waiting for tasks" and no concrete task/owner/role exists, request add_wishlist with a short English atomic work item, then orchestrate_project and dispatch_project when the user explicitly asked to act.
+                - If Six Sigma evidence is critical or COPQ-heavy, prefer recovery, merge-conflict, CTQ, QA, and environment bootstrap tools before feature expansion.
                 - Prefer multiple narrow tools over one broad generic command.
                 - Max 12 tool calls.
 
@@ -386,18 +401,43 @@ public class ProjectOperatorService {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         List<OperatorToolCall> calls = new ArrayList<>();
         if (looksLikeWorkspaceRepairIntent(project, lower)) {
-            calls.add(new OperatorToolCall("ensure_project_workspace", objectMapper.createObjectNode(),
-                    "User asked to repair the project workspace or the workspace is not a Git repository."));
+            addRoutedCall(calls, "ensure_project_workspace",
+                    "User asked to repair the project workspace or the workspace is not a Git repository.");
+        }
+        if (looksLikeEnvironmentBootstrapIntent(lower)) {
+            addRoutedCall(calls, "ensure_project_workspace",
+                    "Environment/bootstrap intent requires verifying or repairing the project workspace.");
+            addRoutedCall(calls, "ensure_environment_bootstrap_work",
+                    "Environment and repository boundary must be converted into concrete EMS bootstrap work.");
+            addRoutedCall(calls, "dispatch_project",
+                    "Bootstrap work should be dispatched when the user asks the operator to act.");
+        }
+        if (looksLikeQualityWasteIntent(lower)) {
+            addRoutedCall(calls, "six_sigma_pareto",
+                    "Quality/waste intent requires project-only Six Sigma Pareto evidence.");
+            addRoutedCall(calls, "operator_waste_guard",
+                    "Quality/waste intent requires EMS waste guard decisions.");
+        }
+        if (looksLikeJulesTriageIntent(lower)) {
+            addRoutedCall(calls, "jules_activity_triage",
+                    "Jules loop or unanswered activity requires session triage before recommendations.");
         }
         if (looksLikeStartTestingIntent(lower)) {
-            calls.add(new OperatorToolCall("start_testing_stream", objectMapper.createObjectNode(),
-                    "User explicitly asked to start project testing tasks."));
+            addRoutedCall(calls, "start_testing_stream",
+                    "User explicitly asked to start project testing tasks.");
         }
         if (looksLikeBlockedRecoveryIntent(lower)) {
-            calls.add(new OperatorToolCall("recover_blocked_flow", objectMapper.createObjectNode(),
-                    "User explicitly asked to resume or replace blocked Jules work without manual task selection."));
+            addRoutedCall(calls, "recover_blocked_flow",
+                    "User explicitly asked to resume or replace blocked Jules work without manual task selection.");
         }
         return calls;
+    }
+
+    private void addRoutedCall(List<OperatorToolCall> calls, String tool, String reason) {
+        boolean alreadyAdded = calls.stream().anyMatch(call -> call.tool().equals(tool));
+        if (!alreadyAdded) {
+            calls.add(new OperatorToolCall(tool, objectMapper.createObjectNode(), reason));
+        }
     }
 
     private boolean looksLikeWorkspaceRepairIntent(ProjectEntity project, String lower) {
@@ -427,6 +467,35 @@ public class ProjectOperatorService {
         return blocked && recover;
     }
 
+    private boolean looksLikeEnvironmentBootstrapIntent(String lower) {
+        boolean environment = containsAny(lower,
+                "environment", "workspace", "local", "setup", "bootstrap", "scaffold", "repository", "repo", ".git",
+                "backend", "frontend", "run command", "test command",
+                "\u043e\u043a\u0440\u0443\u0436\u0435\u043d", "\u0432\u043e\u0440\u043a\u0441\u043f\u0435\u0439\u0441", "\u043b\u043e\u043a\u0430\u043b",
+                "\u0440\u0435\u043f\u043e\u0437\u0438\u0442", "\u0441\u043a\u0430\u0444\u0444\u043e\u043b\u0434", "\u0431\u044d\u043a\u0435\u043d\u0434",
+                "\u0444\u0440\u043e\u043d\u0442\u0435\u043d\u0434", "\u043a\u043b\u043e\u043d", "\u0433\u0438\u0442");
+        boolean action = containsAny(lower,
+                "fix", "repair", "start", "begin", "create", "add", "continue", "prepare", "make",
+                "\u0438\u0441\u043f\u0440\u0430\u0432", "\u043f\u043e\u0447\u0438\u043d", "\u043d\u0430\u0447", "\u0441\u043e\u0437\u0434",
+                "\u0434\u043e\u0431\u0430\u0432", "\u043f\u043e\u0434\u0433\u043e\u0442\u043e\u0432", "\u0440\u0430\u0437\u0431\u0435\u0440",
+                "\u0440\u0430\u0437\u043e\u0431\u0440", "\u0434\u0435\u043b\u0430\u0439", "\u0441\u0434\u0435\u043b\u0430\u0439");
+        return environment && action;
+    }
+
+    private boolean looksLikeQualityWasteIntent(String lower) {
+        return containsAny(lower,
+                "six sigma", "dpmo", "sigma", "defect", "defects", "quality", "copq", "waste", "scrap",
+                "\u0431\u0440\u0430\u043a", "\u0434\u0435\u0444\u0435\u043a\u0442", "\u043a\u0430\u0447\u0435\u0441\u0442\u0432",
+                "\u0448\u0435\u0441\u0442\u044c \u0441\u0438\u0433\u043c", "\u0440\u0430\u0441\u0445\u043e\u0434", "\u043f\u043e\u0442\u0435\u0440");
+    }
+
+    private boolean looksLikeJulesTriageIntent(String lower) {
+        return containsAny(lower,
+                "jules", "session", "loop", "stuck", "unanswered", "activity", "nobody answers", "bad session",
+                "\u0434\u0436\u0443\u043b", "\u0441\u0435\u0441\u0441", "\u0437\u0430\u0432\u0438\u0441", "\u0442\u0443\u043f\u0438\u043a",
+                "\u043a\u0440\u0443\u0433", "\u043d\u0435 \u043e\u0442\u0432\u0435\u0447", "\u043d\u0438\u043a\u0442\u043e \u043d\u0435 \u043e\u0442\u0432\u0435\u0447");
+    }
+
     private String toolCatalog() {
         return """
                 Read-only project/data tools:
@@ -438,6 +507,12 @@ public class ProjectOperatorService {
                 - list_accounts {}
                 - list_conflicts {}
                 - list_bottlenecks {}
+                - project_bootstrap_audit {}
+                - jules_activity_triage {}
+                - six_sigma_pareto {}
+                - pr_review_and_merge_plan {}
+                - operator_waste_guard {}
+                - project_decision_memory {"note":"optional English decision note; omit to read memory"}
                 - project_memory_read {}
 
                 Repository/code tools:
@@ -475,8 +550,15 @@ public class ProjectOperatorService {
                 - orchestrate_project {} MUTATING
                 - dispatch_project {} MUTATING
                 - recover_blocked_flow {} MUTATING
+                - create_atomic_wishlist {"content":"English atomic wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
+                - compile_dependency_graph {} MUTATING
+                - dispatch_next_best_task {} MUTATING
+                - close_bad_session {"sessionId":"optional UUID","reason":"English closure reason"} MUTATING
+                - postmortem_to_wishlist {"sessionId":"UUID","reason":"English postmortem reason"} MUTATING
+                - run_project_checks {} MUTATING/EXECUTION
                 - maintenance_stuck {} MUTATING
                 - add_wishlist {"content":"English wishlist text","sourceRoleTag":"BARCAN-TAG-09"} MUTATING
+                - ensure_environment_bootstrap_work {} MUTATING
                 - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
                 - ensure_project_workspace {} MUTATING
                 - start_testing_stream {} MUTATING
@@ -515,6 +597,12 @@ public class ProjectOperatorService {
                 case "list_accounts" -> contextFact(context, tool, "accountsAvailableForProject");
                 case "list_conflicts" -> contextFact(context, tool, "conflicts");
                 case "list_bottlenecks" -> contextFact(context, tool, "bottlenecks");
+                case "project_bootstrap_audit" -> projectBootstrapAudit(project);
+                case "jules_activity_triage" -> julesActivityTriage(context);
+                case "six_sigma_pareto" -> sixSigmaPareto(context);
+                case "pr_review_and_merge_plan" -> prReviewAndMergePlan(context);
+                case "operator_waste_guard" -> operatorWasteGuard(context);
+                case "project_decision_memory" -> projectDecisionMemory(project, args, userMessage);
                 case "project_memory_read" -> projectMemoryRead(project);
                 case "repo_profile" -> repoProfile(rootFor(project, args));
                 case "workspace_tree" -> tree(rootFor(project, args));
@@ -543,8 +631,15 @@ public class ProjectOperatorService {
                 case "orchestrate_project" -> mutating(userMessage, tool, () -> orchestrateProject(project));
                 case "dispatch_project" -> mutating(userMessage, tool, () -> dispatchProject(project));
                 case "recover_blocked_flow" -> mutating(userMessage, tool, () -> recoverBlockedFlow(project));
+                case "create_atomic_wishlist" -> mutating(userMessage, tool, () -> createAtomicWishlist(project, args));
+                case "compile_dependency_graph" -> mutating(userMessage, tool, () -> compileDependencyGraph(project));
+                case "dispatch_next_best_task" -> mutating(userMessage, tool, () -> dispatchNextBestTask(project));
+                case "close_bad_session" -> mutating(userMessage, tool, () -> closeBadSession(project, args));
+                case "postmortem_to_wishlist" -> mutating(userMessage, tool, () -> postmortemToWishlist(project, args));
+                case "run_project_checks" -> mutating(userMessage, tool, () -> runDetectedChecks(resolveProjectWorkspace(project)));
                 case "maintenance_stuck" -> mutating(userMessage, tool, this::maintenanceStuck);
                 case "add_wishlist" -> mutating(userMessage, tool, () -> addWishlist(project, args));
+                case "ensure_environment_bootstrap_work" -> mutating(userMessage, tool, () -> ensureEnvironmentBootstrapWork(project));
                 case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
                 case "ensure_project_workspace" -> mutating(userMessage, tool, () -> ensureProjectWorkspace(project));
                 case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
@@ -708,6 +803,147 @@ public class ProjectOperatorService {
         }
     }
 
+    private ToolObservation projectBootstrapAudit(ProjectEntity project) {
+        Path root = resolveProjectWorkspace(project);
+        StringBuilder output = new StringBuilder();
+        output.append("Project bootstrap audit for ").append(project.getName()).append('\n');
+        output.append("workspace=").append(root).append('\n');
+        output.append("gitRepository=").append(Files.isDirectory(root.resolve(".git"))).append('\n');
+        output.append("readme=").append(Files.isRegularFile(root.resolve("README.md"))).append('\n');
+        output.append("backendBoundary=").append(hasAny(root, "pom.xml", "build.gradle", "src/main", "backend")).append('\n');
+        output.append("frontendBoundary=").append(hasAny(root, "package.json", "frontend/package.json", "src/App.svelte", "src/main.ts")).append('\n');
+        output.append("ci=").append(hasAny(root, ".github/workflows/ci.yml", ".github/workflows")).append('\n');
+        output.append("\n## detected_checks\n").append(testPlan(root).output()).append('\n');
+        output.append("\n## repo_profile\n").append(repoProfile(root).output());
+        return new ToolObservation("project_bootstrap_audit", Files.isDirectory(root) ? "ok" : "missing", trim(output.toString()));
+    }
+
+    private boolean hasAny(Path root, String... relativePaths) {
+        for (String relativePath : relativePaths) {
+            if (Files.exists(root.resolve(relativePath))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private ToolObservation julesActivityTriage(ProjectOperationalContext context) {
+        JsonNode sessions = factNode(context, "julesSessions");
+        StringBuilder output = new StringBuilder();
+        output.append("Jules activity triage for selected project.\n");
+        output.append("countsByStatus=").append(sessions.path("countsByStatus")).append('\n');
+        int active = 0;
+        for (JsonNode session : sessions.path("items")) {
+            String status = session.path("status").asText("");
+            if (!List.of("queued", "running", "revising", "stuck").contains(status)) {
+                continue;
+            }
+            active++;
+            output.append("- session=").append(session.path("id").asText(""))
+                    .append(", external=").append(session.path("externalSessionId").asText(""))
+                    .append(", status=").append(status)
+                    .append(", role=").append(session.path("roleTag").asText(""))
+                    .append(", account=").append(session.path("accountName").asText(""))
+                    .append(", task=").append(session.path("taskId").asText(""))
+                    .append(", updatedAt=").append(session.path("updatedAt").asText(""))
+                    .append('\n');
+            if (active >= 12) {
+                output.append("... limited to 12 active sessions\n");
+                break;
+            }
+        }
+        if (active == 0) {
+            output.append("No active Jules sessions require activity triage.\n");
+        } else {
+            output.append("Action rule: if a session has repeated non-actionable dialogue, stale status, or no concrete next action, use close_bad_session then postmortem_to_wishlist.");
+        }
+        return new ToolObservation("jules_activity_triage", "ok", trim(output.toString()));
+    }
+
+    private ToolObservation sixSigmaPareto(ProjectOperationalContext context) {
+        JsonNode sixSigma = factNode(context, "sixSigmaControl");
+        if (sixSigma.isMissingNode() || sixSigma.isNull()) {
+            return new ToolObservation("six_sigma_pareto", "missing", "Six Sigma control facts are not available for the selected project.");
+        }
+        StringBuilder output = new StringBuilder();
+        output.append("Six Sigma control view\n");
+        output.append("status=").append(sixSigma.path("statusLabel").asText("NOT AVAILABLE")).append('\n');
+        output.append("dpmo=").append(sixSigma.path("dpmo").asText("NOT AVAILABLE")).append('\n');
+        output.append("sigmaLevel=").append(sixSigma.path("sigmaLevel").asText("NOT AVAILABLE")).append('\n');
+        output.append("copqProxy=").append(sixSigma.path("copqProxy").asText("NOT AVAILABLE")).append('\n');
+        output.append("recommendedAction=").append(sixSigma.path("recommendedAction").asText("NOT AVAILABLE")).append("\n\n");
+        output.append("CTQ Pareto:\n");
+        int count = 0;
+        for (JsonNode row : sixSigma.path("ctqPareto")) {
+            output.append("- ").append(row.path("ctq").asText(row.path("name").asText("unknown")))
+                    .append(": defects=").append(row.path("defects").asText("0"))
+                    .append(", dpmo=").append(row.path("dpmo").asText("0"))
+                    .append(", source=").append(row.path("source").asText("quality_gate"))
+                    .append('\n');
+            count++;
+        }
+        if (count == 0) {
+            output.append("- No CTQ defects in current evidence.\n");
+        }
+        return new ToolObservation("six_sigma_pareto", "ok", trim(output.toString()));
+    }
+
+    private ToolObservation prReviewAndMergePlan(ProjectOperationalContext context) {
+        JsonNode github = factNode(context, "githubPullRequestsLive");
+        JsonNode reviews = factNode(context, "databasePrReviews");
+        StringBuilder output = new StringBuilder();
+        output.append("PR review and merge plan for selected project.\n");
+        output.append("githubAvailable=").append(github.path("available").asText("false"))
+                .append(", open=").append(github.path("openCount").asText("0"))
+                .append(", closed=").append(github.path("closedCount").asText("0"))
+                .append(", error=").append(github.path("error").asText(""))
+                .append('\n');
+        output.append("reviews approved=").append(reviews.path("approved").asText("0"))
+                .append(", rejected=").append(reviews.path("rejected").asText("0"))
+                .append(", merged=").append(reviews.path("merged").asText("0"))
+                .append(", approvedButNotMerged=").append(reviews.path("approvedButNotMerged").asText("0"))
+                .append("\n\n");
+        output.append("Open PRs:\n");
+        int count = 0;
+        for (JsonNode pr : github.path("open")) {
+            output.append("- #").append(pr.path("number").asText(""))
+                    .append(" ").append(pr.path("title").asText(""))
+                    .append(" by ").append(pr.path("author").asText(""))
+                    .append(" ").append(pr.path("url").asText(""))
+                    .append('\n');
+            count++;
+        }
+        if (count == 0) {
+            output.append("- No live open PRs are available in GitHub evidence.\n");
+        }
+        output.append("Action rule: merge only approved, conflict-free PRs with passing checks; otherwise create recovery wishlist for the top blocking CTQ.");
+        return new ToolObservation("pr_review_and_merge_plan", "ok", trim(output.toString()));
+    }
+
+    private ToolObservation operatorWasteGuard(ProjectOperationalContext context) {
+        JsonNode sixSigma = factNode(context, "sixSigmaControl");
+        JsonNode capacity = factNode(context, "julesUniversalRoleCapacity");
+        JsonNode tasks = factNode(context, "tasks");
+        StringBuilder output = new StringBuilder();
+        output.append("EMS waste guard\n");
+        output.append("sixSigmaStatus=").append(sixSigma.path("statusLabel").asText("NOT AVAILABLE"))
+                .append(", copqProxy=").append(sixSigma.path("copqProxy").asText("NOT AVAILABLE"))
+                .append(", sharedSlotsFree=").append(capacity.path("sharedSlotsFree").asText("NOT AVAILABLE"))
+                .append('\n');
+        output.append("taskCounts=").append(tasks.path("countsByStatus")).append('\n');
+        output.append("Guardrail decisions:\n");
+        output.append("- If sharedSlotsFree > 0 and queued tasks exist, dispatch flow is the next target; do not claim capacity shortage.\n");
+        output.append("- If Six Sigma is critical, stop feature expansion and work the top CTQ Pareto item first.\n");
+        output.append("- If no task can be named with owner and role, create_atomic_wishlist then compile_dependency_graph.\n");
+        output.append("- If a Jules session loops or becomes non-actionable, close_bad_session and let postmortem_to_wishlist produce fresh work.");
+        return new ToolObservation("operator_waste_guard", "ok", trim(output.toString()));
+    }
+
+    private JsonNode factNode(ProjectOperationalContext context, String key) {
+        Object value = context.facts().get(key);
+        return value == null ? com.fasterxml.jackson.databind.node.MissingNode.getInstance() : objectMapper.valueToTree(value);
+    }
+
     private Path projectMemoryFile(ProjectEntity project) {
         String key = project.getId() == null ? sanitizeFileName(project.getName()) : project.getId().toString();
         return memoryRoot.resolve(key + ".md").normalize();
@@ -828,6 +1064,104 @@ public class ProjectOperatorService {
         );
         return new ToolObservation("add_wishlist", "ok",
                 "wishlistId=" + response.id() + ", status=" + response.status() + ", sourceRoleTag=" + response.sourceRoleTag());
+    }
+
+    private ToolObservation createAtomicWishlist(ProjectEntity project, JsonNode args) {
+        String content = textArg(args, "content", "");
+        if (content.isBlank()) {
+            return new ToolObservation("create_atomic_wishlist", "blocked",
+                    "content is required. The content must be a short English EMS work item with JTBD, owner role, Kano, Cynefin, DoD, and verification boundary.");
+        }
+        String sourceRoleTag = textArg(args, "sourceRoleTag", "BARCAN-TAG-09");
+        if (!sourceRoleTag.matches("BARCAN-TAG-(0[0-9]|1[0-1])")) {
+            sourceRoleTag = "BARCAN-TAG-09";
+        }
+        String normalized = """
+                EMS atomic wishlist item.
+                Source role: %s
+                Rule: this item must compile into one short Jules session per owner role, with no duplicated role fan-out.
+
+                %s
+                """.formatted(sourceRoleTag, content.trim());
+        var response = projectFlowService.addWishlistItem(
+                project.getId(),
+                new WishlistRequestDto(project.getId(), WishlistSource.role, sourceRoleTag, normalized)
+        );
+        return new ToolObservation("create_atomic_wishlist", "ok",
+                "wishlistId=" + response.id()
+                        + ", status=" + response.status()
+                        + ", sourceRoleTag=" + response.sourceRoleTag()
+                        + ", next=compile_dependency_graph");
+    }
+
+    private ToolObservation compileDependencyGraph(ProjectEntity project) {
+        StringBuilder output = new StringBuilder();
+        Optional<UUID> bootstrap = projectFlowService.ensureEnvironmentBootstrapWork(project.getId());
+        output.append("environmentBootstrapTask=")
+                .append(bootstrap.map(UUID::toString).orElse("already_present"))
+                .append('\n');
+        try {
+            OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+            output.append("processedWishlistItems=").append(orchestration.processedWishlistItems())
+                    .append(", createdTasks=").append(orchestration.createdTasks().size())
+                    .append(", message=").append(orchestration.message());
+            return new ToolObservation("compile_dependency_graph", "ok", trim(output.toString()));
+        } catch (OrchestrationCooldownException e) {
+            output.append("orchestrationCooldownSeconds=").append(e.getRetryAfterSeconds())
+                    .append("\nGraph compile was partially completed if bootstrap was created; retry after cooldown.");
+            return new ToolObservation("compile_dependency_graph", "partial", trim(output.toString()));
+        }
+    }
+
+    private ToolObservation dispatchNextBestTask(ProjectEntity project) {
+        projectFlowService.dispatchQueuedTasks(project.getId());
+        projectFlowService.dispatchReviewTasks(project.getId());
+        return new ToolObservation("dispatch_next_best_task", "ok",
+                "Ran dependency-aware queued/review dispatch for the selected project. The backend chooses the next eligible task by queue priority, dependency blockers, file-scope conflicts, and universal Jules capacity.");
+    }
+
+    private ToolObservation closeBadSession(ProjectEntity project, JsonNode args) {
+        UUID sessionId = uuidArg(args, "sessionId");
+        String reason = textArg(args, "reason",
+                "operator_bad_session_closed: repeated loop, stale work, irrelevant activity, or no concrete next action");
+        Map<String, Object> result = projectFlowService.closeBadJulesSession(project.getId(), sessionId, reason);
+        try {
+            return new ToolObservation("close_bad_session", "closed".equals(result.get("status")) ? "ok" : "empty",
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result));
+        } catch (Exception e) {
+            return new ToolObservation("close_bad_session", "ok", String.valueOf(result));
+        }
+    }
+
+    private ToolObservation postmortemToWishlist(ProjectEntity project, JsonNode args) {
+        UUID sessionId = uuidArg(args, "sessionId");
+        if (sessionId == null) {
+            return new ToolObservation("postmortem_to_wishlist", "blocked", "sessionId is required.");
+        }
+        String reason = textArg(args, "reason", "operator_postmortem: convert bad Jules session into fresh atomic recovery work");
+        Optional<UUID> wishlistId = projectFlowService.createSessionPostmortemWishlist(project.getId(), sessionId, reason);
+        return new ToolObservation("postmortem_to_wishlist", "ok",
+                wishlistId.map(id -> "wishlistId=" + id + ", status=pending")
+                        .orElse("Postmortem wishlist already exists for session " + sessionId));
+    }
+
+    private ToolObservation ensureEnvironmentBootstrapWork(ProjectEntity project) {
+        Optional<UUID> createdTaskId = projectFlowService.ensureEnvironmentBootstrapWork(project.getId());
+        if (createdTaskId.isPresent()) {
+            return new ToolObservation("ensure_environment_bootstrap_work", "ok",
+                    "Created EMS environment/bootstrap task " + createdTaskId.get()
+                            + " for repository boundary, setup commands, and backend/frontend execution contract.");
+        }
+        return new ToolObservation("ensure_environment_bootstrap_work", "ok",
+                "EMS environment/bootstrap task already exists for this project; no duplicate was created.");
+    }
+
+    private ToolObservation projectDecisionMemory(ProjectEntity project, JsonNode args, String userMessage) {
+        String note = textArg(args, "note", textArg(args, "content", ""));
+        if (note.isBlank()) {
+            return projectMemoryRead(project);
+        }
+        return mutating(userMessage, "project_decision_memory", () -> projectMemoryAppend(project, args));
     }
 
     private ToolObservation ensureProjectWorkspace(ProjectEntity project) {
@@ -1055,6 +1389,18 @@ public class ProjectOperatorService {
         return node.get(field).asText(fallback).trim();
     }
 
+    private UUID uuidArg(JsonNode node, String field) {
+        String raw = textArg(node, field, "");
+        if (raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private int intArg(JsonNode node, String field, int fallback, int min, int max) {
         int value = node != null && node.has(field) ? node.get(field).asInt(fallback) : fallback;
         return Math.max(min, Math.min(max, value));
@@ -1087,14 +1433,18 @@ public class ProjectOperatorService {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         return containsAny(lower,
                 "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
-                "remember", "save ", "persist ", "fix", "repair", "clone",
+                "continue", "recover", "unblock", "restart", "replace", "remember", "save ", "persist ", "fix", "repair", "clone",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
+                "\u043d\u0430\u0447\u043d", "\u043d\u0430\u0447\u0438", "\u043f\u0440\u043e\u0434\u043e\u043b\u0436", "\u0432\u043e\u0437\u043e\u0431\u043d",
                 "\u0441\u0434\u0435\u043b\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0439", "\u0441\u043e\u0437\u0434\u0430\u0442\u044c",
                 "\u0434\u043e\u0431\u0430\u0432\u044c", "\u0434\u043e\u0431\u0430\u0432\u0438\u0442\u044c",
                 "\u043e\u0440\u043a\u0435\u0441\u0442\u0440", "\u0434\u0438\u0441\u043f\u0430\u0442\u0447",
                 "\u043f\u043e\u0434\u043d\u0438\u043c\u0438", "\u0441\u0431\u0435\u0440\u0438", "\u0431\u0438\u043b\u0434",
                 "\u0437\u0430\u043f\u043e\u043c\u043d\u0438", "\u0441\u043e\u0445\u0440\u0430\u043d\u0438",
-                "\u0438\u0441\u043f\u0440\u0430\u0432", "\u043f\u043e\u0447\u0438\u043d", "\u0441\u043a\u043b\u043e\u043d\u0438\u0440");
+                "\u0438\u0441\u043f\u0440\u0430\u0432", "\u043f\u043e\u0447\u0438\u043d", "\u0440\u0430\u0437\u0431\u043b\u043e\u043a",
+                "\u0432\u043e\u0441\u0441\u0442\u0430\u043d\u043e\u0432", "\u0437\u0430\u043c\u0435\u043d\u0438", "\u0440\u0430\u0437\u0433\u0440\u0435\u0431",
+                "\u0440\u0430\u0437\u0431\u0435\u0440", "\u0440\u0430\u0437\u043e\u0431\u0440",
+                "\u0441\u043a\u043b\u043e\u043d\u0438\u0440");
     }
 
     private boolean isAllowedOperatorCommand(List<String> command) {

@@ -39,6 +39,7 @@ public class ProjectFlowService {
     );
     private static final String UNIVERSAL_CAPABILITIES = "*";
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
+    private static final String ENVIRONMENT_BOOTSTRAP_TOC = "BOOTSTRAP-ENVIRONMENT-BOUNDARY";
     private static final long ORCHESTRATION_COOLDOWN_SECONDS = 300L;
 
     private final ProjectRepository projectRepository;
@@ -56,6 +57,7 @@ public class ProjectFlowService {
     private final ClientDeliveryService clientDeliveryService;
     private final ProjectFinalReportRepository projectFinalReportRepository;
     private final JulesSessionRepository julesSessionRepository;
+    private final JulesActivityResponseRepository julesActivityResponseRepository;
     private final ProjectGenerationStateRepository projectGenerationStateRepository;
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
@@ -86,6 +88,7 @@ public class ProjectFlowService {
                               ClientDeliveryService clientDeliveryService,
                               ProjectFinalReportRepository projectFinalReportRepository,
                               JulesSessionRepository julesSessionRepository,
+                              JulesActivityResponseRepository julesActivityResponseRepository,
                               ProjectGenerationStateRepository projectGenerationStateRepository,
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization,
@@ -107,6 +110,7 @@ public class ProjectFlowService {
         this.clientDeliveryService = clientDeliveryService;
         this.projectFinalReportRepository = projectFinalReportRepository;
         this.julesSessionRepository = julesSessionRepository;
+        this.julesActivityResponseRepository = julesActivityResponseRepository;
         this.projectGenerationStateRepository = projectGenerationStateRepository;
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
@@ -254,11 +258,15 @@ public class ProjectFlowService {
             existingIds.add(t.getId());
         }
 
+        int processedCount = 0;
+        if (ensureEnvironmentBootstrapTask(project).isPresent()) {
+            processedCount++;
+        }
+
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
                 wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
 
-        int processedCount = 0;
         for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingItems) {
             try {
                 // Reload from repository to ensure we have the latest compiled data
@@ -321,6 +329,235 @@ public class ProjectFlowService {
             createdTasks,
             "Orchestrated " + processedCount + " wishlist items. " + createdTasks.size() + " tasks created."
         );
+    }
+
+    @Transactional
+    public Optional<UUID> ensureEnvironmentBootstrapWork(UUID projectId) {
+        ProjectEntity project = requireActiveProject(projectId);
+        return ensureEnvironmentBootstrapTask(project).map(TaskEntity::getId);
+    }
+
+    private Optional<TaskEntity> ensureEnvironmentBootstrapTask(ProjectEntity project) {
+        if (findEnvironmentBootstrapTask(project.getId()).isPresent()) {
+            return Optional.empty();
+        }
+
+        WishlistEntity bootstrap = findEnvironmentBootstrapWishlist(project.getId())
+                .orElseGet(() -> {
+                    WishlistEntity item = new WishlistEntity();
+                    item.setProjectId(project.getId());
+                    item.setSource(WishlistSource.role);
+                    item.setSourceRoleTag("BARCAN-TAG-01");
+                    item.setStatus(WishlistStatus.pending);
+                    return item;
+                });
+
+        bootstrap.setContent("EMS bootstrap: define the repository execution boundary and local runtime contract before feature implementation.");
+        bootstrap.setCompiledByRole(ORCHESTRATOR_ROLE);
+        bootstrap.setJtbd("When a new project starts, I want the repository structure, runtime commands, and backend/frontend boundaries to be explicit, so that Jules can execute short role-owned tasks without guessing where code belongs.");
+        bootstrap.setLeanValue(LeanValue.essential);
+        bootstrap.setTocConstraintRef(ENVIRONMENT_BOOTSTRAP_TOC);
+        bootstrap.setSixSigmaMetric("Reduce setup and dispatch defects by verifying the project scaffold before role-specific feature work.");
+        bootstrap.setDod("Repository/runtime boundary contract exists in README.md or docs/architecture/bootstrap.md and names setup, run, test, backend, frontend, and handoff boundaries. Role: BARCAN-TAG-01. Compiler role: BARCAN-TAG-09.");
+        bootstrap.setAcceptanceCriteria("Given Jules starts any implementation task, When the agent inspects the repository, Then it can identify the project root, install command, run command, test command, backend boundary, frontend boundary, and where new code must be placed without asking the human operator.");
+        if (bootstrap.getStatus() == WishlistStatus.converted_to_task) {
+            bootstrap.setStatus(WishlistStatus.pending);
+        }
+
+        WishlistEntity saved = wishlistRepository.save(bootstrap);
+        TaskEntity task = technicalLeadCompiler.createTaskFromWishlist(
+                saved.getId(),
+                null,
+                "EMS-bootstrap-" + shortId(saved.getId()),
+                1,
+                1,
+                "environment bootstrap is required before feature flow dispatch"
+        );
+        return Optional.ofNullable(task);
+    }
+
+    private Optional<WishlistEntity> findEnvironmentBootstrapWishlist(UUID projectId) {
+        return wishlistRepository.findByProjectId(projectId).stream()
+                .filter(wishlist -> ENVIRONMENT_BOOTSTRAP_TOC.equals(wishlist.getTocConstraintRef())
+                        || (wishlist.getContent() != null && wishlist.getContent().contains("EMS bootstrap: define the repository execution boundary")))
+                .findFirst();
+    }
+
+    private Optional<TaskEntity> findEnvironmentBootstrapTask(UUID projectId) {
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(task -> task.getPayload() != null)
+                .filter(task -> ENVIRONMENT_BOOTSTRAP_TOC.equals(task.getPayload().path("toc_constraint_ref").asText()))
+                .findFirst();
+    }
+
+    private String shortId(UUID id) {
+        String value = id == null ? UUID.randomUUID().toString() : id.toString();
+        return value.substring(0, Math.min(8, value.length()));
+    }
+
+    @Transactional
+    public Map<String, Object> closeBadJulesSession(UUID projectId, UUID sessionId, String reason) {
+        ProjectEntity project = requireActiveProject(projectId);
+        Map<UUID, TaskEntity> tasksById = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .collect(java.util.stream.Collectors.toMap(TaskEntity::getId, task -> task, (a, b) -> a));
+
+        Optional<JulesSessionEntity> target = selectBadSession(tasksById, sessionId);
+        if (target.isEmpty()) {
+            return Map.of(
+                    "status", "none",
+                    "message", "No active Jules session was eligible for bad-session closure.",
+                    "projectId", project.getId()
+            );
+        }
+
+        JulesSessionEntity session = target.get();
+        TaskEntity task = tasksById.get(session.getTaskId());
+        String closureReason = firstNonBlank(reason,
+                "operator_bad_session_closed: destructive loop, stale work, irrelevant activity, or no concrete next action");
+        session.setStatus("loop_closed");
+        session.setClosedAt(Instant.now());
+        session.setClosureReason(closureReason);
+        julesSessionRepository.save(session);
+
+        if (task != null && task.getStatus() != TaskStatus.done && task.getStatus() != TaskStatus.failed) {
+            claimService.closeTaskAsBlocked(task.getId(), closureReason);
+        }
+
+        Optional<UUID> postmortemWishlistId = createSessionPostmortemWishlist(project.getId(), session.getId(), closureReason);
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("status", "closed");
+        result.put("sessionId", session.getId());
+        result.put("externalSessionId", session.getExternalSessionId());
+        result.put("taskId", session.getTaskId());
+        result.put("taskRole", task != null && task.getRole() != null ? task.getRole().getTag() : null);
+        result.put("closureReason", closureReason);
+        result.put("postmortemWishlistId", postmortemWishlistId.orElse(null));
+        result.put("message", "Closed one bad Jules session and created a postmortem wishlist for fresh atomic recovery work.");
+        return result;
+    }
+
+    @Transactional
+    public Optional<UUID> createSessionPostmortemWishlist(UUID projectId, UUID sessionId, String reason) {
+        ProjectEntity project = requireActiveProject(projectId);
+        JulesSessionEntity session = julesSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new IllegalArgumentException("Jules session not found: " + sessionId));
+        TaskEntity task = taskRepository.findById(session.getTaskId())
+                .orElseThrow(() -> new IllegalArgumentException("Task not found for session: " + session.getTaskId()));
+        if (task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+            throw new IllegalArgumentException("Jules session does not belong to project " + project.getId());
+        }
+
+        String marker = "Operator postmortem source session: " + session.getId();
+        boolean exists = wishlistRepository.findByProjectId(project.getId()).stream()
+                .map(WishlistEntity::getContent)
+                .anyMatch(content -> content != null && content.contains(marker));
+        if (exists) {
+            return Optional.empty();
+        }
+
+        List<JulesActivityResponseEntity> responses =
+                julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+        String roleTag = task.getRole() != null ? task.getRole().getTag() : ORCHESTRATOR_ROLE;
+        String latestQuestion = responses.stream()
+                .map(JulesActivityResponseEntity::getQuestion)
+                .filter(value -> value != null && !value.isBlank())
+                .findFirst()
+                .orElse("No recorded Jules question was available.");
+
+        WishlistEntity followUp = new WishlistEntity();
+        followUp.setProjectId(project.getId());
+        followUp.setSource(WishlistSource.role_mismatch_followup);
+        followUp.setSourceRoleTag(roleTag);
+        followUp.setStatus(WishlistStatus.pending);
+        followUp.setContent(truncate("""
+                [Operator postmortem from bad Jules session]
+                Operator postmortem source session: %s
+                External Jules session: %s
+                Original task: %s
+                Original role: %s
+                Closure reason: %s
+
+                Six Sigma CTQ:
+                - Defect type: bad Jules session / loop / stale blocker / non-actionable dialogue.
+                - Cost of poor quality: one blocked task plus wasted Jules interaction budget.
+
+                Kano: Must-Be
+                Cynefin: complicated
+                JTBD: When a Jules session becomes destructive or non-actionable, I want the smallest recoverable work item to be replanned, so the project flow resumes without repeating the same loop.
+
+                New short Jules session:
+                - Inspect only the original task context and the latest blocker evidence.
+                - Choose exactly one atomic fix, verification, or repository-hygiene action.
+                - Open one branch and one PR.
+                - If the root cause is still ambiguous, document one precise blocker and stop.
+
+                DoD:
+                - One concrete owner-role result is completed or one precise blocker is written.
+                - Verification command/result is included in the PR or blocker note.
+                - No broad redesign, no duplicate task generation, no generated artifacts.
+                - Dialogue budget remains below 8 orchestrator replies.
+
+                Latest blocker evidence:
+                %s
+                """.formatted(
+                session.getId(),
+                valueOrUnset(session.getExternalSessionId()),
+                task.getId(),
+                roleTag,
+                firstNonBlank(reason, valueOrUnset(session.getClosureReason())),
+                truncate(latestQuestion, 1_200)
+        ), 6_000));
+        WishlistEntity saved = wishlistRepository.save(followUp);
+        return Optional.of(saved.getId());
+    }
+
+    private Optional<JulesSessionEntity> selectBadSession(Map<UUID, TaskEntity> tasksById, UUID sessionId) {
+        if (sessionId != null) {
+            return julesSessionRepository.findById(sessionId)
+                    .filter(session -> tasksById.containsKey(session.getTaskId()))
+                    .filter(this::isActiveJulesSession);
+        }
+        return julesSessionRepository.findAll().stream()
+                .filter(session -> tasksById.containsKey(session.getTaskId()))
+                .filter(this::isActiveJulesSession)
+                .sorted(Comparator
+                        .comparingInt((JulesSessionEntity session) -> badSessionRisk(session)).reversed()
+                        .thenComparing(JulesSessionEntity::getUpdatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
+                .findFirst();
+    }
+
+    private boolean isActiveJulesSession(JulesSessionEntity session) {
+        String status = session.getStatus();
+        return "queued".equals(status)
+                || "running".equals(status)
+                || "revising".equals(status)
+                || "stuck".equals(status);
+    }
+
+    private int badSessionRisk(JulesSessionEntity session) {
+        int score = switch (session.getStatus()) {
+            case "stuck" -> 100;
+            case "revising" -> 70;
+            case "running" -> 50;
+            case "queued" -> 20;
+            default -> 0;
+        };
+        if (session.getUpdatedAt() != null) {
+            long ageMinutes = Duration.between(session.getUpdatedAt(), Instant.now()).toMinutes();
+            score += (int) Math.min(80, Math.max(0, ageMinutes / 5));
+        }
+        int responses = julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId()).size();
+        score += Math.min(80, responses * 8);
+        return score;
+    }
+
+    private String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private void recordOrchestrationStartOrThrow(UUID projectId) {
@@ -977,7 +1214,7 @@ public class ProjectFlowService {
     @Transactional(readOnly = true)
     public ProjectDashboardDto dashboard(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
-        List<AgentDashboardDto> agents = accountRepository.findByProjectIdOrderByNameAsc(projectId).stream()
+        List<AgentDashboardDto> agents = accountRepository.findAvailableForProjectOrderByNameAsc(projectId).stream()
                 .map(account -> {
                     ClaimEntity activeClaim = claimRepository
                             .findByAccountIdAndTaskProjectIdAndReleasedAtIsNull(account.getId(), projectId)
