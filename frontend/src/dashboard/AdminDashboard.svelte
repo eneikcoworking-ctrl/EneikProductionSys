@@ -350,13 +350,13 @@
           {#if integration.secretKey}
             <div class="setting-line">
               <span>token</span>
-              {#if editing[integration.secretKey]}
-                <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
+              {#if editing[integration.secretKey!]}
+                <input bind:value={drafts[integration.secretKey!]} placeholder="new token" />
               {:else}
-                <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
+                <input value={settingByKey(integration.secretKey!)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
-              <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Edit</button>
-                <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
+              <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey!)}>Edit</button>
+                <button type="button" onclick={() => saveSetting(integration.secretKey!, drafts[integration.secretKey!] || '')} disabled={!editing[integration.secretKey!]}>
                   Save
                 </button>
               </div>
@@ -370,13 +370,13 @@
           {#if integration.extraKey}
             <div class="setting-line">
               <span>{integration.name === 'Antigravity' ? 'agent' : 'team'}</span>
-              {#if editing[integration.extraKey]}
-                <input bind:value={drafts[integration.extraKey]} placeholder={integration.name === 'Antigravity' ? 'antigravity-preview-05-2026' : 'Linear team id'} />
+              {#if editing[integration.extraKey!]}
+                <input bind:value={drafts[integration.extraKey!]} placeholder={integration.name === 'Antigravity' ? 'antigravity-preview-05-2026' : 'Linear team id'} />
               {:else}
-                <input value={settingByKey(integration.extraKey)?.maskedValue || ''} placeholder="not set" disabled />
+                <input value={settingByKey(integration.extraKey!)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
-              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey)}>Edit</button>
-              <button type="button" onclick={() => saveSetting(integration.extraKey, drafts[integration.extraKey] || '')} disabled={!editing[integration.extraKey]}>
+              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey!)}>Edit</button>
+              <button type="button" onclick={() => saveSetting(integration.extraKey!, drafts[integration.extraKey!] || '')} disabled={!editing[integration.extraKey!]}>
                 Save
               </button>
             </div>
@@ -388,8 +388,8 @@
               <label class="toggle inline-toggle">
                 <input
                   type="checkbox"
-                  checked={settingByKey(integration.pushKey)?.enabled === true}
-                  onchange={(event) => saveSetting(integration.pushKey, String((event.currentTarget as HTMLInputElement).checked))}
+                  checked={settingByKey(integration.pushKey!)?.enabled === true}
+                  onchange={(event) => saveSetting(integration.pushKey!, String((event.currentTarget as HTMLInputElement).checked))}
                 />
                 <span>autonomous branch + PR flow</span>
               </label>
@@ -397,7 +397,7 @@
           {/if}
 
           <div class="source-line">
-            <small>{integration.secretKey ? settingByKey(integration.secretKey)?.source || 'none' : 'uses gemini key'}</small>
+            <small>{integration.secretKey ? settingByKey(integration.secretKey!)?.source || 'none' : 'uses gemini key'}</small>
             {#if integration.name === 'GitHub'}
               <small>{status?.githubAccess?.data?.latest?.ci_status || 'no check yet'}</small>
             {:else if integration.name === 'Linear'}
