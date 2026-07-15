@@ -18,6 +18,7 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.jules.JulesRoleCapabilities;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
@@ -347,6 +348,7 @@ public class ProjectOperationalContextService {
         fact.put("id", task.getId());
         fact.put("status", task.getStatus());
         fact.put("roleTag", task.getRole() != null ? task.getRole().getTag() : null);
+        fact.put("title", TaskTitleBuilder.displayTitle(task));
         fact.put("description", trim(task.getDescription(), 900));
         fact.put("priority", task.getPriority());
         fact.put("retryCount", task.getRetryCount());
@@ -391,6 +393,7 @@ public class ProjectOperationalContextService {
                 ? "recorded_failed_attempt"
                 : task != null ? task.getStatus() : null);
         fact.put("roleTag", task != null && task.getRole() != null ? task.getRole().getTag() : null);
+        fact.put("taskTitle", task != null ? TaskTitleBuilder.displayTitle(task) : null);
         fact.put("taskDescription", task != null ? trim(task.getDescription(), 300) : null);
         fact.put("accountId", session.getAccountId());
         fact.put("accountName", account != null ? account.getName() : null);

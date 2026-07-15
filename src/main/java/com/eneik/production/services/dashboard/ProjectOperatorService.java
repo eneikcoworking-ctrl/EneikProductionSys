@@ -11,7 +11,9 @@ import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
+import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
+import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -58,6 +60,8 @@ public class ProjectOperatorService {
     private final ClaimService claimService;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final AntigravityDiagnosticService antigravityDiagnosticService;
+    private final GoogleAiResourceService googleAiResourceService;
+    private final DesignAssetService designAssetService;
     private final SystemSettingsService settingsService;
     private final Path workspaceRoot;
     private final Path systemRepoRoot;
@@ -77,6 +81,8 @@ public class ProjectOperatorService {
                                   ClaimService claimService,
                                   GitHubPullRequestService gitHubPullRequestService,
                                   AntigravityDiagnosticService antigravityDiagnosticService,
+                                  GoogleAiResourceService googleAiResourceService,
+                                  DesignAssetService designAssetService,
                                   SystemSettingsService settingsService,
                                   @Value("${project-factory.workspace-root:./project-workspaces}") String workspaceRoot,
                                   @Value("${eneik.operator.system-repo-root:}") String systemRepoRoot,
@@ -95,6 +101,8 @@ public class ProjectOperatorService {
         this.claimService = claimService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.antigravityDiagnosticService = antigravityDiagnosticService;
+        this.googleAiResourceService = googleAiResourceService;
+        this.designAssetService = designAssetService;
         this.settingsService = settingsService;
         this.workspaceRoot = Paths.get(workspaceRoot).toAbsolutePath().normalize();
         this.systemRepoRoot = (systemRepoRoot == null || systemRepoRoot.isBlank())
@@ -145,6 +153,7 @@ public class ProjectOperatorService {
                 - Recorded failed attempts are internal defect counter evidence only. Do not present them as active project work. Do not mention those totals unless the user explicitly asks for production defect accounting.
                 - Closed-but-unmerged PRs are historical scrap/COPQ evidence, not open work. Never tell the user to close closed PRs again. Only live open PRs are actionable.
                 - Antigravity Diagnostic Worker is the deep engineering executor for bounded code diagnostics. Use it for repository-level investigation, local/build/test repair, and diagnostic branch artifacts; never treat it as a chat answer substitute.
+                - Google AI resources are operator tools, not decoration: use grounded research for fresh facts, URL Context for cited pages, and Design Asset Service for visual assets. If a visual brief is unclear, first create a BARCAN-TAG-03 or BARCAN-TAG-09 wishlist item for content planning, then generate the asset.
                 - For project planning, focus on current project state: workspace, live open PRs, queued/review work, active sessions, API/account availability, and the next dispatchable task.
                 - Open unmerged PRs are WIP/integration debt, not proof of forward progress. When the user explicitly asks to close stale PRs or restart the flow, use the PR cleanup tool and then recover/dispatch fresh work.
                 - Do not say you lack analytical tools while project facts contain tasks, sessions, wishlist, accounts, PRs, conflicts, or EMS metrics. If bottleneck detection is empty, analyze queue/review/done balance, session age, PR review state, account API state, and dispatchability instead.
@@ -460,6 +469,10 @@ public class ProjectOperatorService {
                 - If repository setup, local environment, .git, workspace, backend/frontend boundary, or setup commands are missing and the user asks to fix/start/continue, request ensure_project_workspace and ensure_environment_bootstrap_work.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
                 - If the user asks for Antigravity, deep repository diagnostics, local code repair, root-cause investigation, or a diagnostic branch, request antigravity_diagnostic_worker.
+                - If the user asks which Google/Gemini tools are available or how resources are configured, request google_ai_resource_catalog.
+                - If the user asks for current external facts, market/legal/technical research, competitor context, or fresh documentation, request google_search_research.
+                - If the user gives a URL and asks to analyze it, request url_context_research.
+                - If the user explicitly asks to generate, create, or produce a visual asset, banner, hero image, mockup, icon, or site image, request design_asset_generate. If the brief is vague, first request create_atomic_wishlist for BARCAN-TAG-03 content planning.
                 - If the user asks to resume, continue, unblock, recover, replace failed work, or create new corrected tasks after failed Jules work, request recover_blocked_flow. Do not ask the user to choose task IDs.
                 - If the next step is described only as "waiting for tasks" and no concrete task/owner/role exists, request add_wishlist with a short English atomic work item, then orchestrate_project and dispatch_project when the user explicitly asked to act.
                 - Do not use Six Sigma alone as a reason to stop project work; it is production telemetry for the EMS makers, not the project operator's execution concern.
@@ -545,6 +558,32 @@ public class ProjectOperatorService {
         if (looksLikeAntigravityIntent(lower)) {
             addRoutedCall(calls, "antigravity_diagnostic_worker",
                     "User asked for deep Antigravity engineering diagnostics or a diagnostic branch artifact.");
+        }
+        if (looksLikeGoogleAiResourceIntent(lower)) {
+            addRoutedCall(calls, "google_ai_resource_catalog",
+                    "User asked about Gemini/Google AI resource availability or integration model.");
+        }
+        if (looksLikeGroundedResearchIntent(lower)) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("question", userMessage == null ? "" : userMessage);
+            calls.add(new OperatorToolCall("google_search_research", args,
+                    "User asked for fresh external research or current Google-grounded facts."));
+        }
+        if (looksLikeUrlContextIntent(lower)) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("question", userMessage == null ? "" : userMessage);
+            args.put("url", firstUrl(userMessage == null ? "" : userMessage));
+            calls.add(new OperatorToolCall("url_context_research", args,
+                    "User asked to analyze a concrete URL with URL Context."));
+        }
+        if (looksLikeDesignAssetIntent(lower)) {
+            ObjectNode args = objectMapper.createObjectNode();
+            args.put("brief", userMessage == null ? "" : userMessage);
+            args.put("assetType", inferredAssetType(lower));
+            args.put("quality", containsAny(lower, "pro", "brand", "бренд", "премиум") ? "pro" : "fast");
+            args.put("useGoogleSearch", containsAny(lower, "current", "fresh", "google", "market", "конкур", "рынок"));
+            calls.add(new OperatorToolCall("design_asset_generate", args,
+                    "User explicitly asked to generate a visual design asset."));
         }
         if (looksLikeWorkspaceRepairIntent(project, lower)) {
             addRoutedCall(calls, "ensure_project_workspace",
@@ -710,6 +749,68 @@ public class ProjectOperatorService {
                 "\u043f\u0443\u0448\u0438\u0442\u044c \u0432\u0435\u0442\u043a", "\u043f\u0440\u0438\u0447\u0438\u043d\u0443 \u0432 \u043a\u043e\u0434\u0435");
     }
 
+    private boolean looksLikeGoogleAiResourceIntent(String lower) {
+        return containsAny(lower,
+                "google ai resource", "gemini resource", "ai resources", "available models", "model catalog",
+                "nano banana", "veo", "grounding", "url context",
+                "\u0440\u0435\u0441\u0443\u0440\u0441\u044b \u0434\u0436\u0435\u043c\u0438\u043d\u0438", "\u0440\u0435\u0441\u0443\u0440\u0441\u044b gemini",
+                "\u0438\u043d\u0441\u0442\u0440\u0443\u043c\u0435\u043d\u0442\u044b google", "\u043c\u043e\u0434\u0435\u043b\u0438 gemini");
+    }
+
+    private boolean looksLikeGroundedResearchIntent(String lower) {
+        boolean research = containsAny(lower,
+                "research", "current facts", "fresh facts", "market", "competitor", "latest", "documentation",
+                "google search", "grounded",
+                "\u0438\u0441\u0441\u043b\u0435\u0434", "\u0440\u044b\u043d\u043e\u043a", "\u043a\u043e\u043d\u043a\u0443\u0440", "\u0430\u043a\u0442\u0443\u0430\u043b",
+                "\u0441\u0432\u0435\u0436", "\u0434\u043e\u043a\u0443\u043c\u0435\u043d\u0442");
+        boolean asksExternal = containsAny(lower, "google", "web", "internet", "external", "outside",
+                "\u0433\u0443\u0433\u043b", "\u0438\u043d\u0442\u0435\u0440\u043d\u0435\u0442", "\u0432\u043d\u0435\u0448");
+        return research && asksExternal;
+    }
+
+    private boolean looksLikeUrlContextIntent(String lower) {
+        return lower.contains("http://") || lower.contains("https://") || containsAny(lower, "url context", "analyze url", "\u0441\u0441\u044b\u043b\u043a");
+    }
+
+    private boolean looksLikeDesignAssetIntent(String lower) {
+        boolean visual = containsAny(lower,
+                "banner", "hero image", "site image", "visual asset", "mockup", "icon", "illustration", "image",
+                "generate image", "design asset", "nano banana",
+                "\u0431\u0430\u043d\u043d\u0435\u0440", "\u043a\u0430\u0440\u0442\u0438\u043d", "\u0438\u0437\u043e\u0431\u0440\u0430\u0436",
+                "\u043c\u043e\u043a\u0430\u043f", "\u0438\u043a\u043e\u043d", "\u0434\u0438\u0437\u0430\u0439\u043d");
+        boolean action = containsAny(lower,
+                "generate", "create", "produce", "make", "render",
+                "\u0441\u0433\u0435\u043d\u0435\u0440", "\u0441\u043e\u0437\u0434", "\u0441\u0434\u0435\u043b", "\u043d\u0430\u0440\u0438\u0441");
+        return visual && action;
+    }
+
+    private String firstUrl(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("https?://\\S+").matcher(value);
+        if (matcher.find()) {
+            return matcher.group().replaceAll("[),.;]+$", "");
+        }
+        return "";
+    }
+
+    private String inferredAssetType(String lower) {
+        if (containsAny(lower, "hero", "\u0445\u0438\u0440\u043e")) {
+            return "hero";
+        }
+        if (containsAny(lower, "banner", "\u0431\u0430\u043d\u043d\u0435\u0440")) {
+            return "banner";
+        }
+        if (containsAny(lower, "icon", "\u0438\u043a\u043e\u043d")) {
+            return "icon";
+        }
+        if (containsAny(lower, "mockup", "\u043c\u043e\u043a\u0430\u043f")) {
+            return "mockup";
+        }
+        return "visual_asset";
+    }
+
     private String toolCatalog() {
         return """
                 Read-only project/data tools:
@@ -729,6 +830,9 @@ public class ProjectOperatorService {
                 - autonomous_flow_steward {}
                 - project_decision_memory {"note":"optional English decision note; omit to read memory"}
                 - project_memory_read {}
+                - google_ai_resource_catalog {}
+                - google_search_research {"question":"English research question"}
+                - url_context_research {"url":"https://example.com","question":"English URL analysis question"}
 
                 Repository/code tools:
                 - repo_profile {"root":"project|system"}
@@ -779,6 +883,7 @@ public class ProjectOperatorService {
                 - ensure_project_workspace {} MUTATING
                 - start_testing_stream {} MUTATING
                 - antigravity_diagnostic_worker {"mission":"optional English bounded diagnostic mission"} MUTATING/REMOTE_EXECUTION
+                - design_asset_generate {"brief":"English visual brief","assetType":"hero|banner|mockup|icon|visual_asset","quality":"fast|pro","useGoogleSearch":false} MUTATING/REMOTE_EXECUTION
 
                 Generic tool:
                 - run_command {"root":"project|system","command":["git","status","--short"],"timeoutSeconds":30} MUTATING/EXECUTION
@@ -822,6 +927,9 @@ public class ProjectOperatorService {
                 case "autonomous_flow_steward" -> autonomousFlowSteward(project, context);
                 case "project_decision_memory" -> projectDecisionMemory(project, args, userMessage);
                 case "project_memory_read" -> projectMemoryRead(project);
+                case "google_ai_resource_catalog" -> googleAiResourceCatalog();
+                case "google_search_research" -> googleSearchResearch(context, args, userMessage);
+                case "url_context_research" -> urlContextResearch(context, args, userMessage);
                 case "repo_profile" -> repoProfile(rootFor(project, args));
                 case "workspace_tree" -> tree(rootFor(project, args));
                 case "find_files" -> findFiles(rootFor(project, args), args);
@@ -863,6 +971,7 @@ public class ProjectOperatorService {
                 case "ensure_project_workspace" -> mutating(userMessage, tool, () -> ensureProjectWorkspace(project));
                 case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
                 case "antigravity_diagnostic_worker" -> mutating(userMessage, tool, () -> antigravityDiagnosticWorker(project, context, userMessage, args));
+                case "design_asset_generate" -> mutating(userMessage, tool, () -> designAssetGenerate(project, context, args, userMessage));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
                 default -> new ToolObservation(tool, "unknown_tool", "Tool is not registered. Reason requested by Gemini: " + call.reason());
             };
@@ -1631,6 +1740,77 @@ public class ProjectOperatorService {
         return new ToolObservation("antigravity_diagnostic_worker", status, trim(output.toString()));
     }
 
+    private ToolObservation googleAiResourceCatalog() {
+        try {
+            return new ToolObservation(
+                    "google_ai_resource_catalog",
+                    "ok",
+                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(googleAiResourceService.resourceMatrix())
+            );
+        } catch (Exception e) {
+            return new ToolObservation("google_ai_resource_catalog", "error", e.getMessage());
+        }
+    }
+
+    private ToolObservation googleSearchResearch(ProjectOperationalContext context, JsonNode args, String userMessage) {
+        String question = textArg(args, "question", userMessage == null ? "" : userMessage);
+        var result = googleAiResourceService.googleSearchResearch(question, context.promptJson());
+        StringBuilder output = new StringBuilder();
+        output.append("Google Search research result\n")
+                .append("status=").append(result.status()).append('\n')
+                .append("model=").append(valueOrUnset(result.model())).append("\n\n")
+                .append(result.outputText().isBlank() ? result.rawPreview() : result.outputText());
+        return new ToolObservation(
+                "google_search_research",
+                result.available() ? result.status() : "missing",
+                trim(output.toString())
+        );
+    }
+
+    private ToolObservation urlContextResearch(ProjectOperationalContext context, JsonNode args, String userMessage) {
+        String url = textArg(args, "url", firstUrl(userMessage == null ? "" : userMessage));
+        String question = textArg(args, "question", userMessage == null ? "" : userMessage);
+        if (url.isBlank()) {
+            return new ToolObservation("url_context_research", "blocked", "url is required.");
+        }
+        var result = googleAiResourceService.urlContextResearch(url, question, context.promptJson());
+        StringBuilder output = new StringBuilder();
+        output.append("URL Context research result\n")
+                .append("url=").append(url).append('\n')
+                .append("status=").append(result.status()).append('\n')
+                .append("model=").append(valueOrUnset(result.model())).append("\n\n")
+                .append(result.outputText().isBlank() ? result.rawPreview() : result.outputText());
+        return new ToolObservation(
+                "url_context_research",
+                result.available() ? result.status() : "missing",
+                trim(output.toString())
+        );
+    }
+
+    private ToolObservation designAssetGenerate(ProjectEntity project,
+                                                ProjectOperationalContext context,
+                                                JsonNode args,
+                                                String userMessage) {
+        String brief = textArg(args, "brief", userMessage == null ? "" : userMessage);
+        String assetType = textArg(args, "assetType", "visual_asset");
+        String quality = textArg(args, "quality", "fast");
+        boolean useGoogleSearch = args != null && args.has("useGoogleSearch") && args.get("useGoogleSearch").asBoolean(false);
+        var result = designAssetService.generateAsset(project, context, brief, assetType, quality, useGoogleSearch);
+        StringBuilder output = new StringBuilder();
+        output.append("Design Asset Service result\n")
+                .append("status=").append(result.status()).append('\n')
+                .append("model=").append(valueOrUnset(result.model())).append('\n')
+                .append("imagePath=").append(valueOrUnset(result.imagePath())).append('\n')
+                .append("metadataPath=").append(valueOrUnset(result.metadataPath())).append('\n')
+                .append("mimeType=").append(valueOrUnset(result.mimeType())).append("\n\n")
+                .append(result.message());
+        return new ToolObservation(
+                "design_asset_generate",
+                result.available() ? result.status() : "missing",
+                trim(output.toString())
+        );
+    }
+
     private ToolObservation runGenericCommand(ProjectEntity project, JsonNode args, String userMessage) {
         Path root = rootFor(project, args);
         JsonNode rawCommand = args.path("command");
@@ -1793,8 +1973,11 @@ public class ProjectOperatorService {
         if (looksLikeAntigravityIntent(lower)) {
             return true;
         }
+        if (looksLikeDesignAssetIntent(lower)) {
+            return true;
+        }
         return containsAny(lower,
-                "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
+                "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate", "generate ", "produce ",
                 "continue", "recover", "unblock", "restart", "replace", "remember", "save ", "persist ", "fix", "repair", "clone", "close ",
                 "\u0437\u0430\u043f\u0443\u0441\u0442\u0438", "\u0437\u0430\u043f\u0443\u0441\u0442\u0438\u0442\u044c",
                 "\u043d\u0430\u0447\u043d", "\u043d\u0430\u0447\u0438", "\u043f\u0440\u043e\u0434\u043e\u043b\u0436", "\u0432\u043e\u0437\u043e\u0431\u043d",

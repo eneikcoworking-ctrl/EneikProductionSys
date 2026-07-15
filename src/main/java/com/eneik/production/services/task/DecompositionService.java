@@ -66,6 +66,7 @@ public class DecompositionService {
                     RoleEntity role = roleRepository.findById(tag)
                             .orElseThrow(() -> new RuntimeException("Role not found: " + tag));
                     task.setRole(role);
+                    task.setTitle(TaskTitleBuilder.build(tag, requirementText));
                     task.setDescription("[" + tag + "] " + requirementText);
                     task.setStatus(TaskStatus.queued);
 
@@ -81,7 +82,7 @@ public class DecompositionService {
         List<TaskEntity> savedTasks = taskRepository.saveAll(tasksToSave);
 
         List<TaskShortDto> taskDtos = savedTasks.stream()
-                .map(t -> new TaskShortDto(t.getId(), t.getRole().getTag(), t.getDescription()))
+                .map(t -> new TaskShortDto(t.getId(), t.getRole().getTag(), TaskTitleBuilder.displayTitle(t), t.getDescription()))
                 .collect(Collectors.toList());
 
         return new DecompositionResponseDto(sourceRequirementId, taskDtos);

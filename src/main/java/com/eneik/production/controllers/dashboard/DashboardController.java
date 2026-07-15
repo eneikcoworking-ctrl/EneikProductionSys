@@ -7,6 +7,7 @@ import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.dashboard.BottleneckDetectionService;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -42,7 +43,7 @@ public class DashboardController {
                 account.getName(),
                 account.getStatus(),
                 activeClaim != null ? activeClaim.getRole().getTag() : null,
-                activeClaim != null ? activeClaim.getTask().getDescription() : null,
+                activeClaim != null ? TaskTitleBuilder.displayTitle(activeClaim.getTask()) : null,
                 activeClaim != null ? activeClaim.getClaimedAt() : null,
                 activeClaim != null ? activeClaim.getLeaseExpiresAt() : null,
                 account.getLastHeartbeat()

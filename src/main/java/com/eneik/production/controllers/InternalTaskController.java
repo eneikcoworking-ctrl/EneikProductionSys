@@ -55,6 +55,9 @@ public class InternalTaskController {
         if (updates.containsKey("linearIssueId")) {
             task.setLinearIssueId((String) updates.get("linearIssueId"));
         }
+        if (updates.containsKey("title")) {
+            task.setTitle((String) updates.get("title"));
+        }
         if (updates.containsKey("status")) {
             task.setStatus(TaskStatus.valueOf((String) updates.get("status")));
         }

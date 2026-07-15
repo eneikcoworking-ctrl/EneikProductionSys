@@ -37,7 +37,9 @@ public class SystemSettingsService {
         Boolean enabled = definition.enabledFlag()
                 ? Boolean.parseBoolean(effective.value())
                 : null;
-        String maskedValue = definition.enabledFlag() ? null : mask(effective.value());
+        String maskedValue = definition.enabledFlag()
+                ? null
+                : definition.secret() ? mask(effective.value()) : effective.value();
         return new SettingDto(definition.key(), enabled, maskedValue, effective.source());
     }
 
@@ -133,25 +135,50 @@ public class SystemSettingsService {
 
     private static Map<String, SettingDefinition> definitions() {
         Map<String, SettingDefinition> definitions = new LinkedHashMap<>();
-        definitions.put("github_enabled", new SettingDefinition("github_enabled", "GITHUB_ENABLED", "github.enabled", true));
-        definitions.put("github_token", new SettingDefinition("github_token", "GITHUB_TOKEN", "github.token", false));
-        definitions.put("linear_enabled", new SettingDefinition("linear_enabled", "LINEAR_ENABLED", "linear.enabled", true));
-        definitions.put("linear_api_key", new SettingDefinition("linear_api_key", "LINEAR_API_KEY", "linear.api-key", false));
-        definitions.put("linear_team_id", new SettingDefinition("linear_team_id", "LINEAR_TEAM_ID", "linear.team-id", false));
-        definitions.put("jules_enabled", new SettingDefinition("jules_enabled", "JULES_ENABLED", "JULES_ENABLED", true));
-        definitions.put("jules_api_key", new SettingDefinition("jules_api_key", "JULES_API_KEY", "JULES_API_KEY", false));
-        definitions.put("gemini_enabled", new SettingDefinition("gemini_enabled", "GEMINI_ENABLED", "GEMINI_ENABLED", true));
-        definitions.put("gemini_api_key", new SettingDefinition("gemini_api_key", "GEMINI_API_KEY", "GEMINI_API_KEY", false));
-        definitions.put("antigravity_enabled", new SettingDefinition("antigravity_enabled", "ANTIGRAVITY_ENABLED", "antigravity.enabled", true));
-        definitions.put("antigravity_push_enabled", new SettingDefinition("antigravity_push_enabled", "ANTIGRAVITY_PUSH_ENABLED", "antigravity.push-enabled", true));
-        definitions.put("antigravity_api_key", new SettingDefinition("antigravity_api_key", "ANTIGRAVITY_API_KEY", "antigravity.api-key", false));
-        definitions.put("antigravity_agent", new SettingDefinition("antigravity_agent", "ANTIGRAVITY_AGENT", "antigravity.agent", false));
-        definitions.put("falsification_cycle_enabled", new SettingDefinition("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled", true));
-        definitions.put("simulated_actuator_health", new SettingDefinition("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health", false));
+        definitions.put("github_enabled", flag("github_enabled", "GITHUB_ENABLED", "github.enabled"));
+        definitions.put("github_token", secret("github_token", "GITHUB_TOKEN", "github.token"));
+        definitions.put("linear_enabled", flag("linear_enabled", "LINEAR_ENABLED", "linear.enabled"));
+        definitions.put("linear_api_key", secret("linear_api_key", "LINEAR_API_KEY", "linear.api-key"));
+        definitions.put("linear_team_id", plain("linear_team_id", "LINEAR_TEAM_ID", "linear.team-id"));
+        definitions.put("jules_enabled", flag("jules_enabled", "JULES_ENABLED", "JULES_ENABLED"));
+        definitions.put("jules_api_key", secret("jules_api_key", "JULES_API_KEY", "JULES_API_KEY"));
+        definitions.put("gemini_enabled", flag("gemini_enabled", "GEMINI_ENABLED", "GEMINI_ENABLED"));
+        definitions.put("gemini_api_key", secret("gemini_api_key", "GEMINI_API_KEY", "GEMINI_API_KEY"));
+        definitions.put("google_ai_api_key", secret("google_ai_api_key", "GOOGLE_AI_API_KEY", "google-ai.api-key"));
+        definitions.put("gemini_model", plain("gemini_model", "GEMINI_MODEL", "gemini.model"));
+        definitions.put("gemini_fallback_models", plain("gemini_fallback_models", "GEMINI_FALLBACK_MODELS", "gemini.fallback-models"));
+        definitions.put("gemini_pro_model", plain("gemini_pro_model", "GEMINI_PRO_MODEL", "gemini.pro-model"));
+        definitions.put("gemini_pro_fallback_models", plain("gemini_pro_fallback_models", "GEMINI_PRO_FALLBACK_MODELS", "gemini.pro-fallback-models"));
+        definitions.put("google_search_grounding_enabled", flag("google_search_grounding_enabled", "GOOGLE_SEARCH_GROUNDING_ENABLED", "google-search-grounding.enabled"));
+        definitions.put("url_context_enabled", flag("url_context_enabled", "URL_CONTEXT_ENABLED", "url-context.enabled"));
+        definitions.put("design_service_enabled", flag("design_service_enabled", "DESIGN_SERVICE_ENABLED", "design-service.enabled"));
+        definitions.put("nano_banana_enabled", flag("nano_banana_enabled", "NANO_BANANA_ENABLED", "nano-banana.enabled"));
+        definitions.put("nano_banana_model", plain("nano_banana_model", "NANO_BANANA_MODEL", "nano-banana.model"));
+        definitions.put("nano_banana_pro_model", plain("nano_banana_pro_model", "NANO_BANANA_PRO_MODEL", "nano-banana.pro-model"));
+        definitions.put("veo_enabled", flag("veo_enabled", "VEO_ENABLED", "veo.enabled"));
+        definitions.put("veo_model", plain("veo_model", "VEO_MODEL", "veo.model"));
+        definitions.put("antigravity_enabled", flag("antigravity_enabled", "ANTIGRAVITY_ENABLED", "antigravity.enabled"));
+        definitions.put("antigravity_push_enabled", flag("antigravity_push_enabled", "ANTIGRAVITY_PUSH_ENABLED", "antigravity.push-enabled"));
+        definitions.put("antigravity_api_key", secret("antigravity_api_key", "ANTIGRAVITY_API_KEY", "antigravity.api-key"));
+        definitions.put("antigravity_agent", plain("antigravity_agent", "ANTIGRAVITY_AGENT", "antigravity.agent"));
+        definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
+        definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         return definitions;
     }
 
-    private record SettingDefinition(String key, String envName, String propertyName, boolean enabledFlag) {
+    private static SettingDefinition flag(String key, String envName, String propertyName) {
+        return new SettingDefinition(key, envName, propertyName, true, false);
+    }
+
+    private static SettingDefinition secret(String key, String envName, String propertyName) {
+        return new SettingDefinition(key, envName, propertyName, false, true);
+    }
+
+    private static SettingDefinition plain(String key, String envName, String propertyName) {
+        return new SettingDefinition(key, envName, propertyName, false, false);
+    }
+
+    private record SettingDefinition(String key, String envName, String propertyName, boolean enabledFlag, boolean secret) {
     }
 
     private record EffectiveSetting(String value, String source) {

@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
 import com.eneik.production.services.BottleneckAwarePriorityService;
 import com.eneik.production.services.gate.GateOrchestrator;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
@@ -162,6 +163,8 @@ public class TechnicalLeadCompiler {
 
         String cynefin = cynefinDomain(wishlist);
         String kano = kanoClass(wishlist);
+        String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal));
+        task.setTitle(shortTitle);
         task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin));
 
         RoleEntity role = roleRepository.findById(roleTag)
@@ -171,6 +174,7 @@ public class TechnicalLeadCompiler {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("source_wishlist_id", wishlist.getId().toString());
         payload.put("source_role_tag", wishlist.getSourceRoleTag() == null ? "" : wishlist.getSourceRoleTag());
+        payload.put("short_title", shortTitle);
         payload.put("slice_title", sliceTitle(wishlist));
         payload.put("role_atomic_goal", atomicGoal);
         payload.put("jtbd", englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist)));
@@ -213,6 +217,14 @@ public class TechnicalLeadCompiler {
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
         return saved;
+    }
+
+    private String taskTitleSource(WishlistEntity wishlist, String atomicGoal) {
+        return (sliceTitle(wishlist) + " "
+                + (atomicGoal != null ? atomicGoal : "") + " "
+                + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
+                + (wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : "")).trim();
     }
 
     private java.util.Optional<TaskEntity> findExistingSemanticTask(UUID projectId, String semanticKey) {

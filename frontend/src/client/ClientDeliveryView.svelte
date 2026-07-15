@@ -86,7 +86,8 @@
         <ul class="item-list delivered">
           {#each deliveryData.delivered as task}
             <li>
-              <div class="task-title">{task.description}</div>
+              <div class="task-title">{task.title || task.TITLE || 'Delivered Slice'}</div>
+              <div class="task-dod">{task.description || task.DESCRIPTION}</div>
               {#if task.payload && task.payload.definitionOfDone}
                 <div class="task-dod">DoD: {task.payload.definitionOfDone}</div>
               {/if}

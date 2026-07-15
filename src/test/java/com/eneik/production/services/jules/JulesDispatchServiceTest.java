@@ -261,10 +261,11 @@ class JulesDispatchServiceTest {
         task.setId(taskId);
         task.setProject(project);
         task.setRole(role);
+        task.setTitle("UI Slice");
         task.setDescription("Implement one dashboard UI slice.");
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
-        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), eq("Implement one dashboard UI slice."), anyString(), isNull()))
+        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), contains("Implement one dashboard UI slice."), anyString(), isNull(), eq("UI Slice")))
                 .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
@@ -272,13 +273,13 @@ class JulesDispatchServiceTest {
         JulesDispatchResult result = julesDispatchService.dispatch(task);
 
         assertTrue(result.dispatched());
-        verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), eq("Implement one dashboard UI slice."), argThat(context ->
+        verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), contains("Task Title: UI Slice"), argThat(context ->
                 context.contains("## Compact Role Guide")
                         && context.contains("Use English only")
                         && context.contains("docs/DESIGN_SYSTEM.md")
                         && !context.contains("FULL ROLE CHARTER")
                         && !context.contains("REFUSAL CRITERIA")
-        ), isNull());
+        ), isNull(), eq("UI Slice"));
     }
 
     @Test

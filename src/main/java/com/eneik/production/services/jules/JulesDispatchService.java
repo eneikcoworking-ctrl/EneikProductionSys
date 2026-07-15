@@ -17,6 +17,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.RoleCapabilityLoader;
 import com.eneik.production.services.github.GitHubPullRequestService;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import com.eneik.production.repositories.RoleRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
@@ -188,7 +189,8 @@ public class JulesDispatchService {
         }
 
         String repoUrl = sourcePrefix + project.getRepositoryName();
-        String description = task.getDescription();
+        String sessionTitle = TaskTitleBuilder.displayTitle(task);
+        String description = withTaskPromptTitle(sessionTitle, task.getDescription());
         var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
         if (conflictOpt.isPresent()) {
             var conflict = conflictOpt.get();
@@ -200,10 +202,12 @@ public class JulesDispatchService {
             if (conflictingFiles == null || conflictingFiles.trim().isEmpty()) {
                 conflictingFiles = "[]";
             }
-            description = "Rebase your branch onto the current main and resolve merge conflicts. Original task: [" + dod + "]. Conflict is in: " + conflictingFiles + ".";
+            sessionTitle = "Conflict Resolve";
+            description = withTaskPromptTitle(sessionTitle, "Rebase your branch onto the current main and resolve merge conflicts. Original task: [" + dod + "]. Conflict is in: " + conflictingFiles + ".");
             log.info("Modified prompt for task {} because of merge conflict. New prompt: {}", task.getId(), description);
         } else if ("REVIEWER".equalsIgnoreCase(mode)) {
-            description = "[REVIEWER MODE]\nAudit the following code changes against docs/AI_REVIEW_GUIDELINES.md.\n" + description;
+            sessionTitle = "PR Review";
+            description = withTaskPromptTitle(sessionTitle, "[REVIEWER MODE]\nAudit the following code changes against docs/AI_REVIEW_GUIDELINES.md.\n" + task.getDescription());
         }
 
         StringBuilder roleContextBuilder = new StringBuilder();
@@ -269,8 +273,8 @@ public class JulesDispatchService {
         }
 
         JulesApiClient.CreateSessionResult createResult = apiKey != null
-                ? julesApiClient.createSessionDetailed(repoUrl, description, roleContext, apiKey)
-                : julesApiClient.createSessionDetailed(repoUrl, description, roleContext, null);
+                ? julesApiClient.createSessionDetailed(repoUrl, description, roleContext, apiKey, sessionTitle)
+                : julesApiClient.createSessionDetailed(repoUrl, description, roleContext, null, sessionTitle);
         if (createResult == null) {
             createResult = new JulesApiClient.CreateSessionResult(null, 0, "Jules API client returned no create-session result");
         }
@@ -305,6 +309,12 @@ public class JulesDispatchService {
         }
 
         return julesSessionRepository.save(session);
+    }
+
+    private String withTaskPromptTitle(String title, String description) {
+        String safeTitle = TaskTitleBuilder.enforceTwoOrThreeWords(title);
+        String safeDescription = description == null ? "" : description;
+        return "Task Title: " + safeTitle + "\n\n" + safeDescription;
     }
 
     private void appendCompactRoleGuide(StringBuilder roleContextBuilder, String roleTag) {
@@ -1196,6 +1206,7 @@ public class JulesDispatchService {
                                 TaskEntity t = new TaskEntity();
                                 t.setProject(task.getProject());
                                 t.setRole(role);
+                                t.setTitle(TaskTitleBuilder.build(rTag, desc));
                                 t.setDescription(desc);
                                 t.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
                                 

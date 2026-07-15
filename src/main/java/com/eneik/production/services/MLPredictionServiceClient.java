@@ -39,12 +39,40 @@ public class MLPredictionServiceClient {
     private String getGeminiApiKey() {
         if (settingsService != null) {
             try {
+                String googleAiKey = settingsService.effectiveValue("google_ai_api_key");
+                if (googleAiKey != null && !googleAiKey.isBlank()) {
+                    return googleAiKey;
+                }
                 return settingsService.effectiveValue("gemini_api_key");
             } catch (Exception e) {
                 // Ignore
             }
         }
         return "";
+    }
+
+    private String modelOverrideForTier(String modelTier) {
+        if (settingsService == null) {
+            return "";
+        }
+        try {
+            boolean pro = modelTier != null && "pro".equalsIgnoreCase(modelTier.trim());
+            String primary = settingsService.effectiveValue(pro ? "gemini_pro_model" : "gemini_model");
+            String fallback = settingsService.effectiveValue(pro ? "gemini_pro_fallback_models" : "gemini_fallback_models");
+            StringBuilder candidates = new StringBuilder();
+            if (primary != null && !primary.isBlank()) {
+                candidates.append(primary.trim());
+            }
+            if (fallback != null && !fallback.isBlank()) {
+                if (!candidates.isEmpty()) {
+                    candidates.append(',');
+                }
+                candidates.append(fallback.trim());
+            }
+            return candidates.toString();
+        } catch (Exception e) {
+            return "";
+        }
     }
 
     public boolean checkSystemRisk(int activeTasks, double currentCycleTime) {
@@ -83,6 +111,7 @@ public class MLPredictionServiceClient {
             request.put("apiKey", getGeminiApiKey());
             request.put("githubToken", settingsService.effectiveValue("github_token"));
             request.put("modelTier", "pro");
+            request.put("modelOverride", modelOverrideForTier("pro"));
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -105,6 +134,7 @@ public class MLPredictionServiceClient {
             request.put("prDiff", prDiff);
             request.put("refusalCriteria", refusalCriteria);
             request.put("apiKey", getGeminiApiKey());
+            request.put("modelOverride", modelOverrideForTier(""));
 
             return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
         } catch (Exception e) {
@@ -137,6 +167,7 @@ public class MLPredictionServiceClient {
             if (modelTier != null && !modelTier.isBlank()) {
                 request.put("modelTier", modelTier);
             }
+            request.put("modelOverride", modelOverrideForTier(modelTier));
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             if (response != null && response.containsKey("text")) {
@@ -158,6 +189,7 @@ public class MLPredictionServiceClient {
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("content", wishlistContent);
         request.put("apiKey", getGeminiApiKey());
+        request.put("modelOverride", modelOverrideForTier(""));
 
         try {
             return restTemplate.postForObject(endpoint, new org.springframework.http.HttpEntity<>(request, headers), java.util.Map.class);
@@ -178,6 +210,8 @@ public class MLPredictionServiceClient {
         java.util.Map<String, Object> request = new java.util.HashMap<>();
         request.put("content", wishlistContent);
         request.put("apiKey", getGeminiApiKey());
+        request.put("modelTier", "pro");
+        request.put("modelOverride", modelOverrideForTier("pro"));
 
         try {
             java.util.Map<String, Object> response = restTemplate.postForObject(

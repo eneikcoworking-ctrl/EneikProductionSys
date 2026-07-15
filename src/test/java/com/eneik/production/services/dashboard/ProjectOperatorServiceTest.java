@@ -7,6 +7,8 @@ import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
 import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
+import com.eneik.production.services.design.DesignAssetService;
+import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +39,8 @@ class ProjectOperatorServiceTest {
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
+        DesignAssetService designAssetService = mock(DesignAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -47,6 +51,8 @@ class ProjectOperatorServiceTest {
                 claimService,
                 gitHubPullRequestService,
                 antigravityDiagnosticService,
+                googleAiResourceService,
+                designAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -116,6 +122,8 @@ class ProjectOperatorServiceTest {
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
+        DesignAssetService designAssetService = mock(DesignAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -126,6 +134,8 @@ class ProjectOperatorServiceTest {
                 claimService,
                 gitHubPullRequestService,
                 antigravityDiagnosticService,
+                googleAiResourceService,
+                designAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -194,6 +204,8 @@ class ProjectOperatorServiceTest {
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
+        DesignAssetService designAssetService = mock(DesignAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -204,6 +216,8 @@ class ProjectOperatorServiceTest {
                 claimService,
                 gitHubPullRequestService,
                 antigravityDiagnosticService,
+                googleAiResourceService,
+                designAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -272,6 +286,8 @@ class ProjectOperatorServiceTest {
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
+        DesignAssetService designAssetService = mock(DesignAssetService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -282,6 +298,8 @@ class ProjectOperatorServiceTest {
                 claimService,
                 gitHubPullRequestService,
                 antigravityDiagnosticService,
+                googleAiResourceService,
+                designAssetService,
                 settingsService,
                 "project-workspaces",
                 ".",

@@ -25,6 +25,9 @@ public class TaskEntity {
     @Column(nullable = false)
     private String description;
 
+    @Column(length = 80)
+    private String title;
+
     @JdbcTypeCode(SqlTypes.JSON)
     private JsonNode payload;
 
@@ -36,6 +39,7 @@ public class TaskEntity {
 
     private String julesSessionName;
 
+    @Column(length = 2048)
     private String julesDispatchStatus;
 
     @Column(name = "quality_gate_passed")
@@ -75,6 +79,8 @@ public class TaskEntity {
     public void setRole(RoleEntity role) { this.role = role; }
     public String getDescription() { return description; }
     public void setDescription(String description) { this.description = description; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
     public JsonNode getPayload() { return payload; }
     public void setPayload(JsonNode payload) { this.payload = payload; }
     public TaskStatus getStatus() { return status; }

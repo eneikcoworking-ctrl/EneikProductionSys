@@ -5,5 +5,6 @@ import java.util.UUID;
 public record TaskShortDto(
     UUID id,
     String tag,
+    String title,
     String description
 ) {}

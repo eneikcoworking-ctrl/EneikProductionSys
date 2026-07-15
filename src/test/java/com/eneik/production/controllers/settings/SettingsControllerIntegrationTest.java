@@ -76,6 +76,21 @@ class SettingsControllerIntegrationTest {
     }
 
     @Test
+    void modelSettingsReturnPlainValue() {
+        ResponseEntity<SettingDto> saveResponse = restTemplate.exchange(
+                "/api/settings",
+                HttpMethod.PUT,
+                new HttpEntity<>(new SettingUpdateRequest("nano_banana_model", "gemini-3.1-flash-image")),
+                SettingDto.class
+        );
+
+        assertThat(saveResponse.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(saveResponse.getBody()).isNotNull();
+        assertThat(saveResponse.getBody().maskedValue()).isEqualTo("gemini-3.1-flash-image");
+        assertThat(saveResponse.getBody().source()).isEqualTo("database");
+    }
+
+    @Test
     void corsPreflightAllowsSettingsPutFromFrontend() throws Exception {
         mockMvc.perform(options("/api/settings")
                         .header(HttpHeaders.ORIGIN, "http://localhost:3000")

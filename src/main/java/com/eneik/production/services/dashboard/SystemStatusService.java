@@ -15,6 +15,7 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +45,7 @@ public class SystemStatusService {
     private final TaskConflictRepository taskConflictRepository;
     private final WishlistRepository wishlistRepository;
     private final EmsMetricsService emsMetricsService;
+    private final GoogleAiResourceService googleAiResourceService;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -54,7 +56,8 @@ public class SystemStatusService {
                                PrReviewRepository prReviewRepository,
                                TaskConflictRepository taskConflictRepository,
                                WishlistRepository wishlistRepository,
-                               EmsMetricsService emsMetricsService) {
+                               EmsMetricsService emsMetricsService,
+                               GoogleAiResourceService googleAiResourceService) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -65,6 +68,7 @@ public class SystemStatusService {
         this.taskConflictRepository = taskConflictRepository;
         this.wishlistRepository = wishlistRepository;
         this.emsMetricsService = emsMetricsService;
+        this.googleAiResourceService = googleAiResourceService;
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
@@ -79,6 +83,7 @@ public class SystemStatusService {
         status.put("conflictDpmo", safeSection(() -> conflictDpmo(projectId)));
         status.put("emsMetrics", safeSection(() -> emsMetrics(projectId)));
         status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
+        status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         return status;
     }
 

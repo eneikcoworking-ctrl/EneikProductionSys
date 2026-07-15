@@ -1,6 +1,7 @@
 package com.eneik.production.services.jules;
 
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -46,6 +47,10 @@ public class JulesApiClient {
     }
 
     public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey) {
+        return createSessionDetailed(repoUrl, taskDescription, roleContext, apiKey, TaskTitleBuilder.build("", taskDescription));
+    }
+
+    public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey, String title) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {
             log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
             return new CreateSessionResult("skipped", 0, "jules_disabled");
@@ -68,7 +73,7 @@ public class JulesApiClient {
             body.put("prompt", taskDescription + "\n\nContext:\n" + roleContext);
             body.set("sourceContext", sourceContext);
             body.put("automationMode", "AUTO_CREATE_PR");
-            body.put("title", "Jules Task Execution");
+            body.put("title", TaskTitleBuilder.enforceTwoOrThreeWords(title));
 
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(apiBaseUrl + "/sessions"))

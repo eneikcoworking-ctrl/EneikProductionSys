@@ -682,7 +682,8 @@
                     <span class="kano-badge {getKanoCategory(task.tag).colorClass}">{getKanoCategory(task.tag).label}</span>
                     <span class="badge-status {task.status}">{task.status}</span>
                   </div>
-                  <p class="task-description" title={task.description}>{task.description}</p>
+                  <p class="task-title-line" title={task.description}>{task.title || task.payload?.short_title || 'Task Slice'}</p>
+                  <p class="task-description" title={task.description}>{task.payload?.role_atomic_goal || task.payload?.slice_title || task.description}</p>
                   <div class="task-footer">
                     <span class="gate-badge {task.qualityGatePassed ? 'pass' : 'fail'}">
                       Gate: {task.qualityGatePassed ? 'Passed' : 'Pending'}
@@ -1408,10 +1409,20 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.01);
     min-width: 0;
   }
+  .task-title-line {
+    font-size: 14px;
+    color: var(--neutral-900);
+    font-weight: 800;
+    margin: var(--space-2) 0 2px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .task-description {
     font-size: 13px;
     color: var(--neutral-700);
-    margin: var(--space-2) 0;
+    margin: 0 0 var(--space-2);
     line-height: 1.4;
     display: -webkit-box;
     -webkit-box-orient: vertical;

@@ -3,6 +3,7 @@ services:
     build:
       context: ./src/models/ml
     environment:
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
       GEMINI_API_KEY: ${GEMINI_API_KEY:-}
       GEMINI_API_VERSION: ${GEMINI_API_VERSION:-v1beta}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
@@ -34,6 +35,21 @@ services:
       ENEIK_OPERATOR_DOCKER_COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-eneikproductionsys}
       ENEIK_OPERATOR_MAX_TOOL_ROUNDS: ${ENEIK_OPERATOR_MAX_TOOL_ROUNDS:-3}
       ENEIK_OPERATOR_ANSWER_CRITIC_ENABLED: ${ENEIK_OPERATOR_ANSWER_CRITIC_ENABLED:-true}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.5-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-3.1-flash-lite,gemini-2.5-flash}
+      GEMINI_PRO_MODEL: ${GEMINI_PRO_MODEL:-gemini-3.1-pro-preview}
+      GEMINI_PRO_FALLBACK_MODELS: ${GEMINI_PRO_FALLBACK_MODELS:-gemini-3.5-flash,gemini-2.5-flash}
+      GOOGLE_SEARCH_GROUNDING_ENABLED: ${GOOGLE_SEARCH_GROUNDING_ENABLED:-true}
+      URL_CONTEXT_ENABLED: ${URL_CONTEXT_ENABLED:-true}
+      DESIGN_SERVICE_ENABLED: ${DESIGN_SERVICE_ENABLED:-true}
+      DESIGN_ASSET_ROOT: /app/data/design-assets
+      NANO_BANANA_ENABLED: ${NANO_BANANA_ENABLED:-true}
+      NANO_BANANA_MODEL: ${NANO_BANANA_MODEL:-gemini-3.1-flash-image}
+      NANO_BANANA_PRO_MODEL: ${NANO_BANANA_PRO_MODEL:-gemini-3-pro-image}
+      VEO_ENABLED: ${VEO_ENABLED:-false}
+      VEO_MODEL: ${VEO_MODEL:-veo-3.1-generate-preview}
       GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}

@@ -7,6 +7,7 @@ import java.util.UUID;
 public record TaskDto(
     UUID id,
     String tag,
+    String title,
     String description,
     TaskStatus status,
     JsonNode payload,

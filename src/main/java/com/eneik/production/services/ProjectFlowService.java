@@ -17,6 +17,7 @@ import com.eneik.production.services.projectfactory.GitHubProjectFactoryClient;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -319,7 +320,7 @@ public class ProjectFlowService {
         java.util.List<TaskShortDto> createdTasks = new java.util.ArrayList<>();
         for (TaskEntity t : currentTasks) {
             if (!existingIds.contains(t.getId())) {
-                createdTasks.add(new TaskShortDto(t.getId(), t.getRole().getTag(), t.getDescription()));
+                createdTasks.add(new TaskShortDto(t.getId(), t.getRole().getTag(), TaskTitleBuilder.displayTitle(t), t.getDescription()));
             }
         }
 
@@ -1232,7 +1233,7 @@ public class ProjectFlowService {
                             account.getName(),
                             account.getStatus(),
                             activeClaim != null ? activeClaim.getRole().getTag() : null,
-                            activeClaim != null ? activeClaim.getTask().getDescription() : null,
+                            activeClaim != null ? TaskTitleBuilder.displayTitle(activeClaim.getTask()) : null,
                             activeClaim != null ? activeClaim.getClaimedAt() : null,
                             activeClaim != null ? activeClaim.getLeaseExpiresAt() : null,
                             account.getLastHeartbeat()
@@ -1263,6 +1264,7 @@ public class ProjectFlowService {
                 .map(task -> new TaskDto(
                         task.getId(),
                         task.getRole().getTag(),
+                        TaskTitleBuilder.displayTitle(task),
                         task.getDescription(),
                         task.getStatus(),
                         task.getPayload(),

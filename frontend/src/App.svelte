@@ -4,6 +4,7 @@
   import CommandDashboardV2 from './dashboard/CommandDashboardV2.svelte';
   import MetricsView from './dashboard/MetricsView.svelte';
   import AdminDashboard from './dashboard/AdminDashboard.svelte';
+  import AiResourcesDashboard from './dashboard/AiResourcesDashboard.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -13,7 +14,7 @@
   let status = 'Ready';
   let bootLoading = true;
   let loadError = '';
-  let activeView: 'dashboard' | 'metrics' | 'admin' = 'dashboard';
+  let activeView: 'dashboard' | 'metrics' | 'resources' | 'admin' = 'dashboard';
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
 
@@ -101,6 +102,7 @@
     <div class="nav-links">
       <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Dashboard</button>
       <button onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
+      <button onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>AI Resources</button>
       <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>Token Admin</button>
     </div>
 
@@ -125,6 +127,8 @@
   <!-- View Content Slot -->
   {#if activeView === 'admin'}
     <AdminDashboard />
+  {:else if activeView === 'resources'}
+    <AiResourcesDashboard />
   {:else if dashboard}
     {#if activeView === 'dashboard'}
       <CommandDashboardV2 projectId={dashboard.project.id} />
