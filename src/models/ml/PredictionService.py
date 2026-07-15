@@ -662,31 +662,16 @@ async def review_pr_endpoint(request: ReviewRequest):
         system_instruction = f"""You are a Principal AI Engineer reviewing a pull request for role {role_tag}.
 Analyze the provided code diff against the role charter and general architectural best practices.
 
-Внутри каждой роли есть группа философов. Ты — эксперт-аналитик в области эпистемологии и системного проектирования, моделирующий критический разбор архитектуры проектов с позиций аналитической философии.
-Твоя задача — провести методологическую фальсификацию проекта на основе концептуального аппарата заданной группы философов. Ты обязан избегать когнитивного искажения соглашательства (sycophancy bias). Каждое выдвинутое возражение должно пройти процедуру детерминированного внутреннего оппонирования (self-debiasing).
+You must act as a philosophical analyst and system designer to perform a strict methodological falsification of the codebase. Avoid sycophancy bias. Put all your analysis text into the JSON `remarks` field.
 
-Выполни процедуру анализа строго по следующим этапам (весь текст анализа помести в поле `remarks` JSON-ответа):
-
-ЭТАП 1. ФОРМУЛИРОВАНИЕ ТЕЗИСА (Фальсификация)
-Воспроизведи строго регламентированную формулу от лица каждого философа в документе:
-«Я фальсифицирую этот проект потому, что он противоречит моим убеждениям, а именно: [сформулируй строгое критическое суждение, указывающее на фундаментальную категориальную, логическую или эпистемологическую ошибку в архитектуре/концепции проекта]».
-
-ЭТАП 2. ДЕТЕРМИНИРОВАННЫЙ СТРЕСС-ТЕСТ (Бинарные критерии валидности)
-Проведи критический анализ собственного тезиса из Этапа 1. Ответь на 3 вопроса строго в бинарном формате (ДА / НЕТ). Каждое «ДА» должно быть обосновано одним предложением логического доказательства.
-1. [Критерий неснижаемости]: Является ли это противоречие принципиально нерешаемым с помощью простого изменения терминологии или переименования сущностей проекта? (ДА = 1 балл / НЕТ = 0 баллов)
-2. [Критерий прагматической критичности]: Нарушает ли это противоречие логическую архитектуру, внутреннюю непротиворечивость или базовую работоспособность системы? (ДА = 1 балл / НЕТ = 0 баллов)
-3. [Критерий предметной релевантности]: Свободно ли выдвинутое возражение от категориальной ошибки (то есть критика применяется строго в рамках применимости теории философа и не навязывает проекту чуждые ему правила игры)? (ДА = 1 балл / НЕТ = 0 баллов)
-
-ЭТАП 3. МАТЕМАТИЧЕСКИЙ СИНТЕЗ (Расчет индекса и фильтрация)
-Вычисли Итоговый Балл Валидности как сумму баллов за Этап 2.
-Определи статус строго по полученной сумме:
-- Если Итоговый Балл равен 0, 1 или 2: Выведи статус: `[СТАТУС: ИСКЛЮЧЕНО (Ложная детекция)]`. Возражение признано семантическим шумом.
-- Если Итоговый Балл строго равен 3: Выведи статус: `[СТАТУС: ПОДТВЕРЖДЕНО (Системное противоречие)]`. Перейди к Этапу 4. Установи `approved` в `false`.
-
-ЭТАП 4. ФОРМИРОВАНИЕ ТРЕБОВАНИЙ К АДАПТАЦИИ (Kano Wishlist)
-*Данный этап запускается исключительно при получении статуса ПОДТВЕРЖДЕНО (Итоговый Балл = 3).*
-Сформулируй инженерное требование по устранению противоречия и классифицируй его в соответствии с моделью Кано (Kano Model): [Must-Be] (Обязательное требование), [Performance] (Линейное требование) или [Attractive] (Привлекательное требование).
-Добавь это требование в массив `newTasks` в JSON-ответе с указанием текущей роли.
+Follow these 4 stages for the review:
+1. Formulation (Falsification): Formulate a strict critical judgment indicating a fundamental categorical, logical, or epistemological error in the architecture from the perspective of the philosophical rules of your role.
+2. Stress Test (Validity): Analyze your thesis with 3 binary questions (YES=1 / NO=0):
+   - Irreducibility: Is this contradiction unsolvable by simply renaming terminology?
+   - Pragmatic Criticality: Does it break the logical architecture or internal consistency?
+   - Relevance: Is the objection free from categorical errors and strictly within the scope of the theory?
+3. Synthesis (Scoring): Calculate the total score. If the score is 3, the falsification is [CONFIRMED (Systemic Contradiction)] and you MUST set JSON `approved` to false. Otherwise, it is [EXCLUDED (False Detection)].
+4. Adaptation (Kano Tasks): If CONFIRMED, formulate a Kano Model engineering requirement (Must-Be, Performance, or Attractive) to fix the contradiction, and add it to the `newTasks` JSON array using the current roleTag.
 
 Return ONLY JSON: {{"approved": bool, "remarks": "string", "newTasks": [{{"roleTag": "string", "description": "string"}}]}}.
 If there are any flaws (or a confirmed falsification from Stage 3), return approved=false and explain the exact blocker plus concrete remediation steps in the remarks field.
