@@ -259,6 +259,14 @@
     return `${clamped}%`;
   }
 
+  function stanceLabel(stance: string): string {
+    return (stance || 'unknown').replace(/_/g, ' ');
+  }
+
+  function pressureLabel(value: string): string {
+    return (value || 'none').replace(/_/g, '-');
+  }
+
   function compactNumber(value: number | undefined | null): string {
     const n = value ?? 0;
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -353,6 +361,75 @@
           </div>
         </div>
 
+        {#if dashboard.emsMetrics.roleDoctrineReadiness}
+          <div class="role-council">
+            <div class="card-header compact">
+              <div>
+                <h2>BARCAN Council Readiness</h2>
+                <p class="ems-note">{dashboard.emsMetrics.roleDoctrineReadiness.interpretation}</p>
+              </div>
+              <span class="council-status {dashboard.emsMetrics.roleDoctrineReadiness.statusLabel}">
+                {dashboard.emsMetrics.roleDoctrineReadiness.statusLabel}
+              </span>
+            </div>
+
+            <div class="council-summary">
+              <div>
+                <span class="label-xs">Readiness</span>
+                <strong>{score(dashboard.emsMetrics.roleDoctrineReadiness.readinessScore)}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Satisfied</span>
+                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.satisfied}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Almost</span>
+                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.almostSatisfied}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Objects</span>
+                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.objects}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Refuses</span>
+                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.refuses}</strong>
+              </div>
+              <div>
+                <span class="label-xs">Unknown</span>
+                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.unknown}</strong>
+              </div>
+            </div>
+
+            <div class="doctrine-grid">
+              {#each dashboard.emsMetrics.roleDoctrineReadiness.roles as role}
+                <article class="doctrine-card {role.stance}">
+                  <div class="doctrine-head">
+                    <div>
+                      <span class="role-tag">{role.roleTag}</span>
+                      <h3>{role.doctrineName}</h3>
+                    </div>
+                    <span class="stance-badge {role.stance}">{stanceLabel(role.stance)}</span>
+                  </div>
+                  <p class="doctrine-focus">{role.doctrineFocus}</p>
+                  <div class="doctrine-score">
+                    <div class="bar-track">
+                      <div class="bar-fill doctrine {role.stance}" style={`width: ${scoreWidth(role.satisfactionScore)}`}></div>
+                    </div>
+                    <strong>{score(role.satisfactionScore)}</strong>
+                  </div>
+                  <div class="doctrine-meta">
+                    <span>Kano: {pressureLabel(role.kanoPressure)}</span>
+                    <span>Confidence: {percent(role.confidence)}</span>
+                    <span>Source: {role.sourceWishlistPending}/{role.sourceWishlistTotal}</span>
+                    <span>Owner: {role.ownerTasksDone}/{role.ownerTasksTotal}</span>
+                  </div>
+                  <p class="doctrine-objection">{role.topObjection}</p>
+                </article>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
         <div class="ems-grid">
           <div class="ems-box">
             <div class="card-header compact">
@@ -377,15 +454,15 @@
 
           <div class="ems-box">
             <div class="card-header compact">
-              <h2>Role KPI</h2>
-              <span class="indicator">{dashboard.emsMetrics.roleKpis.length} roles</span>
+              <h2>Role Execution Telemetry</h2>
+              <span class="indicator">{dashboard.emsMetrics.roleKpis.length} owner roles</span>
             </div>
             <div class="role-kpi-list">
               {#each dashboard.emsMetrics.roleKpis as role}
                 <div class="role-kpi-row">
                   <div class="flow-label">
                     <strong>{role.roleTag}</strong>
-                    <span>{score(role.kpiScore)}/{score(role.kpiTarget)} / D:{role.defectWork}</span>
+                    <span>{role.done}/{role.total} done / open {role.queued + role.active + role.blocked + role.failed} / D:{role.defectWork}</span>
                   </div>
                   <div class="bar-track">
                     <div class="bar-fill kpi {role.statusLabel}" style={`width: ${scoreWidth(role.kpiScore)}`}></div>
@@ -814,6 +891,162 @@
     color: var(--neutral-800);
     line-height: 1.1;
   }
+  .role-council {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+    min-width: 0;
+  }
+  .council-status {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    border-radius: 5px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .council-status.ready,
+  .stance-badge.satisfied {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .council-status.incomplete,
+  .stance-badge.unknown {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+  .council-status.contested,
+  .stance-badge.objects,
+  .stance-badge.almost_satisfied {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .council-status.blocked,
+  .stance-badge.refuses {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .council-summary {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-bottom: var(--space-3);
+  }
+  .council-summary > div {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-100);
+    border-radius: 6px;
+    padding: var(--space-2);
+    min-width: 0;
+  }
+  .council-summary strong {
+    display: block;
+    font-size: 18px;
+    line-height: 1.1;
+    color: var(--neutral-800);
+  }
+  .doctrine-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(220px, 1fr));
+    gap: var(--space-2);
+  }
+  .doctrine-card {
+    border: 1px solid var(--neutral-200);
+    border-left: 4px solid var(--neutral-300);
+    border-radius: 8px;
+    padding: var(--space-3);
+    min-width: 0;
+    background: #fff;
+  }
+  .doctrine-card.satisfied {
+    border-left-color: #0d9488;
+  }
+  .doctrine-card.almost_satisfied {
+    border-left-color: #f59e0b;
+  }
+  .doctrine-card.objects {
+    border-left-color: #ea580c;
+  }
+  .doctrine-card.refuses {
+    border-left-color: #dc2626;
+  }
+  .doctrine-card.unknown {
+    border-left-color: #4f46e5;
+  }
+  .doctrine-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    align-items: flex-start;
+    min-width: 0;
+  }
+  .doctrine-head h3 {
+    font-size: 13px;
+    font-weight: 800;
+    color: var(--neutral-800);
+    margin-top: 3px;
+    overflow-wrap: anywhere;
+  }
+  .stance-badge {
+    font-size: 9px;
+    font-weight: 900;
+    text-transform: uppercase;
+    border-radius: 4px;
+    padding: 2px 5px;
+    white-space: nowrap;
+  }
+  .doctrine-focus {
+    min-height: 34px;
+    margin: var(--space-2) 0;
+    color: var(--neutral-600);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .doctrine-score {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+  .doctrine-score strong {
+    font-size: 13px;
+    color: var(--neutral-800);
+  }
+  .bar-fill.doctrine.satisfied {
+    background: #0d9488;
+  }
+  .bar-fill.doctrine.almost_satisfied {
+    background: #f59e0b;
+  }
+  .bar-fill.doctrine.objects {
+    background: #ea580c;
+  }
+  .bar-fill.doctrine.refuses {
+    background: #dc2626;
+  }
+  .bar-fill.doctrine.unknown {
+    background: #4f46e5;
+  }
+  .doctrine-meta {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 3px 8px;
+    color: var(--neutral-500);
+    font-size: 10px;
+  }
+  .doctrine-meta span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .doctrine-objection {
+    margin: var(--space-2) 0 0;
+    color: var(--neutral-700);
+    font-size: 10px;
+    line-height: 1.35;
+  }
   .ems-grid {
     display: grid;
     grid-template-columns: 1fr 1.15fr 0.85fr;
@@ -885,6 +1118,9 @@
   .bar-fill.kpi.watch {
     background: #f59e0b;
   }
+  .bar-fill.kpi.idle {
+    background: #94a3b8;
+  }
   .bar-fill.kpi.attention,
   .bar-fill.kpi.behind {
     background: #dc2626;
@@ -905,6 +1141,10 @@
   .kpi-status.watch {
     background: #fef3c7;
     color: #92400e;
+  }
+  .kpi-status.idle {
+    background: #f1f5f9;
+    color: #475569;
   }
   .kpi-status.attention,
   .kpi-status.behind {
@@ -1714,9 +1954,22 @@
     .ems-summary {
       grid-template-columns: repeat(2, minmax(0, 1fr));
     }
+    .council-summary {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+    .doctrine-grid {
+      grid-template-columns: repeat(2, minmax(220px, 1fr));
+    }
     .ems-grid,
     .dashboard-grid,
     .onboarding-content-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  @media (max-width: 720px) {
+    .council-summary,
+    .doctrine-grid {
       grid-template-columns: 1fr;
     }
   }

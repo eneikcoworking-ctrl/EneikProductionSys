@@ -170,6 +170,7 @@ public class TechnicalLeadCompiler {
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("source_wishlist_id", wishlist.getId().toString());
+        payload.put("source_role_tag", wishlist.getSourceRoleTag() == null ? "" : wishlist.getSourceRoleTag());
         payload.put("slice_title", sliceTitle(wishlist));
         payload.put("role_atomic_goal", atomicGoal);
         payload.put("jtbd", englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist)));
@@ -190,7 +191,8 @@ public class TechnicalLeadCompiler {
         payload.put("ems_defect_work", isDefectWork(wishlist));
         payload.put("ems_defect_weight", defectWeight(wishlist, roleTag, cynefin));
         payload.put("ems_kpi_weight", kpiWeight(wishlist, kano, cynefin));
-        payload.put("ems_criticality_score", criticalityScore(wishlist, roleTag, kano, cynefin));
+        double criticality = criticalityScore(wishlist, roleTag, kano, cynefin);
+        payload.put("ems_criticality_score", criticality);
         payload.put("depends_on", dependsOn != null ? dependsOn.getId().toString() : "");
         task.setPayload(payload);
 
@@ -198,6 +200,9 @@ public class TechnicalLeadCompiler {
         task.setCynefinDomain(cynefin);
 
         int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
+        if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {
+            priority = Math.max(priority, (int) Math.round(criticality * 10.0));
+        }
         if ("chaotic".equalsIgnoreCase(cynefin)) {
             priority = 1000;
         }
@@ -310,6 +315,9 @@ public class TechnicalLeadCompiler {
         if (isDefectWork(wishlist)) {
             weight += 0.2;
         }
+        if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {
+            weight += doctrinePressure(wishlist.getSourceRoleTag());
+        }
         return round(weight);
     }
 
@@ -319,7 +327,20 @@ public class TechnicalLeadCompiler {
         if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-06".equals(roleTag) || "BARCAN-TAG-07".equals(roleTag)) {
             score += 2.0;
         }
+        if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {
+            score += doctrinePressure(wishlist.getSourceRoleTag()) * 8.0;
+        }
         return round(score);
+    }
+
+    private double doctrinePressure(String sourceRoleTag) {
+        return switch (sourceRoleTag) {
+            case "BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-05",
+                    "BARCAN-TAG-06", "BARCAN-TAG-07", "BARCAN-TAG-08", "BARCAN-TAG-10" -> 0.25;
+            case "BARCAN-TAG-09" -> 0.20;
+            case "BARCAN-TAG-03", "BARCAN-TAG-04", "BARCAN-TAG-11" -> 0.15;
+            default -> 0.10;
+        };
     }
 
     private double round(double value) {

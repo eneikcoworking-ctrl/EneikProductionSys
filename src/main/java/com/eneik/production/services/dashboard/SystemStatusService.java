@@ -14,6 +14,7 @@ import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -40,6 +41,8 @@ public class SystemStatusService {
     private final JdbcTemplate jdbcTemplate;
     private final PrReviewRepository prReviewRepository;
     private final TaskConflictRepository taskConflictRepository;
+    private final WishlistRepository wishlistRepository;
+    private final EmsMetricsService emsMetricsService;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -48,7 +51,9 @@ public class SystemStatusService {
                                LinearIssueMetadataRepository linearIssueMetadataRepository,
                                JdbcTemplate jdbcTemplate,
                                PrReviewRepository prReviewRepository,
-                               TaskConflictRepository taskConflictRepository) {
+                               TaskConflictRepository taskConflictRepository,
+                               WishlistRepository wishlistRepository,
+                               EmsMetricsService emsMetricsService) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -57,6 +62,8 @@ public class SystemStatusService {
         this.jdbcTemplate = jdbcTemplate;
         this.prReviewRepository = prReviewRepository;
         this.taskConflictRepository = taskConflictRepository;
+        this.wishlistRepository = wishlistRepository;
+        this.emsMetricsService = emsMetricsService;
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
@@ -69,6 +76,7 @@ public class SystemStatusService {
         status.put("qualityGate", safeSection(() -> qualityGate(projectId)));
         status.put("tasks", safeSection(() -> tasks(projectId)));
         status.put("conflictDpmo", safeSection(() -> conflictDpmo(projectId)));
+        status.put("emsMetrics", safeSection(() -> emsMetrics(projectId)));
         return status;
     }
 
@@ -249,6 +257,16 @@ public class SystemStatusService {
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));
         return section;
+    }
+
+    private Object emsMetrics(UUID projectId) {
+        List<TaskEntity> tasks = projectId == null
+                ? taskRepository.findAll()
+                : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        var wishlist = projectId == null
+                ? wishlistRepository.findAll()
+                : wishlistRepository.findByProjectId(projectId);
+        return emsMetricsService.build(tasks, wishlist);
     }
 
     private Map<String, Object> conflictDpmo(UUID projectId) {

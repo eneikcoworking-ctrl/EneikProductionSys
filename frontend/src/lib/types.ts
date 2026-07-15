@@ -112,6 +112,39 @@ export type EmsFlowStage = {
   weightedScore: number;
 };
 
+export type EmsRoleDoctrineVerdict = {
+  roleTag: string;
+  doctrineName: string;
+  doctrineFocus: string;
+  stance: 'satisfied' | 'almost_satisfied' | 'objects' | 'refuses' | 'unknown';
+  satisfactionScore: number;
+  confidence: number;
+  kanoPressure: 'none' | 'discovery' | 'must_be' | 'performance' | string;
+  cynefinBias: string;
+  topObjection: string;
+  sourceWishlistPending: number;
+  sourceWishlistTotal: number;
+  ownerTasksTotal: number;
+  ownerTasksOpen: number;
+  ownerTasksBlocked: number;
+  ownerTasksDone: number;
+  defectWork: number;
+  evidence: string[];
+};
+
+export type EmsRoleDoctrineReadiness = {
+  roles: EmsRoleDoctrineVerdict[];
+  rolesEvaluated: number;
+  satisfied: number;
+  almostSatisfied: number;
+  objects: number;
+  refuses: number;
+  unknown: number;
+  readinessScore: number;
+  statusLabel: 'ready' | 'incomplete' | 'contested' | 'blocked' | string;
+  interpretation: string;
+};
+
 export type EmsRoleKpi = {
   roleTag: string;
   total: number;
@@ -128,7 +161,7 @@ export type EmsRoleKpi = {
   flowEfficiency: number;
   kpiScore: number;
   kpiTarget: number;
-  statusLabel: 'on_target' | 'watch' | 'attention' | 'behind';
+  statusLabel: 'on_target' | 'watch' | 'attention' | 'behind' | 'idle';
 };
 
 export type EmsDashboardMetrics = {
@@ -139,6 +172,7 @@ export type EmsDashboardMetrics = {
     completionRate: number;
     weightedProgress: number;
   };
+  roleDoctrineReadiness: EmsRoleDoctrineReadiness;
   roleKpis: EmsRoleKpi[];
   defectWork: {
     totalDefectWork: number;

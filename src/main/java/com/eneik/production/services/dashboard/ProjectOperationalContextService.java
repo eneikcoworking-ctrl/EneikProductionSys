@@ -127,7 +127,7 @@ public class ProjectOperationalContextService {
         factPack.put("project", projectFact(project, fallbackProjectName));
         factPack.put("githubPullRequestsLive", githubFact(pullRequests));
         factPack.put("tasks", taskFacts(tasks));
-        factPack.put("emsMetrics", emsMetricsService.build(tasks));
+        factPack.put("emsMetrics", emsMetricsService.build(tasks, wishlist));
         factPack.put("julesSessions", sessionFacts(sessions, tasksById, accounts));
         factPack.put("databasePrReviews", reviewFacts(reviews, sessions, tasksById));
         factPack.put("wishlist", wishlistFacts(wishlist));

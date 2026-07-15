@@ -1007,7 +1007,8 @@ public class ProjectFlowService {
                 taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.done),
                 taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.failed)
         );
-        List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistRepository.findByProjectId(projectId)
+        List<com.eneik.production.models.persistence.WishlistEntity> wishlistEntities = wishlistRepository.findByProjectId(projectId);
+        List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistEntities
                 .stream()
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt()))
@@ -1035,7 +1036,7 @@ public class ProjectFlowService {
                 wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending).size(),
                 queue,
                 pipeline,
-                emsMetricsService.build(taskEntities),
+                emsMetricsService.build(taskEntities, wishlistEntities),
                 agents,
                 wishlist,
                 tasks

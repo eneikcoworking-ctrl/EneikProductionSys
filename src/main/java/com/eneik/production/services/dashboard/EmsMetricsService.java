@@ -3,6 +3,8 @@ package com.eneik.production.services.dashboard;
 import com.eneik.production.dto.dashboard.EmsDashboardMetricsDto;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
@@ -22,20 +24,42 @@ import java.util.stream.Collectors;
 
 @Service
 public class EmsMetricsService {
+    private static final List<RoleDoctrineProfile> ROLE_DOCTRINES = List.of(
+            new RoleDoctrineProfile("BARCAN-TAG-00", "CODE-GUARDIAN", "Code meaning, binary review, integration integrity", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-01", "ACTUALIST-OBJECT", "Real domain objects, identity, domain boundaries", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-02", "RIGID-DESIGNATOR", "Contracts, naming, API semantics, context safety", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-03", "BELIEF-INTENSION", "User intention, cognitive load, JTBD-backed interaction design", "performance", "complex"),
+            new RoleDoctrineProfile("BARCAN-TAG-04", "MODAL-QUANTIFIER", "Prediction evidence, epistemic tagging, no hallucinated certainty", "performance", "complex"),
+            new RoleDoctrineProfile("BARCAN-TAG-05", "NECESSARY-IDENTITY", "Environment causality, reproducible operations, incident closure", "must_be", "chaotic"),
+            new RoleDoctrineProfile("BARCAN-TAG-06", "DEONTIC-CONSISTENCY", "Testability, bivalence, falsification, quality gates", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-07", "SECOND-ORDER-KNOWLEDGE", "Auth, validation, zero-trust proof, hostile inputs", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-08", "SUBSTITUTIVITY-SALVA-VERITATE", "Data type integrity, migrations, lineage, substitutability", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-09", "MORAL-DILEMMA", "Lean/TOC/JTBD value filter, waste prevention, decision quality", "performance", "complex"),
+            new RoleDoctrineProfile("BARCAN-TAG-10", "DEONTIC-PROHIBITION", "Compliance prohibitions, retention, PIA and regulatory constraints", "must_be", "complicated"),
+            new RoleDoctrineProfile("BARCAN-TAG-11", "CLIENT-PERCEPTION", "Perceptual UX, accessibility, visual evidence, Core Web Vitals", "performance", "complex")
+    );
 
     public EmsDashboardMetricsDto build(List<TaskEntity> tasks) {
+        return build(tasks, List.of());
+    }
+
+    public EmsDashboardMetricsDto build(List<TaskEntity> tasks, List<WishlistEntity> wishlist) {
         List<TaskEntity> safeTasks = tasks == null ? List.of() : tasks;
+        List<WishlistEntity> safeWishlist = wishlist == null ? List.of() : wishlist;
         return new EmsDashboardMetricsDto(
                 Instant.now().toString(),
                 flowChart(safeTasks),
+                roleDoctrineReadiness(safeTasks, safeWishlist),
                 roleKpis(safeTasks),
                 defectWork(safeTasks),
                 graphHealth(safeTasks),
                 List.of(
-                        "Role KPI is calculated from task status, quality gate state, retry load, and defect work.",
+                        "Role doctrine readiness is calculated for all 12 BARCAN tags from source-role wishlist evidence, owner-role task evidence, defects, and missing evidence.",
+                        "Role execution telemetry is separate from doctrine readiness; zero owner tasks means no execution load, not role approval.",
                         "Defect work includes failed, blocked, retried, and circuit-breaker recovery tasks.",
                         "Graph health uses EMS payload keys plus dependsOn edges; lower duplicate semantic keys means cleaner orchestration.",
-                        "A queued task with an unfinished dependsOn task is intentionally blocked by the dependency graph, not by missing Jules capability."
+                        "A queued task with an unfinished dependsOn task is intentionally blocked by the dependency graph, not by missing Jules capability.",
+                        "Use sourceRoleTag as the role that raised an objection; use task.roleTag as the owner role responsible for execution."
                 )
         );
     }
@@ -79,12 +103,138 @@ public class EmsMetricsService {
         );
     }
 
+    private EmsDashboardMetricsDto.RoleDoctrineReadiness roleDoctrineReadiness(List<TaskEntity> tasks, List<WishlistEntity> wishlist) {
+        Map<String, List<TaskEntity>> tasksByOwnerRole = tasks.stream()
+                .collect(Collectors.groupingBy(this::roleTag, LinkedHashMap::new, Collectors.toList()));
+        Map<String, List<WishlistEntity>> wishlistBySourceRole = wishlist.stream()
+                .filter(item -> item.getSourceRoleTag() != null && !item.getSourceRoleTag().isBlank())
+                .collect(Collectors.groupingBy(WishlistEntity::getSourceRoleTag, LinkedHashMap::new, Collectors.toList()));
+
+        List<EmsDashboardMetricsDto.RoleDoctrineVerdict> verdicts = ROLE_DOCTRINES.stream()
+                .map(profile -> roleDoctrineVerdict(
+                        profile,
+                        tasksByOwnerRole.getOrDefault(profile.roleTag(), List.of()),
+                        wishlistBySourceRole.getOrDefault(profile.roleTag(), List.of())
+                ))
+                .toList();
+
+        long satisfied = countStance(verdicts, "satisfied");
+        long almostSatisfied = countStance(verdicts, "almost_satisfied");
+        long objects = countStance(verdicts, "objects");
+        long refuses = countStance(verdicts, "refuses");
+        long unknown = countStance(verdicts, "unknown");
+        double readinessScore = verdicts.stream()
+                .mapToDouble(EmsDashboardMetricsDto.RoleDoctrineVerdict::satisfactionScore)
+                .average()
+                .orElse(0.0);
+
+        String statusLabel;
+        String interpretation;
+        if (refuses > 0) {
+            statusLabel = "blocked";
+            interpretation = "One or more BARCAN doctrines refuse the current project state; resolve Must-Be objections before acceptance.";
+        } else if (objects > 0) {
+            statusLabel = "contested";
+            interpretation = "BARCAN doctrine objections exist; compile source-role wishlist into owner-role atomic work before expanding scope.";
+        } else if (unknown > 0) {
+            statusLabel = "incomplete";
+            interpretation = "Some BARCAN roles have no attack or execution evidence yet; run the role council attack before claiming readiness.";
+        } else {
+            statusLabel = "ready";
+            interpretation = "All BARCAN doctrines are satisfied or almost satisfied from available project evidence.";
+        }
+
+        return new EmsDashboardMetricsDto.RoleDoctrineReadiness(
+                verdicts,
+                verdicts.size(),
+                satisfied,
+                almostSatisfied,
+                objects,
+                refuses,
+                unknown,
+                round(readinessScore),
+                statusLabel,
+                interpretation
+        );
+    }
+
+    private EmsDashboardMetricsDto.RoleDoctrineVerdict roleDoctrineVerdict(RoleDoctrineProfile profile,
+                                                                           List<TaskEntity> ownerTasks,
+                                                                           List<WishlistEntity> sourceWishlist) {
+        long ownerTotal = ownerTasks.size();
+        long ownerDone = ownerTasks.stream().filter(this::isDoneLike).count();
+        long ownerOpen = ownerTasks.stream().filter(task -> !isDoneLike(task)).count();
+        long ownerBlocked = ownerTasks.stream().filter(this::isBlockedLike).count();
+        long ownerFailed = ownerTasks.stream().filter(task -> task.getStatus() == TaskStatus.failed).count();
+        long defectWork = ownerTasks.stream().filter(this::isDefectWork).count();
+        long gatePassed = ownerTasks.stream().filter(TaskEntity::isQualityGatePassed).count();
+        long sourceTotal = sourceWishlist.size();
+        long sourcePending = sourceWishlist.stream()
+                .filter(item -> item.getStatus() == WishlistStatus.pending)
+                .count();
+
+        boolean hasEvidence = ownerTotal > 0 || sourceTotal > 0;
+        boolean severeSourceObjection = sourceWishlist.stream()
+                .filter(item -> item.getStatus() == WishlistStatus.pending)
+                .anyMatch(item -> containsRefusalSignal(item.getContent())
+                        || containsRefusalSignal(item.getAcceptanceCriteria())
+                        || containsRefusalSignal(item.getDod()));
+        boolean hardFailure = ownerBlocked > 0 || ownerFailed > 0;
+
+        String stance;
+        double satisfactionScore;
+        if (!hasEvidence) {
+            stance = "unknown";
+            satisfactionScore = 25.0;
+        } else if ((severeSourceObjection && "must_be".equals(profile.kanoBias())) || ownerFailed > 0) {
+            stance = "refuses";
+            satisfactionScore = Math.max(0.0, 34.0 - (ownerFailed * 6.0) - Math.min(20.0, sourcePending * 4.0));
+        } else if (sourcePending > 0 || hardFailure || defectWork > 0) {
+            stance = "objects";
+            satisfactionScore = Math.max(35.0, 62.0 - (ownerBlocked * 5.0) - Math.min(18.0, sourcePending * 3.0) - Math.min(12.0, defectWork * 2.0));
+        } else if (ownerOpen > 0) {
+            stance = "almost_satisfied";
+            satisfactionScore = 72.0 + ratio(ownerDone, ownerTotal) * 18.0;
+        } else {
+            stance = "satisfied";
+            satisfactionScore = ownerTotal == 0 ? 78.0 : 92.0 + Math.min(8.0, gatePassed * 1.5);
+        }
+
+        double confidence = confidence(ownerTotal, ownerDone, gatePassed, sourceTotal, hasEvidence);
+        String kanoPressure = kanoPressure(profile, stance);
+        String topObjection = topObjection(stance, sourcePending, ownerOpen, ownerBlocked, ownerFailed, defectWork);
+
+        return new EmsDashboardMetricsDto.RoleDoctrineVerdict(
+                profile.roleTag(),
+                profile.doctrineName(),
+                profile.doctrineFocus(),
+                stance,
+                round(satisfactionScore),
+                round(confidence),
+                kanoPressure,
+                profile.cynefinBias(),
+                topObjection,
+                sourcePending,
+                sourceTotal,
+                ownerTotal,
+                ownerOpen,
+                ownerBlocked,
+                ownerDone,
+                defectWork,
+                roleEvidence(ownerTotal, ownerDone, gatePassed, sourcePending, sourceTotal, ownerBlocked, defectWork)
+        );
+    }
+
     private List<EmsDashboardMetricsDto.RoleKpi> roleKpis(List<TaskEntity> tasks) {
         Map<String, List<TaskEntity>> byRole = tasks.stream()
                 .collect(Collectors.groupingBy(this::roleTag, LinkedHashMap::new, Collectors.toList()));
-        return byRole.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey())
-                .map(entry -> roleKpi(entry.getKey(), entry.getValue()))
+        List<String> orderedTags = new ArrayList<>(roleDoctrineTags());
+        byRole.keySet().stream()
+                .filter(tag -> !orderedTags.contains(tag))
+                .sorted()
+                .forEach(orderedTags::add);
+        return orderedTags.stream()
+                .map(roleTag -> roleKpi(roleTag, byRole.getOrDefault(roleTag, List.of())))
                 .toList();
     }
 
@@ -104,6 +254,27 @@ public class EmsMetricsService {
         double gatePassRate = gated == 0 ? 1.0 : ratio(gatePassed, gated);
         double defectPressure = defectPressure(tasks);
         double flowEfficiency = ratio(done, done + active + blocked + failed);
+        if (total == 0) {
+            double target = kpiTarget(roleTag);
+            return new EmsDashboardMetricsDto.RoleKpi(
+                    roleTag,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0.0,
+                    1.0,
+                    0.0,
+                    0.0,
+                    0.0,
+                    target,
+                    "idle"
+            );
+        }
         double kpiScore = clamp01(
                 completion * 0.42
                         + gatePassRate * 0.23
@@ -393,6 +564,115 @@ public class EmsMetricsService {
         return "behind";
     }
 
+    private long countStance(List<EmsDashboardMetricsDto.RoleDoctrineVerdict> verdicts, String stance) {
+        return verdicts.stream().filter(verdict -> stance.equals(verdict.stance())).count();
+    }
+
+    private Set<String> roleDoctrineTags() {
+        return ROLE_DOCTRINES.stream()
+                .map(RoleDoctrineProfile::roleTag)
+                .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
+    }
+
+    private boolean containsRefusalSignal(String text) {
+        if (text == null || text.isBlank()) {
+            return false;
+        }
+        String lower = text.toLowerCase(Locale.ROOT);
+        return lower.contains("refusal")
+                || lower.contains("reject")
+                || lower.contains("forbidden")
+                || lower.contains("violation")
+                || lower.contains("critical")
+                || lower.contains("p0")
+                || lower.contains("security")
+                || lower.contains("auth")
+                || lower.contains("privacy")
+                || lower.contains("compliance")
+                || lower.contains("leak")
+                || lower.contains("failed")
+                || lower.contains("blocked");
+    }
+
+    private double confidence(long ownerTotal, long ownerDone, long gatePassed, long sourceTotal, boolean hasEvidence) {
+        if (!hasEvidence) {
+            return 0.18;
+        }
+        double value = 0.24;
+        if (sourceTotal > 0) {
+            value += 0.26;
+        }
+        if (ownerTotal > 0) {
+            value += 0.24;
+        }
+        if (ownerDone > 0) {
+            value += 0.14;
+        }
+        if (gatePassed > 0) {
+            value += 0.12;
+        }
+        return clamp01(value);
+    }
+
+    private String kanoPressure(RoleDoctrineProfile profile, String stance) {
+        return switch (stance) {
+            case "refuses" -> "must_be";
+            case "objects" -> profile.kanoBias();
+            case "unknown" -> "discovery";
+            case "almost_satisfied" -> "performance";
+            default -> "none";
+        };
+    }
+
+    private String topObjection(String stance, long sourcePending, long ownerOpen, long ownerBlocked, long ownerFailed, long defectWork) {
+        if ("unknown".equals(stance)) {
+            return "No role-attack or execution evidence exists yet; run the BARCAN council attack before project acceptance.";
+        }
+        if (ownerFailed > 0) {
+            return "Owner-role execution has failed work; recover through a fresh atomic wishlist item before claiming doctrine satisfaction.";
+        }
+        if (sourcePending > 0) {
+            return "Source-role objections are still pending; compile, deduplicate, or explicitly dismiss them.";
+        }
+        if (ownerBlocked > 0) {
+            return "Owner-role work is blocked; analyze the failed attempt and create smaller recovery work.";
+        }
+        if (defectWork > 0) {
+            return "Defect-work evidence remains attached to this role; close recovery before increasing feature scope.";
+        }
+        if (ownerOpen > 0) {
+            return "Execution work is still open; role is close but not fully satisfied.";
+        }
+        return "No open doctrine objection is visible in the current project evidence.";
+    }
+
+    private List<String> roleEvidence(long ownerTotal, long ownerDone, long gatePassed, long sourcePending,
+                                      long sourceTotal, long ownerBlocked, long defectWork) {
+        List<String> evidence = new ArrayList<>();
+        if (sourceTotal > 0) {
+            evidence.add("source_wishlist_total=" + sourceTotal);
+        }
+        if (sourcePending > 0) {
+            evidence.add("source_wishlist_pending=" + sourcePending);
+        }
+        if (ownerTotal > 0) {
+            evidence.add("owner_tasks=" + ownerDone + "/" + ownerTotal + " done");
+        }
+        if (gatePassed > 0) {
+            evidence.add("quality_gate_passed=" + gatePassed);
+        }
+        if (ownerBlocked > 0) {
+            evidence.add("blocked_or_failed_owner_tasks=" + ownerBlocked);
+        }
+        if (defectWork > 0) {
+            evidence.add("defect_work=" + defectWork);
+        }
+        if (evidence.isEmpty()) {
+            evidence.add("no_evidence_yet");
+        }
+        return evidence;
+    }
+
     private String payloadText(TaskEntity task, String field) {
         JsonNode payload = task.getPayload();
         if (payload == null || payload.isNull() || !payload.has(field) || payload.get(field).isNull()) {
@@ -428,4 +708,12 @@ public class EmsMetricsService {
     private double round(double value) {
         return Math.round(value * 100.0) / 100.0;
     }
+
+    private record RoleDoctrineProfile(
+            String roleTag,
+            String doctrineName,
+            String doctrineFocus,
+            String kanoBias,
+            String cynefinBias
+    ) {}
 }

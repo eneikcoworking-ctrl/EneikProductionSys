@@ -38,20 +38,26 @@
     }
   });
 
-  const roles = [
-    { tag: 'BARCAN-TAG-00', name: 'Code Guardian / Tech Lead', metric: 'God-file detection limit', value: '< 1000 LOC', status: 'Compliant' },
-    { tag: 'BARCAN-TAG-01', name: 'Solution Architect', metric: 'MVC / Controller compliance', value: '100%', status: 'Compliant' },
-    { tag: 'BARCAN-TAG-02', name: 'Backend Engineer', metric: 'Java standard architecture', value: 'JDK 17 / Spring Boot 3', status: 'Active' },
-    { tag: 'BARCAN-TAG-03', name: 'UI/UX Designer', metric: 'Fitts / Miller layout targets', value: '44px minimum touch target', status: 'Active' },
-    { tag: 'BARCAN-TAG-04', name: 'ML Engineer', metric: 'FastAPI Predictions Health', value: '99.8%', status: 'Compliant' },
-    { tag: 'BARCAN-TAG-05', name: 'DevOps / SRE', metric: 'Secret scanning & security leaks', value: '0 leaks detected', status: 'Secure' },
-    { tag: 'BARCAN-TAG-06', name: 'QA Automation', metric: 'JUnit Test execution count', value: '101 Tests passed', status: '100% Pass' },
-    { tag: 'BARCAN-TAG-07', name: 'AppSec / Security', metric: 'PII masking and filter coverage', value: 'Email/Phone masked', status: 'Secure' },
-    { tag: 'BARCAN-TAG-08', name: 'Data Engineer / DBA', metric: 'PostgreSQL & H2 compatibility', value: 'H2 schema verified', status: 'Active' },
-    { tag: 'BARCAN-TAG-09', name: 'Technical Product Manager', metric: 'Linear Sync completeness rate', value: '98%', status: 'Active' },
-    { tag: 'BARCAN-TAG-10', name: 'Compliance Officer', metric: 'Deontic rules and constraints', value: '100% compliant', status: 'Compliant' },
-    { tag: 'BARCAN-TAG-11', name: 'Frontend Engineer', metric: 'Lighthouse Core Web Vitals', value: 'CLS < 0.1, LCP <= 2.5s', status: 'Optimized' }
-  ];
+  function score(value: number | undefined | null): string {
+    return `${Math.round(value ?? 0)}`;
+  }
+
+  function percent(value: number | undefined | null): string {
+    return `${Math.round((value ?? 0) * 100)}%`;
+  }
+
+  function scoreWidth(value: number | undefined | null): string {
+    const clamped = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+    return `${clamped}%`;
+  }
+
+  function stanceLabel(value: string): string {
+    return (value || 'unknown').replace(/_/g, ' ');
+  }
+
+  function pressureLabel(value: string): string {
+    return (value || 'none').replace(/_/g, '-');
+  }
 </script>
 
 <div class="metrics-root">
@@ -152,26 +158,67 @@
 
     <!-- BLOCK 3: Role Metrics -->
     <section class="roles-metrics-section">
-      <h3>Professional Role Metrics (12 BARCAN Roles)</h3>
-      <p class="section-desc">Live role-level control indicators for each production specialty</p>
+      <h3>BARCAN Council Readiness</h3>
+      <p class="section-desc">Doctrine satisfaction for all 12 BARCAN roles, separated from execution workload.</p>
 
-      <div class="roles-grid">
-        {#each roles as role}
-          <article class="role-metric-card">
-            <div class="role-header">
-              <span class="role-tag-badge">{role.tag}</span>
-              <span class="role-status-badge">{role.status}</span>
-            </div>
-            <h4>{role.name}</h4>
-            <div class="role-body">
-              <p class="label-xs">Controlled parameter:</p>
-              <p class="role-metric-name">{role.metric}</p>
-              <p class="label-xs mt-2">Current live value:</p>
-              <p class="role-metric-value">{role.value}</p>
-            </div>
-          </article>
-        {/each}
-      </div>
+      {#if metrics.emsMetrics?.data?.roleDoctrineReadiness}
+        <div class="role-readiness-summary">
+          <div>
+            <span class="label-xs">Readiness</span>
+            <strong>{score(metrics.emsMetrics.data.roleDoctrineReadiness.readinessScore)}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Satisfied</span>
+            <strong>{metrics.emsMetrics.data.roleDoctrineReadiness.satisfied}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Almost</span>
+            <strong>{metrics.emsMetrics.data.roleDoctrineReadiness.almostSatisfied}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Objects</span>
+            <strong>{metrics.emsMetrics.data.roleDoctrineReadiness.objects}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Refuses</span>
+            <strong>{metrics.emsMetrics.data.roleDoctrineReadiness.refuses}</strong>
+          </div>
+          <div>
+            <span class="label-xs">Unknown</span>
+            <strong>{metrics.emsMetrics.data.roleDoctrineReadiness.unknown}</strong>
+          </div>
+        </div>
+
+        <p class="council-interpretation">{metrics.emsMetrics.data.roleDoctrineReadiness.interpretation}</p>
+
+        <div class="roles-grid">
+          {#each metrics.emsMetrics.data.roleDoctrineReadiness.roles as role}
+            <article class="role-metric-card doctrine {role.stance}">
+              <div class="role-header">
+                <span class="role-tag-badge">{role.roleTag}</span>
+                <span class="role-status-badge {role.stance}">{stanceLabel(role.stance)}</span>
+              </div>
+              <h4>{role.doctrineName}</h4>
+              <p class="role-focus">{role.doctrineFocus}</p>
+              <div class="role-score-row">
+                <div class="role-score-track">
+                  <div class="role-score-fill {role.stance}" style="width: {scoreWidth(role.satisfactionScore)}"></div>
+                </div>
+                <strong>{score(role.satisfactionScore)}</strong>
+              </div>
+              <div class="role-body">
+                <p class="label-xs">Doctrine pressure:</p>
+                <p class="role-metric-name">{pressureLabel(role.kanoPressure)} / {role.cynefinBias}</p>
+                <p class="label-xs mt-2">Evidence:</p>
+                <p class="role-metric-value">Source {role.sourceWishlistPending}/{role.sourceWishlistTotal} · Owner {role.ownerTasksDone}/{role.ownerTasksTotal} · Confidence {percent(role.confidence)}</p>
+                <p class="role-objection">{role.topObjection}</p>
+              </div>
+            </article>
+          {/each}
+        </div>
+      {:else}
+        <p class="empty-state">Role doctrine readiness is not available yet.</p>
+      {/if}
     </section>
   {/if}
 </div>
@@ -328,6 +375,30 @@
   .roles-metrics-section {
     margin-top: var(--space-8);
   }
+  .role-readiness-summary {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin-top: var(--space-4);
+  }
+  .role-readiness-summary > div {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+  }
+  .role-readiness-summary strong {
+    display: block;
+    font-size: 22px;
+    color: var(--neutral-800);
+    line-height: 1.1;
+  }
+  .council-interpretation {
+    margin-top: var(--space-3);
+    color: var(--neutral-600);
+    font-size: 13px;
+    line-height: 1.45;
+  }
   .roles-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
@@ -343,10 +414,29 @@
     flex-direction: column;
     gap: var(--space-2);
   }
+  .role-metric-card.doctrine {
+    border-left: 4px solid var(--neutral-300);
+  }
+  .role-metric-card.doctrine.satisfied {
+    border-left-color: #0d9488;
+  }
+  .role-metric-card.doctrine.almost_satisfied {
+    border-left-color: #f59e0b;
+  }
+  .role-metric-card.doctrine.objects {
+    border-left-color: #ea580c;
+  }
+  .role-metric-card.doctrine.refuses {
+    border-left-color: #dc2626;
+  }
+  .role-metric-card.doctrine.unknown {
+    border-left-color: #4f46e5;
+  }
   .role-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
+    gap: var(--space-2);
   }
   .role-tag-badge {
     font-size: 9px;
@@ -364,11 +454,65 @@
     padding: 2px 6px;
     border-radius: 4px;
   }
+  .role-status-badge.satisfied {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .role-status-badge.almost_satisfied,
+  .role-status-badge.objects {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .role-status-badge.refuses {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .role-status-badge.unknown {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
   .role-metric-card h4 {
     font-size: 14px;
     font-weight: 700;
     color: var(--neutral-800);
     margin: var(--space-1) 0;
+  }
+  .role-focus {
+    min-height: 36px;
+    color: var(--neutral-600);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .role-score-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .role-score-track {
+    height: 8px;
+    background: var(--neutral-100);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .role-score-fill {
+    height: 100%;
+    border-radius: inherit;
+  }
+  .role-score-fill.satisfied {
+    background: #0d9488;
+  }
+  .role-score-fill.almost_satisfied {
+    background: #f59e0b;
+  }
+  .role-score-fill.objects {
+    background: #ea580c;
+  }
+  .role-score-fill.refuses {
+    background: #dc2626;
+  }
+  .role-score-fill.unknown {
+    background: #4f46e5;
   }
   .role-metric-name {
     font-size: 13px;
@@ -379,6 +523,25 @@
     font-size: 15px;
     font-weight: 800;
     color: var(--primary);
+  }
+  .role-objection {
+    margin-top: var(--space-2);
+    color: var(--neutral-600);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+
+  @media (max-width: 900px) {
+    .role-readiness-summary {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 620px) {
+    .metrics-grid,
+    .role-readiness-summary {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* Loader styling */
