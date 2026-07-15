@@ -253,6 +253,6 @@ class ProjectOperatorServiceTest {
 
         String answer = service.answer(projectId, "test-project", "What can you test?");
 
-        assertEquals("the selected project facts and the collected operator evidence show no runnable tests.", answer);
+        assertEquals("current project evidence and operator evidence show no runnable tests.", answer);
     }
 }

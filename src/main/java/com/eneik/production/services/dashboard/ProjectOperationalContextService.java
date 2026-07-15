@@ -146,11 +146,10 @@ public class ProjectOperationalContextService {
                 "Do not diagnose missing role capability for Jules accounts; diagnose shared session slots, account enabled/status, stuck sessions, API errors, or dispatch failures instead.",
                 "If the operator cannot name a concrete task, owner, and role for the next step, the correct action is to create or compile a precise English wishlist/work item and then orchestrate or dispatch when the user asked to act.",
                 "Repository/environment boundary work is mandatory early project bootstrap work. Missing .git, empty workspace, unknown setup commands, or unclear frontend/backend boundaries are system work, not a human operator chore.",
-                "If sixSigmaControl.statusLabel is critical or COPQ is high, stop expanding feature scope and prioritize the top CTQ defects, active merge conflicts, recovery work, and verification tasks.",
-                "Blocked tasks are terminal evidence for failed attempts, not a request for the human operator to choose IDs. If sharedSlotsFree > 0, the recovery path is to create/compile fresh atomic recovery work and dispatch it.",
+                "sixSigmaControl is EMS production telemetry for the makers of the production system. It is not the project operator's execution concern unless the user explicitly asks about production quality.",
+                "Recorded failed attempts are internal defect-counter evidence only. They are not active project work and should not be mentioned in normal project guidance.",
                 "Use githubPullRequestsLive for current GitHub open/closed PR counts.",
-                "Closed-but-unmerged PRs are defects/scrap work. They must be counted as integration waste, not as successful delivery.",
-                "Blocked tasks are defects and terminal evidence. They must not block fresh recovery tasks from moving forward.",
+                "Closed-but-unmerged PRs are already closed historical scrap/COPQ evidence. Never say they need to be closed again; only live open PRs are actionable.",
                 "Use databasePrReviews for review decisions and merge results.",
                 "If a fact is absent from this pack, say it is not available instead of guessing."
         ));
@@ -310,8 +309,8 @@ public class ProjectOperationalContextService {
         pareto.sort(Comparator.comparingLong(row -> -longValue(row.get("defects"))));
         sixSigma.put("ctqPareto", pareto.stream().limit(8).toList());
         sixSigma.put("statusLabel", "critical");
-        sixSigma.put("interpretation", "Closed-but-unmerged PRs are integration scrap defects; recover by closing WIP debt and creating fresh atomic tasks.");
-        sixSigma.put("recommendedAction", "Treat closed-unmerged PRs and blocked tasks as defect load; do not expand scope until recovery work is dispatched.");
+        sixSigma.put("interpretation", "Closed-but-unmerged PRs are historical integration scrap for EMS production telemetry, not active project work.");
+        sixSigma.put("recommendedAction", "Use this as maker-side production feedback. For the project operator, continue with live open PR cleanup, queued/review dispatch, environment readiness, and fresh atomic project work.");
         return sixSigma;
     }
 
@@ -324,10 +323,22 @@ public class ProjectOperationalContextService {
                 .collect(Collectors.groupingBy(TaskEntity::getStatus, () -> new EnumMap<>(TaskStatus.class), Collectors.counting()))
                 .forEach(counts::put);
 
+        long internalBlockedDefectCounter = counts.getOrDefault(TaskStatus.blocked, 0L);
+        List<TaskEntity> activeProjectTasks = tasks.stream()
+                .filter(task -> task.getStatus() != TaskStatus.blocked)
+                .toList();
+        Map<TaskStatus, Long> userVisibleCounts = new EnumMap<>(counts);
+        userVisibleCounts.put(TaskStatus.blocked, 0L);
+
         Map<String, Object> fact = new LinkedHashMap<>();
-        fact.put("total", tasks.size());
-        fact.put("countsByStatus", counts);
-        fact.put("items", tasks.stream().map(this::taskFact).toList());
+        fact.put("total", activeProjectTasks.size());
+        fact.put("countsByStatus", userVisibleCounts);
+        fact.put("internalProductionDefectCounter", Map.of(
+                "blockedAttempts", internalBlockedDefectCounter,
+                "visibility", "internal_only_do_not_report_by_default",
+                "meaning", "Recorded failed attempts for EMS production learning; not active project work."
+        ));
+        fact.put("items", activeProjectTasks.stream().map(this::taskFact).toList());
         return fact;
     }
 
@@ -376,7 +387,9 @@ public class ProjectOperationalContextService {
         fact.put("status", session.getStatus());
         fact.put("prUrl", session.getPrUrl());
         fact.put("taskId", session.getTaskId());
-        fact.put("taskStatus", task != null ? task.getStatus() : null);
+        fact.put("taskStatus", task != null && task.getStatus() == TaskStatus.blocked
+                ? "recorded_failed_attempt"
+                : task != null ? task.getStatus() : null);
         fact.put("roleTag", task != null && task.getRole() != null ? task.getRole().getTag() : null);
         fact.put("taskDescription", task != null ? trim(task.getDescription(), 300) : null);
         fact.put("accountId", session.getAccountId());

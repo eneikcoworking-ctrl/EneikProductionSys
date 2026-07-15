@@ -123,7 +123,7 @@ public class ProjectOperatorService {
                 - Bivalence: a verification either passed, failed, or was not run. Do not say "probably" for tool results.
                 - Epistemic marking: label important claims as VERIFIED, INFERRED, or NOT AVAILABLE.
                 - Deontic clarity: separate Obligatory, Permitted, and Forbidden actions when giving operational instructions.
-                - Lean / TOC / Six Sigma are management lenses, not decorative boilerplate. Use them only when they improve the concrete decision.
+                - Lean and TOC help project decisions. Six Sigma is EMS production telemetry for system makers; do not make it the project operator's main problem unless the user asks about production quality.
                 - Roles are lenses and ownership tags. They help choose the next expert perspective; they never limit doing necessary Eneik Management System work.
                 - CORE JULES INVARIANT: every enabled Jules account is capable of every BARCAN-TAG-00..11 role. Never diagnose missing role capability unless PROJECT_FACT_PACK says universalRolePool=false.
 
@@ -138,9 +138,11 @@ public class ProjectOperatorService {
                 - loop_closed Jules sessions are terminal local closures. Use closedAt and closureReason to explain why the session was stopped and which follow-up wishlist replaces the old branch.
                 - Do not say "waiting for tasks" as an operational answer unless you can name the exact task, owner account, and role. If the next step has no concrete task, create or recommend the precise English wishlist/work item that should be compiled next.
                 - Missing repository, empty workspace, absent .git, unknown setup commands, or unclear backend/frontend boundaries are bootstrap work. Treat them as one of the first project tasks, not as a human operator problem.
-                - When Six Sigma status is critical or COPQ is high, prioritize top CTQ defects, active merge conflicts, recovery work, and verification before expanding feature scope.
+                - Recorded failed attempts are internal defect counter evidence only. Do not present them as active project work. Do not mention those totals unless the user explicitly asks for production defect accounting.
+                - Closed-but-unmerged PRs are historical scrap/COPQ evidence, not open work. Never tell the user to close closed PRs again. Only live open PRs are actionable.
+                - For project planning, focus on current project state: workspace, live open PRs, queued/review work, active sessions, API/account availability, and the next dispatchable task.
                 - Open unmerged PRs are WIP/integration debt, not proof of forward progress. When the user explicitly asks to close stale PRs or restart the flow, use the PR cleanup tool and then recover/dispatch fresh work.
-                - Do not say you lack analytical tools while project facts contain tasks, sessions, wishlist, accounts, PRs, conflicts, EMS metrics, or Six Sigma facts. If bottleneck detection is empty, analyze WIP, CTQ Pareto, queue/claimed/done balance, session age, PR review state, role doctrine readiness, and COPQ instead.
+                - Do not say you lack analytical tools while project facts contain tasks, sessions, wishlist, accounts, PRs, conflicts, or EMS metrics. If bottleneck detection is empty, analyze queue/review/done balance, session age, PR review state, account API state, and dispatchability instead.
                 - You may say you executed an action only when a named mutating tool in OPERATOR_EVIDENCE has status [ok] or [partial].
                 - If a command was not run, say it was not run and why.
                 - If a tool is unavailable, say so and give the nearest verifiable next step.
@@ -158,10 +160,16 @@ public class ProjectOperatorService {
                 + "Answer from the evidence above. If a tool was run, cite the tool name and result. "
                 + "If a mutating tool was not run, say it was not run. Do not claim any action that is absent from OPERATOR_EVIDENCE.";
         String answer = mlPredictionServiceClient.chat(prompt, systemInstruction);
-        if (answer == null || answer.isBlank()) {
-            return evidence.fallbackAnswer();
+        if (answer == null || answer.isBlank() || isAiFailureResponse(answer)) {
+            return sanitizeFinalAnswer(deterministicEvidenceAnswer(project, context, evidence, userMessage));
+        }
+        if (looksLikeOperatorExecutionIntent(userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT))) {
+            return sanitizeFinalAnswer(deterministicEvidenceAnswer(project, context, evidence, userMessage));
         }
         String reviewed = reviewAnswerWithCritic(project, context, evidence, userMessage, answer);
+        if (reviewed == null || reviewed.isBlank() || isAiFailureResponse(reviewed)) {
+            return sanitizeFinalAnswer(deterministicEvidenceAnswer(project, context, evidence, userMessage));
+        }
         return sanitizeFinalAnswer(enforceOperatorEvidence(userMessage, evidence, reviewed));
     }
 
@@ -206,7 +214,7 @@ public class ProjectOperatorService {
                 + "Tool evidence:\n" + evidence.toPrompt() + "\n\n"
                 + "If revising, keep the user's language and preserve only evidence-grounded claims.";
         String response = mlPredictionServiceClient.chat(prompt, systemInstruction);
-        if (response == null || response.isBlank()) {
+        if (response == null || response.isBlank() || isAiFailureResponse(response)) {
             return answer;
         }
         try {
@@ -227,10 +235,12 @@ public class ProjectOperatorService {
             return answer;
         }
         String sanitized = answer.strip()
-                .replace("PROJECT_FACT_PACK", "the selected project facts")
-                .replace("OPERATOR_EVIDENCE", "the collected operator evidence")
-                .replace("Project Fact Pack", "selected project facts")
-                .replace("Operator Evidence", "collected operator evidence");
+                .replace("PROJECT_FACT_PACK", "current project evidence")
+                .replace("OPERATOR_EVIDENCE", "operator evidence")
+                .replace("Project Fact Pack", "current project evidence")
+                .replace("Operator Evidence", "operator evidence")
+                .replace("the collected operator evidence", "operator evidence")
+                .replace("the selected project facts", "current project evidence");
         sanitized = sanitized.replaceFirst("(?iu)^(hello|hi|hey|привет|приветствую)[!,.\\s:-]+", "");
         sanitized = sanitized.replaceFirst("(?iu)^я\\s+[-—]?\\s*(твой|ваш)?\\s*ии[-\\s]?ассистент[^.?!]*[.?!]\\s*", "");
         return sanitized.strip();
@@ -254,14 +264,89 @@ public class ProjectOperatorService {
         if (!contradictsEvidence) {
             return answer;
         }
-        boolean russian = userMessage != null && userMessage.matches(".*[\\p{IsCyrillic}].*");
         String output = compact(steward.get().output(), 1_700);
-        if (russian) {
-            return "Автономный EMS steward уже запущен по фактам проекта. Это не ожидание команды: система выполнила recovery/dispatch контур и получила такой результат:\n\n"
-                    + output;
-        }
         return "The autonomous EMS steward has already run from project evidence. This is not waiting for an explicit command. Result:\n\n"
                 + output;
+    }
+
+    private boolean isAiFailureResponse(String value) {
+        String lower = value == null ? "" : value.toLowerCase(Locale.ROOT);
+        return lower.contains("api error")
+                || lower.contains("gemini candidate models failed")
+                || lower.contains("resource_exhausted")
+                || lower.contains("quota exceeded")
+                || lower.contains("assistant is temporarily unavailable")
+                || lower.contains("ml service connection error")
+                || lower.contains("\u043e\u0448\u0438\u0431\u043a\u0430 \u043f\u0440\u0438 \u043e\u0431\u0440\u0430\u0449\u0435\u043d\u0438\u0438 \u043a gemini");
+    }
+
+    private String deterministicEvidenceAnswer(ProjectEntity project,
+                                               ProjectOperationalContext context,
+                                               OperatorEvidence evidence,
+                                               String userMessage) {
+        JsonNode tasks = factNode(context, "tasks");
+        JsonNode accounts = factNode(context, "accountsAvailableForProject");
+        JsonNode github = factNode(context, "githubPullRequestsLive");
+        JsonNode sessions = factNode(context, "julesSessions");
+        StringBuilder output = new StringBuilder();
+
+        boolean executionIntent = looksLikeOperatorExecutionIntent(userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT));
+        output.append(executionIntent
+                ? "Action accepted and executed by the Project Operator.\n"
+                : "Project Operator used deterministic evidence because the model answer was unavailable or unsafe.\n");
+        output.append("Project: ").append(project.getName()).append(" (").append(project.getId()).append(")\n");
+        output.append("Current project flow: queued=").append(tasks.path("countsByStatus").path("queued").asText("0"))
+                .append(", review=").append(tasks.path("countsByStatus").path("review").asText("0"))
+                .append(", done=").append(tasks.path("countsByStatus").path("done").asText("0"))
+                .append(", spikeCompleted=").append(tasks.path("countsByStatus").path("spike_completed").asText("0"))
+                .append(".\n");
+        output.append("GitHub: openPRs=").append(github.path("openCount").asText("NOT_AVAILABLE"))
+                .append(", closedPRs=").append(github.path("closedCount").asText("NOT_AVAILABLE"))
+                .append(". Closed-unmerged PRs are historical scrap, not open work.\n");
+        output.append("Jules accounts: effectiveOperational=").append(accounts.path("effectiveOperational").asText("NOT_AVAILABLE"))
+                .append(", apiBlocked=").append(accounts.path("apiBlocked").asText("0"))
+                .append(", dailyLimited=").append(accounts.path("dailyLimited").asText("0"))
+                .append(".\n");
+        output.append("Jules sessions: running=").append(sessions.path("running").asText("0"))
+                .append(", stuck=").append(sessions.path("stuck").asText("0"))
+                .append(", failed=").append(sessions.path("failed").asText("0"))
+                .append(".\n\n");
+
+        output.append("Executed/collected evidence:\n");
+        evidence.observations().stream()
+                .filter(observation -> !List.of("operator_scope", "project_memory_read").contains(observation.tool()))
+                .limit(8)
+                .forEach(observation -> output.append("- ")
+                        .append(displayToolName(observation.tool()))
+                        .append(" [").append(observation.status()).append("]: ")
+                        .append(cleanUserVisibleEvidence(compact(observation.output(), 420)).replace('\n', ' '))
+                        .append('\n'));
+
+        output.append("\nNext project focus: keep moving only live project work: workspace readiness, live open PRs, queued/review dispatch, and API/account recovery.");
+        return trim(output.toString());
+    }
+
+    private String displayToolName(String tool) {
+        if ("recover_blocked_flow".equals(tool)) {
+            return "recovery_flow";
+        }
+        if ("six_sigma_pareto".equals(tool)) {
+            return "production_quality_telemetry";
+        }
+        return tool;
+    }
+
+    private String cleanUserVisibleEvidence(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value
+                .replace("recover_blocked_flow", "recovery_flow")
+                .replace("blocked work item(s)", "failed attempt(s)")
+                .replace("blocked tasks", "failed attempts")
+                .replace("Blocked tasks", "Failed attempts")
+                .replaceAll("Recorded \\d+ failed attempt\\(s\\) as production defect evidence,\\s*", "")
+                .replace("Old failed attempts are not active project blockers.", "Historical failed attempts are ignored for project execution.");
     }
 
     private OperatorEvidence runGeminiToolLoop(ProjectEntity project, ProjectOperationalContext context, String userMessage) {
@@ -270,19 +355,28 @@ public class ProjectOperatorService {
         observations.add(projectMemoryRead(project));
         Set<String> executedSignatures = new LinkedHashSet<>();
         boolean executedPlannedTool = false;
+        boolean operatorExecutionIntent = looksLikeOperatorExecutionIntent(userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT));
 
         if (shouldRunAutonomousSteward(context)) {
             observations.add(autonomousFlowSteward(project, context));
+            executedSignatures.add("autonomous_flow_steward::{}");
             executedPlannedTool = true;
         }
 
         for (OperatorToolCall call : routeOperatorIntents(project, userMessage)) {
             String signature = toolSignature(call);
+            if (executedSignatures.contains(signature)) {
+                continue;
+            }
             executedSignatures.add(signature);
             observations.add(new ToolObservation("intent_router", "ok",
                     "Routed user request to deterministic operator tool: " + signature));
             observations.add(executeToolCall(project, context, userMessage, call));
             executedPlannedTool = true;
+        }
+
+        if (operatorExecutionIntent) {
+            return new OperatorEvidence(observations);
         }
 
         for (int round = 1; round <= maxToolRounds; round++) {
@@ -351,7 +445,7 @@ public class ProjectOperatorService {
                 - Use tools aggressively when facts, code, Docker, Git, tests, PRs, sessions, or execution state may matter.
                 - Use already collected observations before asking for another tool.
                 - When observations are enough for a factual answer, return an empty toolCalls array.
-                - For project health, defects, waste, DPMO, quality, COPQ, or Six Sigma questions, request six_sigma_pareto and operator_waste_guard.
+                - For explicit production-quality, defects, waste, DPMO, COPQ, or Six Sigma questions, request six_sigma_pareto and operator_waste_guard.
                 - For PR review, merge readiness, conflicts, or "what can be merged" questions, request pr_review_and_merge_plan.
                 - For Jules loops, repeated questions, stale sessions, unanswered activity, or "why nobody answers" questions, request jules_activity_triage. If the user asks to fix it, request close_bad_session or recover_blocked_flow.
                 - For "waiting for tasks" or no concrete next task, create_atomic_wishlist then compile_dependency_graph; dispatch_next_best_task when the user asked to start/continue work.
@@ -360,9 +454,9 @@ public class ProjectOperatorService {
                 - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
                 - If repository setup, local environment, .git, workspace, backend/frontend boundary, or setup commands are missing and the user asks to fix/start/continue, request ensure_project_workspace and ensure_environment_bootstrap_work.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
-                - If the user asks to resume, continue, unblock, recover, replace blocked work, or create new corrected tasks after blocked/failed Jules work, request recover_blocked_flow. Do not ask the user to choose blocked task IDs.
+                - If the user asks to resume, continue, unblock, recover, replace failed work, or create new corrected tasks after failed Jules work, request recover_blocked_flow. Do not ask the user to choose task IDs.
                 - If the next step is described only as "waiting for tasks" and no concrete task/owner/role exists, request add_wishlist with a short English atomic work item, then orchestrate_project and dispatch_project when the user explicitly asked to act.
-                - If Six Sigma evidence is critical or COPQ-heavy, prefer recovery, merge-conflict, CTQ, QA, and environment bootstrap tools before feature expansion.
+                - Do not use Six Sigma alone as a reason to stop project work; it is production telemetry for the EMS makers, not the project operator's execution concern.
                 - If the user asks about stale, unmerged, useless, noisy, or cleanup PRs, request close_unmerged_pull_requests before recovery/dispatch.
                 - Prefer multiple narrow tools over one broad generic command.
                 - Max 12 tool calls.
@@ -438,6 +532,10 @@ public class ProjectOperatorService {
     private List<OperatorToolCall> routeOperatorIntents(ProjectEntity project, String userMessage) {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
         List<OperatorToolCall> calls = new ArrayList<>();
+        if (looksLikeOperatorExecutionIntent(lower)) {
+            addRoutedCall(calls, "autonomous_flow_steward",
+                    "User confirmed or asked to continue execution; run the project recovery/dispatch sequence without asking for another confirmation.");
+        }
         if (looksLikeWorkspaceRepairIntent(project, lower)) {
             addRoutedCall(calls, "ensure_project_workspace",
                     "User asked to repair the project workspace or the workspace is not a Git repository.");
@@ -474,7 +572,7 @@ public class ProjectOperatorService {
         }
         if (looksLikeBlockedRecoveryIntent(lower)) {
             addRoutedCall(calls, "recover_blocked_flow",
-                    "User explicitly asked to resume or replace blocked Jules work without manual task selection.");
+                    "User explicitly asked to resume or replace failed Jules work without manual task selection.");
         }
         return calls;
     }
@@ -494,6 +592,44 @@ public class ProjectOperatorService {
         }
         Path workspace = resolveProjectWorkspace(project);
         return !Files.isDirectory(workspace.resolve(".git"));
+    }
+
+    private boolean looksLikeOperatorExecutionIntent(String lower) {
+        String compact = lower == null ? "" : lower.trim();
+        if (Set.of(
+                "ok",
+                "yes",
+                "confirm",
+                "confirmed",
+                "go",
+                "go ahead",
+                "run it",
+                "execute",
+                "start",
+                "continue",
+                "\u0434\u0430",
+                "\u043e\u043a",
+                "\u043e\u043a\u0435\u0439",
+                "\u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0436\u0434\u0430\u044e",
+                "\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439",
+                "\u0437\u0430\u043f\u0443\u0441\u0442\u0438",
+                "\u0438\u043d\u0438\u0446\u0438\u0438\u0440\u0443\u0439",
+                "\u0432\u044b\u043f\u043e\u043b\u043d\u044f\u0439",
+                "\u0434\u0435\u043b\u0430\u0439",
+                "\u043d\u0430\u0447\u0438\u043d\u0430\u0439"
+        ).contains(compact)) {
+            return true;
+        }
+        return containsAny(compact,
+                "go ahead", "run the plan", "execute the plan", "continue the plan", "start recovery",
+                "\u0434\u0432\u0438\u0433\u0430\u0435\u043c\u0441\u044f \u0434\u0430\u043b\u044c\u0448\u0435",
+                "\u0434\u0432\u0438\u0433\u0430\u0439\u0441\u044f \u0434\u0430\u043b\u044c\u0448\u0435",
+                "\u0438\u0434\u0435\u043c \u0434\u0430\u043b\u044c\u0448\u0435",
+                "\u043f\u043e\u0435\u0445\u0430\u043b\u0438",
+                "\u0437\u0430\u043f\u0443\u0441\u043a\u0430\u0439",
+                "\u0438\u043d\u0438\u0446\u0438\u0438\u0440\u0443",
+                "\u0432\u044b\u043f\u043e\u043b\u043d",
+                "\u043f\u0440\u043e\u0434\u043e\u043b\u0436");
     }
 
     private boolean looksLikeStartTestingIntent(String lower) {
@@ -928,7 +1064,8 @@ public class ProjectOperatorService {
             return new ToolObservation("six_sigma_pareto", "missing", "Six Sigma control facts are not available for the selected project.");
         }
         StringBuilder output = new StringBuilder();
-        output.append("Six Sigma control view\n");
+        output.append("Six Sigma EMS production telemetry\n");
+        output.append("scope=production-system-feedback, not a project execution stop condition\n");
         output.append("status=").append(sixSigma.path("statusLabel").asText("NOT AVAILABLE")).append('\n');
         output.append("dpmo=").append(sixSigma.path("dpmo").asText("NOT AVAILABLE")).append('\n');
         output.append("sigmaLevel=").append(sixSigma.path("sigmaLevel").asText("NOT AVAILABLE")).append('\n');
@@ -978,7 +1115,7 @@ public class ProjectOperatorService {
         if (count == 0) {
             output.append("- No live open PRs are available in GitHub evidence.\n");
         }
-        output.append("Action rule: merge only approved, conflict-free PRs with passing checks; otherwise create recovery wishlist for the top blocking CTQ.");
+        output.append("Action rule: merge only approved, conflict-free PRs with passing checks; otherwise create a fresh atomic wishlist item for the top current project risk.");
         return new ToolObservation("pr_review_and_merge_plan", "ok", trim(output.toString()));
     }
 
@@ -995,7 +1132,7 @@ public class ProjectOperatorService {
         output.append("taskCounts=").append(tasks.path("countsByStatus")).append('\n');
         output.append("Guardrail decisions:\n");
         output.append("- If sharedSlotsFree > 0 and queued tasks exist, dispatch flow is the next target; do not claim capacity shortage.\n");
-        output.append("- If Six Sigma is critical, stop feature expansion and work the top CTQ Pareto item first.\n");
+        output.append("- Six Sigma is maker-side production telemetry; do not stop project execution only because of it.\n");
         output.append("- If no task can be named with owner and role, create_atomic_wishlist then compile_dependency_graph.\n");
         output.append("- If a Jules session loops or becomes non-actionable, close_bad_session and let postmortem_to_wishlist produce fresh work.");
         return new ToolObservation("operator_waste_guard", "ok", trim(output.toString()));
@@ -1005,24 +1142,22 @@ public class ProjectOperatorService {
         if (!allowMutatingTools) {
             return false;
         }
-        JsonNode sixSigma = factNode(context, "sixSigmaControl");
         JsonNode tasks = factNode(context, "tasks");
         JsonNode github = factNode(context, "githubPullRequestsLive");
         JsonNode sessions = factNode(context, "julesSessions");
+        JsonNode accounts = factNode(context, "accountsAvailableForProject");
 
-        boolean criticalQuality = "critical".equalsIgnoreCase(sixSigma.path("statusLabel").asText(""));
-        long copq = sixSigma.path("copqProxy").asLong(0);
-        long blocked = tasks.path("countsByStatus").path("blocked").asLong(0);
         long queued = tasks.path("countsByStatus").path("queued").asLong(0);
+        long review = tasks.path("countsByStatus").path("review").asLong(0);
         long openPullRequests = github.path("openCount").asLong(0);
         long stuckSessions = sessions.path("stuck").asLong(0);
         long failedSessions = sessions.path("failed").asLong(0);
+        long apiBlockedAccounts = accounts.path("apiBlocked").asLong(0);
 
-        return criticalQuality
-                || copq >= 10
-                || blocked > 0
-                || queued > 0
+        return queued > 0
+                || review > 0
                 || stuckSessions > 0
+                || apiBlockedAccounts > 0
                 || (openPullRequests > 0 && failedSessions > 0);
     }
 
@@ -1033,23 +1168,21 @@ public class ProjectOperatorService {
         }
 
         StringBuilder output = new StringBuilder();
-        JsonNode sixSigma = factNode(context, "sixSigmaControl");
         JsonNode tasks = factNode(context, "tasks");
         JsonNode github = factNode(context, "githubPullRequestsLive");
         JsonNode sessions = factNode(context, "julesSessions");
+        JsonNode accounts = factNode(context, "accountsAvailableForProject");
         long openPullRequests = github.path("openCount").asLong(0);
-        long blocked = tasks.path("countsByStatus").path("blocked").asLong(0);
 
         output.append("Autonomous EMS steward engaged for selected project.\n")
-                .append("trigger: sixSigmaStatus=").append(sixSigma.path("statusLabel").asText("NOT_AVAILABLE"))
-                .append(", copqProxy=").append(sixSigma.path("copqProxy").asText("0"))
-                .append(", blockedTasks=").append(blocked)
-                .append(", queuedTasks=").append(tasks.path("countsByStatus").path("queued").asText("0"))
+                .append("trigger: queuedTasks=").append(tasks.path("countsByStatus").path("queued").asText("0"))
+                .append(", reviewTasks=").append(tasks.path("countsByStatus").path("review").asText("0"))
                 .append(", openPullRequests=").append(openPullRequests)
                 .append(", stuckSessions=").append(sessions.path("stuck").asText("0"))
+                .append(", apiBlockedAccounts=").append(accounts.path("apiBlocked").asText("0"))
                 .append('\n');
 
-        if (openPullRequests > 0 && (blocked > 0 || "critical".equalsIgnoreCase(sixSigma.path("statusLabel").asText("")))) {
+        if (openPullRequests > 0) {
             appendObservation(output, closeUnmergedPullRequests(project, objectMapper.createObjectNode()
                     .put("reason", "Autonomous EMS steward WIP cleanup: close open unmerged PRs before rebuilding the project flow.")));
         }
@@ -1183,10 +1316,9 @@ public class ProjectOperatorService {
         projectFlowService.dispatchQueuedTasks(project.getId());
         projectFlowService.dispatchReviewTasks(project.getId());
         return new ToolObservation("recover_blocked_flow", "ok",
-                "Recovered " + recovered
-                        + " blocked work item(s), then ran dispatchQueuedTasks + dispatchReviewTasks for project "
+                "Checked recovery flow, created/reused fresh recovery work where applicable, then ran dispatchQueuedTasks + dispatchReviewTasks for project "
                         + project.getId()
-                        + ". Existing blocked tasks remain as evidence; replacement work is created as fresh atomic recovery tasks.");
+                        + ". Historical failed attempts are not active project work.");
     }
 
     private ToolObservation closeUnmergedPullRequests(ProjectEntity project, JsonNode args) {
@@ -1294,7 +1426,7 @@ public class ProjectOperatorService {
         projectFlowService.dispatchQueuedTasks(project.getId());
         projectFlowService.dispatchReviewTasks(project.getId());
         return new ToolObservation("dispatch_next_best_task", "ok",
-                "Ran dependency-aware queued/review dispatch for the selected project. The backend chooses the next eligible task by queue priority, dependency blockers, file-scope conflicts, and universal Jules capacity.");
+                "Ran dependency-aware queued/review dispatch for the selected project. The backend chooses the next eligible task by queue priority, dependency constraints, file-scope conflicts, and universal Jules capacity.");
     }
 
     private ToolObservation closeBadSession(ProjectEntity project, JsonNode args) {
@@ -1608,6 +1740,9 @@ public class ProjectOperatorService {
 
     private boolean isExplicitMutatingRequest(String userMessage) {
         String lower = userMessage == null ? "" : userMessage.toLowerCase(Locale.ROOT);
+        if (looksLikeOperatorExecutionIntent(lower)) {
+            return true;
+        }
         return containsAny(lower,
                 "run ", "start ", "create ", "add ", "execute ", "build ", "pull ", "dispatch", "orchestrate",
                 "continue", "recover", "unblock", "restart", "replace", "remember", "save ", "persist ", "fix", "repair", "clone", "close ",
