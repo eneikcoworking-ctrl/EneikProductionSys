@@ -65,13 +65,9 @@ public class AntigravityDiagnosticService {
             return DiagnosticResult.unavailable("Antigravity integration is disabled.");
         }
 
-        String apiKey = firstNonBlank(
-                settingsService.effectiveValue("antigravity_api_key"),
-                settingsService.effectiveValue("google_ai_api_key"),
-                settingsService.effectiveValue("gemini_api_key")
-        );
+        String apiKey = firstNonBlank(settingsService.effectiveValue("gemini_api_key"));
         if (apiKey == null || apiKey.isBlank()) {
-            return DiagnosticResult.unavailable("Antigravity API key is missing. Configure antigravity_api_key, google_ai_api_key, or gemini_api_key.");
+            return DiagnosticResult.unavailable("Gemini API key is missing. Configure gemini_api_key.");
         }
 
         RepoRef repoRef = repoRef(project);
@@ -154,15 +150,16 @@ public class AntigravityDiagnosticService {
                 : repoHttps;
 
         return """
-                You are Eneik Antigravity Diagnostic Worker.
-                You are not the project manager. Gemini Project Operator delegated one bounded engineering diagnostic mission to you.
+                You are Eneik Antigravity Autonomous Engineering Worker.
+                Gemini Project Operator delegated one bounded engineering mission to you.
 
                 HARD RULES:
                 - Work in English only.
-                - Never modify, merge, or force-push main.
-                - Use exactly this diagnostic branch: %s
-                - Keep code changes minimal and diagnostic. Prefer a small repair plus tests over broad refactoring.
-                - If you cannot safely change code, still produce an evidence-backed diagnosis and follow-up wishlist items.
+                - Do not commit directly to main; work through the dedicated branch and PR flow.
+                - Use exactly this autonomous work branch: %s
+                - Prefer fixing the root cause and proving it with tests over merely describing the issue.
+                - Keep scope coherent with the project facts and operator request; split unrelated discoveries into follow-up wishlist items.
+                - If code cannot be changed safely, produce an evidence-backed diagnosis and concrete follow-up wishlist items.
                 - Do not print, echo, store in files, or reveal credentials. If a token appears in command output, redact it.
                 - Return a final artifact with these exact headings:
                   STATUS
@@ -184,10 +181,11 @@ public class AntigravityDiagnosticService {
                 1. Clone repository.
                 2. Checkout default branch and pull latest.
                 3. Create branch %s from default branch.
-                4. Diagnose the project task/problem using repository evidence.
+                4. Diagnose and, when feasible, repair the project task/problem using repository evidence.
                 5. Run available tests or document why tests cannot run.
                 6. Commit only if you made useful changes.
-                7. If push_requested=true, push branch %s. Do not open or merge a PR unless the repository tooling makes that trivial; branch push is enough.
+                7. If push_requested=true, push branch %s and open a PR when GitHub tooling/API access is available.
+                8. Never merge your own PR; Eneik merge gates decide after review.
 
                 OPERATOR REQUEST:
                 %s
@@ -268,7 +266,7 @@ public class AntigravityDiagnosticService {
         if (clean.isBlank()) {
             clean = "unknown-project";
         }
-        return "ag-diagnostic/" + clean + "/" + BRANCH_TIME.format(Instant.now());
+        return "ag-autonomy/" + clean + "/" + BRANCH_TIME.format(Instant.now());
     }
 
     private String firstNonBlank(String... values) {

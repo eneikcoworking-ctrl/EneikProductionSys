@@ -28,8 +28,7 @@
   };
 
   const settingRows: SettingRow[] = [
-    { key: 'google_ai_api_key', label: 'Google AI key', kind: 'secret', placeholder: 'AI Studio API key' },
-    { key: 'gemini_api_key', label: 'Gemini fallback key', kind: 'secret', placeholder: 'fallback Gemini key' },
+    { key: 'gemini_api_key', label: 'Gemini / Google AI key', kind: 'secret', placeholder: 'AI Studio API key' },
     { key: 'gemini_enabled', label: 'Gemini text', kind: 'toggle' },
     { key: 'gemini_model', label: 'Fast text model', kind: 'text', placeholder: 'gemini-3.5-flash' },
     { key: 'gemini_fallback_models', label: 'Fast fallbacks', kind: 'text', placeholder: 'gemini-3.1-flash-lite,gemini-2.5-flash' },
@@ -44,9 +43,8 @@
     { key: 'veo_enabled', label: 'Veo video', kind: 'toggle' },
     { key: 'veo_model', label: 'Veo model', kind: 'text', placeholder: 'veo-3.1-generate-preview' },
     { key: 'antigravity_enabled', label: 'Antigravity', kind: 'toggle' },
-    { key: 'antigravity_api_key', label: 'Antigravity key', kind: 'secret', placeholder: 'optional separate key' },
     { key: 'antigravity_agent', label: 'Antigravity agent', kind: 'text', placeholder: 'antigravity-preview-05-2026' },
-    { key: 'antigravity_push_enabled', label: 'Diagnostic branch push', kind: 'toggle' }
+    { key: 'antigravity_push_enabled', label: 'Autonomous branch push', kind: 'toggle' }
   ];
 
   let settings = $state<Setting[]>([]);

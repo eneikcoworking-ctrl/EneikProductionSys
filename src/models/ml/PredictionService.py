@@ -66,7 +66,7 @@ def ask_gemini(
 ) -> str:
     # Check if we have an API key configured or in env
     if not api_key:
-        api_key = os.getenv("GOOGLE_AI_API_KEY", "") or os.getenv("GEMINI_API_KEY", "")
+        api_key = os.getenv("GEMINI_API_KEY", "")
 
     if api_key:
         api_key = api_key.strip()

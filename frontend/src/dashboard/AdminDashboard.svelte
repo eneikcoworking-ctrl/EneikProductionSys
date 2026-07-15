@@ -92,7 +92,7 @@
   type IntegrationConfig = {
     name: string;
     enabledKey: string;
-    secretKey: string;
+    secretKey?: string;
     extraKey?: string;
     pushKey?: string;
   };
@@ -102,7 +102,7 @@
     { name: 'Linear', enabledKey: 'linear_enabled', secretKey: 'linear_api_key', extraKey: 'linear_team_id' },
     { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' },
     { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' },
-    { name: 'Antigravity', enabledKey: 'antigravity_enabled', secretKey: 'antigravity_api_key', extraKey: 'antigravity_agent', pushKey: 'antigravity_push_enabled' }
+    { name: 'Antigravity', enabledKey: 'antigravity_enabled', extraKey: 'antigravity_agent', pushKey: 'antigravity_push_enabled' }
   ];
 
   let status = $state<SystemStatus | null>(null);
@@ -347,18 +347,25 @@
               <span>enabled</span>
             </label>
           </div>
-          <div class="setting-line">
-            <span>token</span>
-            {#if editing[integration.secretKey]}
-              <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
-            {:else}
-              <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
-            {/if}
-            <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Edit</button>
-              <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
-                Save
-              </button>
+          {#if integration.secretKey}
+            <div class="setting-line">
+              <span>token</span>
+              {#if editing[integration.secretKey]}
+                <input bind:value={drafts[integration.secretKey]} placeholder="new token" />
+              {:else}
+                <input value={settingByKey(integration.secretKey)?.maskedValue || ''} placeholder="not set" disabled />
+              {/if}
+              <button type="button" class="secondary" onclick={() => startEdit(integration.secretKey)}>Edit</button>
+                <button type="button" onclick={() => saveSetting(integration.secretKey, drafts[integration.secretKey] || '')} disabled={!editing[integration.secretKey]}>
+                  Save
+                </button>
+              </div>
+          {:else if integration.name === 'Antigravity'}
+            <div class="setting-line">
+              <span>key</span>
+              <input value="Uses Gemini / Google AI key" disabled />
             </div>
+          {/if}
 
           {#if integration.extraKey}
             <div class="setting-line">
@@ -384,19 +391,19 @@
                   checked={settingByKey(integration.pushKey)?.enabled === true}
                   onchange={(event) => saveSetting(integration.pushKey, String((event.currentTarget as HTMLInputElement).checked))}
                 />
-                <span>diagnostic branches only</span>
+                <span>autonomous branch + PR flow</span>
               </label>
             </div>
           {/if}
 
           <div class="source-line">
-            <small>{settingByKey(integration.secretKey)?.source || 'none'}</small>
+            <small>{integration.secretKey ? settingByKey(integration.secretKey)?.source || 'none' : 'uses gemini key'}</small>
             {#if integration.name === 'GitHub'}
               <small>{status?.githubAccess?.data?.latest?.ci_status || 'no check yet'}</small>
             {:else if integration.name === 'Linear'}
               <small>{status?.linearCompleteness?.data?.totalIssues ?? 0} issues</small>
             {:else if integration.name === 'Antigravity'}
-              <small>{settingByKey(integration.pushKey || '')?.enabled ? 'branch push enabled' : 'diagnostic only'}</small>
+              <small>{settingByKey(integration.pushKey || '')?.enabled ? 'autonomous branch push enabled' : 'read-only diagnostic'}</small>
             {:else}
               <small>{status?.julesSessions?.data?.total ?? 0} sessions</small>
             {/if}

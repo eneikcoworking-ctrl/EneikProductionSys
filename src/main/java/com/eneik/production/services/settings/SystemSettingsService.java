@@ -144,7 +144,6 @@ public class SystemSettingsService {
         definitions.put("jules_api_key", secret("jules_api_key", "JULES_API_KEY", "JULES_API_KEY"));
         definitions.put("gemini_enabled", flag("gemini_enabled", "GEMINI_ENABLED", "GEMINI_ENABLED"));
         definitions.put("gemini_api_key", secret("gemini_api_key", "GEMINI_API_KEY", "GEMINI_API_KEY"));
-        definitions.put("google_ai_api_key", secret("google_ai_api_key", "GOOGLE_AI_API_KEY", "google-ai.api-key"));
         definitions.put("gemini_model", plain("gemini_model", "GEMINI_MODEL", "gemini.model"));
         definitions.put("gemini_fallback_models", plain("gemini_fallback_models", "GEMINI_FALLBACK_MODELS", "gemini.fallback-models"));
         definitions.put("gemini_pro_model", plain("gemini_pro_model", "GEMINI_PRO_MODEL", "gemini.pro-model"));
@@ -159,7 +158,6 @@ public class SystemSettingsService {
         definitions.put("veo_model", plain("veo_model", "VEO_MODEL", "veo.model"));
         definitions.put("antigravity_enabled", flag("antigravity_enabled", "ANTIGRAVITY_ENABLED", "antigravity.enabled"));
         definitions.put("antigravity_push_enabled", flag("antigravity_push_enabled", "ANTIGRAVITY_PUSH_ENABLED", "antigravity.push-enabled"));
-        definitions.put("antigravity_api_key", secret("antigravity_api_key", "ANTIGRAVITY_API_KEY", "antigravity.api-key"));
         definitions.put("antigravity_agent", plain("antigravity_agent", "ANTIGRAVITY_AGENT", "antigravity.agent"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));

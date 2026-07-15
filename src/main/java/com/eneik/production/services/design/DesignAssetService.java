@@ -55,7 +55,7 @@ public class DesignAssetService {
             return DesignAssetResult.unavailable("Nano Banana image generation is disabled.");
         }
         if (!googleAiResourceService.hasGoogleAiKey()) {
-            return DesignAssetResult.unavailable("Google AI key is not configured.");
+            return DesignAssetResult.unavailable("Gemini API key is not configured.");
         }
 
         String normalizedQuality = quality == null ? "" : quality.toLowerCase(Locale.ROOT);

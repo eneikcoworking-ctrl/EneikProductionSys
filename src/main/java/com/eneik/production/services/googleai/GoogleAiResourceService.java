@@ -46,7 +46,6 @@ public class GoogleAiResourceService {
 
     public List<Map<String, Object>> resourceMatrix() {
         boolean googleKey = hasGoogleAiKey();
-        String credentialSource = googleAiCredentialSource();
         boolean geminiEnabled = settingsService.effectiveBoolean("gemini_enabled");
         boolean antigravityEnabled = settingsService.effectiveBoolean("antigravity_enabled");
         boolean searchEnabled = settingsService.effectiveBoolean("google_search_grounding_enabled");
@@ -63,8 +62,7 @@ public class GoogleAiResourceService {
                 "google_ai_interaction",
                 model("gemini_model", "gemini-3.5-flash"),
                 "assistant_chat, wishlist_compile, task_metadata",
-                googleKey ? "ready" : "missing Google AI key",
-                credentialSource
+                googleKey ? "ready" : "missing Gemini API key"
         ));
         resources.add(resource(
                 "gemini_pro",
@@ -73,8 +71,7 @@ public class GoogleAiResourceService {
                 "google_ai_interaction",
                 model("gemini_pro_model", "gemini-3.1-pro-preview"),
                 "critical_review, Jules dialogue, architecture decisions",
-                googleKey ? "ready" : "missing Google AI key",
-                credentialSource
+                googleKey ? "ready" : "missing Gemini API key"
         ));
         resources.add(resource(
                 "structured_planning",
@@ -83,8 +80,7 @@ public class GoogleAiResourceService {
                 "structured_outputs",
                 model("gemini_pro_model", "gemini-3.1-pro-preview"),
                 "JTBD, Kano, Cynefin, DoD, dependency graph",
-                googleKey ? "ready" : "missing Google AI key",
-                credentialSource
+                googleKey ? "ready" : "missing Gemini API key"
         ));
         resources.add(resource(
                 "google_search_grounding",
@@ -93,8 +89,7 @@ public class GoogleAiResourceService {
                 "google_search",
                 model("gemini_model", "gemini-3.5-flash"),
                 "market, legal, technical freshness",
-                searchEnabled ? googleKey ? "ready" : "missing Google AI key" : "disabled",
-                credentialSource
+                searchEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "url_context",
@@ -103,8 +98,7 @@ public class GoogleAiResourceService {
                 "url_context",
                 model("gemini_model", "gemini-3.5-flash"),
                 "page/PDF/repository docs context",
-                urlEnabled ? googleKey ? "ready" : "missing Google AI key" : "disabled",
-                credentialSource
+                urlEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "nano_banana_design",
@@ -113,8 +107,7 @@ public class GoogleAiResourceService {
                 "image_generation",
                 model("nano_banana_model", "gemini-3.1-flash-image"),
                 "site hero, banner, mockup, visual asset",
-                designEnabled && nanoEnabled ? googleKey ? "ready" : "missing Google AI key" : "disabled",
-                credentialSource
+                designEnabled && nanoEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "nano_banana_pro",
@@ -123,8 +116,7 @@ public class GoogleAiResourceService {
                 "image_generation",
                 model("nano_banana_pro_model", "gemini-3-pro-image"),
                 "brand-sensitive visual asset",
-                designEnabled && nanoEnabled ? googleKey ? "ready" : "missing Google AI key" : "disabled",
-                credentialSource
+                designEnabled && nanoEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "veo_video",
@@ -133,18 +125,16 @@ public class GoogleAiResourceService {
                 "video_generation",
                 model("veo_model", "veo-3.1-generate-preview"),
                 "demo/promo video planning",
-                veoEnabled ? googleKey ? "configured; execution endpoint not wired in phase 1" : "missing Google AI key" : "disabled",
-                credentialSource
+                veoEnabled ? googleKey ? "configured; execution endpoint not wired in phase 1" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
                 "antigravity",
-                "Antigravity Diagnostic Worker",
+                "Antigravity Autonomous Worker",
                 antigravityEnabled && googleKey,
                 "agentic_code_execution",
                 model("antigravity_agent", "antigravity-preview-05-2026"),
-                "deep repository diagnostics, local repair, diagnostic branch",
-                antigravityEnabled ? googleKey ? "ready" : "missing Google AI key" : "disabled",
-                credentialSource
+                "deep repository diagnostics, local repair, autonomous branch and PR flow",
+                antigravityEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         return resources;
     }
@@ -155,7 +145,7 @@ public class GoogleAiResourceService {
             return Map.of(
                     "available", false,
                     "status", "missing_key",
-                    "message", "Google AI key is not configured."
+                    "message", "Gemini API key is not configured."
             );
         }
         try {
@@ -246,7 +236,7 @@ public class GoogleAiResourceService {
     public InteractionResult callInteraction(String model, String input, List<String> toolTypes) {
         String apiKey = googleAiApiKey();
         if (apiKey.isBlank()) {
-            return InteractionResult.unavailable("Google AI key is not configured.");
+            return InteractionResult.unavailable("Gemini API key is not configured.");
         }
         try {
             ObjectNode body = objectMapper.createObjectNode();
@@ -307,20 +297,7 @@ public class GoogleAiResourceService {
     }
 
     public String googleAiApiKey() {
-        return firstNonBlank(
-                settingsService.effectiveValue("google_ai_api_key"),
-                settingsService.effectiveValue("gemini_api_key")
-        );
-    }
-
-    public String googleAiCredentialSource() {
-        if (!blank(settingsService.effectiveValue("google_ai_api_key"))) {
-            return "google_ai_api_key";
-        }
-        if (!blank(settingsService.effectiveValue("gemini_api_key"))) {
-            return "gemini_api_key_fallback";
-        }
-        return "none";
+        return firstNonBlank(settingsService.effectiveValue("gemini_api_key"));
     }
 
     public String model(String settingKey, String fallback) {
@@ -334,8 +311,7 @@ public class GoogleAiResourceService {
                                          String toolType,
                                          String model,
                                          String operatorUse,
-                                         String status,
-                                         String credentialSource) {
+                                         String status) {
         Map<String, Object> resource = new LinkedHashMap<>();
         resource.put("id", id);
         resource.put("name", name);
@@ -344,7 +320,6 @@ public class GoogleAiResourceService {
         resource.put("model", model);
         resource.put("operatorUse", operatorUse);
         resource.put("status", status);
-        resource.put("credentialSource", credentialSource);
         return resource;
     }
 

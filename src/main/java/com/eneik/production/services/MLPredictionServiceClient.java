@@ -39,10 +39,6 @@ public class MLPredictionServiceClient {
     private String getGeminiApiKey() {
         if (settingsService != null) {
             try {
-                String googleAiKey = settingsService.effectiveValue("google_ai_api_key");
-                if (googleAiKey != null && !googleAiKey.isBlank()) {
-                    return googleAiKey;
-                }
                 return settingsService.effectiveValue("gemini_api_key");
             } catch (Exception e) {
                 // Ignore
