@@ -42,14 +42,18 @@ public class JulesApiClient {
     }
 
     public String createSession(String repoUrl, String taskDescription, String roleContext, String apiKey) {
+        return createSessionDetailed(repoUrl, taskDescription, roleContext, apiKey).sessionName();
+    }
+
+    public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {
             log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
-            return "skipped";
+            return new CreateSessionResult("skipped", 0, "jules_disabled");
         }
 
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("Jules API key is not configured. Returning 'skipped'.");
-            return "skipped";
+            return new CreateSessionResult("skipped", 0, "missing_api_key");
         }
 
         try {
@@ -76,17 +80,48 @@ public class JulesApiClient {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 log.warn("Jules session creation failed: status={} body={}", response.statusCode(), response.body());
-                return null;
+                return new CreateSessionResult(null, response.statusCode(), response.body());
             }
 
             JsonNode json = objectMapper.readTree(response.body());
-            return json.path("name").asText(null);
+            return new CreateSessionResult(json.path("name").asText(null), response.statusCode(), "");
         } catch (IOException | InterruptedException e) {
             log.error("Error creating Jules session", e);
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            return null;
+            return new CreateSessionResult(null, 0, e.getMessage());
+        }
+    }
+
+    public record CreateSessionResult(String sessionName, int statusCode, String errorBody) {
+        public boolean dailyLimitOrQuota() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return statusCode == 429
+                    || lower.contains("quota")
+                    || lower.contains("daily")
+                    || lower.contains("rate limit")
+                    || lower.contains("resource_exhausted");
+        }
+
+        public boolean apiPreconditionOrAuthorizationBlocked() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return statusCode == 400
+                    || statusCode == 401
+                    || statusCode == 403
+                    || lower.contains("failed_precondition")
+                    || lower.contains("permission_denied")
+                    || lower.contains("unauthorized")
+                    || lower.contains("forbidden")
+                    || lower.contains("access denied")
+                    || lower.contains("precondition");
+        }
+
+        public String compactError() {
+            if (errorBody == null || errorBody.isBlank()) {
+                return "";
+            }
+            return errorBody.length() <= 500 ? errorBody : errorBody.substring(0, 500);
         }
     }
 

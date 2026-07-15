@@ -97,7 +97,10 @@ public class SystemStatusService {
         Map<String, Long> summary = accounts.stream()
                 .collect(Collectors.groupingBy(account -> account.getStatus().name(), Collectors.counting()));
         long decommissioned = summary.getOrDefault(AccountStatus.decommissioned.name(), 0L);
+        long dailyLimited = summary.getOrDefault(AccountStatus.daily_limited.name(), 0L);
+        long apiBlocked = summary.getOrDefault(AccountStatus.api_blocked.name(), 0L);
         long operational = accounts.size() - decommissioned;
+        long effectiveOperational = operational - dailyLimited - apiBlocked - summary.getOrDefault(AccountStatus.offline.name(), 0L);
         long apiKeyConfigured = accounts.stream()
                 .filter(account -> account.getStatus() != AccountStatus.decommissioned)
                 .filter(account -> account.getApiKey() != null && !account.getApiKey().isBlank())
@@ -106,10 +109,13 @@ public class SystemStatusService {
         Map<String, Object> section = new LinkedHashMap<>();
         section.put("total", accounts.size());
         section.put("operational", operational);
+        section.put("effectiveOperational", Math.max(0, effectiveOperational));
         section.put("apiKeyConfigured", apiKeyConfigured);
         section.put("idle", summary.getOrDefault(AccountStatus.idle.name(), 0L));
         section.put("busy", summary.getOrDefault(AccountStatus.busy.name(), 0L));
         section.put("offline", summary.getOrDefault(AccountStatus.offline.name(), 0L));
+        section.put("dailyLimited", dailyLimited);
+        section.put("apiBlocked", apiBlocked);
         section.put("decommissioned", decommissioned);
         section.put("items", accounts.stream().map(this::accountItem).toList());
         return section;

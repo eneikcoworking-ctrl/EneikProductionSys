@@ -1118,6 +1118,12 @@ public class ProjectFlowService {
                     savedTask.setJulesSessionName(dispatch.sessionName());
                     savedTask.setJulesDispatchStatus(dispatch.reason());
                     taskRepository.save(savedTask);
+                    if (!dispatch.dispatched()) {
+                        claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
+                        log.warn("Failed to dispatch queued task {} of project {} to account {}: {}",
+                                savedTask.getId(), project.getName(), account.getName(), dispatch.reason());
+                        continue;
+                    }
                     log.info("Dispatched queued task {} of project {} to account {}", savedTask.getId(), project.getName(), account.getName());
                 } catch (Exception e) {
                     log.error("Failed to claim/dispatch queued task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
@@ -1217,7 +1223,9 @@ public class ProjectFlowService {
         List<AgentDashboardDto> agents = accountRepository.findAvailableForProjectOrderByNameAsc(projectId).stream()
                 .map(account -> {
                     ClaimEntity activeClaim = claimRepository
-                            .findByAccountIdAndTaskProjectIdAndReleasedAtIsNull(account.getId(), projectId)
+                            .findByAccountIdAndTaskProjectIdAndReleasedAtIsNullOrderByClaimedAtDesc(account.getId(), projectId)
+                            .stream()
+                            .findFirst()
                             .orElse(null);
                     return new AgentDashboardDto(
                             account.getId(),

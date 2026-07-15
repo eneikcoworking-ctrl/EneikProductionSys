@@ -15,6 +15,8 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Optional;
 
 @Service
@@ -87,6 +89,47 @@ public class GitHubPullRequestService {
         }
     }
 
+    public PullRequestCloseReport closeOpenPullRequests(ProjectEntity project, String reason) {
+        if (project == null) {
+            return PullRequestCloseReport.unavailable("", "", "Project is not selected");
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            RepoRef repoRef = repoRef(project);
+            return PullRequestCloseReport.unavailable(repoRef.owner(), repoRef.repo(), "GitHub integration is disabled");
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            RepoRef repoRef = repoRef(project);
+            return PullRequestCloseReport.unavailable(repoRef.owner(), repoRef.repo(), "GitHub token is missing");
+        }
+
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return PullRequestCloseReport.unavailable(repoRef.owner(), repoRef.repo(), "Repository owner/name is missing");
+        }
+
+        try {
+            List<GitHubPullRequest> openPullRequests = fetchPullRequests(repoRef, "open", token);
+            List<PullRequestCloseResult> results = new ArrayList<>();
+            for (GitHubPullRequest pullRequest : openPullRequests) {
+                results.add(closePullRequest(repoRef, pullRequest, token, reason));
+            }
+            long closed = results.stream().filter(result -> "closed".equals(result.status())).count();
+            return new PullRequestCloseReport(
+                    true,
+                    repoRef.owner(),
+                    repoRef.repo(),
+                    openPullRequests.size(),
+                    closed,
+                    results,
+                    ""
+            );
+        } catch (Exception e) {
+            log.warn("Could not close GitHub PRs for {}/{}: {}", repoRef.owner(), repoRef.repo(), e.getMessage());
+            return PullRequestCloseReport.unavailable(repoRef.owner(), repoRef.repo(), e.getMessage());
+        }
+    }
+
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
         String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state=" + encode(state) + "&per_page=100";
         HttpRequest request = baseRequest(path, token).GET().build();
@@ -108,16 +151,50 @@ public class GitHubPullRequestService {
                     pr.path("number").asInt(),
                     pr.path("title").asText(""),
                     pr.path("head").path("ref").asText(""),
-                    pr.path("user").path("login").asText("")
+                    pr.path("user").path("login").asText(""),
+                    pr.hasNonNull("merged_at")
             ));
         }
         return result;
+    }
+
+    private PullRequestCloseResult closePullRequest(RepoRef repoRef,
+                                                   GitHubPullRequest pullRequest,
+                                                   String token,
+                                                   String reason) throws Exception {
+        String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullRequest.number();
+        String body = "{\"state\":\"closed\"}";
+        HttpRequest request = baseRequest(path, token)
+                .method("PATCH", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            log.info("Closed GitHub PR {} for {}/{} as WIP cleanup. reason={}",
+                    pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
+            return new PullRequestCloseResult(
+                    pullRequest.number(),
+                    pullRequest.url(),
+                    "closed",
+                    response.statusCode(),
+                    "Closed as explicit operator WIP cleanup."
+            );
+        }
+        log.warn("GitHub PR close failed for {}: status={} body={}",
+                pullRequest.url(), response.statusCode(), preview(response.body()));
+        return new PullRequestCloseResult(
+                pullRequest.number(),
+                pullRequest.url(),
+                "failed",
+                response.statusCode(),
+                preview(response.body())
+        );
     }
 
     private HttpRequest.Builder baseRequest(String path, String token) {
         return HttpRequest.newBuilder(URI.create(githubConfig.getApiBaseUrl().replaceAll("/+$", "") + path))
                 .header("Authorization", "Bearer " + token)
                 .header("Accept", "application/vnd.github+json")
+                .header("Content-Type", "application/json")
                 .header("X-GitHub-Api-Version", "2022-11-28");
     }
 
@@ -155,7 +232,29 @@ public class GitHubPullRequestService {
 
     private record RepoRef(String owner, String repo) {}
 
-    public record GitHubPullRequest(String url, int number, String title, String headRef, String author) {}
+    public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged) {}
+
+    public record PullRequestCloseResult(
+            int number,
+            String url,
+            String status,
+            int statusCode,
+            String message
+    ) {}
+
+    public record PullRequestCloseReport(
+            boolean available,
+            String owner,
+            String repo,
+            int requested,
+            long closed,
+            List<PullRequestCloseResult> results,
+            String error
+    ) {
+        static PullRequestCloseReport unavailable(String owner, String repo, String error) {
+            return new PullRequestCloseReport(false, owner, repo, 0, 0, List.of(), error);
+        }
+    }
 
     public record PullRequestSnapshot(
             boolean available,
@@ -165,6 +264,10 @@ public class GitHubPullRequestService {
             java.util.List<GitHubPullRequest> closed,
             String error
     ) {
+        public long closedUnmergedCount() {
+            return closed == null ? 0 : closed.stream().filter(pr -> !pr.merged()).count();
+        }
+
         static PullRequestSnapshot unavailable(String owner, String repo, String error) {
             return new PullRequestSnapshot(false, owner, repo, java.util.List.of(), java.util.List.of(), error);
         }

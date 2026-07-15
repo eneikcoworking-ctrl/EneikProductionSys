@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
@@ -35,6 +36,36 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     void updateStatus(@Param("id") UUID id, @Param("status") AccountStatus status);
 
     @Modifying
+    @Transactional
+    @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle " +
+            "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited")
+    int resetDailyLimitedAccounts();
+
+    @Modifying
+    @Transactional
+    @Query(value = """
+            UPDATE accounts
+            SET status = 'api_blocked'
+            WHERE status = 'daily_limited'
+              AND id IN (
+                  SELECT DISTINCT account_id
+                  FROM jules_sessions s
+                  WHERE s.account_id IS NOT NULL
+                    AND s.updated_at = (
+                        SELECT MAX(s2.updated_at)
+                        FROM jules_sessions s2
+                        WHERE s2.account_id = s.account_id
+                          AND s2.status = 'failed'
+                    )
+                    AND (
+                        LOWER(COALESCE(s.closure_reason, '')) LIKE '%failed_precondition%'
+                        OR LOWER(COALESCE(s.closure_reason, '')) LIKE '%precondition%'
+                    )
+              )
+            """, nativeQuery = true)
+    int reclassifyPreconditionDailyLimitedAccounts();
+
+    @Modifying
     @Query("UPDATE AccountEntity a SET a.currentProjectId = :newProjectId " +
            "WHERE a.currentProjectId IS NULL " +
            "OR a.currentProjectId IN (SELECT p.id FROM ProjectEntity p WHERE p.status = com.eneik.production.models.persistence.ProjectStatus.accepted)")
@@ -54,7 +85,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.enabled = true
-              AND a.status <> 'decommissioned'
+              AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR :tag IS NOT NULL)
               AND (
@@ -82,7 +113,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query(value = """
             SELECT COUNT(*) > 0 FROM accounts a
             WHERE a.enabled = true
-              AND a.status <> 'decommissioned'
+              AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (:tag IS NULL OR :tag IS NOT NULL)
               AND (
                   SELECT COUNT(*)

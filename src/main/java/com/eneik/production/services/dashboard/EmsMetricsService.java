@@ -341,7 +341,7 @@ public class EmsMetricsService {
         long linkedEdges = tasks.stream().filter(task -> task.getDependsOn() != null).count();
         long blockedByDependency = tasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.queued)
-                .filter(task -> task.getDependsOn() != null && !isDoneLike(task.getDependsOn()))
+                .filter(task -> task.getDependsOn() != null && !isTerminalForDependency(task.getDependsOn()))
                 .count();
         long duplicateSemanticKeys = duplicateSemanticKeys(tasks);
         double graphCoverage = ratio(graphTasks, tasks.size());
@@ -491,6 +491,10 @@ public class EmsMetricsService {
 
     private boolean isDoneLike(TaskEntity task) {
         return task != null && (task.getStatus() == TaskStatus.done || task.getStatus() == TaskStatus.spike_completed);
+    }
+
+    private boolean isTerminalForDependency(TaskEntity task) {
+        return isDoneLike(task) || isBlockedLike(task);
     }
 
     private boolean isActiveLike(TaskEntity task) {

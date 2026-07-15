@@ -2,11 +2,13 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import com.eneik.production.services.MLPredictionServiceClient;
 
 import java.util.List;
@@ -17,6 +19,7 @@ public class ContinuousOrchestrationService {
 
     private final ProjectRepository projectRepository;
     private final ProjectFlowService projectFlowService;
+    private final AccountRepository accountRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.services.jules.JulesDispatchService julesDispatchService;
     private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
@@ -25,6 +28,7 @@ public class ContinuousOrchestrationService {
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
+                                         AccountRepository accountRepository,
                                          com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                          com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
                                          com.eneik.production.repositories.WishlistRepository wishlistRepository,
@@ -32,6 +36,7 @@ public class ContinuousOrchestrationService {
                                          MLPredictionServiceClient mlPredictionServiceClient) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
+        this.accountRepository = accountRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.julesDispatchService = julesDispatchService;
         this.wishlistRepository = wishlistRepository;
@@ -41,6 +46,8 @@ public class ContinuousOrchestrationService {
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
     public void continuousOrchestrate() {
+        repairMisclassifiedJulesAccountLimits();
+
         try {
             julesDispatchService.runSessionSafetyMaintenance();
         } catch (Exception e) {
@@ -66,6 +73,23 @@ public class ContinuousOrchestrationService {
             } catch (Exception e) {
                 log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
             }
+        }
+    }
+
+    @Scheduled(cron = "${jules.daily-limit-reset-cron:0 5 0 * * ?}")
+    @Transactional
+    public void resetDailyLimitedAccounts() {
+        int reset = accountRepository.resetDailyLimitedAccounts();
+        if (reset > 0) {
+            log.info("Continuous Orchestration: Reset {} Jules account(s) from daily_limited to idle", reset);
+        }
+    }
+
+    @Transactional
+    public void repairMisclassifiedJulesAccountLimits() {
+        int repaired = accountRepository.reclassifyPreconditionDailyLimitedAccounts();
+        if (repaired > 0) {
+            log.warn("Continuous Orchestration: Reclassified {} Jules account(s) from daily_limited to api_blocked because the latest evidence is precondition/API refusal, not quota", repaired);
         }
     }
 

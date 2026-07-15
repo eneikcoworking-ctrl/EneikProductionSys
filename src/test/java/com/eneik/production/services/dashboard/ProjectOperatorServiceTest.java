@@ -6,6 +6,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -33,6 +34,7 @@ class ProjectOperatorServiceTest {
         MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
+        GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -41,6 +43,7 @@ class ProjectOperatorServiceTest {
                 mlPredictionServiceClient,
                 projectFlowService,
                 claimService,
+                gitHubPullRequestService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -108,6 +111,7 @@ class ProjectOperatorServiceTest {
         MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
+        GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -116,6 +120,7 @@ class ProjectOperatorServiceTest {
                 mlPredictionServiceClient,
                 projectFlowService,
                 claimService,
+                gitHubPullRequestService,
                 settingsService,
                 "project-workspaces",
                 ".",
@@ -182,6 +187,7 @@ class ProjectOperatorServiceTest {
         MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
+        GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
         SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
         ProjectOperatorService service = new ProjectOperatorService(
@@ -190,6 +196,7 @@ class ProjectOperatorServiceTest {
                 mlPredictionServiceClient,
                 projectFlowService,
                 claimService,
+                gitHubPullRequestService,
                 settingsService,
                 "project-workspaces",
                 ".",

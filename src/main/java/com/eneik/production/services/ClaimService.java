@@ -283,6 +283,28 @@ public class ClaimService {
         });
     }
 
+    @Transactional
+    public void releaseClaimToQueue(UUID taskId, String reason) {
+        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.failed);
+            claimRepository.save(claim);
+
+            accountRepository.findById(claim.getAccount().getId()).ifPresent(account -> {
+                if (account.getStatus() != AccountStatus.daily_limited && account.getStatus() != AccountStatus.api_blocked) {
+                    account.setStatus(AccountStatus.idle);
+                    accountRepository.save(account);
+                }
+            });
+        });
+
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setStatus(TaskStatus.queued);
+            task.setJulesDispatchStatus(reason);
+            taskRepository.save(task);
+        });
+    }
+
     private ClaimEntity findActiveClaimByTaskId(UUID taskId) {
         return claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active claim for task " + taskId));
@@ -359,8 +381,10 @@ public class ClaimService {
                 taskRepository.save(task);
 
                 accountRepository.findById(claim.getAccount().getId()).ifPresent(acc -> {
-                    acc.setStatus(AccountStatus.idle);
-                    accountRepository.save(acc);
+                    if (acc.getStatus() != AccountStatus.daily_limited && acc.getStatus() != AccountStatus.api_blocked) {
+                        acc.setStatus(AccountStatus.idle);
+                        accountRepository.save(acc);
+                    }
                 });
             }
         }

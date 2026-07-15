@@ -121,6 +121,7 @@ public class ProjectOperationalContextService {
         GitHubPullRequestService.PullRequestSnapshot pullRequests = gitHubPullRequestService.pullRequestSnapshot(project);
         PrStats prStats = prStats(pullRequests, reviews);
         Map<String, Object> systemStatus = systemStatusService.getStatus(project.getId());
+        Object sixSigmaControl = augmentSixSigmaWithGithubPrDefects(sectionData(systemStatus.get("sixSigma")), pullRequests);
 
         Map<String, Object> factPack = new LinkedHashMap<>();
         factPack.put("scope", "selected_project_only");
@@ -136,7 +137,7 @@ public class ProjectOperationalContextService {
         factPack.put("julesUniversalRoleCapacity", julesCapacityFacts(tasks, accounts, sessions));
         factPack.put("conflicts", conflictFacts(conflicts));
         factPack.put("bottlenecks", bottleneckFacts(project.getId()));
-        factPack.put("sixSigmaControl", systemStatus.get("sixSigma"));
+        factPack.put("sixSigmaControl", sixSigmaControl);
         factPack.put("systemStatusProjectOnly", systemStatus);
         factPack.put("rules", List.of(
                 "No global system data is included in this fact pack.",
@@ -148,6 +149,8 @@ public class ProjectOperationalContextService {
                 "If sixSigmaControl.statusLabel is critical or COPQ is high, stop expanding feature scope and prioritize the top CTQ defects, active merge conflicts, recovery work, and verification tasks.",
                 "Blocked tasks are terminal evidence for failed attempts, not a request for the human operator to choose IDs. If sharedSlotsFree > 0, the recovery path is to create/compile fresh atomic recovery work and dispatch it.",
                 "Use githubPullRequestsLive for current GitHub open/closed PR counts.",
+                "Closed-but-unmerged PRs are defects/scrap work. They must be counted as integration waste, not as successful delivery.",
+                "Blocked tasks are defects and terminal evidence. They must not block fresh recovery tasks from moving forward.",
                 "Use databasePrReviews for review decisions and merge results.",
                 "If a fact is absent from this pack, say it is not available instead of guessing."
         ));
@@ -229,6 +232,13 @@ public class ProjectOperationalContextService {
         return fact;
     }
 
+    private Object sectionData(Object section) {
+        if (section instanceof Map<?, ?> map && map.containsKey("data")) {
+            return map.get("data");
+        }
+        return section;
+    }
+
     private Map<String, Object> githubFact(GitHubPullRequestService.PullRequestSnapshot snapshot) {
         Map<String, Object> fact = new LinkedHashMap<>();
         fact.put("available", snapshot.available());
@@ -237,8 +247,10 @@ public class ProjectOperationalContextService {
         fact.put("error", snapshot.error());
         fact.put("openCount", snapshot.open().size());
         fact.put("closedCount", snapshot.closed().size());
+        fact.put("closedUnmergedCount", snapshot.closedUnmergedCount());
         fact.put("open", snapshot.open().stream().map(this::pullRequestFact).toList());
         fact.put("closed", snapshot.closed().stream().map(this::pullRequestFact).toList());
+        fact.put("closedUnmerged", snapshot.closed().stream().filter(pr -> !pr.merged()).map(this::pullRequestFact).toList());
         return fact;
     }
 
@@ -249,7 +261,58 @@ public class ProjectOperationalContextService {
         fact.put("author", pr.author());
         fact.put("headRef", pr.headRef());
         fact.put("url", pr.url());
+        fact.put("merged", pr.merged());
         return fact;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Object augmentSixSigmaWithGithubPrDefects(Object rawSixSigma,
+                                                       GitHubPullRequestService.PullRequestSnapshot pullRequests) {
+        if (!(rawSixSigma instanceof Map<?, ?> rawMap)) {
+            return rawSixSigma;
+        }
+        Map<String, Object> sixSigma = new LinkedHashMap<>();
+        rawMap.forEach((key, value) -> sixSigma.put(String.valueOf(key), value));
+        long closedUnmerged = pullRequests == null ? 0 : pullRequests.closedUnmergedCount();
+        if (closedUnmerged <= 0) {
+            return sixSigma;
+        }
+
+        long totalOpportunities = longValue(sixSigma.get("totalOpportunities")) + closedUnmerged;
+        long totalDefects = longValue(sixSigma.get("totalDefects")) + closedUnmerged;
+        sixSigma.put("totalOpportunities", totalOpportunities);
+        sixSigma.put("totalDefects", totalDefects);
+        sixSigma.put("closedUnmergedPrDefects", closedUnmerged);
+        sixSigma.put("dpmo", round(totalOpportunities == 0 ? 0.0 : (totalDefects / (double) totalOpportunities) * 1_000_000.0));
+        sixSigma.put("yieldRate", round(totalOpportunities == 0 ? 0.0 : (totalOpportunities - totalDefects) / (double) totalOpportunities));
+        sixSigma.put("copqProxy", longValue(sixSigma.get("copqProxy")) + (closedUnmerged * 4));
+
+        List<Map<String, Object>> pareto = new ArrayList<>();
+        Object rawPareto = sixSigma.get("ctqPareto");
+        if (rawPareto instanceof List<?> rows) {
+            for (Object row : rows) {
+                if (row instanceof Map<?, ?> map) {
+                    Map<String, Object> copy = new LinkedHashMap<>();
+                    map.forEach((key, value) -> copy.put(String.valueOf(key), value));
+                    pareto.add(copy);
+                }
+            }
+        }
+        Map<String, Object> githubRow = new LinkedHashMap<>();
+        githubRow.put("source", "github_pr");
+        githubRow.put("ctq", "closed_unmerged_pr");
+        githubRow.put("name", "Closed unmerged PR");
+        githubRow.put("opportunities", Math.max(1, pullRequests.closed().size()));
+        githubRow.put("defects", closedUnmerged);
+        githubRow.put("defectShare", round(totalDefects == 0 ? 0.0 : closedUnmerged / (double) totalDefects));
+        githubRow.put("dpmo", round((closedUnmerged / (double) Math.max(1, pullRequests.closed().size())) * 1_000_000.0));
+        pareto.add(githubRow);
+        pareto.sort(Comparator.comparingLong(row -> -longValue(row.get("defects"))));
+        sixSigma.put("ctqPareto", pareto.stream().limit(8).toList());
+        sixSigma.put("statusLabel", "critical");
+        sixSigma.put("interpretation", "Closed-but-unmerged PRs are integration scrap defects; recover by closing WIP debt and creating fresh atomic tasks.");
+        sixSigma.put("recommendedAction", "Treat closed-unmerged PRs and blocked tasks as defect load; do not expand scope until recovery work is dispatched.");
+        return sixSigma;
     }
 
     private Map<String, Object> taskFacts(List<TaskEntity> tasks) {
@@ -409,6 +472,15 @@ public class ProjectOperationalContextService {
         Map<String, Object> fact = new LinkedHashMap<>();
         fact.put("total", accounts.size());
         fact.put("countsByStatus", counts);
+        fact.put("dailyLimited", counts.getOrDefault(AccountStatus.daily_limited.name(), 0L));
+        fact.put("apiBlocked", counts.getOrDefault(AccountStatus.api_blocked.name(), 0L));
+        fact.put("effectiveOperational", accounts.stream()
+                .filter(AccountEntity::isEnabled)
+                .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> account.getStatus() != AccountStatus.offline)
+                .filter(account -> account.getStatus() != AccountStatus.daily_limited)
+                .filter(account -> account.getStatus() != AccountStatus.api_blocked)
+                .count());
         fact.put("universalRoleInvariant", "Every enabled Jules account is capable of every BARCAN-TAG-00..11 role.");
         fact.put("maxConcurrentSessionsPerAccount", maxConcurrentJulesSessionsPerAccount);
         fact.put("items", accounts.stream().map(account -> accountFact(account, activeCapacitySessionsByAccount, trackedSessionsByAccount)).toList());
@@ -423,6 +495,11 @@ public class ProjectOperationalContextService {
         fact.put("id", account.getId());
         fact.put("name", account.getName());
         fact.put("status", account.getStatus());
+        fact.put("effectiveStatus", account.getStatus() == AccountStatus.daily_limited
+                ? "daily_limited_no_new_sessions"
+                : account.getStatus() == AccountStatus.api_blocked
+                ? "jules_api_blocked_no_new_sessions"
+                : account.getStatus().name());
         fact.put("enabled", account.isEnabled());
         fact.put("currentProjectId", account.getCurrentProjectId());
         fact.put("githubUsername", account.getGithubUsername());
@@ -431,7 +508,9 @@ public class ProjectOperationalContextService {
         fact.put("activeCapacitySessions", capacitySessions);
         fact.put("trackedActiveProjectSessions", trackedSessionsByAccount.getOrDefault(account.getId(), 0L));
         fact.put("maxConcurrentSessions", maxConcurrentJulesSessionsPerAccount);
-        fact.put("freeSessionSlots", Math.max(0, maxConcurrentJulesSessionsPerAccount - capacitySessions));
+        fact.put("freeSessionSlots", account.getStatus() == AccountStatus.daily_limited || account.getStatus() == AccountStatus.api_blocked
+                ? 0
+                : Math.max(0, maxConcurrentJulesSessionsPerAccount - capacitySessions));
         fact.put("lastHeartbeat", text(account.getLastHeartbeat()));
         return fact;
     }
@@ -442,6 +521,9 @@ public class ProjectOperationalContextService {
         List<AccountEntity> enabledAccounts = accounts.stream()
                 .filter(AccountEntity::isEnabled)
                 .filter(account -> account.getStatus() != AccountStatus.decommissioned)
+                .filter(account -> account.getStatus() != AccountStatus.offline)
+                .filter(account -> account.getStatus() != AccountStatus.daily_limited)
+                .filter(account -> account.getStatus() != AccountStatus.api_blocked)
                 .toList();
         Map<UUID, AccountEntity> enabledById = enabledAccounts.stream()
                 .filter(account -> account.getId() != null)
@@ -464,12 +546,16 @@ public class ProjectOperationalContextService {
         fact.put("allRoleTags", JulesRoleCapabilities.ALL_ROLE_TAGS);
         fact.put("maxConcurrentSessionsPerAccount", maxConcurrentJulesSessionsPerAccount);
         fact.put("enabledAccounts", enabledAccounts.size());
+        fact.put("dailyLimitedAccounts", accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count());
+        fact.put("apiBlockedAccounts", accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count());
         fact.put("sharedSlotsTotal", sharedSlotsTotal);
         fact.put("sharedSlotsUsed", activeCapacitySessions);
         fact.put("sharedSlotsFree", sharedSlotsFree);
         fact.put("queuedTasksByRole", queuedByRole);
         fact.put("interpretationRules", List.of(
                 "If sharedSlotsFree > 0, do not claim a Jules capacity shortage.",
+                "Accounts with status daily_limited have zero effective new-session capacity until their explicit Jules quota/rate limit resets.",
+                "Accounts with status api_blocked are not daily-limited; inspect the latest create-session HTTP error, repository access, sourceContext, and API authorization.",
                 "If queuedTasksByRole is non-empty and sharedSlotsFree > 0, the next diagnostic target is dispatch flow, stuck claims, API errors, or project/task conflict rules.",
                 "Never diagnose missing BARCAN capability unless universalRolePool is false."
         ));
@@ -601,6 +687,24 @@ public class ProjectOperationalContextService {
         }
         int index = prUrl.lastIndexOf('/');
         return index >= 0 ? "PR #" + prUrl.substring(index + 1) : prUrl;
+    }
+
+    private long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value instanceof String string && !string.isBlank()) {
+            try {
+                return Long.parseLong(string);
+            } catch (NumberFormatException ignored) {
+                return 0L;
+            }
+        }
+        return 0L;
+    }
+
+    private double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
     }
 
     private String firstSentence(String value) {

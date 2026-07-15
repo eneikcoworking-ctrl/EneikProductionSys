@@ -24,6 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
@@ -74,6 +75,30 @@ class JulesDispatchServiceTest {
         assertEquals("failed", julesDispatchService.mapExternalStatus("CANCELLED"));
         assertEquals("running", julesDispatchService.mapExternalStatus("UNKNOWN"));
         assertEquals("running", julesDispatchService.mapExternalStatus(null));
+    }
+
+    @Test
+    void failedPreconditionIsApiBlockedNotDailyLimit() {
+        JulesApiClient.CreateSessionResult result = new JulesApiClient.CreateSessionResult(
+                null,
+                400,
+                "{\"error\":{\"status\":\"FAILED_PRECONDITION\",\"message\":\"Repository access is not ready\"}}"
+        );
+
+        assertFalse(result.dailyLimitOrQuota());
+        assertTrue(result.apiPreconditionOrAuthorizationBlocked());
+    }
+
+    @Test
+    void explicitQuotaErrorIsDailyLimit() {
+        JulesApiClient.CreateSessionResult result = new JulesApiClient.CreateSessionResult(
+                null,
+                429,
+                "{\"error\":{\"status\":\"RESOURCE_EXHAUSTED\",\"message\":\"daily quota exceeded\"}}"
+        );
+
+        assertTrue(result.dailyLimitOrQuota());
+        assertFalse(result.apiPreconditionOrAuthorizationBlocked());
     }
 
     @Test
@@ -239,25 +264,25 @@ class JulesDispatchServiceTest {
         task.setDescription("Implement one dashboard UI slice.");
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
-        when(julesApiClient.createSession(eq("prefix/repo"), eq("Implement one dashboard UI slice."), anyString()))
-                .thenReturn("sessions/new");
+        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), eq("Implement one dashboard UI slice."), anyString(), isNull()))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
 
         JulesDispatchResult result = julesDispatchService.dispatch(task);
 
         assertTrue(result.dispatched());
-        verify(julesApiClient).createSession(eq("prefix/repo"), eq("Implement one dashboard UI slice."), argThat(context ->
+        verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), eq("Implement one dashboard UI slice."), argThat(context ->
                 context.contains("## Compact Role Guide")
                         && context.contains("Use English only")
                         && context.contains("docs/DESIGN_SYSTEM.md")
                         && !context.contains("FULL ROLE CHARTER")
                         && !context.contains("REFUSAL CRITERIA")
-        ));
+        ), isNull());
     }
 
     @Test
-    void repeatedPrReviewArtifactBlockerClosesLoopInsteadOfSpammingJules() {
+    void repeatedPrReviewArtifactBlockerCreatesDebtInsteadOfStoppingFlow() {
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -309,14 +334,15 @@ class JulesDispatchServiceTest {
 
         julesDispatchService.handlePrOpenedWorkflow(session);
 
-        assertEquals("loop_closed", session.getStatus());
+        assertEquals("pr_opened", session.getStatus());
+        assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());
         verify(julesApiClient, never()).sendMessage(anyString(), anyString());
         verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
-        verify(claimService).closeTaskAsBlocked(eq(taskId), contains("repository_hygiene_review_repeated"));
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), contains("repository_hygiene_review_repeated"));
         verify(wishlistRepository).save(argThat(item ->
                 item instanceof WishlistEntity
-                        && ((WishlistEntity) item).getContent().contains("Kano: Must-Be")
-                        && ((WishlistEntity) item).getContent().contains("clean the existing PR branch")
+                        && ((WishlistEntity) item).getContent().contains("Repository hygiene technical debt")
+                        && ((WishlistEntity) item).getContent().contains("minor generated/local artifact")
         ));
     }
 }

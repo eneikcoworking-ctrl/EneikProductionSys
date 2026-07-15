@@ -1,6 +1,7 @@
 package com.eneik.production.services.dashboard;
 
 import com.eneik.production.dto.dashboard.BottleneckDto;
+import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -50,12 +51,21 @@ public class BottleneckDetectionService {
                     maxConcurrentJulesSessionsPerAccount
             );
             if (!hasCapacity && row.oldestWaitingMinutes() > WAITING_THRESHOLD_MINUTES) {
+                var accounts = accountRepository.findAll();
+                long dailyLimited = accounts.stream().filter(account -> account.getStatus() == AccountStatus.daily_limited).count();
+                long apiBlocked = accounts.stream().filter(account -> account.getStatus() == AccountStatus.api_blocked).count();
+                String reason = "All Jules accounts are universal role-capable; the shared account pool has no free session slot for queued " + row.tag() + " work";
+                if (dailyLimited > 0 || apiBlocked > 0) {
+                    reason += ". Capacity reduction: daily_limited=" + dailyLimited
+                            + ", api_blocked=" + apiBlocked
+                            + ". api_blocked is not a daily limit; inspect Jules create-session errors and repository/API authorization.";
+                }
                 result.add(new BottleneckDto(
                         "no_free_jules_slot",
                         row.tag(),
                         row.count(),
                         row.oldestWaitingMinutes(),
-                        "All Jules accounts are universal role-capable; the shared account pool has no free session slot for queued " + row.tag() + " work"
+                        reason
                 ));
             }
         });

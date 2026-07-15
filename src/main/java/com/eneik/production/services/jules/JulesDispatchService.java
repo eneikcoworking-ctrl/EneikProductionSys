@@ -1,6 +1,7 @@
 package com.eneik.production.services.jules;
 
 import com.eneik.production.dto.RoleRules;
+import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
@@ -134,10 +135,21 @@ public class JulesDispatchService {
         }
 
         JulesSessionEntity session = dispatchInternal(task, accountId, mode);
+        boolean dispatched = "running".equals(session.getStatus()) || "queued".equals(session.getStatus());
+        String reason;
+        if ("skipped".equals(session.getExternalSessionId())) {
+            reason = "Jules integration disabled";
+        } else if (!dispatched) {
+            reason = session.getClosureReason() == null || session.getClosureReason().isBlank()
+                    ? "Jules session creation failed"
+                    : session.getClosureReason();
+        } else {
+            reason = "Dispatched to Jules";
+        }
         return new JulesDispatchResult(
-                "running".equals(session.getStatus()) || "queued".equals(session.getStatus()),
+                dispatched,
                 session.getExternalSessionId(),
-                "skipped".equals(session.getExternalSessionId()) ? "Jules integration disabled" : "Dispatched to Jules"
+                reason
         );
     }
 
@@ -256,15 +268,37 @@ public class JulesDispatchService {
                     .orElse(null);
         }
 
-        String externalId = apiKey != null
-                ? julesApiClient.createSession(repoUrl, description, roleContext, apiKey)
-                : julesApiClient.createSession(repoUrl, description, roleContext);
+        JulesApiClient.CreateSessionResult createResult = apiKey != null
+                ? julesApiClient.createSessionDetailed(repoUrl, description, roleContext, apiKey)
+                : julesApiClient.createSessionDetailed(repoUrl, description, roleContext, null);
+        if (createResult == null) {
+            createResult = new JulesApiClient.CreateSessionResult(null, 0, "Jules API client returned no create-session result");
+        }
+        String externalId = createResult.sessionName();
 
         if ("skipped".equals(externalId)) {
             session.setStatus("queued");
             session.setExternalSessionId("skipped");
         } else if (externalId == null) {
             session.setStatus("failed");
+            session.setClosureReason("jules_create_session_failed"
+                    + (createResult.statusCode() > 0 ? ": HTTP " + createResult.statusCode() : "")
+                    + (createResult.compactError().isBlank() ? "" : " " + createResult.compactError()));
+            if (accountId != null && createResult.dailyLimitOrQuota()) {
+                accountRepository.findById(accountId).ifPresent(account -> {
+                    account.setStatus(AccountStatus.daily_limited);
+                    accountRepository.save(account);
+                });
+                session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
+                        + session.getClosureReason());
+            } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
+                accountRepository.findById(accountId).ifPresent(account -> {
+                    account.setStatus(AccountStatus.api_blocked);
+                    accountRepository.save(account);
+                });
+                session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
+                        + "This is not a daily limit. " + session.getClosureReason());
+            }
         } else {
             session.setExternalSessionId(externalId);
             session.setStatus("running");
@@ -665,6 +699,57 @@ public class JulesDispatchService {
                 || lower.contains(".webm");
     }
 
+    private boolean isSoftGeneratedArtifactDebt(String text) {
+        if (!mentionsGeneratedArtifact(text)) {
+            return false;
+        }
+        String lower = text == null ? "" : text.toLowerCase(Locale.ROOT);
+        boolean hardRisk = lower.contains(".env")
+                || lower.contains("secret")
+                || lower.contains("token")
+                || lower.contains("password")
+                || lower.contains("credential")
+                || lower.contains("node_modules")
+                || lower.contains("binary repository");
+        return !hardRisk;
+    }
+
+    private void createRepositoryHygieneDebtWishlist(TaskEntity task, String remarks) {
+        if (task == null || task.getProject() == null || task.getProject().getId() == null) {
+            return;
+        }
+        String content = """
+                Repository hygiene technical debt from a delivered PR.
+                Source: minor generated/local artifact was detected during review, but it is non-secret and should not block product flow.
+                JTBD: When the project has delivered value with small local artifacts, I want repository hygiene cleaned in a separate short task, so delivery continues without normalizing artifact debt.
+                Owner role: BARCAN-TAG-00.
+                Kano: Performance.
+                Cynefin: clear.
+                DoD: Remove minor generated/local artifacts if present, update ignore rules where needed, and verify no secrets or heavy generated folders are tracked.
+                Review note: %s
+                """.formatted(truncate(remarks, 700));
+        boolean exists = wishlistRepository.findByProjectId(task.getProject().getId()).stream()
+                .anyMatch(item -> item.getContent() != null
+                        && item.getContent().contains("Repository hygiene technical debt from a delivered PR")
+                        && item.getContent().contains(task.getId().toString()));
+        if (exists) {
+            return;
+        }
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(task.getProject().getId());
+        wishlist.setSource(WishlistSource.role);
+        wishlist.setSourceRoleTag("BARCAN-TAG-00");
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setContent(content + "\nOriginal task: " + task.getId());
+        wishlist.setJtbd("When minor repository artifacts exist after delivery, clean them as separate technical debt without blocking product flow.");
+        wishlist.setTocConstraintRef("REPOSITORY-HYGIENE-DEBT");
+        wishlist.setSixSigmaMetric("closed_unmerged_pr_and_artifact_debt");
+        wishlist.setDod("Minor artifacts are removed or documented, ignore rules are adjusted, and no secrets/heavy generated folders are tracked.");
+        wishlist.setAcceptanceCriteria("Given repository hygiene debt exists, When cleanup runs, Then product functionality remains unchanged and artifact risk is reduced.");
+        wishlist.setCompiledByRole("BARCAN-TAG-00");
+        wishlistRepository.save(wishlist);
+    }
+
     private String generatedArtifactRemediation(TaskEntity task, long previousSimilarQuestions) {
         String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
         String marker = detectedGeneratedArtifactMarker(task != null ? task.getDescription() : null);
@@ -672,22 +757,23 @@ public class JulesDispatchService {
                 ? "Circuit breaker: this blocker question has repeated. Stop the discussion loop and execute the remediation exactly.\n\n"
                 : "";
         return loopPrefix
-                + "Task " + taskId + " is blocked by Git hygiene only: generated/local artifacts are in the PR diff"
+                + "Task " + taskId + " has a Git hygiene issue only: generated/local artifacts are in the PR diff"
                 + ("generated/local artifacts".equals(marker) ? "." : " (" + marker + ").") + "\n"
-                + "Do not change product scope. Clean the same branch, update .gitignore if needed, run this check, and resubmit:\n"
+                + "Do not change product scope. If this is a small non-secret local report artifact, do not expand the discussion; clean it if quick, otherwise document it as technical debt and resubmit the product work:\n"
                 + "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
-                + "Acceptance: the command prints no artifact paths and the PR contains only source/config/test/doc changes.";
+                + "Acceptance: no secrets or heavy generated folders are committed. Minor non-secret artifacts may be handled as follow-up repository hygiene debt.";
     }
 
     private String buildReviewRejectionMessage(TaskEntity task, String remarks) {
         String taskId = task != null && task.getId() != null ? task.getId().toString() : "unknown";
         if (mentionsGeneratedArtifact(remarks)) {
             String marker = detectedGeneratedArtifactMarker(remarks);
-            return "PR review for task " + taskId + " is blocked by repository hygiene, not by product requirements.\n"
+            return "PR review for task " + taskId + " found repository hygiene debt, not a product requirement failure.\n"
                     + "Detected generated/local artifact in the diff: " + marker + ".\n"
-                    + "Fix only this blocker on the same PR branch: untrack generated artifact folders, add missing .gitignore entries, then verify:\n"
+                    + "If the artifact is small and non-secret, do not loop on it; either remove it quickly or document it as technical debt and keep the product slice moving. Never commit secrets or large generated folders.\n"
+                    + "Optional cleanup check:\n"
                     + "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true\n"
-                    + "Stop after cleanup. Do not add new feature, design, architecture, or test-expansion work.";
+                    + "Stop after the smallest cleanup. Do not add new feature, design, architecture, or test-expansion work.";
         }
         return truncate("PR review for task " + taskId + " is blocked. Fix only the specific review blocker below, update the same PR branch, and resubmit. Do not expand product scope.\n\n"
                 + remarks, 1_600);
@@ -1083,9 +1169,15 @@ public class JulesDispatchService {
                 if (remarks == null || remarks.isBlank()) {
                     remarks = "PR review rejected without detailed remarks.";
                 }
+                boolean softArtifactDebt = !approved && isSoftGeneratedArtifactDebt(remarks);
 
-                if (approved) {
-                    prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. " + remarks);
+                if (approved || softArtifactDebt) {
+                    if (softArtifactDebt) {
+                        createRepositoryHygieneDebtWishlist(task, remarks);
+                    }
+                    prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. "
+                            + (softArtifactDebt ? "TECH_DEBT_RECORDED: minor generated/local artifact debt; product slice may continue. " : "")
+                            + remarks);
                     prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
 
                     // Move task to review stage so AutoMergeService can merge it
@@ -1127,7 +1219,7 @@ public class JulesDispatchService {
                     String julesReviewMessage = buildReviewRejectionMessage(task, remarks);
                     recordSystemReviewRejection(session, reviewSignal, julesReviewMessage, false);
 
-                    if (previousSimilarReviewRejections > 0) {
+                    if (previousSimilarReviewRejections > 0 && !mentionsGeneratedArtifact(remarks)) {
                         String closeReason = "repository_hygiene_review_repeated: same PR blocker persisted after prior remediation";
                         closeLoopAndCreateFollowUps(session, task, reviewSignal, responseHistory, closeReason);
                         return;
