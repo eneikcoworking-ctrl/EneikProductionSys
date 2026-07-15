@@ -21,6 +21,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -77,6 +78,7 @@ public class SystemStatusService {
         status.put("tasks", safeSection(() -> tasks(projectId)));
         status.put("conflictDpmo", safeSection(() -> conflictDpmo(projectId)));
         status.put("emsMetrics", safeSection(() -> emsMetrics(projectId)));
+        status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
         return status;
     }
 
@@ -215,6 +217,10 @@ public class SystemStatusService {
         long totalAttempts = 0;
         long totalOpportunities = 0;
         long totalDefects = 0;
+        long passedChecks = 0;
+        long failedChecks = 0;
+        Map<String, CtqAccumulator> ctq = new LinkedHashMap<>();
+        List<Map<String, Object>> defectItems = new ArrayList<>();
 
         List<TaskEntity> tasks = taskRepository.findAll();
         if (projectId != null) {
@@ -230,18 +236,51 @@ public class SystemStatusService {
                 JsonNode checks = report.get("checks");
                 totalOpportunities += checks.size();
                 for (JsonNode check : checks) {
+                    String checkName = check.path("name").asText("unknown_check");
+                    boolean passed = check.path("passed").asBoolean(false);
+                    CtqAccumulator item = ctq.computeIfAbsent(checkName, key -> new CtqAccumulator(key, "quality_gate"));
+                    item.opportunities++;
                     if (!check.path("passed").asBoolean()) {
                         totalDefects++;
+                        failedChecks++;
+                        item.defects++;
+                        if (defectItems.size() < 20) {
+                            Map<String, Object> defect = new LinkedHashMap<>();
+                            defect.put("taskId", task.getId());
+                            defect.put("roleTag", task.getRole() == null ? "unknown-role" : task.getRole().getTag());
+                            defect.put("checkName", checkName);
+                            defect.put("failureReasons", failureReasons(check));
+                            defect.put("taskDescription", truncate(task.getDescription(), 220));
+                            defectItems.add(defect);
+                        }
+                    } else {
+                        passedChecks++;
                     }
                 }
             }
         }
 
+        double dpmo = totalOpportunities == 0 ? 0 : (double) totalDefects / totalOpportunities * 1_000_000;
+        double yieldRate = yieldRate(totalDefects, totalOpportunities);
         Map<String, Object> section = new LinkedHashMap<>();
         section.put("totalAttempts", totalAttempts);
         section.put("totalOpportunities", totalOpportunities);
         section.put("defects", totalDefects);
-        section.put("dpmo", totalOpportunities == 0 ? 0 : (double) totalDefects / totalOpportunities * 1_000_000);
+        section.put("passedChecks", passedChecks);
+        section.put("failedChecks", failedChecks);
+        section.put("dpmo", round(dpmo));
+        section.put("yieldRate", round(yieldRate));
+        section.put("sigmaLevel", round(sigmaLevel(dpmo)));
+        section.put("firstPassYield", totalAttempts == 0 ? 0.0 : round(tasks.stream()
+                .filter(task -> task.getQualityGateReport() != null && task.getQualityGateReport().has("checks"))
+                .filter(TaskEntity::isQualityGatePassed)
+                .count() / (double) totalAttempts));
+        long qualityDefectTotal = totalDefects;
+        section.put("ctqBreakdown", ctq.values().stream()
+                .map(acc -> ctqMap(acc, qualityDefectTotal))
+                .sorted((a, b) -> Long.compare(((Number) b.get("defects")).longValue(), ((Number) a.get("defects")).longValue()))
+                .toList());
+        section.put("defectItems", defectItems);
         return section;
     }
 
@@ -267,6 +306,68 @@ public class SystemStatusService {
                 ? wishlistRepository.findAll()
                 : wishlistRepository.findByProjectId(projectId);
         return emsMetricsService.build(tasks, wishlist);
+    }
+
+    private Map<String, Object> sixSigma(UUID projectId) {
+        Map<String, Object> quality = qualityGate(projectId);
+        Map<String, Object> conflicts = conflictDpmo(projectId);
+
+        long qualityOpportunities = longValue(quality.get("totalOpportunities"));
+        long qualityDefects = longValue(quality.get("defects"));
+        long mergeOpportunities = longValue(conflicts.get("totalMergeAttempts"));
+        long mergeDefects = longValue(conflicts.get("conflicts"));
+        long totalOpportunities = qualityOpportunities + mergeOpportunities;
+        long totalDefects = qualityDefects + mergeDefects;
+        double dpmo = totalOpportunities == 0 ? 0.0 : (double) totalDefects / totalOpportunities * 1_000_000.0;
+        double qualityYield = yieldRate(qualityDefects, qualityOpportunities);
+        double mergeYield = yieldRate(mergeDefects, mergeOpportunities);
+        double rolledThroughputYield = totalOpportunities == 0 ? 0.0 : qualityYield * mergeYield;
+
+        List<Map<String, Object>> pareto = new ArrayList<>();
+        Object ctqBreakdown = quality.get("ctqBreakdown");
+        if (ctqBreakdown instanceof List<?> list) {
+            for (Object raw : list) {
+                if (raw instanceof Map<?, ?> map) {
+                    pareto.add(copyMap(map));
+                }
+            }
+        }
+        Object conflictTypes = conflicts.get("conflictTypePareto");
+        if (conflictTypes instanceof List<?> list) {
+            for (Object raw : list) {
+                if (raw instanceof Map<?, ?> map) {
+                    Map<String, Object> row = copyMap(map);
+                    row.put("source", "merge_conflict");
+                    row.put("ctq", "Merge Conflict: " + row.getOrDefault("name", "unknown"));
+                    row.put("opportunities", mergeOpportunities);
+                    row.put("dpmo", mergeOpportunities == 0 ? 0.0 : round((longValue(row.get("defects")) / (double) mergeOpportunities) * 1_000_000.0));
+                    pareto.add(row);
+                }
+            }
+        }
+        pareto.sort(Comparator.comparingLong(row -> -longValue(row.get("defects"))));
+
+        long activeConflicts = listSize(conflicts.get("activeConflicts"));
+        long copqProxy = qualityDefects + (mergeDefects * 3) + (activeConflicts * 5);
+
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("method", "Six Sigma DMAIC control view");
+        section.put("unit", "project production opportunity");
+        section.put("totalOpportunities", totalOpportunities);
+        section.put("totalDefects", totalDefects);
+        section.put("dpmo", round(dpmo));
+        section.put("yieldRate", round(yieldRate(totalDefects, totalOpportunities)));
+        section.put("sigmaLevel", round(sigmaLevel(dpmo)));
+        section.put("qualityGateSigma", quality.get("sigmaLevel"));
+        section.put("mergeSigma", conflicts.get("sigmaLevel"));
+        section.put("firstPassYield", quality.get("firstPassYield"));
+        section.put("rolledThroughputYield", round(rolledThroughputYield));
+        section.put("copqProxy", copqProxy);
+        section.put("ctqPareto", pareto.stream().limit(8).toList());
+        section.put("statusLabel", sixSigmaStatus(sigmaLevel(dpmo), totalOpportunities, activeConflicts));
+        section.put("interpretation", sixSigmaInterpretation(totalOpportunities, dpmo, activeConflicts));
+        section.put("recommendedAction", sixSigmaAction(pareto, activeConflicts));
+        return section;
     }
 
     private Map<String, Object> conflictDpmo(UUID projectId) {
@@ -297,6 +398,7 @@ public class SystemStatusService {
         long conflictsAllTime = allConflicts.size();
         long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
         double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
+        double yieldAllTime = yieldRate(conflictsAllTime, totalAttemptsAllTime);
 
         long mergedLast7Days = allReviews.stream()
                 .filter(r -> Boolean.TRUE.equals(r.getMerged()))
@@ -307,6 +409,7 @@ public class SystemStatusService {
                 .count();
         long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
         double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
+        double yieldLast7Days = yieldRate(conflictsLast7Days, totalAttemptsLast7Days);
 
         List<TaskConflictEntity> activeConflicts = allConflicts.stream()
                 .filter(c -> !"auto_resolved".equals(c.getResolutionStatus()))
@@ -327,13 +430,201 @@ public class SystemStatusService {
             activeList.add(cMap);
         }
 
+        List<Map<String, Object>> conflictTypePareto = pareto(allConflicts.stream()
+                .map(conflict -> blankToUnknown(conflict.getConflictType()))
+                .toList(), totalAttemptsAllTime);
+        List<Map<String, Object>> resolutionStatusPareto = pareto(allConflicts.stream()
+                .map(conflict -> blankToUnknown(conflict.getResolutionStatus()))
+                .toList(), totalAttemptsAllTime);
+
         Map<String, Object> data = new java.util.LinkedHashMap<>();
-        data.put("dpmo", dpmoAllTime);
-        data.put("dpmoLast7Days", dpmoLast7Days);
+        data.put("dpmo", round(dpmoAllTime));
+        data.put("dpmoLast7Days", round(dpmoLast7Days));
         data.put("totalMergeAttempts", totalAttemptsAllTime);
         data.put("conflicts", conflictsAllTime);
+        data.put("yieldRate", round(yieldAllTime));
+        data.put("sigmaLevel", round(sigmaLevel(dpmoAllTime)));
+        data.put("last7Days", Map.of(
+                "totalMergeAttempts", totalAttemptsLast7Days,
+                "conflicts", conflictsLast7Days,
+                "dpmo", round(dpmoLast7Days),
+                "yieldRate", round(yieldLast7Days),
+                "sigmaLevel", round(sigmaLevel(dpmoLast7Days))
+        ));
+        data.put("conflictTypePareto", conflictTypePareto);
+        data.put("resolutionStatusPareto", resolutionStatusPareto);
         data.put("activeConflicts", activeList);
         return data;
+    }
+
+    private List<String> failureReasons(JsonNode check) {
+        List<String> reasons = new ArrayList<>();
+        JsonNode node = check.path("failureReasons");
+        if (node.isArray()) {
+            for (JsonNode reason : node) {
+                reasons.add(reason.asText(""));
+            }
+        }
+        return reasons;
+    }
+
+    private Map<String, Object> ctqMap(CtqAccumulator acc, long totalDefects) {
+        double dpmo = acc.opportunities == 0 ? 0.0 : (acc.defects / (double) acc.opportunities) * 1_000_000.0;
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("source", acc.source);
+        row.put("ctq", acc.name);
+        row.put("name", acc.name);
+        row.put("opportunities", acc.opportunities);
+        row.put("defects", acc.defects);
+        row.put("defectShare", totalDefects == 0 ? 0.0 : round(acc.defects / (double) totalDefects));
+        row.put("dpmo", round(dpmo));
+        row.put("yieldRate", round(yieldRate(acc.defects, acc.opportunities)));
+        row.put("sigmaLevel", round(sigmaLevel(dpmo)));
+        return row;
+    }
+
+    private List<Map<String, Object>> pareto(List<String> values, long opportunities) {
+        Map<String, Long> counts = values.stream()
+                .collect(Collectors.groupingBy(value -> value, LinkedHashMap::new, Collectors.counting()));
+        return counts.entrySet().stream()
+                .sorted((a, b) -> Long.compare(b.getValue(), a.getValue()))
+                .map(entry -> {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    row.put("name", entry.getKey());
+                    row.put("defects", entry.getValue());
+                    row.put("opportunities", opportunities);
+                    row.put("dpmo", opportunities == 0 ? 0.0 : round((entry.getValue() / (double) opportunities) * 1_000_000.0));
+                    return row;
+                })
+                .toList();
+    }
+
+    private String sixSigmaStatus(double sigma, long opportunities, long activeConflicts) {
+        if (opportunities == 0) {
+            return "no_data";
+        }
+        if (activeConflicts > 0 || sigma < 3.0) {
+            return "critical";
+        }
+        if (sigma < 4.0) {
+            return "improve";
+        }
+        if (sigma < 5.0) {
+            return "controlled";
+        }
+        return "excellent";
+    }
+
+    private String sixSigmaInterpretation(long opportunities, double dpmo, long activeConflicts) {
+        if (opportunities == 0) {
+            return "No measurable CTQ opportunities are available yet. Run quality gates and PR reviews before interpreting Six Sigma health.";
+        }
+        if (activeConflicts > 0) {
+            return "The process has active merge-conflict defects. Treat them as escaped integration defects before adding new feature scope.";
+        }
+        if (dpmo >= 100_000) {
+            return "The process is below a stable Six Sigma control band. Use DMAIC: define the leading CTQ defect, remove its root cause, then remeasure.";
+        }
+        if (dpmo >= 10_000) {
+            return "The process is improving but still loses quality at a visible rate. Prioritize the Pareto-leading CTQ.";
+        }
+        return "The current measured process is controlled for the visible CTQs. Continue monitoring sample size and trend.";
+    }
+
+    private String sixSigmaAction(List<Map<String, Object>> pareto, long activeConflicts) {
+        if (activeConflicts > 0) {
+            return "Resolve active merge conflicts first; they are live escaped defects and distort throughput.";
+        }
+        if (pareto.isEmpty()) {
+            return "Collect more CTQ data by running task quality gates and PR review cycles.";
+        }
+        Map<String, Object> top = pareto.get(0);
+        return "Run DMAIC on top CTQ: " + top.getOrDefault("ctq", top.getOrDefault("name", "unknown")) + ".";
+    }
+
+    private double yieldRate(long defects, long opportunities) {
+        if (opportunities <= 0) {
+            return 0.0;
+        }
+        return Math.max(0.0, Math.min(1.0, 1.0 - defects / (double) opportunities));
+    }
+
+    private double sigmaLevel(double dpmo) {
+        if (dpmo <= 0.0) {
+            return 6.0;
+        }
+        if (dpmo >= 1_000_000.0) {
+            return 0.0;
+        }
+        double yield = Math.max(0.000001, Math.min(0.999999, 1.0 - dpmo / 1_000_000.0));
+        return Math.max(0.0, Math.min(6.0, inverseNormalCdf(yield) + 1.5));
+    }
+
+    private double inverseNormalCdf(double p) {
+        double low = -6.0;
+        double high = 6.0;
+        for (int i = 0; i < 80; i++) {
+            double mid = (low + high) / 2.0;
+            if (normalCdf(mid) < p) {
+                low = mid;
+            } else {
+                high = mid;
+            }
+        }
+        return (low + high) / 2.0;
+    }
+
+    private double normalCdf(double x) {
+        return 0.5 * (1.0 + erf(x / Math.sqrt(2.0)));
+    }
+
+    private double erf(double x) {
+        double sign = Math.signum(x);
+        double abs = Math.abs(x);
+        double t = 1.0 / (1.0 + 0.3275911 * abs);
+        double y = 1.0 - (((((1.061405429 * t - 1.453152027) * t) + 1.421413741) * t - 0.284496736) * t + 0.254829592) * t * Math.exp(-abs * abs);
+        return sign * y;
+    }
+
+    private long longValue(Object value) {
+        return value instanceof Number number ? number.longValue() : 0L;
+    }
+
+    private int listSize(Object value) {
+        return value instanceof List<?> list ? list.size() : 0;
+    }
+
+    private Map<String, Object> copyMap(Map<?, ?> source) {
+        Map<String, Object> copy = new LinkedHashMap<>();
+        source.forEach((key, value) -> copy.put(String.valueOf(key), value));
+        return copy;
+    }
+
+    private String blankToUnknown(String value) {
+        return value == null || value.isBlank() ? "unknown" : value;
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= maxLength ? value : value.substring(0, maxLength) + "...";
+    }
+
+    private double round(double value) {
+        return Math.round(value * 100.0) / 100.0;
+    }
+
+    private static class CtqAccumulator {
+        private final String name;
+        private final String source;
+        private long opportunities;
+        private long defects;
+
+        private CtqAccumulator(String name, String source) {
+            this.name = name;
+            this.source = source;
+        }
     }
 
     private Object safeSection(SectionSupplier supplier) {

@@ -30,7 +30,8 @@ class SystemStatusControllerIntegrationTest {
                 "linearCompleteness",
                 "julesSessions",
                 "qualityGate",
-                "tasks"
+                "tasks",
+                "sixSigma"
         );
         assertThat(section(response, "integrations")).containsEntry("available", true);
         assertThat(section(response, "accounts")).containsEntry("available", true);
@@ -49,7 +50,8 @@ class SystemStatusControllerIntegrationTest {
                 "linearCompleteness",
                 "julesSessions",
                 "qualityGate",
-                "tasks"
+                "tasks",
+                "sixSigma"
         );
         assertThat(section(response, "accounts")).containsEntry("available", true);
     }

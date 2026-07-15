@@ -58,6 +58,21 @@
   function pressureLabel(value: string): string {
     return (value || 'none').replace(/_/g, '-');
   }
+
+  function compactNumber(value: number | undefined | null): string {
+    const n = value ?? 0;
+    if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+    if (n >= 1000) return `${Math.round(n / 100) / 10}k`;
+    return `${Math.round(n)}`;
+  }
+
+  function sigmaClass(value: number | undefined | null): string {
+    const sigma = value ?? 0;
+    if (sigma >= 5) return 'excellent';
+    if (sigma >= 4) return 'controlled';
+    if (sigma >= 3) return 'improve';
+    return 'critical';
+  }
 </script>
 
 <div class="metrics-root">
@@ -122,21 +137,85 @@
 
       <!-- BLOCK 2: Quality And Defects -->
       <section class="metric-card shadow">
-        <h3>Quality And Defects</h3>
-        <p class="card-subtitle">Quality gate and merge conflict DPMO</p>
-
-        <div class="dpmo-subgrid">
-          <div class="dpmo-box">
-            <span class="stat-number text-red">{Math.round(metrics.qualityGate?.data?.dpmo ?? 0)}</span>
-            <span class="stat-label">Quality Gate DPMO</span>
-            <small class="text-xs">{metrics.qualityGate?.data?.defects ?? 0} defects across {metrics.qualityGate?.data?.totalOpportunities ?? 0} checks</small>
+        <div class="quality-header">
+          <div>
+            <h3>Six Sigma Quality Control</h3>
+            <p class="card-subtitle">CTQ defects, DPMO, sigma level, yield, and Pareto root-cause focus</p>
           </div>
-          <div class="dpmo-box">
-            <span class="stat-number text-red">{Math.round(metrics.conflictDpmo?.data?.dpmo ?? 0)}</span>
-            <span class="stat-label">Merge Conflict DPMO</span>
-            <small class="text-xs">{metrics.conflictDpmo?.data?.conflicts ?? 0} conflicts across {metrics.conflictDpmo?.data?.totalMergeAttempts ?? 0} merge attempts</small>
-          </div>
+          <span class="sigma-status {metrics.sixSigma?.data?.statusLabel || 'no_data'}">{metrics.sixSigma?.data?.statusLabel || 'no data'}</span>
         </div>
+
+        {#if metrics.sixSigma?.data}
+          <div class="sixsigma-summary">
+            <div class="sigma-tile {sigmaClass(metrics.sixSigma.data.sigmaLevel)}">
+              <span class="label-xs">Sigma level</span>
+              <strong>{(metrics.sixSigma.data.sigmaLevel ?? 0).toFixed(2)}</strong>
+            </div>
+            <div>
+              <span class="label-xs">Process yield</span>
+              <strong>{percent(metrics.sixSigma.data.yieldRate)}</strong>
+            </div>
+            <div>
+              <span class="label-xs">DPMO</span>
+              <strong>{compactNumber(metrics.sixSigma.data.dpmo)}</strong>
+            </div>
+            <div>
+              <span class="label-xs">COPQ proxy</span>
+              <strong>{metrics.sixSigma.data.copqProxy}</strong>
+            </div>
+          </div>
+
+          <div class="sixsigma-note">
+            <strong>{metrics.sixSigma.data.recommendedAction}</strong>
+            <p>{metrics.sixSigma.data.interpretation}</p>
+          </div>
+
+          <div class="ctq-grid">
+            <div class="ctq-card">
+              <div class="ctq-head">
+                <strong>Quality Gate CTQ</strong>
+                <span class="sigma-chip {sigmaClass(metrics.qualityGate?.data?.sigmaLevel)}">{(metrics.qualityGate?.data?.sigmaLevel ?? 0).toFixed(2)}σ</span>
+              </div>
+              <div class="ctq-stats">
+                <span>{metrics.qualityGate?.data?.defects ?? 0} defects</span>
+                <span>{metrics.qualityGate?.data?.totalOpportunities ?? 0} opportunities</span>
+                <span>{percent(metrics.qualityGate?.data?.yieldRate)} yield</span>
+              </div>
+            </div>
+            <div class="ctq-card">
+              <div class="ctq-head">
+                <strong>Merge Conflict CTQ</strong>
+                <span class="sigma-chip {sigmaClass(metrics.conflictDpmo?.data?.sigmaLevel)}">{(metrics.conflictDpmo?.data?.sigmaLevel ?? 0).toFixed(2)}σ</span>
+              </div>
+              <div class="ctq-stats">
+                <span>{metrics.conflictDpmo?.data?.conflicts ?? 0} conflicts</span>
+                <span>{metrics.conflictDpmo?.data?.totalMergeAttempts ?? 0} merge attempts</span>
+                <span>{percent(metrics.conflictDpmo?.data?.yieldRate)} yield</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="pareto-section">
+            <h4>CTQ Pareto</h4>
+            <div class="pareto-list">
+              {#each metrics.sixSigma.data.ctqPareto || [] as item}
+                <div class="pareto-row">
+                  <div class="pareto-label">
+                    <strong>{item.ctq || item.name}</strong>
+                    <span>{item.defects} defects · {compactNumber(item.dpmo)} DPMO</span>
+                  </div>
+                  <div class="pareto-track">
+                    <div class="pareto-fill" style="width: {scoreWidth(((item.defects ?? 0) / Math.max(1, metrics.sixSigma.data.totalDefects || 1)) * 100)}"></div>
+                  </div>
+                </div>
+              {:else}
+                <p class="empty-state">No CTQ defects recorded yet.</p>
+              {/each}
+            </div>
+          </div>
+        {:else}
+          <p class="empty-state">Six Sigma metrics are not available yet.</p>
+        {/if}
 
         <div class="active-conflicts-section">
           <h4>Active Merge Conflicts ({metrics.conflictDpmo?.data?.activeConflicts?.length ?? 0})</h4>
@@ -335,6 +414,187 @@
     flex-direction: column;
     align-items: center;
   }
+  .quality-header {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+    align-items: flex-start;
+    margin-bottom: var(--space-4);
+  }
+  .sigma-status {
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    border-radius: 5px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+  .sigma-status.no_data {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+  .sigma-status.critical,
+  .sigma-chip.critical {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .sigma-status.improve,
+  .sigma-chip.improve {
+    background: #fef3c7;
+    color: #92400e;
+  }
+  .sigma-status.controlled,
+  .sigma-chip.controlled {
+    background: #dbeafe;
+    color: #1d4ed8;
+  }
+  .sigma-status.excellent,
+  .sigma-chip.excellent {
+    background: #d1fae5;
+    color: #065f46;
+  }
+  .sixsigma-summary {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .sixsigma-summary > div {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-100);
+    border-radius: 8px;
+    padding: var(--space-3);
+    min-width: 0;
+  }
+  .sixsigma-summary strong {
+    display: block;
+    font-size: 22px;
+    line-height: 1.1;
+    color: var(--neutral-800);
+  }
+  .sigma-tile.critical strong {
+    color: #b91c1c;
+  }
+  .sigma-tile.improve strong {
+    color: #b45309;
+  }
+  .sigma-tile.controlled strong {
+    color: #1d4ed8;
+  }
+  .sigma-tile.excellent strong {
+    color: #047857;
+  }
+  .sixsigma-note {
+    background: #f8fafc;
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .sixsigma-note strong {
+    display: block;
+    color: var(--neutral-800);
+    font-size: 13px;
+    margin-bottom: 3px;
+  }
+  .sixsigma-note p {
+    color: var(--neutral-600);
+    font-size: 12px;
+    line-height: 1.4;
+  }
+  .ctq-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+  }
+  .ctq-card {
+    border: 1px solid var(--neutral-200);
+    border-radius: 8px;
+    padding: var(--space-3);
+  }
+  .ctq-head {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-2);
+    align-items: center;
+    margin-bottom: var(--space-2);
+  }
+  .ctq-head strong {
+    color: var(--neutral-800);
+    font-size: 13px;
+  }
+  .sigma-chip {
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 2px 6px;
+    white-space: nowrap;
+  }
+  .ctq-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-2);
+    color: var(--neutral-600);
+    font-size: 11px;
+  }
+  .ctq-stats span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pareto-section {
+    border-top: 1px solid var(--neutral-200);
+    padding-top: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  .pareto-section h4 {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: var(--space-3);
+  }
+  .pareto-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+  .pareto-row {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) 1.2fr;
+    gap: var(--space-2);
+    align-items: center;
+  }
+  .pareto-label {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 0;
+  }
+  .pareto-label strong {
+    color: var(--neutral-700);
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pareto-label span {
+    color: var(--neutral-500);
+    font-size: 10px;
+  }
+  .pareto-track {
+    height: 8px;
+    background: var(--neutral-100);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .pareto-fill {
+    height: 100%;
+    background: #dc2626;
+    border-radius: inherit;
+  }
 
   .active-conflicts-section {
     border-top: 1px solid var(--neutral-200);
@@ -532,6 +792,10 @@
   }
 
   @media (max-width: 900px) {
+    .sixsigma-summary,
+    .ctq-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
     .role-readiness-summary {
       grid-template-columns: repeat(3, minmax(0, 1fr));
     }
@@ -539,8 +803,14 @@
 
   @media (max-width: 620px) {
     .metrics-grid,
+    .sixsigma-summary,
+    .ctq-grid,
+    .pareto-row,
     .role-readiness-summary {
       grid-template-columns: 1fr;
+    }
+    .quality-header {
+      flex-direction: column;
     }
   }
 
