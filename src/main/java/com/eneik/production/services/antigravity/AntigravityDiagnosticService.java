@@ -67,10 +67,11 @@ public class AntigravityDiagnosticService {
 
         String apiKey = firstNonBlank(
                 settingsService.effectiveValue("antigravity_api_key"),
+                settingsService.effectiveValue("google_ai_api_key"),
                 settingsService.effectiveValue("gemini_api_key")
         );
         if (apiKey == null || apiKey.isBlank()) {
-            return DiagnosticResult.unavailable("Antigravity API key is missing. Configure antigravity_api_key or gemini_api_key.");
+            return DiagnosticResult.unavailable("Antigravity API key is missing. Configure antigravity_api_key, google_ai_api_key, or gemini_api_key.");
         }
 
         RepoRef repoRef = repoRef(project);
