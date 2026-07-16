@@ -161,8 +161,14 @@ public class TechnicalLeadCompiler {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
 
+        java.util.Set<String> extractedRoles = extractRoleTags(wishlist);
+        if (extractedRoles.isEmpty() && roleTag != null) {
+            extractedRoles.add(roleTag);
+        }
+        String joinedRoles = String.join(", ", extractedRoles);
+
         String cynefin = cynefinDomain(wishlist);
-        String kano = kanoClass(wishlist);
+        String kano = kanoClass(wishlist, extractedRoles);
         String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal));
         task.setTitle(shortTitle);
         task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin));
@@ -173,7 +179,7 @@ public class TechnicalLeadCompiler {
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("source_wishlist_id", wishlist.getId().toString());
-        payload.put("source_role_tag", wishlist.getSourceRoleTag() == null ? "" : wishlist.getSourceRoleTag());
+        payload.put("source_role_tag", joinedRoles);
         payload.put("short_title", shortTitle);
         payload.put("slice_title", sliceTitle(wishlist));
         payload.put("role_atomic_goal", atomicGoal);
@@ -194,10 +200,11 @@ public class TechnicalLeadCompiler {
         payload.put("ems_flow_stage", flowStage(roleTag));
         payload.put("ems_defect_work", isDefectWork(wishlist));
         payload.put("ems_defect_weight", defectWeight(wishlist, roleTag, cynefin));
-        payload.put("ems_kpi_weight", kpiWeight(wishlist, kano, cynefin));
-        double criticality = criticalityScore(wishlist, roleTag, kano, cynefin);
+        payload.put("ems_kpi_weight", kpiWeight(wishlist, kano, cynefin, extractedRoles));
+        double criticality = criticalityScore(wishlist, roleTag, kano, cynefin, extractedRoles);
         payload.put("ems_criticality_score", criticality);
         payload.put("depends_on", dependsOn != null ? dependsOn.getId().toString() : "");
+        payload.set("impact_coefficients", createImpactMatrix(roleTag, extractedRoles));
         task.setPayload(payload);
 
         task.setStatus(TaskStatus.queued);
@@ -217,6 +224,39 @@ public class TechnicalLeadCompiler {
         TaskEntity saved = taskRepository.save(task);
         createdTasks.add(saved);
         return saved;
+    }
+
+    private ObjectNode createImpactMatrix(String ownerRole, java.util.Set<String> affectedRoles) {
+        ObjectNode matrix = objectMapper.createObjectNode();
+        java.util.Set<String> roles = new java.util.HashSet<>(affectedRoles);
+        roles.add(ownerRole);
+
+        for (String tag : java.util.List.of("BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-03",
+                "BARCAN-TAG-04", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-07",
+                "BARCAN-TAG-08", "BARCAN-TAG-09", "BARCAN-TAG-10", "BARCAN-TAG-11")) {
+            double coefficient = 0.1;
+            if (tag.equals(ownerRole)) {
+                coefficient = 0.9;
+            } else if (roles.contains(tag)) {
+                coefficient = 0.8;
+            }
+            matrix.put(tag, coefficient);
+        }
+        return matrix;
+    }
+
+    private java.util.Set<String> extractRoleTags(WishlistEntity wishlist) {
+        java.util.Set<String> tags = new java.util.LinkedHashSet<>();
+        if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {
+            tags.add(wishlist.getSourceRoleTag().trim());
+        }
+        String searchArea = (wishlist.getContent() != null ? wishlist.getContent() : "") + " "
+                + (wishlist.getDod() != null ? wishlist.getDod() : "");
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("BARCAN-TAG-\\d{2}").matcher(searchArea);
+        while (matcher.find()) {
+            tags.add(matcher.group());
+        }
+        return tags;
     }
 
     private String taskTitleSource(WishlistEntity wishlist, String atomicGoal) {
@@ -312,13 +352,16 @@ public class TechnicalLeadCompiler {
         return round(Math.min(1.5, weight));
     }
 
-    private double kpiWeight(WishlistEntity wishlist, String kano, String cynefin) {
+    private double kpiWeight(WishlistEntity wishlist, String kano, String cynefin, java.util.Set<String> extractedRoles) {
         double weight = switch (kano == null ? "" : kano.toLowerCase(java.util.Locale.ROOT)) {
             case "must-be", "mustbe" -> 1.25;
             case "performance", "one-dimensional" -> 1.1;
             case "attractive" -> 0.9;
             default -> 1.0;
         };
+        if (extractedRoles.size() > 1) {
+            weight = Math.max(weight, 1.5);
+        }
         if ("complex".equalsIgnoreCase(cynefin)) {
             weight += 0.15;
         } else if ("chaotic".equalsIgnoreCase(cynefin)) {
@@ -333,8 +376,8 @@ public class TechnicalLeadCompiler {
         return round(weight);
     }
 
-    private double criticalityScore(WishlistEntity wishlist, String roleTag, String kano, String cynefin) {
-        double score = kpiWeight(wishlist, kano, cynefin) * 10.0;
+    private double criticalityScore(WishlistEntity wishlist, String roleTag, String kano, String cynefin, java.util.Set<String> extractedRoles) {
+        double score = kpiWeight(wishlist, kano, cynefin, extractedRoles) * 10.0;
         score += defectWeight(wishlist, roleTag, cynefin) * 5.0;
         if ("BARCAN-TAG-00".equals(roleTag) || "BARCAN-TAG-06".equals(roleTag) || "BARCAN-TAG-07".equals(roleTag)) {
             score += 2.0;
@@ -342,10 +385,27 @@ public class TechnicalLeadCompiler {
         if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {
             score += doctrinePressure(wishlist.getSourceRoleTag()) * 8.0;
         }
+        if (extractedRoles.size() > 1) {
+            score += 10.0;
+        }
         return round(score);
     }
 
     private double doctrinePressure(String sourceRoleTag) {
+        if (sourceRoleTag == null) {
+            return 0.0;
+        }
+        if (sourceRoleTag.contains(",")) {
+            double maxPressure = 0.0;
+            for (String tag : sourceRoleTag.split(",")) {
+                maxPressure = Math.max(maxPressure, singleDoctrinePressure(tag.trim()));
+            }
+            return maxPressure;
+        }
+        return singleDoctrinePressure(sourceRoleTag);
+    }
+
+    private double singleDoctrinePressure(String sourceRoleTag) {
         return switch (sourceRoleTag) {
             case "BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-05",
                     "BARCAN-TAG-06", "BARCAN-TAG-07", "BARCAN-TAG-08", "BARCAN-TAG-10" -> 0.25;
@@ -775,8 +835,15 @@ public class TechnicalLeadCompiler {
         String jtbd = englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist));
         String acceptanceCriteria = englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist));
 
+        java.util.Set<String> extractedRoles = extractRoleTags(wishlist);
+        if (extractedRoles.isEmpty() && roleTag != null) {
+            extractedRoles.add(roleTag);
+        }
+        String joinedRoles = String.join(", ", extractedRoles);
+
         StringBuilder sb = new StringBuilder();
         sb.append("Role: ").append(roleTag).append(" - ").append(roleLabel(roleTag)).append("\n");
+        sb.append("Source Roles: ").append(joinedRoles).append("\n");
         sb.append("Slice: ").append(sliceTitle(wishlist)).append("\n");
         sb.append("Atomic Goal: ").append(atomicGoal).append("\n");
         sb.append("Kano: ").append(kano).append("\n");
@@ -869,6 +936,12 @@ public class TechnicalLeadCompiler {
     }
 
     private String targetRoleForWishlist(WishlistEntity wishlist) {
+        if (wishlist.getSourceRoleTag() != null && wishlist.getSourceRoleTag().contains(",")) {
+            String firstTag = wishlist.getSourceRoleTag().split(",")[0].trim();
+            if (isValidRoleTag(firstTag)) {
+                return firstTag;
+            }
+        }
         if (isValidRoleTag(wishlist.getSourceRoleTag())) {
             return wishlist.getSourceRoleTag();
         }
@@ -971,7 +1044,10 @@ public class TechnicalLeadCompiler {
         };
     }
 
-    private String kanoClass(WishlistEntity wishlist) {
+    private String kanoClass(WishlistEntity wishlist, java.util.Set<String> extractedRoles) {
+        if (extractedRoles.size() > 1) {
+            return "Must-Be";
+        }
         String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
                 + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
                 + (wishlist.getDod() != null ? wishlist.getDod() : "")).toLowerCase(java.util.Locale.ROOT);

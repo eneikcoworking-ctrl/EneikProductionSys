@@ -106,27 +106,23 @@ public class FalsificationCycleService {
                     violationsFoundCount++;
                     log.warn("FalsificationCycleService: Code violation detected for role {} in project {}", roleTag, project.getName());
 
-                    if (followUpsCreatedCount < 2) {
-                        // Create self_falsification wishlist item. Orchestrate converts it later via the single smart compiler path.
-                        WishlistEntity wishlist = new WishlistEntity();
-                        wishlist.setProjectId(project.getId());
-                        wishlist.setSource(WishlistSource.self_falsification);
-                        wishlist.setSourceRoleTag(roleTag);
-                        wishlist.setContent("Compliance violation detected for role " + roleTag + ". Violates: " + rcResult.get("reason"));
-                        wishlist.setStatus(WishlistStatus.pending);
-                        wishlist.setLeanValue(LeanValue.essential);
-                        wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-                        wishlist.setCompiledByRole("BARCAN-TAG-09");
-                        wishlist.setJtbd("Fix role refusal criteria violation detected by falsification cycle");
-                        wishlist.setSixSigmaMetric("falsification_run_rate");
-                        wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
-                        wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
-                        wishlist = wishlistRepository.save(wishlist);
-                        followUpsCreatedCount++;
-                        log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
-                    } else {
-                        log.info("FalsificationCycleService: Rate limit of 2 follow-up wishlist items per run reached, skipping role {}", roleTag);
-                    }
+                    // Create self_falsification wishlist item. Orchestrate converts it later via the single smart compiler path.
+                    WishlistEntity wishlist = new WishlistEntity();
+                    wishlist.setProjectId(project.getId());
+                    wishlist.setSource(WishlistSource.self_falsification);
+                    wishlist.setSourceRoleTag(roleTag);
+                    wishlist.setContent("Compliance violation detected for role " + roleTag + ". Violates: " + rcResult.get("reason"));
+                    wishlist.setStatus(WishlistStatus.pending);
+                    wishlist.setLeanValue(LeanValue.essential);
+                    wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                    wishlist.setCompiledByRole("BARCAN-TAG-09");
+                    wishlist.setJtbd("Fix role refusal criteria violation detected by falsification cycle");
+                    wishlist.setSixSigmaMetric("falsification_run_rate");
+                    wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
+                    wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
+                    wishlist = wishlistRepository.save(wishlist);
+                    followUpsCreatedCount++;
+                    log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
                 }
             }
 
@@ -141,39 +137,35 @@ public class FalsificationCycleService {
                         log.warn("FalsificationCycleService: Methodological contradiction confirmed for role {} by philosopher {}: {}",
                                 roleTag, phRes.get("philosopher"), phRes.get("thesis"));
 
-                        if (followUpsCreatedCount < 2) {
-                            WishlistEntity wishlist = new WishlistEntity();
-                            wishlist.setProjectId(project.getId());
-                            wishlist.setSource(WishlistSource.self_falsification);
-                            wishlist.setSourceRoleTag(roleTag);
-                            
-                            String philosopher = (String) phRes.get("philosopher");
-                            String thesis = (String) phRes.get("thesis");
-                            String mustBe = (String) phRes.get("must_be");
-                            String performance = (String) phRes.get("performance");
-                            String attractive = (String) phRes.get("attractive");
-                            
-                            String content = "Methodological contradiction confirmed by " + philosopher + ": " + thesis + "\n" +
-                                             "Score: " + phRes.get("score") + "\n" +
-                                             "[Must-Be]: " + mustBe + "\n" +
-                                             "[Performance]: " + performance + "\n" +
-                                             "[Attractive]: " + attractive;
-                            
-                            wishlist.setContent(content);
-                            wishlist.setStatus(WishlistStatus.pending);
-                            wishlist.setLeanValue(LeanValue.essential);
-                            wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-                            wishlist.setCompiledByRole("BARCAN-TAG-09");
-                            wishlist.setJtbd("Resolve methodological contradiction identified by " + philosopher);
-                            wishlist.setSixSigmaMetric("falsification_run_rate");
-                            wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
-                            wishlist.setAcceptanceCriteria("Given methodological contradiction by " + philosopher + ", When resolving, Then Must-Be requirement is fulfilled: " + mustBe);
-                            wishlist = wishlistRepository.save(wishlist);
-                            followUpsCreatedCount++;
-                            log.info("FalsificationCycleService: Created self_falsification wishlist item {} for methodological falsification by {}", wishlist.getId(), philosopher);
-                        } else {
-                            log.info("FalsificationCycleService: Rate limit of 2 follow-up wishlist items per run reached, skipping methodological check for {}", phRes.get("philosopher"));
-                        }
+                        WishlistEntity wishlist = new WishlistEntity();
+                        wishlist.setProjectId(project.getId());
+                        wishlist.setSource(WishlistSource.self_falsification);
+                        wishlist.setSourceRoleTag(roleTag);
+                        
+                        String philosopher = (String) phRes.get("philosopher");
+                        String thesis = (String) phRes.get("thesis");
+                        String mustBe = (String) phRes.get("must_be");
+                        String performance = (String) phRes.get("performance");
+                        String attractive = (String) phRes.get("attractive");
+                        
+                        String content = "Methodological contradiction confirmed by " + philosopher + ": " + thesis + "\n" +
+                                         "Score: " + phRes.get("score") + "\n" +
+                                         "[Must-Be]: " + mustBe + "\n" +
+                                         "[Performance]: " + performance + "\n" +
+                                         "[Attractive]: " + attractive;
+                        
+                        wishlist.setContent(content);
+                        wishlist.setStatus(WishlistStatus.pending);
+                        wishlist.setLeanValue(LeanValue.essential);
+                        wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                        wishlist.setCompiledByRole("BARCAN-TAG-09");
+                        wishlist.setJtbd("Resolve methodological contradiction identified by " + philosopher);
+                        wishlist.setSixSigmaMetric("falsification_run_rate");
+                        wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
+                        wishlist.setAcceptanceCriteria("Given methodological contradiction by " + philosopher + ", When resolving, Then Must-Be requirement is fulfilled: " + mustBe);
+                        wishlist = wishlistRepository.save(wishlist);
+                        followUpsCreatedCount++;
+                        log.info("FalsificationCycleService: Created self_falsification wishlist item {} for methodological falsification by {}", wishlist.getId(), philosopher);
                     }
                 }
             }

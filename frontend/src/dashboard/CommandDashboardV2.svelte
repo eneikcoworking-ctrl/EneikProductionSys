@@ -259,6 +259,14 @@
     return `${clamped}%`;
   }
 
+  function getSatisfactionColor(score: number | undefined | null): string {
+    const val = score ?? 0;
+    const hue = 280 - (val / 100.0) * (280 - 140);
+    const sat = 85 - (val / 100.0) * (85 - 75);
+    const light = 45 - (val / 100.0) * (45 - 40);
+    return `hsl(${hue}, ${sat}%, ${light}%)`;
+  }
+
   function stanceLabel(stance: string): string {
     return (stance || 'unknown').replace(/_/g, ' ');
   }
@@ -413,7 +421,7 @@
                   <p class="doctrine-focus">{role.doctrineFocus}</p>
                   <div class="doctrine-score">
                     <div class="bar-track">
-                      <div class="bar-fill doctrine {role.stance}" style={`width: ${scoreWidth(role.satisfactionScore)}`}></div>
+                      <div class="bar-fill doctrine {role.stance}" style={`width: ${scoreWidth(role.satisfactionScore)}; background: ${getSatisfactionColor(role.satisfactionScore)};`}></div>
                     </div>
                     <strong>{score(role.satisfactionScore)}</strong>
                   </div>

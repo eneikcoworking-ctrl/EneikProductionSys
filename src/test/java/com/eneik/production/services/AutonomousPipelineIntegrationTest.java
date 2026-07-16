@@ -332,7 +332,7 @@ class AutonomousPipelineIntegrationTest {
     }
 
     @Test
-    void testFalsificationCycleRateLimitAndRunRecord() throws java.io.IOException {
+    void testFalsificationCycleNoRateLimitAndRunRecord() throws java.io.IOException {
         // Enable falsification cycle
         settingsService.save("falsification_cycle_enabled", "true");
 
@@ -395,6 +395,111 @@ class AutonomousPipelineIntegrationTest {
         List<WishlistEntity> followUps = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.self_falsification)
                 .toList();
-        assertThat(followUps).hasSize(2);
+        assertThat(followUps).hasSize(12);
+    }
+
+    @Test
+    void testWishlistGroupingAndKanoPriority() {
+        // Setup Project
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Grouping Project");
+        project.setSlug("grouping-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("grouping-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        // Stub AI metadata generation
+        java.util.Map<String, Object> mockMeta = new java.util.HashMap<>();
+        mockMeta.put("jtbd", "Resolve design code constraints");
+        mockMeta.put("acceptanceCriteria", "All checks pass successfully");
+        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
+                .thenReturn(mockMeta);
+
+        // Create similar pending wishlist items (Hex colors violations)
+        WishlistEntity item1 = new WishlistEntity();
+        item1.setProjectId(project.getId());
+        item1.setSource(WishlistSource.self_falsification);
+        item1.setSourceRoleTag("BARCAN-TAG-01");
+        item1.setContent("Compliance violation detected for role BARCAN-TAG-01. Violates: hex colors used in frontend CSS.");
+        item1.setStatus(WishlistStatus.pending);
+        item1.setLeanValue(LeanValue.essential);
+        item1.setDod("Acceptance check BARCAN-TAG-01");
+        item1.setAcceptanceCriteria("No hex colors");
+        item1.setTocConstraintRef("some-ref");
+        item1.setJtbd("some jtbd");
+        item1.setSixSigmaMetric("some metric");
+        item1.setCompiledByRole("BARCAN-TAG-09");
+        item1 = wishlistRepository.saveAndFlush(item1);
+
+        WishlistEntity item2 = new WishlistEntity();
+        item2.setProjectId(project.getId());
+        item2.setSource(WishlistSource.self_falsification);
+        item2.setSourceRoleTag("BARCAN-TAG-11");
+        item2.setContent("Compliance violation detected for role BARCAN-TAG-11. Violates: hex color found in styles.");
+        item2.setStatus(WishlistStatus.pending);
+        item2.setLeanValue(LeanValue.essential);
+        item2.setDod("Acceptance check BARCAN-TAG-11 reference docs/DESIGN_SYSTEM.md");
+        item2.setAcceptanceCriteria("No hex colors");
+        item2.setTocConstraintRef("some-ref");
+        item2.setJtbd("some jtbd");
+        item2.setSixSigmaMetric("some metric");
+        item2.setCompiledByRole("BARCAN-TAG-09");
+        item2 = wishlistRepository.saveAndFlush(item2);
+
+        // Create an independent wishlist item (completely different text)
+        WishlistEntity item3 = new WishlistEntity();
+        item3.setProjectId(project.getId());
+        item3.setSource(WishlistSource.self_falsification);
+        item3.setSourceRoleTag("BARCAN-TAG-02");
+        item3.setContent("Methodological contradiction: real compare instead of mock diff.");
+        item3.setStatus(WishlistStatus.pending);
+        item3.setLeanValue(LeanValue.essential);
+        item3.setDod("Acceptance check BARCAN-TAG-02");
+        item3.setAcceptanceCriteria("Real comparison");
+        item3.setTocConstraintRef("some-ref");
+        item3.setJtbd("some jtbd");
+        item3.setSixSigmaMetric("some metric");
+        item3.setCompiledByRole("BARCAN-TAG-09");
+        item3 = wishlistRepository.saveAndFlush(item3);
+
+        // Run orchestration
+        projectFlowService.orchestrate(project.getId());
+
+        // Verify wishlist statuses
+        WishlistEntity loaded1 = wishlistRepository.findById(item1.getId()).orElseThrow();
+        WishlistEntity loaded2 = wishlistRepository.findById(item2.getId()).orElseThrow();
+        WishlistEntity loaded3 = wishlistRepository.findById(item3.getId()).orElseThrow();
+
+        // One of the similar items should be converted_to_task, the other dismissed
+        boolean check1 = loaded1.getStatus() == WishlistStatus.converted_to_task && loaded2.getStatus() == WishlistStatus.dismissed;
+        boolean check2 = loaded2.getStatus() == WishlistStatus.converted_to_task && loaded1.getStatus() == WishlistStatus.dismissed;
+        assertThat(check1 || check2).isTrue();
+
+        // Independent item should be converted_to_task
+        assertThat(loaded3.getStatus()).isEqualTo(WishlistStatus.converted_to_task);
+
+        // Verify the tasks created
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        // Filter out bootstrap tasks
+        List<TaskEntity> nonBootstrapTasks = tasks.stream()
+                .filter(t -> t.getPayload() == null || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(t.getPayload().path("toc_constraint_ref").asText()))
+                .filter(t -> !t.getTitle().toLowerCase().contains("bootstrap"))
+                .filter(t -> !t.getTitle().contains("Runtime Contract"))
+                .toList();
+
+        assertThat(nonBootstrapTasks).hasSize(2);
+
+        // Find the multi-role task (which contains both roles)
+        TaskEntity multiRoleTask = nonBootstrapTasks.stream()
+                .filter(t -> {
+                    String desc = t.getDescription();
+                    return desc != null && desc.contains("BARCAN-TAG-01") && desc.contains("BARCAN-TAG-11");
+                })
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("Multi-role task not found in: " + nonBootstrapTasks));
+
+        // Verify Kano
+        assertThat(multiRoleTask.getDescription()).contains("Kano: Must-Be");
     }
 }

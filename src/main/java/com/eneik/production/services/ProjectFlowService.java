@@ -252,6 +252,9 @@ public class ProjectFlowService {
         ProjectEntity project = requireActiveProject(projectId);
         recordOrchestrationStartOrThrow(projectId);
 
+        // Group similar pending wishlist items using graph theory connected components
+        groupSimilarWishlistItems(project.getId());
+
         // 1. Record existing task IDs of this project
         java.util.List<TaskEntity> existingTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         java.util.Set<UUID> existingIds = new java.util.HashSet<>();
@@ -272,6 +275,9 @@ public class ProjectFlowService {
             try {
                 // Reload from repository to ensure we have the latest compiled data
                 wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
+                if (wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.pending) {
+                    continue;
+                }
 
                 if (compileWishlistIntoAtomicSlices(project, wishlist)) {
                     processedCount++;
@@ -1476,6 +1482,165 @@ public class ProjectFlowService {
                 uiColorToken,
                 collaborators
         );
+    }
+
+    private void groupSimilarWishlistItems(java.util.UUID projectId) {
+        java.util.List<com.eneik.production.models.persistence.WishlistEntity> pending =
+                wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending);
+        if (pending.size() <= 1) {
+            return;
+        }
+
+        int n = pending.size();
+        java.util.Map<Integer, java.util.List<Integer>> adj = new java.util.HashMap<>();
+        for (int i = 0; i < n; i++) {
+            adj.put(i, new java.util.ArrayList<>());
+        }
+
+        for (int i = 0; i < n; i++) {
+            for (int j = i + 1; j < n; j++) {
+                if (areWishlistItemsSimilar(pending.get(i), pending.get(j))) {
+                    adj.get(i).add(j);
+                    adj.get(j).add(i);
+                }
+            }
+        }
+
+        boolean[] visited = new boolean[n];
+        java.util.List<java.util.List<Integer>> components = new java.util.ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            if (!visited[i]) {
+                java.util.List<Integer> component = new java.util.ArrayList<>();
+                java.util.Queue<Integer> queue = new java.util.LinkedList<>();
+                queue.add(i);
+                visited[i] = true;
+                while (!queue.isEmpty()) {
+                    int curr = queue.poll();
+                    component.add(curr);
+                    for (int neighbor : adj.get(curr)) {
+                        if (!visited[neighbor]) {
+                            visited[neighbor] = true;
+                            queue.add(neighbor);
+                        }
+                    }
+                }
+                components.add(component);
+            }
+        }
+
+        for (java.util.List<Integer> componentIndices : components) {
+            if (componentIndices.size() > 1) {
+                com.eneik.production.models.persistence.WishlistEntity survivor = pending.get(componentIndices.get(0));
+                java.util.Set<String> uniqueContents = new java.util.LinkedHashSet<>();
+                java.util.Set<String> uniqueRoleTags = new java.util.LinkedHashSet<>();
+                java.util.Set<String> uniqueDods = new java.util.LinkedHashSet<>();
+                java.util.Set<String> uniqueAcceptanceCriteria = new java.util.LinkedHashSet<>();
+                java.util.Set<String> uniqueJtbds = new java.util.LinkedHashSet<>();
+                
+                for (int idx : componentIndices) {
+                    com.eneik.production.models.persistence.WishlistEntity item = pending.get(idx);
+                    if (item.getContent() != null) {
+                        uniqueContents.add(item.getContent().trim());
+                    }
+                    if (item.getDod() != null) {
+                        uniqueDods.add(item.getDod().trim());
+                    }
+                    if (item.getAcceptanceCriteria() != null) {
+                        uniqueAcceptanceCriteria.add(item.getAcceptanceCriteria().trim());
+                    }
+                    if (item.getJtbd() != null) {
+                        uniqueJtbds.add(item.getJtbd().trim());
+                    }
+                    if (item.getSourceRoleTag() != null && !item.getSourceRoleTag().isBlank()) {
+                        for (String tag : item.getSourceRoleTag().split(",")) {
+                            uniqueRoleTags.add(tag.trim());
+                        }
+                    }
+                }
+
+                survivor.setContent(String.join("\n---\n", uniqueContents));
+                if (!uniqueDods.isEmpty()) {
+                    survivor.setDod(String.join("; ", uniqueDods));
+                }
+                if (!uniqueAcceptanceCriteria.isEmpty()) {
+                    survivor.setAcceptanceCriteria(String.join("; ", uniqueAcceptanceCriteria));
+                }
+                if (!uniqueJtbds.isEmpty()) {
+                    survivor.setJtbd(String.join("; ", uniqueJtbds));
+                }
+                wishlistRepository.save(survivor);
+                log.info("ProjectFlowService: Grouped and merged {} similar wishlist items into survivor {}", 
+                        componentIndices.size(), survivor.getId());
+
+                for (int k = 1; k < componentIndices.size(); k++) {
+                    com.eneik.production.models.persistence.WishlistEntity duplicate = pending.get(componentIndices.get(k));
+                    duplicate.setStatus(com.eneik.production.models.persistence.WishlistStatus.dismissed);
+                    wishlistRepository.save(duplicate);
+                    log.info("ProjectFlowService: Dismissed duplicate wishlist item {} (merged into {})", 
+                            duplicate.getId(), survivor.getId());
+                }
+            }
+        }
+    }
+
+    private boolean areWishlistItemsSimilar(com.eneik.production.models.persistence.WishlistEntity item1, com.eneik.production.models.persistence.WishlistEntity item2) {
+        String text1 = item1.getContent();
+        String text2 = item2.getContent();
+        if (text1 == null || text2 == null) {
+            return false;
+        }
+
+        java.util.Set<String> tokens1 = getCleanTokens(text1);
+        java.util.Set<String> tokens2 = getCleanTokens(text2);
+
+        if (tokens1.isEmpty() || tokens2.isEmpty()) {
+            return false;
+        }
+
+        java.util.Set<String> intersection = new java.util.HashSet<>(tokens1);
+        intersection.retainAll(tokens2);
+
+        java.util.Set<String> union = new java.util.HashSet<>(tokens1);
+        union.addAll(tokens2);
+
+        double similarity = (double) intersection.size() / union.size();
+        return similarity >= 0.25;
+    }
+
+    private java.util.Set<String> getCleanTokens(String text) {
+        if (text == null) {
+            return java.util.Collections.emptySet();
+        }
+        
+        String cleaned = text.toLowerCase()
+                .replaceAll("[^a-zA-Z0-9а-яА-Я\\s-]", " ")
+                .replaceAll("\\s+", " ");
+        
+        String[] words = cleaned.split(" ");
+        java.util.Set<String> tokens = new java.util.HashSet<>();
+        
+        java.util.Set<String> stopWords = java.util.Set.of(
+            "compliance", "violation", "detected", "for", "role", "violates", 
+            "methodological", "contradiction", "confirmed", "by", "philosopher", 
+            "thesis", "score", "must-be", "performance", "attractive", "given", 
+            "when", "then", "requirement", "is", "fulfilled", "and", "the", "with", 
+            "from", "into", "a", "an", "of", "in", "on", "at", "to", "or",
+            "соответствие", "фальсификация", "нарушение", "противоречие", "подтверждено", "роль"
+        );
+        
+        for (String word : words) {
+            word = word.trim();
+            if (word.contains("tag-")) {
+                continue;
+            }
+            if (word.endsWith("s") && word.length() > 3) {
+                word = word.substring(0, word.length() - 1);
+            }
+            if (word.length() > 2 && !stopWords.contains(word)) {
+                tokens.add(word);
+            }
+        }
+        return tokens;
     }
 
 }

@@ -114,7 +114,8 @@ public class EmsMetricsService {
                 .map(profile -> roleDoctrineVerdict(
                         profile,
                         tasksByOwnerRole.getOrDefault(profile.roleTag(), List.of()),
-                        wishlistBySourceRole.getOrDefault(profile.roleTag(), List.of())
+                        wishlistBySourceRole.getOrDefault(profile.roleTag(), List.of()),
+                        tasks
                 ))
                 .toList();
 
@@ -160,7 +161,8 @@ public class EmsMetricsService {
 
     private EmsDashboardMetricsDto.RoleDoctrineVerdict roleDoctrineVerdict(RoleDoctrineProfile profile,
                                                                            List<TaskEntity> ownerTasks,
-                                                                           List<WishlistEntity> sourceWishlist) {
+                                                                           List<WishlistEntity> sourceWishlist,
+                                                                           List<TaskEntity> allTasks) {
         long ownerTotal = ownerTasks.size();
         long ownerDone = ownerTasks.stream().filter(this::isDoneLike).count();
         long ownerOpen = ownerTasks.stream().filter(task -> !isDoneLike(task)).count();
@@ -181,6 +183,18 @@ public class EmsMetricsService {
                         || containsRefusalSignal(item.getDod()));
         boolean hardFailure = ownerBlocked > 0 || ownerFailed > 0;
 
+        double totalPotentialImpact = 0.0;
+        double actualRealizedImpact = 0.0;
+        for (TaskEntity task : allTasks) {
+            double impact = getTaskImpact(task, profile.roleTag());
+            totalPotentialImpact += impact;
+            if (isDoneLike(task)) {
+                double qualityMultiplier = task.isQualityGatePassed() ? 1.0 : 0.7;
+                actualRealizedImpact += impact * qualityMultiplier;
+            }
+        }
+        double impactRatio = totalPotentialImpact == 0.0 ? 0.0 : (actualRealizedImpact / totalPotentialImpact);
+
         String stance;
         double satisfactionScore;
         if (!hasEvidence) {
@@ -188,16 +202,19 @@ public class EmsMetricsService {
             satisfactionScore = 25.0;
         } else if ((severeSourceObjection && "must_be".equals(profile.kanoBias())) || ownerFailed > 0) {
             stance = "refuses";
-            satisfactionScore = Math.max(0.0, 34.0 - (ownerFailed * 6.0) - Math.min(20.0, sourcePending * 4.0));
+            double maxPotential = Math.max(0.0, 34.0 - (ownerFailed * 6.0) - Math.min(20.0, sourcePending * 4.0));
+            satisfactionScore = impactRatio * maxPotential;
         } else if (sourcePending > 0 || hardFailure || defectWork > 0) {
             stance = "objects";
-            satisfactionScore = Math.max(35.0, 62.0 - (ownerBlocked * 5.0) - Math.min(18.0, sourcePending * 3.0) - Math.min(12.0, defectWork * 2.0));
+            double maxPotential = Math.max(35.0, 62.0 - (ownerBlocked * 5.0) - Math.min(18.0, sourcePending * 3.0) - Math.min(12.0, defectWork * 2.0));
+            satisfactionScore = 35.0 + impactRatio * (maxPotential - 35.0);
         } else if (ownerOpen > 0) {
             stance = "almost_satisfied";
-            satisfactionScore = 72.0 + ratio(ownerDone, ownerTotal) * 18.0;
+            satisfactionScore = 72.0 + impactRatio * 18.0;
         } else {
             stance = "satisfied";
-            satisfactionScore = ownerTotal == 0 ? 78.0 : 92.0 + Math.min(8.0, gatePassed * 1.5);
+            double baseScore = ownerTotal == 0 ? 78.0 : 92.0 + Math.min(8.0, gatePassed * 1.5);
+            satisfactionScore = baseScore;
         }
 
         double confidence = confidence(ownerTotal, ownerDone, gatePassed, sourceTotal, hasEvidence);
@@ -711,6 +728,20 @@ public class EmsMetricsService {
 
     private double round(double value) {
         return Math.round(value * 100.0) / 100.0;
+    }
+
+    private double getTaskImpact(TaskEntity task, String roleTag) {
+        JsonNode payload = task.getPayload();
+        if (payload != null && payload.has("impact_coefficients")) {
+            JsonNode matrix = payload.get("impact_coefficients");
+            if (matrix.has(roleTag)) {
+                return matrix.get(roleTag).asDouble(0.1);
+            }
+        }
+        if (task.getRole() != null && roleTag.equals(task.getRole().getTag())) {
+            return 0.9;
+        }
+        return 0.1;
     }
 
     private record RoleDoctrineProfile(
