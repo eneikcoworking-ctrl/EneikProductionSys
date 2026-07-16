@@ -142,6 +142,29 @@ public class MLPredictionServiceClient {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    public java.util.List<Map<String, Object>> checkMethodologicalFalsification(String prDiff, String charterRules) {
+        String endpoint = mlServiceUrl + "/api/v1/review/methodological-falsification";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> request = new HashMap<>();
+            request.put("prDiff", prDiff);
+            request.put("charterRules", charterRules);
+            request.put("apiKey", getGeminiApiKey());
+            request.put("modelOverride", modelOverrideForTier(""));
+
+            Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            if (response != null && response.containsKey("results")) {
+                return (java.util.List<Map<String, Object>>) response.get("results");
+            }
+        } catch (Exception e) {
+            LOGGER.severe("ML service checkMethodologicalFalsification call failed: " + e.getMessage());
+        }
+        return java.util.Collections.emptyList();
+    }
+
     public String chat(String prompt, String systemInstruction) {
         return chatWithTier(prompt, systemInstruction, "");
     }

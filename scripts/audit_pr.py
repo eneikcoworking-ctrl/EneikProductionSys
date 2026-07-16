@@ -55,41 +55,100 @@ def is_relevant_for_role(role_tag, file_path):
     ]):
         return True
 
-    # Code Guardian / Tech Lead (TAG-00) and Technical Product Manager (TAG-09)
-    # have global integration rights
+    # ACC-01: Code Guardian / Tech Lead (TAG-00) and Technical Product Manager (TAG-09)
+    # have global integration and review rights across all layers
     if role_tag in ["BARCAN-TAG-00", "BARCAN-TAG-09"]:
         return True
 
-    if role_tag == "BARCAN-TAG-02":  # Backend Engineer
-        # Spring Boot Java or next.js api / prisma / fastapi models
-        if "src/main/java/" in lower and not "/test/" in lower and lower.endswith(".java"):
-            return True
-        if "src/app/api/" in lower or "app/api" in lower or lower.endswith(".prisma") or lower.endswith(".py"):
+    # ACC-02: Solution Architect (TAG-01) & Backend Engineer (TAG-02)
+    if role_tag == "BARCAN-TAG-01":
+        # Models: domain entities & blueprints
+        if "src/main/java/com/eneik/production/models/domain/" in file_path or "docs/" in lower:
             return True
         return False
 
-    elif role_tag in ["BARCAN-TAG-03", "BARCAN-TAG-11"]:  # UI/UX Designer & Frontend Engineer
-        # frontend, src/views, src/components, src/app (excluding API / prisma / tests)
-        if "test" in lower or "api/" in lower or lower.endswith(".prisma") or lower.endswith(".py"):
+    if role_tag == "BARCAN-TAG-02":
+        # REST controllers & GreetingController (exclude policy & auth subfolders)
+        if "src/main/java/com/eneik/production/controllers/" in file_path:
+            if any(term in lower for term in ["/policy/", "/auth/"]):
+                return False
+            return True
+        # Services & general backend logic
+        if "src/main/java/com/eneik/production/services/" in file_path:
+            return True
+        return False
+
+    # ACC-04: UI/UX Designer (TAG-03) & Frontend Engineer (TAG-11)
+    if role_tag == "BARCAN-TAG-03":
+        # Atomic design system components & styles
+        if "src/views/components/" in lower or "design/" in lower or lower.endswith(".css"):
+            return True
+        return False
+
+    if role_tag == "BARCAN-TAG-11":
+        # Frontend pages & application state
+        if any(term in lower for term in ["src/views/pages/", "src/views/states/", "frontend/"]):
+            return True
+        if any(lower.endswith(ext) for ext in [".svelte", ".tsx", ".jsx", ".ts", ".js"]):
+            # Prevent frontend modifying java or python backend folders
+            if not any(term in lower for term in ["src/main/", "src/models/", "tests/"]):
+                return True
+        return False
+
+    # ACC-03: ML Engineer (TAG-04) & Data Engineer / DBA (TAG-08)
+    if role_tag == "BARCAN-TAG-04":
+        # Java ML models & ML FastAPI service files
+        if "src/main/java/com/eneik/production/models/ml/" in file_path or "src/models/ml/" in lower:
+            return True
+        return False
+
+    if role_tag == "BARCAN-TAG-08":
+        # Database entities & flyway migrations
+        if "src/main/java/com/eneik/production/models/persistence/" in file_path:
+            return True
+        if "src/main/resources/db/migration/" in lower:
+            return True
+        return False
+
+    # ACC-05: DevOps / SRE (TAG-05)
+    if role_tag == "BARCAN-TAG-05":
+        # workflows, dockerfiles, environment configs, build/sync scripts
+        if ".github/" in lower or "dockerfile" in lower or "scripts/" in lower or "config/env/" in lower:
+            return True
+        if any(lower.endswith(ext) for ext in [".yml", ".yaml", ".sh", ".cmd"]):
+            return True
+        return False
+
+    # ACC-06: QA Automation (TAG-06) & AppSec (TAG-07)
+    if role_tag == "BARCAN-TAG-06":
+        # Tests (unit, integration, e2e) except security
+        if "tests/security/" in lower:
             return False
-        if any(term in lower for term in ["frontend/", "src/views/", "src/components/", "src/app/", "design/"]):
+        if "tests/" in lower or "/test/" in lower:
             return True
-        if any(lower.endswith(ext) for ext in [".svelte", ".tsx", ".jsx", ".css", ".html", ".js", ".ts"]):
+        if any(lower.endswith(ext) for ext in [".test.ts", ".test.js", ".spec.ts"]):
             return True
-        return False
-
-    elif role_tag == "BARCAN-TAG-06":  # QA Automation
-        # Tests only
-        return "test" in lower or "/tests/" in lower or lower.endswith(".test.ts") or lower.endswith(".test.js")
-
-    elif role_tag == "BARCAN-TAG-05":  # DevOps / SRE
-        # github actions, dockerfiles, scripts, configurations
-        if ".github/" in lower or "dockerfile" in lower or "scripts/" in lower or lower.endswith(".yml") or lower.endswith(".yaml"):
+        if lower.endswith("test.java"):
             return True
         return False
 
-    # Default to True for roles with unmapped folders to be safe
-    return True
+    if role_tag == "BARCAN-TAG-07":
+        # Auth controllers & security tests
+        if "src/main/java/com/eneik/production/controllers/auth/" in file_path:
+            return True
+        if "tests/security/" in lower:
+            return True
+        return False
+
+    # ACC-07: Compliance Officer (TAG-10)
+    if role_tag == "BARCAN-TAG-10":
+        # Regulatory policy controllers
+        if "src/main/java/com/eneik/production/controllers/policy/" in file_path:
+            return True
+        return False
+
+    # Default to False to enforce strict zero-defect boundaries (no unmapped leakage!)
+    return False
 
 
 def main():

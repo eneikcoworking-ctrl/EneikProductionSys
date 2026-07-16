@@ -161,6 +161,13 @@ public class AutoMergeService {
                             }
                         }
 
+                        if ("mock_diff".equals(prDiff)) {
+                            String localDiff = getLocalWorkspaceDiff(task.getProject());
+                            if (localDiff != null && !localDiff.isBlank()) {
+                                prDiff = localDiff;
+                            }
+                        }
+
                         Map<String, Object> rcResult = mlPredictionServiceClient.checkRefusalCriteria(prDiff, refusalCriteria);
                         boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
                         if (!isCompliant) {
@@ -453,4 +460,35 @@ public class AutoMergeService {
     }
 
     private record PullRequestTarget(String url, String owner, String repo, String pullNumber) {}
+
+    private String getLocalWorkspaceDiff(com.eneik.production.models.persistence.ProjectEntity project) {
+        if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
+            java.io.File workspaceDir = new java.io.File(project.getWorkspacePath());
+            if (workspaceDir.exists() && workspaceDir.isDirectory()) {
+                try {
+                    ProcessBuilder pb = new ProcessBuilder("git", "diff", "HEAD~1");
+                    pb.directory(workspaceDir);
+                    pb.redirectErrorStream(true);
+                    Process process = pb.start();
+
+                    java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8)
+                    );
+                    StringBuilder diffSb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        diffSb.append(line).append("\n");
+                    }
+                    process.waitFor();
+                    if (process.exitValue() == 0 && diffSb.length() > 0) {
+                        return diffSb.toString();
+                    }
+                } catch (Exception e) {
+                    log.warn("AutoMergeService: Failed to retrieve Git diff from workspace {}: {}",
+                            project.getWorkspacePath(), e.getMessage());
+                }
+            }
+        }
+        return null;
+    }
 }

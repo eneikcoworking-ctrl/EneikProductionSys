@@ -22,6 +22,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 public class OrchestrationStatusTest {
 
+    @org.junit.jupiter.api.BeforeEach
+    public void setUp() {
+        taskRepository.deleteAll();
+        wishlistRepository.deleteAll();
+        accountRepository.deleteAll();
+        projectRepository.deleteAll();
+    }
+
     @Autowired
     private ProjectFlowService projectFlowService;
     @Autowired
@@ -91,7 +99,8 @@ public class OrchestrationStatusTest {
         // 1. Manual orchestration creates the task
         projectFlowService.orchestrate(project.getId());
 
-        Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> !taskRepository.findAll().isEmpty());
+        final UUID finalProjectId = project.getId();
+        Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> !taskRepository.findByProjectIdOrderByCreatedAtDesc(finalProjectId).isEmpty());
 
         // 2. Continuous loop dispatches existing queued work, but does not create new tasks.
         continuousOrchestrationService.continuousOrchestrate();
@@ -99,10 +108,10 @@ public class OrchestrationStatusTest {
         Awaitility.await()
             .atMost(5, TimeUnit.SECONDS)
             .pollInterval(100, TimeUnit.MILLISECONDS)
-            .until(() -> taskRepository.findAll().get(0).getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed);
+            .until(() -> taskRepository.findByProjectIdOrderByCreatedAtDesc(finalProjectId).get(0).getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed);
 
         // 3. Assertions
-        java.util.List<TaskEntity> tasks = taskRepository.findAll();
+        java.util.List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
         assertThat(tasks).isNotEmpty();
         UUID taskId = tasks.get(0).getId();
 

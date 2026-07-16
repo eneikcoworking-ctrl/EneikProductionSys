@@ -83,9 +83,6 @@ public class FalsificationCycleService {
         int violationsFoundCount = 0;
         int followUpsCreatedCount = 0;
 
-        // Check if there is a critical regression
-        boolean hasCriticalRegression = !checkActuatorHealth(project);
-
         String latestDiff = getLatestProjectDiff(project);
 
         for (RoleEntity role : activeRoles) {
@@ -100,6 +97,7 @@ public class FalsificationCycleService {
                 log.warn("FalsificationCycleService: Could not load rules for role {}: {}", roleTag, e.getMessage());
             }
 
+            // 1. Refusal Criteria check
             if (refusalCriteria != null && !refusalCriteria.trim().isEmpty()) {
                 Map<String, Object> rcResult = mlPredictionServiceClient.checkRefusalCriteria(latestDiff, refusalCriteria);
                 boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
@@ -131,6 +129,54 @@ public class FalsificationCycleService {
                     }
                 }
             }
+
+            // 2. Methodological Falsification (Philosophical Critique) check
+            String rawRules = readRawRules(role);
+            if (rawRules != null && !rawRules.trim().isEmpty()) {
+                List<Map<String, Object>> phResults = mlPredictionServiceClient.checkMethodologicalFalsification(latestDiff, rawRules);
+                for (Map<String, Object> phRes : phResults) {
+                    String status = (String) phRes.get("status");
+                    if ("ПОДТВЕРЖДЕНО".equalsIgnoreCase(status) || "CONFIRMED".equalsIgnoreCase(status)) {
+                        violationsFoundCount++;
+                        log.warn("FalsificationCycleService: Methodological contradiction confirmed for role {} by philosopher {}: {}",
+                                roleTag, phRes.get("philosopher"), phRes.get("thesis"));
+
+                        if (followUpsCreatedCount < 2) {
+                            WishlistEntity wishlist = new WishlistEntity();
+                            wishlist.setProjectId(project.getId());
+                            wishlist.setSource(WishlistSource.self_falsification);
+                            wishlist.setSourceRoleTag(roleTag);
+                            
+                            String philosopher = (String) phRes.get("philosopher");
+                            String thesis = (String) phRes.get("thesis");
+                            String mustBe = (String) phRes.get("must_be");
+                            String performance = (String) phRes.get("performance");
+                            String attractive = (String) phRes.get("attractive");
+                            
+                            String content = "Methodological contradiction confirmed by " + philosopher + ": " + thesis + "\n" +
+                                             "Score: " + phRes.get("score") + "\n" +
+                                             "[Must-Be]: " + mustBe + "\n" +
+                                             "[Performance]: " + performance + "\n" +
+                                             "[Attractive]: " + attractive;
+                            
+                            wishlist.setContent(content);
+                            wishlist.setStatus(WishlistStatus.pending);
+                            wishlist.setLeanValue(LeanValue.essential);
+                            wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                            wishlist.setCompiledByRole("BARCAN-TAG-09");
+                            wishlist.setJtbd("Resolve methodological contradiction identified by " + philosopher);
+                            wishlist.setSixSigmaMetric("falsification_run_rate");
+                            wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
+                            wishlist.setAcceptanceCriteria("Given methodological contradiction by " + philosopher + ", When resolving, Then Must-Be requirement is fulfilled: " + mustBe);
+                            wishlist = wishlistRepository.save(wishlist);
+                            followUpsCreatedCount++;
+                            log.info("FalsificationCycleService: Created self_falsification wishlist item {} for methodological falsification by {}", wishlist.getId(), philosopher);
+                        } else {
+                            log.info("FalsificationCycleService: Rate limit of 2 follow-up wishlist items per run reached, skipping methodological check for {}", phRes.get("philosopher"));
+                        }
+                    }
+                }
+            }
         }
 
         FalsificationRunEntity run = new FalsificationRunEntity();
@@ -143,6 +189,21 @@ public class FalsificationCycleService {
 
         log.info("FalsificationCycleService: Completed check for project {}. Checked roles: {}, Violations: {}, Follow-up wishlist items created: {}",
                 project.getName(), rolesCheckedCount, violationsFoundCount, followUpsCreatedCount);
+    }
+
+    private String readRawRules(RoleEntity role) {
+        if (role.getRulesPath() == null || role.getRulesPath().isBlank()) {
+            return "";
+        }
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(role.getRulesPath());
+            if (java.nio.file.Files.exists(path)) {
+                return java.nio.file.Files.readString(path);
+            }
+        } catch (Exception e) {
+            log.warn("FalsificationCycleService: Failed to read raw rules for role {}: {}", role.getTag(), e.getMessage());
+        }
+        return "";
     }
 
     private boolean checkActuatorHealth(ProjectEntity project) {
@@ -168,6 +229,38 @@ public class FalsificationCycleService {
     }
 
     private String getLatestProjectDiff(ProjectEntity project) {
+        // If workspacePath is set and exists, try to get actual git diff
+        if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
+            java.io.File workspaceDir = new java.io.File(project.getWorkspacePath());
+            if (workspaceDir.exists() && workspaceDir.isDirectory()) {
+                try {
+                    // Get diff against HEAD~1 or origin/main
+                    ProcessBuilder pb = new ProcessBuilder("git", "diff", "HEAD~1");
+                    pb.directory(workspaceDir);
+                    pb.redirectErrorStream(true);
+                    Process process = pb.start();
+
+                    java.io.BufferedReader reader = new java.io.BufferedReader(
+                            new java.io.InputStreamReader(process.getInputStream(), java.nio.charset.StandardCharsets.UTF_8)
+                    );
+                    StringBuilder diffSb = new StringBuilder();
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        diffSb.append(line).append("\n");
+                    }
+                    process.waitFor();
+                    if (process.exitValue() == 0 && diffSb.length() > 0) {
+                        log.info("FalsificationCycleService: Retrieved actual Git diff for project {}", project.getName());
+                        return diffSb.toString();
+                    }
+                } catch (Exception e) {
+                    log.warn("FalsificationCycleService: Failed to retrieve Git diff from workspace {}: {}",
+                            project.getWorkspacePath(), e.getMessage());
+                }
+            }
+        }
+
+        // Fallback to database query:
         try {
             List<String> diffs = jdbcTemplate.query(
                 "SELECT r.diff_summary FROM pr_reviews r " +
