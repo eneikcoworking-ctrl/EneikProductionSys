@@ -141,6 +141,7 @@ public class TaskClaimServiceTest {
         project.setSlug("claim-gate-test-" + suffix);
         project.setRepositoryName("claim-gate-test-repo-" + suffix);
         project.setRepoUrl("https://github.com/eneikcoworking-ctrl/claim-gate-test-" + suffix);
+        project.setStatus(ProjectStatus.active);
         project = projectRepository.saveAndFlush(project);
 
         RoleEntity role = roleRepository.findById(roleTag).orElseThrow();
