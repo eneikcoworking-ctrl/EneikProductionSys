@@ -22,8 +22,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 public class OrchestrationStatusTest {
 
+    @Autowired
+    private ClaimRepository claimRepository;
+
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
+        claimRepository.deleteAll();
+        julesSessionRepository.deleteAll();
         taskRepository.deleteAll();
         wishlistRepository.deleteAll();
         accountRepository.deleteAll();
