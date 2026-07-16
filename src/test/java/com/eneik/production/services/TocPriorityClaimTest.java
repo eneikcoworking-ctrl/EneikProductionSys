@@ -51,6 +51,7 @@ public class TocPriorityClaimTest {
         project.setSlug("toc-test");
         project.setRepositoryName("toc-repo");
         project.setRepoUrl("http://github.com/test/toc");
+        project.setStatus(ProjectStatus.active);
         project = projectRepository.saveAndFlush(project);
 
         RoleEntity role = roleRepository.findById("BARCAN-TAG-02").orElseThrow();
