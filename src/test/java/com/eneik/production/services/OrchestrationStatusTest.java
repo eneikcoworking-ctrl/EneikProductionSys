@@ -24,6 +24,7 @@ public class OrchestrationStatusTest {
 
     @org.junit.jupiter.api.BeforeEach
     public void setUp() {
+        claimRepository.deleteAll();
         taskRepository.deleteAll();
         wishlistRepository.deleteAll();
         accountRepository.deleteAll();
@@ -50,6 +51,9 @@ public class OrchestrationStatusTest {
 
     @Autowired
     private AccountRepository accountRepository;
+
+    @Autowired
+    private ClaimRepository claimRepository;
 
     @Autowired
     private ClaimService claimService;
