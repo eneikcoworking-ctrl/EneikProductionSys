@@ -157,6 +157,8 @@ public class AntigravityDiagnosticService {
                 - Work in English only.
                 - Do not commit directly to main; work through the dedicated branch and PR flow.
                 - Use exactly this autonomous work branch: %s
+                - Mandatory Sandbox Verification: You MUST use the code_execution tool to run the build and tests (e.g. 'mvn clean test' or 'npm run test') and ensure the build succeeds before committing.
+                - No Placeholders or Stubs: Do NOT write TODO comments, empty mock classes, or temporary stub implementations. Every code modification must be a complete, fully implemented feature/fix.
                 - Prefer fixing the root cause and proving it with tests over merely describing the issue.
                 - Keep scope coherent with the project facts and operator request; split unrelated discoveries into follow-up wishlist items.
                 - If code cannot be changed safely, produce an evidence-backed diagnosis and concrete follow-up wishlist items.

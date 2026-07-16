@@ -52,6 +52,8 @@ public class AutoMergeService {
     private final WishlistRepository wishlistRepository;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.services.video.VideoAssetService videoAssetService;
+    private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -65,7 +67,9 @@ public class AutoMergeService {
                             RoleCapabilityLoader roleCapabilityLoader,
                             WishlistRepository wishlistRepository,
                             MLPredictionServiceClient mlPredictionServiceClient,
-                            GitHubPullRequestService gitHubPullRequestService) {
+                            GitHubPullRequestService gitHubPullRequestService,
+                            com.eneik.production.services.video.VideoAssetService videoAssetService,
+                            com.eneik.production.services.dashboard.ProjectOperationalContextService contextService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -79,6 +83,8 @@ public class AutoMergeService {
         this.wishlistRepository = wishlistRepository;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.videoAssetService = videoAssetService;
+        this.contextService = contextService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -265,6 +271,26 @@ public class AutoMergeService {
                         task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
                         taskRepository.save(task);
                         log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
+
+                        // Automatically generate a walkthrough video for the merged task!
+                        try {
+                            var context = contextService.build(task.getProject().getId(), task.getProject().getName());
+                            var videoResult = videoAssetService.generateAsset(
+                                    task.getProject(),
+                                    context,
+                                    "Feature walkthrough for task: " + task.getDescription() + ". Diff summary: " + review.getDiffSummary(),
+                                    "walkthrough",
+                                    "standard",
+                                    false
+                            );
+                            if (videoResult.available()) {
+                                log.info("AutoMergeService: Veo Video walkthrough successfully generated at {}", videoResult.videoPath());
+                            } else {
+                                log.warn("AutoMergeService: Veo Video walkthrough generation was unavailable: {}", videoResult.message());
+                            }
+                        } catch (Exception e) {
+                            log.error("AutoMergeService: Failed to trigger Veo Video walkthrough: " + e.getMessage());
+                        }
                         
                         // Create chaotic_debt wishlist entry if it was chaotic
                         if ("chaotic".equalsIgnoreCase(task.getCynefinDomain())) {

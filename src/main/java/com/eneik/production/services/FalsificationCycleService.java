@@ -221,6 +221,42 @@ public class FalsificationCycleService {
     }
 
     private String getLatestProjectDiff(ProjectEntity project) {
+        StringBuilder logs = new StringBuilder();
+        if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
+            java.io.File workspaceDir = new java.io.File(project.getWorkspacePath());
+            if (workspaceDir.exists() && workspaceDir.isDirectory()) {
+                // read mvn-clean-test.log
+                java.nio.file.Path mvnLog = java.nio.file.Paths.get(project.getWorkspacePath(), "mvn-clean-test.log");
+                if (java.nio.file.Files.exists(mvnLog)) {
+                    try {
+                        java.util.List<String> lines = java.nio.file.Files.readAllLines(mvnLog);
+                        int start = Math.max(0, lines.size() - 200);
+                        logs.append("\n\n--- MVN CLEAN TEST LOG (LAST 200 LINES) ---\n");
+                        for (int i = start; i < lines.size(); i++) {
+                            logs.append(lines.get(i)).append("\n");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to read mvn log: " + e.getMessage());
+                    }
+                }
+                // read frontend-test.log
+                java.nio.file.Path feLog = java.nio.file.Paths.get(project.getWorkspacePath(), "frontend-test.log");
+                if (java.nio.file.Files.exists(feLog)) {
+                    try {
+                        java.util.List<String> lines = java.nio.file.Files.readAllLines(feLog);
+                        int start = Math.max(0, lines.size() - 200);
+                        logs.append("\n\n--- FRONTEND TEST LOG (LAST 200 LINES) ---\n");
+                        for (int i = start; i < lines.size(); i++) {
+                            logs.append(lines.get(i)).append("\n");
+                        }
+                    } catch (Exception e) {
+                        log.warn("Failed to read frontend log: " + e.getMessage());
+                    }
+                }
+            }
+        }
+
+        String diff = "mock_diff";
         // If workspacePath is set and exists, try to get actual git diff
         if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {
             java.io.File workspaceDir = new java.io.File(project.getWorkspacePath());
@@ -243,7 +279,7 @@ public class FalsificationCycleService {
                     process.waitFor();
                     if (process.exitValue() == 0 && diffSb.length() > 0) {
                         log.info("FalsificationCycleService: Retrieved actual Git diff for project {}", project.getName());
-                        return diffSb.toString();
+                        diff = diffSb.toString();
                     }
                 } catch (Exception e) {
                     log.warn("FalsificationCycleService: Failed to retrieve Git diff from workspace {}: {}",
@@ -252,23 +288,26 @@ public class FalsificationCycleService {
             }
         }
 
-        // Fallback to database query:
-        try {
-            List<String> diffs = jdbcTemplate.query(
-                "SELECT r.diff_summary FROM pr_reviews r " +
-                "JOIN jules_sessions s ON r.jules_session_id = s.id " +
-                "JOIN tasks t ON s.task_id = t.id " +
-                "WHERE t.project_id = ? " +
-                "ORDER BY r.created_at DESC LIMIT 1",
-                (rs, rowNum) -> rs.getString("diff_summary"),
-                project.getId()
-            );
-            if (!diffs.isEmpty() && diffs.get(0) != null) {
-                return diffs.get(0);
+        if ("mock_diff".equals(diff)) {
+            // Fallback to database query:
+            try {
+                List<String> diffs = jdbcTemplate.query(
+                    "SELECT r.diff_summary FROM pr_reviews r " +
+                    "JOIN jules_sessions s ON r.jules_session_id = s.id " +
+                    "JOIN tasks t ON s.task_id = t.id " +
+                    "WHERE t.project_id = ? " +
+                    "ORDER BY r.created_at DESC LIMIT 1",
+                    (rs, rowNum) -> rs.getString("diff_summary"),
+                    project.getId()
+                );
+                if (!diffs.isEmpty() && diffs.get(0) != null) {
+                    diff = diffs.get(0);
+                }
+            } catch (Exception e) {
+                log.warn("FalsificationCycleService: Failed to query latest project diff: {}", e.getMessage());
             }
-        } catch (Exception e) {
-            log.warn("FalsificationCycleService: Failed to query latest project diff: {}", e.getMessage());
         }
-        return "mock_diff";
+
+        return diff + logs.toString();
     }
 }

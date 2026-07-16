@@ -18,6 +18,20 @@
   let showAcceptConfirm = false;
   let acceptConfirmationText = '';
   let acceptingProject = false;
+  let videoAssets: any[] = [];
+
+  async function fetchVideoAssets() {
+    try {
+      const slug = dashboard?.project?.slug ?? '';
+      if (!slug) return;
+      const res = await fetch(`${API_BASE}/api/ai/resources/video-assets/${slug}`);
+      if (res.ok) {
+        videoAssets = await res.json();
+      }
+    } catch (e) {
+      console.error("Failed to fetch video assets:", e);
+    }
+  }
 
   const ORCHESTRATE_COOLDOWN_SECONDS = 300;
 
@@ -109,6 +123,10 @@
 
       dashboard = await res1.json();
       commandDashboard = await res2.json();
+
+      if (dashboard?.project?.slug) {
+        await fetchVideoAssets();
+      }
 
       if (dashboard.project.status === 'analyzing') {
         await fetchOnboardingData();
@@ -290,11 +308,19 @@
         clearOrchestrateCooldown();
       }
     }, 1000);
+    const pollTimer = setInterval(() => {
+      if (projectId) {
+        fetchDashboard();
+      }
+    }, 10000); // Poll every 10 seconds
     if (projectId && projectId !== loadedProjectId) {
       loadedProjectId = projectId;
       fetchDashboard();
     }
-    return () => clearInterval(timer);
+    return () => {
+      clearInterval(timer);
+      clearInterval(pollTimer);
+    };
   });
 </script>
 
@@ -343,6 +369,49 @@
         </button>
       </div>
     </header>
+
+    <!-- Automated Video Releases Slider -->
+    <section class="video-releases-panel">
+      <div class="card-header compact" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h2>Autonomous Video Releases Progress</h2>
+        <span class="badge live {videoAssets.length > 0 ? 'active' : 'idle'}">
+          {videoAssets.length > 0 ? 'Live Pipeline' : 'Standby Mode'}
+        </span>
+      </div>
+
+      {#if videoAssets.length > 0}
+        <div class="video-slider-container">
+          <div class="video-carousel">
+            {#each videoAssets as video}
+              <div class="video-card">
+                <div class="video-wrapper">
+                  <video src={video.url} controls muted preload="metadata" class="release-video">
+                    Your browser does not support the video tag.
+                  </video>
+                </div>
+                <div class="video-info">
+                  <h3>{video.name}</h3>
+                  <a href={video.url} target="_blank" class="download-link">Open in New Tab</a>
+                </div>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {:else}
+        <div class="logo-fallback-container">
+          <div class="animated-logo-ring">
+            <div class="logo-core">EMS</div>
+            <div class="wave wave-1"></div>
+            <div class="wave wave-2"></div>
+            <div class="wave wave-3"></div>
+          </div>
+          <div class="fallback-text">
+            <h3>Eneik Management System</h3>
+            <p>Standby mode. Awaiting autonomous release walkthrough video generation...</p>
+          </div>
+        </div>
+      {/if}
+    </section>
 
     {#if dashboard.emsMetrics}
       <section class="ems-panel">
@@ -1991,5 +2060,155 @@
     .doctrine-grid {
       grid-template-columns: 1fr;
     }
+  }
+
+  .video-releases-panel {
+    background: white;
+    border: 1px solid var(--neutral-200);
+    border-radius: 12px;
+    padding: 20px;
+    margin-bottom: 24px;
+  }
+  .video-slider-container {
+    overflow-x: auto;
+    padding-bottom: 12px;
+    margin-top: 16px;
+  }
+  .video-carousel {
+    display: flex;
+    gap: 20px;
+    width: max-content;
+  }
+  .video-card {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    width: 320px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .video-wrapper {
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .release-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+  .video-info {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .video-info h3 {
+    margin: 0;
+    font-size: 14px;
+    color: var(--neutral-800);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .download-link {
+    font-size: 12px;
+    color: var(--primary-600);
+    text-decoration: none;
+    font-weight: 500;
+  }
+  .download-link:hover {
+    text-decoration: underline;
+  }
+  .badge.live {
+    background: #e2fef0;
+    color: #0f7643;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-weight: 600;
+    display: inline-block;
+  }
+  .badge.live.idle {
+    background: #e2e8f0;
+    color: #475569;
+  }
+  .logo-fallback-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px;
+    background: radial-gradient(circle at center, #ffffff 0%, #f8fafc 100%);
+    border-radius: 8px;
+    border: 1px dashed var(--neutral-300);
+    gap: 20px;
+    text-align: center;
+  }
+  .animated-logo-ring {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .logo-core {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+    color: white;
+    font-size: 16px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 20px rgba(37, 99, 235, 0.4);
+    z-index: 2;
+  }
+  .wave {
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    border: 2px solid rgba(37, 99, 235, 0.3);
+    border-radius: 50%;
+    animation: ripple 3s infinite cubic-bezier(0.25, 0, 0, 1);
+    opacity: 0;
+    z-index: 1;
+  }
+  .wave-1 {
+    animation-delay: 0s;
+  }
+  .wave-2 {
+    animation-delay: 1s;
+  }
+  .wave-3 {
+    animation-delay: 2s;
+  }
+  @keyframes ripple {
+    0% {
+      transform: scale(1);
+      opacity: 0.8;
+    }
+    100% {
+      transform: scale(2.2);
+      opacity: 0;
+    }
+  }
+  .fallback-text h3 {
+    margin: 0;
+    font-size: 16px;
+    color: var(--neutral-800);
+    font-weight: 700;
+  }
+  .fallback-text p {
+    margin: 6px 0 0 0;
+    font-size: 12px;
+    color: var(--neutral-500);
   }
 </style>

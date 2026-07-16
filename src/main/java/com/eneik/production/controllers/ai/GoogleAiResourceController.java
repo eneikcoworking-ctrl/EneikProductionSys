@@ -8,12 +8,18 @@ import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.video.VideoAssetService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -87,6 +93,28 @@ public class GoogleAiResourceController {
                 request != null && request.useGoogleSearch()
         );
         return ResponseEntity.ok(result);
+    }
+
+    @GetMapping("/video-assets/{projectSlug}")
+    public List<Map<String, String>> listVideoAssets(@PathVariable String projectSlug) {
+        try {
+            Path dir = Paths.get("./data/video-assets", projectSlug);
+            if (!Files.exists(dir)) {
+                return Collections.emptyList();
+            }
+            try (var stream = Files.list(dir)) {
+                return stream
+                        .filter(p -> p.toString().endsWith(".mp4") || p.toString().endsWith(".webm") || p.toString().endsWith(".mov"))
+                        .map(p -> {
+                            String filename = p.getFileName().toString();
+                            String url = "http://localhost:8080/api/assets/video/" + projectSlug + "/" + filename;
+                            return Map.of("name", filename, "url", url);
+                        })
+                        .toList();
+            }
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
     }
 
     public record DesignAssetRequest(

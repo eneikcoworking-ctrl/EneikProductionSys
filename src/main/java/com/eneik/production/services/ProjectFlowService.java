@@ -65,6 +65,9 @@ public class ProjectFlowService {
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final EmsMetricsService emsMetricsService;
+    private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
+    private final com.eneik.production.services.design.DesignAssetService designAssetService;
+    private final com.eneik.production.services.antigravity.AntigravityDiagnosticService antigravityDiagnosticService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -95,7 +98,10 @@ public class ProjectFlowService {
                               @Value("${github.org}") String githubOrganization,
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
                               MLPredictionServiceClient mlPredictionServiceClient,
-                              EmsMetricsService emsMetricsService) {
+                              EmsMetricsService emsMetricsService,
+                              com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
+                              com.eneik.production.services.design.DesignAssetService designAssetService,
+                              com.eneik.production.services.antigravity.AntigravityDiagnosticService antigravityDiagnosticService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -118,6 +124,9 @@ public class ProjectFlowService {
         this.onboardingAuditService = onboardingAuditService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.emsMetricsService = emsMetricsService;
+        this.contextService = contextService;
+        this.designAssetService = designAssetService;
+        this.antigravityDiagnosticService = antigravityDiagnosticService;
     }
 
     @Transactional
@@ -130,7 +139,6 @@ public class ProjectFlowService {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Project name is required");
         }
-
         String mode = onboardingMode != null ? onboardingMode.trim() : "greenfield";
 
         // 1. Freeze current active project only if greenfield
@@ -764,7 +772,7 @@ public class ProjectFlowService {
             String ownerRole = targetRoleForSlice(wishlist, slice);
             wishlist.setSourceRoleTag(ownerRole);
             wishlistRepository.save(wishlist);
-            compileSliceMetadata(wishlist.getId(), slice, ownerRole);
+            compileSliceMetadata(project, wishlist.getId(), slice, ownerRole);
             technicalLeadCompiler.createTaskFromWishlist(
                     wishlist.getId(),
                     null,
@@ -795,7 +803,7 @@ public class ProjectFlowService {
             sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
             sliceWishlist.setStatus(WishlistStatus.pending);
             sliceWishlist = wishlistRepository.save(sliceWishlist);
-            compileSliceMetadata(sliceWishlist.getId(), slice, ownerRole);
+            compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole);
             TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
                     sliceWishlist.getId(),
                     previousTask,
@@ -889,7 +897,27 @@ public class ProjectFlowService {
         return java.util.List.of(legacyMetadataSlice(wishlist.getContent(), aiMeta));
     }
 
-    private void compileSliceMetadata(UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
+    private void compileSliceMetadata(ProjectEntity project, UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
+        String acceptanceCriteria = defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria());
+        if (slice.hasUi() || "BARCAN-TAG-11".equals(ownerRole) || "BARCAN-TAG-03".equals(ownerRole)) {
+            try {
+                var context = contextService.build(project.getId(), project.getName());
+                var designResult = designAssetService.generateAsset(
+                        project,
+                        context,
+                        "Create visual reference mockup for: " + slice.jtbd(),
+                        "mockup",
+                        "fast",
+                        false
+                );
+                if (designResult.available() && "ok".equals(designResult.status())) {
+                    acceptanceCriteria = acceptanceCriteria + "\n\nDESIGN_MOCKUP_ASSET: " + designResult.imagePath();
+                }
+            } catch (Exception e) {
+                log.warn("DesignAsset pre-generation failed: " + e.getMessage());
+            }
+        }
+
         technicalLeadCompiler.compile(
                 wishlistId,
                 ORCHESTRATOR_ROLE,
@@ -898,7 +926,7 @@ public class ProjectFlowService {
                 defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
                 defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
                 compiledDod(ownerRole, slice),
-                defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria())
+                acceptanceCriteria
         );
     }
 
@@ -1108,6 +1136,41 @@ public class ProjectFlowService {
             }
 
             String roleTag = task.getRole().getTag();
+
+            String cynefin = task.getCynefinDomain();
+            boolean isComplex = "complex".equalsIgnoreCase(cynefin) || "chaotic".equalsIgnoreCase(cynefin);
+            boolean isSelfFalsification = task.getPayload() != null && task.getPayload().path("ems_defect_work").asBoolean(false);
+            boolean needsAntigravity = (isComplex || isSelfFalsification || task.getRetryCount() > 0)
+                    && settingsService.effectiveBoolean("antigravity_enabled");
+
+            if (needsAntigravity) {
+                log.info("ProjectFlowService: Bypassing Jules for task {} (Cynefin: {}, Defect: {}, Retries: {}). Routing directly to Antigravity.",
+                        task.getId(), cynefin, isSelfFalsification, task.getRetryCount());
+                task.setStatus(TaskStatus.in_progress);
+                task.setJulesDispatchStatus("Dispatched autonomously to Antigravity Diagnostic Worker");
+                taskRepository.save(task);
+
+                try {
+                    var context = contextService.build(project.getId(), project.getName());
+                    var result = antigravityDiagnosticService.runDiagnostic(project, context, task.getDescription());
+                    if (result.available() && result.branchVerified()) {
+                        task.setStatus(TaskStatus.review);
+                        task.setJulesSessionName(result.branchName());
+                        task.setJulesDispatchStatus("Completed autonomously by Antigravity. Branch: " + result.branchName());
+                        log.info("ProjectFlowService: Antigravity successfully resolved task {} and pushed branch {}", task.getId(), result.branchName());
+                    } else {
+                        task.setStatus(TaskStatus.failed);
+                        task.setJulesDispatchStatus("Antigravity execution failed: " + result.output());
+                        log.warn("ProjectFlowService: Antigravity failed to resolve task {}: {}", task.getId(), result.output());
+                    }
+                } catch (Exception e) {
+                    task.setStatus(TaskStatus.failed);
+                    task.setJulesDispatchStatus("Antigravity execution error: " + e.getMessage());
+                    log.error("ProjectFlowService: Error running Antigravity for task " + task.getId(), e);
+                }
+                taskRepository.save(task);
+                continue;
+            }
             Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
                     project.getId(),
                     roleTag,
