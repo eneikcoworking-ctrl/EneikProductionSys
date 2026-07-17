@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration>
+    <include resource="org/springframework/boot/logging/logback/base.xml"/>
+
+    <!-- Feeds LogScopeBuffer: buckets PROJECT:{id}-scoped log events into an in-memory per-project ring
+         buffer (see LogScope/LogScopeBuffer), so the falsification cycle can attach recent operational
+         context to its role compliance checks without re-parsing container logs. -->
+    <appender name="SCOPED_BUFFER" class="com.eneik.production.services.logging.ScopedBufferAppender"/>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+        <appender-ref ref="SCOPED_BUFFER"/>
+    </root>
+</configuration>

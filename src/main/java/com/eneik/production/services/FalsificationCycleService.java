@@ -115,8 +115,17 @@ public class FalsificationCycleService {
             if (refusalCriteria != null && !refusalCriteria.trim().isEmpty()) {
                 Map<String, Object> rcResult = mlPredictionServiceClient.checkRefusalCriteria(latestDiff, refusalCriteria);
                 boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
+                String reason = String.valueOf(rcResult.get("reason"));
 
-                if (!isCompliant) {
+                // checkRefusalCriteria() deliberately fails toward compliant=false when the ML/Gemini
+                // verification pipeline itself is unreachable (AutoMergeService relies on that to block a
+                // merge it can't verify). But "we couldn't check" is not the same claim as "we found a real
+                // violation" - treating it as one here would spawn a high-priority wishlist demanding a fix
+                // for a regression that never happened, every time Gemini has an outage or hits quota.
+                if (!isCompliant && reason.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
+                    log.warn("FalsificationCycleService: Skipping refusal-criteria check for role {} in project {} - verification service unavailable, not treating as a violation",
+                            roleTag, project.getName());
+                } else if (!isCompliant) {
                     violationsFoundCount++;
                     log.warn("FalsificationCycleService: Code violation detected for role {} in project {}", roleTag, project.getName());
 
@@ -328,6 +337,14 @@ public class FalsificationCycleService {
                 }
             } catch (Exception e) {
                 log.warn("FalsificationCycleService: Failed to query latest project diff: {}", e.getMessage());
+            }
+        }
+
+        java.util.List<String> recentActivity = com.eneik.production.services.logging.LogScopeBuffer.recent(project.getId(), 60);
+        if (!recentActivity.isEmpty()) {
+            logs.append("\n\n--- RECENT PROJECT OPERATIONAL ACTIVITY (last ").append(recentActivity.size()).append(" scoped log lines) ---\n");
+            for (String line : recentActivity) {
+                logs.append(line).append("\n");
             }
         }
 

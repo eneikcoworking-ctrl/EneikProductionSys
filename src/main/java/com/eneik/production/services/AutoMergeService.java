@@ -14,6 +14,7 @@ import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.services.github.GitHubPullRequestService;
+import com.eneik.production.services.logging.LogScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -97,23 +98,34 @@ public class AutoMergeService {
 
         for (PrReviewEntity review : pendingReviews) {
             boolean isChaotic = false;
+            com.eneik.production.models.persistence.TaskEntity task = null;
             if (review.getJulesSessionId() != null) {
                 var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
                 if (sessionOpt.isPresent()) {
                     var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                    if (taskOpt.isPresent() && "chaotic".equalsIgnoreCase(taskOpt.get().getCynefinDomain())) {
-                        isChaotic = true;
+                    if (taskOpt.isPresent()) {
+                        task = taskOpt.get();
+                        isChaotic = "chaotic".equalsIgnoreCase(task.getCynefinDomain());
                     }
                 }
             }
 
-            if (isChaotic) {
-                // Cynefin "chaotic" domain: act first to stabilize, sense/respond afterward — the merge
-                // proceeds on green CI alone, and executeMerge() below unconditionally records a
-                // high-priority chaotic_debt wishlist item so the bypass is always followed up on review.
-                executeMerge(review);
-            } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
-                executeMerge(review);
+            if (task != null && task.getProject() != null) {
+                LogScope.project(task.getProject().getId());
+            } else {
+                LogScope.system();
+            }
+            try {
+                if (isChaotic) {
+                    // Cynefin "chaotic" domain: act first to stabilize, sense/respond afterward — the merge
+                    // proceeds on green CI alone, and executeMerge() below unconditionally records a
+                    // high-priority chaotic_debt wishlist item so the bypass is always followed up on review.
+                    executeMerge(review);
+                } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
+                    executeMerge(review);
+                }
+            } finally {
+                LogScope.clear();
             }
         }
     }

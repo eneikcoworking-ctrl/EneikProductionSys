@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.services.logging.LogScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -26,6 +27,7 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
     private final com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final com.eneik.production.repositories.TaskRepository taskRepository;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -34,7 +36,8 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.jules.JulesDispatchService julesDispatchService,
                                          com.eneik.production.repositories.WishlistRepository wishlistRepository,
                                          com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler,
-                                         MLPredictionServiceClient mlPredictionServiceClient) {
+                                         MLPredictionServiceClient mlPredictionServiceClient,
+                                         com.eneik.production.repositories.TaskRepository taskRepository) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -43,56 +46,67 @@ public class ContinuousOrchestrationService {
         this.wishlistRepository = wishlistRepository;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.taskRepository = taskRepository;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
     public void continuousOrchestrate() {
-        repairMisclassifiedJulesAccountLimits();
-
+        LogScope.system();
         try {
-            julesDispatchService.runSessionSafetyMaintenance();
-        } catch (Exception e) {
-            log.error("Continuous Orchestration: Failed to run Jules safety maintenance", e);
-        }
+            repairMisclassifiedJulesAccountLimits();
 
-        pollActiveJulesSessions();
+            try {
+                julesDispatchService.runSessionSafetyMaintenance();
+            } catch (Exception e) {
+                log.error("Continuous Orchestration: Failed to run Jules safety maintenance", e);
+            }
+
+            pollActiveJulesSessions();
+        } finally {
+            LogScope.clear();
+        }
 
         List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
         for (ProjectEntity project : activeProjects) {
-            log.info("Continuous Orchestration: Processing project {}", project.getName());
-
-            // Compile any pending wishlist items into tasks. This is the step that used to only run when a
-            // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
-            // stalls the moment the queue drains down to a wishlist item that isn't a circuit-breaker
-            // recovery follow-up. orchestrate() is self-rate-limited (5 min/project cooldown), so calling it
-            // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
-            // recovery/dispatch calls below.
+            LogScope.project(project.getId());
             try {
-                OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
-                if (orchestration.processedWishlistItems() > 0) {
-                    log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
-                            orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
-                }
-            } catch (OrchestrationCooldownException e) {
-                log.debug("Continuous Orchestration: Orchestration on cooldown for project {} ({}s remaining)",
-                        project.getId(), e.getRetryAfterSeconds());
-            } catch (Exception e) {
-                log.error("Continuous Orchestration: Failed to compile wishlist for project {}", project.getId(), e);
-            }
+                log.info("Continuous Orchestration: Processing project {}", project.getName());
 
-            try {
-                int recovered = projectFlowService.recoverBlockedWork(project.getId());
-                if (recovered > 0) {
-                    log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
-                            recovered, project.getName());
+                // Compile any pending wishlist items into tasks. This is the step that used to only run when a
+                // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
+                // stalls the moment the queue drains down to a wishlist item that isn't a circuit-breaker
+                // recovery follow-up. orchestrate() is self-rate-limited (5 min/project cooldown), so calling it
+                // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
+                // recovery/dispatch calls below.
+                try {
+                    OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+                    if (orchestration.processedWishlistItems() > 0) {
+                        log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
+                                orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
+                    }
+                } catch (OrchestrationCooldownException e) {
+                    log.debug("Continuous Orchestration: Orchestration on cooldown for project {} ({}s remaining)",
+                            project.getId(), e.getRetryAfterSeconds());
+                } catch (Exception e) {
+                    log.error("Continuous Orchestration: Failed to compile wishlist for project {}", project.getId(), e);
                 }
-                projectFlowService.dispatchQueuedTasks(project.getId());
-                projectFlowService.dispatchReviewTasks(project.getId());
-            } catch (OrchestrationCooldownException e) {
-                log.info("Continuous Orchestration: Skipping project {} for {} seconds because orchestration is on cooldown",
-                        project.getId(), e.getRetryAfterSeconds());
-            } catch (Exception e) {
-                log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
+
+                try {
+                    int recovered = projectFlowService.recoverBlockedWork(project.getId());
+                    if (recovered > 0) {
+                        log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
+                                recovered, project.getName());
+                    }
+                    projectFlowService.dispatchQueuedTasks(project.getId());
+                    projectFlowService.dispatchReviewTasks(project.getId());
+                } catch (OrchestrationCooldownException e) {
+                    log.info("Continuous Orchestration: Skipping project {} for {} seconds because orchestration is on cooldown",
+                            project.getId(), e.getRetryAfterSeconds());
+                } catch (Exception e) {
+                    log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
+                }
+            } finally {
+                LogScope.clear();
             }
         }
     }
@@ -123,10 +137,18 @@ public class ContinuousOrchestrationService {
                             || "stuck".equals(s.getStatus()))
                     .toList();
             for (com.eneik.production.models.persistence.JulesSessionEntity session : activeSessions) {
+                taskRepository.findById(session.getTaskId())
+                        .map(task -> task.getProject())
+                        .ifPresentOrElse(
+                                project -> LogScope.project(project.getId()),
+                                LogScope::system
+                        );
                 try {
                     julesDispatchService.pollStatus(session.getId());
                 } catch (Exception e) {
                     log.error("Failed to poll status for Jules session {}", session.getId(), e);
+                } finally {
+                    LogScope.clear();
                 }
             }
         } catch (Exception e) {
