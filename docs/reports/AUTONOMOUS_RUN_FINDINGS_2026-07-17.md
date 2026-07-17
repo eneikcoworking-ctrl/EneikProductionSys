@@ -77,3 +77,31 @@ sessions see repeated spurious "killed" events.
   deliberately for a reason (avoiding a specific false-positive), so the fix needs to distinguish "PR exists
   and is real" from whatever edge case the original skip was protecting against - not a pattern-match-and-fix,
   a design decision.
+
+---
+
+### 2026-07-17T19:40Z — Design/video generation never runs: Gemini prepay balance depleted (billing, not a code bug)
+
+- **Observed:** User asked why no design mockups or videos exist for test-twenty-fourth despite the feature
+  being enabled (`DESIGN_SERVICE_ENABLED=true`, `NANO_BANANA_ENABLED=true`, `VEO_ENABLED=true`, a valid
+  `gemini_api_key` configured in the settings DB). `data/design-assets/` has assets only for a *different*
+  project (test-twenty-third); `data/video-assets/` doesn't exist at all. ML service logs
+  (`docker compose logs ml`) show the real cause: `HTTP Error calling Gemini API model gemini-3.1-pro-preview:
+  429 - {"code":429,"message":"Your prepayment credits are depleted...","status":"RESOURCE_EXHAUSTED"}` -
+  and the same 429 for every fallback model (gemini-3.5-flash, gemini-2.5-flash) too.
+- **Why it matters:** This is a billing/account issue, not an application bug - the Gemini API key's prepaid
+  balance is at zero, so every Gemini-backed call fails regardless of which model is tried. It affects three
+  things through the same key: ML-service task-slice classification (falls back to local heuristics, so this
+  one is silently self-healing), `DesignAssetService.generateAsset()` (mockups), and `VideoAssetService`
+  (Veo videos) - the latter two have no fallback and simply produce nothing.
+- **Secondary finding (real code smell):** `GoogleAiResourceService` and `DesignAssetService` contain zero
+  `log.*` calls anywhere. A failed design/video generation returns a quiet `available=false` result object
+  that calling code (`ProjectFlowService.compileSliceMetadata`, `ProjectOperatorService`) checks and silently
+  skips on - no warning, no error, nothing in `docker compose logs backend`. The only reason this was
+  diagnosable at all was that the *Python* ML service happens to log its own Gemini failures. Tracked as a
+  follow-up, not fixed yet (pending user confirmation): add logging to `GoogleAiResourceService.callInteraction`
+  and `DesignAssetService`/`VideoAssetService`'s unavailable-result branches so a depleted-billing (or any
+  other) failure is visible in the backend's own logs instead of requiring cross-service log archaeology.
+- **Suggestion:** Not a code fix - user needs to add prepay credits at https://ai.studio/projects. Once
+  billing is restored, design/video generation should work without any code change (the logic is already
+  correctly wired). The logging gap noted above is a separate, optional follow-up.
