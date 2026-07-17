@@ -28,7 +28,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query("SELECT COUNT(a) > 0 FROM AccountEntity a WHERE " +
            "a.lastHeartbeat > :threshold AND " +
-           "(:tag IS NULL OR :tag IS NOT NULL)")
+           "(:tag IS NULL OR a.capabilities = '*' OR CONCAT(',', a.capabilities, ',') LIKE CONCAT('%,', :tag, ',%'))")
     boolean existsOnlineWithCapability(@Param("tag") String tag, @Param("threshold") Instant threshold);
 
     @Modifying
@@ -78,7 +78,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
-            "AND (:tag IS NULL OR :tag IS NOT NULL) " +
+            "AND (:tag IS NULL OR capabilities = '*' OR ',' || capabilities || ',' LIKE '%,' || :tag || ',%') " +
             "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
 
@@ -87,7 +87,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             WHERE a.enabled = true
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
-              AND (:tag IS NULL OR :tag IS NOT NULL)
+              AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -114,7 +114,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             SELECT COUNT(*) > 0 FROM accounts a
             WHERE a.enabled = true
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
-              AND (:tag IS NULL OR :tag IS NOT NULL)
+              AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s

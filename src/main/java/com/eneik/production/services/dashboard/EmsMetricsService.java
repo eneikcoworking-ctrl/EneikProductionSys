@@ -741,7 +741,10 @@ public class EmsMetricsService {
         if (task.getRole() != null && roleTag.equals(task.getRole().getTag())) {
             return 0.9;
         }
-        return 0.1;
+        // A task owned by another role and not explicitly cross-referenced via impact_coefficients
+        // carries no weight for this role — otherwise every unrelated task in the project nudges every
+        // other role's satisfaction ratio, diluting it toward the project-wide average as task count grows.
+        return 0.0;
     }
 
     private record RoleDoctrineProfile(

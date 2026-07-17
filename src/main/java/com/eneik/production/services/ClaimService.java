@@ -28,6 +28,13 @@ public class ClaimService {
 
     private static final Duration LEASE_TTL = Duration.ofHours(1);
 
+    /**
+     * Claims made outside JulesDispatchService (claim()/claimForProject()/claimSpecificTask()) never get a
+     * JulesSessionEntity, so the self-healing pass below must not treat "no session yet" as "stuck" until a
+     * claim has had a fair chance to either produce a session or be worked without one.
+     */
+    private static final Duration SELF_HEALING_GRACE_PERIOD = Duration.ofMinutes(5);
+
     private final ClaimRepository claimRepository;
     private final TaskRepository taskRepository;
     private final AccountRepository accountRepository;
@@ -89,14 +96,17 @@ public class ClaimService {
 
     @Transactional
     public ClaimDto claimSpecificTask(UUID taskId, UUID accountId) {
-        TaskEntity task = taskRepository.findById(taskId)
-                .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
+        // Atomic SELECT ... FOR UPDATE SKIP LOCKED: only one concurrent caller can lock a still-queued
+        // task by id, closing the read-then-write race that used to let two threads both claim it.
+        TaskEntity task = taskRepository.lockTaskByIdForUpdate(taskId)
+                .orElseThrow(() -> {
+                    boolean exists = taskRepository.existsById(taskId);
+                    return exists
+                            ? new IllegalStateException("Task is not in queued status or is already locked: " + taskId)
+                            : new IllegalArgumentException("Task not found: " + taskId);
+                });
         AccountEntity account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new IllegalArgumentException("Account not found: " + accountId));
-
-        if (task.getStatus() != TaskStatus.queued) {
-            throw new IllegalStateException("Task is not in queued status: " + task.getStatus());
-        }
 
         String taskTag = task.getRole().getTag();
         boolean isCapable = "*".equals(account.getCapabilities()) ||
@@ -363,6 +373,11 @@ public class ClaimService {
         // requeue the task and release the claim so it can be re-dispatched.
         List<ClaimEntity> activeClaims = claimRepository.findByReleasedAtIsNull();
         for (ClaimEntity claim : activeClaims) {
+            if (claim.getClaimedAt() != null
+                    && claim.getClaimedAt().isAfter(Instant.now().minus(SELF_HEALING_GRACE_PERIOD))) {
+                continue;
+            }
+
             TaskEntity task = claim.getTask();
             List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
             boolean isAlive = false;

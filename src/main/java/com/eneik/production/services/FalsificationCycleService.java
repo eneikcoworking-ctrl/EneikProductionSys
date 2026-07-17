@@ -23,6 +23,14 @@ import java.util.UUID;
 public class FalsificationCycleService {
     private static final Logger log = LoggerFactory.getLogger(FalsificationCycleService.class);
 
+    /**
+     * A still-unresolved violation must not spawn a fresh self_falsification wishlist item every single
+     * night forever: once one has fired for a role in this window, later runs skip it (regardless of
+     * whether the earlier item is still pending or has already been compiled into a task) and let the
+     * existing follow-up run its course.
+     */
+    private static final Duration FOLLOWUP_SUPPRESSION_WINDOW = Duration.ofDays(3);
+
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
     private final RoleCapabilityLoader roleCapabilityLoader;
@@ -71,6 +79,12 @@ public class FalsificationCycleService {
         }
     }
 
+    private boolean hasRecentFollowUp(UUID projectId, String roleTag) {
+        return wishlistRepository.existsByProjectIdAndSourceRoleTagAndSourceAndCreatedAtAfter(
+                projectId, roleTag, WishlistSource.self_falsification,
+                Instant.now().minus(FOLLOWUP_SUPPRESSION_WINDOW));
+    }
+
     @Transactional
     public void executeCycleForProject(ProjectEntity project) {
         log.info("FalsificationCycleService: Running check for project {}", project.getName());
@@ -106,23 +120,27 @@ public class FalsificationCycleService {
                     violationsFoundCount++;
                     log.warn("FalsificationCycleService: Code violation detected for role {} in project {}", roleTag, project.getName());
 
-                    // Create self_falsification wishlist item. Orchestrate converts it later via the single smart compiler path.
-                    WishlistEntity wishlist = new WishlistEntity();
-                    wishlist.setProjectId(project.getId());
-                    wishlist.setSource(WishlistSource.self_falsification);
-                    wishlist.setSourceRoleTag(roleTag);
-                    wishlist.setContent("Compliance violation detected for role " + roleTag + ". Violates: " + rcResult.get("reason"));
-                    wishlist.setStatus(WishlistStatus.pending);
-                    wishlist.setLeanValue(LeanValue.essential);
-                    wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-                    wishlist.setCompiledByRole("BARCAN-TAG-09");
-                    wishlist.setJtbd("Fix role refusal criteria violation detected by falsification cycle");
-                    wishlist.setSixSigmaMetric("falsification_run_rate");
-                    wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
-                    wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
-                    wishlist = wishlistRepository.save(wishlist);
-                    followUpsCreatedCount++;
-                    log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
+                    if (hasRecentFollowUp(project.getId(), roleTag)) {
+                        log.info("FalsificationCycleService: Skipping duplicate self_falsification wishlist for role {} — a follow-up was already created within {}", roleTag, FOLLOWUP_SUPPRESSION_WINDOW);
+                    } else {
+                        // Create self_falsification wishlist item. Orchestrate converts it later via the single smart compiler path.
+                        WishlistEntity wishlist = new WishlistEntity();
+                        wishlist.setProjectId(project.getId());
+                        wishlist.setSource(WishlistSource.self_falsification);
+                        wishlist.setSourceRoleTag(roleTag);
+                        wishlist.setContent("Compliance violation detected for role " + roleTag + ". Violates: " + rcResult.get("reason"));
+                        wishlist.setStatus(WishlistStatus.pending);
+                        wishlist.setLeanValue(LeanValue.essential);
+                        wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
+                        wishlist.setCompiledByRole("BARCAN-TAG-09");
+                        wishlist.setJtbd("Fix role refusal criteria violation detected by falsification cycle");
+                        wishlist.setSixSigmaMetric("falsification_run_rate");
+                        wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
+                        wishlist.setAcceptanceCriteria("Refusal criteria check passes successfully");
+                        wishlist = wishlistRepository.save(wishlist);
+                        followUpsCreatedCount++;
+                        log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
+                    }
                 }
             }
 
@@ -136,6 +154,11 @@ public class FalsificationCycleService {
                         violationsFoundCount++;
                         log.warn("FalsificationCycleService: Methodological contradiction confirmed for role {} by philosopher {}: {}",
                                 roleTag, phRes.get("philosopher"), phRes.get("thesis"));
+
+                        if (hasRecentFollowUp(project.getId(), roleTag)) {
+                            log.info("FalsificationCycleService: Skipping duplicate self_falsification wishlist for role {} — a follow-up was already created within {}", roleTag, FOLLOWUP_SUPPRESSION_WINDOW);
+                            continue;
+                        }
 
                         WishlistEntity wishlist = new WishlistEntity();
                         wishlist.setProjectId(project.getId());

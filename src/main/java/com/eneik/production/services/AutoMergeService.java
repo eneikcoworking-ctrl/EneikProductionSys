@@ -106,10 +106,13 @@ public class AutoMergeService {
                 }
             }
 
-            if (isChaotic) {
+            boolean hasApprovalToken = review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN);
+            if (hasApprovalToken) {
+                // The cynefin "chaotic" domain still requires the reviewer approval token — green CI plus a
+                // classifier-assigned domain must never be the sole gate for merging unreviewed autonomous code.
                 executeMerge(review);
-            } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
-                executeMerge(review);
+            } else if (isChaotic) {
+                log.warn("AutoMergeService: PR {} is in the chaotic cynefin domain but has no approval token yet — holding for review instead of auto-merging.", review.getPrUrl());
             }
         }
     }
