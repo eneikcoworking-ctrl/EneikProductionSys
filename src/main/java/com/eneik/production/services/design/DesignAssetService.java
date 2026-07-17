@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.stitch.StitchClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -29,15 +30,18 @@ public class DesignAssetService {
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
     private final GoogleAiResourceService googleAiResourceService;
+    private final StitchClient stitchClient;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final Path assetRoot;
 
     public DesignAssetService(GoogleAiResourceService googleAiResourceService,
+                              StitchClient stitchClient,
                               SystemSettingsService settingsService,
                               ObjectMapper objectMapper,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this.googleAiResourceService = googleAiResourceService;
+        this.stitchClient = stitchClient;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
         this.assetRoot = Paths.get(assetRoot == null || assetRoot.isBlank() ? "./data/design-assets" : assetRoot)
@@ -56,6 +60,20 @@ public class DesignAssetService {
                     project == null ? "unknown" : project.getId());
             return DesignAssetResult.unavailable("Design service is disabled.");
         }
+
+        // Stitch generates real UI screens (HTML + screenshot) from Gemini models but is billed/
+        // rate-limited independently from the main Gemini Developer API prepay balance, so it is
+        // preferred here when configured - it keeps working even when the nano-banana/Gemini image
+        // path is blocked by a depleted prepay balance.
+        if (settingsService.effectiveBoolean("stitch_enabled") && stitchClient.hasStitchKey()) {
+            DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType);
+            if (stitchResult.available()) {
+                return stitchResult;
+            }
+            log.warn("DesignAssetService: Stitch generation failed ({}), falling back to nano-banana: {}",
+                    stitchResult.status(), stitchResult.message());
+        }
+
         if (!settingsService.effectiveBoolean("nano_banana_enabled")) {
             log.info("DesignAssetService: Nano Banana image generation is disabled; skipping mockup generation for project {}",
                     project == null ? "unknown" : project.getId());
@@ -137,6 +155,81 @@ public class DesignAssetService {
         } catch (Exception e) {
             log.warn("DesignAssetService: failed to write generated mockup to disk: {}", e.getMessage());
             return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage());
+        }
+    }
+
+    private DesignAssetResult generateViaStitch(ProjectEntity project, String brief, String assetType) {
+        String title = project == null ? "Eneik design" : firstNonBlank(project.getName(), project.getSlug(), "Eneik design");
+        String stitchProjectId = stitchClient.createProject(title);
+        if (stitchProjectId == null) {
+            return new DesignAssetResult(false, "stitch_project_error", "stitch", "", "", "",
+                    "Stitch did not return a project ID for create_project.");
+        }
+
+        String prompt = brief == null || brief.isBlank()
+                ? "Create a UI screen for: " + firstNonBlank(assetType, "the current project feature")
+                : brief;
+        StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH");
+        if (!screen.available()) {
+            return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message());
+        }
+
+        try {
+            String projectSlug = slug(project == null ? "unknown-project" : firstNonBlank(project.getSlug(), project.getName(), project.getId().toString()));
+            String kind = slug(firstNonBlank(assetType, "asset"));
+            Path directory = assetRoot.resolve(projectSlug).normalize();
+            Files.createDirectories(directory);
+            String basename = FILE_TIME.format(Instant.now()) + "-" + kind;
+
+            String imagePath = "";
+            if (!screen.screenshotDownloadUrl().isBlank()) {
+                byte[] imageBytes = stitchClient.download(screen.screenshotDownloadUrl());
+                if (imageBytes != null) {
+                    Path resolvedImagePath = directory.resolve(basename + ".png").normalize();
+                    Files.write(resolvedImagePath, imageBytes);
+                    imagePath = resolvedImagePath.toString();
+                }
+            }
+
+            String htmlPath = "";
+            if (!screen.htmlDownloadUrl().isBlank()) {
+                byte[] htmlBytes = stitchClient.download(screen.htmlDownloadUrl());
+                if (htmlBytes != null) {
+                    Path resolvedHtmlPath = directory.resolve(basename + ".html").normalize();
+                    Files.write(resolvedHtmlPath, htmlBytes);
+                    htmlPath = resolvedHtmlPath.toString();
+                }
+            }
+
+            if (imagePath.isBlank() && htmlPath.isBlank()) {
+                return new DesignAssetResult(false, "stitch_download_error", "stitch", "", "", "",
+                        "Stitch generated a screen but its files could not be downloaded.");
+            }
+
+            Path metadataPath = directory.resolve(basename + ".json").normalize();
+            ObjectNode metadata = objectMapper.createObjectNode();
+            metadata.put("projectId", project == null ? "" : String.valueOf(project.getId()));
+            metadata.put("projectName", project == null ? "" : project.getName());
+            metadata.put("provider", "stitch");
+            metadata.put("stitchProjectId", stitchProjectId);
+            metadata.put("assetType", assetType == null ? "" : assetType);
+            metadata.put("createdAt", Instant.now().toString());
+            metadata.put("brief", brief == null ? "" : brief);
+            metadata.put("htmlPath", htmlPath);
+            Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
+
+            return new DesignAssetResult(
+                    true,
+                    "ok",
+                    "stitch",
+                    imagePath.isBlank() ? htmlPath : imagePath,
+                    metadataPath.toString(),
+                    imagePath.isBlank() ? "text/html" : "image/png",
+                    "Generated design asset via Stitch."
+            );
+        } catch (Exception e) {
+            log.warn("DesignAssetService: failed to write Stitch-generated asset to disk: {}", e.getMessage());
+            return new DesignAssetResult(false, "write_error", "stitch", "", "", "", e.getMessage());
         }
     }
 
