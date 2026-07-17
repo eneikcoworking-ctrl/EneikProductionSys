@@ -192,6 +192,14 @@ class AutonomousPipelineIntegrationTest {
 
         PrReviewEntity updatedReview = prReviewRepository.findById(review.getId()).orElseThrow();
         assertThat(updatedReview.getMerged()).isFalse();
+
+        // Once a review's task has reached spike_completed, processAutoMerge() must stop re-evaluating it
+        // every scheduled cycle - it used to log "Merging PR... Not merging branch" forever, identically,
+        // because review.merged stays false (it genuinely wasn't merged) so the pendingReviews query kept
+        // matching it. Re-running the cycle must be a true no-op now: same terminal state, nothing re-touched.
+        autoMergeService.processAutoMerge();
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.spike_completed);
+        assertThat(prReviewRepository.findById(review.getId()).orElseThrow().getMerged()).isFalse();
     }
 
     @Test

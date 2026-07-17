@@ -92,6 +92,7 @@ public class AutoMergeService {
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
                 .filter(r -> "success".equalsIgnoreCase(r.getCiStatus()))
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+                .filter(r -> !isAlreadyResolvedSpike(r))
                 .toList();
 
         for (PrReviewEntity review : pendingReviews) {
@@ -115,6 +116,21 @@ public class AutoMergeService {
                 executeMerge(review);
             }
         }
+    }
+
+    // A "complex" Cynefin-domain spike marks its task spike_completed and leaves review.merged = false
+    // (it was genuinely not merged, so merged = true would be wrong) - but that means the review keeps
+    // matching the pendingReviews filter above forever, re-running the same "Merging PR... Not merging
+    // branch" no-op every scheduled cycle indefinitely. The task itself is already terminal, so once a
+    // review's task has reached spike_completed there is nothing left to (re-)decide.
+    private boolean isAlreadyResolvedSpike(PrReviewEntity review) {
+        if (review.getJulesSessionId() == null) {
+            return false;
+        }
+        return julesSessionRepository.findById(review.getJulesSessionId())
+                .flatMap(session -> taskRepository.findById(session.getTaskId()))
+                .map(task -> task.getStatus() == TaskStatus.spike_completed)
+                .orElse(false);
     }
 
     @Transactional
