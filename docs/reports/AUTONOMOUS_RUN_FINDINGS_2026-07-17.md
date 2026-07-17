@@ -105,3 +105,21 @@ sessions see repeated spurious "killed" events.
 - **Suggestion:** Not a code fix - user needs to add prepay credits at https://ai.studio/projects. Once
   billing is restored, design/video generation should work without any code change (the logic is already
   correctly wired). The logging gap noted above is a separate, optional follow-up.
+
+---
+
+### 2026-07-18T00:XXZ — Stitch integrated and deployed as a free alternative to nano-banana
+
+- **Outcome:** Following the Gemini billing finding above, verified live (via direct MCP calls: `create_project`,
+  `generate_screen_from_text` against `https://stitch.googleapis.com/mcp`) that Google's Stitch generates real
+  UI screens (design system, theme, HTML, screenshot) with zero billing errors while nano-banana was fully
+  blocked by the depleted Gemini prepay balance - Stitch is billed/rate-limited independently.
+- **Implemented:** `StitchClient` (minimal JSON-RPC MCP client), wired into `DesignAssetService.generateAsset()`
+  as the preferred path when `stitch_enabled` + a Stitch API key are configured; falls back to the existing
+  nano-banana/Gemini path unchanged if Stitch isn't configured or fails. `DesignAssetServiceTest` covers all
+  three paths (Stitch success, Stitch not configured, Stitch failure fallback). Commit `b4524fd`.
+- **Status: DEPLOYED and verified 2026-07-18T00:57Z.** Fresh container, clean startup, `stitch_api_key` saved
+  via `PUT /api/settings` (database-backed, never committed to git) and confirmed via `GET /api/settings`
+  (`source":"database"`).
+- **Not covered:** Video generation (Veo) has no Stitch equivalent - it remains blocked by the same depleted
+  Gemini balance until the user tops up prepay credits or a free video-gen alternative is found.
