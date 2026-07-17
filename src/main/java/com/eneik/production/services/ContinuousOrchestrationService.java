@@ -1,5 +1,6 @@
 package com.eneik.production.services;
 
+import com.eneik.production.dto.OrchestrationResultDto;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.repositories.AccountRepository;
@@ -58,8 +59,28 @@ public class ContinuousOrchestrationService {
 
         List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
         for (ProjectEntity project : activeProjects) {
+            log.info("Continuous Orchestration: Processing project {}", project.getName());
+
+            // Compile any pending wishlist items into tasks. This is the step that used to only run when a
+            // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
+            // stalls the moment the queue drains down to a wishlist item that isn't a circuit-breaker
+            // recovery follow-up. orchestrate() is self-rate-limited (5 min/project cooldown), so calling it
+            // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
+            // recovery/dispatch calls below.
             try {
-                log.info("Continuous Orchestration: Processing project {}", project.getName());
+                OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+                if (orchestration.processedWishlistItems() > 0) {
+                    log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
+                            orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
+                }
+            } catch (OrchestrationCooldownException e) {
+                log.debug("Continuous Orchestration: Orchestration on cooldown for project {} ({}s remaining)",
+                        project.getId(), e.getRetryAfterSeconds());
+            } catch (Exception e) {
+                log.error("Continuous Orchestration: Failed to compile wishlist for project {}", project.getId(), e);
+            }
+
+            try {
                 int recovered = projectFlowService.recoverBlockedWork(project.getId());
                 if (recovered > 0) {
                     log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
