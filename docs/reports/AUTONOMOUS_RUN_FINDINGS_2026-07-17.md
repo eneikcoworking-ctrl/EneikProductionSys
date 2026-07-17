@@ -50,3 +50,30 @@ and via the redirected host-side log file, both of which showed genuine progress
 `BUILD SUCCESS` regardless of what the notification claimed). Ground truth was always the file/container
 state, never the notification. Not an application bug, but worth knowing if future autonomous-run
 sessions see repeated spurious "killed" events.
+
+---
+
+### 2026-07-17T18:0X Z — active_session_age_limit abandons already-opened PRs instead of reviewing them
+
+- **Observed:** User cross-checked GitHub directly (`gh pr list --repo eneikcoworking-ctrl/test-twenty-fourth
+  --state all`): 5 PRs merged, 6 still open. The 6 open PRs line up exactly with the project's 5 current
+  `blocked` tasks (plus one older PR #3 from before today's reset) - all of them Jules sessions that were
+  force-closed by the 180-minute `active_session_age_limit` breaker while their session status was
+  `revising`, each followed by a fresh replacement task ("Restart the work as a fresh short session").
+- **Why it matters:** `JulesDispatchService.pollStatus()` only calls `detectOpenPullRequestFromGitHub()` when
+  `oldStatus` is NOT `"revising"` (line ~394, deliberate: avoids misreading a stale "SUCCEEDED" poll while a
+  revision is in flight). But `closeOverdueActiveSessions()`'s age-limit check treats `revising` as an
+  active/incomplete state needing closure (`isAgeLimitedActiveStatus`, JulesDispatchService.java:1487-1492)
+  with NO check for whether a PR already exists on GitHub. Net effect: if Jules is slow to transition out of
+  `revising` and crosses 180 minutes, Eneik never looks at GitHub, assumes zero progress, closes the session,
+  and dispatches a brand new task to redo the same work from scratch - while the real PR (which may contain
+  working, reviewable code) is left open forever, un-reviewed, un-merged, cluttering the repo. This is not a
+  hard bug (no exception) but a genuine "dumb" design smell: real completed/near-complete work is discarded
+  based on Eneik's own internal status label, not on GitHub's actual state.
+- **Suggestion (recorded, NOT changed yet - needs a human judgment call, offered to the user, awaiting
+  answer):** before closing a session for `active_session_age_limit`, check
+  `detectOpenPullRequestFromGitHub()` regardless of `revising` status; if a PR exists, route the task to
+  review/merge evaluation instead of a fresh restart. Risk to weigh: the `revising` skip was added
+  deliberately for a reason (avoiding a specific false-positive), so the fix needs to distinguish "PR exists
+  and is real" from whatever edge case the original skip was protecting against - not a pattern-match-and-fix,
+  a design decision.
