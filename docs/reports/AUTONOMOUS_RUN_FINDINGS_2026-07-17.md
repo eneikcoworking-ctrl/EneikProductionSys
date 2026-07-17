@@ -77,6 +77,12 @@ sessions see repeated spurious "killed" events.
   deliberately for a reason (avoiding a specific false-positive), so the fix needs to distinguish "PR exists
   and is real" from whatever edge case the original skip was protecting against - not a pattern-match-and-fix,
   a design decision.
+- **Resolution (user decision, went further than the initial suggestion):** user's explicit principle -
+  "time is never the argument, only whether Jules is still responding" - so rather than patch the age-limit
+  check with a PR lookup, `closeOverdueActiveSessions()` / `isAgeLimitedActiveStatus()` / `maxActiveSessionMinutes`
+  were **removed entirely**. The only remaining closure path is `closeOverdueStuckSessions()`
+  (`stuck_session_timeout`), which is behavior-based - it only fires once Jules itself reports the "stuck"
+  status, never on elapsed time alone. **Status: DEPLOYED 2026-07-18T00:57Z**, commit `e79557c`.
 
 ---
 
@@ -122,4 +128,56 @@ sessions see repeated spurious "killed" events.
   via `PUT /api/settings` (database-backed, never committed to git) and confirmed via `GET /api/settings`
   (`source":"database"`).
 - **Not covered:** Video generation (Veo) has no Stitch equivalent - it remains blocked by the same depleted
-  Gemini balance until the user tops up prepay credits or a free video-gen alternative is found.
+  Gemini balance until the user tops up prepay credits or a free video-gen alternative is found. User
+  explicitly decided not to pay for it - `veo_enabled` set to `false` in settings so the system stops
+  attempting a resource that will never be free.
+
+---
+
+### 2026-07-18T00:00Z — Falsification cycle fail-safe misreported infra failures as policy violations
+
+- **Observed:** User asked to enable the falsification cycle (`falsification_cycle_enabled`, was `false`) and
+  raise its frequency from once/day to every 4 hours - explicitly called this "the core of the whole system".
+  While enabling it, reviewed `FalsificationCycleService.executeCycleForProject()` and found
+  `MLPredictionServiceClient.checkRefusalCriteria()` deliberately returns `compliant=false` with reason
+  `VERIFICATION_SERVICE_UNAVAILABLE: ...` whenever the ML/Gemini pipeline itself is unreachable - a correct
+  fail-safe for `AutoMergeService`'s merge gate (don't merge what you can't verify). But
+  `FalsificationCycleService` treated that identically to a real detected violation, creating a
+  `HIGH_PRIORITY_DEBT` wishlist item demanding a fix for a regression that never happened.
+- **Why it matters:** With the Gemini prepay balance already confirmed depleted (see the design/video
+  finding above) and the cycle about to run 6x more often, this would have flooded every active project with
+  fake "fix this regression" work across all 12 roles on the very next scheduled run - a textbook "dumb"
+  design smell: infrastructure unavailability was being misreported as a philosophical/policy violation.
+- **Suggestion:** Fixed directly (small, narrowly scoped): the `VERIFICATION_SERVICE_UNAVAILABLE` sentinel is
+  now recognized and skipped with a warning log instead of being treated as a violation. The methodological
+  falsification check (`checkMethodologicalFalsification`) was already safe by contrast - it fails toward an
+  empty result list (silently misses checks during an outage, but never fabricates a violation).
+  **Status: DEPLOYED 2026-07-18T00:57Z**, commit `2d22dce`. Cron changed from `0 0 2 * * ?` (daily) to
+  `0 0 */4 * * ?` (every 4 hours), also deployed in the same commit.
+
+---
+
+### 2026-07-18T00:15Z — Scope-tagged logs (SYSTEM vs PROJECT) + LogScopeBuffer feeding falsification context
+
+- **Context:** User raised a design question (not a bug): the factory's own operational health (dispatch,
+  circuit breakers, account maintenance) and one specific built project's activity were mixed together in
+  logs and findings with no way to separate them - and any findings fed back to project roles must never leak
+  factory-internal ("SYSTEM") noise, only that project's own activity.
+- **Implemented:** `LogScope` (SLF4J MDC wrapper: `system()`/`project(id)`/`clear()`), applied at the entry
+  points where per-project work actually happens - the main loop and `pollActiveJulesSessions` in
+  `ContinuousOrchestrationService`, and the per-review merge loop in `AutoMergeService` (each resolves the
+  owning project via task lookup). Every existing `log.*` call anywhere in the resulting call stack picks up
+  the tag automatically via MDC - no changes needed to individual log statements.
+  `logging.pattern.level` renders it as `[PROJECT:{id}]` or `[SYSTEM]` in console output.
+  `LogScopeBuffer` + `ScopedBufferAppender` (custom Logback appender, `logback-spring.xml`): an in-memory,
+  per-project ring buffer that only ever stores `PROJECT:{id}`-scoped events, never `SYSTEM`-scoped ones -
+  system noise cannot leak into project-facing context by construction, not by convention.
+  `FalsificationCycleService.getLatestProjectDiff()` now appends the last 60 buffered lines for that project
+  alongside the git diff and test logs, so role compliance checks see recent operational activity, not just
+  the code diff in isolation.
+- **Status: DEPLOYED 2026-07-18T00:57Z**, commit `2d22dce`. Verified live: `docker compose logs backend`
+  shows `[SYSTEM]` for startup/account-maintenance lines and `[PROJECT:52ae4a5a-...]` for
+  `ContinuousOrchestrationService: Processing project test-twenty-fourth` and subsequent per-project lines.
+- **Not yet done:** this session's own periodic monitoring findings (this file) are NOT wired into the
+  falsification cycle - only recent *log* activity is. Feeding curated findings in as well was discussed but
+  not implemented before the session paused.
