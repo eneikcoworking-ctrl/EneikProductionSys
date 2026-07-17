@@ -453,13 +453,14 @@ public class JulesDispatchService {
 
         JsonNode root = julesApiClient.getSessionActivities(session.getExternalSessionId(), apiKey);
         if (root != null && root.path("activitiesOverflow").asBoolean(false)) {
-            closeLoopAndCreateFollowUps(
-                    session,
-                    task,
-                    "Jules activities payload exceeded the backend safety limit before Eneik could parse new agent questions.",
-                    List.of(),
-                    "activity_log_overflow: Jules activity log exceeded the safe scanner limit"
-            );
+            // A large activity payload just means the session has a long history (lots of tool calls/file
+            // reads) - it is not evidence the session is stuck. Closing the loop here used to throw away
+            // sessions that were actively progressing toward a PR, purely because Eneik's own log-scanner
+            // hit its memory guard. Skip this cycle's question scan instead; genuinely stuck/runaway
+            // sessions are still caught by the independent, time-based stuck_session_timeout and
+            // active_session_age_limit circuit breakers.
+            log.warn("Jules activities payload for session {} exceeded the backend safety limit; skipping question scan this cycle (session left running)",
+                    session.getExternalSessionId());
             return;
         }
         if (root == null || !root.path("activities").isArray()) {

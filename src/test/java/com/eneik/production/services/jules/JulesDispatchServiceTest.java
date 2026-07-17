@@ -190,7 +190,7 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void closesLoopAndCreatesWishlistWhenActivitiesOverflow() {
+    void skipsQuestionScanWithoutClosingLoopWhenActivitiesOverflow() {
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
@@ -229,19 +229,17 @@ class JulesDispatchServiceTest {
                 .thenReturn(objectMapper.createObjectNode()
                         .put("activitiesOverflow", true)
                         .put("maxBytes", 2_097_152));
-        when(mlPredictionServiceClient.chat(anyString(), anyString())).thenReturn("Root cause: activity log overflow\nKano classification: Must-Be\nCynefin domain: complex");
-        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
 
         JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
 
-        assertEquals("loop_closed", result.getStatus());
+        // A large activity payload is not evidence the session is stuck - it just means the session has a
+        // long history. The session must be left running so it can keep progressing toward a PR; genuinely
+        // stuck/runaway sessions are still caught by the independent, time-based stuck_session_timeout and
+        // active_session_age_limit circuit breakers.
+        assertEquals("running", result.getStatus());
         verify(julesApiClient, never()).sendMessage(eq("sessions/overflow"), anyString(), eq("jules-key"));
-        verify(claimService).closeTaskAsBlocked(eq(taskId), contains("activity_log_overflow"));
-        verify(wishlistRepository).save(argThat(item ->
-                item instanceof WishlistEntity
-                        && ((WishlistEntity) item).getContent().contains("Cynefin: complex")
-                        && ((WishlistEntity) item).getContent().contains("activities payload exceeded")
-        ));
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
     }
 
     @Test

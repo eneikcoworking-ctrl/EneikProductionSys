@@ -19,6 +19,7 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
 
   backend:
     build:
@@ -69,6 +70,7 @@ services:
     depends_on:
       ml:
         condition: service_healthy
+    restart: unless-stopped
 
   frontend:
     build:
@@ -79,3 +81,4 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    restart: unless-stopped
