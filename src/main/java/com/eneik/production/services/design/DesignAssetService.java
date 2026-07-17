@@ -6,6 +6,8 @@ import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,7 @@ import java.util.Locale;
 
 @Service
 public class DesignAssetService {
+    private static final Logger log = LoggerFactory.getLogger(DesignAssetService.class);
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
@@ -49,12 +52,18 @@ public class DesignAssetService {
                                            String quality,
                                            boolean useGoogleSearch) {
         if (!settingsService.effectiveBoolean("design_service_enabled")) {
+            log.info("DesignAssetService: design service is disabled; skipping mockup generation for project {}",
+                    project == null ? "unknown" : project.getId());
             return DesignAssetResult.unavailable("Design service is disabled.");
         }
         if (!settingsService.effectiveBoolean("nano_banana_enabled")) {
+            log.info("DesignAssetService: Nano Banana image generation is disabled; skipping mockup generation for project {}",
+                    project == null ? "unknown" : project.getId());
             return DesignAssetResult.unavailable("Nano Banana image generation is disabled.");
         }
         if (!googleAiResourceService.hasGoogleAiKey()) {
+            log.warn("DesignAssetService: Gemini API key is not configured; skipping mockup generation for project {}",
+                    project == null ? "unknown" : project.getId());
             return DesignAssetResult.unavailable("Gemini API key is not configured.");
         }
 
@@ -71,9 +80,13 @@ public class DesignAssetService {
                 allowSearch ? List.of("google_search") : List.of()
         );
         if (!interaction.available()) {
+            log.warn("DesignAssetService: mockup generation via model {} failed (status={}): {}",
+                    model, interaction.status(), interaction.outputText());
             return new DesignAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText());
         }
         if (interaction.outputImageBase64().isBlank()) {
+            log.warn("DesignAssetService: model {} returned no image block for project {}",
+                    model, project == null ? "unknown" : project.getId());
             return new DesignAssetResult(
                     false,
                     "no_image",
@@ -122,6 +135,7 @@ public class DesignAssetService {
                     "Generated design asset and metadata."
             );
         } catch (Exception e) {
+            log.warn("DesignAssetService: failed to write generated mockup to disk: {}", e.getMessage());
             return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage());
         }
     }

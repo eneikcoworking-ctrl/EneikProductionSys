@@ -75,9 +75,6 @@ public class JulesDispatchService {
     @Value("${jules.stuck-close-threshold-minutes:120}")
     private int stuckCloseThresholdMinutes;
 
-    @Value("${jules.max-active-session-minutes:180}")
-    private int maxActiveSessionMinutes;
-
     @Value("${jules.max-loop-closures-per-run:5}")
     private int maxLoopClosuresPerRun;
 
@@ -456,9 +453,9 @@ public class JulesDispatchService {
             // A large activity payload just means the session has a long history (lots of tool calls/file
             // reads) - it is not evidence the session is stuck. Closing the loop here used to throw away
             // sessions that were actively progressing toward a PR, purely because Eneik's own log-scanner
-            // hit its memory guard. Skip this cycle's question scan instead; genuinely stuck/runaway
-            // sessions are still caught by the independent, time-based stuck_session_timeout and
-            // active_session_age_limit circuit breakers.
+            // hit its memory guard. Skip this cycle's question scan instead; a genuinely stuck session is
+            // still caught by the independent stuck_session_timeout breaker, which only fires once Jules
+            // itself reports the "stuck" status - not on elapsed time alone.
             log.warn("Jules activities payload for session {} exceeded the backend safety limit; skipping question scan this cycle (session left running)",
                     session.getExternalSessionId());
             return;
@@ -933,16 +930,6 @@ public class JulesDispatchService {
                     atomicSliceFollowUp(task, latestQuestion)
             );
         }
-        if (closeReason.contains("active_session_age_limit")) {
-            return new LoopDiagnosis(
-                    "The Jules session exceeded the maximum safe age for a weak coding-model branch; poll updates were masking lack of production progress.",
-                    "Must-Be",
-                    "complicated",
-                    roleTag,
-                    "Restart the work as a fresh short session",
-                    atomicSliceFollowUp(task, latestQuestion)
-            );
-        }
         return new LoopDiagnosis(
                 "The same blocker repeated and the session stopped making objective progress.",
                 "Must-Be",
@@ -1396,7 +1383,6 @@ public class JulesDispatchService {
     public void runSessionSafetyMaintenance() {
         claimService.detectStuckSessions(stuckThresholdMinutes);
         closeOverdueStuckSessions();
-        closeOverdueActiveSessions();
     }
 
     @Transactional
@@ -1440,54 +1426,4 @@ public class JulesDispatchService {
         }
     }
 
-    @Transactional
-    public void closeOverdueActiveSessions() {
-        Instant threshold = Instant.now().minus(Duration.ofMinutes(maxActiveSessionMinutes));
-        List<JulesSessionEntity> sessions = julesSessionRepository.findAll();
-        if (sessions == null || sessions.isEmpty()) {
-            return;
-        }
-        int closed = 0;
-        for (JulesSessionEntity session : sessions) {
-            if (closed >= maxLoopClosuresPerRun) {
-                break;
-            }
-            if (!isAgeLimitedActiveStatus(session.getStatus())) {
-                continue;
-            }
-            if (session.getCreatedAt() == null || session.getCreatedAt().isAfter(threshold)) {
-                continue;
-            }
-            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
-            if (task == null) {
-                session.setStatus("loop_closed");
-                session.setClosedAt(Instant.now());
-                session.setClosureReason("active_session_age_limit: task no longer exists");
-                julesSessionRepository.save(session);
-                continue;
-            }
-            List<JulesActivityResponseEntity> responseHistory =
-                    julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
-            String latestQuestion = responseHistory.stream()
-                    .findFirst()
-                    .map(JulesActivityResponseEntity::getQuestion)
-                    .filter(question -> question != null && !question.isBlank())
-                    .orElse("Jules session exceeded the maximum safe active duration without completing the task.");
-            closeLoopAndCreateFollowUps(
-                    session,
-                    task,
-                    latestQuestion,
-                    responseHistory,
-                    "active_session_age_limit: active for at least " + maxActiveSessionMinutes + " minutes"
-            );
-            closed++;
-        }
-    }
-
-    private boolean isAgeLimitedActiveStatus(String status) {
-        return "queued".equals(status)
-                || "running".equals(status)
-                || "revising".equals(status)
-                || "stuck".equals(status);
-    }
 }

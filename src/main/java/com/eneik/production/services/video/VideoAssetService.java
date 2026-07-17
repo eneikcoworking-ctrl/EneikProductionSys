@@ -6,6 +6,8 @@ import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,7 @@ import java.util.Locale;
 
 @Service
 public class VideoAssetService {
+    private static final Logger log = LoggerFactory.getLogger(VideoAssetService.class);
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
@@ -49,9 +52,13 @@ public class VideoAssetService {
                                           String quality,
                                           boolean useGoogleSearch) {
         if (!settingsService.effectiveBoolean("veo_enabled")) {
+            log.info("VideoAssetService: Veo video generation is disabled; skipping video generation for project {}",
+                    project == null ? "unknown" : project.getId());
             return VideoAssetResult.unavailable("Veo video generation is disabled.");
         }
         if (!googleAiResourceService.hasGoogleAiKey()) {
+            log.warn("VideoAssetService: Gemini API key is not configured; skipping video generation for project {}",
+                    project == null ? "unknown" : project.getId());
             return VideoAssetResult.unavailable("Gemini API key is not configured.");
         }
 
@@ -65,6 +72,8 @@ public class VideoAssetService {
                 allowSearch ? List.of("google_search", "video_generation") : List.of("video_generation")
         );
         if (!interaction.available()) {
+            log.warn("VideoAssetService: video generation via model {} failed (status={}): {}",
+                    model, interaction.status(), interaction.outputText());
             return new VideoAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText());
         }
 
@@ -89,6 +98,8 @@ public class VideoAssetService {
             metadata.put("rawPreview", interaction.rawPreview());
 
             if (interaction.outputVideoBase64().isBlank()) {
+                log.warn("VideoAssetService: model {} returned no video block for project {}",
+                        model, project == null ? "unknown" : project.getId());
                 metadata.put("status", "no_video");
                 Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
                 return new VideoAssetResult(
@@ -123,6 +134,7 @@ public class VideoAssetService {
                     "Generated video asset and metadata."
             );
         } catch (Exception e) {
+            log.warn("VideoAssetService: failed to write generated video to disk: {}", e.getMessage());
             return new VideoAssetResult(false, "write_error", model, "", "", "", e.getMessage());
         }
     }

@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -22,6 +24,8 @@ import java.util.Map;
 
 @Service
 public class GoogleAiResourceService {
+    private static final Logger log = LoggerFactory.getLogger(GoogleAiResourceService.class);
+
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -226,6 +230,7 @@ public class GoogleAiResourceService {
     public InteractionResult callInteraction(String model, String input, List<String> toolTypes) {
         String apiKey = googleAiApiKey();
         if (apiKey.isBlank()) {
+            log.warn("GoogleAiResourceService: Gemini API key is not configured; skipping call to model {}", model);
             return InteractionResult.unavailable("Gemini API key is not configured.");
         }
         try {
@@ -253,6 +258,8 @@ public class GoogleAiResourceService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             String redacted = redact(response.body(), apiKey);
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                log.warn("GoogleAiResourceService: Gemini API call to model {} failed with HTTP {}: {}",
+                        model, response.statusCode(), preview(redacted, 500));
                 return new InteractionResult(
                         false,
                         "api_error",
@@ -281,8 +288,10 @@ public class GoogleAiResourceService {
             );
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+            log.warn("GoogleAiResourceService: Gemini API call to model {} was interrupted", model);
             return new InteractionResult(false, "interrupted", model, "", "", "", "", "", "Interaction interrupted.");
         } catch (Exception e) {
+            log.warn("GoogleAiResourceService: Gemini API call to model {} failed: {}", model, e.getMessage());
             return new InteractionResult(false, "error", model, "", "", "", "", "", e.getMessage());
         }
     }
