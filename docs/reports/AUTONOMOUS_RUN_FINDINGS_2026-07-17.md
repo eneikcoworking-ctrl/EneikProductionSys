@@ -37,5 +37,16 @@ actually worth a human's attention: a bug, a design weak spot, or a recurring pa
 - **Suggestion:** Fixed directly (small, safe, narrowly scoped): added `isAlreadyResolvedSpike()` filter to
   `processAutoMerge()`'s candidate query that excludes reviews whose task has already reached
   `spike_completed`. Extended `AutonomousPipelineIntegrationTest#testComplexDomainSpikeStatus` to call
-  `processAutoMerge()` a second time and assert the state stays a no-op. Tests running now; will deploy if
-  green.
+  `processAutoMerge()` a second time and assert the state stays a no-op.
+- **Status: DEPLOYED and confirmed 2026-07-17T16:05Z.** Commit `5ecc4dc`, live in container created
+  2026-07-17T15:57:55Z. Verified via `docker compose logs backend --since <redeploy time>`: zero
+  `AutoMergeService` log lines at all for the previously-repeating PRs (was ~12-15 identical
+  merge-attempt/reject cycles per 15 min before the fix) - the loop is gone.
+
+**Side note on tooling reliability during this fix:** deploying this took 5 attempts because this
+session's background-task completion notifications repeatedly reported `killed` for processes that were
+actually still running fine underneath (confirmed via `docker ps`/`docker logs` on the orphaned container
+and via the redirected host-side log file, both of which showed genuine progress and eventual
+`BUILD SUCCESS` regardless of what the notification claimed). Ground truth was always the file/container
+state, never the notification. Not an application bug, but worth knowing if future autonomous-run
+sessions see repeated spurious "killed" events.
