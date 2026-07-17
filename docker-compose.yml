@@ -49,10 +49,6 @@ services:
       VEO_ENABLED: ${VEO_ENABLED:-true}
       VEO_MODEL: ${VEO_MODEL:-veo-3.1-generate-preview}
       VIDEO_ASSET_ROOT: /app/data/video-assets
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-      CLAUDE_WORKER_ENABLED: ${CLAUDE_WORKER_ENABLED:-false}
-      CLAUDE_WORKER_PUSH_ENABLED: ${CLAUDE_WORKER_PUSH_ENABLED:-true}
-      CLAUDE_WORKER_MODEL: ${CLAUDE_WORKER_MODEL:-claude-opus-4-8}
       GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}

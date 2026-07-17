@@ -47,8 +47,6 @@ public class GoogleAiResourceService {
     public List<Map<String, Object>> resourceMatrix() {
         boolean googleKey = hasGoogleAiKey();
         boolean geminiEnabled = settingsService.effectiveBoolean("gemini_enabled");
-        boolean claudeWorkerEnabled = settingsService.effectiveBoolean("claude_worker_enabled");
-        boolean claudeKey = !firstNonBlank(settingsService.effectiveValue("anthropic_api_key")).isBlank();
         boolean searchEnabled = settingsService.effectiveBoolean("google_search_grounding_enabled");
         boolean urlEnabled = settingsService.effectiveBoolean("url_context_enabled");
         boolean designEnabled = settingsService.effectiveBoolean("design_service_enabled");
@@ -127,15 +125,6 @@ public class GoogleAiResourceService {
                 model("veo_model", "veo-3.1-generate-preview"),
                 "demo, promo, onboarding, walkthrough video assets",
                 veoEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
-        ));
-        resources.add(resource(
-                "claude_worker",
-                "Claude Autonomous Worker",
-                claudeWorkerEnabled && claudeKey,
-                "agentic_code_execution",
-                model("claude_worker_model", "claude-opus-4-8"),
-                "deep repository diagnostics, local repair, autonomous branch and PR flow",
-                claudeWorkerEnabled ? claudeKey ? "ready" : "missing Anthropic API key" : "disabled"
         ));
         return resources;
     }

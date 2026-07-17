@@ -6,7 +6,6 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
-import com.eneik.production.services.claude.ClaudeAutonomousWorkerService;
 import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
@@ -24,6 +23,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.contains;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -39,7 +39,6 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -52,7 +51,6 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -124,7 +122,6 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -137,7 +134,6 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -208,7 +204,6 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -221,7 +216,6 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -285,14 +279,13 @@ class ProjectOperatorServiceTest {
     }
 
     @Test
-    void claudeWorkerIntentRunsDiagnosticWorkerTool() {
+    void deepDiagnosticIntentRoutesThroughJulesWishlistPipeline() {
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ProjectOperationalContextService contextService = mock(ProjectOperationalContextService.class);
         MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -305,7 +298,6 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -354,29 +346,31 @@ class ProjectOperatorServiceTest {
                         )
                 );
 
+        UUID wishlistId = UUID.randomUUID();
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(contextService.build(projectId, "test-project")).thenReturn(context);
-        when(claudeAutonomousWorkerService.runDiagnostic(any(), any(), anyString()))
-                .thenReturn(new ClaudeAutonomousWorkerService.DiagnosticResult(
-                        false,
-                        "unavailable",
-                        "",
-                        false,
-                        false,
-                        "",
-                        "Claude autonomous worker is disabled."
+        when(projectFlowService.addWishlistItem(eq(projectId), any()))
+                .thenReturn(new com.eneik.production.dto.WishlistResponseDto(
+                        wishlistId, projectId,
+                        com.eneik.production.models.persistence.WishlistSource.role,
+                        "BARCAN-TAG-00", "diagnostic request",
+                        com.eneik.production.models.persistence.WishlistStatus.pending,
+                        java.time.Instant.now()
                 ));
+        when(projectFlowService.orchestrate(projectId))
+                .thenReturn(new com.eneik.production.dto.OrchestrationResultDto(projectId, 1, List.of(), "compiled 1 task"));
         when(mlPredictionServiceClient.chat(anyString(), contains("tool planner")))
                 .thenReturn("{\"toolCalls\":[]}");
         when(mlPredictionServiceClient.chat(anyString(), contains("PROJECT_FACT_PACK")))
-                .thenReturn("Claude diagnostic worker was checked and is disabled.");
+                .thenReturn("Deep diagnostic worker dispatched the request to Jules.");
         when(mlPredictionServiceClient.chat(anyString(), contains("answer critic")))
                 .thenReturn("{\"verdict\":\"pass\",\"issues\":[]}");
 
-        String answer = service.answer(projectId, "test-project", "Use Claude diagnostic branch for this project.");
+        String answer = service.answer(projectId, "test-project", "Run a deep diagnostic branch for this project.");
 
-        assertEquals("Claude diagnostic worker was checked and is disabled.", answer);
-        verify(claudeAutonomousWorkerService).runDiagnostic(any(), any(), anyString());
-        verify(projectFlowService, never()).orchestrate(any());
+        assertEquals("Deep diagnostic worker dispatched the request to Jules.", answer);
+        verify(projectFlowService).addWishlistItem(eq(projectId), any());
+        verify(projectFlowService).orchestrate(projectId);
+        verify(projectFlowService).dispatchQueuedTasks(projectId);
     }
 }

@@ -156,15 +156,6 @@ public class SystemSettingsService {
         definitions.put("nano_banana_pro_model", plain("nano_banana_pro_model", "NANO_BANANA_PRO_MODEL", "nano-banana.pro-model"));
         definitions.put("veo_enabled", flag("veo_enabled", "VEO_ENABLED", "veo.enabled"));
         definitions.put("veo_model", plain("veo_model", "VEO_MODEL", "veo.model"));
-        definitions.put("claude_worker_enabled", flag("claude_worker_enabled", "CLAUDE_WORKER_ENABLED", "claude-worker.enabled"));
-        definitions.put("claude_worker_push_enabled", flag("claude_worker_push_enabled", "CLAUDE_WORKER_PUSH_ENABLED", "claude-worker.push-enabled"));
-        definitions.put("claude_worker_model", plain("claude_worker_model", "CLAUDE_WORKER_MODEL", "claude-worker.model"));
-        definitions.put("anthropic_api_key", secret("anthropic_api_key", "ANTHROPIC_API_KEY", "anthropic.api-key"));
-        // Managed Agents resources are created once and reused; the ids are cached here rather than
-        // re-created on every dispatch (agents.create()/environments.create() are setup calls, not
-        // per-request calls — see the Managed Agents "create once, reference by id" contract).
-        definitions.put("claude_worker_agent_id", plain("claude_worker_agent_id", "CLAUDE_WORKER_AGENT_ID", "claude-worker.agent-id"));
-        definitions.put("claude_worker_environment_id", plain("claude_worker_environment_id", "CLAUDE_WORKER_ENVIRONMENT_ID", "claude-worker.environment-id"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         return definitions;

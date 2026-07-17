@@ -41,10 +41,7 @@
     { key: 'nano_banana_model', label: 'Image model', kind: 'text', placeholder: 'gemini-3.1-flash-image' },
     { key: 'nano_banana_pro_model', label: 'Pro image model', kind: 'text', placeholder: 'gemini-3-pro-image' },
     { key: 'veo_enabled', label: 'Veo video', kind: 'toggle' },
-    { key: 'veo_model', label: 'Veo model', kind: 'text', placeholder: 'veo-3.1-generate-preview' },
-    { key: 'claude_worker_enabled', label: 'Claude Worker', kind: 'toggle' },
-    { key: 'claude_worker_model', label: 'Claude Worker model', kind: 'text', placeholder: 'claude-opus-4-8' },
-    { key: 'claude_worker_push_enabled', label: 'Autonomous branch push', kind: 'toggle' }
+    { key: 'veo_model', label: 'Veo model', kind: 'text', placeholder: 'veo-3.1-generate-preview' }
   ];
 
   let settings = $state<Setting[]>([]);

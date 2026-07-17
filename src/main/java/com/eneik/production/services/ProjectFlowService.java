@@ -67,7 +67,6 @@ public class ProjectFlowService {
     private final EmsMetricsService emsMetricsService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
-    private final com.eneik.production.services.claude.ClaudeAutonomousWorkerService claudeAutonomousWorkerService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -100,8 +99,7 @@ public class ProjectFlowService {
                               MLPredictionServiceClient mlPredictionServiceClient,
                               EmsMetricsService emsMetricsService,
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
-                              com.eneik.production.services.design.DesignAssetService designAssetService,
-                              com.eneik.production.services.claude.ClaudeAutonomousWorkerService claudeAutonomousWorkerService) {
+                              com.eneik.production.services.design.DesignAssetService designAssetService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -126,7 +124,6 @@ public class ProjectFlowService {
         this.emsMetricsService = emsMetricsService;
         this.contextService = contextService;
         this.designAssetService = designAssetService;
-        this.claudeAutonomousWorkerService = claudeAutonomousWorkerService;
     }
 
     @Transactional
@@ -1137,40 +1134,9 @@ public class ProjectFlowService {
 
             String roleTag = task.getRole().getTag();
 
-            String cynefin = task.getCynefinDomain();
-            boolean isComplex = "complex".equalsIgnoreCase(cynefin) || "chaotic".equalsIgnoreCase(cynefin);
-            boolean isSelfFalsification = task.getPayload() != null && task.getPayload().path("ems_defect_work").asBoolean(false);
-            boolean needsClaudeWorker = (isComplex || isSelfFalsification || task.getRetryCount() > 0)
-                    && settingsService.effectiveBoolean("claude_worker_enabled");
-
-            if (needsClaudeWorker) {
-                log.info("ProjectFlowService: Bypassing Jules for task {} (Cynefin: {}, Defect: {}, Retries: {}). Routing directly to Claude autonomous worker.",
-                        task.getId(), cynefin, isSelfFalsification, task.getRetryCount());
-                task.setStatus(TaskStatus.in_progress);
-                task.setJulesDispatchStatus("Dispatched autonomously to Claude Autonomous Worker");
-                taskRepository.save(task);
-
-                try {
-                    var context = contextService.build(project.getId(), project.getName());
-                    var result = claudeAutonomousWorkerService.runDiagnostic(project, context, task.getDescription());
-                    if (result.available() && result.branchVerified()) {
-                        task.setStatus(TaskStatus.review);
-                        task.setJulesSessionName(result.branchName());
-                        task.setJulesDispatchStatus("Completed autonomously by Claude. Branch: " + result.branchName());
-                        log.info("ProjectFlowService: Claude autonomous worker successfully resolved task {} and pushed branch {}", task.getId(), result.branchName());
-                    } else {
-                        task.setStatus(TaskStatus.failed);
-                        task.setJulesDispatchStatus("Claude autonomous worker execution failed: " + result.output());
-                        log.warn("ProjectFlowService: Claude autonomous worker failed to resolve task {}: {}", task.getId(), result.output());
-                    }
-                } catch (Exception e) {
-                    task.setStatus(TaskStatus.failed);
-                    task.setJulesDispatchStatus("Claude autonomous worker execution error: " + e.getMessage());
-                    log.error("ProjectFlowService: Error running Claude autonomous worker for task " + task.getId(), e);
-                }
-                taskRepository.save(task);
-                continue;
-            }
+            // Complex/chaotic/retried/defect-work tasks used to bypass Jules for a separate autonomous
+            // worker; Jules now has universal role capability across every BARCAN-TAG role, so all tasks
+            // flow through the same dispatch path below regardless of cynefin domain or retry count.
             Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
                     project.getId(),
                     roleTag,

@@ -101,8 +101,7 @@
     { name: 'GitHub', enabledKey: 'github_enabled', secretKey: 'github_token' },
     { name: 'Linear', enabledKey: 'linear_enabled', secretKey: 'linear_api_key', extraKey: 'linear_team_id' },
     { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' },
-    { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' },
-    { name: 'Claude Worker', enabledKey: 'claude_worker_enabled', secretKey: 'anthropic_api_key', extraKey: 'claude_worker_model', pushKey: 'claude_worker_push_enabled' }
+    { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' }
   ];
 
   let status = $state<SystemStatus | null>(null);
@@ -248,8 +247,8 @@
   function startEdit(key: string, isSecret = true) {
     editing = { ...editing, [key]: true };
     // Secrets can't be pre-filled (only a masked value is ever returned), so those start blank. Non-secret
-    // fields (e.g. linear_team_id, claude_worker_model) start from the current value — otherwise clicking
-    // Edit then Save without typing anything silently overwrites a working value with an empty string.
+    // fields (e.g. linear_team_id) start from the current value — otherwise clicking Edit then Save without
+    // typing anything silently overwrites a working value with an empty string.
     const current = isSecret ? '' : (settingByKey(key)?.maskedValue || '');
     drafts = { ...drafts, [key]: current };
   }
@@ -386,9 +385,9 @@
 
           {#if integration.extraKey}
             <div class="setting-line">
-              <span>{integration.name === 'Claude Worker' ? 'model' : 'team'}</span>
+              <span>team</span>
               {#if editing[integration.extraKey!]}
-                <input bind:value={drafts[integration.extraKey!]} placeholder={integration.name === 'Claude Worker' ? 'claude-opus-4-8' : 'Linear team id'} />
+                <input bind:value={drafts[integration.extraKey!]} placeholder="Linear team id" />
               {:else}
                 <input value={settingByKey(integration.extraKey!)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
@@ -421,8 +420,6 @@
               <small>{status?.linearCompleteness?.data?.totalIssues ?? 0} issues</small>
             {:else if integration.name === 'Jules'}
               <small>{status?.julesSessions?.data?.total ?? 0} sessions</small>
-            {:else if integration.name === 'Claude Worker'}
-              <small>{settingByKey(integration.pushKey || '')?.enabled ? 'autonomous branch push enabled' : 'read-only diagnostic'}</small>
             {:else}
               <small>used for AI generation (design/video assets)</small>
             {/if}
