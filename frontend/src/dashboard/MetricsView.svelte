@@ -39,11 +39,13 @@
   });
 
   function score(value: number | undefined | null): string {
-    return `${Math.round(value ?? 0)}`;
+    const clamped = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+    return `${clamped}`;
   }
 
   function percent(value: number | undefined | null): string {
-    return `${Math.round((value ?? 0) * 100)}%`;
+    const clamped = Math.max(0, Math.min(100, Math.round((value ?? 0) * 100)));
+    return `${clamped}%`;
   }
 
   function scoreWidth(value: number | undefined | null): string {
@@ -52,7 +54,9 @@
   }
 
   function getSatisfactionColor(score: number | undefined | null): string {
-    const val = score ?? 0;
+    // Clamp before deriving hue/sat/light — an out-of-range score otherwise produces negative
+    // saturation/lightness, an invalid CSS value the browser drops, rendering an invisible bar.
+    const val = Math.max(0, Math.min(100, score ?? 0));
     const hue = 280 - (val / 100.0) * (280 - 140);
     const sat = 85 - (val / 100.0) * (85 - 75);
     const light = 45 - (val / 100.0) * (45 - 40);

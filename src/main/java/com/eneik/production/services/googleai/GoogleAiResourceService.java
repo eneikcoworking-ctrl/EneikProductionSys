@@ -47,7 +47,8 @@ public class GoogleAiResourceService {
     public List<Map<String, Object>> resourceMatrix() {
         boolean googleKey = hasGoogleAiKey();
         boolean geminiEnabled = settingsService.effectiveBoolean("gemini_enabled");
-        boolean antigravityEnabled = settingsService.effectiveBoolean("antigravity_enabled");
+        boolean claudeWorkerEnabled = settingsService.effectiveBoolean("claude_worker_enabled");
+        boolean claudeKey = !firstNonBlank(settingsService.effectiveValue("anthropic_api_key")).isBlank();
         boolean searchEnabled = settingsService.effectiveBoolean("google_search_grounding_enabled");
         boolean urlEnabled = settingsService.effectiveBoolean("url_context_enabled");
         boolean designEnabled = settingsService.effectiveBoolean("design_service_enabled");
@@ -128,13 +129,13 @@ public class GoogleAiResourceService {
                 veoEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
         ));
         resources.add(resource(
-                "antigravity",
-                "Antigravity Autonomous Worker",
-                antigravityEnabled && googleKey,
+                "claude_worker",
+                "Claude Autonomous Worker",
+                claudeWorkerEnabled && claudeKey,
                 "agentic_code_execution",
-                model("antigravity_agent", "antigravity-preview-05-2026"),
+                model("claude_worker_model", "claude-opus-4-8"),
                 "deep repository diagnostics, local repair, autonomous branch and PR flow",
-                antigravityEnabled ? googleKey ? "ready" : "missing Gemini API key" : "disabled"
+                claudeWorkerEnabled ? claudeKey ? "ready" : "missing Anthropic API key" : "disabled"
         ));
         return resources;
     }

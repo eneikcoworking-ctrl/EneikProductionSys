@@ -102,7 +102,7 @@
     { name: 'Linear', enabledKey: 'linear_enabled', secretKey: 'linear_api_key', extraKey: 'linear_team_id' },
     { name: 'Jules', enabledKey: 'jules_enabled', secretKey: 'jules_api_key' },
     { name: 'Gemini', enabledKey: 'gemini_enabled', secretKey: 'gemini_api_key' },
-    { name: 'Antigravity', enabledKey: 'antigravity_enabled', extraKey: 'antigravity_agent', pushKey: 'antigravity_push_enabled' }
+    { name: 'Claude Worker', enabledKey: 'claude_worker_enabled', secretKey: 'anthropic_api_key', extraKey: 'claude_worker_model', pushKey: 'claude_worker_push_enabled' }
   ];
 
   let status = $state<SystemStatus | null>(null);
@@ -151,38 +151,52 @@
   }
 
   async function loadActiveProject() {
-    const response = await fetch(`${API_BASE}/api/projects`);
-    if (response.ok) {
-      const projects = await response.json();
-      activeProject = projects.find((p: any) => p.status === 'active') || null;
+    try {
+      const response = await fetch(`${API_BASE}/api/projects`);
+      if (response.ok) {
+        const projects = await response.json();
+        activeProject = projects.find((p: any) => p.status === 'active') || null;
+      }
+    } catch (e) {
+      message = `Network error while loading active project: ${e}`;
     }
   }
 
   async function refreshCollaborators() {
     if (!activeProject) return;
     message = 'Refreshing collaborators...';
-    const response = await fetch(`${API_BASE}/api/projects/${activeProject.id}/collaborators/refresh`, {
-      method: 'POST'
-    });
-    if (response.ok) {
-      activeProject = await response.json();
-      message = 'Collaborators refreshed';
-    } else {
-      message = 'Refresh failed';
+    try {
+      const response = await fetch(`${API_BASE}/api/projects/${activeProject.id}/collaborators/refresh`, {
+        method: 'POST'
+      });
+      if (response.ok) {
+        activeProject = await response.json();
+        message = 'Collaborators refreshed';
+      } else {
+        message = 'Refresh failed';
+      }
+    } catch (e) {
+      message = `Network error while refreshing collaborators: ${e}`;
     }
   }
 
   async function updateAccount(account: AccountItem, updates: any) {
-    const response = await fetch(`${API_BASE}/api/accounts/${account.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updates)
-    });
-    if (response.ok) {
-      editing[`acc_${account.id}`] = false;
-      drafts[`acc_${account.id}`] = '';
-      await loadStatus();
-      message = 'Account updated';
+    try {
+      const response = await fetch(`${API_BASE}/api/accounts/${account.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates)
+      });
+      if (response.ok) {
+        editing[`acc_${account.id}`] = false;
+        drafts[`acc_${account.id}`] = '';
+        await loadStatus();
+        message = 'Account updated';
+      } else {
+        message = `Account update failed: ${response.status}`;
+      }
+    } catch (e) {
+      message = `Network error while updating account: ${e}`;
     }
   }
 
@@ -211,25 +225,33 @@
   }
 
   async function saveSetting(key: string, value: string) {
-    const response = await fetch(`${API_BASE}/api/settings`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key, value })
-    });
-    if (!response.ok) {
-      message = `Save failed: ${key}`;
-      return;
+    try {
+      const response = await fetch(`${API_BASE}/api/settings`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value })
+      });
+      if (!response.ok) {
+        message = `Save failed: ${key}`;
+        return;
+      }
+      upsertSetting(await response.json());
+      drafts = { ...drafts, [key]: '' };
+      editing = { ...editing, [key]: false };
+      await loadStatus();
+      message = `${key} saved`;
+    } catch (e) {
+      message = `Network error while saving ${key}: ${e}`;
     }
-    upsertSetting(await response.json());
-    drafts = { ...drafts, [key]: '' };
-    editing = { ...editing, [key]: false };
-    await loadStatus();
-    message = `${key} saved`;
   }
 
-  function startEdit(key: string) {
+  function startEdit(key: string, isSecret = true) {
     editing = { ...editing, [key]: true };
-    drafts = { ...drafts, [key]: '' };
+    // Secrets can't be pre-filled (only a masked value is ever returned), so those start blank. Non-secret
+    // fields (e.g. linear_team_id, claude_worker_model) start from the current value — otherwise clicking
+    // Edit then Save without typing anything silently overwrites a working value with an empty string.
+    const current = isSecret ? '' : (settingByKey(key)?.maskedValue || '');
+    drafts = { ...drafts, [key]: current };
   }
 
   function formatDate(value?: string) {
@@ -360,22 +382,17 @@
                   Save
                 </button>
               </div>
-          {:else if integration.name === 'Antigravity'}
-            <div class="setting-line">
-              <span>key</span>
-              <input value="Uses Gemini / Google AI key" disabled />
-            </div>
           {/if}
 
           {#if integration.extraKey}
             <div class="setting-line">
-              <span>{integration.name === 'Antigravity' ? 'agent' : 'team'}</span>
+              <span>{integration.name === 'Claude Worker' ? 'model' : 'team'}</span>
               {#if editing[integration.extraKey!]}
-                <input bind:value={drafts[integration.extraKey!]} placeholder={integration.name === 'Antigravity' ? 'antigravity-preview-05-2026' : 'Linear team id'} />
+                <input bind:value={drafts[integration.extraKey!]} placeholder={integration.name === 'Claude Worker' ? 'claude-opus-4-8' : 'Linear team id'} />
               {:else}
                 <input value={settingByKey(integration.extraKey!)?.maskedValue || ''} placeholder="not set" disabled />
               {/if}
-              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey!)}>Edit</button>
+              <button type="button" class="secondary" onclick={() => startEdit(integration.extraKey!, false)}>Edit</button>
               <button type="button" onclick={() => saveSetting(integration.extraKey!, drafts[integration.extraKey!] || '')} disabled={!editing[integration.extraKey!]}>
                 Save
               </button>
@@ -402,10 +419,12 @@
               <small>{status?.githubAccess?.data?.latest?.ci_status || 'no check yet'}</small>
             {:else if integration.name === 'Linear'}
               <small>{status?.linearCompleteness?.data?.totalIssues ?? 0} issues</small>
-            {:else if integration.name === 'Antigravity'}
+            {:else if integration.name === 'Jules'}
+              <small>{status?.julesSessions?.data?.total ?? 0} sessions</small>
+            {:else if integration.name === 'Claude Worker'}
               <small>{settingByKey(integration.pushKey || '')?.enabled ? 'autonomous branch push enabled' : 'read-only diagnostic'}</small>
             {:else}
-              <small>{status?.julesSessions?.data?.total ?? 0} sessions</small>
+              <small>used for AI generation (design/video assets)</small>
             {/if}
           </div>
         </article>

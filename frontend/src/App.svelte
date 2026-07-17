@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import type { ProjectDashboard, ProjectSummary } from './lib/types';
   import CommandDashboardV2 from './dashboard/CommandDashboardV2.svelte';
   import MetricsView from './dashboard/MetricsView.svelte';
@@ -89,6 +89,20 @@
   }
 
   onMount(loadProjects);
+
+  // Keep the header's project name/status in sync with CommandDashboardV2's own 10s poll cycle —
+  // without this, dashboard.project here goes stale the moment the child dashboard picks up a change.
+  let headerRefreshInterval: ReturnType<typeof setInterval> | undefined;
+  onMount(() => {
+    headerRefreshInterval = setInterval(() => {
+      if (dashboard) {
+        loadDashboard(dashboard.project.id);
+      }
+    }, 10000);
+  });
+  onDestroy(() => {
+    if (headerRefreshInterval) clearInterval(headerRefreshInterval);
+  });
 </script>
 
 <main class="shell">
@@ -118,7 +132,7 @@
       <div class="active-project-card">
         <p class="eyebrow">Active Project In Production</p>
         <h2>{dashboard.project.name}</h2>
-        <span class="badge active">{dashboard.project.status}</span>
+        <span class="badge {dashboard.project.status}">{dashboard.project.status}</span>
         <code class="path">{dashboard.project.repositoryName || 'no repo'}</code>
       </div>
     </section>
@@ -295,6 +309,11 @@
     background: #d1fae5;
     color: #065f46;
   }
+  .active-project-card .badge.accepted { background: #dbeafe; color: #1e40af; }
+  .active-project-card .badge.waiting { background: #fef3c7; color: #92400e; }
+  .active-project-card .badge.frozen { background: #fee2e2; color: #b91c1c; }
+  .active-project-card .badge.analyzing { background: #eff6ff; color: #1e40af; }
+  .active-project-card .badge.archived { background: var(--neutral-200); color: var(--neutral-600); }
 
   .other-projects-section {
     margin-top: var(--space-8);

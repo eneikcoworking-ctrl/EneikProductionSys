@@ -6,7 +6,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.ProjectFlowService;
-import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
+import com.eneik.production.services.claude.ClaudeAutonomousWorkerService;
 import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.github.GitHubPullRequestService;
@@ -39,7 +39,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -52,7 +52,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                antigravityDiagnosticService,
+                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -124,7 +124,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -137,7 +137,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                antigravityDiagnosticService,
+                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -208,7 +208,7 @@ class ProjectOperatorServiceTest {
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -221,7 +221,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                antigravityDiagnosticService,
+                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -285,14 +285,14 @@ class ProjectOperatorServiceTest {
     }
 
     @Test
-    void antigravityIntentRunsDiagnosticWorkerTool() {
+    void claudeWorkerIntentRunsDiagnosticWorkerTool() {
         ProjectRepository projectRepository = mock(ProjectRepository.class);
         ProjectOperationalContextService contextService = mock(ProjectOperationalContextService.class);
         MLPredictionServiceClient mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         ProjectFlowService projectFlowService = mock(ProjectFlowService.class);
         ClaimService claimService = mock(ClaimService.class);
         GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
-        AntigravityDiagnosticService antigravityDiagnosticService = mock(AntigravityDiagnosticService.class);
+        ClaudeAutonomousWorkerService claudeAutonomousWorkerService = mock(ClaudeAutonomousWorkerService.class);
         GoogleAiResourceService googleAiResourceService = mock(GoogleAiResourceService.class);
         DesignAssetService designAssetService = mock(DesignAssetService.class);
         VideoAssetService videoAssetService = mock(VideoAssetService.class);
@@ -305,7 +305,7 @@ class ProjectOperatorServiceTest {
                 projectFlowService,
                 claimService,
                 gitHubPullRequestService,
-                antigravityDiagnosticService,
+                claudeAutonomousWorkerService,
                 googleAiResourceService,
                 designAssetService,
                 videoAssetService,
@@ -356,27 +356,27 @@ class ProjectOperatorServiceTest {
 
         when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
         when(contextService.build(projectId, "test-project")).thenReturn(context);
-        when(antigravityDiagnosticService.runDiagnostic(any(), any(), anyString()))
-                .thenReturn(new AntigravityDiagnosticService.DiagnosticResult(
+        when(claudeAutonomousWorkerService.runDiagnostic(any(), any(), anyString()))
+                .thenReturn(new ClaudeAutonomousWorkerService.DiagnosticResult(
                         false,
                         "unavailable",
                         "",
                         false,
                         false,
                         "",
-                        "Antigravity integration is disabled."
+                        "Claude autonomous worker is disabled."
                 ));
         when(mlPredictionServiceClient.chat(anyString(), contains("tool planner")))
                 .thenReturn("{\"toolCalls\":[]}");
         when(mlPredictionServiceClient.chat(anyString(), contains("PROJECT_FACT_PACK")))
-                .thenReturn("Antigravity diagnostic worker was checked and is disabled.");
+                .thenReturn("Claude diagnostic worker was checked and is disabled.");
         when(mlPredictionServiceClient.chat(anyString(), contains("answer critic")))
                 .thenReturn("{\"verdict\":\"pass\",\"issues\":[]}");
 
-        String answer = service.answer(projectId, "test-project", "Use Antigravity diagnostic branch for this project.");
+        String answer = service.answer(projectId, "test-project", "Use Claude diagnostic branch for this project.");
 
-        assertEquals("Antigravity diagnostic worker was checked and is disabled.", answer);
-        verify(antigravityDiagnosticService).runDiagnostic(any(), any(), anyString());
+        assertEquals("Claude diagnostic worker was checked and is disabled.", answer);
+        verify(claudeAutonomousWorkerService).runDiagnostic(any(), any(), anyString());
         verify(projectFlowService, never()).orchestrate(any());
     }
 }

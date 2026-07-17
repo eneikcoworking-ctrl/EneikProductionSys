@@ -1172,7 +1172,7 @@ public class JulesDispatchService {
                 prData.setFilesChanged(4);
                 prData.setChangedFiles(java.util.Collections.emptyList());
 
-                // Invoke the local agent code review (Antigravity Reviewer)
+                // Invoke the local agent code review (Claude Autonomous Worker reviewer)
                 Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), prUrl);
                 boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
                 String remarks = (String) reviewResult.get("remarks");

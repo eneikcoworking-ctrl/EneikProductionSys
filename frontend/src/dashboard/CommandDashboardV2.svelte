@@ -259,12 +259,17 @@
     return { label: 'Indifferent', colorClass: 'kano-indifferent' };
   }
 
+  // percent()/score() are clamped to [0,100] to match width()/scoreWidth() — they render the label next
+  // to that same bar, and an unclamped upstream value (rounding drift, stale data) used to show a maxed-out
+  // bar next to a label reading over 100%.
   function percent(value: number | undefined | null): string {
-    return `${Math.round((value ?? 0) * 100)}%`;
+    const clamped = Math.max(0, Math.min(100, Math.round((value ?? 0) * 100)));
+    return `${clamped}%`;
   }
 
   function score(value: number | undefined | null): string {
-    return `${Math.round(value ?? 0)}`;
+    const clamped = Math.max(0, Math.min(100, Math.round(value ?? 0)));
+    return `${clamped}`;
   }
 
   function width(value: number | undefined | null): string {
@@ -278,7 +283,10 @@
   }
 
   function getSatisfactionColor(score: number | undefined | null): string {
-    const val = score ?? 0;
+    // Clamp before deriving hue/sat/light — an out-of-range score previously produced negative
+    // saturation/lightness, an invalid CSS value that made the browser drop the whole background
+    // declaration and render an invisible bar instead of a merely-wrong color.
+    const val = Math.max(0, Math.min(100, score ?? 0));
     const hue = 280 - (val / 100.0) * (280 - 140);
     const sat = 85 - (val / 100.0) * (85 - 75);
     const light = 45 - (val / 100.0) * (45 - 40);
@@ -382,7 +390,7 @@
       {#if videoAssets.length > 0}
         <div class="video-slider-container">
           <div class="video-carousel">
-            {#each videoAssets as video}
+            {#each videoAssets as video (video.url)}
               <div class="video-card">
                 <div class="video-wrapper">
                   <video src={video.url} controls muted preload="metadata" class="release-video">
@@ -478,7 +486,7 @@
             </div>
 
             <div class="doctrine-grid">
-              {#each dashboard.emsMetrics.roleDoctrineReadiness.roles as role}
+              {#each dashboard.emsMetrics.roleDoctrineReadiness.roles as role (role.roleTag)}
                 <article class="doctrine-card {role.stance}">
                   <div class="doctrine-head">
                     <div>
@@ -514,7 +522,7 @@
               <span class="indicator">{dashboard.emsMetrics.flowChart.totalTasks} tasks</span>
             </div>
             <div class="flow-chart">
-              {#each dashboard.emsMetrics.flowChart.stages as stage}
+              {#each dashboard.emsMetrics.flowChart.stages as stage (stage.label)}
                 <div class="flow-row">
                   <div class="flow-label">
                     <strong>{stage.label}</strong>
@@ -535,7 +543,7 @@
               <span class="indicator">{dashboard.emsMetrics.roleKpis.length} owner roles</span>
             </div>
             <div class="role-kpi-list">
-              {#each dashboard.emsMetrics.roleKpis as role}
+              {#each dashboard.emsMetrics.roleKpis as role (role.roleTag)}
                 <div class="role-kpi-row">
                   <div class="flow-label">
                     <strong>{role.roleTag}</strong>
@@ -663,7 +671,7 @@
             {#if dashboard.wishlist.length === 0}
               <p class="empty-state">No wishlist items. Submit one above.</p>
             {:else}
-              {#each dashboard.wishlist as item}
+              {#each dashboard.wishlist as item (item.id)}
                 <article class="wish-item">
                   <div class="item-header">
                     <span class="badge-tag">{item.source || 'client'}</span>
@@ -752,7 +760,7 @@
             {#if dashboard.tasks.length === 0}
               <p class="empty-state">No tasks created yet. Click Orchestrate to compile wishes.</p>
             {:else}
-              {#each dashboard.tasks as task}
+              {#each dashboard.tasks as task (task.id)}
                 <article class="task-item">
                   <div class="item-header">
                     <span class="role-tag">{task.tag}</span>
@@ -784,7 +792,7 @@
           </div>
 
           <div class="agent-list scrollable">
-            {#each dashboard.agents as agent}
+            {#each dashboard.agents as agent (agent.accountId)}
               <article class="agent-card">
                 <div class="agent-header">
                   <strong>{agent.name}</strong>
@@ -808,7 +816,7 @@
             {#if dashboard.queue.byTag.length === 0}
               <p class="empty-state">Queue is empty. Everything processed!</p>
             {:else}
-              {#each dashboard.queue.byTag as item}
+              {#each dashboard.queue.byTag as item (item.tag)}
                 <div class="queue-item">
                   <span class="role-tag">{item.tag}</span>
                   <span class="queue-count badge {item.count > 1 ? 'warning' : 'success'}">{item.count} tasks</span>

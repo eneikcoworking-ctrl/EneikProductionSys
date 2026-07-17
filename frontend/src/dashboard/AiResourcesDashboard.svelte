@@ -42,9 +42,9 @@
     { key: 'nano_banana_pro_model', label: 'Pro image model', kind: 'text', placeholder: 'gemini-3-pro-image' },
     { key: 'veo_enabled', label: 'Veo video', kind: 'toggle' },
     { key: 'veo_model', label: 'Veo model', kind: 'text', placeholder: 'veo-3.1-generate-preview' },
-    { key: 'antigravity_enabled', label: 'Antigravity', kind: 'toggle' },
-    { key: 'antigravity_agent', label: 'Antigravity agent', kind: 'text', placeholder: 'antigravity-preview-05-2026' },
-    { key: 'antigravity_push_enabled', label: 'Autonomous branch push', kind: 'toggle' }
+    { key: 'claude_worker_enabled', label: 'Claude Worker', kind: 'toggle' },
+    { key: 'claude_worker_model', label: 'Claude Worker model', kind: 'text', placeholder: 'claude-opus-4-8' },
+    { key: 'claude_worker_push_enabled', label: 'Autonomous branch push', kind: 'toggle' }
   ];
 
   let settings = $state<Setting[]>([]);
@@ -111,9 +111,13 @@
     }
   }
 
-  function startEdit(key: string) {
+  function startEdit(key: string, kind: SettingRow['kind'] = 'text') {
     editing = { ...editing, [key]: true };
-    drafts = { ...drafts, [key]: '' };
+    // Secrets can't be pre-filled (the backend only ever returns a masked value), so those start blank.
+    // Non-secret fields start from the current value — otherwise clicking Edit then Save without typing
+    // anything silently overwrites a working value (e.g. veo_model) with an empty string.
+    const current = kind === 'secret' ? '' : (settingByKey(key)?.maskedValue || '');
+    drafts = { ...drafts, [key]: current };
   }
 
   function statusClass(resource: AiResource) {
@@ -179,7 +183,7 @@
             {:else}
               <input value={settingByKey(row.key)?.maskedValue || ''} placeholder={row.placeholder || 'not set'} disabled />
             {/if}
-            <button type="button" class="secondary" onclick={() => startEdit(row.key)}>Edit</button>
+            <button type="button" class="secondary" onclick={() => startEdit(row.key, row.kind)}>Edit</button>
             <button type="button" onclick={() => saveSetting(row.key, drafts[row.key] || '')} disabled={!editing[row.key]}>
               Save
             </button>

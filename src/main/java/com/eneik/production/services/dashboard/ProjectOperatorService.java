@@ -10,7 +10,7 @@ import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
-import com.eneik.production.services.antigravity.AntigravityDiagnosticService;
+import com.eneik.production.services.claude.ClaudeAutonomousWorkerService;
 import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService.ProjectOperationalContext;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
@@ -60,7 +60,7 @@ public class ProjectOperatorService {
     private final ProjectFlowService projectFlowService;
     private final ClaimService claimService;
     private final GitHubPullRequestService gitHubPullRequestService;
-    private final AntigravityDiagnosticService antigravityDiagnosticService;
+    private final ClaudeAutonomousWorkerService claudeAutonomousWorkerService;
     private final GoogleAiResourceService googleAiResourceService;
     private final DesignAssetService designAssetService;
     private final VideoAssetService videoAssetService;
@@ -82,7 +82,7 @@ public class ProjectOperatorService {
                                   ProjectFlowService projectFlowService,
                                   ClaimService claimService,
                                   GitHubPullRequestService gitHubPullRequestService,
-                                  AntigravityDiagnosticService antigravityDiagnosticService,
+                                  ClaudeAutonomousWorkerService claudeAutonomousWorkerService,
                                   GoogleAiResourceService googleAiResourceService,
                                   DesignAssetService designAssetService,
                                   VideoAssetService videoAssetService,
@@ -103,7 +103,7 @@ public class ProjectOperatorService {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.gitHubPullRequestService = gitHubPullRequestService;
-        this.antigravityDiagnosticService = antigravityDiagnosticService;
+        this.claudeAutonomousWorkerService = claudeAutonomousWorkerService;
         this.googleAiResourceService = googleAiResourceService;
         this.designAssetService = designAssetService;
         this.videoAssetService = videoAssetService;
@@ -156,7 +156,7 @@ public class ProjectOperatorService {
                 - Missing repository, empty workspace, absent .git, unknown setup commands, or unclear backend/frontend boundaries are bootstrap work. Treat them as one of the first project tasks, not as a human operator problem.
                 - Recorded failed attempts are internal defect counter evidence only. Do not present them as active project work. Do not mention those totals unless the user explicitly asks for production defect accounting.
                 - Closed-but-unmerged PRs are historical scrap/COPQ evidence, not open work. Never tell the user to close closed PRs again. Only live open PRs are actionable.
-                - Antigravity Diagnostic Worker is the deep engineering executor for bounded code diagnostics. Use it for repository-level investigation, local/build/test repair, and diagnostic branch artifacts; never treat it as a chat answer substitute.
+                - Claude Autonomous Worker is the deep engineering executor for bounded code diagnostics. Use it for repository-level investigation, local/build/test repair, and diagnostic branch artifacts; never treat it as a chat answer substitute.
                 - Google AI resources are operator tools, not decoration: use grounded research for fresh facts, URL Context for cited pages, and Design Asset Service for visual assets. If a visual brief is unclear, first create a BARCAN-TAG-03 or BARCAN-TAG-09 wishlist item for content planning, then generate the asset.
                 - For project planning, focus on current project state: workspace, live open PRs, queued/review work, active sessions, API/account availability, and the next dispatchable task.
                 - Open unmerged PRs are WIP/integration debt, not proof of forward progress. When the user explicitly asks to close stale PRs or restart the flow, use the PR cleanup tool and then recover/dispatch fresh work.
@@ -479,7 +479,7 @@ public class ProjectOperatorService {
                 - If the project workspace is missing, empty, or not a Git repository and the user asks to fix/repair/clone it, request ensure_project_workspace.
                 - If repository setup, local environment, .git, workspace, backend/frontend boundary, or setup commands are missing and the user asks to fix/start/continue, request ensure_project_workspace and ensure_environment_bootstrap_work.
                 - If the user asks to start testing work, request start_testing_stream instead of only explaining testing theory.
-                - If the user asks for Antigravity, deep repository diagnostics, local code repair, root-cause investigation, or a diagnostic branch, request antigravity_diagnostic_worker.
+                - If the user asks for the Claude autonomous worker, deep repository diagnostics, local code repair, root-cause investigation, or a diagnostic branch, request claude_autonomous_worker.
                 - If the user asks which Google/Gemini tools are available or how resources are configured, request google_ai_resource_catalog.
                 - If the user asks for current external facts, market/legal/technical research, competitor context, or fresh documentation, request google_search_research.
                 - If the user gives a URL and asks to analyze it, request url_context_research.
@@ -567,9 +567,9 @@ public class ProjectOperatorService {
             addRoutedCall(calls, "autonomous_flow_steward",
                     "User confirmed or asked to continue execution; run the project recovery/dispatch sequence without asking for another confirmation.");
         }
-        if (looksLikeAntigravityIntent(lower)) {
-            addRoutedCall(calls, "antigravity_diagnostic_worker",
-                    "User asked for deep Antigravity engineering diagnostics or a diagnostic branch artifact.");
+        if (looksLikeClaudeWorkerIntent(lower)) {
+            addRoutedCall(calls, "claude_autonomous_worker",
+                    "User asked for deep Claude engineering diagnostics or a diagnostic branch artifact.");
         }
         if (looksLikeGoogleAiResourceIntent(lower)) {
             addRoutedCall(calls, "google_ai_resource_catalog",
@@ -662,7 +662,7 @@ public class ProjectOperatorService {
                 .append("Tool rules:\n")
                 .append("- BARCAN-TAG-03/11 visual evidence demand -> Nano Banana design asset.\n")
                 .append("- BARCAN-TAG-03/09/11 demo, promo, onboarding, walkthrough demand -> Veo video asset.\n")
-                .append("- BARCAN-TAG-00/01/02/05/06/07/08/10 technical refusal, defect, or chaotic/complicated root-cause demand -> Antigravity autonomous branch.\n")
+                .append("- BARCAN-TAG-00/01/02/05/06/07/08/10 technical refusal, defect, or chaotic/complicated root-cause demand -> Claude autonomous branch.\n")
                 .append("- Unknown role doctrine evidence -> short English role attack wishlist, then dependency compilation.\n")
                 .append("- Existing source-role pending wishlist without owner work -> compile dependency graph and dispatch next best task.\n\n");
 
@@ -742,14 +742,14 @@ public class ProjectOperatorService {
                 }
             }
 
-            if (shouldRouteAntigravity(role, demandLower)) {
-                String routeKey = routeKey(project, roleTag, "antigravity_diagnostic_worker", demand);
+            if (shouldRouteClaudeWorker(role, demandLower)) {
+                String routeKey = routeKey(project, roleTag, "claude_autonomous_worker", demand);
                 if (!alreadyRouted(project, routeKey)) {
                     ObjectNode args = objectMapper.createObjectNode();
                     args.put("mission", roleToolBrief(role, demand,
                             "Diagnose and repair the smallest root cause in an autonomous branch. Run available tests and open/push the branch when possible."));
-                    appendObservation(output, antigravityDiagnosticWorker(project, context, args.path("mission").asText(), args));
-                    rememberRoute(project, routeKey, "Routed " + roleTag + " demand to Antigravity autonomous engineering.");
+                    appendObservation(output, claudeAutonomousWorker(project, context, args.path("mission").asText(), args));
+                    rememberRoute(project, routeKey, "Routed " + roleTag + " demand to Claude autonomous engineering.");
                     actions++;
                 }
             }
@@ -853,7 +853,7 @@ public class ProjectOperatorService {
                 "accessibility", "ui", "ux", "screen", "perception", "design", "asset");
     }
 
-    private boolean shouldRouteAntigravity(JsonNode role, String demandLower) {
+    private boolean shouldRouteClaudeWorker(JsonNode role, String demandLower) {
         String roleTag = role.path("roleTag").asText("");
         boolean technicalRole = Set.of(
                 "BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-05",
@@ -1010,9 +1010,9 @@ public class ProjectOperatorService {
                 "\u043a\u0440\u0443\u0433", "\u043d\u0435 \u043e\u0442\u0432\u0435\u0447", "\u043d\u0438\u043a\u0442\u043e \u043d\u0435 \u043e\u0442\u0432\u0435\u0447");
     }
 
-    private boolean looksLikeAntigravityIntent(String lower) {
+    private boolean looksLikeClaudeWorkerIntent(String lower) {
         return containsAny(lower,
-                "antigravity", "anti-gravity", "diagnostic branch", "deep diagnostic", "deep diagnose",
+                "claude worker", "claude autonomous", "diagnostic branch", "deep diagnostic", "deep diagnose",
                 "root cause branch", "engineering executor", "run local repair", "push diagnostic branch",
                 "\u0430\u043d\u0442\u0438\u0433\u0440\u0430\u0432\u0438\u0442", "\u0433\u043b\u0443\u0431\u043e\u043a\u0430\u044f \u0434\u0438\u0430\u0433\u043d\u043e\u0441",
                 "\u0434\u0438\u0430\u0433\u043d\u043e\u0441\u0442\u0438\u0447\u0435\u0441\u043a", "\u0441\u043f\u0435\u0446\u0438\u0430\u043b\u044c\u043d\u0443\u044e \u0432\u0435\u0442\u043a",
@@ -1166,7 +1166,7 @@ public class ProjectOperatorService {
                 - project_memory_append {"note":"English durable project memory note grounded in current evidence"} MUTATING
                 - ensure_project_workspace {} MUTATING
                 - start_testing_stream {} MUTATING
-                - antigravity_diagnostic_worker {"mission":"optional English bounded diagnostic mission"} MUTATING/REMOTE_EXECUTION
+                - claude_autonomous_worker {"mission":"optional English bounded diagnostic mission"} MUTATING/REMOTE_EXECUTION
                 - design_asset_generate {"brief":"English visual brief","assetType":"hero|banner|mockup|icon|visual_asset","quality":"fast|pro","useGoogleSearch":false} MUTATING/REMOTE_EXECUTION
                 - video_asset_generate {"brief":"English video brief","assetType":"demo|promo|onboarding|walkthrough|project_video","quality":"standard|pro","useGoogleSearch":false} MUTATING/REMOTE_EXECUTION
 
@@ -1255,7 +1255,7 @@ public class ProjectOperatorService {
                 case "project_memory_append" -> mutating(userMessage, tool, () -> projectMemoryAppend(project, args));
                 case "ensure_project_workspace" -> mutating(userMessage, tool, () -> ensureProjectWorkspace(project));
                 case "start_testing_stream" -> mutating(userMessage, tool, () -> startTestingStream(project));
-                case "antigravity_diagnostic_worker" -> mutating(userMessage, tool, () -> antigravityDiagnosticWorker(project, context, userMessage, args));
+                case "claude_autonomous_worker" -> mutating(userMessage, tool, () -> claudeAutonomousWorker(project, context, userMessage, args));
                 case "design_asset_generate" -> mutating(userMessage, tool, () -> designAssetGenerate(project, context, args, userMessage));
                 case "video_asset_generate" -> mutating(userMessage, tool, () -> videoAssetGenerate(project, context, args, userMessage));
                 case "run_command" -> runGenericCommand(project, args, userMessage);
@@ -2001,16 +2001,16 @@ public class ProjectOperatorService {
         }
     }
 
-    private ToolObservation antigravityDiagnosticWorker(ProjectEntity project,
+    private ToolObservation claudeAutonomousWorker(ProjectEntity project,
                                                         ProjectOperationalContext context,
                                                         String userMessage,
                                                         JsonNode args) {
         String mission = textArg(args, "mission", "");
         String request = mission.isBlank() ? userMessage : mission;
-        var result = antigravityDiagnosticService.runDiagnostic(project, context, request);
+        var result = claudeAutonomousWorkerService.runDiagnostic(project, context, request);
 
         StringBuilder output = new StringBuilder();
-        output.append("Antigravity Diagnostic Worker result\n")
+        output.append("Claude Autonomous Worker result\n")
                 .append("status=").append(result.status()).append('\n')
                 .append("branch=").append(result.branchName().isBlank() ? "NOT_CREATED" : result.branchName()).append('\n')
                 .append("pushRequested=").append(result.branchPushRequested()).append('\n')
@@ -2023,7 +2023,7 @@ public class ProjectOperatorService {
         String status = result.available()
                 ? result.branchVerified() ? "ok" : "partial"
                 : "missing";
-        return new ToolObservation("antigravity_diagnostic_worker", status, trim(output.toString()));
+        return new ToolObservation("claude_autonomous_worker", status, trim(output.toString()));
     }
 
     private ToolObservation googleAiResourceCatalog() {
@@ -2280,7 +2280,7 @@ public class ProjectOperatorService {
         if (looksLikeOperatorExecutionIntent(lower)) {
             return true;
         }
-        if (looksLikeAntigravityIntent(lower)) {
+        if (looksLikeClaudeWorkerIntent(lower)) {
             return true;
         }
         if (looksLikeDesignAssetIntent(lower)) {
