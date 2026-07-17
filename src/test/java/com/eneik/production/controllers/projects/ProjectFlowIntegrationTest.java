@@ -441,6 +441,14 @@ class ProjectFlowIntegrationTest {
 
         ProjectDashboardDto dashboard = restTemplate.getForObject("/api/projects/" + project.id() + "/dashboard", ProjectDashboardDto.class);
         assertThat(dashboard.openWishlistCount()).isEqualTo(1);
-        assertThat(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id())).isEmpty();
+
+        // orchestrate() unconditionally ensures an environment-bootstrap task exists for every active project,
+        // independent of wishlist compilation - that's not part of what this test is exercising.
+        java.util.List<com.eneik.production.models.persistence.TaskEntity> nonBootstrapTasks =
+                taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id()).stream()
+                        .filter(t -> t.getPayload() == null
+                                || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(t.getPayload().path("toc_constraint_ref").asText()))
+                        .toList();
+        assertThat(nonBootstrapTasks).isEmpty();
     }
 }

@@ -325,6 +325,10 @@ class AutonomousPipelineIntegrationTest {
 
         List<TaskEntity> replacementTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(task -> !task.getId().equals(blockedTaskId))
+                // orchestrate() unconditionally ensures an environment-bootstrap task exists for every active
+                // project, independent of the blocked-work recovery this test is exercising.
+                .filter(task -> task.getPayload() == null
+                        || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(task.getPayload().path("toc_constraint_ref").asText()))
                 .toList();
         assertThat(replacementTasks).hasSize(1);
         assertThat(replacementTasks.get(0).getStatus()).isIn(TaskStatus.queued, TaskStatus.claimed);
