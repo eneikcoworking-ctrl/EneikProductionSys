@@ -10,6 +10,7 @@ import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.jules.JulesRoleCapabilities;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -55,6 +56,19 @@ class AccountControllerIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        cleanDatabase();
+    }
+
+    // Real HTTP calls against a random-port server can't use @Transactional rollback, so anything this class
+    // creates (including an "active" project) is really committed. Without this, the last test method's
+    // project stays active for the rest of the suite and gets silently processed by any later test that calls
+    // ContinuousOrchestrationService.continuousOrchestrate() (which scans every active project).
+    @AfterEach
+    void tearDown() {
+        cleanDatabase();
+    }
+
+    private void cleanDatabase() {
         wishlistItemRepository.deleteAll();
         julesSessionRepository.deleteAll();
         claimRepository.deleteAll();

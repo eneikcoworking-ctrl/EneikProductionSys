@@ -11,6 +11,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistItemRepository;
 import com.eneik.production.repositories.OnboardingAuditFindingRepository;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,6 +62,20 @@ class ProjectFlowIntegrationTest {
 
     @BeforeEach
     void setUp() {
+        cleanDatabase();
+    }
+
+    // This class uses TestRestTemplate against a real random-port server, so test methods cannot rely on
+    // @Transactional rollback — every project/task/wishlist a test creates is really committed to the shared
+    // H2 database. Without this cleanup, whichever project this class's last test method leaves behind stays
+    // "active" for the rest of the suite, and gets silently picked up by any later test class that calls
+    // ContinuousOrchestrationService.continuousOrchestrate() (which processes every active project).
+    @AfterEach
+    void tearDown() {
+        cleanDatabase();
+    }
+
+    private void cleanDatabase() {
         claimRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM needs_human_review");
         jdbcTemplate.update("DELETE FROM task_conflicts");
@@ -70,8 +85,7 @@ class ProjectFlowIntegrationTest {
         accountRepository.deleteAll();
         jdbcTemplate.update("DELETE FROM github_access_status");
         projectRepository.deleteAll();
-
-}
+    }
 
     @Test
     void clientProjectWishlistOrchestrationClaimAndAcceptanceFlow() {
