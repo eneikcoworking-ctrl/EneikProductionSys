@@ -63,7 +63,6 @@ public class ProjectFlowService {
     private final ObjectMapper objectMapper;
     private final String githubOrganization;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
-    private final MLPredictionServiceClient mlPredictionServiceClient;
     private final EmsMetricsService emsMetricsService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
@@ -96,7 +95,6 @@ public class ProjectFlowService {
                               ObjectMapper objectMapper,
                               @Value("${github.org}") String githubOrganization,
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
-                              MLPredictionServiceClient mlPredictionServiceClient,
                               EmsMetricsService emsMetricsService,
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                               com.eneik.production.services.design.DesignAssetService designAssetService) {
@@ -120,7 +118,6 @@ public class ProjectFlowService {
         this.objectMapper = objectMapper;
         this.githubOrganization = githubOrganization;
         this.onboardingAuditService = onboardingAuditService;
-        this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.emsMetricsService = emsMetricsService;
         this.contextService = contextService;
         this.designAssetService = designAssetService;
@@ -289,18 +286,11 @@ public class ProjectFlowService {
                     log.info("ProjectFlowService: Synchronously compiled wishlist {} into atomic task slices", wishlist.getId());
                     continue;
                 } else if (wishlist.getCompiledByRole() == null) {
-                    java.util.Map<String, Object> aiMeta = new java.util.HashMap<>();
-                    if (mlPredictionServiceClient != null) {
-                        try {
-                            aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
-                        } catch (Exception e) {
-                            log.error("Failed to generate AI metadata for wishlist {}: {}", wishlist.getId(), e.getMessage());
-                            // Skip this wishlist item so it can be retried later
-                            continue;
-                        }
-                    }
-                    String jtbd = aiMeta != null && aiMeta.containsKey("jtbd") ? aiMeta.get("jtbd").toString() : fallbackTaskSlice(wishlist.getContent()).jtbd();
-                    String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria") ? aiMeta.get("acceptanceCriteria").toString() : fallbackTaskSlice(wishlist.getContent()).acceptanceCriteria();
+                    // Gemini-free: Jules reads the real original brief directly (see
+                    // TechnicalLeadCompiler.buildTaskDescription's "Original Brief" section), so no AI
+                    // pre-summarization is needed here either.
+                    String jtbd = fallbackTaskSlice(wishlist.getContent()).jtbd();
+                    String ac = fallbackTaskSlice(wishlist.getContent()).acceptanceCriteria();
 
                     technicalLeadCompiler.compile(
                         wishlist.getId(),
@@ -880,18 +870,16 @@ public class ProjectFlowService {
         return "EMS-" + suffix + "-" + id.substring(0, Math.min(8, id.length()));
     }
 
+    // Deliberately Gemini-free: task compilation used to route through mlPredictionServiceClient's
+    // Gemini-backed slice/metadata generation, which silently fell back to a generic, fabricated slice
+    // on any failure (including the Gemini billing exhaustion this system has been running under) -
+    // producing plausible-looking but content-free tasks with zero connection to the real wishlist.
+    // The user does not want to pay for Gemini generations; Jules itself (already paid for, already
+    // working) is the one that reads and compiles the real brief now - it receives the full original
+    // wishlist content verbatim via TechnicalLeadCompiler.buildTaskDescription's "Original Brief"
+    // section, not a pre-digested AI summary.
     private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> resolveTaskSlices(WishlistEntity wishlist) {
-        if (mlPredictionServiceClient == null) {
-            return java.util.List.of(fallbackTaskSlice(wishlist.getContent()));
-        }
-
-        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = mlPredictionServiceClient.generateTaskSlices(wishlist.getContent());
-        if (slices != null && !slices.isEmpty()) {
-            return slices.stream().limit(6).toList();
-        }
-
-        java.util.Map<String, Object> aiMeta = mlPredictionServiceClient.generateTaskMetadata(wishlist.getContent());
-        return java.util.List.of(legacyMetadataSlice(wishlist.getContent(), aiMeta));
+        return java.util.List.of(fallbackTaskSlice(wishlist.getContent()));
     }
 
     private void compileSliceMetadata(ProjectEntity project, UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
@@ -1009,15 +997,26 @@ public class ProjectFlowService {
         return "BARCAN-TAG-02";
     }
 
+    // The short wrapper line stays for human traceability (which parent wishlist, which role, which
+    // index), but the parent's real full content is appended below it, unmodified - this is what
+    // ultimately reaches TechnicalLeadCompiler.buildTaskDescription's "Original Brief" section via
+    // wishlist.getContent() on this child wishlist. Previously this method replaced the real content
+    // with just the (now honest-but-still-truncated) slice title, so even a correctly non-fabricated
+    // title never carried the actual client text through to what Jules reads.
     private String internalSliceContent(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice, int index) {
         String uiMarker = (slice.hasUi()
                 || looksLikeUi(slice.title() + " " + slice.jtbd() + " " + slice.acceptanceCriteria())) ? "UI " : "";
-        return "Internal " + uiMarker + "work item " + index + " (" + targetRoleForSlice(parent, slice) + ") from wishlist " + parent.getId()
+        String wrapper = "Internal " + uiMarker + "work item " + index + " (" + targetRoleForSlice(parent, slice) + ") from wishlist " + parent.getId()
                 + ": " + safeSliceTitle(slice.title());
+        String parentContent = parent.getContent();
+        if (parentContent == null || parentContent.isBlank()) {
+            return wrapper;
+        }
+        return wrapper + "\n\n" + parentContent;
     }
 
     private String safeSliceTitle(String title) {
-        if (title == null || title.isBlank() || containsNonEnglishSignal(title)) {
+        if (title == null || title.isBlank()) {
             return "client-requested capability";
         }
         String compact = title.replaceAll("\\s+", " ").trim();
@@ -1025,27 +1024,6 @@ public class ProjectFlowService {
             return compact;
         }
         return compact.substring(0, 87) + "...";
-    }
-
-    private MLPredictionServiceClient.TaskSliceMetadata legacyMetadataSlice(String wishlistContent, java.util.Map<String, Object> aiMeta) {
-        String jtbd = aiMeta != null && aiMeta.containsKey("jtbd")
-                ? String.valueOf(aiMeta.get("jtbd"))
-                : fallbackTaskSlice(wishlistContent).jtbd();
-        String ac = aiMeta != null && aiMeta.containsKey("acceptanceCriteria")
-                ? String.valueOf(aiMeta.get("acceptanceCriteria"))
-                : fallbackTaskSlice(wishlistContent).acceptanceCriteria();
-        return new MLPredictionServiceClient.TaskSliceMetadata(
-                featureLabel(wishlistContent),
-                jtbd,
-                ac,
-                inferRoleTag(featureLabel(wishlistContent) + " " + jtbd + " " + ac, looksLikeUi(wishlistContent)),
-                LeanValue.essential,
-                "Must-Be",
-                looksLikeUi(wishlistContent) ? "complicated" : "clear",
-                "TOC-CONSTRAINT-DECOMPOSITION",
-                "Escaped defects <= 5%",
-                looksLikeUi(wishlistContent)
-        );
     }
 
     private MLPredictionServiceClient.TaskSliceMetadata fallbackTaskSlice(String wishlistContent) {
@@ -1066,24 +1044,21 @@ public class ProjectFlowService {
         );
     }
 
+    // Never collapse real content into a generic placeholder string, in any language. The old
+    // English-only word-extraction silently discarded non-English (e.g. Cyrillic) briefs entirely,
+    // producing the same literal "client-requested capability" label for every non-English wishlist -
+    // which then got mistaken for a real, derived title. A short, honest excerpt of the real content
+    // (whatever language it's in) is always more truthful than a generic label, since the full original
+    // text now also always reaches the task description (see TechnicalLeadCompiler.buildTaskDescription).
     private String featureLabel(String wishlistContent) {
-        if (wishlistContent == null || wishlistContent.isBlank() || containsNonEnglishSignal(wishlistContent)) {
+        if (wishlistContent == null || wishlistContent.isBlank()) {
             return "client-requested capability";
         }
-        java.util.Set<String> stopWords = java.util.Set.of(
-                "the", "and", "for", "with", "that", "this", "from", "into", "need", "want",
-                "make", "create", "build", "add", "implement", "please", "system", "feature"
-        );
-        java.util.List<String> words = new java.util.ArrayList<>();
-        for (String word : wishlistContent.toLowerCase(java.util.Locale.ROOT).split("[^a-z0-9]+")) {
-            if (word.length() >= 3 && !stopWords.contains(word)) {
-                words.add(word);
-            }
-            if (words.size() == 4) {
-                break;
-            }
+        String compact = wishlistContent.replaceAll("\\s+", " ").trim();
+        if (compact.isEmpty()) {
+            return "client-requested capability";
         }
-        return words.isEmpty() ? "client-requested capability" : String.join(" ", words);
+        return compact.length() <= 60 ? compact : compact.substring(0, 57) + "...";
     }
 
     private boolean looksLikeUi(String value) {
@@ -1097,15 +1072,6 @@ public class ProjectFlowService {
 
     private String defaultText(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value;
-    }
-
-    private boolean containsNonEnglishSignal(String value) {
-        if (value == null) {
-            return false;
-        }
-        return value.matches(".*[\\p{IsCyrillic}].*")
-                || value.contains("\u00d0")
-                || value.contains("\u00d1");
     }
 
     @Transactional

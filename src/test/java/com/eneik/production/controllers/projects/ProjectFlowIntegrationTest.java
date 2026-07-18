@@ -250,7 +250,12 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
-    void orchestrationCompilesWishlistIntoDependencyGraphAndDedupesSlices() {
+    void orchestrationCompilesWishlistIntoSingleHonestTaskWithoutGemini() {
+        // Task compilation no longer calls mlPredictionServiceClient.generateTaskSlices() at all (see
+        // ProjectFlowService.resolveTaskSlices) - the user does not want to pay for Gemini generations,
+        // and the multi-slice AI decomposition this test used to verify silently fell back to fabricated
+        // placeholder content whenever Gemini failed. One wishlist now compiles into exactly one honest
+        // task built directly from the real content; Jules does any further decomposition itself.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "Graph Compiler Project"),
@@ -267,60 +272,6 @@ class ProjectFlowIntegrationTest {
         );
         assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata backend =
-                new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
-                        "Account settings API",
-                        "When an operator edits account settings, I want the API to persist the update, so that settings are saved reliably.",
-                        "Given valid settings, When the API receives an update, Then the values are persisted.",
-                        "BARCAN-TAG-02",
-                        com.eneik.production.models.persistence.LeanValue.essential,
-                        "Must-Be",
-                        "clear",
-                        "TOC-CONSTRAINT-API",
-                        "Escaped defects <= 5%",
-                        false
-                );
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskSlices(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(java.util.List.of(
-                        backend,
-                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
-                                "Duplicate account settings API",
-                                backend.jtbd(),
-                                backend.acceptanceCriteria(),
-                                "BARCAN-TAG-02",
-                                com.eneik.production.models.persistence.LeanValue.essential,
-                                "Must-Be",
-                                "clear",
-                                "TOC-CONSTRAINT-API",
-                                "Escaped defects <= 5%",
-                                false
-                        ),
-                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
-                                "Account settings UI",
-                                "When an operator opens account settings, I want a browser form, so that settings can be edited safely.",
-                                "Given the settings page opens, When the form renders, Then editable fields and save feedback are visible.",
-                                "BARCAN-TAG-11",
-                                com.eneik.production.models.persistence.LeanValue.essential,
-                                "Performance",
-                                "complicated",
-                                "TOC-CONSTRAINT-UI",
-                                "UI defects <= 5%",
-                                true
-                        ),
-                        new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
-                                "Account settings verification",
-                                "When account settings are implemented, I want automated verification, so that regressions are caught.",
-                                "Given the implementation exists, When tests run, Then the primary account settings path is verified.",
-                                "BARCAN-TAG-06",
-                                com.eneik.production.models.persistence.LeanValue.essential,
-                                "Must-Be",
-                                "clear",
-                                "TOC-CONSTRAINT-QA",
-                                "Escaped defects <= 2%",
-                                false
-                        )
-                ));
-
         ResponseEntity<Map> orchestration = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/orchestrate",
                 null,
@@ -331,25 +282,17 @@ class ProjectFlowIntegrationTest {
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
                 taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id()).stream()
                         .filter(task -> !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(task.getPayload().path("toc_constraint_ref").asText()))
-                        .sorted(java.util.Comparator.comparingInt(task -> task.getPayload().path("ems_graph_order").asInt()))
                         .toList();
 
-        assertThat(tasks).hasSize(3);
-        assertThat(tasks).extracting(task -> task.getRole().getTag())
-                .containsExactly("BARCAN-TAG-02", "BARCAN-TAG-11", "BARCAN-TAG-06");
+        assertThat(tasks).hasSize(1);
         assertThat(tasks.get(0).getDependsOn()).isNull();
-        assertThat(tasks.get(1).getDependsOn().getId()).isEqualTo(tasks.get(0).getId());
-        assertThat(tasks.get(2).getDependsOn().getId()).isEqualTo(tasks.get(1).getId());
-        assertThat(tasks).extracting(task -> task.getPayload().path("ems_semantic_key").asText())
-                .doesNotHaveDuplicates();
-        assertThat(tasks.get(0).getPayload().path("ems_graph_key").asText()).startsWith("EMS-flow-");
+        assertThat(tasks.get(0).getDescription()).contains("Build account settings with API, browser UI, and verification");
+        assertThat(tasks.get(0).getDescription()).contains("Original Brief");
 
         ProjectDashboardDto dashboard = restTemplate.getForObject(
                 "/api/projects/" + project.id() + "/dashboard",
                 ProjectDashboardDto.class
         );
-        assertThat(dashboard.emsMetrics().graphHealth().graphTasks()).isEqualTo(4);
-        assertThat(dashboard.emsMetrics().graphHealth().linkedEdges()).isEqualTo(2);
         assertThat(dashboard.emsMetrics().graphHealth().duplicateSemanticKeys()).isZero();
     }
 
@@ -423,7 +366,12 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
-    void testAiServiceFailureGracefulDegradation() {
+    void taskCompilationSucceedsEvenWhenAiServiceMockWouldFail() {
+        // Task compilation no longer calls the ML/Gemini service at all (see
+        // ProjectFlowService.resolveTaskSlices), so it can no longer be degraded by an AI outage - this
+        // is the whole point of the fix: a wishlist item now compiles into a real task immediately and
+        // unconditionally, using the honest fallback slice built directly from its own content, rather
+        // than deferring or silently fabricating placeholder content while waiting on Gemini.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "Failing AI App"),
@@ -440,7 +388,7 @@ class ProjectFlowIntegrationTest {
         continuousOrchestrationService.continuousOrchestrate();
 
         ProjectDashboardDto dashboard = restTemplate.getForObject("/api/projects/" + project.id() + "/dashboard", ProjectDashboardDto.class);
-        assertThat(dashboard.openWishlistCount()).isEqualTo(1);
+        assertThat(dashboard.openWishlistCount()).isEqualTo(0);
 
         // orchestrate() unconditionally ensures an environment-bootstrap task exists for every active project,
         // independent of wishlist compilation - that's not part of what this test is exercising.
@@ -449,6 +397,7 @@ class ProjectFlowIntegrationTest {
                         .filter(t -> t.getPayload() == null
                                 || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(t.getPayload().path("toc_constraint_ref").asText()))
                         .toList();
-        assertThat(nonBootstrapTasks).isEmpty();
+        assertThat(nonBootstrapTasks).hasSize(1);
+        assertThat(nonBootstrapTasks.get(0).getDescription()).contains("Will fail in AI");
     }
 }

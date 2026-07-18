@@ -155,7 +155,13 @@ public class TechnicalLeadCompilerIntegrationTest {
     }
 
     @Test
-    public void testNonEnglishWishlistDoesNotLeakIntoTaskDescription() {
+    public void testNonEnglishWishlistContentReachesTaskDescription() {
+        // Task compilation no longer routes through Gemini (see ProjectFlowService.resolveTaskSlices),
+        // so the real original wishlist text - in whatever language it's in - is the only signal Jules
+        // ever receives. Previously this was deliberately stripped out for non-English content, which
+        // meant Jules never saw the actual client ask when the JTBD/acceptance-criteria fields were
+        // generic (e.g. during a Gemini outage) - exactly the bug that produced hours of fabricated,
+        // self-referential task titles disconnected from the real (Russian) client brief.
         WishlistEntity localWish = new WishlistEntity();
         localWish.setProjectId(projectId);
         localWish.setSource(WishlistSource.client);
@@ -172,9 +178,10 @@ public class TechnicalLeadCompilerIntegrationTest {
 
         TaskEntity task = compiler.createTaskFromWishlist(localWish.getId());
 
-        assertFalse(task.getDescription().matches(".*[\\p{IsCyrillic}].*"));
+        assertTrue(task.getDescription().contains("\u0421\u0434\u0435\u043b\u0430\u0442\u044c \u043b\u0438\u0447\u043d\u044b\u0439 \u043a\u0430\u0431\u0438\u043d\u0435\u0442"));
+        assertTrue(task.getDescription().contains("Original Brief"));
         assertTrue(task.getDescription().contains("When this slice is delivered"));
-        assertTrue(task.getDescription().contains("Do not paste, translate, or re-interpret the original client wish"));
+        assertTrue(task.getDescription().contains("do not paste the raw Original Brief verbatim into the PR narrative"));
     }
 
     @Test

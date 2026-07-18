@@ -854,13 +854,26 @@ public class TechnicalLeadCompiler {
                     .append(englishMetadata(wishlist.getContent(), "Circuit-breaker recovery for a previous Jules session."))
                     .append("\n\n");
         }
+        // Always include the real original wishlist text verbatim, in whatever language it's in - task
+        // compilation no longer routes through Gemini, so this is the only place the actual client ask
+        // reaches Jules at all. Previously this was omitted for most wishlist sources and the JTBD/
+        // acceptance-criteria fields above were the only signal Jules received - when those were
+        // AI-fallback placeholders (e.g. during a Gemini outage), Jules had no way to recover the real
+        // intent because it never saw the source text.
+        String originalBrief = wishlist.getContent();
+        if (originalBrief != null && !originalBrief.isBlank()) {
+            sb.append("Original Brief (verbatim, may be in any language - read and understand it yourself,\n")
+                    .append("do not rely only on the JTBD/Acceptance Criteria above if they look generic):\n")
+                    .append(compactLines(originalBrief, 4000))
+                    .append("\n\n");
+        }
         sb.append("Definition of Done:\n");
         sb.append("- ").append(dod).append("\n");
         sb.append("- One branch and one PR are opened for this role only.\n");
         sb.append("- The PR summary includes the exact verification command and result.\n\n");
         sb.append("Acceptance Criteria:\n").append(compactLines(acceptanceCriteria, 900)).append("\n\n");
         sb.append("Boundaries:\n");
-        sb.append("- Do not paste, translate, or re-interpret the original client wish in the PR narrative.\n");
+        sb.append("- Write your own clear English PR title and summary describing what you actually built - do not paste the raw Original Brief verbatim into the PR narrative.\n");
         sb.append("- Do not implement adjacent slices or other roles.\n");
         sb.append("- If the session reaches 8 back-and-forth messages, stop with a concrete blocker instead of looping.\n\n");
         sb.append("Execution Notes:\n").append(executionNotesForRole(roleTag));
