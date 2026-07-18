@@ -181,3 +181,99 @@ sessions see repeated spurious "killed" events.
 - **Not yet done:** this session's own periodic monitoring findings (this file) are NOT wired into the
   falsification cycle - only recent *log* activity is. Feeding curated findings in as well was discussed but
   not implemented before the session paused.
+
+---
+
+### 2026-07-18T01:00Z — Flow-fix plan (Areas 2-5) implemented, tested, deployed, verified live
+
+Full plan (root-caused via direct DB/GitHub queries: reactive-only wishlist generation starved by a low
+merge rate, itself starved by circuit-breaker bugs already fixed above) implemented in order:
+
+- **Area 2 (rescue abandoned PRs):** `JulesDispatchService.reconcileAbandonedPullRequests()` sweeps
+  `loop_closed` sessions with no `pr_reviews` row, checks GitHub directly for a PR the session already
+  opened before being force-closed. Verified live against the real repo: found and reconciled real
+  abandoned PRs across `test-twentieth` and `test-twenty-first` within the first orchestration cycle after
+  deploy (`#22`, `#24`, `#23`, `test-twenty-first#2`, `#1`).
+- **Area 3 (project monitoring):** `GET /api/projects/{id}/pull-requests` (wraps the already-existing
+  `GitHubPullRequestService.pullRequestSnapshot`) and `GET /api/projects/{id}/recent-activity` (wraps
+  `LogScopeBuffer.recent`). Verified against `test-twenty-fourth`: matches `gh pr list` exactly (6 open -
+  `#3,#5,#7,#8,#10,#11`, 5 merged, 0 closed-unmerged).
+- **Area 4 (break wishlist starvation):** `IdleProjectAdviceService` (new, 15-min cron) detects a genuinely
+  idle active project (no pending wishlist, nothing queued, nothing in flight) and asks Gemini for one
+  wishlist item targeted at the project's least-used role - capped at one role/one item/project/cycle.
+  `RoleAdviceLoopService.afterTaskComplete` upgraded from templating the task description back to actually
+  asking Gemini for a follow-up recommendation (safe fallback to the old template if the ML service is
+  unavailable). New `WishlistSource.idle_generation` enum value.
+- **Area 5 (system monitoring):** `SystemProgressTracker` (in-memory heartbeat, recorded on real dispatch
+  success and real merge success only - not every 60s tick) + `ContinuousOrchestrationService.checkForSystemStall()`
+  checks it against idle capacity every cycle, persists `system_stall_status` (ok/stalled/idle_no_work).
+  Exposed via a new `systemHealth` section in `SystemStatusService.getStatus()`.
+- All 127 backend tests pass (a real, pre-existing test bug was caught and fixed along the way: the FK
+  added in the housekeeping pass correctly rejected `AutonomousPipelineIntegrationTest` passing a
+  never-persisted random session id to `onPrOpened` - fixed by creating a real session, not by weakening
+  the FK).
+- **Status: DEPLOYED and verified 2026-07-18T00:57Z-01:10Z**, commits `f237467` (Areas 2-5).
+
+---
+
+### 2026-07-18T01:10Z — `needs_human_review` was a silent write-only dead end (caught by user, not by me)
+
+- **Observed:** while implementing Area 2, `reconcileAbandonedPullRequests()` was written to route a
+  rescued-but-unreviewable PR to a `NeedsHumanReviewEntity` row as a "conservative first slice" - explicitly
+  reasoned as safer than auto-merging a session Jules might no longer recognize as active. The user
+  immediately flagged this on sight: "человек не должен участвовать" (a human must never need to
+  participate) - this system's stated design is that a human only creates the project, writes the wishlist,
+  and accepts the finished project; nothing else may wait on a person.
+- **Investigation confirmed it was worse than "needs a human":** grepping the whole codebase found
+  `NeedsHumanReviewRepository`/`NeedsHumanReviewEntity` had **zero readers anywhere** - not the frontend, not
+  any scheduled job, nothing. A second, older, pre-existing writer already existed too
+  (`AutoMergeService.handleMergeConflict()`, escalating after 3 failed auto-resolve attempts) with the exact
+  same problem. Both were genuine dead ends: work simply stopped forever, silently, with no human and no
+  system ever revisiting it - a worse failure mode than the "abandoned PR" bug Area 2 was built to fix in
+  the first place.
+- **Fixed (same session, before deploy):** both writers now resolve autonomously instead of parking.
+  `reconcileAbandonedPullRequests()` runs the rescued PR through the existing automated reviewer
+  (`mlPredictionServiceClient.reviewPr`) - approved PRs get a `pr_reviews` row that `AutoMergeService`'s own
+  next cycle merges through its already-tested pipeline (zero new merge logic); rejected PRs spawn a fresh
+  atomic recovery task. A `VERIFICATION_SERVICE_UNAVAILABLE` fail-safe response is retried next cycle, not
+  treated as a rejection (same precedent as the falsification fail-safe fix above).
+  `AutoMergeService.handleMergeConflict()`'s 3-strikes escalation now abandons the conflicting branch and
+  spawns a fresh recovery task the same way, instead of writing to the dead table.
+  `NeedsHumanReviewRepository` wiring removed from all three services that referenced it (the entity/table
+  itself left in place, now fully dormant - a candidate for outright removal in a future pass, not urgent).
+- **Status: DEPLOYED and verified 2026-07-18T01:25Z** (all 127 tests pass, clean restart, no errors in the
+  first orchestration cycles after deploy), commit `22ff365`.
+- **Lesson:** "conservative first slice" reasoning silently smuggled in a human-in-the-loop assumption that
+  contradicts this project's core design. The philosophy check ("could a human be required here, even
+  implicitly, even as a fallback?") needs to be applied to every new code path, not just the obviously
+  autonomous ones.
+
+---
+
+### 2026-07-18T01:25Z — Design generated via Stitch + frontend redesign applied
+
+- **Design:** second Stitch generation (first was rejected as "мрачный и вторичный" - dark and generic).
+  New direction: light-industrial "mission control" for the factory floor, Cynefin domain colors used as
+  real functional status coding (Clear/Complicated/Complex/Chaotic), sharp panel edges, IBM Plex Sans +
+  JetBrains Mono, dial-gauge and event-ticker motifs instead of generic cards/progress-bars. Three screens
+  generated (System Dashboard, Project View, Resources & Tokens) and reviewed via a published artifact
+  before porting - all real Stitch HTML/CSS output, not hand-authored (per explicit instruction: "ты сам
+  ничего не должен генерировать. только ресурс stitch!").
+- **Frontend:** applied the new design tokens globally (`app.css` - colors, IBM Plex Sans/JetBrains Mono,
+  sharp radius, hard offset shadows) so every existing view inherits the look without touching its data
+  logic - a full blind rewrite of ~4,700 lines of working Svelte with no visual-rendering capability
+  available this session was judged too risky given "флоу, ядро и истина" were stated as the top priority.
+  Instead: three new reusable components (`DialGauge`, `CynefinBadge`, `ActivityTicker`) plus real,
+  additive panels wired to the Area 2/3 backend work - a GitHub-PR-truth panel and recent-activity ticker on
+  the Project View, a System Health panel on the System view, Cynefin badges on task cards. Product name
+  corrected to "Eneik Management System" throughout (was still showing "Project Command Center" in one spot).
+- **Deliberately not done:** AI-resource utilization dials were not faked - no real percentage/quota metric
+  exists server-side yet, and inventing one would contradict the falsification-first principle this session
+  keeps coming back to. Flagged as real follow-up work (token/cost metering), not faked for visual completeness.
+- **Known remaining debt (not fixed this session):** ~17 hardcoded old-palette hex colors remain in status
+  badges across `CommandDashboardV2`/`MetricsView`/`AdminDashboard` (light-blue "accepted"/"waiting" badge
+  backgrounds) - cosmetically inconsistent with the new palette but not broken. Left alone rather than
+  edited blind, since this session has no way to visually verify the result.
+- **Status: DEPLOYED and verified 2026-07-18T01:26Z** - `svelte-check` clean (0 errors), both containers
+  rebuilt and restarted cleanly, frontend title confirmed via curl, `systemHealth` endpoint confirmed live.
+  Commit `3c31a3c`.
