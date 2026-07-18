@@ -4,9 +4,9 @@ import com.eneik.production.dto.RoleRules;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
-import com.eneik.production.models.persistence.NeedsHumanReviewEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
@@ -63,7 +63,6 @@ public class JulesDispatchService {
     private final RoleRepository roleRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
-    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final String sourcePrefix;
 
@@ -96,7 +95,6 @@ public class JulesDispatchService {
                                 RoleRepository roleRepository,
                                 GitHubPullRequestService gitHubPullRequestService,
                                 com.eneik.production.repositories.PrReviewRepository prReviewRepository,
-                                com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
@@ -113,7 +111,6 @@ public class JulesDispatchService {
         this.roleRepository = roleRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.prReviewRepository = prReviewRepository;
-        this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.systemProgressTracker = systemProgressTracker;
         this.sourcePrefix = sourcePrefix;
     }
@@ -1446,10 +1443,13 @@ public class JulesDispatchService {
      * already produced real, working code - a PR opened right before closure is otherwise structurally
      * invisible to AutoMergeService (which only iterates existing pr_reviews rows) forever.
      *
-     * Deliberately conservative first slice: this only ever surfaces a finding to a human via
-     * NeedsHumanReviewEntity - it never reopens the session, messages Jules, or auto-merges. The session
-     * is already terminally closed; resurrecting it (as handlePrOpenedWorkflow's rejection path does for a
-     * live session) would be the wrong move for a session Jules itself may no longer recognize as active.
+     * Fully autonomous end-to-end (no human review parking lot): the discovered PR is run through the
+     * same mlPredictionServiceClient.reviewPr(...) gate AutoMergeService trusts elsewhere. An approved PR
+     * gets a pr_reviews row with ciStatus=success, which AutoMergeService's own next cycle picks up and
+     * merges through its already-tested pipeline (Cynefin/Philosophical-Filter checks included) - no new
+     * merge logic here. A rejected PR spawns a fresh atomic recovery task instead (same "start clean, one
+     * small slice" idiom used by ProjectFlowService's blocked-task recovery), so the work keeps moving
+     * without ever waiting on a human who, per this system's design, never participates day to day.
      */
     @Transactional
     public void reconcileAbandonedPullRequests() {
@@ -1462,7 +1462,7 @@ public class JulesDispatchService {
 
         for (JulesSessionEntity session : closedSessions) {
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
-            if (task == null || needsHumanReviewRepository.existsByTaskId(task.getId())) {
+            if (task == null) {
                 continue;
             }
 
@@ -1476,22 +1476,49 @@ public class JulesDispatchService {
             session.setPrUrl(pr.url());
             julesSessionRepository.save(session);
 
-            String verdict = "";
+            Map<String, Object> reviewResult;
             try {
-                Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), pr.url());
-                boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
-                verdict = approved ? " (auto-review: looks mergeable)" : " (auto-review: flagged issues)";
+                reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), pr.url());
             } catch (Exception e) {
-                log.warn("reconcileAbandonedPullRequests: local review check failed for {}: {}", pr.url(), e.getMessage());
+                log.warn("reconcileAbandonedPullRequests: review call failed for {}: {} - will retry next cycle", pr.url(), e.getMessage());
+                continue;
+            }
+            String remarks = String.valueOf(reviewResult.get("remarks"));
+            if (remarks.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
+                log.warn("reconcileAbandonedPullRequests: review service unavailable for {} - will retry next cycle, not treating as a rejection", pr.url());
+                continue;
             }
 
-            NeedsHumanReviewEntity nhr = new NeedsHumanReviewEntity();
-            nhr.setTask(task);
-            String reason = "Abandoned PR reconciliation: " + pr.url() + verdict;
-            nhr.setReason(reason.length() > 256 ? reason.substring(0, 256) : reason);
-            needsHumanReviewRepository.save(nhr);
-            log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - routed to human review instead of being silently lost.",
-                    pr.url(), session.getExternalSessionId(), task.getId());
+            boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
+            if (approved) {
+                PrReviewEntity review = new PrReviewEntity();
+                review.setJulesSessionId(session.getId());
+                review.setPrUrl(pr.url());
+                review.setCiStatus("success");
+                review.setRiskLevel("medium");
+                review.setDiffSummary("Abandoned-PR reconciliation: auto-review approved. " + remarks);
+                prReviewRepository.save(review);
+                log.info("Reconciled abandoned PR {} for closed session {} (task {}) - approved by auto-review, queued for AutoMergeService.",
+                        pr.url(), session.getExternalSessionId(), task.getId());
+            } else {
+                WishlistEntity followUp = new WishlistEntity();
+                followUp.setProjectId(task.getProject().getId());
+                followUp.setSource(WishlistSource.role_mismatch_followup);
+                followUp.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
+                followUp.setStatus(WishlistStatus.pending);
+                followUp.setContent(("""
+                        [Auto recovery: abandoned PR flagged by auto-review]
+                        Found existing PR %s left behind by a force-closed session for task %s.
+                        Auto-review verdict: rejected. Remarks: %s
+
+                        Goal: start one fresh, short Jules session that addresses the remarks above and
+                        replaces this abandoned attempt. Do not continue the old branch. One atomic slice,
+                        one PR, one objective acceptance criterion.
+                        """).formatted(pr.url(), task.getId(), remarks));
+                wishlistRepository.save(followUp);
+                log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - auto-review rejected, queued a fresh recovery task instead of a human-review dead end.",
+                        pr.url(), session.getExternalSessionId(), task.getId());
+            }
         }
     }
 

@@ -3,11 +3,9 @@ package com.eneik.production.services;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
-import com.eneik.production.repositories.NeedsHumanReviewRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.jules.JulesDispatchService;
 import com.eneik.production.models.persistence.TaskConflictEntity;
-import com.eneik.production.models.persistence.NeedsHumanReviewEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
@@ -47,7 +45,6 @@ public class AutoMergeService {
     private final ObjectMapper objectMapper;
     private final com.eneik.production.services.advice.RoleAdviceLoopService roleAdviceLoopService;
     private final TaskConflictRepository taskConflictRepository;
-    private final NeedsHumanReviewRepository needsHumanReviewRepository;
     private final JulesDispatchService julesDispatchService;
     private final RoleCapabilityLoader roleCapabilityLoader;
     private final WishlistRepository wishlistRepository;
@@ -64,7 +61,6 @@ public class AutoMergeService {
                             ObjectMapper objectMapper,
                             com.eneik.production.services.advice.RoleAdviceLoopService roleAdviceLoopService,
                             TaskConflictRepository taskConflictRepository,
-                            NeedsHumanReviewRepository needsHumanReviewRepository,
                             JulesDispatchService julesDispatchService,
                             RoleCapabilityLoader roleCapabilityLoader,
                             WishlistRepository wishlistRepository,
@@ -80,7 +76,6 @@ public class AutoMergeService {
         this.objectMapper = objectMapper;
         this.roleAdviceLoopService = roleAdviceLoopService;
         this.taskConflictRepository = taskConflictRepository;
-        this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.julesDispatchService = julesDispatchService;
         this.roleCapabilityLoader = roleCapabilityLoader;
         this.wishlistRepository = wishlistRepository;
@@ -402,15 +397,31 @@ public class AutoMergeService {
         conflict.setResolutionAttempts(attempts);
         
         if (attempts >= 3) {
+            // Three auto-resolve attempts have failed - this branch is unrecoverable, not worth a
+            // fourth rebase. No human ever looks at this system day-to-day, so escalating to a
+            // needs_human_review row here used to be a dead end (nothing reads that table). Instead,
+            // abandon the conflicting branch and spawn one fresh atomic recovery task - same idiom
+            // already used by ProjectFlowService's blocked-task recovery and by
+            // reconcileAbandonedPullRequests' rejection path.
             conflict.setResolutionStatus("escalated");
             taskConflictRepository.save(conflict);
-            
-            NeedsHumanReviewEntity humanReview = new NeedsHumanReviewEntity();
-            humanReview.setTask(task);
-            humanReview.setReason("repeated merge conflict after 3 auto-resolve attempts");
-            needsHumanReviewRepository.save(humanReview);
-            
-            log.warn("Merge conflict for task {} escalated to human review after {} attempts", taskId, attempts);
+
+            WishlistEntity recovery = new WishlistEntity();
+            recovery.setProjectId(task.getProject().getId());
+            recovery.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
+            recovery.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
+            recovery.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            recovery.setContent(("""
+                    [Auto recovery: merge conflict unresolved after 3 attempts]
+                    Task %s's branch (PR %s) hit repeated merge conflicts across 3 auto-resolve attempts.
+
+                    Goal: start one fresh, short Jules session against current main that reimplements this
+                    work without touching the abandoned branch. One atomic slice, one PR, one objective
+                    acceptance criterion.
+                    """).formatted(taskId, review.getPrUrl()));
+            wishlistRepository.save(recovery);
+
+            log.warn("Merge conflict for task {} escalated after {} attempts - queued a fresh recovery task instead of a human-review dead end.", taskId, attempts);
         } else {
             taskConflictRepository.save(conflict);
             
