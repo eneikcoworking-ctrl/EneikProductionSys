@@ -928,9 +928,11 @@ async def assistant_chat_endpoint(request: ChatRequest):
             cleaned = "Gemini returned an empty response. No model-generated facts were added."
 
         return ChatResponse(text=cleaned)
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Assistant Chat Exception: {e}")
-        return ChatResponse(text=f"Произошла ошибка при обращении к Gemini: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Gemini call failed: {e}") from e
 
 
 if __name__ == "__main__":
