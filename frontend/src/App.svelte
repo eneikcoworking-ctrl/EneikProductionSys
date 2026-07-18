@@ -109,15 +109,15 @@
   <!-- Top Navigation Bar -->
   <section class="topbar">
     <div class="brand">
-      <p class="eyebrow">Eneik Production System</p>
-      <h1>Project Command Center</h1>
+      <p class="eyebrow">Autonomous Software Factory</p>
+      <h1>Eneik Management System</h1>
     </div>
     
     <div class="nav-links">
-      <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Dashboard</button>
+      <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Project</button>
       <button onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
-      <button onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>AI Resources</button>
-      <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>Token Admin</button>
+      <button onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
+      <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
     </div>
 
     <div class="create-project">

@@ -1,5 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import ActivityTicker from './ActivityTicker.svelte';
+  import CynefinBadge from './CynefinBadge.svelte';
 
   export let projectId: string;
 
@@ -19,6 +21,8 @@
   let acceptConfirmationText = '';
   let acceptingProject = false;
   let videoAssets: any[] = [];
+  let prTruth: any = null;
+  let recentActivity: string[] = [];
 
   async function fetchVideoAssets() {
     try {
@@ -131,10 +135,28 @@
       if (dashboard.project.status === 'analyzing') {
         await fetchOnboardingData();
       }
+
+      fetchProjectTruth();
     } catch (e: any) {
       error = e.message;
     } finally {
       loading = false;
+    }
+  }
+
+  // Real GitHub PR state + this project's own scoped activity log — the "truth" panel. Kept in its
+  // own try/catch (rather than the Promise.all above) so a GitHub-disabled/misconfigured project
+  // never blocks the rest of the dashboard from loading.
+  async function fetchProjectTruth() {
+    try {
+      const [prRes, activityRes] = await Promise.all([
+        fetch(`${API_BASE}/api/projects/${projectId}/pull-requests`),
+        fetch(`${API_BASE}/api/projects/${projectId}/recent-activity?limit=60`)
+      ]);
+      prTruth = prRes.ok ? await prRes.json() : null;
+      recentActivity = activityRes.ok ? (await activityRes.json()).lines ?? [] : [];
+    } catch {
+      // Non-fatal — the truth panel just shows its own empty state.
     }
   }
 
@@ -377,6 +399,42 @@
         </button>
       </div>
     </header>
+
+    <!-- GitHub Truth + Recent Activity — real state, not the system's own bookkeeping -->
+    <section class="truth-panel">
+      <div class="truth-col">
+        <div class="card-header compact">
+          <h2>Pull Requests (GitHub truth)</h2>
+        </div>
+        {#if prTruth === null}
+          <p class="empty-note">Loading…</p>
+        {:else if !prTruth.available}
+          <p class="empty-note">{prTruth.error || 'GitHub integration unavailable for this project.'}</p>
+        {:else}
+          <div class="pr-counts">
+            <span class="pr-count open">{prTruth.open.length} open</span>
+            <span class="pr-count merged">{prTruth.closed.filter((p: any) => p.merged).length} merged</span>
+            <span class="pr-count closed">{prTruth.closed.filter((p: any) => !p.merged).length} closed</span>
+          </div>
+          <ul class="pr-list">
+            {#each prTruth.open as pr (pr.url)}
+              <li>
+                <a href={pr.url} target="_blank" rel="noreferrer">#{pr.number} {pr.title}</a>
+                <span class="pr-author">{pr.author}</span>
+              </li>
+            {:else}
+              <li class="empty-note">No open pull requests.</li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      <div class="truth-col">
+        <div class="card-header compact">
+          <h2>Recent Project Activity</h2>
+        </div>
+        <ActivityTicker lines={recentActivity} emptyText="No scoped activity logged yet for this project." />
+      </div>
+    </section>
 
     <!-- Automated Video Releases Slider -->
     <section class="video-releases-panel">
@@ -766,6 +824,7 @@
                     <span class="role-tag">{task.tag}</span>
                     <span class="kano-badge {getKanoCategory(task.tag).colorClass}">{getKanoCategory(task.tag).label}</span>
                     <span class="badge-status {task.status}">{task.status}</span>
+                    <CynefinBadge domain={task.cynefinDomain} />
                   </div>
                   <p class="task-title-line" title={task.description}>{task.title || task.payload?.short_title || 'Task Slice'}</p>
                   <p class="task-description" title={task.description}>{task.payload?.role_atomic_goal || task.payload?.slice_title || task.description}</p>
@@ -887,6 +946,83 @@
     gap: var(--space-6);
     min-height: calc(100vh - 200px);
     font-family: inherit;
+  }
+
+  .truth-panel {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+  .truth-col {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: var(--radius);
+    padding: var(--space-4);
+  }
+  .truth-col .card-header h2 {
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--neutral-600);
+    margin: 0 0 var(--space-3);
+  }
+  .pr-counts {
+    display: flex;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+  }
+  .pr-count {
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    font-weight: 700;
+    padding: 4px 10px;
+  }
+  .pr-count.open { background: var(--surface-sunken); color: var(--primary); }
+  .pr-count.merged { background: var(--success-bg); color: var(--success); }
+  .pr-count.closed { background: var(--neutral-100); color: var(--neutral-500); }
+  .pr-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    list-style: none;
+    margin: 0;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 0;
+  }
+  .pr-list li {
+    align-items: center;
+    display: flex;
+    gap: var(--space-2);
+    justify-content: space-between;
+  }
+  .pr-list a {
+    color: var(--neutral-900);
+    font-weight: 600;
+    text-decoration: none;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pr-list a:hover {
+    color: var(--primary);
+  }
+  .pr-author {
+    color: var(--neutral-500);
+    flex: none;
+    font-size: 12px;
+  }
+  .empty-note {
+    color: var(--neutral-500);
+    font-size: 13px;
+  }
+  @media (max-width: 900px) {
+    .truth-panel {
+      grid-template-columns: 1fr;
+    }
   }
 
   /* Loader styling */

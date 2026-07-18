@@ -87,6 +87,7 @@
     qualityGate: Section<Record<string, number>>;
     tasks: Section<Record<string, number>>;
     conflictDpmo?: Section<ConflictDpmoData>;
+    systemHealth?: Section<{ lastProgressAt: string; minutesSinceProgress: number; status: string }>;
   };
 
   type IntegrationConfig = {
@@ -349,6 +350,19 @@
     </div>
   </div>
 
+  <section class="admin-panel system-health-panel status-{status?.systemHealth?.data?.status ?? 'unknown'}">
+    <div class="panel-head">
+      <h2>System Health</h2>
+      <span class="health-pill">{status?.systemHealth?.data?.status ?? 'loading'}</span>
+    </div>
+    {#if status?.systemHealth?.data}
+      <p class="health-line">
+        {status.systemHealth.data.minutesSinceProgress} minute(s) since the last real forward progress
+        (a Jules dispatch or a merge) — stall threshold check runs every orchestration cycle.
+      </p>
+    {/if}
+  </section>
+
   <section class="admin-panel">
     <div class="panel-head">
       <h2>Integrations</h2>
@@ -582,6 +596,31 @@
     display: grid;
     gap: 18px;
     padding-bottom: 96px;
+  }
+
+  .system-health-panel {
+    border-left: 4px solid var(--neutral-300);
+  }
+  .system-health-panel.status-ok { border-left-color: var(--success); }
+  .system-health-panel.status-stalled { border-left-color: var(--error); }
+  .system-health-panel.status-idle_no_work { border-left-color: var(--warning); }
+  .health-pill {
+    border-radius: var(--radius);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    padding: 3px 10px;
+    text-transform: uppercase;
+  }
+  .status-ok .health-pill { background: var(--success-bg); color: var(--success); }
+  .status-stalled .health-pill { background: var(--error-bg); color: var(--error); }
+  .status-idle_no_work .health-pill { background: var(--warning-bg); color: var(--warning); }
+  .status-unknown .health-pill { background: var(--neutral-100); color: var(--neutral-500); }
+  .health-line {
+    color: var(--neutral-600);
+    font-size: 13px;
+    margin: 8px 0 0;
   }
 
   .admin-header,
