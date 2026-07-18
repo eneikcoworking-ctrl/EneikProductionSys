@@ -296,42 +296,6 @@
     return Array.from(byUsername.values()).sort((a, b) => a.username.localeCompare(b.username));
   }
 
-  let chatOpen = $state(false);
-  let chatInput = $state('');
-  let chatHistory = $state<{ sender: 'user' | 'ai'; text: string }[]>([]);
-  let chatLoading = $state(false);
-
-  async function sendChatMessage() {
-    if (!chatInput.trim() || chatLoading) return;
-    const userMsg = chatInput.trim();
-    chatHistory = [...chatHistory, { sender: 'user', text: userMsg }];
-    chatInput = '';
-    chatLoading = true;
-
-    try {
-      const response = await fetch(`${API_BASE}/api/dashboard/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userMsg,
-          projectId: activeProject?.id || '',
-          projectName: activeProject?.name || '',
-          mode: 'operator'
-        })
-      });
-      if (response.ok) {
-        const data = await response.json();
-        chatHistory = [...chatHistory, { sender: 'ai', text: data.response || 'Empty assistant response.' }];
-      } else {
-        chatHistory = [...chatHistory, { sender: 'ai', text: 'Error: assistant server is not reachable.' }];
-      }
-    } catch (e) {
-      chatHistory = [...chatHistory, { sender: 'ai', text: `Network error: ${e}` }];
-    } finally {
-      chatLoading = false;
-    }
-  }
-
   onMount(loadStatus);
 </script>
 
@@ -343,11 +307,6 @@
     </div>
     <div class="admin-header-actions">
       <button type="button" onclick={loadStatus}>Refresh</button>
-      {#if !chatOpen}
-        <button type="button" class="chat-trigger inline" onclick={() => chatOpen = true}>
-          Ask AI
-        </button>
-      {/if}
     </div>
   </div>
 
@@ -589,38 +548,6 @@
     <p class="admin-message">Admin status: {message}</p>
   </section>
 
-  <!-- AI Assistant Chat Widget -->
-  {#if chatOpen}
-    <div class="chat-widget">
-      <div class="chat-box">
-        <div class="chat-header">
-          <h3>Project Operator Eneik</h3>
-          <button type="button" class="close-btn" onclick={() => chatOpen = false}>×</button>
-        </div>
-        <div class="chat-messages">
-          {#each chatHistory as messageItem}
-            <div class={`chat-message ${messageItem.sender}`}>
-              <div class="message-bubble">{messageItem.text}</div>
-            </div>
-          {/each}
-          {#if chatLoading}
-            <div class="chat-message ai">
-              <div class="message-bubble loading">Thinking...</div>
-            </div>
-          {/if}
-        </div>
-        <div class="chat-input-area">
-          <input
-            type="text"
-            placeholder="Ask about the current project..."
-            bind:value={chatInput}
-            onkeydown={(e) => { if (e.key === 'Enter') sendChatMessage(); }}
-          />
-          <button type="button" onclick={sendChatMessage} disabled={chatLoading}>Send</button>
-        </div>
-      </div>
-    </div>
-  {/if}
 </section>
 
 <style>
@@ -1021,164 +948,6 @@
       grid-template-columns: 1fr;
     }
 
-    .chat-widget {
-      bottom: 14px;
-      right: 14px;
-    }
-
-    .chat-box {
-      height: min(520px, calc(100vh - 88px));
-      width: calc(100vw - 28px);
-    }
-
-    .chat-input-area {
-      flex-direction: column;
-    }
-  }
-
-  /* Chat Widget Styles */
-  .chat-widget {
-    bottom: 20px;
-    position: fixed;
-    right: 20px;
-    z-index: 1000;
-  }
-
-  .chat-trigger {
-    background: #1d4ed8;
-    border: none;
-    border-radius: 50px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    color: white;
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 700;
-    min-height: 44px;
-    padding: 10px 18px;
-    transition: background 0.2s;
-  }
-
-  .chat-trigger:hover {
-    background: #1e40af;
-  }
-
-  .chat-trigger.inline {
-    border-radius: 6px;
-    box-shadow: none;
-  }
-
-  .chat-box {
-    background: white;
-    border: 1px solid #cbd5e1;
-    border-radius: 12px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-    display: flex;
-    flex-direction: column;
-    height: min(520px, calc(100vh - 96px));
-    width: min(420px, calc(100vw - 40px));
-  }
-
-  .chat-header {
-    align-items: center;
-    background: #1d4ed8;
-    border-top-left-radius: 11px;
-    border-top-right-radius: 11px;
-    color: white;
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 16px;
-  }
-
-  .chat-header h3 {
-    font-size: 15px;
-    font-weight: 700;
-    margin: 0;
-  }
-
-  .close-btn {
-    background: transparent;
-    border: none;
-    color: white;
-    cursor: pointer;
-    font-size: 20px;
-    font-weight: 700;
-  }
-
-  .chat-messages {
-    background: #f8fafc;
-    display: flex;
-    flex-direction: column;
-    flex-grow: 1;
-    gap: 12px;
-    overflow-y: auto;
-    padding: 16px;
-  }
-
-  .chat-message {
-    display: flex;
-    max-width: 80%;
-  }
-
-  .chat-message.user {
-    align-self: flex-end;
-  }
-
-  .chat-message.ai {
-    align-self: flex-start;
-  }
-
-  .message-bubble {
-    border-radius: 8px;
-    font-size: 13px;
-    line-height: 1.5;
-    padding: 8px 12px;
-    white-space: pre-wrap;
-  }
-
-  .chat-message.user .message-bubble {
-    background: #1d4ed8;
-    color: white;
-  }
-
-  .chat-message.ai .message-bubble {
-    background: #e2e8f0;
-    color: #1e293b;
-  }
-
-  .message-bubble.loading {
-    color: #64748b;
-    font-style: italic;
-  }
-
-  .chat-input-area {
-    border-top: 1px solid #e2e8f0;
-    display: flex;
-    gap: 8px;
-    padding: 12px;
-  }
-
-  .chat-input-area input {
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    flex-grow: 1;
-    font-size: 13px;
-    padding: 8px 12px;
-  }
-
-  .chat-input-area button {
-    background: #1d4ed8;
-    border: none;
-    border-radius: 6px;
-    color: white;
-    cursor: pointer;
-    font-size: 13px;
-    font-weight: 600;
-    padding: 8px 16px;
-  }
-
-  .chat-input-area button:disabled {
-    background: #94a3b8;
-    cursor: not-allowed;
   }
 
   @media (max-width: 900px) {
@@ -1189,20 +958,6 @@
 
     .admin-header-actions button {
       flex: 1 1 120px;
-    }
-
-    .chat-widget {
-      bottom: 14px;
-      right: 14px;
-    }
-
-    .chat-box {
-      height: min(520px, calc(100vh - 88px));
-      width: calc(100vw - 28px);
-    }
-
-    .chat-input-area {
-      flex-direction: column;
     }
   }
 </style>

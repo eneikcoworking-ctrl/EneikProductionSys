@@ -131,13 +131,6 @@ class ProjectFlowIntegrationTest {
         );
         assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        // Setup mock for synchronous generateTaskMetadata
-        java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
-        aiResponse.put("jtbd", "Automated UI Verification");
-        aiResponse.put("acceptanceCriteria", "Visuals match reference");
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn(aiResponse);
-
         ResponseEntity<Map> orchestration = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/orchestrate",
                 null,
@@ -384,9 +377,6 @@ class ProjectFlowIntegrationTest {
 
         com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Will fail in AI");
         restTemplate.postForEntity("/api/projects/" + project.id() + "/wishlist", req, com.eneik.production.dto.WishlistResponseDto.class);
-
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-            .thenThrow(new RuntimeException("Simulated AI Failure"));
 
         continuousOrchestrationService.continuousOrchestrate();
 

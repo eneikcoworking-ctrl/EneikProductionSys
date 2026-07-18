@@ -158,58 +158,6 @@ public class ProjectOperationalContextService {
         return new ProjectOperationalContext(project.getId(), project.getName(), factPack, toJson(factPack), prStats);
     }
 
-    public boolean isPrReviewQuestion(String message) {
-        String lower = message == null ? "" : message.toLowerCase();
-        boolean asksAboutPullRequests = lower.contains("pr")
-                || lower.contains("pull request")
-                || lower.contains("\u043f\u0443\u043b\u043b")
-                || lower.contains("\u043f\u0443\u043b \u0440\u0435\u043a\u0432\u0435\u0441\u0442")
-                || lower.contains("\u043f\u0443\u043b\u043b-\u0440\u0435\u043a\u0432\u0435\u0441\u0442")
-                || lower.contains("pull-request");
-        boolean asksAboutReviewResult = lower.contains("\u0440\u0435\u0432\u044c\u044e")
-                || lower.contains("review")
-                || lower.contains("\u0440\u0435\u0437\u0443\u043b\u044c\u0442\u0430\u0442")
-                || lower.contains("\u0441\u043a\u043e\u043b\u044c\u043a\u043e")
-                || lower.contains("\u043e\u0442\u043a\u0440\u044b\u0442\u043e")
-                || lower.contains("\u0437\u0430\u043a\u0440\u044b\u0442\u043e")
-                || lower.contains("\u0441\u043c\u0451\u0440\u0436")
-                || lower.contains("\u0441\u043c\u0435\u0440\u0436")
-                || lower.contains("merge");
-        return asksAboutPullRequests && asksAboutReviewResult;
-    }
-
-    public String answerPrReviewQuestion(ProjectOperationalContext context) {
-        PrStats stats = context.prStats();
-        StringBuilder answer = new StringBuilder();
-        answer.append("\u041f\u043e \u0442\u0435\u043a\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u043e\u0435\u043a\u0442\u0443 `").append(context.projectName()).append("`:\n");
-        if (stats.githubAvailable()) {
-            answer.append("- GitHub \u0441\u0435\u0439\u0447\u0430\u0441: open PR = ").append(stats.githubOpen())
-                    .append(", closed PR = ").append(stats.githubClosed()).append(".\n");
-        } else {
-            answer.append("- GitHub live PR count \u043d\u0435\u0434\u043e\u0441\u0442\u0443\u043f\u0435\u043d: ").append(stats.githubError()).append(".\n");
-        }
-        answer.append("- \u0423\u043d\u0438\u043a\u0430\u043b\u044c\u043d\u044b\u0445 PR \u0441 review: ").append(stats.reviewedPullRequests())
-                .append(" (\u0437\u0430\u043f\u0438\u0441\u0435\u0439 review \u0432 backend: ").append(stats.reviewRecords()).append(")")
-                .append(". Approved = ").append(stats.approved())
-                .append(", rejected = ").append(stats.rejected())
-                .append(", merged = ").append(stats.merged())
-                .append(", approved-but-not-merged = ").append(stats.pendingApproved()).append(".\n");
-
-        if (!stats.mergedLines().isEmpty()) {
-            answer.append("- \u0423\u0436\u0435 \u0441\u043c\u0451\u0440\u0436\u0435\u043d\u043e: ").append(String.join("; ", stats.mergedLines())).append(".\n");
-        }
-        if (!stats.approvedPendingLines().isEmpty()) {
-            answer.append("- \u041e\u0434\u043e\u0431\u0440\u0435\u043d\u043e, \u043d\u043e \u0435\u0449\u0435 \u043d\u0435 \u0441\u043c\u0451\u0440\u0436\u0435\u043d\u043e: ").append(String.join("; ", stats.approvedPendingLines())).append(".\n");
-        }
-        if (!stats.rejectedLines().isEmpty()) {
-            answer.append("- \u041d\u0430 \u0434\u043e\u0440\u0430\u0431\u043e\u0442\u043a\u0435 \u043f\u043e\u0441\u043b\u0435 review: ").append(String.join("; ", stats.rejectedLines())).append(".\n");
-        }
-        if (!stats.openPrLines().isEmpty()) {
-            answer.append("- \u041e\u0442\u043a\u0440\u044b\u0442\u044b\u0435 PR \u043d\u0430 GitHub: ").append(String.join("; ", stats.openPrLines())).append(".");
-        }
-        return answer.toString();
-    }
-
     private Optional<ProjectEntity> resolveProject(UUID projectId) {
         if (projectId != null) {
             return projectRepository.findById(projectId);

@@ -93,11 +93,6 @@ public class OrchestrationStatusTest {
         account.setEnabled(true);
         account = accountRepository.save(account);
 
-        java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
-        aiResponse.put("jtbd", "Automated UI Verification");
-        aiResponse.put("acceptanceCriteria", "Visuals match reference");
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn(aiResponse);
         project.setFactoryStatus("ready_local");
         projectRepository.save(project);
 

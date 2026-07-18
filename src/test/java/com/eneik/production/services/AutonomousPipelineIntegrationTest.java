@@ -412,13 +412,6 @@ class AutonomousPipelineIntegrationTest {
         project.setRepositoryName("grouping-repo");
         project = projectRepository.saveAndFlush(project);
 
-        // Stub AI metadata generation
-        java.util.Map<String, Object> mockMeta = new java.util.HashMap<>();
-        mockMeta.put("jtbd", "Resolve design code constraints");
-        mockMeta.put("acceptanceCriteria", "All checks pass successfully");
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(mockMeta);
-
         // Create similar pending wishlist items (Hex colors violations)
         WishlistEntity item1 = new WishlistEntity();
         item1.setProjectId(project.getId());
