@@ -605,8 +605,7 @@
   .system-health-panel.status-stalled { border-left-color: var(--error); }
   .system-health-panel.status-idle_no_work { border-left-color: var(--warning); }
   .health-pill {
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    border-radius: var(--radius-pill);
     font-size: 11px;
     font-weight: 700;
     letter-spacing: 0.05em;

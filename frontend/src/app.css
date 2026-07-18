@@ -1,32 +1,36 @@
 :root {
-  /* Mission Control design tokens — Stitch-generated (Google Stitch, project "Autonomous Control
-     Logic"), see docs/reports/AUTONOMOUS_RUN_FINDINGS_2026-07-17.md for the review artifact. Colors
-     double as the Cynefin domain vocabulary already used server-side (task.cynefinDomain): Clear =
-     primary, Complicated = warning, Complex = accent, Chaotic = error. Replaces the prior generic
-     blue/rounded-corner/Inter SaaS look. */
-  --primary: #0058BE;      /* Cynefin: Clear */
-  --secondary: #855300;
-  --accent: #6B38D4;       /* Cynefin: Complex */
-  --success: #0F766E;
-  --success-bg: #DCFCE7;
-  --warning: #B45309;      /* Cynefin: Complicated */
-  --warning-bg: #FFFBEB;
-  --error: #BA1A1A;        /* Cynefin: Chaotic */
+  /* Modern/editorial design tokens — Stitch-generated (Google Stitch, project "Eneik EMS - Modern
+     v4"), see docs/reports/AUTONOMOUS_RUN_FINDINGS_2026-07-17.md for the review artifact. Replaces
+     the mission-control industrial system after the user rejected it outright ("ни композиции ни
+     изящества") in favor of restrained composition and real typographic hierarchy. Tokens copied
+     directly from Stitch's own generated Tailwind config, not guessed. Cynefin domain colors
+     (task.cynefinDomain) are Stitch's own explicit mapping: Clear=emerald, Complicated=amber,
+     Complex=rose, Chaotic=violet. */
+  --primary: #0040E0;
+  --secondary: #565E74;
+  --accent: #993100;
+  --success: #10B981;      /* Cynefin: Clear */
+  --success-bg: #D1FAE5;
+  --warning: #F59E0B;      /* Cynefin: Complicated */
+  --warning-bg: #FEF3C7;
+  --error: #BA1A1A;
   --error-bg: #FFDAD6;
-  --surface: #F9F9FF;
-  --surface-sunken: #F1F3FF;
-  --background: #E5E7EB;
+  --cynefin-complex: #F43F5E;
+  --cynefin-chaotic: #8B5CF6;
+  --surface: #F8F9FF;
+  --surface-sunken: #EFF4FF;
+  --background: #F8F9FF;
 
-  --neutral-50: #F9F9FF;
-  --neutral-100: #F1F3FF;
-  --neutral-200: #DCE2F7;
-  --neutral-300: #C2C6D6;
-  --neutral-400: #9AA0B4;
-  --neutral-500: #727785;
-  --neutral-600: #424754;
-  --neutral-700: #2E323D;
-  --neutral-800: #1E2230;
-  --neutral-900: #141B2B;
+  --neutral-50: #F8F9FF;
+  --neutral-100: #EFF4FF;
+  --neutral-200: #E5EEFF;
+  --neutral-300: #D3E4FE;
+  --neutral-400: #C4C5D9;
+  --neutral-500: #747688;
+  --neutral-600: #565E74;
+  --neutral-700: #434656;
+  --neutral-800: #213145;
+  --neutral-900: #0B1C30;
 
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -35,12 +39,14 @@
   --space-6: 1.5rem;
   --space-8: 2rem;
 
-  --radius: 3px;
-  --hard-shadow: 2px 2px 0 rgba(20, 27, 43, 0.65);
-  --hard-shadow-sm: 1px 1px 0 rgba(20, 27, 43, 0.5);
+  --radius: 4px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+  --shadow-sm: 0 1px 2px rgba(11, 28, 48, 0.06);
+  --shadow: 0 1px 3px rgba(11, 28, 48, 0.08), 0 1px 2px rgba(11, 28, 48, 0.04);
 
   --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-display: "Libre Caslon Text", Georgia, "Times New Roman", serif;
 
   font-family: var(--font-body);
   color: var(--neutral-900);
@@ -134,13 +140,17 @@ p {
 }
 
 h1 {
+  font-family: var(--font-display);
   font-size: 38px;
-  letter-spacing: 0;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 h2 {
-  font-size: 20px;
-  letter-spacing: 0;
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
 .create-project {
@@ -167,8 +177,7 @@ h2 {
 
 .project-strip button.active {
   border-color: var(--primary);
-  border-width: 2px;
-  box-shadow: var(--hard-shadow-sm);
+  box-shadow: 0 0 0 2px rgba(0, 64, 224, 0.14);
 }
 
 .project-strip span,
@@ -225,11 +234,10 @@ small {
 }
 
 .panel-head h2 {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-family: var(--font-display);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
 }
 
 .panel-head {

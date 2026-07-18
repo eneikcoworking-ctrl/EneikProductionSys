@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import ActivityTicker from './ActivityTicker.svelte';
   import CynefinBadge from './CynefinBadge.svelte';
+  import Skeleton from './Skeleton.svelte';
 
   export let projectId: string;
 
@@ -356,9 +357,23 @@
 
 <div class="dashboard-root">
   {#if loading}
-    <div class="loader-container">
-      <div class="loader-spinner"></div>
-      <p>Synchronizing project pipeline...</p>
+    <div class="skeleton-shell" aria-busy="true" aria-label="Loading project dashboard">
+      <div class="skeleton-header">
+        <Skeleton height="34px" width="280px" />
+        <Skeleton height="16px" width="180px" />
+      </div>
+      <div class="skeleton-truth-panel">
+        <Skeleton height="140px" />
+        <Skeleton height="140px" />
+      </div>
+      <div class="skeleton-pipeline">
+        {#each Array(4) as _}
+          <div class="skeleton-card">
+            <Skeleton height="14px" width="60%" />
+            <Skeleton height="40px" />
+          </div>
+        {/each}
+      </div>
     </div>
   {:else if error}
     <div class="banner error">
@@ -960,13 +975,45 @@
     padding: var(--space-4);
   }
   .truth-col .card-header h2 {
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--neutral-600);
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--neutral-800);
     margin: 0 0 var(--space-3);
+  }
+
+  .skeleton-shell {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-6);
+  }
+  .skeleton-header {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  .skeleton-truth-panel {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+  }
+  .skeleton-pipeline {
+    display: grid;
+    gap: var(--space-4);
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .skeleton-card {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: var(--radius);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    padding: var(--space-4);
+  }
+  @media (max-width: 900px) {
+    .skeleton-truth-panel, .skeleton-pipeline {
+      grid-template-columns: 1fr;
+    }
   }
   .pr-counts {
     display: flex;
@@ -974,8 +1021,7 @@
     margin-bottom: var(--space-3);
   }
   .pr-count {
-    border-radius: var(--radius);
-    font-family: var(--font-mono);
+    border-radius: var(--radius-pill);
     font-size: 12px;
     font-weight: 700;
     padding: 4px 10px;

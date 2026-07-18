@@ -11,18 +11,20 @@
 
 <style>
   .cynefin-badge {
-    border-radius: var(--radius);
+    border-radius: var(--radius-pill);
+    color: #fff;
     display: inline-flex;
-    font-family: var(--font-mono);
     font-size: 10px;
     font-weight: 700;
-    letter-spacing: 0.06em;
-    padding: 2px 7px;
+    letter-spacing: 0.04em;
+    padding: 3px 9px;
     text-transform: uppercase;
     white-space: nowrap;
   }
-  .cynefin-clear { background: var(--surface-sunken); color: var(--primary); border: 1px solid var(--primary); }
-  .cynefin-complicated { background: var(--warning-bg); color: var(--warning); border: 1px solid var(--warning); }
-  .cynefin-complex { background: #F1E9FC; color: var(--accent); border: 1px solid var(--accent); }
-  .cynefin-chaotic { background: var(--error-bg); color: var(--error); border: 1px solid var(--error); }
+  /* Stitch's own explicit Cynefin mapping (design_v4): Clear=emerald, Complicated=amber,
+     Complex=rose, Chaotic=violet - copied from the generated HTML, not guessed. */
+  .cynefin-clear { background: var(--success); }
+  .cynefin-complicated { background: var(--warning); }
+  .cynefin-complex { background: var(--cynefin-complex); }
+  .cynefin-chaotic { background: var(--cynefin-chaotic); }
 </style>

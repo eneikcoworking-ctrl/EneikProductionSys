@@ -1,64 +1,108 @@
 <script lang="ts">
   // Renders scoped log lines (SYSTEM or PROJECT — see LogScope/LogScopeBuffer server-side) as a
-  // control-room event feed. Lines are plain formatted strings from the backend, e.g.
-  // "2026-07-18T00:12:03Z WARN c.e.p...  SYSTEM STALLED: ...".
+  // clean, scannable data table. Lines come from ScopedBufferAppender in the exact format
+  // "<ISO-8601 Instant> <LEVEL> <logger.ClassName> - <message>".
   export let lines: string[] = [];
   export let emptyText = 'No recent activity recorded yet.';
 
-  function levelOf(line: string): 'error' | 'warning' | 'info' {
-    if (/\bERROR\b/.test(line)) return 'error';
-    if (/\bWARN\b/.test(line)) return 'warning';
-    return 'info';
+  const LINE_PATTERN = /^(\S+)\s+(\w+)\s+(\S+)\s+-\s+(.*)$/s;
+
+  function parse(line: string) {
+    const match = LINE_PATTERN.exec(line);
+    if (!match) {
+      return { timestamp: '', level: 'INFO', detail: line };
+    }
+    const [, timestamp, level, , message] = match;
+    return { timestamp: formatTimestamp(timestamp), level, detail: message };
   }
+
+  function formatTimestamp(iso: string): string {
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return iso;
+    return date.toLocaleString(undefined, {
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+  }
+
+  $: rows = lines.slice(-60).reverse().map(parse);
 </script>
 
-<div class="ticker">
-  {#if lines.length === 0}
+<div class="activity-table-wrap">
+  {#if rows.length === 0}
     <p class="empty-line">{emptyText}</p>
   {:else}
-    {#each lines.slice(-60).reverse() as line}
-      <div class="line line-{levelOf(line)}">{line}</div>
-    {/each}
+    <table class="activity-table">
+      <thead>
+        <tr>
+          <th>Timestamp</th>
+          <th>Level</th>
+          <th>Detail</th>
+        </tr>
+      </thead>
+      <tbody>
+        {#each rows as row}
+          <tr>
+            <td class="ts">{row.timestamp}</td>
+            <td><span class="level level-{row.level.toLowerCase()}">{row.level}</span></td>
+            <td class="detail">{row.detail}</td>
+          </tr>
+        {/each}
+      </tbody>
+    </table>
   {/if}
 </div>
 
 <style>
-  .ticker {
-    background: var(--neutral-900);
-    border-radius: var(--radius);
-    color: var(--neutral-200);
-    display: flex;
-    flex-direction: column;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    gap: 3px;
-    max-height: 320px;
+  .activity-table-wrap {
+    max-height: 340px;
     overflow-y: auto;
-    padding: var(--space-3);
   }
-  .line {
-    border-left: 3px solid transparent;
-    padding: 2px 8px;
-    white-space: pre-wrap;
+  .activity-table {
+    border-collapse: collapse;
+    width: 100%;
+  }
+  .activity-table th {
+    background: var(--surface);
+    color: var(--neutral-500);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 6px 10px;
+    position: sticky;
+    text-align: left;
+    text-transform: uppercase;
+    top: 0;
+  }
+  .activity-table td {
+    border-top: 1px solid var(--neutral-200);
+    color: var(--neutral-800);
+    font-size: 13px;
+    padding: 7px 10px;
+    vertical-align: top;
+  }
+  .ts {
+    color: var(--neutral-500);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .detail {
     word-break: break-word;
   }
-  .line-error {
-    background: rgba(186, 26, 26, 0.25);
-    border-left-color: var(--error);
-    color: #ffb4ab;
+  .level {
+    border-radius: var(--radius);
+    display: inline-block;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 2px 6px;
   }
-  .line-warning {
-    background: rgba(180, 83, 9, 0.2);
-    border-left-color: var(--warning);
-    color: #ffd699;
-  }
-  .line-info {
-    color: var(--neutral-300);
-  }
+  .level-error { background: var(--error-bg); color: var(--error); }
+  .level-warn { background: var(--warning-bg); color: var(--warning); }
+  .level-info { background: var(--surface-sunken); color: var(--secondary); }
   .empty-line {
-    color: var(--neutral-400);
-    font-family: var(--font-body);
+    color: var(--neutral-500);
     font-size: 13px;
     margin: 0;
+    padding: var(--space-2) 0;
   }
 </style>
