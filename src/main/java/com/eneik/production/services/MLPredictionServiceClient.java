@@ -24,16 +24,19 @@ public class MLPredictionServiceClient {
     private final RestTemplate restTemplate;
     private final String mlServiceUrl;
     private final SystemSettingsService settingsService;
+    private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
 
     public MLPredictionServiceClient(RestTemplateBuilder restTemplateBuilder,
                                      @Value("${ml.service.url}") String mlServiceUrl,
-                                     SystemSettingsService settingsService) {
+                                     SystemSettingsService settingsService,
+                                     com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker) {
         this.restTemplate = restTemplateBuilder
                 .setConnectTimeout(Duration.ofSeconds(2))
                 .setReadTimeout(Duration.ofSeconds(60))
                 .build();
         this.mlServiceUrl = mlServiceUrl;
         this.settingsService = settingsService;
+        this.aiHealthTracker = aiHealthTracker;
     }
 
     private String getGeminiApiKey() {
@@ -109,9 +112,12 @@ public class MLPredictionServiceClient {
             request.put("modelTier", "pro");
             request.put("modelOverride", modelOverrideForTier("pro"));
 
-            return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            Map<String, Object> result = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            aiHealthTracker.recordSuccess("reviewPr");
+            return result;
         } catch (Exception e) {
             LOGGER.severe("ML service PR review call failed (Fail-Safe Triggered): " + e.getMessage());
+            aiHealthTracker.recordFailure("reviewPr", e.getMessage());
             return Map.of(
                 "approved", false,
                 "remarks", "VERIFICATION_SERVICE_UNAVAILABLE: ML review pipeline connection failed. PR blocked until manual/AI recovery.",
@@ -132,9 +138,12 @@ public class MLPredictionServiceClient {
             request.put("apiKey", getGeminiApiKey());
             request.put("modelOverride", modelOverrideForTier(""));
 
-            return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            Map<String, Object> result = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            aiHealthTracker.recordSuccess("checkRefusalCriteria");
+            return result;
         } catch (Exception e) {
             LOGGER.severe("ML service checkRefusalCriteria call failed (Fail-Safe Triggered): " + e.getMessage());
+            aiHealthTracker.recordFailure("checkRefusalCriteria", e.getMessage());
             return Map.of(
                 "compliant", false,
                 "reason", "VERIFICATION_SERVICE_UNAVAILABLE: ML verification pipeline offline. Blocked compliance audit."
@@ -156,11 +165,13 @@ public class MLPredictionServiceClient {
             request.put("modelOverride", modelOverrideForTier(""));
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            aiHealthTracker.recordSuccess("checkMethodologicalFalsification");
             if (response != null && response.containsKey("results")) {
                 return (java.util.List<Map<String, Object>>) response.get("results");
             }
         } catch (Exception e) {
             LOGGER.severe("ML service checkMethodologicalFalsification call failed: " + e.getMessage());
+            aiHealthTracker.recordFailure("checkMethodologicalFalsification", e.getMessage());
         }
         return java.util.Collections.emptyList();
     }
@@ -190,11 +201,14 @@ public class MLPredictionServiceClient {
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             if (response != null && response.containsKey("text")) {
+                aiHealthTracker.recordSuccess("chat");
                 return (String) response.get("text");
             }
+            aiHealthTracker.recordFailure("chat", "invalid response format");
             return "ERROR: Invalid AI assistant response format.";
         } catch (Exception e) {
             LOGGER.severe("ML service chat call failed: " + e.getMessage());
+            aiHealthTracker.recordFailure("chat", e.getMessage());
             return "The assistant is temporarily unavailable. ML service connection error: " + e.getMessage();
         }
     }

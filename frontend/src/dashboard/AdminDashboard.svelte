@@ -88,6 +88,7 @@
     tasks: Section<Record<string, number>>;
     conflictDpmo?: Section<ConflictDpmoData>;
     systemHealth?: Section<{ lastProgressAt: string; minutesSinceProgress: number; status: string }>;
+    aiHealth?: Section<Record<string, { successCount: number; failureCount: number; lastSuccessAt: string | null; lastFailureAt: string | null; lastFailureReason: string | null }>>;
   };
 
   type IntegrationConfig = {
@@ -363,6 +364,37 @@
     {/if}
   </section>
 
+  <section class="admin-panel ai-health-panel">
+    <div class="panel-head">
+      <h2>AI Call Health</h2>
+      <span>content-truthfulness signal, not just process activity</span>
+    </div>
+    {#if status?.aiHealth?.data && Object.keys(status.aiHealth.data).length > 0}
+      <table class="ai-health-table">
+        <thead>
+          <tr>
+            <th>Call site</th>
+            <th>Success</th>
+            <th>Failures</th>
+            <th>Last failure</th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each Object.entries(status.aiHealth.data) as [callSite, health]}
+            <tr class:failing={health.failureCount > 0 && health.lastFailureAt && (!health.lastSuccessAt || health.lastFailureAt > health.lastSuccessAt)}>
+              <td>{callSite}</td>
+              <td>{health.successCount}</td>
+              <td>{health.failureCount}</td>
+              <td class="reason" title={health.lastFailureReason ?? ''}>{health.lastFailureReason ?? '—'}</td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {:else}
+      <p class="health-line">No AI calls recorded yet this session.</p>
+    {/if}
+  </section>
+
   <section class="admin-panel">
     <div class="panel-head">
       <h2>Integrations</h2>
@@ -620,6 +652,34 @@
     color: var(--neutral-600);
     font-size: 13px;
     margin: 8px 0 0;
+  }
+  .ai-health-table {
+    border-collapse: collapse;
+    margin-top: 8px;
+    width: 100%;
+  }
+  .ai-health-table th {
+    color: var(--neutral-500);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    padding: 6px 8px;
+    text-align: left;
+    text-transform: uppercase;
+  }
+  .ai-health-table td {
+    border-top: 1px solid var(--neutral-200);
+    font-size: 13px;
+    padding: 6px 8px;
+  }
+  .ai-health-table tr.failing td {
+    color: var(--error);
+  }
+  .ai-health-table .reason {
+    max-width: 360px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .admin-header,

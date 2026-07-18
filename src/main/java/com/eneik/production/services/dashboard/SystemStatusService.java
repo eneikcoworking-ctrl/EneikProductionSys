@@ -47,6 +47,7 @@ public class SystemStatusService {
     private final EmsMetricsService emsMetricsService;
     private final GoogleAiResourceService googleAiResourceService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
+    private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -59,7 +60,8 @@ public class SystemStatusService {
                                WishlistRepository wishlistRepository,
                                EmsMetricsService emsMetricsService,
                                GoogleAiResourceService googleAiResourceService,
-                               com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker) {
+                               com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
+                               com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -72,6 +74,7 @@ public class SystemStatusService {
         this.emsMetricsService = emsMetricsService;
         this.googleAiResourceService = googleAiResourceService;
         this.systemProgressTracker = systemProgressTracker;
+        this.aiHealthTracker = aiHealthTracker;
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
@@ -88,6 +91,7 @@ public class SystemStatusService {
         status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         status.put("systemHealth", safeSection(this::systemHealth));
+        status.put("aiHealth", safeSection(aiHealthTracker::snapshot));
         return status;
     }
 

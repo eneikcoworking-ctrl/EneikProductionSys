@@ -3,6 +3,7 @@ package com.eneik.production.services;
 import com.eneik.production.dto.OrchestrationResultDto;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.logging.LogScope;
@@ -115,9 +116,42 @@ public class ContinuousOrchestrationService {
                 } catch (Exception e) {
                     log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
                 }
+
+                checkForDuplicateTaskTitles(project);
             } finally {
                 LogScope.clear();
             }
+        }
+    }
+
+    /**
+     * Content-truthfulness signal, not process activity: flags when a project's recent tasks share
+     * suspiciously repeated titles. This is exactly the failure mode a Gemini-generation fallback bug
+     * produced for hours across two separate runs (generic titles like "recommendation based task
+     * completion slice 1" repeated verbatim across many unrelated tasks) - visible instantly to a human
+     * skimming PR titles, but invisible to every process-activity metric this system had (dispatch
+     * counts, merge counts, stall detection). Direct, cheap, catches the exact class of regression.
+     */
+    private void checkForDuplicateTaskTitles(ProjectEntity project) {
+        try {
+            List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
+                    .stream()
+                    .limit(30)
+                    .toList();
+            java.util.Map<String, Long> titleCounts = recentTasks.stream()
+                    .map(TaskEntity::getTitle)
+                    .filter(title -> title != null && !title.isBlank())
+                    .collect(java.util.stream.Collectors.groupingBy(title -> title, java.util.stream.Collectors.counting()));
+            titleCounts.forEach((title, count) -> {
+                if (count >= 3) {
+                    log.error("DUPLICATE TASK TITLES: '{}' appears {} times among the last {} tasks for project {} - "
+                                    + "likely sign of a generation fallback producing generic/fabricated content instead of "
+                                    + "real derived work. Investigate before trusting recent throughput numbers.",
+                            title, count, recentTasks.size(), project.getName());
+                }
+            });
+        } catch (Exception e) {
+            log.error("Continuous Orchestration: Failed to run duplicate-title check for project {}", project.getId(), e);
         }
     }
 

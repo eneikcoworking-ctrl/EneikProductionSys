@@ -1189,6 +1189,7 @@ public class JulesDispatchService {
                     // Move task to review stage so AutoMergeService can merge it
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
                     taskRepository.save(task);
+                    systemProgressTracker.recordProgress();
                     log.info("Local agent review passed for task {}. PR approved and task moved to REVIEW status.", task.getId());
 
                     // Create new recommended tasks proposed by the review
@@ -1237,6 +1238,7 @@ public class JulesDispatchService {
 
                     session.setStatus("revising");
                     julesSessionRepository.save(session);
+                    systemProgressTracker.recordProgress();
 
                     log.info("Review rejected. Transitioning session {} to revising for task {}", session.getExternalSessionId(), task.getId());
                     saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), julesReviewMessage, "System generated rejection");
@@ -1260,6 +1262,7 @@ public class JulesDispatchService {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
                 if (claimService.hasActiveClaim(task.getId())) {
                     claimService.complete(task.getId());
+                    systemProgressTracker.recordProgress();
                     log.info("Task {} marked as review completed", taskId);
                 } else {
                     log.info("No active reviewer claim for task {}; leaving task status unchanged", task.getId());

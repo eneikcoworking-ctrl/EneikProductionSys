@@ -12,7 +12,7 @@ public class MLPredictionServiceClientTest {
         // Since it's a Spring-managed service with dependencies, we'd typically use @SpringBootTest or Mockito.
         // For a simple unit test fix, we can mock the behavior if we want, but here we just need to fix compilation.
         // Given the goal is just to fix existing tests that were broken by structural changes.
-        MLPredictionServiceClient client = new MLPredictionServiceClient(new RestTemplateBuilder(), "http://localhost:8000", null);
+        MLPredictionServiceClient client = new MLPredictionServiceClient(new RestTemplateBuilder(), "http://localhost:8000", null, new com.eneik.production.services.monitor.AiHealthTracker());
         Map<String, Object> result = client.predictBottleneck(10, 1.5);
 
         assertNotNull(result);
