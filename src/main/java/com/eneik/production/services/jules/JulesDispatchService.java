@@ -4,6 +4,7 @@ import com.eneik.production.dto.RoleRules;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.NeedsHumanReviewEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
@@ -61,6 +62,9 @@ public class JulesDispatchService {
     private final com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
     private final RoleRepository roleRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
+    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
+    private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final String sourcePrefix;
 
     @Value("${jules.stuck-threshold-minutes:30}")
@@ -91,6 +95,9 @@ public class JulesDispatchService {
                                 com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient,
                                 RoleRepository roleRepository,
                                 GitHubPullRequestService gitHubPullRequestService,
+                                com.eneik.production.repositories.PrReviewRepository prReviewRepository,
+                                com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
+                                com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -105,6 +112,9 @@ public class JulesDispatchService {
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.roleRepository = roleRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.prReviewRepository = prReviewRepository;
+        this.needsHumanReviewRepository = needsHumanReviewRepository;
+        this.systemProgressTracker = systemProgressTracker;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -143,6 +153,7 @@ public class JulesDispatchService {
                     : session.getClosureReason();
         } else {
             reason = "Dispatched to Jules";
+            systemProgressTracker.recordProgress();
         }
         return new JulesDispatchResult(
                 dispatched,
@@ -1383,6 +1394,7 @@ public class JulesDispatchService {
     public void runSessionSafetyMaintenance() {
         claimService.detectStuckSessions(stuckThresholdMinutes);
         closeOverdueStuckSessions();
+        reconcileAbandonedPullRequests();
     }
 
     @Transactional
@@ -1423,6 +1435,63 @@ public class JulesDispatchService {
                     "stuck_session_timeout: stuck for at least " + stuckCloseThresholdMinutes + " minutes"
             );
             closed++;
+        }
+    }
+
+    /**
+     * Sweeps closed ("loop_closed") sessions that never got a pr_reviews row and checks GitHub directly
+     * for a PR that Jules may have already opened before the session was force-closed. Circuit breakers
+     * (activity_log_overflow, stuck_session_timeout, or the now-removed active_session_age_limit) close a
+     * session and dispatch a brand-new replacement task, but never checked whether the closed session had
+     * already produced real, working code - a PR opened right before closure is otherwise structurally
+     * invisible to AutoMergeService (which only iterates existing pr_reviews rows) forever.
+     *
+     * Deliberately conservative first slice: this only ever surfaces a finding to a human via
+     * NeedsHumanReviewEntity - it never reopens the session, messages Jules, or auto-merges. The session
+     * is already terminally closed; resurrecting it (as handlePrOpenedWorkflow's rejection path does for a
+     * live session) would be the wrong move for a session Jules itself may no longer recognize as active.
+     */
+    @Transactional
+    public void reconcileAbandonedPullRequests() {
+        Instant recentEnough = Instant.now().minus(Duration.ofDays(7));
+        List<JulesSessionEntity> closedSessions = julesSessionRepository.findByStatus("loop_closed").stream()
+                .filter(s -> s.getClosedAt() != null && s.getClosedAt().isAfter(recentEnough))
+                .filter(s -> s.getPrUrl() == null || s.getPrUrl().isBlank())
+                .filter(s -> !prReviewRepository.existsByJulesSessionId(s.getId()))
+                .toList();
+
+        for (JulesSessionEntity session : closedSessions) {
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task == null || needsHumanReviewRepository.existsByTaskId(task.getId())) {
+                continue;
+            }
+
+            Optional<GitHubPullRequestService.GitHubPullRequest> found =
+                    gitHubPullRequestService.findOpenPullRequestBySession(task.getProject(), session.getExternalSessionId());
+            if (found.isEmpty()) {
+                continue;
+            }
+
+            GitHubPullRequestService.GitHubPullRequest pr = found.get();
+            session.setPrUrl(pr.url());
+            julesSessionRepository.save(session);
+
+            String verdict = "";
+            try {
+                Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), pr.url());
+                boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
+                verdict = approved ? " (auto-review: looks mergeable)" : " (auto-review: flagged issues)";
+            } catch (Exception e) {
+                log.warn("reconcileAbandonedPullRequests: local review check failed for {}: {}", pr.url(), e.getMessage());
+            }
+
+            NeedsHumanReviewEntity nhr = new NeedsHumanReviewEntity();
+            nhr.setTask(task);
+            String reason = "Abandoned PR reconciliation: " + pr.url() + verdict;
+            nhr.setReason(reason.length() > 256 ? reason.substring(0, 256) : reason);
+            needsHumanReviewRepository.save(nhr);
+            log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - routed to human review instead of being silently lost.",
+                    pr.url(), session.getExternalSessionId(), task.getId());
         }
     }
 

@@ -12,3 +12,4 @@ data/
 project-workspaces/
 __pycache__/
 *.pyc
+logs/

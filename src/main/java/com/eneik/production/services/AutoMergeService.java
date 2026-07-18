@@ -55,6 +55,7 @@ public class AutoMergeService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.services.video.VideoAssetService videoAssetService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
+    private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -70,7 +71,8 @@ public class AutoMergeService {
                             MLPredictionServiceClient mlPredictionServiceClient,
                             GitHubPullRequestService gitHubPullRequestService,
                             com.eneik.production.services.video.VideoAssetService videoAssetService,
-                            com.eneik.production.services.dashboard.ProjectOperationalContextService contextService) {
+                            com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
+                            com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -86,6 +88,7 @@ public class AutoMergeService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.videoAssetService = videoAssetService;
         this.contextService = contextService;
+        this.systemProgressTracker = systemProgressTracker;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -293,6 +296,7 @@ public class AutoMergeService {
         if (mergeSuccess) {
             review.setMerged(true);
             prReviewRepository.save(review);
+            systemProgressTracker.recordProgress();
 
             // Also mark corresponding task as done
             if (review.getJulesSessionId() != null) {

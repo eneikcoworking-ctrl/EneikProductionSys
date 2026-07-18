@@ -28,6 +28,11 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
+    private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
+    private final com.eneik.production.services.settings.SystemSettingsService settingsService;
+
+    @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
+    private int stallThresholdMinutes;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -37,7 +42,9 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.repositories.WishlistRepository wishlistRepository,
                                          com.eneik.production.services.compiler.TechnicalLeadCompiler technicalLeadCompiler,
                                          MLPredictionServiceClient mlPredictionServiceClient,
-                                         com.eneik.production.repositories.TaskRepository taskRepository) {
+                                         com.eneik.production.repositories.TaskRepository taskRepository,
+                                         com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
+                                         com.eneik.production.services.settings.SystemSettingsService settingsService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -47,6 +54,8 @@ public class ContinuousOrchestrationService {
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.taskRepository = taskRepository;
+        this.systemProgressTracker = systemProgressTracker;
+        this.settingsService = settingsService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -62,6 +71,7 @@ public class ContinuousOrchestrationService {
             }
 
             pollActiveJulesSessions();
+            checkForSystemStall();
         } finally {
             LogScope.clear();
         }
@@ -108,6 +118,47 @@ public class ContinuousOrchestrationService {
             } finally {
                 LogScope.clear();
             }
+        }
+    }
+
+    /**
+     * Flags SYSTEM-level stall: idle capacity clearly exists (an idle/enabled account, or a project
+     * with pending wishlist/queued work) but nothing genuinely progressed (dispatch, merge) for the
+     * configured window. This is what the first 8h unattended run had no way to surface - hours of
+     * quiet with idle Jules accounts and open work looked identical to "nothing left to do".
+     */
+    private void checkForSystemStall() {
+        try {
+            long minutesSinceProgress = java.time.Duration.between(
+                    systemProgressTracker.lastProgressAt(), java.time.Instant.now()).toMinutes();
+            if (minutesSinceProgress < stallThresholdMinutes) {
+                setSystemStatus("ok");
+                return;
+            }
+
+            boolean idleCapacityExists = accountRepository.findAll().stream()
+                    .anyMatch(a -> a.isEnabled() && a.getStatus() == com.eneik.production.models.persistence.AccountStatus.idle)
+                    || taskRepository.countByStatus(com.eneik.production.models.persistence.TaskStatus.queued) > 0
+                    || wishlistRepository.findAll().stream()
+                            .anyMatch(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending);
+
+            if (idleCapacityExists) {
+                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes while idle capacity or pending work exists", minutesSinceProgress);
+                setSystemStatus("stalled");
+            } else {
+                setSystemStatus("idle_no_work");
+            }
+        } catch (Exception e) {
+            log.error("Continuous Orchestration: Failed to run system stall check", e);
+        }
+    }
+
+    private void setSystemStatus(String status) {
+        // Best-effort only: system_status is observational, never let a settings write break orchestration.
+        try {
+            settingsService.save("system_stall_status", status);
+        } catch (Exception e) {
+            log.debug("Continuous Orchestration: could not persist system status '{}': {}", status, e.getMessage());
         }
     }
 

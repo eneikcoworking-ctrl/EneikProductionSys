@@ -9,4 +9,5 @@ import java.util.UUID;
 @Repository
 public interface PrReviewRepository extends JpaRepository<PrReviewEntity, UUID> {
     Optional<PrReviewEntity> findFirstByJulesSessionIdAndPrUrlOrderByCreatedAtDesc(UUID julesSessionId, String prUrl);
+    boolean existsByJulesSessionId(UUID julesSessionId);
 }

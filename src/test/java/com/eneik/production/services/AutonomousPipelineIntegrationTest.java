@@ -141,7 +141,13 @@ class AutonomousPipelineIntegrationTest {
         prData.setHasTestChanges(false);
         prData.setChangedFiles(Collections.emptyList());
 
-        prReviewPipelineService.onPrOpened("https://github.com/auto-verify-repo/pull/1", UUID.randomUUID(), prData);
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(task.getId());
+        session.setStatus("pr_opened");
+        session.setExternalSessionId("mock-session-auto-verify");
+        session = julesSessionRepository.saveAndFlush(session);
+
+        prReviewPipelineService.onPrOpened("https://github.com/auto-verify-repo/pull/1", session.getId(), prData);
 
         // 6. Trigger Auto-Merge
         autoMergeService.processAutoMerge();

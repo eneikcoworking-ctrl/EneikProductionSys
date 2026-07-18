@@ -57,9 +57,12 @@ class JulesDispatchServiceTest {
         com.eneik.production.repositories.RoleRepository roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
         com.eneik.production.repositories.TaskConflictRepository taskConflictRepository = mock(com.eneik.production.repositories.TaskConflictRepository.class);
         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        com.eneik.production.repositories.PrReviewRepository prReviewRepository = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository = mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
-            prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, "prefix/"
+            prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository, needsHumanReviewRepository,
+            mock(com.eneik.production.services.monitor.SystemProgressTracker.class), "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);

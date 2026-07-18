@@ -19,15 +19,18 @@ public class ProjectController {
     private final ClaimService claimService;
     private final com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
                              com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
-                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
+                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
+                             com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
         this.onboardingAuditService = onboardingAuditService;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @GetMapping
@@ -157,6 +160,25 @@ public class ProjectController {
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }
+    }
+
+    @GetMapping("/{projectId}/pull-requests")
+    public ResponseEntity<?> pullRequests(@PathVariable UUID projectId) {
+        try {
+            com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
+            return ResponseEntity.ok(gitHubPullRequestService.pullRequestSnapshot(project));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
+
+    @GetMapping("/{projectId}/recent-activity")
+    public ResponseEntity<?> recentActivity(@PathVariable UUID projectId,
+                                             @RequestParam(required = false, defaultValue = "100") int limit) {
+        return ResponseEntity.ok(Map.of(
+                "projectId", projectId,
+                "lines", com.eneik.production.services.logging.LogScopeBuffer.recent(projectId, limit)
+        ));
     }
 
     @PostMapping("/{projectId}/collaborators/refresh")

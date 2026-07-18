@@ -67,6 +67,7 @@ public class ProjectFlowService {
     private final EmsMetricsService emsMetricsService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
+    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -99,7 +100,8 @@ public class ProjectFlowService {
                               MLPredictionServiceClient mlPredictionServiceClient,
                               EmsMetricsService emsMetricsService,
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
-                              com.eneik.production.services.design.DesignAssetService designAssetService) {
+                              com.eneik.production.services.design.DesignAssetService designAssetService,
+                              com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -124,6 +126,7 @@ public class ProjectFlowService {
         this.emsMetricsService = emsMetricsService;
         this.contextService = contextService;
         this.designAssetService = designAssetService;
+        this.needsHumanReviewRepository = needsHumanReviewRepository;
     }
 
     @Transactional
@@ -674,6 +677,11 @@ public class ProjectFlowService {
                 break;
             }
             if (hasActiveJulesSession(task.getId())) {
+                continue;
+            }
+            if (needsHumanReviewRepository.existsByTaskId(task.getId())) {
+                // A reconciled/rescued PR is already sitting in human review for this task -
+                // spawning a fresh "start over" wishlist here would race the review outcome.
                 continue;
             }
             String taskId = task.getId().toString();

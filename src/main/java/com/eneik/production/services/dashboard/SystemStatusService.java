@@ -46,6 +46,7 @@ public class SystemStatusService {
     private final WishlistRepository wishlistRepository;
     private final EmsMetricsService emsMetricsService;
     private final GoogleAiResourceService googleAiResourceService;
+    private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -57,7 +58,8 @@ public class SystemStatusService {
                                TaskConflictRepository taskConflictRepository,
                                WishlistRepository wishlistRepository,
                                EmsMetricsService emsMetricsService,
-                               GoogleAiResourceService googleAiResourceService) {
+                               GoogleAiResourceService googleAiResourceService,
+                               com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -69,6 +71,7 @@ public class SystemStatusService {
         this.wishlistRepository = wishlistRepository;
         this.emsMetricsService = emsMetricsService;
         this.googleAiResourceService = googleAiResourceService;
+        this.systemProgressTracker = systemProgressTracker;
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
@@ -84,6 +87,7 @@ public class SystemStatusService {
         status.put("emsMetrics", safeSection(() -> emsMetrics(projectId)));
         status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
+        status.put("systemHealth", safeSection(this::systemHealth));
         return status;
     }
 
@@ -292,6 +296,16 @@ public class SystemStatusService {
                 .sorted((a, b) -> Long.compare(((Number) b.get("defects")).longValue(), ((Number) a.get("defects")).longValue()))
                 .toList());
         section.put("defectItems", defectItems);
+        return section;
+    }
+
+    private Map<String, Object> systemHealth() {
+        long minutesSinceProgress = java.time.Duration.between(
+                systemProgressTracker.lastProgressAt(), java.time.Instant.now()).toMinutes();
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("lastProgressAt", systemProgressTracker.lastProgressAt());
+        section.put("minutesSinceProgress", minutesSinceProgress);
+        section.put("status", settingsService.effectiveValue("system_stall_status"));
         return section;
     }
 
