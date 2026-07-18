@@ -64,7 +64,12 @@ public class JulesDispatchService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
+    private final com.eneik.production.services.ProjectFlowService projectFlowService;
+    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final String sourcePrefix;
+
+    private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
+    private static final String WISHLIST_COMPILER_PLAN_PATH = ".eneik/task-plan.json";
 
     @Value("${jules.stuck-threshold-minutes:30}")
     private int stuckThresholdMinutes;
@@ -96,6 +101,8 @@ public class JulesDispatchService {
                                 GitHubPullRequestService gitHubPullRequestService,
                                 com.eneik.production.repositories.PrReviewRepository prReviewRepository,
                                 com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
+                                @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
+                                com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -112,6 +119,8 @@ public class JulesDispatchService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.prReviewRepository = prReviewRepository;
         this.systemProgressTracker = systemProgressTracker;
+        this.projectFlowService = projectFlowService;
+        this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -1148,6 +1157,10 @@ public class JulesDispatchService {
         UUID taskId = session.getTaskId();
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task != null) {
+            if (projectFlowService.isWishlistCompilerTask(task)) {
+                completeWishlistCompilation(session, task);
+                return;
+            }
             if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed) {
                 log.info("Jules session {} transitioned to pr_opened. Completing implementer phase for task {}.", session.getId(), taskId);
                 if (claimService.hasActiveClaim(task.getId())) {
@@ -1269,6 +1282,164 @@ public class JulesDispatchService {
                 }
             }
         }
+    }
+
+    /**
+     * A wishlist-compiler session reached pr_opened: its PR should carry exactly one JSON plan file
+     * (see ProjectFlowService.wishlistCompilerPrompt), never product code. Parses and validates that
+     * plan, feeds it into the same graph-building logic Gemini's slices used to drive, then discards
+     * the compiler PR (it never gets merged). On invalid/empty output this does not fall back to
+     * fabricated content - it asks Jules to retry a bounded number of times, then escalates to
+     * NeedsHumanReviewEntity.
+     */
+    private void completeWishlistCompilation(JulesSessionEntity session, TaskEntity compilerTask) {
+        UUID wishlistId = compilerTaskWishlistId(compilerTask);
+        if (wishlistId == null) {
+            log.error("Compiler task {} has no compilesWishlistId payload marker; cannot complete compilation", compilerTask.getId());
+            return;
+        }
+        WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElse(null);
+        if (wishlist == null) {
+            log.warn("Compiler task {}: wishlist {} no longer exists, discarding", compilerTask.getId(), wishlistId);
+            if (claimService.hasActiveClaim(compilerTask.getId())) {
+                claimService.complete(compilerTask.getId());
+            }
+            return;
+        }
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
+        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = prOpt
+                .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.headRef()))
+                .orElseGet(List::of);
+
+        if (isValidCompilerPlan(slices)) {
+            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlist, slices);
+            prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
+                    compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks"));
+            if (claimService.hasActiveClaim(compilerTask.getId())) {
+                claimService.complete(compilerTask.getId());
+            }
+            systemProgressTracker.recordProgress();
+            log.info("Wishlist {} compiled by Jules session {} into {} task slice(s)",
+                    wishlist.getId(), session.getExternalSessionId(), slices.size());
+            return;
+        }
+
+        int attempts = compilerTask.getRetryCount();
+        if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
+            if (!needsHumanReviewRepository.existsByTaskId(compilerTask.getId())) {
+                com.eneik.production.models.persistence.NeedsHumanReviewEntity review =
+                        new com.eneik.production.models.persistence.NeedsHumanReviewEntity();
+                review.setTask(compilerTask);
+                review.setReason("Wishlist compiler produced no valid task plan after " + attempts
+                        + " attempt(s) for wishlist " + wishlist.getId() + " - needs manual decomposition.");
+                needsHumanReviewRepository.save(review);
+            }
+            prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
+                    compilerTask.getProject(), pr, "wishlist compiler plan invalid after max retries"));
+            if (claimService.hasActiveClaim(compilerTask.getId())) {
+                claimService.complete(compilerTask.getId());
+            }
+            log.error("Wishlist {} compilation failed after {} attempts; routed to human review", wishlist.getId(), attempts);
+            return;
+        }
+
+        compilerTask.setRetryCount(attempts + 1);
+        taskRepository.save(compilerTask);
+        session.setStatus("revising");
+        julesSessionRepository.save(session);
+
+        String correction = "Your PR did not contain a valid `.eneik/task-plan.json` matching the requested "
+                + "schema (or it echoed a generic placeholder instead of real slices). Please fix the same "
+                + "PR: write only that one file with 1-6 real, concrete work items decomposed from the "
+                + "original client brief in the task description above.";
+        String externalSessionId = session.getExternalSessionId();
+        String sessionApiKey = apiKeyForSession(session);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            boolean sent = sessionApiKey != null
+                    ? julesApiClient.sendMessage(externalSessionId, correction, sessionApiKey)
+                    : julesApiClient.sendMessage(externalSessionId, correction);
+            if (!sent) {
+                log.warn("Failed to send compiler-plan correction to Jules session {}", externalSessionId);
+            }
+        });
+        log.warn("Wishlist compiler plan invalid for wishlist {} (attempt {}/{}); asked Jules to retry",
+                wishlist.getId(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES);
+    }
+
+    private UUID compilerTaskWishlistId(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path("compilesWishlistId").asText(null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    private List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> parseCompilerPlan(
+            ProjectEntity project, String headRef) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(project, headRef, WISHLIST_COMPILER_PLAN_PATH);
+        if (content.isEmpty()) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            JsonNode rawSlices = root.path("slices");
+            if (!rawSlices.isArray()) {
+                return List.of();
+            }
+            List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> result = new java.util.ArrayList<>();
+            for (JsonNode slice : rawSlices) {
+                String leanValueRaw = slice.path("leanValue").asText("essential");
+                com.eneik.production.models.persistence.LeanValue leanValue;
+                try {
+                    leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
+                } catch (Exception e) {
+                    leanValue = com.eneik.production.models.persistence.LeanValue.essential;
+                }
+                result.add(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                        slice.path("title").asText(""),
+                        slice.path("jtbd").asText(""),
+                        slice.path("acceptanceCriteria").asText(""),
+                        slice.path("roleTag").asText(""),
+                        leanValue,
+                        slice.path("kanoClass").asText("Must-Be"),
+                        slice.path("cynefinDomain").asText("clear"),
+                        slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
+                        slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
+                        slice.path("hasUi").asBoolean(false)
+                ));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to parse wishlist compiler plan for project {}: {}", project.getId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices) {
+        if (slices.isEmpty() || slices.size() > 6) {
+            return false;
+        }
+        for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
+            if (slice.title() == null || slice.title().isBlank()
+                    || slice.jtbd() == null || slice.jtbd().isBlank()
+                    || slice.acceptanceCriteria() == null || slice.acceptanceCriteria().isBlank()) {
+                return false;
+            }
+            if (slice.jtbd().contains("one small verifiable capability completed")) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

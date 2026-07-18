@@ -130,6 +130,75 @@ public class GitHubPullRequestService {
         }
     }
 
+    /**
+     * Fetches a single file's raw text content from a branch/ref via the GitHub Contents API. Used to
+     * read back the JSON task-plan file a Jules wishlist-compiler session writes into its PR branch,
+     * since Jules sessions communicate their structured result as a committed file, not a direct reply.
+     */
+    public Optional<String> fetchFileContent(ProjectEntity project, String ref, String path) {
+        if (project == null || ref == null || ref.isBlank() || path == null || path.isBlank()) {
+            return Optional.empty();
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(path) + "?ref=" + encode(ref);
+            HttpRequest request = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("GitHub file fetch failed for {}/{} path={} ref={}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), path, ref, response.statusCode(), preview(response.body()));
+                return Optional.empty();
+            }
+            JsonNode body = objectMapper.readTree(response.body());
+            String encoding = body.path("encoding").asText("");
+            String rawContent = body.path("content").asText("");
+            if (!"base64".equals(encoding) || rawContent.isBlank()) {
+                return Optional.empty();
+            }
+            byte[] decoded = java.util.Base64.getMimeDecoder().decode(rawContent);
+            return Optional.of(new String(decoded, StandardCharsets.UTF_8));
+        } catch (Exception e) {
+            log.warn("Could not fetch file {} at ref {} for project {}: {}", path, ref, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Closes exactly one PR (unlike {@link #closeOpenPullRequests}, which closes every open PR for the
+     * project). Used to discard a wishlist-compiler PR once its JSON plan has been parsed - it only ever
+     * carries the plan file, never product code, so it must never be merged.
+     */
+    public PullRequestCloseResult closeSinglePullRequest(ProjectEntity project, GitHubPullRequest pullRequest, String reason) {
+        if (project == null || pullRequest == null) {
+            return new PullRequestCloseResult(0, "", "failed", 0, "Project or pull request missing");
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub integration is disabled");
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub token is missing");
+        }
+        try {
+            return closePullRequest(repoRef(project), pullRequest, token, reason);
+        } catch (Exception e) {
+            log.warn("Could not close GitHub PR {} for project {}: {}", pullRequest.url(), project.getId(), e.getMessage());
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, e.getMessage());
+        }
+    }
+
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
         String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state=" + encode(state) + "&per_page=100";
         HttpRequest request = baseRequest(path, token).GET().build();
@@ -221,6 +290,13 @@ public class GitHubPullRequestService {
 
     private String encode(String value) {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
+    }
+
+    private String encodePath(String path) {
+        return java.util.Arrays.stream(path.split("/"))
+                .map(this::encode)
+                .reduce((a, b) -> a + "/" + b)
+                .orElse("");
     }
 
     private String preview(String body) {

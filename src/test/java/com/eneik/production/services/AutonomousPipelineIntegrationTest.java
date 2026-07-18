@@ -104,33 +104,18 @@ class AutonomousPipelineIntegrationTest {
         project.setRepositoryName("auto-verify-repo");
         project = projectRepository.saveAndFlush(project);
 
-        // 2. Add Verification Task to Wishlist
-        com.eneik.production.models.persistence.WishlistEntity item = new com.eneik.production.models.persistence.WishlistEntity();
-        item.setProjectId(project.getId());
-        item.setContent("Verification-Task-Alpha-2026");
-        item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-        item.setSource(com.eneik.production.models.persistence.WishlistSource.client);
-        item.setSourceRoleTag("BARCAN-TAG-00");
-        wishlistRepository.saveAndFlush(item);
-
-                java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
-        aiResponse.put("jtbd", "Automated UI Verification");
-        aiResponse.put("acceptanceCriteria", "Visuals match reference");
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
-            .thenReturn(aiResponse);
-
-        // 3. Trigger manual orchestration (Pick up from wishlist)
-        projectFlowService.orchestrate(project.getId());
-
-        // 4. Verify Task Created and Wishlist Converted
-        com.eneik.production.models.persistence.WishlistEntity updatedItem = wishlistRepository.findById(item.getId()).orElseThrow();
-        assertThat(updatedItem.getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
-
+        // 2. Seed a queued task directly. This test exercises the PR-review/auto-merge pipeline (steps
+        // 5-7), not wishlist compilation - real client wishlists now route through a dedicated Jules
+        // compiler account (see ProjectFlowService.dispatchWishlistCompiler) instead of becoming a task
+        // synchronously via orchestrate(), so that step is bypassed here.
         UUID projectId = project.getId();
-        TaskEntity task = taskRepository.findAll().stream()
-                .filter(t -> t.getProject() != null && t.getProject().getId().equals(projectId))
-                .findFirst().orElseThrow();
-        assertThat(task.getStatus()).isEqualTo(TaskStatus.queued);
+        TaskEntity task = new TaskEntity();
+        task.setProject(project);
+        task.setRole(roleRepository.findById("BARCAN-TAG-00").orElseThrow());
+        task.setTitle("Verification-Task-Alpha-2026");
+        task.setDescription("Verification-Task-Alpha-2026");
+        task.setStatus(TaskStatus.queued);
+        task = taskRepository.saveAndFlush(task);
 
         // 5. Simulate PR Opening (AI Reviewer Dispatch)
         PrDataDto prData = new PrDataDto();

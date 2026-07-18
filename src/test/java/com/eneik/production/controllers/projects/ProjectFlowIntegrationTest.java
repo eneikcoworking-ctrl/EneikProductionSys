@@ -45,6 +45,12 @@ class ProjectFlowIntegrationTest {
     private WishlistItemRepository wishlistItemRepository;
 
     @Autowired
+    private com.eneik.production.repositories.WishlistRepository wishlistRepository;
+
+    @Autowired
+    private com.eneik.production.services.ProjectFlowService projectFlowService;
+
+    @Autowired
     private OnboardingAuditFindingRepository onboardingAuditFindingRepository;
 
     @Autowired
@@ -196,26 +202,32 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
-    void orchestrationAddsDesignSystemReadinessForUiSlices() {
+    void buildTaskGraphFromSlicesAddsDesignSystemReadinessForUiSlices() {
+        // This used to be verified end-to-end through /orchestrate with a mocked
+        // mlPredictionServiceClient.generateTaskSlices() response - that call site no longer exists
+        // (ProjectFlowService.resolveTaskSlices never calls Gemini). Real wishlist content now reaches
+        // this same graph-building logic only via a real Jules compiler session's PR result
+        // (JulesDispatchService.completeWishlistCompilation), which this test environment has no real
+        // Jules/GitHub connectivity to drive - so the graph builder is exercised directly instead.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "UI Ready Project"),
                 ProjectDto.class
         );
-
         assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         ProjectDto project = createProject.getBody();
         assertThat(project).isNotNull();
+        com.eneik.production.models.persistence.ProjectEntity projectEntity = projectRepository.findById(project.id()).orElseThrow();
 
-        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
-                "/api/projects/" + project.id() + "/wishlist",
-                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Create a visible portal homepage"),
-                com.eneik.production.dto.WishlistResponseDto.class
-        );
-        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
+        com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+        wishlist.setProjectId(project.id());
+        wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+        wishlist.setContent("Create a visible portal homepage");
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.compiling);
+        wishlist = wishlistRepository.save(wishlist);
 
-        org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskSlices(org.mockito.ArgumentMatchers.anyString()))
-                .thenReturn(java.util.List.of(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+        java.util.List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices =
+                java.util.List.of(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
                         "Portal homepage UI",
                         "When a visitor opens the portal, I want a visible homepage, so that the product can be inspected.",
                         "Given the homepage loads, When the visitor opens the root page, Then the main portal content is visible.",
@@ -226,36 +238,28 @@ class ProjectFlowIntegrationTest {
                         "TOC-CONSTRAINT-DECOMPOSITION",
                         "Escaped defects <= 5%",
                         true
-                )));
+                ));
 
-        ResponseEntity<Map> orchestration = restTemplate.postForEntity(
-                "/api/projects/" + project.id() + "/orchestrate",
-                null,
-                Map.class
-        );
+        boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, wishlist, slices);
+        assertThat(created).isTrue();
 
-        assertThat(orchestration.getStatusCode()).isEqualTo(HttpStatus.OK);
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
                 taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id());
-        assertThat(tasks).hasSize(2);
-        assertThat(tasks).anySatisfy(task -> {
-            assertThat(task.getRole().getTag()).isEqualTo("BARCAN-TAG-01");
-            assertThat(task.getPayload().path("toc_constraint_ref").asText()).isEqualTo("BOOTSTRAP-ENVIRONMENT-BOUNDARY");
-        });
-        com.eneik.production.models.persistence.TaskEntity uiTask = tasks.stream()
-                .filter(task -> "BARCAN-TAG-11".equals(task.getRole().getTag()))
-                .findFirst()
-                .orElseThrow();
+        assertThat(tasks).hasSize(1);
+        com.eneik.production.models.persistence.TaskEntity uiTask = tasks.get(0);
+        assertThat(uiTask.getRole().getTag()).isEqualTo("BARCAN-TAG-11");
         assertThat(uiTask.getPayload().get("dod").asText()).contains("docs/DESIGN_SYSTEM.md");
+
+        com.eneik.production.models.persistence.WishlistEntity reloaded = wishlistRepository.findById(wishlist.getId()).orElseThrow();
+        assertThat(reloaded.getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
     }
 
     @Test
-    void orchestrationCompilesWishlistIntoSingleHonestTaskWithoutGemini() {
-        // Task compilation no longer calls mlPredictionServiceClient.generateTaskSlices() at all (see
-        // ProjectFlowService.resolveTaskSlices) - the user does not want to pay for Gemini generations,
-        // and the multi-slice AI decomposition this test used to verify silently fell back to fabricated
-        // placeholder content whenever Gemini failed. One wishlist now compiles into exactly one honest
-        // task built directly from the real content; Jules does any further decomposition itself.
+    void orchestrationDispatchesRealWishlistToJulesCompilerInsteadOfCreatingTaskDirectly() {
+        // Real client-originated wishlist content must never reach an implementer directly (it could be
+        // poorly written) - it's routed to a dedicated Jules "compiler" session instead of being turned
+        // into a task in-process (see ProjectFlowService.dispatchWishlistCompiler). No Gemini call is
+        // involved anywhere in this path any more.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "Graph Compiler Project"),
@@ -285,15 +289,14 @@ class ProjectFlowIntegrationTest {
                         .toList();
 
         assertThat(tasks).hasSize(1);
-        assertThat(tasks.get(0).getDependsOn()).isNull();
-        assertThat(tasks.get(0).getDescription()).contains("Build account settings with API, browser UI, and verification");
-        assertThat(tasks.get(0).getDescription()).contains("Original Brief");
+        com.eneik.production.models.persistence.TaskEntity compilerTask = tasks.get(0);
+        assertThat(projectFlowService.isWishlistCompilerTask(compilerTask)).isTrue();
+        assertThat(compilerTask.getDescription()).contains("Build account settings with API, browser UI, and verification");
 
-        ProjectDashboardDto dashboard = restTemplate.getForObject(
-                "/api/projects/" + project.id() + "/dashboard",
-                ProjectDashboardDto.class
-        );
-        assertThat(dashboard.emsMetrics().graphHealth().duplicateSemanticKeys()).isZero();
+        java.util.List<com.eneik.production.models.persistence.WishlistEntity> wishlistEntities =
+                wishlistRepository.findByProjectId(project.id());
+        assertThat(wishlistEntities).anySatisfy(w ->
+                assertThat(w.getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.compiling));
     }
 
     @Test
@@ -366,12 +369,12 @@ class ProjectFlowIntegrationTest {
     }
 
     @Test
-    void taskCompilationSucceedsEvenWhenAiServiceMockWouldFail() {
+    void wishlistCompilerDispatchSucceedsEvenWhenAiServiceMockWouldFail() {
         // Task compilation no longer calls the ML/Gemini service at all (see
-        // ProjectFlowService.resolveTaskSlices), so it can no longer be degraded by an AI outage - this
-        // is the whole point of the fix: a wishlist item now compiles into a real task immediately and
-        // unconditionally, using the honest fallback slice built directly from its own content, rather
-        // than deferring or silently fabricating placeholder content while waiting on Gemini.
+        // ProjectFlowService.resolveTaskSlices/dispatchWishlistCompiler), so it can no longer be
+        // degraded by an AI outage - the wishlist is dispatched to the Jules compiler unconditionally,
+        // using its own real content, rather than deferring or silently fabricating placeholder content
+        // while waiting on Gemini.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
                 Map.of("name", "Failing AI App"),
@@ -398,6 +401,7 @@ class ProjectFlowIntegrationTest {
                                 || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(t.getPayload().path("toc_constraint_ref").asText()))
                         .toList();
         assertThat(nonBootstrapTasks).hasSize(1);
+        assertThat(projectFlowService.isWishlistCompilerTask(nonBootstrapTasks.get(0))).isTrue();
         assertThat(nonBootstrapTasks.get(0).getDescription()).contains("Will fail in AI");
     }
 }

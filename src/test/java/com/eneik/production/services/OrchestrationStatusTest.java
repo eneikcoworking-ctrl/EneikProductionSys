@@ -58,6 +58,9 @@ public class OrchestrationStatusTest {
     private JulesSessionRepository julesSessionRepository;
 
     @Autowired
+    private com.eneik.production.repositories.RoleRepository roleRepository;
+
+    @Autowired
     private EntityManager entityManager;
 
     @Test
@@ -70,14 +73,18 @@ public class OrchestrationStatusTest {
         project.setStatus(ProjectStatus.active);
         project = projectRepository.save(project);
 
-        // 2. Create wishlist item
-        com.eneik.production.models.persistence.WishlistEntity item = new com.eneik.production.models.persistence.WishlistEntity();
-        item.setProjectId(project.getId());
-        item.setContent("Make the website beautiful and add backend API for leads");
-        item.setSourceRoleTag("BARCAN-TAG-00");
-        item.setSource(com.eneik.production.models.persistence.WishlistSource.client);
-        item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-        item = wishlistRepository.save(item);
+        // This test exercises the claim/review/done task lifecycle, not wishlist compilation - real
+        // client wishlists now route through a dedicated Jules compiler account (see
+        // ProjectFlowService.dispatchWishlistCompiler), so the task is created directly here instead of
+        // via a wishlist + orchestrate(), keeping this test independent of that separate concern.
+        TaskEntity seedTask = new TaskEntity();
+        seedTask.setProject(project);
+        seedTask.setRole(roleRepository.findById("BARCAN-TAG-00").orElseThrow());
+        seedTask.setTitle("Make the website beautiful and add backend API for leads");
+        seedTask.setDescription("Make the website beautiful and add backend API for leads");
+        seedTask.setStatus(TaskStatus.queued);
+        taskRepository.save(seedTask);
+
         // 3. Create idle account
         AccountEntity account = new AccountEntity();
         account.setName("Agent Smith");
@@ -86,9 +93,7 @@ public class OrchestrationStatusTest {
         account.setEnabled(true);
         account = accountRepository.save(account);
 
-        // 4. Orchestrate
-
-                java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
+        java.util.Map<String, Object> aiResponse = new java.util.HashMap<>();
         aiResponse.put("jtbd", "Automated UI Verification");
         aiResponse.put("acceptanceCriteria", "Visuals match reference");
         org.mockito.Mockito.when(mlPredictionServiceClient.generateTaskMetadata(org.mockito.ArgumentMatchers.anyString()))
@@ -96,13 +101,10 @@ public class OrchestrationStatusTest {
         project.setFactoryStatus("ready_local");
         projectRepository.save(project);
 
-        // 1. Manual orchestration creates the task
-        projectFlowService.orchestrate(project.getId());
-
         final UUID finalProjectId = project.getId();
         Awaitility.await().atMost(5, TimeUnit.SECONDS).until(() -> !taskRepository.findByProjectIdOrderByCreatedAtDesc(finalProjectId).isEmpty());
 
-        // 2. Continuous loop dispatches existing queued work, but does not create new tasks.
+        // 2. Continuous loop dispatches the queued task to the idle account.
         continuousOrchestrationService.continuousOrchestrate();
 
         Awaitility.await()

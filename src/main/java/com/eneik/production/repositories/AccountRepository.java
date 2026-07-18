@@ -88,6 +88,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
+              AND (:reservedName IS NULL OR a.name <> :reservedName)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -108,7 +109,25 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             """, nativeQuery = true)
     Optional<AccountEntity> lockNextJulesAccountWithCapacity(@Param("projectId") UUID projectId,
                                                              @Param("tag") String tag,
-                                                             @Param("maxSessions") int maxSessions);
+                                                             @Param("maxSessions") int maxSessions,
+                                                             @Param("reservedName") String reservedName);
+
+    @Query(value = """
+            SELECT * FROM accounts a
+            WHERE a.name = :name
+              AND a.enabled = true
+              AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
+              AND (
+                  SELECT COUNT(*)
+                  FROM jules_sessions s
+                  JOIN tasks t ON t.id = s.task_id
+                  WHERE s.account_id = a.id
+                    AND s.status IN ('queued', 'running', 'revising', 'stuck')
+                    AND t.status NOT IN ('done', 'failed')
+              ) < :maxSessions
+            ORDER BY a.last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED
+            """, nativeQuery = true)
+    Optional<AccountEntity> lockAccountByNameWithCapacity(@Param("name") String name, @Param("maxSessions") int maxSessions);
 
     @Query(value = """
             SELECT COUNT(*) > 0 FROM accounts a

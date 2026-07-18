@@ -161,6 +161,7 @@ public class SystemSettingsService {
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         definitions.put("system_stall_status", plain("system_stall_status", "SYSTEM_STALL_STATUS", "system-stall.status"));
+        definitions.put("task_compiler_account_name", plain("task_compiler_account_name", "TASK_COMPILER_ACCOUNT_NAME", "task-compiler.account-name"));
         return definitions;
     }
 

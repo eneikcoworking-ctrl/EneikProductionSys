@@ -86,6 +86,8 @@ class IdempotencyTest {
             mock(com.eneik.production.services.github.GitHubPullRequestService.class),
             mock(com.eneik.production.repositories.PrReviewRepository.class),
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+            mock(com.eneik.production.services.ProjectFlowService.class),
+            mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             "prefix/"
         );
 

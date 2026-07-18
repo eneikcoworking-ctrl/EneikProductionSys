@@ -285,6 +285,10 @@ public class ProjectFlowService {
                     processedCount++;
                     log.info("ProjectFlowService: Synchronously compiled wishlist {} into atomic task slices", wishlist.getId());
                     continue;
+                } else if (wishlist.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling) {
+                    // Already handed off to the async Jules compiler dispatch (dispatchWishlistCompiler) -
+                    // the legacy synchronous fallback below must not also compile this same wishlist.
+                    continue;
                 } else if (wishlist.getCompiledByRole() == null) {
                     // Gemini-free: Jules reads the real original brief directly (see
                     // TechnicalLeadCompiler.buildTaskDescription's "Original Brief" section), so no AI
@@ -749,12 +753,13 @@ public class ProjectFlowService {
             return false;
         }
 
-        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = resolveTaskSlices(wishlist);
-        if (slices.isEmpty()) {
-            return false;
-        }
-
         if (wishlist.getSource() == WishlistSource.role_mismatch_followup) {
+            // System-generated circuit-breaker recovery text, not real client content - stays on the
+            // fast deterministic path instead of spending the paid compiler account's limited capacity.
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = resolveTaskSlices(wishlist);
+            if (slices.isEmpty()) {
+                return false;
+            }
             MLPredictionServiceClient.TaskSliceMetadata slice = slices.get(0);
             String ownerRole = targetRoleForSlice(wishlist, slice);
             wishlist.setSourceRoleTag(ownerRole);
@@ -771,6 +776,25 @@ public class ProjectFlowService {
             return true;
         }
 
+        // Real client-originated content must never reach an implementer directly - a poorly written
+        // wishlist would go straight into work with no correction step. It is routed through a dedicated
+        // Jules compiler session (dispatchWishlistCompiler) that decomposes it into a proper
+        // JTBD/Kano/Cynefin-classified task graph - the same job Gemini used to do before its billing
+        // ran out. The compiler's own PR result is what eventually calls buildTaskGraphFromSlices.
+        if (wishlist.getStatus() == WishlistStatus.pending) {
+            dispatchWishlistCompiler(project, wishlist);
+        }
+        return false;
+    }
+
+    /**
+     * Turns a resolved slice list into the dependency-graph of child wishlists/tasks that used to be
+     * built inline here. Called by the Jules compiler result path
+     * (JulesDispatchService.completeWishlistCompilation) once a compiler session's slices are parsed
+     * and validated.
+     */
+    public boolean buildTaskGraphFromSlices(ProjectEntity project, WishlistEntity wishlist,
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
         java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices = emsGraphSlices(wishlist, slices);
         if (graphSlices.isEmpty()) {
             wishlist.setStatus(WishlistStatus.converted_to_task);
@@ -878,6 +902,13 @@ public class ProjectFlowService {
     // working) is the one that reads and compiles the real brief now - it receives the full original
     // wishlist content verbatim via TechnicalLeadCompiler.buildTaskDescription's "Original Brief"
     // section, not a pre-digested AI summary.
+    private static final String DEFAULT_TASK_COMPILER_ACCOUNT_NAME = "eneikdru";
+
+    private String taskCompilerAccountName() {
+        String configured = settingsService.effectiveValue("task_compiler_account_name");
+        return configured == null || configured.isBlank() ? DEFAULT_TASK_COMPILER_ACCOUNT_NAME : configured;
+    }
+
     private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> resolveTaskSlices(WishlistEntity wishlist) {
         return java.util.List.of(fallbackTaskSlice(wishlist.getContent()));
     }
@@ -1074,6 +1105,118 @@ public class ProjectFlowService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
+    public static final String WISHLIST_COMPILER_TASK_TYPE = "wishlist_compiler";
+    public static final String WISHLIST_COMPILER_PAYLOAD_KEY = "taskType";
+    public static final String WISHLIST_COMPILER_WISHLIST_ID_KEY = "compilesWishlistId";
+
+    private void dispatchWishlistCompiler(ProjectEntity project, WishlistEntity wishlist) {
+        wishlist.setStatus(WishlistStatus.compiling);
+        wishlistRepository.save(wishlist);
+
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch wishlist compiler for wishlist {}: role {} not found",
+                    wishlist.getId(), ORCHESTRATOR_ROLE);
+            return;
+        }
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setProject(project);
+        compilerTask.setRole(compilerRole);
+        compilerTask.setTitle("Compile wishlist into task graph");
+        compilerTask.setDescription(wishlistCompilerPrompt(wishlist));
+        compilerTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
+        payload.put(WISHLIST_COMPILER_WISHLIST_ID_KEY, wishlist.getId().toString());
+        compilerTask.setPayload(payload);
+
+        compilerTask = taskRepository.save(compilerTask);
+        dispatchCompilerTask(compilerTask);
+    }
+
+    public boolean isWishlistCompilerTask(TaskEntity task) {
+        return task.getPayload() != null
+                && WISHLIST_COMPILER_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    private void dispatchCompilerTask(TaskEntity compilerTask) {
+        Optional<AccountEntity> accountOpt = accountRepository.lockAccountByNameWithCapacity(
+                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount);
+        if (accountOpt.isEmpty()) {
+            log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
+                    taskCompilerAccountName(), compilerTask.getId());
+            return;
+        }
+
+        AccountEntity account = accountOpt.get();
+        try {
+            claimService.claimSpecificTask(compilerTask.getId(), account.getId());
+            TaskEntity savedTask = taskRepository.findById(compilerTask.getId()).orElse(compilerTask);
+            JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+            savedTask.setJulesSessionName(dispatch.sessionName());
+            savedTask.setJulesDispatchStatus(dispatch.reason());
+            taskRepository.save(savedTask);
+            if (!dispatch.dispatched()) {
+                claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
+                log.warn("Failed to dispatch wishlist compiler task {} to account {}: {}",
+                        savedTask.getId(), account.getName(), dispatch.reason());
+                return;
+            }
+            log.info("Dispatched compiler task {} to account {}", savedTask.getId(), account.getName());
+        } catch (Exception e) {
+            log.error("Failed to claim/dispatch compiler task {} to account {}: {}",
+                    compilerTask.getId(), account.getName(), e.getMessage(), e);
+        }
+    }
+
+    private String wishlistCompilerPrompt(WishlistEntity wishlist) {
+        return """
+                You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose the client
+                brief below into executable work items. Do NOT implement any product code, do not run
+                builds or tests - this task only produces a decomposition plan.
+
+                Output rules:
+                - All output must be in English, even when the source brief is written in another
+                  language. Translate and normalize intent; never copy the raw brief text verbatim into
+                  your output.
+                - Produce 1-6 work items. Each item must have exactly one owner role and one concrete
+                  result. Do not multiply one JTBD across roles.
+                - Do not create QA or integration items unless the brief explicitly asks to verify
+                  existing code, fix merge hygiene, or review an already implemented slice.
+                - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
+                  spike/decision item instead of guessing at implementation.
+                - Each jtbd must be one sentence: "When..., I want..., so that...".
+                - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
+                - Classify each item with Kano: Must-Be, Performance, or Attractive.
+                - Classify implementation uncertainty with Cynefin: clear, complicated, complex, or chaotic.
+                - Choose roleTag from: BARCAN-TAG-00 integration/merge hygiene only; BARCAN-TAG-01
+                  architecture; BARCAN-TAG-02 backend/API; BARCAN-TAG-03 UI/UX design; BARCAN-TAG-04
+                  AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing existing
+                  implementation only; BARCAN-TAG-07 security/auth/access; BARCAN-TAG-08
+                  data/schema/storage/parsing; BARCAN-TAG-09 delivery/spike/decision; BARCAN-TAG-10
+                  compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation.
+                - Set hasUi=true only when the item needs visible browser UI/design work.
+                - Avoid broad platform epics; split them into smaller user/admin/data/API items.
+
+                Deliverable: create a new branch and open a PR that contains ONLY one file,
+                `.eneik/task-plan.json`, with EXACTLY this shape and no other files changed:
+                {"slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02",
+                "jtbd": "When..., I want..., so that...",
+                "acceptanceCriteria": "Given..., When..., Then...\\nGiven...",
+                "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive",
+                "cynefinDomain": "clear|complicated|complex|chaotic",
+                "tocConstraintRef": "short bottleneck reference",
+                "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}
+                Do not write, modify, or delete any other file.
+
+                Client brief to decompose (verbatim, may be in any language - read and understand it
+                yourself, do not rely on it already being in English):
+                %s
+                """.formatted(defaultText(wishlist.getContent(), "(empty brief)"));
+    }
+
     @Transactional
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
@@ -1098,6 +1241,12 @@ public class ProjectFlowService {
                 continue;
             }
 
+            if (isWishlistCompilerTask(task)) {
+                // Compiler tasks are pinned to the reserved compiler account, never the round-robin pool.
+                dispatchCompilerTask(task);
+                continue;
+            }
+
             String roleTag = task.getRole().getTag();
 
             // Complex/chaotic/retried/defect-work tasks used to bypass Jules for a separate autonomous
@@ -1106,7 +1255,8 @@ public class ProjectFlowService {
             Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
                     project.getId(),
                     roleTag,
-                    maxConcurrentJulesSessionsPerAccount
+                    maxConcurrentJulesSessionsPerAccount,
+                    taskCompilerAccountName()
             );
             if (accountOpt.isPresent()) {
                 AccountEntity account = accountOpt.get();
@@ -1170,7 +1320,8 @@ public class ProjectFlowService {
                 Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
                         project.getId(),
                         roleTag,
-                        maxConcurrentJulesSessionsPerAccount
+                        maxConcurrentJulesSessionsPerAccount,
+                        taskCompilerAccountName()
                 );
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();
