@@ -68,6 +68,8 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
         ReflectionTestUtils.setField(julesDispatchService, "loopCloseSimilarThreshold", 3);
+        ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockBlindCycleThreshold", 5);
+        ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
     }
 
     @Test
@@ -347,5 +349,83 @@ class JulesDispatchServiceTest {
                         && ((WishlistEntity) item).getContent().contains("Repository hygiene technical debt")
                         && ((WishlistEntity) item).getContent().contains("minor generated/local artifact")
         ));
+    }
+
+    @Test
+    void forceUnblockSendsDeterministicMessageWhenBlindAndStale() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/blind");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setForcedUnblockAttempts(0);
+        session.setLastProgressAt(Instant.now().minus(45, ChronoUnit.MINUTES));
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(julesApiClient.sendMessage(eq("sessions/blind"), anyString(), eq("jules-key"))).thenReturn(true);
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals(1, session.getForcedUnblockAttempts());
+        assertEquals(0, session.getBlindCycleCount());
+        verify(julesApiClient, timeout(2000)).sendMessage(eq("sessions/blind"), contains("forcibly decide for yourself"), eq("jules-key"));
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+    }
+
+    @Test
+    void forceUnblockEscalatesToLoopClosureAfterMaxAttempts() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/blind-exhausted");
+        session.setStatus("running");
+        session.setBlindCycleCount(7);
+        session.setForcedUnblockAttempts(2);
+        session.setLastProgressAt(Instant.now().minus(90, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Task stuck behind an oversized activity log");
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of());
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals("loop_closed", session.getStatus());
+        verify(claimService).closeTaskAsBlocked(eq(taskId), contains("blind_overflow_unblock_exhausted"));
+        verify(julesApiClient, never()).sendMessage(eq("sessions/blind-exhausted"), anyString(), anyString());
     }
 }

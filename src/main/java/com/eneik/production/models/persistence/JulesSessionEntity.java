@@ -42,6 +42,21 @@ public class JulesSessionEntity {
     @Column(name = "closure_reason")
     private String closureReason;
 
+    // Distinct from updatedAt, which Hibernate bumps on every save regardless of real change (see
+    // preUpdate() below) - lastProgressAt only moves on a genuine forward-progress signal (a real status
+    // transition, or a newly-seen agent question), so staleness checks keyed on it can actually detect a
+    // session that Jules keeps reporting "RUNNING" on while nothing real is happening.
+    @Column(name = "last_progress_at")
+    private Instant lastProgressAt;
+
+    // Consecutive poll cycles where the session's activity log was too large to scan (activitiesOverflow).
+    @Column(name = "blind_cycle_count", nullable = false)
+    private int blindCycleCount = 0;
+
+    // Count of deterministic "decide for yourself and make a PR" messages sent by forceUnblockOverflowedSessions.
+    @Column(name = "forced_unblock_attempts", nullable = false)
+    private int forcedUnblockAttempts = 0;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -74,6 +89,15 @@ public class JulesSessionEntity {
 
     public String getClosureReason() { return closureReason; }
     public void setClosureReason(String closureReason) { this.closureReason = closureReason; }
+
+    public Instant getLastProgressAt() { return lastProgressAt; }
+    public void setLastProgressAt(Instant lastProgressAt) { this.lastProgressAt = lastProgressAt; }
+
+    public int getBlindCycleCount() { return blindCycleCount; }
+    public void setBlindCycleCount(int blindCycleCount) { this.blindCycleCount = blindCycleCount; }
+
+    public int getForcedUnblockAttempts() { return forcedUnblockAttempts; }
+    public void setForcedUnblockAttempts(int forcedUnblockAttempts) { this.forcedUnblockAttempts = forcedUnblockAttempts; }
 
     @PreUpdate
     public void preUpdate() {

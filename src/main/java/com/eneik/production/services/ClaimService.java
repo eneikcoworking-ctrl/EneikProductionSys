@@ -418,8 +418,12 @@ public class ClaimService {
         List<JulesSessionEntity> runningSessions = julesSessionRepository.findByStatus("running");
 
         for (JulesSessionEntity session : runningSessions) {
-            if (session.getUpdatedAt().isBefore(threshold)) {
-                log.warn("Maintenance: Session {} is stuck (no update for {} minutes)", session.getId(), stuckThresholdMinutes);
+            // lastProgressAt (real forward progress) rather than updatedAt, which Hibernate refreshes on
+            // every save regardless of whether anything actually changed - updatedAt alone can never go
+            // stale while polling keeps succeeding, even for a session that is silently blocked.
+            Instant reference = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getUpdatedAt();
+            if (reference.isBefore(threshold)) {
+                log.warn("Maintenance: Session {} is stuck (no real progress for {} minutes)", session.getId(), stuckThresholdMinutes);
                 session.setStatus("stuck");
                 julesSessionRepository.save(session);
             }

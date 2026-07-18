@@ -86,6 +86,12 @@ public class JulesDispatchService {
     @Value("${jules.max-loop-closures-per-run:5}")
     private int maxLoopClosuresPerRun;
 
+    @Value("${jules.forced-unblock-blind-cycle-threshold:5}")
+    private int forcedUnblockBlindCycleThreshold;
+
+    @Value("${jules.forced-unblock-max-attempts:2}")
+    private int forcedUnblockMaxAttempts;
+
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
                                 JulesActivityResponseRepository julesActivityResponseRepository,
@@ -195,6 +201,7 @@ public class JulesDispatchService {
         session.setTaskId(task.getId());
         session.setAccountId(accountId);
         session.setStatus("queued");
+        session.setLastProgressAt(Instant.now());
 
         ProjectEntity project = task.getProject();
         if (project == null) {
@@ -417,6 +424,12 @@ public class JulesDispatchService {
                 }
             }
 
+            if (!mappedStatus.equals(oldStatus)) {
+                // Any real status transition (running->pr_opened, stuck->running, etc.) is genuine
+                // forward progress, unlike updatedAt which refreshes on every save regardless.
+                session.setLastProgressAt(Instant.now());
+                session.setBlindCycleCount(0);
+            }
             session.setStatus(mappedStatus);
             session.setLastStatusCheckAt(Instant.now());
             session = julesSessionRepository.save(session);
@@ -470,15 +483,23 @@ public class JulesDispatchService {
             // A large activity payload just means the session has a long history (lots of tool calls/file
             // reads) - it is not evidence the session is stuck. Closing the loop here used to throw away
             // sessions that were actively progressing toward a PR, purely because Eneik's own log-scanner
-            // hit its memory guard. Skip this cycle's question scan instead; a genuinely stuck session is
-            // still caught by the independent stuck_session_timeout breaker, which only fires once Jules
-            // itself reports the "stuck" status - not on elapsed time alone.
-            log.warn("Jules activities payload for session {} exceeded the backend safety limit; skipping question scan this cycle (session left running)",
-                    session.getExternalSessionId());
+            // hit its memory guard. Skip this cycle's question scan instead; blindCycleCount tracks how
+            // many consecutive cycles this has happened so forceUnblockOverflowedSessions can still
+            // recover a session that is genuinely stuck behind this exact skip.
+            session.setBlindCycleCount(session.getBlindCycleCount() + 1);
+            julesSessionRepository.save(session);
+            log.warn("Jules activities payload for session {} exceeded the backend safety limit; skipping question scan this cycle (session left running, blind cycle {})",
+                    session.getExternalSessionId(), session.getBlindCycleCount());
             return;
         }
         if (root == null || !root.path("activities").isArray()) {
             return;
+        }
+
+        if (session.getBlindCycleCount() != 0) {
+            // A "sighted" cycle - the activity log is back under the size cap.
+            session.setBlindCycleCount(0);
+            julesSessionRepository.save(session);
         }
 
         for (JsonNode activity : root.path("activities")) {
@@ -493,6 +514,11 @@ public class JulesDispatchService {
                     julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(session.getId(), activityHash);
             if (existing.isPresent() && existing.get().isSent()) {
                 continue;
+            }
+            if (existing.isEmpty()) {
+                // Real evidence Jules did something new since the last poll.
+                session.setLastProgressAt(Instant.now());
+                julesSessionRepository.save(session);
             }
 
             try {
@@ -1565,6 +1591,7 @@ public class JulesDispatchService {
     public void runSessionSafetyMaintenance() {
         claimService.detectStuckSessions(stuckThresholdMinutes);
         closeOverdueStuckSessions();
+        forceUnblockOverflowedSessions();
         reconcileAbandonedPullRequests();
     }
 
@@ -1580,7 +1607,8 @@ public class JulesDispatchService {
             if (closed >= maxLoopClosuresPerRun) {
                 break;
             }
-            if (session.getUpdatedAt() == null || session.getUpdatedAt().isAfter(threshold)) {
+            Instant reference = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getUpdatedAt();
+            if (reference == null || reference.isAfter(threshold)) {
                 continue;
             }
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
@@ -1607,6 +1635,83 @@ public class JulesDispatchService {
             );
             closed++;
         }
+    }
+
+    /**
+     * A session with an oversized (>2MB) activity log has its question-scan deliberately skipped every
+     * cycle (see answerAgentQuestions) so a healthy-but-verbose session never gets falsely closed - but
+     * that means a session which is ACTUALLY blocked waiting on an unanswered question, with no other
+     * status change, has no recovery path: the activitiesOverflow skip hides the question, and Jules's
+     * own status API just keeps reporting "RUNNING" (never "STUCK"), so shouldSendStuckRecovery never
+     * fires either. This sweep catches exactly that gap: once a session has gone genuinely dark (blind to
+     * both the overflow-skip and lastProgressAt) for long enough, send a deterministic (no AI call) message
+     * telling Jules to stop waiting and make a decision. Escalates through the existing
+     * closeLoopAndCreateFollowUps breaker after a bounded number of attempts, rather than inventing a
+     * second closure mechanism.
+     */
+    @Transactional
+    public void forceUnblockOverflowedSessions() {
+        Instant staleSince = Instant.now().minus(Duration.ofMinutes(stuckThresholdMinutes));
+        List<JulesSessionEntity> candidates = julesSessionRepository.findByStatusIn(
+                List.of("running", "queued", "revising", "stuck"));
+
+        for (JulesSessionEntity session : candidates) {
+            if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold) {
+                continue;
+            }
+            Instant lastProgress = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getCreatedAt();
+            if (lastProgress.isAfter(staleSince)) {
+                continue;
+            }
+
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task == null) {
+                continue;
+            }
+
+            if (session.getForcedUnblockAttempts() >= forcedUnblockMaxAttempts) {
+                List<JulesActivityResponseEntity> responseHistory =
+                        julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+                closeLoopAndCreateFollowUps(
+                        session,
+                        task,
+                        "Session activity log stayed too large to inspect for " + session.getBlindCycleCount()
+                                + " consecutive cycle(s) with no observed progress since " + lastProgress,
+                        responseHistory,
+                        "blind_overflow_unblock_exhausted: forced unblock attempted "
+                                + session.getForcedUnblockAttempts() + " time(s) without observed progress"
+                );
+                continue;
+            }
+
+            sendForcedUnblockMessageAsync(session, task);
+            session.setForcedUnblockAttempts(session.getForcedUnblockAttempts() + 1);
+            session.setBlindCycleCount(0);
+            julesSessionRepository.save(session);
+        }
+    }
+
+    private void sendForcedUnblockMessageAsync(JulesSessionEntity session, TaskEntity task) {
+        String externalSessionId = session.getExternalSessionId();
+        String apiKey = apiKeyForSession(session);
+        UUID taskId = task.getId();
+        String message = "Eneik orchestrator forced unblock: this session's activity log has stayed too large "
+                + "to inspect for a pending question across several checks, and no new progress has been "
+                + "observed. It is OK to forcibly decide for yourself based on your own knowledge of the "
+                + "project: make one objective move from the task facts, document the smallest safe "
+                + "assumption in the PR summary, and open or update the PR now instead of waiting for "
+                + "further clarification.";
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            boolean sent = apiKey != null
+                    ? julesApiClient.sendMessage(externalSessionId, message, apiKey)
+                    : julesApiClient.sendMessage(externalSessionId, message);
+            if (sent) {
+                log.info("Sent forced blind-overflow unblock message to Jules session {} for task {}", externalSessionId, taskId);
+                saveJulesDialogueLog(taskId, externalSessionId, message, "Forced blind-overflow unblock");
+            } else {
+                log.warn("Failed to send forced blind-overflow unblock message to Jules session {} for task {}", externalSessionId, taskId);
+            }
+        });
     }
 
     /**
