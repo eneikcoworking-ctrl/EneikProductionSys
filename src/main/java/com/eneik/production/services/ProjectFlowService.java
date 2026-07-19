@@ -68,6 +68,7 @@ public class ProjectFlowService {
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final ClientDeliverableReadinessService readinessService;
+    private final FeatureService featureService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -107,7 +108,8 @@ public class ProjectFlowService {
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                               com.eneik.production.services.design.DesignAssetService designAssetService,
                               com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
-                              ClientDeliverableReadinessService readinessService) {
+                              ClientDeliverableReadinessService readinessService,
+                              FeatureService featureService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -133,6 +135,7 @@ public class ProjectFlowService {
         this.designAssetService = designAssetService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.readinessService = readinessService;
+        this.featureService = featureService;
     }
 
     @Transactional
@@ -569,6 +572,7 @@ public class ProjectFlowService {
         followUp.setSource(WishlistSource.role_mismatch_followup);
         followUp.setSourceRoleTag(roleTag);
         followUp.setStatus(WishlistStatus.pending);
+        followUp.setFeatureId(task.getFeatureId());
         followUp.setContent(truncate("""
                 [Operator postmortem from bad Jules session]
                 Operator postmortem source session: %s
@@ -775,6 +779,7 @@ public class ProjectFlowService {
             followUp.setSource(WishlistSource.role_mismatch_followup);
             followUp.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : ORCHESTRATOR_ROLE);
             followUp.setStatus(WishlistStatus.pending);
+            followUp.setFeatureId(task.getFeatureId());
             followUp.setContent(truncate("""
                     [Auto recovery from blocked task]
                     Auto recovery source task: %s
@@ -859,10 +864,15 @@ public class ProjectFlowService {
             wishlist.setSourceRoleTag(ownerRole);
             wishlistRepository.save(wishlist);
             compileSliceMetadata(project, wishlist.getId(), slice, ownerRole);
+            // The follow-up wishlist should already carry the originating task's featureId (propagated at
+            // creation time - see AutoMergeService/JulesDispatchService follow-up creation sites) so
+            // recovery work is recognized as a continuation of the same feature, not a brand-new one. Falls
+            // back to minting fresh only if that propagation is somehow missing - never fails outright.
+            UUID recoveryFeatureId = featureService.resolveOrCreateFeatureId(wishlist, project.getId());
             technicalLeadCompiler.createTaskFromWishlist(
                     wishlist.getId(),
                     null,
-                    emsGraphKey(wishlist, "recovery"),
+                    emsGraphKey(recoveryFeatureId, "recovery"),
                     1,
                     1,
                     "circuit-breaker recovery starts a fresh one-node graph"
@@ -896,7 +906,11 @@ public class ProjectFlowService {
             return false;
         }
 
-        String graphKey = emsGraphKey(wishlist, "flow");
+        // All role-slices decomposed from this one wishlist item share one feature - minted once, here,
+        // before the loop, and stamped onto every slice so continuation (RoleThreadEntity) never mixes
+        // unrelated features that happen to share a role.
+        UUID featureId = featureService.resolveOrCreateFeatureId(wishlist, project.getId());
+        String graphKey = emsGraphKey(featureId, "flow");
         TaskEntity previousTask = null;
         int index = 1;
         for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
@@ -907,6 +921,7 @@ public class ProjectFlowService {
             sliceWishlist.setSourceRoleTag(ownerRole);
             sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
             sliceWishlist.setStatus(WishlistStatus.pending);
+            sliceWishlist.setFeatureId(featureId);
             sliceWishlist = wishlistRepository.save(sliceWishlist);
             compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole);
             TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
@@ -983,8 +998,8 @@ public class ProjectFlowService {
         return "EMS ordered flow: " + ownerRole + " waits for " + previousRole + " to finish the previous verifiable slice";
     }
 
-    private String emsGraphKey(WishlistEntity wishlist, String suffix) {
-        String id = wishlist.getId() == null ? UUID.randomUUID().toString() : wishlist.getId().toString();
+    private String emsGraphKey(UUID featureId, String suffix) {
+        String id = featureId == null ? UUID.randomUUID().toString() : featureId.toString();
         return "EMS-" + suffix + "-" + id.substring(0, Math.min(8, id.length()));
     }
 

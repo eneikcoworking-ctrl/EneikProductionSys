@@ -68,6 +68,7 @@ public class RoleAdviceLoopService {
         wishlist.setProjectId(task.getProject().getId());
         wishlist.setSource(WishlistSource.role);
         wishlist.setSourceRoleTag(task.getRole().getTag());
+        wishlist.setFeatureId(task.getFeatureId());
         wishlist.setContent(recommendation);
         wishlist.setStatus(WishlistStatus.pending);
 

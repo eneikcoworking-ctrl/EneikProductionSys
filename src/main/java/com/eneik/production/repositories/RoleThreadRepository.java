@@ -9,5 +9,5 @@ import java.util.UUID;
 
 @Repository
 public interface RoleThreadRepository extends JpaRepository<RoleThreadEntity, UUID> {
-    Optional<RoleThreadEntity> findByProjectIdAndRoleTag(UUID projectId, String roleTag);
+    Optional<RoleThreadEntity> findByProjectIdAndFeatureIdAndRoleTag(UUID projectId, UUID featureId, String roleTag);
 }

@@ -226,6 +226,7 @@ public class AutoMergeService {
                                 wishlist.setProjectId(task.getProject().getId());
                                 wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
                                 wishlist.setSourceRoleTag(roleTag);
+                                wishlist.setFeatureId(task.getFeatureId());
                                 wishlist.setContent("Role mismatch cleanup required: " + reason);
                                 wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
                                 wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
@@ -346,6 +347,7 @@ public class AutoMergeService {
                             debt.setProjectId(task.getProject().getId());
                             debt.setSource(com.eneik.production.models.persistence.WishlistSource.chaotic_debt);
                             debt.setSourceRoleTag(task.getRole().getTag());
+                            debt.setFeatureId(task.getFeatureId());
                             debt.setContent("Emergency chaotic debt cleanup: Refactor changes introduced in chaotic task " + task.getId());
                             debt.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
                             debt.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
@@ -412,9 +414,11 @@ public class AutoMergeService {
 
         gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), pullNumber).ifPresent(pr -> {
             String roleTag = task.getRole().getTag();
-            RoleThreadEntity thread = roleThreadRepository.findByProjectIdAndRoleTag(task.getProject().getId(), roleTag)
+            UUID featureId = task.getFeatureId();
+            RoleThreadEntity thread = roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(task.getProject().getId(), featureId, roleTag)
                     .orElseGet(RoleThreadEntity::new);
             thread.setProjectId(task.getProject().getId());
+            thread.setFeatureId(featureId);
             thread.setRoleTag(roleTag);
             thread.setBranchName(pr.headRef());
             thread.setAccountId(session.getAccountId());
@@ -423,8 +427,8 @@ public class AutoMergeService {
             thread.setSummary(summary == null ? pr.title() : (summary.length() > 2000 ? summary.substring(0, 2000) : summary));
             thread.setUpdatedAt(java.time.Instant.now());
             roleThreadRepository.save(thread);
-            log.info("AutoMergeService: PR {} classified as has-code; role thread for {} in project {} now points to branch {}",
-                    pullRequestTarget.url(), roleTag, task.getProject().getId(), pr.headRef());
+            log.info("AutoMergeService: PR {} classified as has-code; thread for role {} / feature {} in project {} now points to branch {}",
+                    pullRequestTarget.url(), roleTag, featureId, task.getProject().getId(), pr.headRef());
         });
     }
 
@@ -489,6 +493,7 @@ public class AutoMergeService {
             recovery.setProjectId(task.getProject().getId());
             recovery.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
             recovery.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
+            recovery.setFeatureId(task.getFeatureId());
             recovery.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
             recovery.setContent(("""
                     [Auto recovery: merge conflict unresolved after 3 attempts]

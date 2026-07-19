@@ -70,6 +70,13 @@ public class TaskEntity {
     @Column(name = "source_wishlist_id")
     private UUID sourceWishlistId;
 
+    // The feature this task belongs to - always populated at creation (TechnicalLeadCompiler.
+    // createAndSaveTask via FeatureService), either inherited from the wishlist that produced it or
+    // minted fresh if nothing set one. Scopes RoleThreadEntity continuation so unrelated features never
+    // share a branch just because the same role worked on both.
+    @Column(name = "feature_id")
+    private UUID featureId;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -112,6 +119,8 @@ public class TaskEntity {
     public void setCynefinDomain(String cynefinDomain) { this.cynefinDomain = cynefinDomain; }
     public UUID getSourceWishlistId() { return sourceWishlistId; }
     public void setSourceWishlistId(UUID sourceWishlistId) { this.sourceWishlistId = sourceWishlistId; }
+    public UUID getFeatureId() { return featureId; }
+    public void setFeatureId(UUID featureId) { this.featureId = featureId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

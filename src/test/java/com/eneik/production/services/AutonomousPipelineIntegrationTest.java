@@ -527,4 +527,45 @@ class AutonomousPipelineIntegrationTest {
         // Verify Kano
         assertThat(multiRoleTask.getDescription()).contains("Kano: Must-Be");
     }
+
+    @Test
+    void buildTaskGraphFromSlicesGivesAllSlicesTheSameFeatureId() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Feature Sharing Project");
+        project.setSlug("feature-sharing-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("feature-sharing-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Handle a two-sided feature: backend validation plus a data migration.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        // Non-UI roles deliberately - a UI/design role slice would try to generate a real design asset,
+        // which this test has no need to exercise.
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Backend validation", "Validate the incoming payload server-side.",
+                "Given an invalid payload, When it is submitted, Then the API returns a 400.",
+                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
+                "API connectivity", "100% of invalid payloads rejected", false);
+        MLPredictionServiceClient.TaskSliceMetadata dataSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Data migration", "Migrate the legacy records to the new schema.",
+                "Given legacy records, When the migration runs, Then all records match the new schema.",
+                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
+                "Data integrity", "100% of records migrated", false);
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, brief, List.of(backendSlice, dataSlice));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(t -> t.getRole() != null && ("BARCAN-TAG-02".equals(t.getRole().getTag()) || "BARCAN-TAG-08".equals(t.getRole().getTag())))
+                .toList();
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks.get(0).getFeatureId()).isNotNull();
+        assertThat(tasks.get(0).getFeatureId()).isEqualTo(tasks.get(1).getFeatureId());
+    }
 }

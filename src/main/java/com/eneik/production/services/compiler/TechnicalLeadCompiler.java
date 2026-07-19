@@ -3,6 +3,7 @@ package com.eneik.production.services.compiler;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
 import com.eneik.production.services.BottleneckAwarePriorityService;
+import com.eneik.production.services.FeatureService;
 import com.eneik.production.services.gate.GateOrchestrator;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -25,6 +26,7 @@ public class TechnicalLeadCompiler {
     private final BottleneckAwarePriorityService bottleneckAwarePriorityService;
     private final ObjectMapper objectMapper;
     private final ProjectHotspotFileRepository projectHotspotFileRepository;
+    private final FeatureService featureService;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
 
@@ -36,7 +38,8 @@ public class TechnicalLeadCompiler {
                                  GateOrchestrator gateOrchestrator,
                                  BottleneckAwarePriorityService bottleneckAwarePriorityService,
                                  ObjectMapper objectMapper,
-                                 ProjectHotspotFileRepository projectHotspotFileRepository) {
+                                 ProjectHotspotFileRepository projectHotspotFileRepository,
+                                 FeatureService featureService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
@@ -46,6 +49,7 @@ public class TechnicalLeadCompiler {
         this.bottleneckAwarePriorityService = bottleneckAwarePriorityService;
         this.objectMapper = objectMapper;
         this.projectHotspotFileRepository = projectHotspotFileRepository;
+        this.featureService = featureService;
     }
 
     @Transactional
@@ -210,6 +214,7 @@ public class TechnicalLeadCompiler {
         task.setStatus(TaskStatus.queued);
         task.setCynefinDomain(cynefin);
         task.setSourceWishlistId(wishlist.getId());
+        task.setFeatureId(featureService.resolveOrCreateFeatureId(wishlist, project.getId()));
 
         int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
         if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {

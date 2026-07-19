@@ -51,6 +51,12 @@ public class WishlistEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
+    // The feature this item belongs to (see FeatureEntity/FeatureService) - null until this item is
+    // actually compiled into a task for the first time, or inherited from an originating item/task for
+    // follow-up work (design concerns, circuit-breaker recovery, role-mismatch follow-ups).
+    @Column(name = "feature_id")
+    private UUID featureId;
+
     public UUID getId() {
         return id;
     }
@@ -161,5 +167,13 @@ public class WishlistEntity {
 
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public UUID getFeatureId() {
+        return featureId;
+    }
+
+    public void setFeatureId(UUID featureId) {
+        this.featureId = featureId;
     }
 }

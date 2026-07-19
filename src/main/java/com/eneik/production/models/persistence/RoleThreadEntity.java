@@ -17,6 +17,11 @@ public class RoleThreadEntity {
     @Column(name = "role_tag", nullable = false)
     private String roleTag;
 
+    // Which feature this thread's branch belongs to - narrows continuation to "same feature, same role,
+    // same account", not just "same role" (a role does many unrelated features over a project's life).
+    @Column(name = "feature_id")
+    private UUID featureId;
+
     @Column(name = "branch_name", nullable = false, length = 256)
     private String branchName;
 
@@ -40,6 +45,8 @@ public class RoleThreadEntity {
     public void setProjectId(UUID projectId) { this.projectId = projectId; }
     public String getRoleTag() { return roleTag; }
     public void setRoleTag(String roleTag) { this.roleTag = roleTag; }
+    public UUID getFeatureId() { return featureId; }
+    public void setFeatureId(UUID featureId) { this.featureId = featureId; }
     public String getBranchName() { return branchName; }
     public void setBranchName(String branchName) { this.branchName = branchName; }
     public UUID getAccountId() { return accountId; }

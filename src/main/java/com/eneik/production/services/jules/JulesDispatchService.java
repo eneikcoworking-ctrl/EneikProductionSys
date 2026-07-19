@@ -331,14 +331,16 @@ public class JulesDispatchService {
             log.warn("Could not load extended rules for role {}: {}", task.getRole().getTag(), e.getMessage());
         }
 
-        // Role-thread continuation ("development from the role"): if this project's role already has a
-        // live code branch from a previously merged, real (has-code) PR, start this session from that
-        // branch instead of main - the prior commits are already present, no context is lost. Threads
-        // only ever get created for roles that actually ship real product code (see
-        // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
+        // Role-thread continuation ("development from the role/feature"): if this exact feature already
+        // has a live code branch from a previously merged, real (has-code) PR for this role, start this
+        // session from that branch instead of main - the prior commits are already present, no context is
+        // lost. Scoped to (project, feature, role), not just (project, role): a role does many unrelated
+        // features over a project's lifetime, and continuing an unrelated feature's branch would corrupt
+        // it, not develop it. Threads only ever get created for roles that actually ship real product code
+        // (see AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
         // fallback/design-review roles, which never earn one.
         //
-        // Pinned to the exact account that authenticated the original branch: dispatch selection
+        // Also pinned to the exact account that authenticated the original branch: dispatch selection
         // (round-robin by capacity, see ProjectFlowService.dispatchQueuedTasks) has no idea a thread
         // exists and can hand this task to any account with free capacity. A different account has no
         // verified relationship to a branch it didn't create - cross-account continuation on the Jules
@@ -346,19 +348,20 @@ public class JulesDispatchService {
         // guess. The thread itself is untouched either way and stays available for whenever the owning
         // account comes up again.
         String startingBranch = "main";
-        var roleThreadOpt = roleThreadRepository.findByProjectIdAndRoleTag(task.getProject().getId(), task.getRole().getTag());
+        var roleThreadOpt = task.getFeatureId() == null ? java.util.Optional.<com.eneik.production.models.persistence.RoleThreadEntity>empty()
+                : roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(task.getProject().getId(), task.getFeatureId(), task.getRole().getTag());
         if (roleThreadOpt.isPresent()) {
             var roleThread = roleThreadOpt.get();
             if (accountId != null && accountId.equals(roleThread.getAccountId())) {
                 startingBranch = roleThread.getBranchName();
                 roleContextBuilder.append("\n## Continuing Prior Work\n")
-                        .append("This role has ongoing work on branch ").append(startingBranch).append(". ")
+                        .append("This feature has ongoing work on branch ").append(startingBranch).append(". ")
                         .append("Build on the existing code, do not start over. Prior summary: ")
                         .append(roleThread.getSummary() == null ? "(none)" : roleThread.getSummary()).append("\n");
             } else {
-                log.info("Role thread exists for role {} in project {} on branch {}, but this dispatch went to a "
-                                + "different account ({}); skipping continuation, starting fresh from main.",
-                        task.getRole().getTag(), task.getProject().getId(), roleThread.getBranchName(), accountId);
+                log.info("Role thread exists for role {} / feature {} in project {} on branch {}, but this dispatch "
+                                + "went to a different account ({}); skipping continuation, starting fresh from main.",
+                        task.getRole().getTag(), task.getFeatureId(), task.getProject().getId(), roleThread.getBranchName(), accountId);
             }
         }
         String roleContext = roleContextBuilder.toString();
@@ -874,6 +877,7 @@ public class JulesDispatchService {
         wishlist.setSource(WishlistSource.role);
         wishlist.setSourceRoleTag("BARCAN-TAG-00");
         wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setFeatureId(task.getFeatureId());
         wishlist.setContent(content + "\nOriginal task: " + task.getId());
         wishlist.setJtbd("When minor repository artifacts exist after delivery, clean them as separate technical debt without blocking product flow.");
         wishlist.setTocConstraintRef("REPOSITORY-HYGIENE-DEBT");
@@ -1132,6 +1136,7 @@ public class JulesDispatchService {
         followUp.setSource(WishlistSource.role_mismatch_followup);
         followUp.setSourceRoleTag(diagnosis.roleTag());
         followUp.setStatus(WishlistStatus.pending);
+        followUp.setFeatureId(task.getFeatureId());
         followUp.setContent(truncate("""
                 [Auto follow-up from Jules circuit breaker]
                 Circuit breaker source session: %s
@@ -1782,6 +1787,7 @@ public class JulesDispatchService {
             wishlist.setProjectId(originalTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
             wishlist.setSourceRoleTag(originalTask.getRole().getTag());
+            wishlist.setFeatureId(originalTask.getFeatureId());
             wishlist.setContent("Reviewer concern (non-blocking) on task \"" + TaskTitleBuilder.displayTitle(originalTask) + "\": " + concern);
             wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
             wishlistRepository.save(wishlist);
@@ -1861,6 +1867,7 @@ public class JulesDispatchService {
             wishlist.setProjectId(reviewTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
             wishlist.setSourceRoleTag("BARCAN-TAG-03");
+            wishlist.setFeatureId(reviewTask.getFeatureId());
             wishlist.setContent("Design draft " + draftPath + " was rejected in review: " + verdict.reason()
                     + ". Regenerate or manually correct the mockup for this slice.");
             wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
@@ -1919,6 +1926,7 @@ public class JulesDispatchService {
             wishlist.setProjectId(reviewTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
             wishlist.setSourceRoleTag("BARCAN-TAG-03");
+            wishlist.setFeatureId(reviewTask.getFeatureId());
             wishlist.setContent("Design reviewer concern (non-blocking) on " + approvedDir + ": " + concern);
             wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
             wishlistRepository.save(wishlist);
