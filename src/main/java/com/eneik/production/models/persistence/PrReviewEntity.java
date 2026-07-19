@@ -39,6 +39,9 @@ public class PrReviewEntity {
 
     private Boolean merged = false;
 
+    @Column(name = "has_code")
+    private Boolean hasCode;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getJulesSessionId() { return julesSessionId; }
@@ -65,4 +68,6 @@ public class PrReviewEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Boolean getMerged() { return merged; }
     public void setMerged(Boolean merged) { this.merged = merged; }
+    public Boolean getHasCode() { return hasCode; }
+    public void setHasCode(Boolean hasCode) { this.hasCode = hasCode; }
 }

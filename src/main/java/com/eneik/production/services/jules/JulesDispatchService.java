@@ -72,6 +72,7 @@ public class JulesDispatchService {
     private final com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
     private final RoleRepository roleRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.repositories.RoleThreadRepository roleThreadRepository;
     private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
@@ -98,6 +99,19 @@ public class JulesDispatchService {
         if (!archived) {
             log.warn("Could not archive {} record from {} to {} for project {}", typeLabel, fixedPath, archivePath, project.getId());
         }
+    }
+
+    /**
+     * Marks a session as done with no product code involved - used for the four record-PR session
+     * types (compiler plan / falsification report / review verdict / design review verdict), which by
+     * construction never touch product code, right after their single-file PR merges. Mirrors the shape
+     * of the existing "loop_closed" circuit-breaker closure without implying anything went wrong.
+     */
+    private void closeSessionAsNoCode(JulesSessionEntity session, String reason) {
+        session.setStatus("closed_no_code");
+        session.setClosedAt(java.time.Instant.now());
+        session.setClosureReason(reason);
+        julesSessionRepository.save(session);
     }
 
     @Value("${jules.stuck-threshold-minutes:30}")
@@ -139,6 +153,7 @@ public class JulesDispatchService {
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
                                 com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
+                                com.eneik.production.repositories.RoleThreadRepository roleThreadRepository,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -158,6 +173,7 @@ public class JulesDispatchService {
         this.projectFlowService = projectFlowService;
         this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.falsificationCycleService = falsificationCycleService;
+        this.roleThreadRepository = roleThreadRepository;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -315,6 +331,22 @@ public class JulesDispatchService {
             log.warn("Could not load extended rules for role {}: {}", task.getRole().getTag(), e.getMessage());
         }
 
+        // Role-thread continuation ("development from the role"): if this project's role already has a
+        // live code branch from a previously merged, real (has-code) PR, start this session from that
+        // branch instead of main - the prior commits are already present, no context is lost. Threads
+        // only ever get created for roles that actually ship real product code (see
+        // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
+        // fallback/design-review roles, which never earn one.
+        String startingBranch = "main";
+        var roleThreadOpt = roleThreadRepository.findByProjectIdAndRoleTag(task.getProject().getId(), task.getRole().getTag());
+        if (roleThreadOpt.isPresent()) {
+            var roleThread = roleThreadOpt.get();
+            startingBranch = roleThread.getBranchName();
+            roleContextBuilder.append("\n## Continuing Prior Work\n")
+                    .append("This role has ongoing work on branch ").append(startingBranch).append(". ")
+                    .append("Build on the existing code, do not start over. Prior summary: ")
+                    .append(roleThread.getSummary() == null ? "(none)" : roleThread.getSummary()).append("\n");
+        }
         String roleContext = roleContextBuilder.toString();
 
         String apiKey = null;
@@ -325,8 +357,8 @@ public class JulesDispatchService {
         }
 
         JulesApiClient.CreateSessionResult createResult = apiKey != null
-                ? julesApiClient.createSessionDetailed(repoUrl, description, roleContext, apiKey, sessionTitle)
-                : julesApiClient.createSessionDetailed(repoUrl, description, roleContext, null, sessionTitle);
+                ? julesApiClient.createSessionDetailed(repoUrl, description, roleContext, apiKey, sessionTitle, startingBranch)
+                : julesApiClient.createSessionDetailed(repoUrl, description, roleContext, null, sessionTitle, startingBranch);
         if (createResult == null) {
             createResult = new JulesApiClient.CreateSessionResult(null, 0, "Jules API client returned no create-session result");
         }
@@ -1403,6 +1435,7 @@ public class JulesDispatchService {
                 gitHubPullRequestService.mergeRecordPullRequest(
                         compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks");
                 archiveRecordFile(compilerTask.getProject(), WISHLIST_COMPILER_PLAN_PATH, "task-plan");
+                closeSessionAsNoCode(session, "Compiler plan merged (process/metadata only by design); branch deleted.");
             });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
@@ -1477,6 +1510,7 @@ public class JulesDispatchService {
             gitHubPullRequestService.mergeRecordPullRequest(
                     auditTask.getProject(), pr, "falsification audit report parsed into wishlist follow-ups");
             archiveRecordFile(auditTask.getProject(), com.eneik.production.services.ProjectFlowService.FALSIFICATION_AUDIT_REPORT_PATH, "falsification-report");
+            closeSessionAsNoCode(session, "Falsification report merged (process/metadata only by design); branch deleted.");
         });
         if (claimService.hasActiveClaim(auditTask.getId())) {
             claimService.complete(auditTask.getId());
@@ -1650,6 +1684,7 @@ public class JulesDispatchService {
             gitHubPullRequestService.mergeRecordPullRequest(
                     reviewTask.getProject(), pr, "PR review fallback verdict parsed");
             archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_VERDICT_PATH, "review-verdict");
+            closeSessionAsNoCode(session, "Review verdict merged (process/metadata only by design); branch deleted.");
         });
         if (claimService.hasActiveClaim(reviewTask.getId())) {
             claimService.complete(reviewTask.getId());
@@ -1788,6 +1823,7 @@ public class JulesDispatchService {
             gitHubPullRequestService.mergeRecordPullRequest(
                     reviewTask.getProject(), pr, "design review verdict parsed");
             archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.DESIGN_REVIEW_VERDICT_PATH, "design-review-verdict");
+            closeSessionAsNoCode(session, "Design review verdict merged (process/metadata only by design); branch deleted.");
         });
         if (claimService.hasActiveClaim(reviewTask.getId())) {
             claimService.complete(reviewTask.getId());

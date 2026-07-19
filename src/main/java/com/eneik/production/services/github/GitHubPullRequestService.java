@@ -302,6 +302,9 @@ public class GitHubPullRequestService {
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 log.info("Merged record PR {} for {}/{}. reason={}", pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
+                // Record PRs carry exactly one .eneik/*.json file by construction - never product code -
+                // so the branch is disposable the moment its verdict/report/plan has been merged.
+                deleteBranch(project, pullRequest.headRef());
                 return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "merged", response.statusCode(), reason);
             }
             log.warn("Record PR merge failed for {}: status={} body={}; falling back to close",
@@ -311,6 +314,77 @@ public class GitHubPullRequestService {
                     pullRequest.url(), project.getId(), e.getMessage());
         }
         return closeSinglePullRequest(project, pullRequest, reason + " (merge failed, closed instead)");
+    }
+
+    /**
+     * Deletes a branch by name. Used both unconditionally after a record-PR merge (see above - those
+     * never contain code) and conditionally by AutoMergeService after a real implementer PR merges with
+     * no actual code in its diff. A 404 (branch already gone - e.g. GitHub's own "delete head branches on
+     * merge" repo setting beat us to it) is treated as success, not an error.
+     */
+    public boolean deleteBranch(ProjectEntity project, String branchName) {
+        if (project == null || branchName == null || branchName.isBlank()) {
+            return false;
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/git/refs/heads/" + encodePath(branchName);
+            HttpRequest request = baseRequest(path, token).DELETE().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 204 || response.statusCode() == 404) {
+                log.info("Deleted branch {} for {}/{} (status={})", branchName, repoRef.owner(), repoRef.repo(), response.statusCode());
+                return true;
+            }
+            log.warn("Failed to delete branch {} for {}/{}: status={} body={}",
+                    branchName, repoRef.owner(), repoRef.repo(), response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not delete branch {} for project {}: {}", branchName, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Fetches a single PR by number - used where a caller (AutoMergeService) already knows a PR merged
+     * but only has owner/repo/number, not its head ref (branch name), which is needed to delete the
+     * branch after a no-code classification.
+     */
+    public Optional<GitHubPullRequest> fetchPullRequestByNumber(ProjectEntity project, int pullNumber) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
+            HttpRequest request = baseRequest(path, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("GitHub PR fetch failed for #{} in {}/{}: status={}", pullNumber, repoRef.owner(), repoRef.repo(), response.statusCode());
+                return Optional.empty();
+            }
+            JsonNode pr = objectMapper.readTree(response.body());
+            return Optional.of(new GitHubPullRequest(
+                    pr.path("html_url").asText(""),
+                    pr.path("number").asInt(),
+                    pr.path("title").asText(""),
+                    pr.path("head").path("ref").asText(""),
+                    pr.path("user").path("login").asText(""),
+                    pr.hasNonNull("merged_at")
+            ));
+        } catch (Exception e) {
+            log.warn("Could not fetch PR #{} for project {}: {}", pullNumber, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
     }
 
     /**

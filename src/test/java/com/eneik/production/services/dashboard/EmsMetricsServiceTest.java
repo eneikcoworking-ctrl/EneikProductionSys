@@ -12,10 +12,13 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
 class EmsMetricsServiceTest {
 
-    private final EmsMetricsService service = new EmsMetricsService();
+    private final EmsMetricsService service = new EmsMetricsService(
+            mock(com.eneik.production.repositories.JulesSessionRepository.class),
+            mock(com.eneik.production.repositories.PrReviewRepository.class));
 
     @Test
     void buildShowsAllDoctrineRolesEvenWithoutExecutionTasks() {

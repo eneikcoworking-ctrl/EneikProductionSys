@@ -1,10 +1,14 @@
 package com.eneik.production.services.dashboard;
 
 import com.eneik.production.dto.dashboard.EmsDashboardMetricsDto;
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.PrReviewRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Service;
 
@@ -56,6 +60,32 @@ public class EmsMetricsService {
 
     private boolean isSystemMetaTask(TaskEntity task) {
         return task.getPayload() != null && task.getPayload().has(SYSTEM_TASK_TYPE_PAYLOAD_KEY);
+    }
+
+    private final JulesSessionRepository julesSessionRepository;
+    private final PrReviewRepository prReviewRepository;
+
+    public EmsMetricsService(JulesSessionRepository julesSessionRepository, PrReviewRepository prReviewRepository) {
+        this.julesSessionRepository = julesSessionRepository;
+        this.prReviewRepository = prReviewRepository;
+    }
+
+    /**
+     * null = not merged yet (don't penalize unfinished work early), true = merged with real code
+     * (CodeChangeClassifier), false = merged but confirmed process/config/docs only (see
+     * AutoMergeService.classifyAndHandleBranch, PrReviewEntity.hasCode).
+     */
+    private Boolean mergedHasCode(TaskEntity task) {
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
+        if (sessions.isEmpty()) {
+            return null;
+        }
+        List<UUID> sessionIds = sessions.stream().map(JulesSessionEntity::getId).toList();
+        List<PrReviewEntity> merged = prReviewRepository.findByJulesSessionIdInAndMergedTrue(sessionIds);
+        if (merged.isEmpty()) {
+            return null;
+        }
+        return merged.stream().anyMatch(r -> Boolean.TRUE.equals(r.getHasCode()));
     }
 
     public EmsDashboardMetricsDto build(List<TaskEntity> tasks, List<WishlistEntity> wishlist) {
@@ -349,6 +379,23 @@ public class EmsMetricsService {
         double pressure = defectPressure(tasks);
         double dpmo = tasks.isEmpty() ? 0.0 : ((double) (totalDefectWork + retryLoad) / tasks.size()) * 1_000_000.0;
 
+        // Excludes system/meta tasks (never real code by construction, see isSystemMetaTask) and any task
+        // whose merged PR was confirmed to contain no code (CodeChangeClassifier) - unmerged tasks are
+        // kept in, so in-progress real work isn't penalized before it has a chance to land. dpmo above is
+        // left untouched so existing dashboard consumers see no surprise change; this is the narrower,
+        // "does this look like real defect load in real product code" figure.
+        List<TaskEntity> codeTasksOrUnmerged = tasks.stream()
+                .filter(task -> !isSystemMetaTask(task))
+                .filter(task -> {
+                    Boolean hasCode = mergedHasCode(task);
+                    return hasCode == null || hasCode;
+                })
+                .toList();
+        long codeDefectWork = codeTasksOrUnmerged.stream().filter(this::isDefectWork).count();
+        long codeRetryLoad = codeTasksOrUnmerged.stream().mapToLong(task -> Math.max(0, task.getRetryCount())).sum();
+        double dpmoCodeTasksOnly = codeTasksOrUnmerged.isEmpty() ? 0.0
+                : ((double) (codeDefectWork + codeRetryLoad) / codeTasksOrUnmerged.size()) * 1_000_000.0;
+
         String interpretation = openDefectWork == 0
                 ? "No open defect-work load is visible in the selected project."
                 : "Open defect-work load exists; prioritize recovery tasks before expanding feature scope.";
@@ -361,6 +408,7 @@ public class EmsMetricsService {
                 retryLoad,
                 round(pressure),
                 round(dpmo),
+                round(dpmoCodeTasksOnly),
                 interpretation
         );
     }

@@ -90,6 +90,7 @@ public record EmsDashboardMetricsDto(
             long retryLoad,
             double defectPressure,
             double dpmo,
+            double dpmoCodeTasksOnly,
             String interpretation
     ) {}
 

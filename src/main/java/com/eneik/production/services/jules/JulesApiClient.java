@@ -51,6 +51,15 @@ public class JulesApiClient {
     }
 
     public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey, String title) {
+        return createSessionDetailed(repoUrl, taskDescription, roleContext, apiKey, title, "main");
+    }
+
+    /**
+     * startingBranch lets a session continue from an existing branch (its prior commits already present)
+     * instead of always starting fresh from main - used for role-thread continuation, see
+     * JulesDispatchService.dispatchInternal / RoleThreadRepository.
+     */
+    public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey, String title, String startingBranch) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {
             log.info("Jules integration disabled (JULES_ENABLED != true). Returning 'skipped'.");
             return new CreateSessionResult("skipped", 0, "jules_disabled");
@@ -63,7 +72,7 @@ public class JulesApiClient {
 
         try {
             ObjectNode githubRepoContext = objectMapper.createObjectNode();
-            githubRepoContext.put("startingBranch", "main");
+            githubRepoContext.put("startingBranch", startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch);
 
             ObjectNode sourceContext = objectMapper.createObjectNode();
             sourceContext.put("source", repoUrl);

@@ -11,4 +11,5 @@ public interface PrReviewRepository extends JpaRepository<PrReviewEntity, UUID> 
     Optional<PrReviewEntity> findFirstByJulesSessionIdAndPrUrlOrderByCreatedAtDesc(UUID julesSessionId, String prUrl);
     boolean existsByJulesSessionId(UUID julesSessionId);
     boolean existsByJulesSessionIdInAndMergedTrue(java.util.List<UUID> julesSessionIds);
+    java.util.List<PrReviewEntity> findByJulesSessionIdInAndMergedTrue(java.util.List<UUID> julesSessionIds);
 }

@@ -64,7 +64,8 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
             mock(com.eneik.production.services.ProjectFlowService.class),
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
-            mock(com.eneik.production.services.FalsificationCycleService.class), "prefix/"
+            mock(com.eneik.production.services.FalsificationCycleService.class),
+            mock(com.eneik.production.repositories.RoleThreadRepository.class), "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -270,7 +271,7 @@ class JulesDispatchServiceTest {
         task.setDescription("Implement one dashboard UI slice.");
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
-        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), contains("Implement one dashboard UI slice."), anyString(), isNull(), eq("UI Slice")))
+        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), contains("Implement one dashboard UI slice."), anyString(), isNull(), eq("UI Slice"), eq("main")))
                 .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
@@ -284,7 +285,7 @@ class JulesDispatchServiceTest {
                         && context.contains("docs/DESIGN_SYSTEM.md")
                         && !context.contains("FULL ROLE CHARTER")
                         && !context.contains("REFUSAL CRITERIA")
-        ), isNull(), eq("UI Slice"));
+        ), isNull(), eq("UI Slice"), eq("main"));
     }
 
     @Test
