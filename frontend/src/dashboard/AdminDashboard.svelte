@@ -112,7 +112,7 @@
   let drafts = $state<Record<string, string>>({});
   let editing = $state<Record<string, boolean>>({});
   let newName = $state('');
-  const allBarcanCapabilities = 'BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11';
+  const allBarcanCapabilities = 'BARCAN-TAG-00,BARCAN-TAG-01,BARCAN-TAG-02,BARCAN-TAG-03,BARCAN-TAG-04,BARCAN-TAG-05,BARCAN-TAG-06,BARCAN-TAG-07,BARCAN-TAG-08,BARCAN-TAG-09,BARCAN-TAG-10,BARCAN-TAG-11,BARCAN-TAG-12';
   let newGithubUsername = $state('');
   let newApiKey = $state('');
   let message = $state('Ready');
@@ -455,7 +455,7 @@
       </div>
       <div class="form-field capabilities-field">
         <p class="label">Capabilities</p>
-        <input value="All 12 BARCAN roles" title={allBarcanCapabilities} disabled />
+        <input value="All 13 BARCAN roles" title={allBarcanCapabilities} disabled />
       </div>
       <button class="add-account-btn" onclick={createAccount}>Add Account</button>
     </div>

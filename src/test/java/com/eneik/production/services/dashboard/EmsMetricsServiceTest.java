@@ -24,10 +24,10 @@ class EmsMetricsServiceTest {
     void buildShowsAllDoctrineRolesEvenWithoutExecutionTasks() {
         EmsDashboardMetricsDto metrics = service.build(List.of(), List.of());
 
-        assertThat(metrics.roleDoctrineReadiness().roles()).hasSize(12);
-        assertThat(metrics.roleDoctrineReadiness().unknown()).isEqualTo(12);
+        assertThat(metrics.roleDoctrineReadiness().roles()).hasSize(13);
+        assertThat(metrics.roleDoctrineReadiness().unknown()).isEqualTo(13);
         assertThat(metrics.roleDoctrineReadiness().statusLabel()).isEqualTo("incomplete");
-        assertThat(metrics.roleKpis()).hasSize(12);
+        assertThat(metrics.roleKpis()).hasSize(13);
         assertThat(metrics.roleKpis()).allMatch(kpi -> "idle".equals(kpi.statusLabel()));
     }
 

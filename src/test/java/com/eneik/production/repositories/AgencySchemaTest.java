@@ -33,7 +33,8 @@ public class AgencySchemaTest {
         // 1. Verify Seed Data
         assertTrue(roleRepository.existsById("BARCAN-TAG-00"));
         assertTrue(roleRepository.existsById("BARCAN-TAG-11"));
-        assertEquals(12, roleRepository.count());
+        assertTrue(roleRepository.existsById("BARCAN-TAG-12"));
+        assertEquals(13, roleRepository.count());
 
         // 2. Test CRUD Flow
         RoleEntity role = roleRepository.findById("BARCAN-TAG-01").orElseThrow();

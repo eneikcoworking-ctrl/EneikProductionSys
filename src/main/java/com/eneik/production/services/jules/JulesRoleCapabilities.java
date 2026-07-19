@@ -15,7 +15,8 @@ public final class JulesRoleCapabilities {
             "BARCAN-TAG-08",
             "BARCAN-TAG-09",
             "BARCAN-TAG-10",
-            "BARCAN-TAG-11"
+            "BARCAN-TAG-11",
+            "BARCAN-TAG-12"
     );
 
     public static final String ALL_CAPABILITIES = String.join(",", ALL_ROLE_TAGS);

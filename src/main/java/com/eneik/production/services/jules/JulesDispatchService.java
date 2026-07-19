@@ -453,6 +453,7 @@ public class JulesDispatchService {
             case "BARCAN-TAG-09" -> "decompose wishlist context into short, role-owned, dependency-aware work only.";
             case "BARCAN-TAG-10" -> "verify explicit legal, fiscal, privacy, or policy constraints with cited assumptions.";
             case "BARCAN-TAG-11" -> "implement the smallest Svelte/browser UI interaction required by the task and follow docs/DESIGN_SYSTEM.md.";
+            case "BARCAN-TAG-12" -> "define only the shared API contract (endpoints, request/response shape, DTOs) that backend and frontend will build against; do not implement backend or frontend code.";
             default -> "complete one atomic, verifiable implementation slice and stop.";
         };
     }

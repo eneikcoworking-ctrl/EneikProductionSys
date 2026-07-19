@@ -201,7 +201,7 @@ public class TechnicalLeadCompiler {
         payload.put("ems_graph_order", emsMetadata.graphOrder());
         payload.put("ems_graph_size", emsMetadata.graphSize());
         payload.put("ems_graph_edge_reason", emsMetadata.edgeReason() == null ? "" : emsMetadata.edgeReason());
-        payload.put("ems_flow_stage", flowStage(roleTag));
+        payload.put("ems_flow_stage", com.eneik.production.services.EmsFlowStage.labelForRoleTag(roleTag));
         payload.put("ems_defect_work", isDefectWork(wishlist));
         payload.put("ems_defect_weight", defectWeight(wishlist, roleTag, cynefin));
         payload.put("ems_kpi_weight", kpiWeight(wishlist, kano, cynefin, extractedRoles));
@@ -239,7 +239,7 @@ public class TechnicalLeadCompiler {
 
         for (String tag : java.util.List.of("BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-03",
                 "BARCAN-TAG-04", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-07",
-                "BARCAN-TAG-08", "BARCAN-TAG-09", "BARCAN-TAG-10", "BARCAN-TAG-11")) {
+                "BARCAN-TAG-08", "BARCAN-TAG-09", "BARCAN-TAG-10", "BARCAN-TAG-11", "BARCAN-TAG-12")) {
             double coefficient = 0.1;
             if (tag.equals(ownerRole)) {
                 coefficient = 0.9;
@@ -313,20 +313,6 @@ public class TechnicalLeadCompiler {
                 .replaceAll("[^a-z0-9]+", " ")
                 .replaceAll("\\s+", " ")
                 .trim();
-    }
-
-    private String flowStage(String roleTag) {
-        return switch (roleTag) {
-            case "BARCAN-TAG-09" -> "decision";
-            case "BARCAN-TAG-01" -> "architecture";
-            case "BARCAN-TAG-02", "BARCAN-TAG-04", "BARCAN-TAG-07", "BARCAN-TAG-08" -> "implementation";
-            case "BARCAN-TAG-03", "BARCAN-TAG-11" -> "experience";
-            case "BARCAN-TAG-05" -> "operations";
-            case "BARCAN-TAG-06" -> "verification";
-            case "BARCAN-TAG-00" -> "integration";
-            case "BARCAN-TAG-10" -> "compliance";
-            default -> "implementation";
-        };
     }
 
     private boolean isDefectWork(WishlistEntity wishlist) {
@@ -416,7 +402,7 @@ public class TechnicalLeadCompiler {
             case "BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-05",
                     "BARCAN-TAG-06", "BARCAN-TAG-07", "BARCAN-TAG-08", "BARCAN-TAG-10" -> 0.25;
             case "BARCAN-TAG-09" -> 0.20;
-            case "BARCAN-TAG-03", "BARCAN-TAG-04", "BARCAN-TAG-11" -> 0.15;
+            case "BARCAN-TAG-03", "BARCAN-TAG-04", "BARCAN-TAG-11", "BARCAN-TAG-12" -> 0.15;
             default -> 0.10;
         };
     }
@@ -540,6 +526,8 @@ public class TechnicalLeadCompiler {
                     paths.add("docs/delivery/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
                 } else if ("BARCAN-TAG-10".equals(roleTag)) {
                     paths.add("docs/compliance/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
+                } else if ("BARCAN-TAG-12".equals(roleTag)) {
+                    paths.add("docs/contracts/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".openapi.yaml");
                 }
             } else {
                 // Default Java Spring Boot structure fallback
@@ -588,6 +576,8 @@ public class TechnicalLeadCompiler {
                     paths.add("docs/delivery/" + featureName + ".md");
                 } else if ("BARCAN-TAG-10".equals(roleTag)) {
                     paths.add("docs/compliance/" + featureName + ".md");
+                } else if ("BARCAN-TAG-12".equals(roleTag)) {
+                    paths.add("docs/contracts/" + featureName + ".openapi.yaml");
                 }
             }
         }
@@ -713,6 +703,9 @@ public class TechnicalLeadCompiler {
         } else if ("BARCAN-TAG-10".equals(roleTag)) { // Compliance
             return lower.endsWith(".md") || lower.contains("compliance") || lower.contains("legal")
                     || lower.contains("policy");
+        } else if ("BARCAN-TAG-12".equals(roleTag)) { // API contract
+            return lower.contains("contract") || lower.contains("openapi") || lower.contains("swagger")
+                    || lower.endsWith(".yaml") || lower.endsWith(".yml");
         }
         return false;
     }
@@ -902,6 +895,7 @@ public class TechnicalLeadCompiler {
                 case "BARCAN-TAG-00" -> "Resolve the smallest integration or repository-hygiene blocker from the closed Jules session.";
                 case "BARCAN-TAG-09" -> "Clarify the smallest delivery decision needed to unblock the follow-up wishlist item.";
                 case "BARCAN-TAG-10" -> "Resolve the smallest compliance, legal wording, or policy blocker from the follow-up wishlist item.";
+                case "BARCAN-TAG-12" -> "Resolve the smallest API contract ambiguity blocking backend or frontend from the follow-up wishlist item.";
                 default -> "Resolve the smallest role-specific blocker from the closed Jules session without expanding scope.";
             };
         }
@@ -918,6 +912,7 @@ public class TechnicalLeadCompiler {
             case "BARCAN-TAG-00" -> "Integrate the completed slice, remove accidental artifacts, and verify the branch is merge-ready.";
             case "BARCAN-TAG-09" -> "Produce the smallest delivery decision, sequencing note, or spike result needed for this JTBD slice.";
             case "BARCAN-TAG-10" -> "Implement the smallest compliance, legal-disclaimer, policy, or regulatory-content change needed for this JTBD slice.";
+            case "BARCAN-TAG-12" -> "Define the shared API contract (endpoints, request/response shape, DTOs) that backend and frontend will both build against for this JTBD slice.";
             default -> "Complete the smallest role-specific implementation step needed for this JTBD slice.";
         };
     }
@@ -939,6 +934,7 @@ public class TechnicalLeadCompiler {
             case "BARCAN-TAG-00" -> "The slice is integrated across touched components, repository hygiene is clean, and the merge path is verified. Role: BARCAN-TAG-00";
             case "BARCAN-TAG-09" -> "Delivery decision is recorded as a concise handoff note with one concrete next owner role and no implementation scope expansion. Role: BARCAN-TAG-09";
             case "BARCAN-TAG-10" -> "Compliance/legal/policy behavior or content is implemented with clear disclaimer boundaries and verification notes. Role: BARCAN-TAG-10";
+            case "BARCAN-TAG-12" -> "A machine-readable API contract (OpenAPI/JSON Schema) exists, is grounded in the current data/domain model, and specifies endpoints, request/response shape, and error cases for both backend and frontend to build against. Role: BARCAN-TAG-12";
             default -> "The role-specific change is complete, verified, and documented in the PR summary. Role: " + roleTag;
         };
     }
@@ -951,7 +947,7 @@ public class TechnicalLeadCompiler {
     }
 
     private boolean isValidRoleTag(String value) {
-        return value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-1])");
+        return value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-2])");
     }
 
     private String targetRoleForWishlist(WishlistEntity wishlist) {
@@ -978,7 +974,7 @@ public class TechnicalLeadCompiler {
             return null;
         }
         java.util.regex.Matcher matcher = java.util.regex.Pattern
-                .compile("BARCAN-TAG-(0[0-9]|1[0-1])")
+                .compile("BARCAN-TAG-(0[0-9]|1[0-2])")
                 .matcher(value);
         while (matcher.find()) {
             String role = matcher.group();
@@ -1011,6 +1007,11 @@ public class TechnicalLeadCompiler {
         if (source.contains("security") || source.contains("auth") || source.contains("credential")
                 || source.contains("permission") || source.contains("access-control") || source.contains("login")) {
             return "BARCAN-TAG-07";
+        }
+        if (source.contains("api contract") || source.contains("openapi") || source.contains("swagger")
+                || source.contains("endpoint spec") || source.contains("contract-first")
+                || source.contains("request/response schema")) {
+            return "BARCAN-TAG-12";
         }
         if (source.contains("database") || source.contains("schema") || source.contains("migration")
                 || source.contains("storage") || source.contains("csv") || source.contains("pdf")
@@ -1059,6 +1060,7 @@ public class TechnicalLeadCompiler {
             case "BARCAN-TAG-09" -> "Delivery Management";
             case "BARCAN-TAG-10" -> "Compliance";
             case "BARCAN-TAG-11" -> "Frontend UI";
+            case "BARCAN-TAG-12" -> "API Contract";
             default -> "Role Worker";
         };
     }

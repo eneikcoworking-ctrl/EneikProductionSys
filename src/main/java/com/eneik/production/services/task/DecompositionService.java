@@ -29,6 +29,7 @@ public class DecompositionService {
             new DecompositionRule(List.of("ui", "форм", "экран", "frontend"), List.of("BARCAN-TAG-03", "BARCAN-TAG-11")),
             new DecompositionRule(List.of("данны", "база", "таблиц", "schema"), List.of("BARCAN-TAG-08")),
             new DecompositionRule(List.of("api", "backend", "endpoint"), List.of("BARCAN-TAG-02")),
+            new DecompositionRule(List.of("contract", "openapi", "swagger", "контракт"), List.of("BARCAN-TAG-12")),
             new DecompositionRule(List.of("auth", "парол", "логин", "безопасн"), List.of("BARCAN-TAG-07"))
     );
 

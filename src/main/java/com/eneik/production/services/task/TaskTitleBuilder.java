@@ -18,7 +18,8 @@ public final class TaskTitleBuilder {
             Map.entry("BARCAN-TAG-08", "Data Schema"),
             Map.entry("BARCAN-TAG-09", "Delivery Plan"),
             Map.entry("BARCAN-TAG-10", "Compliance Check"),
-            Map.entry("BARCAN-TAG-11", "UI Slice")
+            Map.entry("BARCAN-TAG-11", "UI Slice"),
+            Map.entry("BARCAN-TAG-12", "API Contract")
     );
 
     private TaskTitleBuilder() {
@@ -119,6 +120,10 @@ public final class TaskTitleBuilder {
         if (lower.contains("frontend") || lower.contains("svelte") || lower.contains("browser")
                 || lower.contains("ui") || lower.contains("form") || lower.contains("page")) {
             return "UI Slice";
+        }
+        if (lower.contains("api contract") || lower.contains("openapi") || lower.contains("swagger")
+                || lower.contains("endpoint spec")) {
+            return "API Contract";
         }
         if (lower.contains("api") || lower.contains("backend") || lower.contains("endpoint")
                 || lower.contains("controller")) {

@@ -906,39 +906,92 @@ public class ProjectFlowService {
             return false;
         }
 
+        warnIfImplicitLayerMissing(wishlist, graphSlices);
+
         // All role-slices decomposed from this one wishlist item share one feature - minted once, here,
         // before the loop, and stamped onto every slice so continuation (FeatureThreadEntity) never mixes
         // unrelated features that happen to share a role.
         UUID featureId = featureService.resolveOrCreateFeatureId(wishlist, project.getId());
         String graphKey = emsGraphKey(featureId, "flow");
-        TaskEntity previousTask = null;
-        int index = 1;
+
+        // graphSlices is already sorted by EmsFlowStage.graphOrderForRoleTag (see emsGraphSlices), so
+        // grouping consecutive equal-order runs reconstructs the stage order without re-sorting.
+        java.util.Map<Integer, java.util.List<MLPredictionServiceClient.TaskSliceMetadata>> byStage =
+                new java.util.LinkedHashMap<>();
         for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
-            WishlistEntity sliceWishlist = new WishlistEntity();
-            sliceWishlist.setProjectId(project.getId());
-            sliceWishlist.setSource(wishlist.getSource());
-            String ownerRole = targetRoleForSlice(wishlist, slice);
-            sliceWishlist.setSourceRoleTag(ownerRole);
-            sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
-            sliceWishlist.setStatus(WishlistStatus.pending);
-            sliceWishlist.setFeatureId(featureId);
-            sliceWishlist = wishlistRepository.save(sliceWishlist);
-            compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole);
-            TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
-                    sliceWishlist.getId(),
-                    previousTask,
-                    graphKey,
-                    index,
-                    graphSlices.size(),
-                    dependencyEdgeReason(previousTask, ownerRole)
-            );
-            previousTask = createdTask != null ? createdTask : previousTask;
-            index++;
+            int stageOrder = EmsFlowStage.graphOrderForRoleTag(targetRoleForSlice(wishlist, slice));
+            byStage.computeIfAbsent(stageOrder, k -> new java.util.ArrayList<>()).add(slice);
+        }
+
+        // Every task in a stage depends on the same anchor - the last task created in the previous
+        // non-empty stage - so tasks within a stage never depend on each other and can be claimed in
+        // parallel (e.g. BARCAN-TAG-02 and BARCAN-TAG-11 both anchored on the same BARCAN-TAG-12
+        // contract task). Schema-level limitation: TaskEntity.dependsOn is single-parent, so a stage
+        // with multiple tasks only carries forward its LAST task as the next stage's anchor, not all of
+        // them - acceptable here since the stages that matter for this graph (model, contract) are
+        // almost always 0-1 tasks; a true multi-parent merge would need a schema change.
+        TaskEntity stageAnchor = null;
+        int index = 1;
+        for (java.util.List<MLPredictionServiceClient.TaskSliceMetadata> stageSlices : byStage.values()) {
+            TaskEntity lastInStage = null;
+            for (MLPredictionServiceClient.TaskSliceMetadata slice : stageSlices) {
+                WishlistEntity sliceWishlist = new WishlistEntity();
+                sliceWishlist.setProjectId(project.getId());
+                sliceWishlist.setSource(wishlist.getSource());
+                String ownerRole = targetRoleForSlice(wishlist, slice);
+                sliceWishlist.setSourceRoleTag(ownerRole);
+                sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
+                sliceWishlist.setStatus(WishlistStatus.pending);
+                sliceWishlist.setFeatureId(featureId);
+                sliceWishlist = wishlistRepository.save(sliceWishlist);
+                compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole);
+                TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
+                        sliceWishlist.getId(),
+                        stageAnchor,
+                        graphKey,
+                        index,
+                        graphSlices.size(),
+                        dependencyEdgeReason(stageAnchor, ownerRole)
+                );
+                lastInStage = createdTask != null ? createdTask : lastInStage;
+                index++;
+            }
+            if (lastInStage != null) {
+                stageAnchor = lastInStage;
+            }
         }
 
         wishlist.setStatus(WishlistStatus.converted_to_task);
         wishlistRepository.save(wishlist);
         return true;
+    }
+
+    // Observability only, never fabrication: the compiler's own slice choices are trusted as-is, this
+    // just surfaces when a plan looks like it skipped a structurally-implied layer so an operator can
+    // review it, rather than silently letting a UI-only or drift-prone parallel split through.
+    private void warnIfImplicitLayerMissing(WishlistEntity wishlist,
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices) {
+        boolean hasUiSlice = graphSlices.stream().anyMatch(MLPredictionServiceClient.TaskSliceMetadata::hasUi);
+        boolean hasDataSlice = false;
+        boolean hasApiSlice = false;
+        boolean hasFrontendSlice = false;
+        boolean hasContractSlice = false;
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
+            String role = targetRoleForSlice(wishlist, slice);
+            hasDataSlice = hasDataSlice || "BARCAN-TAG-08".equals(role);
+            hasApiSlice = hasApiSlice || "BARCAN-TAG-02".equals(role);
+            hasFrontendSlice = hasFrontendSlice || "BARCAN-TAG-11".equals(role);
+            hasContractSlice = hasContractSlice || "BARCAN-TAG-12".equals(role);
+        }
+        if (hasUiSlice && !hasApiSlice && !hasDataSlice) {
+            log.warn("Wishlist {} decomposed into a UI slice with no backend API or data-model slice - "
+                    + "the compiler may have skipped an implicit structural dependency", wishlist.getId());
+        }
+        if (hasApiSlice && hasFrontendSlice && !hasContractSlice) {
+            log.warn("Wishlist {} decomposed into parallel backend (BARCAN-TAG-02) and frontend "
+                    + "(BARCAN-TAG-11) slices with no BARCAN-TAG-12 contract slice - the two sides may "
+                    + "drift without an agreed contract", wishlist.getId());
+        }
     }
 
     private java.util.List<MLPredictionServiceClient.TaskSliceMetadata> emsGraphSlices(
@@ -954,7 +1007,7 @@ public class ProjectFlowService {
         }
         return unique.values().stream()
                 .sorted(java.util.Comparator
-                        .comparingInt((MLPredictionServiceClient.TaskSliceMetadata slice) -> emsStageOrder(targetRoleForSlice(wishlist, slice)))
+                        .comparingInt((MLPredictionServiceClient.TaskSliceMetadata slice) -> EmsFlowStage.graphOrderForRoleTag(targetRoleForSlice(wishlist, slice)))
                         .thenComparing(slice -> normalizeForGraph(slice.title()))
                         .thenComparing(slice -> normalizeForGraph(slice.jtbd())))
                 .toList();
@@ -976,26 +1029,13 @@ public class ProjectFlowService {
                 .trim();
     }
 
-    private int emsStageOrder(String roleTag) {
-        return switch (roleTag) {
-            case "BARCAN-TAG-09" -> 10;
-            case "BARCAN-TAG-01" -> 20;
-            case "BARCAN-TAG-08", "BARCAN-TAG-07", "BARCAN-TAG-04", "BARCAN-TAG-02" -> 30;
-            case "BARCAN-TAG-03", "BARCAN-TAG-11" -> 40;
-            case "BARCAN-TAG-05" -> 50;
-            case "BARCAN-TAG-10" -> 55;
-            case "BARCAN-TAG-06" -> 60;
-            case "BARCAN-TAG-00" -> 70;
-            default -> 35;
-        };
-    }
-
-    private String dependencyEdgeReason(TaskEntity previousTask, String ownerRole) {
-        if (previousTask == null) {
-            return "graph root: first owner-role slice from the wishlist";
+    private String dependencyEdgeReason(TaskEntity stageAnchor, String ownerRole) {
+        if (stageAnchor == null) {
+            return "graph root: first stage of the flow, no predecessor stage";
         }
-        String previousRole = previousTask.getRole() != null ? previousTask.getRole().getTag() : "previous-role";
-        return "EMS ordered flow: " + ownerRole + " waits for " + previousRole + " to finish the previous verifiable slice";
+        String anchorRole = stageAnchor.getRole() != null ? stageAnchor.getRole().getTag() : "previous-stage";
+        return "EMS staged flow: " + ownerRole + " waits for the " + anchorRole
+                + " stage to provide a base, then runs in parallel with any other role in its own stage";
     }
 
     private String emsGraphKey(UUID featureId, String suffix) {
@@ -1115,7 +1155,7 @@ public class ProjectFlowService {
     }
 
     private String normalizeRoleTag(String value, MLPredictionServiceClient.TaskSliceMetadata slice) {
-        if (value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-1])")) {
+        if (value != null && value.matches("BARCAN-TAG-(0[0-9]|1[0-2])")) {
             return value;
         }
         return inferRoleTag(slice);
@@ -1141,6 +1181,11 @@ public class ProjectFlowService {
         if (source.contains("security") || source.contains("auth") || source.contains("credential")
                 || source.contains("permission") || source.contains("access-control") || source.contains("login")) {
             return "BARCAN-TAG-07";
+        }
+        if (source.contains("api contract") || source.contains("openapi") || source.contains("swagger")
+                || source.contains("endpoint spec") || source.contains("contract-first")
+                || source.contains("request/response schema")) {
+            return "BARCAN-TAG-12";
         }
         if (source.contains("database") || source.contains("schema") || source.contains("migration")
                 || source.contains("storage") || source.contains("csv") || source.contains("pdf")
@@ -1344,6 +1389,18 @@ public class ProjectFlowService {
                   existing code, fix merge hygiene, or review an already implemented slice.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
                   spike/decision item instead of guessing at implementation.
+                - Some layers are structurally required even if the brief's narrative never explicitly
+                  asks for them: if the feature needs to persist or query structured data, you MUST
+                  include a BARCAN-TAG-08 data/schema item describing that model; if the feature needs
+                  to expose functionality to a frontend, mobile client, or external integration, you
+                  MUST include a BARCAN-TAG-02 API item describing that contract. Infer these from what
+                  the feature needs to actually work end-to-end, not only from what the client's words
+                  explicitly mention.
+                - If the feature needs BOTH a BARCAN-TAG-02 backend item and a BARCAN-TAG-11 frontend
+                  item that will be built in parallel against each other, you MUST also include a
+                  BARCAN-TAG-12 item that defines the shared API contract (endpoints, request/response
+                  shape, DTOs) they both build against - sequence it before the parallel implementation
+                  items, not alongside them.
                 - Each jtbd must be one sentence: "When..., I want..., so that...".
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
                 - Classify each item with Kano: Must-Be, Performance, or Attractive.
@@ -1353,7 +1410,8 @@ public class ProjectFlowService {
                   AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing existing
                   implementation only; BARCAN-TAG-07 security/auth/access; BARCAN-TAG-08
                   data/schema/storage/parsing; BARCAN-TAG-09 delivery/spike/decision; BARCAN-TAG-10
-                  compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation.
+                  compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation; BARCAN-TAG-12
+                  API contract definition shared by a parallel backend+frontend pair only.
                 - Set hasUi=true only when the item needs visible browser UI/design work.
                 - Avoid broad platform epics; split them into smaller user/admin/data/API items.
                 - Every item MUST end in a concrete committed file, never only a decision, brief, or

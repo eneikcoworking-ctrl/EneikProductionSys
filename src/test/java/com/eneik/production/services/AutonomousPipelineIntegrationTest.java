@@ -394,7 +394,7 @@ class AutonomousPipelineIntegrationTest {
         project = projectRepository.saveAndFlush(project);
 
         // Simulates JulesDispatchService.completeFalsificationAudit parsing a real eneikdru report PR:
-        // one refusal-criteria violation per active role (should be 12).
+        // one refusal-criteria violation per active role (should be 13, since BARCAN-TAG-12 was added).
         List<FalsificationCycleService.AuditViolation> violations = roleRepository.findAll().stream()
                 .filter(RoleEntity::isActive)
                 .map(role -> new FalsificationCycleService.AuditViolation(
@@ -404,19 +404,19 @@ class AutonomousPipelineIntegrationTest {
 
         falsificationCycleService.applyAuditViolations(project, violations, 42);
 
-        // 1. Roles checked count should be 12
+        // 1. Roles checked count should be 13
         List<FalsificationRunEntity> runs = falsificationRunRepository.findByProjectId(project.getId());
         assertThat(runs).hasSize(1);
         FalsificationRunEntity run = runs.get(0);
-        assertThat(run.getRolesCheckedCount()).isEqualTo(12);
+        assertThat(run.getRolesCheckedCount()).isEqualTo(13);
 
         // 2. Falsification creates wishlist follow-ups only; task creation is reserved for Orchestrate.
         // tasksCreatedCount tracks those follow-up wishlist items (not TaskEntity rows - see the "no
         // chaotic tasks" assertion below), so with zero pre-existing suppression it equals the violation
         // count. Previously this was hardcoded to 0 regardless of what actually got created - fixed as
         // part of the test-twenty-eighth post-mortem (the field silently lied about its own effect).
-        assertThat(run.getTasksCreatedCount()).isEqualTo(12);
-        assertThat(run.getViolationsFoundCount()).isEqualTo(12);
+        assertThat(run.getTasksCreatedCount()).isEqualTo(13);
+        assertThat(run.getViolationsFoundCount()).isEqualTo(13);
 
         final UUID targetProjectId = project.getId();
         List<TaskEntity> tasks = taskRepository.findAll().stream()
@@ -427,7 +427,7 @@ class AutonomousPipelineIntegrationTest {
         List<WishlistEntity> followUps = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.self_falsification)
                 .toList();
-        assertThat(followUps).hasSize(12);
+        assertThat(followUps).hasSize(13);
     }
 
     @Test
@@ -567,5 +567,109 @@ class AutonomousPipelineIntegrationTest {
         assertThat(tasks).hasSize(2);
         assertThat(tasks.get(0).getFeatureId()).isNotNull();
         assertThat(tasks.get(0).getFeatureId()).isEqualTo(tasks.get(1).getFeatureId());
+    }
+
+    @Test
+    void buildTaskGraphFromSlicesAnchorsSameStageRolesOnTheContractStageInParallel() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Parallel Stage Project");
+        project.setSlug("parallel-stage-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("parallel-stage-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Model first, then a shared API contract, then backend and AI work in parallel.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        // TAG-11/TAG-03 deliberately excluded - they trigger design-asset pregeneration, not needed to
+        // prove stage anchoring. TAG-02 and TAG-04 both sit in EmsFlowStage.IMPLEMENTATION (order 30),
+        // so they're the same-stage pair used here to prove parallel siblings share one anchor instead
+        // of depending on each other.
+        MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order data model", "Model the order entity and its fields.",
+                "Given the domain, When the model is defined, Then it captures all required order fields.",
+                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
+                "Data integrity", "100% of fields modeled", false);
+        MLPredictionServiceClient.TaskSliceMetadata contractSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order API contract", "Define the shared order API contract.",
+                "Given the order model, When the contract is published, Then backend and AI both build against it.",
+                "BARCAN-TAG-12", LeanValue.essential, "Must-Be", "clear",
+                "Contract drift", "0 drift incidents", false);
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order backend", "Implement the order backend against the contract.",
+                "Given the contract, When a request arrives, Then it is handled per spec.",
+                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
+                "API connectivity", "100% of requests handled", false);
+        MLPredictionServiceClient.TaskSliceMetadata aiSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order AI scoring", "Implement AI scoring against the contract.",
+                "Given the contract, When a request arrives, Then a score is returned per spec.",
+                "BARCAN-TAG-04", LeanValue.essential, "Must-Be", "clear",
+                "Scoring accuracy", "100% of requests scored", false);
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, brief, List.of(modelSlice, contractSlice, backendSlice, aiSlice));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity modelTask = taskByRole(tasks, "BARCAN-TAG-08");
+        TaskEntity contractTask = taskByRole(tasks, "BARCAN-TAG-12");
+        TaskEntity backendTask = taskByRole(tasks, "BARCAN-TAG-02");
+        TaskEntity aiTask = taskByRole(tasks, "BARCAN-TAG-04");
+
+        assertThat(contractTask.getDependsOn().getId()).isEqualTo(modelTask.getId());
+        assertThat(backendTask.getDependsOn().getId()).isEqualTo(contractTask.getId());
+        assertThat(aiTask.getDependsOn().getId()).isEqualTo(contractTask.getId());
+        assertThat(backendTask.getId()).isNotEqualTo(aiTask.getId());
+    }
+
+    @Test
+    void buildTaskGraphFromSlicesSkipsTheContractStageWhenThereIsNoParallelPair() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("No Contract Needed Project");
+        project.setSlug("no-contract-needed-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("no-contract-needed-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Model first, then backend only - no frontend in this feature.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order data model", "Model the order entity and its fields.",
+                "Given the domain, When the model is defined, Then it captures all required order fields.",
+                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
+                "Data integrity", "100% of fields modeled", false);
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order backend", "Implement the order backend.",
+                "Given the model, When a request arrives, Then it is handled.",
+                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
+                "API connectivity", "100% of requests handled", false);
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, brief, List.of(modelSlice, backendSlice));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity modelTask = taskByRole(tasks, "BARCAN-TAG-08");
+        TaskEntity backendTask = taskByRole(tasks, "BARCAN-TAG-02");
+
+        assertThat(tasks.stream().anyMatch(t -> t.getRole() != null && "BARCAN-TAG-12".equals(t.getRole().getTag()))).isFalse();
+        assertThat(backendTask.getDependsOn().getId()).isEqualTo(modelTask.getId());
+    }
+
+    private TaskEntity taskByRole(List<TaskEntity> tasks, String roleTag) {
+        return tasks.stream()
+                .filter(t -> t.getRole() != null && roleTag.equals(t.getRole().getTag()))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("No task found for role " + roleTag + " in: " + tasks));
     }
 }

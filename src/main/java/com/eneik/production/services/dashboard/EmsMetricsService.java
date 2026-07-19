@@ -40,7 +40,8 @@ public class EmsMetricsService {
             new RoleDoctrineProfile("BARCAN-TAG-08", "SUBSTITUTIVITY-SALVA-VERITATE", "Data type integrity, migrations, lineage, substitutability", "must_be", "complicated"),
             new RoleDoctrineProfile("BARCAN-TAG-09", "MORAL-DILEMMA", "Lean/TOC/JTBD value filter, waste prevention, decision quality", "performance", "complex"),
             new RoleDoctrineProfile("BARCAN-TAG-10", "DEONTIC-PROHIBITION", "Compliance prohibitions, retention, PIA and regulatory constraints", "must_be", "complicated"),
-            new RoleDoctrineProfile("BARCAN-TAG-11", "CLIENT-PERCEPTION", "Perceptual UX, accessibility, visual evidence, Core Web Vitals", "performance", "complex")
+            new RoleDoctrineProfile("BARCAN-TAG-11", "CLIENT-PERCEPTION", "Perceptual UX, accessibility, visual evidence, Core Web Vitals", "performance", "complex"),
+            new RoleDoctrineProfile("BARCAN-TAG-12", "SOCIAL-CONTRACT", "Shared API contract before parallel backend/frontend split, drift prevention", "must_be", "complicated")
     );
 
     public EmsDashboardMetricsDto build(List<TaskEntity> tasks) {
@@ -598,27 +599,19 @@ public class EmsMetricsService {
         if (!payloadStage.isBlank()) {
             return payloadStage;
         }
-        return switch (roleTag(task)) {
-            case "BARCAN-TAG-09" -> "decision";
-            case "BARCAN-TAG-01" -> "architecture";
-            case "BARCAN-TAG-02", "BARCAN-TAG-04", "BARCAN-TAG-07", "BARCAN-TAG-08" -> "implementation";
-            case "BARCAN-TAG-03", "BARCAN-TAG-11" -> "experience";
-            case "BARCAN-TAG-05" -> "operations";
-            case "BARCAN-TAG-06" -> "verification";
-            case "BARCAN-TAG-00" -> "integration";
-            case "BARCAN-TAG-10" -> "compliance";
-            default -> "implementation";
-        };
+        return com.eneik.production.services.EmsFlowStage.labelForRoleTag(roleTag(task));
     }
 
     private List<String> orderedStages() {
-        return List.of("decision", "architecture", "implementation", "experience", "operations", "verification", "integration", "compliance");
+        return List.of("decision", "architecture", "data-model", "api-contract", "implementation", "experience", "operations", "verification", "integration", "compliance");
     }
 
     private String stageLabel(String stage) {
         return switch (stage) {
             case "decision" -> "Decision";
             case "architecture" -> "Architecture";
+            case "data-model" -> "Data Model";
+            case "api-contract" -> "API Contract";
             case "implementation" -> "Implementation";
             case "experience" -> "UX/UI";
             case "operations" -> "Build/Deploy";

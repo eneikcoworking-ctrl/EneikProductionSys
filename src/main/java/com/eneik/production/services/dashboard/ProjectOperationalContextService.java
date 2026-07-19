@@ -142,7 +142,7 @@ public class ProjectOperationalContextService {
         factPack.put("systemStatusProjectOnly", systemStatus);
         factPack.put("rules", List.of(
                 "No global system data is included in this fact pack.",
-                "Every enabled Jules account is universal-role capable for all BARCAN-TAG-00..11 roles.",
+                "Every enabled Jules account is universal-role capable for all BARCAN-TAG-00..12 roles.",
                 "BARCAN roles are thinking lenses and ownership tags, not permission boundaries. Never use a role as an excuse to avoid necessary Eneik Management System action.",
                 "Do not diagnose missing role capability for Jules accounts; diagnose shared session slots, account enabled/status, stuck sessions, API errors, or dispatch failures instead.",
                 "If the operator cannot name a concrete task, owner, and role for the next step, the correct action is to create or compile a precise English wishlist/work item and then orchestrate or dispatch when the user asked to act.",
@@ -445,7 +445,7 @@ public class ProjectOperationalContextService {
                 .filter(account -> account.getStatus() != AccountStatus.daily_limited)
                 .filter(account -> account.getStatus() != AccountStatus.api_blocked)
                 .count());
-        fact.put("universalRoleInvariant", "Every enabled Jules account is capable of every BARCAN-TAG-00..11 role.");
+        fact.put("universalRoleInvariant", "Every enabled Jules account is capable of every BARCAN-TAG-00..12 role.");
         fact.put("maxConcurrentSessionsPerAccount", maxConcurrentJulesSessionsPerAccount);
         fact.put("items", accounts.stream().map(account -> accountFact(account, activeCapacitySessionsByAccount, trackedSessionsByAccount)).toList());
         return fact;
