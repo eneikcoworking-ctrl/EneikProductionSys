@@ -297,26 +297,22 @@ public class JulesDispatchService {
         appendCompactRoleGuide(roleContextBuilder, task.getRole().getTag());
 
         try {
+            // The role must actually reach Jules - Jules takes on the role, not just a technical
+            // checklist derived from it. Structured field extraction (RoleRules) is lossy by
+            // construction: charter files use three different Markdown conventions for their deontic
+            // sections, and the philosophy table that defines each role's distinct worldview was never
+            // parsed into any field at all. Sending the raw charter verbatim sidesteps all of that -
+            // Jules reads the exact same document a human reviewer would, including the philosophical
+            // foundation that makes this role's judgment different from every other role's.
+            String rawCharter = roleCapabilityLoader.loadRawCharter(task.getRole().getTag());
+            if (rawCharter != null && !rawCharter.isBlank()) {
+                roleContextBuilder.append("\n## Role Charter (this is who you are for this session)\n")
+                        .append(rawCharter).append("\n");
+            }
+
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
-            if (rules != null) {
-                if (shouldIncludeVerboseRoleRuleSections() && rules.forbidden() != null && !rules.forbidden().isEmpty()) {
-                    roleContextBuilder.append("\n## Forbidden (Запрещено)\n");
-                    for (String f : rules.forbidden()) {
-                        roleContextBuilder.append("- ").append(f).append("\n");
-                    }
-                }
-                if (shouldIncludeVerboseRoleRuleSections() && rules.refusalCriteria() != null && !rules.refusalCriteria().isBlank()) {
-                    roleContextBuilder.append("\n").append(rules.refusalCriteria()).append("\n");
-                }
-                if (shouldIncludeVerboseRoleRuleSections() && rules.deonticStatus() != null && !rules.deonticStatus().isBlank()) {
-                    roleContextBuilder.append("\n").append(rules.deonticStatus()).append("\n");
-                }
-                if (shouldIncludeVerboseRoleRuleSections() && rules.outputFormat() != null && !rules.outputFormat().isBlank()) {
-                    roleContextBuilder.append("\n## Output Format / Definition of Done\n").append(rules.outputFormat()).append("\n");
-                }
-                if (rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {
-                    roleContextBuilder.append("\n## Mandatory Review By\n").append(rules.reviewRequiredBy()).append("\n");
-                }
+            if (rules != null && rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {
+                roleContextBuilder.append("\n## Mandatory Review By\n").append(rules.reviewRequiredBy()).append("\n");
             }
 
             if ("REVIEWER".equalsIgnoreCase(mode)) {
@@ -433,10 +429,6 @@ public class JulesDispatchService {
         roleContextBuilder.append("- Apply Kano as a scope guard: Must-Be first, Performance only when explicit, Delighters only as follow-up wishlist.\n");
         roleContextBuilder.append("- Apply Cynefin as a delivery guard: clear/complicated work needs a direct implementation path, complex work needs one safe probe.\n");
         roleContextBuilder.append("- Role focus: ").append(compactRoleFocus(roleTag)).append("\n");
-    }
-
-    private boolean shouldIncludeVerboseRoleRuleSections() {
-        return false;
     }
 
     private String compactRoleFocus(String roleTag) {

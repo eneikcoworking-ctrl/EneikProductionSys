@@ -253,7 +253,7 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void dispatchUsesCompactEnglishRoleGuideInsteadOfFullCharter() {
+    void dispatchSendsBothTheCompactGuideAndTheFullRoleCharter() {
         UUID taskId = UUID.randomUUID();
 
         ProjectEntity project = new ProjectEntity();
@@ -277,16 +277,21 @@ class JulesDispatchServiceTest {
                 .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
+        when(roleCapabilityLoader.loadRawCharter("BARCAN-TAG-11"))
+                .thenReturn("# BARCAN-TAG-11 · CLIENT-PERCEPTION\n## ФИЛОСОФСКИЙ ФУНДАМЕНТ\n| 1 | **Патриция Черчланд** | ... |\n## КРИТЕРИИ ОТКАЗА (REFUSAL CRITERIA)\nsome refusal criteria text");
 
         JulesDispatchResult result = julesDispatchService.dispatch(task);
 
         assertTrue(result.dispatched());
+        // Jules takes on the role - the compact guide alone is not enough, the full charter (including
+        // the philosophy table that gives this role its distinct worldview) must reach the prompt too.
         verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), contains("Task Title: UI Slice"), argThat(context ->
                 context.contains("## Compact Role Guide")
                         && context.contains("Use English only")
-                        && context.contains("docs/DESIGN_SYSTEM.md")
-                        && !context.contains("FULL ROLE CHARTER")
-                        && !context.contains("REFUSAL CRITERIA")
+                        && context.contains("## Role Charter")
+                        && context.contains("ФИЛОСОФСКИЙ ФУНДАМЕНТ")
+                        && context.contains("Патриция Черчланд")
+                        && context.contains("REFUSAL CRITERIA")
         ), isNull(), eq("UI Slice"), eq("main"));
     }
 

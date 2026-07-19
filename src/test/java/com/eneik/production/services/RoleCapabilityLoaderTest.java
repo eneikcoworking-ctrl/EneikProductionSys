@@ -79,4 +79,20 @@ class RoleCapabilityLoaderTest {
         when(roleRepository.findById("UNKNOWN")).thenReturn(Optional.empty());
         assertThrows(ResponseStatusException.class, () -> loader.loadRules("UNKNOWN"));
     }
+
+    @Test
+    void loadRawCharter_ReturnsFullFileContentVerbatim() throws IOException {
+        String tag = "TAG-01";
+        Path rulesFile = tempDir.resolve("rules.md");
+        String fullCharter = "# BARCAN-TAG-01\n## ФИЛОСОФСКИЙ ФУНДАМЕНТ\n| 1 | **Someone** | Principle | Application |\n";
+        Files.writeString(rulesFile, fullCharter);
+
+        RoleEntity role = new RoleEntity();
+        role.setTag(tag);
+        role.setRulesPath(rulesFile.toString());
+
+        when(roleRepository.findById(tag)).thenReturn(Optional.of(role));
+
+        assertEquals(fullCharter, loader.loadRawCharter(tag));
+    }
 }
