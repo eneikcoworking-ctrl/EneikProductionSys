@@ -101,7 +101,7 @@ public class EmsMetricsService {
                 defectWork(safeTasks),
                 graphHealth(safeTasks),
                 List.of(
-                        "Role doctrine readiness is calculated for all 12 BARCAN tags from source-role wishlist evidence, owner-role task evidence, defects, and missing evidence.",
+                        "Role doctrine readiness is calculated for all 13 BARCAN tags from source-role wishlist evidence, owner-role task evidence, defects, and missing evidence.",
                         "Role doctrine readiness excludes system/meta tasks (wishlist compiler, falsification audit, PR-review fallback, design review) - they are all dispatched under the orchestrator role regardless of which doctrine they touch, so counting them would inflate readiness with infrastructure plumbing instead of real product work. Role KPIs below are not filtered this way and include them.",
                         "Role execution telemetry is separate from doctrine readiness; zero owner tasks means no execution load, not role approval.",
                         "Defect work includes failed, blocked, retried, and circuit-breaker recovery tasks.",

@@ -250,7 +250,7 @@
     <!-- BLOCK 3: Role Metrics -->
     <section class="roles-metrics-section">
       <h3>BARCAN Council Readiness</h3>
-      <p class="section-desc">Doctrine satisfaction for all 12 BARCAN roles, separated from execution workload.</p>
+      <p class="section-desc">Doctrine satisfaction for all 13 BARCAN roles, separated from execution workload.</p>
 
       {#if metrics.emsMetrics?.data?.roleDoctrineReadiness}
         <div class="role-readiness-summary">

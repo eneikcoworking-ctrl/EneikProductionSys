@@ -270,7 +270,7 @@
   function capabilitySummary(value?: string) {
     const capabilities = capabilityList(value);
     if (capabilities.length === 0) return 'No capabilities';
-    if (capabilities.length >= 12) return 'All 12 BARCAN roles';
+    if (capabilities.length >= 13) return 'All 13 BARCAN roles';
     if (capabilities.length === 1) return capabilities[0];
     return `${capabilities.length} roles`;
   }
