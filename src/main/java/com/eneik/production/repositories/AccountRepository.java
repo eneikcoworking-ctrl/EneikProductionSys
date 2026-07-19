@@ -94,7 +94,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (:reservedName IS NULL OR a.name <> :reservedName)
-              AND (LOWER(a.name) = 'eneikdru' OR a.sessions_dispatched_today < :maxDailySessions)
+              AND a.sessions_dispatched_today < :maxDailySessions
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -119,12 +119,15 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                                                              @Param("reservedName") String reservedName,
                                                              @Param("maxDailySessions") int maxDailySessions);
 
+    // No daily-session-budget check here: this method is only ever called with the configured reserved
+    // compiler/falsification account's own name (ProjectFlowService.taskCompilerAccountName()), so every
+    // row it could possibly return already is that exempt account by construction - unlike
+    // lockNextJulesAccountWithCapacity's general pool, there is no other account this query could match.
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.name = :name
               AND a.enabled = true
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
-              AND (LOWER(a.name) = 'eneikdru' OR a.sessions_dispatched_today < :maxDailySessions)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -136,8 +139,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             ORDER BY a.last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<AccountEntity> lockAccountByNameWithCapacity(@Param("name") String name,
-                                                          @Param("maxSessions") int maxSessions,
-                                                          @Param("maxDailySessions") int maxDailySessions);
+                                                          @Param("maxSessions") int maxSessions);
 
     @Query(value = """
             SELECT COUNT(*) > 0 FROM accounts a

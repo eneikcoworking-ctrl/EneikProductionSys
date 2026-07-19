@@ -52,9 +52,21 @@ public class ClientDeliverableReadinessService {
         this.prReviewRepository = prReviewRepository;
     }
 
-    /** True while the project has not yet merged its first buildPhaseDeliverableCount client deliverables. */
+    /**
+     * True while the project has not yet merged its first buildPhaseDeliverableCount client deliverables
+     * - OR, for a brief that decomposes into fewer than that many deliverables in total (the common case:
+     * test-twenty-eighth's brief was exactly 2), until every one of them has merged. Comparing only
+     * against the raw threshold would permanently trap any small brief in BUILD phase forever, since
+     * mergedDeliverables could never reach 10 - worse than the problem this gate was meant to fix.
+     */
     public boolean isBuildPhase(UUID projectId) {
-        return computeForProject(projectId).mergedDeliverables() < buildPhaseDeliverableCount;
+        Readiness readiness = computeForProject(projectId);
+        if (readiness.totalDeliverables() == 0) {
+            return true;
+        }
+        boolean reachedCap = readiness.mergedDeliverables() >= buildPhaseDeliverableCount;
+        boolean allClientWorkMerged = readiness.mergedDeliverables() >= readiness.totalDeliverables();
+        return !(reachedCap || allClientWorkMerged);
     }
 
     public record Readiness(int totalDeliverables, int mergedDeliverables, double ratio) {

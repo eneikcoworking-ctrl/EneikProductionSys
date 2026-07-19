@@ -1278,7 +1278,7 @@ public class ProjectFlowService {
 
     private void dispatchCompilerTask(TaskEntity compilerTask) {
         Optional<AccountEntity> accountOpt = accountRepository.lockAccountByNameWithCapacity(
-                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount, maxDailySessionsPerAccount);
+                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount);
         if (accountOpt.isEmpty()) {
             log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
                     taskCompilerAccountName(), compilerTask.getId());
