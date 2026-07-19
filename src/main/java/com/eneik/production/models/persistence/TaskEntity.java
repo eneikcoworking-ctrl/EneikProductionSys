@@ -65,6 +65,11 @@ public class TaskEntity {
     @Column(name = "cynefin_domain")
     private String cynefinDomain;
 
+    // Real FK mirror of payload.source_wishlist_id (JSON) - see V40 migration. Lets readiness/phase
+    // gating join tasks back to their originating client wishlist item without a JSON text search.
+    @Column(name = "source_wishlist_id")
+    private UUID sourceWishlistId;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -105,6 +110,8 @@ public class TaskEntity {
     public void setDependsOn(TaskEntity dependsOn) { this.dependsOn = dependsOn; }
     public String getCynefinDomain() { return cynefinDomain; }
     public void setCynefinDomain(String cynefinDomain) { this.cynefinDomain = cynefinDomain; }
+    public UUID getSourceWishlistId() { return sourceWishlistId; }
+    public void setSourceWishlistId(UUID sourceWishlistId) { this.sourceWishlistId = sourceWishlistId; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

@@ -41,6 +41,10 @@ public class FalsificationCycleService {
     private final SystemSettingsService settingsService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
+    private final ClientDeliverableReadinessService readinessService;
+
+    @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
+    private double readinessThreshold;
 
     public FalsificationCycleService(ProjectRepository projectRepository,
                                      RoleRepository roleRepository,
@@ -49,7 +53,8 @@ public class FalsificationCycleService {
                                      FalsificationRunRepository falsificationRunRepository,
                                      SystemSettingsService settingsService,
                                      com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
-                                     @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService) {
+                                     @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
+                                     ClientDeliverableReadinessService readinessService) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -58,6 +63,7 @@ public class FalsificationCycleService {
         this.settingsService = settingsService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.projectFlowService = projectFlowService;
+        this.readinessService = readinessService;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -96,6 +102,21 @@ public class FalsificationCycleService {
     // reserved eneikdru account with wishlist compilation instead of contending with real
     // product-implementation dispatch.
     public void executeCycleForProject(ProjectEntity project) {
+        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+        if (readiness.ratio() < readinessThreshold) {
+            // Auditing before there's a real object to audit just spends a reserved eneikdru session on
+            // whatever process/design artifacts happen to be in main yet (confirmed live in
+            // test-twenty-eighth: the first cycle ran against zero merged product code and found only
+            // metadata-formatting nitpicks). Wait until most of what the client actually asked for has
+            // really shipped (merged, not just review-approved - see ClientDeliverableReadinessService)
+            // before spending capacity looking for violations in it.
+            log.info("FalsificationCycleService: Project {} not ready for falsification yet ({}/{} client deliverable(s) merged, "
+                            + "{}% < {}% threshold); skipping this cycle instead of auditing an incomplete project",
+                    project.getName(), readiness.mergedDeliverables(), readiness.totalDeliverables(),
+                    Math.round(readiness.ratio() * 100), Math.round(readinessThreshold * 100));
+            return;
+        }
+
         List<RoleEntity> activeRoles = roleRepository.findAll().stream()
                 .filter(RoleEntity::isActive)
                 .toList();
@@ -248,7 +269,7 @@ public class FalsificationCycleService {
         run.setRunAt(Instant.now());
         run.setRolesCheckedCount(rolesCheckedCount);
         run.setViolationsFoundCount(violationsFoundCount);
-        run.setTasksCreatedCount(0);
+        run.setTasksCreatedCount(followUpsCreatedCount);
         run.setHighestPrNumberAudited(watermark);
         falsificationRunRepository.save(run);
 

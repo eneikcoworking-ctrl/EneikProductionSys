@@ -43,6 +43,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Modifying
     @Transactional
+    @Query("UPDATE AccountEntity a SET a.sessionsDispatchedToday = 0")
+    int resetDailySessionCounts();
+
+    @Modifying
+    @Transactional
     @Query(value = """
             UPDATE accounts
             SET status = 'api_blocked'
@@ -89,6 +94,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (:reservedName IS NULL OR a.name <> :reservedName)
+              AND (LOWER(a.name) = 'eneikdru' OR a.sessions_dispatched_today < :maxDailySessions)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -110,13 +116,15 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     Optional<AccountEntity> lockNextJulesAccountWithCapacity(@Param("projectId") UUID projectId,
                                                              @Param("tag") String tag,
                                                              @Param("maxSessions") int maxSessions,
-                                                             @Param("reservedName") String reservedName);
+                                                             @Param("reservedName") String reservedName,
+                                                             @Param("maxDailySessions") int maxDailySessions);
 
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.name = :name
               AND a.enabled = true
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
+              AND (LOWER(a.name) = 'eneikdru' OR a.sessions_dispatched_today < :maxDailySessions)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -127,7 +135,9 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               ) < :maxSessions
             ORDER BY a.last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
-    Optional<AccountEntity> lockAccountByNameWithCapacity(@Param("name") String name, @Param("maxSessions") int maxSessions);
+    Optional<AccountEntity> lockAccountByNameWithCapacity(@Param("name") String name,
+                                                          @Param("maxSessions") int maxSessions,
+                                                          @Param("maxDailySessions") int maxDailySessions);
 
     @Query(value = """
             SELECT COUNT(*) > 0 FROM accounts a

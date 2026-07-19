@@ -71,6 +71,6 @@ public class BottleneckAwarePriorityService {
             })
             .collect(Collectors.toSet());
 
-        claimService.refreshQueuedTasksPriority(bottleneckRefs, HIGH_PRIORITY, DEFAULT_PRIORITY);
+        claimService.refreshQueuedTasksPriority(bottleneckRefs, HIGH_PRIORITY);
     }
 }

@@ -42,6 +42,9 @@ public class AccountEntity {
     @Column(nullable = false)
     private boolean enabled = true;
 
+    @Column(name = "sessions_dispatched_today", nullable = false)
+    private int sessionsDispatchedToday = 0;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -64,4 +67,6 @@ public class AccountEntity {
     public void setGithubUsername(String githubUsername) { this.githubUsername = githubUsername; }
     public boolean isEnabled() { return enabled; }
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public int getSessionsDispatchedToday() { return sessionsDispatchedToday; }
+    public void setSessionsDispatchedToday(int sessionsDispatchedToday) { this.sessionsDispatchedToday = sessionsDispatchedToday; }
 }

@@ -67,9 +67,16 @@ public class ProjectFlowService {
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final ClientDeliverableReadinessService readinessService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
+
+    // Every account except the reserved compiler/falsification account (eneikdru) has a real Jules daily
+    // session quota; enforcing it locally, proactively, means dispatch selection can budget for it instead
+    // of only finding out reactively once Jules itself returns a quota error (AccountStatus.daily_limited).
+    @Value("${jules.max-daily-sessions-per-account:15}")
+    private int maxDailySessionsPerAccount;
 
     @Value("${orchestration.max-recovery-items-per-run:3}")
     private int maxRecoveryItemsPerRun;
@@ -99,7 +106,8 @@ public class ProjectFlowService {
                               EmsMetricsService emsMetricsService,
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                               com.eneik.production.services.design.DesignAssetService designAssetService,
-                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                              ClientDeliverableReadinessService readinessService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -124,6 +132,7 @@ public class ProjectFlowService {
         this.contextService = contextService;
         this.designAssetService = designAssetService;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.readinessService = readinessService;
     }
 
     @Transactional
@@ -1269,7 +1278,7 @@ public class ProjectFlowService {
 
     private void dispatchCompilerTask(TaskEntity compilerTask) {
         Optional<AccountEntity> accountOpt = accountRepository.lockAccountByNameWithCapacity(
-                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount);
+                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount, maxDailySessionsPerAccount);
         if (accountOpt.isEmpty()) {
             log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
                     taskCompilerAccountName(), compilerTask.getId());
@@ -1401,6 +1410,18 @@ public class ProjectFlowService {
     public boolean isFalsificationAuditTask(TaskEntity task) {
         return task.getPayload() != null
                 && FALSIFICATION_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    /** True for implementation work compiled from a role/role_mismatch_followup/self_falsification/etc.
+     *  wishlist item rather than the client's own brief - the category the BUILD-phase gate defers. Tasks
+     *  with no recorded source wishlist (bootstrap, one-off infra tasks) are never gated here. */
+    private boolean isSelfGeneratedWork(TaskEntity task) {
+        if (task.getSourceWishlistId() == null) {
+            return false;
+        }
+        return wishlistRepository.findById(task.getSourceWishlistId())
+                .map(w -> w.getSource() != WishlistSource.client)
+                .orElse(false);
     }
 
     public Integer falsificationAuditHighestPrNumber(TaskEntity task) {
@@ -1582,6 +1603,7 @@ public class ProjectFlowService {
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
+        boolean buildPhase = readinessService.isBuildPhase(project.getId());
 
         for (TaskEntity task : queuedTasks) {
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
@@ -1609,6 +1631,16 @@ public class ProjectFlowService {
                 continue;
             }
 
+            if (buildPhase && isSelfGeneratedWork(task)) {
+                // BUILD phase: only work traceable to the client's own brief is allowed to dispatch. Design
+                // review/role-mismatch-followup/self-falsification-derived work stays queued (not dropped -
+                // it simply waits) until the project has actually shipped its first
+                // buildPhaseDeliverableCount client deliverables. See test-twenty-eighth post-mortem §6.4:
+                // this kind of self-generated backlog made up 82% of dispatched capacity while the two real
+                // ТЗ items sat starved of retries.
+                continue;
+            }
+
             String roleTag = task.getRole().getTag();
 
             // Complex/chaotic/retried/defect-work tasks used to bypass Jules for a separate autonomous
@@ -1618,7 +1650,8 @@ public class ProjectFlowService {
                     project.getId(),
                     roleTag,
                     maxConcurrentJulesSessionsPerAccount,
-                    taskCompilerAccountName()
+                    taskCompilerAccountName(),
+                    maxDailySessionsPerAccount
             );
             if (accountOpt.isPresent()) {
                 AccountEntity account = accountOpt.get();
@@ -1683,7 +1716,8 @@ public class ProjectFlowService {
                         project.getId(),
                         roleTag,
                         maxConcurrentJulesSessionsPerAccount,
-                        taskCompilerAccountName()
+                        taskCompilerAccountName(),
+                        maxDailySessionsPerAccount
                 );
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();

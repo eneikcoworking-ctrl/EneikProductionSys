@@ -454,8 +454,16 @@ public class ClaimService {
                 || "stuck".equals(status);
     }
 
+    // Was a flat overwrite to highPriority-or-defaultPriority for every queued task on every 5-minute
+    // tick, regardless of current value. That silently destroyed the Kano/Cynefin-informed criticality
+    // score TechnicalLeadCompiler computes once at task-creation time (task.priority can start well above
+    // 100, e.g. a client Must-Be item) - a non-bottleneck task got flattened to 0 right alongside genuine
+    // low-value cosmetic work, erasing the very signal this method exists to act on. This is now purely
+    // additive: bottleneck status can only ever boost a task's priority (never below what it already had),
+    // never silently lower it. There is no reliable "original" value to revert to once overwritten, so
+    // the safe default is to leave a task's priority alone unless there's a concrete reason to raise it.
     @Transactional
-    public void refreshQueuedTasksPriority(Set<String> bottleneckRefs, int highPriority, int defaultPriority) {
+    public void refreshQueuedTasksPriority(Set<String> bottleneckRefs, int highPriority) {
         log.info("Refreshing priority for queued tasks based on current bottlenecks...");
         List<TaskEntity> queuedTasks = taskRepository.findByStatus(TaskStatus.queued);
 
@@ -465,8 +473,11 @@ public class ClaimService {
             if (task.getPayload() != null && task.getPayload().has("toc_constraint_ref")) {
                 tocRef = task.getPayload().get("toc_constraint_ref").asText();
             }
-            int newPriority = (tocRef != null && bottleneckRefs.contains(tocRef)) ? highPriority : defaultPriority;
-
+            boolean isBottleneck = tocRef != null && bottleneckRefs.contains(tocRef);
+            if (!isBottleneck) {
+                continue;
+            }
+            int newPriority = Math.max(task.getPriority(), highPriority);
             if (task.getPriority() != newPriority) {
                 task.setPriority(newPriority);
                 updatedCount++;

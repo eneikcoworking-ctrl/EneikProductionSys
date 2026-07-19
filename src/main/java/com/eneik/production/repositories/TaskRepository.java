@@ -177,4 +177,5 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<QueueDashboardDto.TagCountDto> queuedGroupedByProjectAndTag(@Param("projectId") UUID projectId);
 
     List<TaskEntity> findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(UUID projectId, TaskStatus status);
+    List<TaskEntity> findBySourceWishlistIdIn(List<UUID> sourceWishlistIds);
 }

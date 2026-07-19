@@ -162,6 +162,9 @@ public class SystemSettingsService {
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         definitions.put("system_stall_status", plain("system_stall_status", "SYSTEM_STALL_STATUS", "system-stall.status"));
         definitions.put("task_compiler_account_name", plain("task_compiler_account_name", "TASK_COMPILER_ACCOUNT_NAME", "task-compiler.account-name"));
+        // Off by default: SystemStatusController's /sql endpoint is an unauthenticated raw JDBC executor
+        // (SELECT and DML both). Must be explicitly opted into per-environment, never assumed safe.
+        definitions.put("debug_sql_endpoint_enabled", flag("debug_sql_endpoint_enabled", "DEBUG_SQL_ENDPOINT_ENABLED", "debug.sql-endpoint.enabled"));
         return definitions;
     }
 

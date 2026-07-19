@@ -39,6 +39,12 @@ class FalsificationCycleServiceTest {
                                                   RoleRepository roleRepository,
                                                   ProjectFlowService projectFlowService,
                                                   FalsificationRunRepository falsificationRunRepository) {
+        // Readiness-gated by default now (see ClientDeliverableReadinessService) - these tests exercise
+        // the diff-fetching/dedup/skip logic downstream of that gate, not the gate itself, so stub it as
+        // always-ready regardless of which project id is asked about.
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1.0));
         return new FalsificationCycleService(
                 mock(ProjectRepository.class),
                 roleRepository,
@@ -47,7 +53,8 @@ class FalsificationCycleServiceTest {
                 falsificationRunRepository,
                 mock(SystemSettingsService.class),
                 gitHubPullRequestService,
-                projectFlowService
+                projectFlowService,
+                readinessService
         );
     }
 

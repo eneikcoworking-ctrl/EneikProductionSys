@@ -203,6 +203,7 @@ public class ContinuousOrchestrationService {
         if (reset > 0) {
             log.info("Continuous Orchestration: Reset {} Jules account(s) from daily_limited to idle", reset);
         }
+        accountRepository.resetDailySessionCounts();
     }
 
     @Transactional

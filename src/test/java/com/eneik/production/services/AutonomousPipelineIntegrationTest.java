@@ -411,7 +411,11 @@ class AutonomousPipelineIntegrationTest {
         assertThat(run.getRolesCheckedCount()).isEqualTo(12);
 
         // 2. Falsification creates wishlist follow-ups only; task creation is reserved for Orchestrate.
-        assertThat(run.getTasksCreatedCount()).isEqualTo(0);
+        // tasksCreatedCount tracks those follow-up wishlist items (not TaskEntity rows - see the "no
+        // chaotic tasks" assertion below), so with zero pre-existing suppression it equals the violation
+        // count. Previously this was hardcoded to 0 regardless of what actually got created - fixed as
+        // part of the test-twenty-eighth post-mortem (the field silently lied about its own effect).
+        assertThat(run.getTasksCreatedCount()).isEqualTo(12);
         assertThat(run.getViolationsFoundCount()).isEqualTo(12);
 
         final UUID targetProjectId = project.getId();

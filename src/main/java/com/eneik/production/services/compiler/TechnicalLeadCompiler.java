@@ -209,6 +209,7 @@ public class TechnicalLeadCompiler {
 
         task.setStatus(TaskStatus.queued);
         task.setCynefinDomain(cynefin);
+        task.setSourceWishlistId(wishlist.getId());
 
         int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
         if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {

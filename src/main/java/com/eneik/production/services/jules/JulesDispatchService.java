@@ -48,6 +48,16 @@ public class JulesDispatchService {
     private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
     private static final int FOLLOW_UP_CONTENT_MAX_LENGTH = 7_500;
     private static final String REVIEW_REJECTION_ACTIVITY_NAME = "system-pr-review-rejection";
+    // A design-review "approved, but here are some concerns" verdict is by definition non-blocking - it
+    // must never gate the design-review-loop.dispatch on its own findings, only ever add backlog. But an
+    // unconditional "one concern in, one wishlist item out" mapping with no stopping condition means a
+    // single design role can generate an unbounded amount of self-perpetuating work that competes for the
+    // same limited Jules capacity as the actual client deliverable it's reviewing (confirmed live in
+    // test-twenty-eighth: 48 of 78 wishlist items across the whole project traced back to exactly this
+    // loop). Cap how much *pending* non-blocking backlog one project's design role is allowed to carry at
+    // once - once the cap is hit, new concerns are logged but not turned into fresh work; they'll surface
+    // again on the next real review pass if still relevant, once older items have been worked off.
+    private static final int MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT = 5;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -348,6 +358,12 @@ public class JulesDispatchService {
         } else {
             session.setExternalSessionId(externalId);
             session.setStatus("running");
+            if (accountId != null) {
+                accountRepository.findById(accountId).ifPresent(account -> {
+                    account.setSessionsDispatchedToday(account.getSessionsDispatchedToday() + 1);
+                    accountRepository.save(account);
+                });
+            }
         }
 
         return julesSessionRepository.save(session);
@@ -1819,10 +1835,36 @@ public class JulesDispatchService {
             log.warn("Design review: draft {} approved but promotion to {} failed (no files copied)", draftPath, approvedDir);
         }
 
+        long pendingConcernCount = wishlistRepository.countByProjectIdAndSourceAndSourceRoleTagAndStatus(
+                reviewTask.getProject().getId(),
+                com.eneik.production.models.persistence.WishlistSource.role,
+                "BARCAN-TAG-03",
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+        List<com.eneik.production.models.persistence.WishlistEntity> pendingDesignWishlist = pendingConcernCount > 0
+                ? wishlistRepository.findByProjectIdAndStatus(reviewTask.getProject().getId(),
+                        com.eneik.production.models.persistence.WishlistStatus.pending)
+                : List.of();
+
         for (String concern : verdict.concerns()) {
             if (concern == null || concern.isBlank()) {
                 continue;
             }
+            if (pendingConcernCount >= MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT) {
+                log.info("Design review: dropping non-blocking concern on {} - project already has {} pending "
+                                + "design-review follow-up(s) (cap {}); will resurface on a future review pass if still real: {}",
+                        approvedDir, pendingConcernCount, MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT, concern);
+                continue;
+            }
+            String finalConcern = concern;
+            boolean alreadyPending = pendingDesignWishlist.stream().anyMatch(item ->
+                    "BARCAN-TAG-03".equals(item.getSourceRoleTag())
+                            && item.getContent() != null
+                            && item.getContent().contains(finalConcern));
+            if (alreadyPending) {
+                log.info("Design review: skipping duplicate non-blocking concern on {} - already pending: {}", approvedDir, concern);
+                continue;
+            }
+
             com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
             wishlist.setProjectId(reviewTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
@@ -1830,6 +1872,7 @@ public class JulesDispatchService {
             wishlist.setContent("Design reviewer concern (non-blocking) on " + approvedDir + ": " + concern);
             wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
             wishlistRepository.save(wishlist);
+            pendingConcernCount++;
         }
     }
 
