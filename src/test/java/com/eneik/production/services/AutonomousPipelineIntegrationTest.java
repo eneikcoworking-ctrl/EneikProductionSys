@@ -335,14 +335,33 @@ class AutonomousPipelineIntegrationTest {
     }
 
     @Test
-    void testFalsificationCycleNoRateLimitAndRunRecord() throws java.io.IOException {
+    void testOrchestrateDoesNotCreateBootstrapTaskWhenWishlistIsEmpty() {
+        // Lean: no wishlist means no real demand yet - orchestrate() must not spend a real Jules
+        // dispatch on a bootstrap task nobody asked for. Confirmed live: this used to fire on the very
+        // first background orchestration cycle for a brand-new, still-empty project, confusing the
+        // operator during the test-twenty-fifth experiment ("I haven't written a wishlist yet - why is
+        // a session already running?").
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Empty Wishlist Project");
+        project.setSlug("empty-wishlist-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("empty-wishlist-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        projectFlowService.orchestrate(project.getId());
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        assertThat(tasks).isEmpty();
+    }
+
+    @Test
+    void testFalsificationCycleSkipsHonestlyWhenNoRealCodeChangesAvailable() {
         // Enable falsification cycle
         settingsService.save("falsification_cycle_enabled", "true");
 
-        // Simulate critical regression (actuator health is DOWN/unhealthy)
-        settingsService.save("simulated_actuator_health", "DOWN");
-
-        // Setup Project
+        // Setup Project - GitHub is disabled by default in the test profile and no local workspace
+        // exists, so there is genuinely no real diff to audit.
         ProjectEntity project = new ProjectEntity();
         project.setName("Falsification Project");
         project.setSlug("falsification-project");
@@ -351,34 +370,40 @@ class AutonomousPipelineIntegrationTest {
         project.setRepositoryName("falsification-repo");
         project = projectRepository.saveAndFlush(project);
 
-        // Mock tasks so that getLatestProjectDiff gets this review. We need the task to belong to this project
-        TaskEntity mockTask = new TaskEntity();
-        mockTask.setProject(project);
-        mockTask.setRole(roleRepository.findById("BARCAN-TAG-00").orElseThrow());
-        mockTask.setDescription("Mock Task for Diff Linkage");
-        mockTask.setStatus(TaskStatus.review);
-        mockTask = taskRepository.saveAndFlush(mockTask);
-
-        // Setup a PR review in database with a diff that triggers violations
-        JulesSessionEntity session = new JulesSessionEntity();
-        session.setTaskId(mockTask.getId());
-        session.setStatus("pr_opened");
-        session.setExternalSessionId("mock-session-falsify");
-        session = julesSessionRepository.saveAndFlush(session);
-
-        // Create a PR review with violating diff
-        PrReviewEntity review = new PrReviewEntity();
-        review.setPrUrl("https://github.com/falsification-repo/pull/1");
-        review.setJulesSessionId(session.getId());
-        review.setCiStatus("success");
-        review.setDiffSummary("violates_criteria: hardcoded hex color used.");
-        review.setRiskLevel("low");
-        review = prReviewRepository.saveAndFlush(review);
-
-        // Run falsification cycle
+        // This is the exact bug that was fixed: the old implementation would fall back to a database
+        // query returning an unrelated PR-review remark string and hand it to Jules labelled as "the
+        // diff to audit". The correct behavior is to skip the cycle honestly rather than audit nothing.
         falsificationCycleService.executeCycleForProject(project);
 
-        // Verify:
+        final UUID targetProjectId = project.getId();
+        List<TaskEntity> auditTasks = taskRepository.findAll().stream()
+                .filter(t -> t.getProject() != null && t.getProject().getId().equals(targetProjectId))
+                .filter(projectFlowService::isFalsificationAuditTask)
+                .toList();
+        assertThat(auditTasks).isEmpty();
+    }
+
+    @Test
+    void testApplyAuditViolationsCreatesWishlistFollowUpsAndRunRecord() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Falsification Apply Project");
+        project.setSlug("falsification-apply-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("falsification-apply-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        // Simulates JulesDispatchService.completeFalsificationAudit parsing a real eneikdru report PR:
+        // one refusal-criteria violation per active role (should be 12).
+        List<FalsificationCycleService.AuditViolation> violations = roleRepository.findAll().stream()
+                .filter(RoleEntity::isActive)
+                .map(role -> new FalsificationCycleService.AuditViolation(
+                        role.getTag(), "refusal_criteria", "hardcoded hex color used.",
+                        "", "", "", "", "", ""))
+                .toList();
+
+        falsificationCycleService.applyAuditViolations(project, violations, 42);
+
         // 1. Roles checked count should be 12
         List<FalsificationRunEntity> runs = falsificationRunRepository.findByProjectId(project.getId());
         assertThat(runs).hasSize(1);

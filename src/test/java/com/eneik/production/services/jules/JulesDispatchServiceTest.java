@@ -63,7 +63,8 @@ class JulesDispatchServiceTest {
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
             mock(com.eneik.production.services.ProjectFlowService.class),
-            mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class), "prefix/"
+            mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
+            mock(com.eneik.production.services.FalsificationCycleService.class), "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);

@@ -66,6 +66,7 @@ public class ProjectFlowService {
     private final EmsMetricsService emsMetricsService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -97,7 +98,8 @@ public class ProjectFlowService {
                               com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
                               EmsMetricsService emsMetricsService,
                               com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
-                              com.eneik.production.services.design.DesignAssetService designAssetService) {
+                              com.eneik.production.services.design.DesignAssetService designAssetService,
+                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -121,17 +123,20 @@ public class ProjectFlowService {
         this.emsMetricsService = emsMetricsService;
         this.contextService = contextService;
         this.designAssetService = designAssetService;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @Transactional
-    public ProjectDto createProject(String name) {
-        return createProject(name, "greenfield");
-    }
-
-    @Transactional
-    public ProjectDto createProject(String name, String onboardingMode) {
+    public ProjectDto createProject(String name, String onboardingMode, String initialWishlist) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Project name is required");
+        }
+        // A project with no wishlist is a project the orchestrator will eventually generate a bootstrap
+        // task for just to have something to do (the exact wasted-work pattern the Lean bootstrap-deferral
+        // fix targeted) - requiring real client content at creation time means that gap can never open in
+        // the first place. Fail before any GitHub repo/workspace provisioning happens, not after.
+        if (initialWishlist == null || initialWishlist.isBlank()) {
+            throw new IllegalArgumentException("initialWishlist is required - a project cannot be created without a client brief");
         }
         String mode = onboardingMode != null ? onboardingMode.trim() : "greenfield";
 
@@ -184,6 +189,13 @@ public class ProjectFlowService {
                 log.error("Failed to run onboarding audit for project {}", saved.getId(), e);
             }
         }
+
+        WishlistEntity firstWishlist = new WishlistEntity();
+        firstWishlist.setProjectId(saved.getId());
+        firstWishlist.setContent(initialWishlist.trim());
+        firstWishlist.setSource(WishlistSource.client);
+        firstWishlist.setStatus(WishlistStatus.pending);
+        wishlistRepository.save(firstWishlist);
 
         return toProjectDto(saved);
     }
@@ -265,13 +277,23 @@ public class ProjectFlowService {
         }
 
         int processedCount = 0;
-        if (ensureEnvironmentBootstrapTask(project).isPresent()) {
-            processedCount++;
-        }
 
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
                 wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
+
+        // Lean: the bootstrap task used to fire unconditionally on the first orchestrate() call, which
+        // ContinuousOrchestrationService triggers automatically every ~2-3 minutes for every active
+        // project - a brand-new project with no wishlist yet got a real Jules session dispatched
+        // (consuming an account slot and real cost) before the operator had asked for anything at all.
+        // Confirmed live: this confused the operator during the test-twenty-fifth experiment ("I haven't
+        // written a wishlist or pressed orchestrate yet - why is a session already running?"). Gating it
+        // on real pending demand is classic overproduction waste avoidance: don't build the scaffold until
+        // there's an actual first thing to scaffold for. The idempotency check inside
+        // ensureEnvironmentBootstrapTask still means it only ever fires once per project either way.
+        if (!pendingItems.isEmpty() && ensureEnvironmentBootstrapTask(project).isPresent()) {
+            processedCount++;
+        }
 
         for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingItems) {
             try {
@@ -379,7 +401,70 @@ public class ProjectFlowService {
                 1,
                 "environment bootstrap is required before feature flow dispatch"
         );
+        if (task != null) {
+            completeBootstrapDeterministically(project, task);
+        }
         return Optional.ofNullable(task);
+    }
+
+    // This task's own Definition of Done never referenced wishlist content - it only asks for a
+    // repository/runtime boundary doc naming setup, run, test, backend, and frontend boundaries. That is
+    // knowable directly from the project's own identity fields and the multi-stack CI template every
+    // project already gets (ProjectWorkspaceFactoryService's ciWorkflow), without needing an AI session to
+    // "figure it out" - and this exact task was one of the most common places a real Jules session got
+    // stuck in review-rejection loops (confirmed live in test-twenty-seventh: sat in revising for 1+ hour).
+    // Deterministic and honest about its own limits: if the commit fails for any reason, the task is left
+    // queued so it falls back to the normal Jules dispatch path rather than silently losing the work.
+    private void completeBootstrapDeterministically(ProjectEntity project, TaskEntity task) {
+        String content = bootstrapDocContent(project);
+        boolean committed = gitHubPullRequestService.commitFile(
+                project,
+                "docs/architecture/bootstrap.md",
+                content.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: repository execution boundary and runtime contract"
+        );
+        if (committed) {
+            task.setStatus(TaskStatus.done);
+            taskRepository.save(task);
+            log.info("Environment bootstrap for project {} completed deterministically by the backend (no Jules session needed): docs/architecture/bootstrap.md", project.getId());
+        } else {
+            log.warn("Environment bootstrap commit failed for project {}; leaving task queued for normal Jules dispatch as fallback", project.getId());
+        }
+    }
+
+    private String bootstrapDocContent(ProjectEntity project) {
+        return """
+                # Repository Execution Boundary and Runtime Contract
+
+                Generated deterministically at project bootstrap - not by a Jules session. This documents
+                the same structure every Eneik-generated project starts from; it does not depend on the
+                client wishlist.
+
+                ## Identity
+
+                - Project: %s
+                - Repository: %s
+
+                ## Setup, run, test
+
+                Detected by manifest file presence (matches .github/workflows/ci.yml):
+                - `pom.xml` present -> Java/Maven backend: `mvn test` to verify, `mvn spring-boot:run` (or the
+                  project's documented entrypoint) to run.
+                - `package.json` present -> Node/frontend: `npm ci`, `npm test --if-present`, `npm run build --if-present`.
+                - `requirements.txt` present -> Python service: `pip install -r requirements.txt`, `pytest`.
+
+                Until a role's first PR introduces one of these manifests, that boundary is not yet
+                established - implementers should create the manifest as part of their first real change,
+                not assume one already exists.
+
+                ## Backend / frontend / handoff boundaries
+
+                - Backend code belongs under a top-level backend source root (e.g. `src/main/java` for Java).
+                - Frontend code belongs under `frontend/` (e.g. `frontend/src` for a Svelte/Node frontend).
+                - Cross-cutting docs belong under `docs/`.
+                - New code must be placed under the boundary matching its role; do not mix backend and
+                  frontend concerns in the same source root.
+                """.formatted(project.getName(), project.getRepositoryUrl());
     }
 
     private Optional<WishlistEntity> findEnvironmentBootstrapWishlist(UUID projectId) {
@@ -913,24 +998,62 @@ public class ProjectFlowService {
         return java.util.List.of(fallbackTaskSlice(wishlist.getContent()));
     }
 
+    // Matches the exact follow-up content JulesDispatchService.completeDesignReview writes for each
+    // non-blocking concern: "Design reviewer concern (non-blocking) on design/approved/{path}: {text}".
+    private static final java.util.regex.Pattern DESIGN_CONCERN_APPROVED_PATH_PATTERN =
+            java.util.regex.Pattern.compile("Design reviewer concern \\(non-blocking\\) on (design/approved/[^:]+):");
+
+    // A slice compiled from a design-review concern is a correction to an already-approved mockup, not
+    // new UI surface - re-running Stitch and a fresh design-review session for it never converges: the
+    // new mockup gets its own review, which finds a new concern on some other element, which spawns
+    // another correction slice, forever (confirmed live in test-twenty-sixth: 5 chained design-review
+    // cycles, same "touch target" class of finding recurring on a different element each time, still
+    // generating new pending concerns when the operator stopped the run). The parent chain's content is
+    // preserved verbatim through internalSliceContent's wrapping, so this matches regardless of how many
+    // compiler generations deep the concern has travelled.
+    private String approvedDesignPathFromFollowUp(UUID wishlistId) {
+        WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElse(null);
+        if (wishlist == null || wishlist.getContent() == null) {
+            return null;
+        }
+        var matcher = DESIGN_CONCERN_APPROVED_PATH_PATTERN.matcher(wishlist.getContent());
+        return matcher.find() ? matcher.group(1) : null;
+    }
+
     private void compileSliceMetadata(ProjectEntity project, UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
         String acceptanceCriteria = defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria());
         if (slice.hasUi() || "BARCAN-TAG-11".equals(ownerRole) || "BARCAN-TAG-03".equals(ownerRole)) {
-            try {
-                var context = contextService.build(project.getId(), project.getName());
-                var designResult = designAssetService.generateAsset(
-                        project,
-                        context,
-                        "Create visual reference mockup for: " + slice.jtbd(),
-                        "mockup",
-                        "fast",
-                        false
-                );
-                if (designResult.available() && "ok".equals(designResult.status())) {
-                    acceptanceCriteria = acceptanceCriteria + "\n\nDESIGN_MOCKUP_ASSET: " + designResult.imagePath();
+            String approvedDesignPath = approvedDesignPathFromFollowUp(wishlistId);
+            if (approvedDesignPath != null) {
+                acceptanceCriteria = acceptanceCriteria + "\n\nDESIGN_MOCKUP_ASSET (already approved - this is a correction to existing design, not new UI; implement directly against it, no new mockup or design review needed): "
+                        + approvedDesignPath + "/mockup.html";
+            } else {
+                try {
+                    var context = contextService.build(project.getId(), project.getName());
+                    String brief = "Create visual reference mockup for: " + slice.jtbd();
+                    var designResult = designAssetService.generateAsset(
+                            project,
+                            context,
+                            brief,
+                            "mockup",
+                            "fast",
+                            false
+                    );
+                    if (designResult.available() && "ok".equals(designResult.status())) {
+                        // Only reference the GitHub-committed draft path - a Jules session has no access to
+                        // the Eneik backend's own local disk (designResult.imagePath()), so a local-only path
+                        // is a dead reference (confirmed live in the test-twenty-fifth experiment). If the
+                        // GitHub commit itself failed, skip the reference entirely rather than hand Jules
+                        // something it cannot open.
+                        if (!designResult.repoDraftPath().isBlank()) {
+                            acceptanceCriteria = acceptanceCriteria + "\n\nDESIGN_MOCKUP_ASSET (draft, pending design review - read directly from this repo checkout): "
+                                    + designResult.repoDraftPath() + "/mockup.html";
+                            dispatchDesignReview(project, designResult.repoDraftPath(), brief);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.warn("DesignAsset pre-generation failed: " + e.getMessage());
                 }
-            } catch (Exception e) {
-                log.warn("DesignAsset pre-generation failed: " + e.getMessage());
             }
         }
 
@@ -948,7 +1071,7 @@ public class ProjectFlowService {
 
     private String compiledDod(String ownerRole, MLPredictionServiceClient.TaskSliceMetadata slice) {
         String roleSpecificReadiness = switch (ownerRole) {
-            case "BARCAN-TAG-03" -> "UI/design readiness: follow docs/DESIGN_SYSTEM.md for layout, visual states, and interaction evidence.";
+            case "BARCAN-TAG-03" -> "UI/design readiness: follow docs/DESIGN_SYSTEM.md for layout, visual states, and interaction evidence. Deliverable is a committed HTML/CSS mockup file - a written brief or description with no mockup file is not acceptable.";
             case "BARCAN-TAG-11" -> "Frontend readiness: implement browser UI according to docs/DESIGN_SYSTEM.md and verify the user-visible interaction.";
             default -> "Role readiness: complete the smallest owner-role result without expanding scope.";
         };
@@ -1123,7 +1246,10 @@ public class ProjectFlowService {
         TaskEntity compilerTask = new TaskEntity();
         compilerTask.setProject(project);
         compilerTask.setRole(compilerRole);
-        compilerTask.setTitle("Compile wishlist into task graph");
+        // Suffixed with a short wishlist id fragment: an identical literal title across multiple compiler
+        // dispatches in the same project (a normal, legitimate occurrence) was tripping
+        // ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
+        compilerTask.setTitle("Compile wishlist into task graph (" + shortId(wishlist.getId()) + ")");
         compilerTask.setDescription(wishlistCompilerPrompt(wishlist));
         compilerTask.setStatus(TaskStatus.queued);
 
@@ -1164,7 +1290,14 @@ public class ProjectFlowService {
                         savedTask.getId(), account.getName(), dispatch.reason());
                 return;
             }
-            log.info("Dispatched compiler task {} to account {}", savedTask.getId(), account.getName());
+            // JulesDispatchService.dispatch() reports dispatched=true both for a genuinely fresh dispatch
+            // and for the "already dispatched, skip duplicate" no-op - logging both as "Dispatched compiler
+            // task" made the no-op case indistinguishable from a real dispatch in the logs.
+            if ("already dispatched, skipping duplicate".equals(dispatch.reason())) {
+                log.info("Compiler task {} was already dispatched to account {}; skipped duplicate dispatch", savedTask.getId(), account.getName());
+            } else {
+                log.info("Dispatched compiler task {} to account {}", savedTask.getId(), account.getName());
+            }
         } catch (Exception e) {
             log.error("Failed to claim/dispatch compiler task {} to account {}: {}",
                     compilerTask.getId(), account.getName(), e.getMessage(), e);
@@ -1199,6 +1332,16 @@ public class ProjectFlowService {
                   compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation.
                 - Set hasUi=true only when the item needs visible browser UI/design work.
                 - Avoid broad platform epics; split them into smaller user/admin/data/API items.
+                - Every item MUST end in a concrete committed file, never only a decision, brief, or
+                  discussion with nothing to show for it. Pick the artifact by domain: engineering work
+                  (backend/frontend/data/AI/build/security) -> real source code; copywriting or content
+                  work -> a text file containing the actual finished copy, not a description of what the
+                  copy should say; marketing or pricing work -> a file containing the actual prices/offer
+                  text, not a plan to define them later; UI/UX design work -> the design itself saved as
+                  a committed HTML/CSS mockup file, never just a written brief describing a mockup someone
+                  else should make. A BARCAN-TAG-09 delivery/spike/decision item must still end in a
+                  written decision-record file (e.g. a short architecture-decision markdown file) - "we
+                  discussed it" is not a deliverable.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
                 `.eneik/task-plan.json`, with EXACTLY this shape and no other files changed:
@@ -1215,6 +1358,224 @@ public class ProjectFlowService {
                 yourself, do not rely on it already being in English):
                 %s
                 """.formatted(defaultText(wishlist.getContent(), "(empty brief)"));
+    }
+
+    // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and
+    // methodological-falsification checks used to call Gemini once per active role per project on every
+    // falsification cycle. Reuses the same reserved eneikdru account and dispatch plumbing
+    // (dispatchCompilerTask is generic) - the falsification cron only fires every few hours, so it shares
+    // that account's capacity comfortably instead of contending with real product-implementation dispatch.
+    public static final String FALSIFICATION_AUDIT_TASK_TYPE = "falsification_audit";
+    public static final String FALSIFICATION_AUDIT_REPORT_PATH = ".eneik/falsification-report.json";
+    public static final String FALSIFICATION_AUDIT_HIGHEST_PR_KEY = "highestPrNumberAudited";
+
+    public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber) {
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch falsification audit for project {}: role {} not found",
+                    project.getId(), ORCHESTRATOR_ROLE);
+            return null;
+        }
+
+        TaskEntity auditTask = new TaskEntity();
+        auditTask.setProject(project);
+        auditTask.setRole(compilerRole);
+        // Suffixed with a short timestamp fragment for the same reason as the compiler task title above -
+        // avoid tripping the duplicate-task-title false positive across separate legitimate audit runs.
+        auditTask.setTitle("Falsification audit: refusal criteria & methodological review (" + shortId(UUID.randomUUID()) + ")");
+        auditTask.setDescription(prompt);
+        auditTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, FALSIFICATION_AUDIT_TASK_TYPE);
+        if (highestPrNumber != null) {
+            payload.put(FALSIFICATION_AUDIT_HIGHEST_PR_KEY, highestPrNumber);
+        }
+        auditTask.setPayload(payload);
+
+        auditTask = taskRepository.save(auditTask);
+        dispatchCompilerTask(auditTask);
+        return auditTask.getId();
+    }
+
+    public boolean isFalsificationAuditTask(TaskEntity task) {
+        return task.getPayload() != null
+                && FALSIFICATION_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public Integer falsificationAuditHighestPrNumber(TaskEntity task) {
+        if (task.getPayload() == null || !task.getPayload().hasNonNull(FALSIFICATION_AUDIT_HIGHEST_PR_KEY)) {
+            return null;
+        }
+        return task.getPayload().path(FALSIFICATION_AUDIT_HIGHEST_PR_KEY).asInt();
+    }
+
+    // Fallback reviewer, used only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE - so
+    // a real outage (or a permanently depleted quota) never leaves an implementer PR stuck unreviewed
+    // forever. Dispatches a standalone Jules eneikdru session (same reserved account and generic dispatch
+    // plumbing as the compiler/audit above) that reads the real diff and writes a soft verdict: it only
+    // blocks for a small enumerated set of critical problems, everything else is approved with concerns
+    // recorded as follow-up wishlist items - so work never stalls waiting on a reviewer's opinion, it only
+    // ever accumulates improvement backlog.
+    public static final String PR_REVIEW_FALLBACK_TASK_TYPE = "pr_review_fallback";
+    public static final String PR_REVIEW_FALLBACK_VERDICT_PATH = ".eneik/review-verdict.json";
+    public static final String PR_REVIEW_FALLBACK_TASK_ID_KEY = "reviewsTaskId";
+
+    public UUID dispatchReviewFallback(TaskEntity originalTask, String prompt) {
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch PR review fallback for task {}: role {} not found",
+                    originalTask.getId(), ORCHESTRATOR_ROLE);
+            return null;
+        }
+
+        TaskEntity reviewTask = new TaskEntity();
+        reviewTask.setProject(originalTask.getProject());
+        reviewTask.setRole(compilerRole);
+        // Suffixed with the reviewed task's short id - same duplicate-title false-positive reasoning as
+        // the compiler/audit task titles above; observed live triggering
+        // ContinuousOrchestrationService's DUPLICATE TASK TITLES alarm after only 3 fallback dispatches.
+        reviewTask.setTitle("PR review fallback (Gemini unavailable, " + shortId(originalTask.getId()) + ")");
+        reviewTask.setDescription(prompt);
+        reviewTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
+        payload.put(PR_REVIEW_FALLBACK_TASK_ID_KEY, originalTask.getId().toString());
+        reviewTask.setPayload(payload);
+
+        reviewTask = taskRepository.save(reviewTask);
+        dispatchCompilerTask(reviewTask);
+        return reviewTask.getId();
+    }
+
+    public boolean isReviewFallbackTask(TaskEntity task) {
+        return task.getPayload() != null
+                && PR_REVIEW_FALLBACK_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public UUID reviewFallbackTargetTaskId(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(PR_REVIEW_FALLBACK_TASK_ID_KEY).asText(null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    // A generated design mockup used to be an orphaned artifact: DesignAssetService wrote it to the Eneik
+    // backend's own local disk, and the only "reference" a task ever got was that local path pasted into
+    // Acceptance Criteria text - unreachable by any Jules session, which only ever sees its own GitHub
+    // checkout. Confirmed live in the test-twenty-fifth experiment: the mockup was real, the reference to
+    // it was structurally dead. Fixed two ways: (1) DesignAssetService now commits the real file into the
+    // project's own repo under design/draft/, so a Jules session can read it directly; (2) this method
+    // dispatches a real Jules review (role BARCAN-TAG-03) against that draft, applying the same
+    // composition/philosophical "attack" a human designer would - only a genuinely severe problem blocks
+    // promotion, everything else is approved with concerns recorded as follow-up wishlist work (same soft
+    // philosophy as the PR review fallback above: work never stalls waiting on a reviewer's opinion).
+    public static final String DESIGN_REVIEW_TASK_TYPE = "design_review";
+    public static final String DESIGN_REVIEW_VERDICT_PATH = ".eneik/design-review-verdict.json";
+    public static final String DESIGN_REVIEW_DRAFT_PATH_KEY = "designDraftPath";
+    private static final String DESIGNER_ROLE = "BARCAN-TAG-03";
+
+    public void dispatchDesignReview(ProjectEntity project, String draftPath, String brief) {
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch design review for project {}: role {} not found", project.getId(), ORCHESTRATOR_ROLE);
+            return;
+        }
+        String charter = readRawRoleRules(DESIGNER_ROLE);
+
+        TaskEntity reviewTask = new TaskEntity();
+        reviewTask.setProject(project);
+        reviewTask.setRole(compilerRole);
+        reviewTask.setTitle("Design review (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
+        reviewTask.setDescription(designReviewPrompt(draftPath, brief, charter));
+        reviewTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, DESIGN_REVIEW_TASK_TYPE);
+        payload.put(DESIGN_REVIEW_DRAFT_PATH_KEY, draftPath);
+        reviewTask.setPayload(payload);
+
+        reviewTask = taskRepository.save(reviewTask);
+        dispatchCompilerTask(reviewTask);
+        log.info("Dispatched design review task {} for draft {} in project {}", reviewTask.getId(), draftPath, project.getName());
+    }
+
+    public boolean isDesignReviewTask(TaskEntity task) {
+        return task.getPayload() != null
+                && DESIGN_REVIEW_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public String designReviewDraftPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(DESIGN_REVIEW_DRAFT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? null : raw;
+    }
+
+    private static final java.time.format.DateTimeFormatter FILE_TIME_SUFFIX =
+            java.time.format.DateTimeFormatter.ofPattern("HHmmssSSS").withZone(java.time.ZoneOffset.UTC);
+
+    private String readRawRoleRules(String roleTag) {
+        RoleEntity role = roleRepository.findById(roleTag).orElse(null);
+        if (role == null || role.getRulesPath() == null || role.getRulesPath().isBlank()) {
+            return "";
+        }
+        try {
+            java.nio.file.Path path = java.nio.file.Paths.get(role.getRulesPath());
+            if (java.nio.file.Files.exists(path)) {
+                return java.nio.file.Files.readString(path);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to read raw rules for role {}: {}", roleTag, e.getMessage());
+        }
+        return "";
+    }
+
+    private String designReviewPrompt(String draftPath, String brief, String charter) {
+        return """
+                You are the design reviewer for this project (BARCAN-TAG-03 role - UI/UX Designer). A
+                draft mockup was just generated and committed to THIS repository at `%s/mockup.html`
+                (and `%s/mockup.png` if present). Read it directly from your checkout - do NOT
+                implement, fix, or change any product code, and do not run builds or tests; this task
+                only produces a review verdict.
+
+                Apply your role charter below: composition, WCAG contrast where determinable from the
+                markup/CSS, Gestalt principles, information density (Miller's Law), and the
+                philosophical framing in your charter. This is a single generated screen, not a
+                desktop/mobile pair - do not reject it solely for missing a second resolution; judge
+                what is actually checkable from this one file.
+
+                Be lenient by design: work must never stall waiting on your opinion. Reject
+                ("verdict":"reject") ONLY for a small set of genuinely severe problems: the file is
+                empty, corrupted, or unreadable; contrast is badly broken (illegible text); the layout
+                is fundamentally incoherent; or it has nothing to do with the brief below. Anything else
+                - taste, minor spacing, a debatable color choice - is NOT a blocker: approve it and list
+                it as a "concern" instead, so it becomes a follow-up improvement item rather than
+                stopped work.
+
+                Deliverable: create a new branch and open a PR that contains ONLY one file,
+                `.eneik/design-review-verdict.json`, with EXACTLY this shape and no other files changed:
+                {"verdict": "approve", "reason": "", "concerns": ["short concern 1"]}
+                or, only for a genuine severe blocker:
+                {"verdict": "reject", "reason": "concrete, specific reason tied to the file", "concerns": []}
+                Do not write, modify, or delete any other file.
+
+                Design brief this mockup was generated for:
+                %s
+
+                Your role charter:
+                %s
+                """.formatted(draftPath, draftPath, brief, charter);
     }
 
     @Transactional
@@ -1241,8 +1602,9 @@ public class ProjectFlowService {
                 continue;
             }
 
-            if (isWishlistCompilerTask(task)) {
-                // Compiler tasks are pinned to the reserved compiler account, never the round-robin pool.
+            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+                // Compiler, falsification-audit, review-fallback, and design-review tasks are pinned to
+                // the reserved compiler account, never the round-robin pool.
                 dispatchCompilerTask(task);
                 continue;
             }

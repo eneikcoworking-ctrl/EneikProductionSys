@@ -16,7 +16,7 @@ const saveMockProjects = (projects: Project[]) => {
 };
 
 export const projectsApi = {
-  async createProject(name: string): Promise<Project> {
+  async createProject(name: string, onboardingMode?: string, initialWishlist?: string): Promise<Project> {
     if (USE_MOCK) {
       await sleep(400);
       const newProject: Project = {
@@ -38,7 +38,7 @@ export const projectsApi = {
     const res = await fetch(`${API_BASE}/api/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, onboardingMode, initialWishlist }),
     });
     if (!res.ok) {
       const err = await res.text();

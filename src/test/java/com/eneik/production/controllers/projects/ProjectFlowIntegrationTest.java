@@ -97,7 +97,7 @@ class ProjectFlowIntegrationTest {
     void clientProjectWishlistOrchestrationClaimAndAcceptanceFlow() {
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
-                Map.of("name", "Client Site Redesign"),
+                Map.of("name", "Client Site Redesign", "initialWishlist", "Redesign the client site"),
                 ProjectDto.class
         );
 
@@ -204,7 +204,7 @@ class ProjectFlowIntegrationTest {
         // Jules/GitHub connectivity to drive - so the graph builder is exercised directly instead.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
-                Map.of("name", "UI Ready Project"),
+                Map.of("name", "UI Ready Project", "initialWishlist", "Build the UI-ready slice"),
                 ProjectDto.class
         );
         assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
@@ -255,19 +255,12 @@ class ProjectFlowIntegrationTest {
         // involved anywhere in this path any more.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
-                Map.of("name", "Graph Compiler Project"),
+                Map.of("name", "Graph Compiler Project", "initialWishlist", "Build account settings with API, browser UI, and verification"),
                 ProjectDto.class
         );
         assertThat(createProject.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         ProjectDto project = createProject.getBody();
         assertThat(project).isNotNull();
-
-        ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
-                "/api/projects/" + project.id() + "/wishlist",
-                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Build account settings with API, browser UI, and verification"),
-                com.eneik.production.dto.WishlistResponseDto.class
-        );
-        assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);
 
         ResponseEntity<Map> orchestration = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/orchestrate",
@@ -296,7 +289,7 @@ class ProjectFlowIntegrationTest {
     void brownfieldOnboardingAuditAndActivationFlow() throws Exception {
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
-                Map.of("name", "Legacy App", "onboardingMode", "brownfield"),
+                Map.of("name", "Legacy App", "onboardingMode", "brownfield", "initialWishlist", "Analyze and modernize the legacy app"),
                 ProjectDto.class
         );
 
@@ -370,13 +363,10 @@ class ProjectFlowIntegrationTest {
         // while waiting on Gemini.
         ResponseEntity<ProjectDto> createProject = restTemplate.postForEntity(
                 "/api/projects",
-                Map.of("name", "Failing AI App"),
+                Map.of("name", "Failing AI App", "initialWishlist", "Will fail in AI"),
                 ProjectDto.class
         );
         ProjectDto project = createProject.getBody();
-
-        com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Will fail in AI");
-        restTemplate.postForEntity("/api/projects/" + project.id() + "/wishlist", req, com.eneik.production.dto.WishlistResponseDto.class);
 
         continuousOrchestrationService.continuousOrchestrate();
 

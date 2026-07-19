@@ -17,6 +17,9 @@
   let activeView: 'dashboard' | 'metrics' | 'resources' | 'admin' = 'dashboard';
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
+  let showWishlistPrompt = false;
+  let pendingOnboardingMode = 'greenfield';
+  let initialWishlist = '';
 
   async function loadProjects() {
     loadError = '';
@@ -54,19 +57,34 @@
     dashboard = await response.json();
   }
 
-  async function createProject(onboardingMode?: string) {
+  function promptForWishlist(onboardingMode: string) {
     if (!projectName.trim()) return;
+    pendingOnboardingMode = onboardingMode;
+    showOnboardPrompt = false;
+    showWishlistPrompt = true;
+  }
+
+  function cancelWishlistPrompt() {
+    showWishlistPrompt = false;
+    initialWishlist = '';
+  }
+
+  async function createProject() {
+    if (!projectName.trim() || !initialWishlist.trim()) return;
+    const onboardingMode = pendingOnboardingMode;
     status = onboardingMode === 'brownfield' ? 'Onboarding existing project...' : 'Creating isolated project workspace...';
     try {
       const response = await fetch(`${API_BASE}/api/projects`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: projectName, onboardingMode: onboardingMode || 'greenfield' })
+        body: JSON.stringify({ name: projectName, onboardingMode, initialWishlist })
       });
       if (response.ok) {
         const project = await response.json();
         projectName = '';
+        initialWishlist = '';
         showOnboardPrompt = false;
+        showWishlistPrompt = false;
         await loadProjects();
         await loadDashboard(project.id);
         status = onboardingMode === 'brownfield' ? 'Project onboarded. Analyzing Stack and Architecture.' : 'Project created. Seven Jules accounts attached.';
@@ -74,6 +92,7 @@
         const err = await response.json();
         if (err.error === 'name_conflict') {
           conflictingProjectName = projectName;
+          showWishlistPrompt = false;
           showOnboardPrompt = true;
           status = 'Name conflict detected on GitHub.';
         } else {
@@ -122,7 +141,7 @@
 
     <div class="create-project">
       <input bind:value={projectName} placeholder="New project name" aria-label="New project name" />
-      <button onclick={() => createProject()}>Create</button>
+      <button onclick={() => promptForWishlist('greenfield')}>Create</button>
     </div>
   </section>
 
@@ -191,8 +210,28 @@
         <h3>Repository Onboarding</h3>
         <p>A repository named <strong>{conflictingProjectName}</strong> already exists on GitHub. Should Eneik onboard and analyze that existing repository?</p>
         <div class="modal-actions">
-          <button class="btn btn-primary" onclick={() => createProject('brownfield')}>Yes, analyze it</button>
+          <button class="btn btn-primary" onclick={() => promptForWishlist('brownfield')}>Yes, analyze it</button>
           <button class="btn btn-secondary" onclick={() => { showOnboardPrompt = false; projectName = ''; status = 'Ready'; }}>No, use another name</button>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  {#if showWishlistPrompt}
+    <div class="modal-backdrop">
+      <div class="modal-content wishlist-modal">
+        <h3>First wishlist item for "{projectName}"</h3>
+        <p>A project can't be created empty - describe the first thing you want built. You can add more later.</p>
+        <textarea
+          bind:value={initialWishlist}
+          rows="8"
+          placeholder="Paste the client brief or describe the first feature..."
+          class="wishlist-textarea"
+          autofocus
+        ></textarea>
+        <div class="modal-actions">
+          <button class="btn btn-primary" disabled={!initialWishlist.trim()} onclick={createProject}>Create Project</button>
+          <button class="btn btn-secondary" onclick={cancelWishlistPrompt}>Back</button>
         </div>
       </div>
     </div>
@@ -255,6 +294,19 @@
   .modal-actions .btn-secondary {
     background: #f1f5f9;
     color: #475569;
+  }
+  .wishlist-modal {
+    max-width: 640px;
+  }
+  .wishlist-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font: inherit;
+    resize: vertical;
+    margin-bottom: 24px;
   }
   .nav-links {
     display: flex;

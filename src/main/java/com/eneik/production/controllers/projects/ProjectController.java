@@ -41,7 +41,7 @@ public class ProjectController {
     @PostMapping
     public ResponseEntity<?> create(@RequestBody ProjectCreateRequestDto request) {
         try {
-            return ResponseEntity.status(HttpStatus.CREATED).body(projectFlowService.createProject(request.name(), request.onboardingMode()));
+            return ResponseEntity.status(HttpStatus.CREATED).body(projectFlowService.createProject(request.name(), request.onboardingMode(), request.initialWishlist()));
         } catch (IllegalArgumentException e) {
             if ("name_conflict".equals(e.getMessage())) {
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("error", "name_conflict", "message", "Repository already exists on GitHub. Do you want to onboard it?"));

@@ -207,16 +207,23 @@ public class AutoMergeService {
                         boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
                         if (!isCompliant) {
                             String reason = (String) rcResult.get("reason");
-                            log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
-                            
-                            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-                            wishlist.setProjectId(task.getProject().getId());
-                            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
-                            wishlist.setSourceRoleTag(roleTag);
-                            wishlist.setContent("Role mismatch cleanup required: " + reason);
-                            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-                            wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
-                            wishlistRepository.save(wishlist);
+                            // checkRefusalCriteria() fails toward compliant=false when the ML/Gemini pipeline
+                            // itself is unreachable - "we couldn't check" is not the same claim as "we found a
+                            // real violation" (same precedent as FalsificationCycleService's identical guard).
+                            if (reason != null && reason.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
+                                log.warn("Refusal-criteria check unavailable for task {} (role {}); not treating as a violation", task.getId(), roleTag);
+                            } else {
+                                log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
+
+                                com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+                                wishlist.setProjectId(task.getProject().getId());
+                                wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
+                                wishlist.setSourceRoleTag(roleTag);
+                                wishlist.setContent("Role mismatch cleanup required: " + reason);
+                                wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                                wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+                                wishlistRepository.save(wishlist);
+                            }
                         }
                     }
                 }

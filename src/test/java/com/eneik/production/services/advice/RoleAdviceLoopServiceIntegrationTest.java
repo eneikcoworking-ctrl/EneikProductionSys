@@ -34,7 +34,11 @@ public class RoleAdviceLoopServiceIntegrationTest {
     private RoleRepository roleRepository;
 
     @Test
-    public void testAfterTaskComplete() {
+    public void testAfterTaskCompleteSkipsWishlistWhenAdviceServiceUnavailable() {
+        // In the test profile the ML service is unreachable, so this exercises the honest-fallback path:
+        // no fabricated advice should be created (the old fallback echoed the entire task description -
+        // which always carries the full original client brief - producing an oversized wishlist item that
+        // triggered a full re-decomposition of the brief; skipping is correct, not a regression).
         ProjectEntity project = new ProjectEntity();
         project.setName("Test Project");
         project.setSlug("test-project-advice");
@@ -55,10 +59,9 @@ public class RoleAdviceLoopServiceIntegrationTest {
         var wishlists = wishlistRepository.findAll();
         boolean found = wishlists.stream().anyMatch(w ->
             w.getSource() == WishlistSource.role &&
-            "BARCAN-TAG-02".equals(w.getSourceRoleTag()) &&
-            w.getContent().contains("Completed task")
+            "BARCAN-TAG-02".equals(w.getSourceRoleTag())
         );
 
-        assertTrue(found);
+        assertFalse(found, "No wishlist should be created when advice generation is unavailable - fabricating one from the raw task description was the bug being fixed");
     }
 }

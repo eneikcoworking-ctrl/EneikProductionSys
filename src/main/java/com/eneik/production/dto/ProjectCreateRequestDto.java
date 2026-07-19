@@ -1,4 +1,4 @@
 package com.eneik.production.dto;
 
-public record ProjectCreateRequestDto(String name, String onboardingMode) {
+public record ProjectCreateRequestDto(String name, String onboardingMode, String initialWishlist) {
 }

@@ -26,6 +26,12 @@ public class FalsificationRunEntity {
     @Column(name = "tasks_created_count", nullable = false)
     private int tasksCreatedCount;
 
+    // Lean: without this, every 4h cycle re-fetched and re-audited the same last-5-merged-PR diffs even
+    // when nothing new had merged since the previous run - real GitHub API calls and a real Jules session
+    // spent auditing code that was already audited. Null means "no prior run" (audit everything found).
+    @Column(name = "highest_pr_number_audited")
+    private Integer highestPrNumberAudited;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -43,4 +49,7 @@ public class FalsificationRunEntity {
 
     public int getTasksCreatedCount() { return tasksCreatedCount; }
     public void setTasksCreatedCount(int tasksCreatedCount) { this.tasksCreatedCount = tasksCreatedCount; }
+
+    public Integer getHighestPrNumberAudited() { return highestPrNumberAudited; }
+    public void setHighestPrNumberAudited(Integer highestPrNumberAudited) { this.highestPrNumberAudited = highestPrNumberAudited; }
 }

@@ -50,11 +50,25 @@ public class RoleAdviceLoopService {
             }
         }
 
+        String recommendation = generateFollowUpRecommendation(task);
+        if (recommendation == null) {
+            // Gemini unavailable and no real advice was derived - skip rather than fabricate. The old
+            // fallback ("Recommendation based on task completion: " + task.getDescription()) echoed the
+            // ENTIRE task description, which itself always carries the full original client brief
+            // verbatim (see ProjectFlowService's "Original Brief" section) - that oversized, brief-echoing
+            // "recommendation" then routed through compileWishlistIntoAtomicSlices into a full eneikdru
+            // compiler dispatch, re-decomposing almost the entire original ТЗ a second time and flooding
+            // the project with duplicate-content tasks. A skipped cycle produces zero value but also zero
+            // harm; a fabricated one produced real, expensive waste.
+            log.warn("RoleAdviceLoopService: Gemini unavailable for task {}, skipping advice generation this cycle (not fabricating a fallback)", task.getId());
+            return;
+        }
+
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(task.getProject().getId());
         wishlist.setSource(WishlistSource.role);
         wishlist.setSourceRoleTag(task.getRole().getTag());
-        wishlist.setContent(generateFollowUpRecommendation(task));
+        wishlist.setContent(recommendation);
         wishlist.setStatus(WishlistStatus.pending);
 
         wishlistRepository.save(wishlist);
@@ -80,10 +94,10 @@ public class RoleAdviceLoopService {
                     && !response.startsWith("The assistant is temporarily unavailable")) {
                 return response.trim();
             }
-            log.warn("RoleAdviceLoopService: Gemini follow-up recommendation unavailable for task {}, falling back to template", task.getId());
+            log.warn("RoleAdviceLoopService: Gemini follow-up recommendation unavailable for task {}", task.getId());
         } catch (Exception e) {
             log.warn("RoleAdviceLoopService: follow-up recommendation call failed for task {}: {}", task.getId(), e.getMessage());
         }
-        return "Recommendation based on task completion: " + task.getDescription();
+        return null;
     }
 }

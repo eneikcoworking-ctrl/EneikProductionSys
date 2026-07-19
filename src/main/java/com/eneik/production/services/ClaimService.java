@@ -411,13 +411,20 @@ public class ClaimService {
 
     /**
      * Maintenance: Detects and marks Jules sessions that are stuck.
+     *
+     * Covers "revising" as well as "running": a session sent back for fixes after a review rejection
+     * (see JulesDispatchService's REVIEW REJECTED handling) has no other liveness check pointed at it -
+     * forceUnblockOverflowedSessions only acts once blindCycleCount has climbed via the oversized-activity-
+     * log path, which a quietly-stalled revising session with a normal-sized log never triggers. Without
+     * "revising" here, such a session (and its task) can sit claimed/revising forever with zero automatic
+     * recovery. Confirmed live in test-twenty-sixth: two tasks stuck >40 minutes with no path back.
      */
     @Transactional
     public void detectStuckSessions(int stuckThresholdMinutes) {
         Instant threshold = Instant.now().minus(stuckThresholdMinutes, ChronoUnit.MINUTES);
-        List<JulesSessionEntity> runningSessions = julesSessionRepository.findByStatus("running");
+        List<JulesSessionEntity> activeSessions = julesSessionRepository.findByStatusIn(List.of("running", "revising"));
 
-        for (JulesSessionEntity session : runningSessions) {
+        for (JulesSessionEntity session : activeSessions) {
             // lastProgressAt (real forward progress) rather than updatedAt, which Hibernate refreshes on
             // every save regardless of whether anything actually changed - updatedAt alone can never go
             // stale while polling keeps succeeding, even for a session that is silently blocked.

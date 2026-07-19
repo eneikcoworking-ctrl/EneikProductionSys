@@ -39,9 +39,7 @@
     { key: 'design_service_enabled', label: 'Design service', kind: 'toggle' },
     { key: 'nano_banana_enabled', label: 'Nano Banana', kind: 'toggle' },
     { key: 'nano_banana_model', label: 'Image model', kind: 'text', placeholder: 'gemini-3.1-flash-image' },
-    { key: 'nano_banana_pro_model', label: 'Pro image model', kind: 'text', placeholder: 'gemini-3-pro-image' },
-    { key: 'veo_enabled', label: 'Veo video', kind: 'toggle' },
-    { key: 'veo_model', label: 'Veo model', kind: 'text', placeholder: 'veo-3.1-generate-preview' }
+    { key: 'nano_banana_pro_model', label: 'Pro image model', kind: 'text', placeholder: 'gemini-3-pro-image' }
   ];
 
   let settings = $state<Setting[]>([]);

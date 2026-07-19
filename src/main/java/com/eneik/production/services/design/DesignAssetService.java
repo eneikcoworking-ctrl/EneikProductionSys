@@ -29,24 +29,55 @@ public class DesignAssetService {
     private static final DateTimeFormatter FILE_TIME =
             DateTimeFormatter.ofPattern("yyyyMMddHHmmss").withZone(ZoneOffset.UTC);
 
+    public static final String DESIGN_DRAFT_ROOT = "design/draft";
+    public static final String DESIGN_APPROVED_ROOT = "design/approved";
+
     private final GoogleAiResourceService googleAiResourceService;
     private final StitchClient stitchClient;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final Path assetRoot;
 
     public DesignAssetService(GoogleAiResourceService googleAiResourceService,
                               StitchClient stitchClient,
                               SystemSettingsService settingsService,
                               ObjectMapper objectMapper,
+                              com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this.googleAiResourceService = googleAiResourceService;
         this.stitchClient = stitchClient;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
+        this.gitHubPullRequestService = gitHubPullRequestService;
         this.assetRoot = Paths.get(assetRoot == null || assetRoot.isBlank() ? "./data/design-assets" : assetRoot)
                 .toAbsolutePath()
                 .normalize();
+    }
+
+    /**
+     * Commits a design asset's real bytes into the project's actual GitHub repository under
+     * design/draft/{basename}/ - local disk (./data/design-assets/...) is only reachable from the Eneik
+     * backend's own container, never from a Jules session (which only ever sees its GitHub checkout).
+     * Without this, DESIGN_MOCKUP_ASSET references handed to implementer/reviewer tasks were dead paths -
+     * confirmed live in the test-twenty-fifth experiment. Best-effort: returns "" (not an error) if GitHub
+     * isn't configured, since local generation still succeeded and the caller can fall back to that.
+     */
+    private String commitDraftToGitHub(ProjectEntity project, String basename, byte[] htmlBytes, byte[] imageBytes, String imageExtension) {
+        if (project == null) {
+            return "";
+        }
+        String draftDir = DESIGN_DRAFT_ROOT + "/" + basename;
+        boolean committedAny = false;
+        if (htmlBytes != null && htmlBytes.length > 0) {
+            committedAny |= gitHubPullRequestService.commitFile(project, draftDir + "/mockup.html", htmlBytes,
+                    "Add design draft: " + basename);
+        }
+        if (imageBytes != null && imageBytes.length > 0) {
+            committedAny |= gitHubPullRequestService.commitFile(project, draftDir + "/mockup" + imageExtension, imageBytes,
+                    "Add design draft screenshot: " + basename);
+        }
+        return committedAny ? draftDir : "";
     }
 
     public DesignAssetResult generateAsset(ProjectEntity project,
@@ -100,7 +131,7 @@ public class DesignAssetService {
         if (!interaction.available()) {
             log.warn("DesignAssetService: mockup generation via model {} failed (status={}): {}",
                     model, interaction.status(), interaction.outputText());
-            return new DesignAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText());
+            return new DesignAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText(), "");
         }
         if (interaction.outputImageBase64().isBlank()) {
             log.warn("DesignAssetService: model {} returned no image block for project {}",
@@ -113,7 +144,8 @@ public class DesignAssetService {
                     "",
                     "",
                     "The image model returned no image block. Text output: " + interaction.outputText()
-                            + "\nRaw preview: " + interaction.rawPreview()
+                            + "\nRaw preview: " + interaction.rawPreview(),
+                    ""
             );
         }
 
@@ -143,6 +175,8 @@ public class DesignAssetService {
             metadata.put("textOutput", interaction.outputText());
             Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
 
+            String repoDraftPath = commitDraftToGitHub(project, basename, null, imageBytes, extension);
+
             return new DesignAssetResult(
                     true,
                     "ok",
@@ -150,11 +184,12 @@ public class DesignAssetService {
                     imagePath.toString(),
                     metadataPath.toString(),
                     interaction.outputImageMimeType(),
-                    "Generated design asset and metadata."
+                    "Generated design asset and metadata.",
+                    repoDraftPath
             );
         } catch (Exception e) {
             log.warn("DesignAssetService: failed to write generated mockup to disk: {}", e.getMessage());
-            return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage());
+            return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage(), "");
         }
     }
 
@@ -163,7 +198,7 @@ public class DesignAssetService {
         String stitchProjectId = stitchClient.createProject(title);
         if (stitchProjectId == null) {
             return new DesignAssetResult(false, "stitch_project_error", "stitch", "", "", "",
-                    "Stitch did not return a project ID for create_project.");
+                    "Stitch did not return a project ID for create_project.", "");
         }
 
         String prompt = brief == null || brief.isBlank()
@@ -171,7 +206,7 @@ public class DesignAssetService {
                 : brief;
         StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH");
         if (!screen.available()) {
-            return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message());
+            return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "");
         }
 
         try {
@@ -182,28 +217,30 @@ public class DesignAssetService {
             String basename = FILE_TIME.format(Instant.now()) + "-" + kind;
 
             String imagePath = "";
+            byte[] screenshotBytes = null;
             if (!screen.screenshotDownloadUrl().isBlank()) {
-                byte[] imageBytes = stitchClient.download(screen.screenshotDownloadUrl());
-                if (imageBytes != null) {
+                screenshotBytes = stitchClient.download(screen.screenshotDownloadUrl());
+                if (screenshotBytes != null) {
                     Path resolvedImagePath = directory.resolve(basename + ".png").normalize();
-                    Files.write(resolvedImagePath, imageBytes);
+                    Files.write(resolvedImagePath, screenshotBytes);
                     imagePath = resolvedImagePath.toString();
                 }
             }
 
             String htmlPath = "";
+            byte[] htmlFileBytes = null;
             if (!screen.htmlDownloadUrl().isBlank()) {
-                byte[] htmlBytes = stitchClient.download(screen.htmlDownloadUrl());
-                if (htmlBytes != null) {
+                htmlFileBytes = stitchClient.download(screen.htmlDownloadUrl());
+                if (htmlFileBytes != null) {
                     Path resolvedHtmlPath = directory.resolve(basename + ".html").normalize();
-                    Files.write(resolvedHtmlPath, htmlBytes);
+                    Files.write(resolvedHtmlPath, htmlFileBytes);
                     htmlPath = resolvedHtmlPath.toString();
                 }
             }
 
             if (imagePath.isBlank() && htmlPath.isBlank()) {
                 return new DesignAssetResult(false, "stitch_download_error", "stitch", "", "", "",
-                        "Stitch generated a screen but its files could not be downloaded.");
+                        "Stitch generated a screen but its files could not be downloaded.", "");
             }
 
             Path metadataPath = directory.resolve(basename + ".json").normalize();
@@ -218,6 +255,8 @@ public class DesignAssetService {
             metadata.put("htmlPath", htmlPath);
             Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
 
+            String repoDraftPath = commitDraftToGitHub(project, basename, htmlFileBytes, screenshotBytes, ".png");
+
             return new DesignAssetResult(
                     true,
                     "ok",
@@ -225,11 +264,12 @@ public class DesignAssetService {
                     imagePath.isBlank() ? htmlPath : imagePath,
                     metadataPath.toString(),
                     imagePath.isBlank() ? "text/html" : "image/png",
-                    "Generated design asset via Stitch."
+                    "Generated design asset via Stitch.",
+                    repoDraftPath
             );
         } catch (Exception e) {
             log.warn("DesignAssetService: failed to write Stitch-generated asset to disk: {}", e.getMessage());
-            return new DesignAssetResult(false, "write_error", "stitch", "", "", "", e.getMessage());
+            return new DesignAssetResult(false, "write_error", "stitch", "", "", "", e.getMessage(), "");
         }
     }
 
@@ -316,10 +356,11 @@ public class DesignAssetService {
             String imagePath,
             String metadataPath,
             String mimeType,
-            String message
+            String message,
+            String repoDraftPath
     ) {
         static DesignAssetResult unavailable(String reason) {
-            return new DesignAssetResult(false, "unavailable", "", "", "", "", reason);
+            return new DesignAssetResult(false, "unavailable", "", "", "", "", reason, "");
         }
     }
 }

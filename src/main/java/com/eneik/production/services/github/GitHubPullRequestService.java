@@ -136,6 +136,16 @@ public class GitHubPullRequestService {
      * since Jules sessions communicate their structured result as a committed file, not a direct reply.
      */
     public Optional<String> fetchFileContent(ProjectEntity project, String ref, String path) {
+        return fetchFileBytes(project, ref, path).map(bytes -> new String(bytes, StandardCharsets.UTF_8));
+    }
+
+    /**
+     * Binary-safe counterpart of {@link #fetchFileContent} - decoding through a UTF-8 String (as
+     * fetchFileContent does) silently corrupts non-text content such as PNG screenshots. Used by
+     * {@link #copyFile} to promote a design draft (which includes a PNG) to the approved folder without
+     * mangling it.
+     */
+    public Optional<byte[]> fetchFileBytes(ProjectEntity project, String ref, String path) {
         if (project == null || ref == null || ref.isBlank() || path == null || path.isBlank()) {
             return Optional.empty();
         }
@@ -167,8 +177,7 @@ public class GitHubPullRequestService {
             if (!"base64".equals(encoding) || rawContent.isBlank()) {
                 return Optional.empty();
             }
-            byte[] decoded = java.util.Base64.getMimeDecoder().decode(rawContent);
-            return Optional.of(new String(decoded, StandardCharsets.UTF_8));
+            return Optional.of(java.util.Base64.getMimeDecoder().decode(rawContent));
         } catch (Exception e) {
             log.warn("Could not fetch file {} at ref {} for project {}: {}", path, ref, project.getId(), e.getMessage());
             return Optional.empty();
@@ -176,9 +185,138 @@ public class GitHubPullRequestService {
     }
 
     /**
+     * Fetches the unified diff text for a PR - used by the Jules-reviewer fallback
+     * (JulesDispatchService.dispatchReviewerFallback) to embed the real code change directly in that
+     * session's prompt, since Jules sessions always start from main and have no way to check out an
+     * arbitrary PR branch themselves.
+     */
+    public Optional<String> fetchDiffText(ProjectEntity project, int pullNumber) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String url = githubConfig.getApiBaseUrl().replaceAll("/+$", "") + "/repos/"
+                    + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
+            HttpRequest request = HttpRequest.newBuilder(URI.create(url))
+                    .header("Authorization", "Bearer " + token)
+                    .header("Accept", "application/vnd.github.v3.diff")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return Optional.of(response.body());
+            }
+            log.warn("GitHub diff fetch failed for PR #{} in project {}: status={}", pullNumber, project.getId(), response.statusCode());
+        } catch (Exception e) {
+            log.warn("Could not fetch diff for PR #{} in project {}: {}", pullNumber, project.getId(), e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Commits a single new file directly to the project's default branch via the GitHub "create file
+     * contents" API - used to put generated design assets (Stitch mockups) inside the actual repository
+     * so a Jules session (which only ever sees the checked-out repo, never the Eneik backend's own disk)
+     * can read them. Only handles brand-new files (no `sha`, so this is a create, not an update) - every
+     * caller here uses a fresh timestamped path, so collisions are not expected.
+     */
+    public boolean commitFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return false;
+        }
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/" + encodePath(path);
+            var body = objectMapper.createObjectNode();
+            body.put("message", commitMessage);
+            body.put("content", java.util.Base64.getEncoder().encodeToString(content));
+            HttpRequest request = baseRequest(urlPath, token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 || response.statusCode() == 201) {
+                return true;
+            }
+            log.warn("GitHub commit-file failed for {}/{} path={}: status={} body={}",
+                    repoRef.owner(), repoRef.repo(), path, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not commit file {} for project {}: {}", path, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    /**
+     * Reads an existing committed file and re-commits its exact bytes at a new path - used to promote a
+     * design draft to the approved folder once it passes review, without touching the draft (kept as a
+     * permanent record).
+     */
+    public boolean copyFile(ProjectEntity project, String fromPath, String toPath, String commitMessage) {
+        Optional<byte[]> content = fetchFileBytes(project, "main", fromPath);
+        if (content.isEmpty()) {
+            log.warn("GitHub copy-file: source {} not found for project {}", fromPath, project == null ? "unknown" : project.getId());
+            return false;
+        }
+        return commitFile(project, toPath, content.get(), commitMessage);
+    }
+
+    /**
+     * Merges a record PR (a compiler plan, a review verdict, a design-review verdict, a falsification
+     * report) instead of discarding it. These files are real production documentation once parsed and
+     * acted on - "it did its job" is a reason to keep it in history under a real name, not to throw it
+     * away. Falls back to {@link #closeSinglePullRequest} if the merge itself fails (e.g. a real
+     * conflict), so a failed merge never leaves the PR silently open forever.
+     */
+    public PullRequestCloseResult mergeRecordPullRequest(ProjectEntity project, GitHubPullRequest pullRequest, String reason) {
+        if (project == null || pullRequest == null) {
+            return new PullRequestCloseResult(0, "", "failed", 0, "Project or pull request missing");
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub integration is disabled");
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub token is missing");
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullRequest.number() + "/merge";
+            HttpRequest request = baseRequest(path, token)
+                    .PUT(HttpRequest.BodyPublishers.ofString("{}", StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                log.info("Merged record PR {} for {}/{}. reason={}", pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
+                return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "merged", response.statusCode(), reason);
+            }
+            log.warn("Record PR merge failed for {}: status={} body={}; falling back to close",
+                    pullRequest.url(), response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not merge record PR {} for project {}: {}; falling back to close",
+                    pullRequest.url(), project.getId(), e.getMessage());
+        }
+        return closeSinglePullRequest(project, pullRequest, reason + " (merge failed, closed instead)");
+    }
+
+    /**
      * Closes exactly one PR (unlike {@link #closeOpenPullRequests}, which closes every open PR for the
-     * project). Used to discard a wishlist-compiler PR once its JSON plan has been parsed - it only ever
-     * carries the plan file, never product code, so it must never be merged.
+     * project). Used only when a record PR could not be validly parsed (e.g. an invalid compiler plan) -
+     * there is nothing worth keeping in history in that case.
      */
     public PullRequestCloseResult closeSinglePullRequest(ProjectEntity project, GitHubPullRequest pullRequest, String reason) {
         if (project == null || pullRequest == null) {

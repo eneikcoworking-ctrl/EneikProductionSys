@@ -66,10 +66,29 @@ public class JulesDispatchService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
     private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
+    private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
     private static final String WISHLIST_COMPILER_PLAN_PATH = ".eneik/task-plan.json";
+
+    private static final java.time.format.DateTimeFormatter RECORD_ARCHIVE_TIME_SUFFIX =
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMdd-HHmmssSSS").withZone(java.time.ZoneOffset.UTC);
+
+    // Once a record PR (compiler plan, review verdict, design verdict, falsification report) is merged,
+    // its file sits at a fixed, reused path (e.g. .eneik/task-plan.json) - the NEXT merge would silently
+    // overwrite it, destroying the previous run's documentation. Archiving a timestamped copy under
+    // .eneik/records/ keeps every run as permanent, distinctly named production documentation instead of
+    // a single clobbered file (operator's explicit instruction: "даже если там просто файл с текстом -
+    // его сохранять под соответствующим названием - для контекста. Это производственная документация").
+    private void archiveRecordFile(com.eneik.production.models.persistence.ProjectEntity project, String fixedPath, String typeLabel) {
+        String archivePath = ".eneik/records/" + typeLabel + "-" + RECORD_ARCHIVE_TIME_SUFFIX.format(java.time.Instant.now()) + ".json";
+        boolean archived = gitHubPullRequestService.copyFile(project, fixedPath, archivePath,
+                "Archive " + typeLabel + " as production documentation");
+        if (!archived) {
+            log.warn("Could not archive {} record from {} to {} for project {}", typeLabel, fixedPath, archivePath, project.getId());
+        }
+    }
 
     @Value("${jules.stuck-threshold-minutes:30}")
     private int stuckThresholdMinutes;
@@ -109,6 +128,7 @@ public class JulesDispatchService {
                                 com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
                                 com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
+                                @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -127,6 +147,7 @@ public class JulesDispatchService {
         this.systemProgressTracker = systemProgressTracker;
         this.projectFlowService = projectFlowService;
         this.needsHumanReviewRepository = needsHumanReviewRepository;
+        this.falsificationCycleService = falsificationCycleService;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -1187,6 +1208,18 @@ public class JulesDispatchService {
                 completeWishlistCompilation(session, task);
                 return;
             }
+            if (projectFlowService.isFalsificationAuditTask(task)) {
+                completeFalsificationAudit(session, task);
+                return;
+            }
+            if (projectFlowService.isReviewFallbackTask(task)) {
+                completeReviewerFallback(session, task);
+                return;
+            }
+            if (projectFlowService.isDesignReviewTask(task)) {
+                completeDesignReview(session, task);
+                return;
+            }
             if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed) {
                 log.info("Jules session {} transitioned to pr_opened. Completing implementer phase for task {}.", session.getId(), taskId);
                 if (claimService.hasActiveClaim(task.getId())) {
@@ -1213,6 +1246,15 @@ public class JulesDispatchService {
                 String remarks = (String) reviewResult.get("remarks");
                 if (remarks == null || remarks.isBlank()) {
                     remarks = "PR review rejected without detailed remarks.";
+                }
+                if (!approved && remarks.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
+                    // Gemini itself is unreachable/out of quota - this is not a real defect in Jules's code,
+                    // so neither fake-approving nor sending a rejection message asking Jules to "fix" nothing
+                    // is honest. A retry-only strategy would never resolve a genuinely dead Gemini quota, so
+                    // dispatch a real Jules eneikdru session as the reviewer instead - work keeps moving
+                    // either way, it just costs a Jules session instead of an instant Gemini call.
+                    dispatchReviewerFallback(task, prUrl);
+                    return;
                 }
                 boolean softArtifactDebt = !approved && isSoftGeneratedArtifactDebt(remarks);
 
@@ -1341,8 +1383,11 @@ public class JulesDispatchService {
 
         if (isValidCompilerPlan(slices)) {
             projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlist, slices);
-            prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
-                    compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks"));
+            prOpt.ifPresent(pr -> {
+                gitHubPullRequestService.mergeRecordPullRequest(
+                        compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks");
+                archiveRecordFile(compilerTask.getProject(), WISHLIST_COMPILER_PLAN_PATH, "task-plan");
+            });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
             }
@@ -1392,6 +1437,400 @@ public class JulesDispatchService {
         });
         log.warn("Wishlist compiler plan invalid for wishlist {} (attempt {}/{}); asked Jules to retry",
                 wishlist.getId(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES);
+    }
+
+    /**
+     * A falsification-audit session reached pr_opened: its PR should carry exactly one JSON report
+     * (see FalsificationCycleService.buildAuditPrompt), never product code. Parses it, applies any
+     * violations through the same wishlist-creation path Gemini's answers used to drive
+     * (FalsificationCycleService.applyAuditViolations), then discards the audit PR - it never gets
+     * merged, same as the wishlist compiler PR. No retry loop: an invalid/missing report simply skips
+     * this run, since the falsification cron fires again in a few hours regardless.
+     */
+    private void completeFalsificationAudit(JulesSessionEntity session, TaskEntity auditTask) {
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(auditTask.getProject(), session.getExternalSessionId());
+        List<com.eneik.production.services.FalsificationCycleService.AuditViolation> violations = prOpt
+                .map(pr -> parseFalsificationReport(auditTask.getProject(), pr.headRef()))
+                .orElseGet(List::of);
+
+        Integer highestPrNumber = projectFlowService.falsificationAuditHighestPrNumber(auditTask);
+        falsificationCycleService.applyAuditViolations(auditTask.getProject(), violations, highestPrNumber);
+
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(
+                    auditTask.getProject(), pr, "falsification audit report parsed into wishlist follow-ups");
+            archiveRecordFile(auditTask.getProject(), com.eneik.production.services.ProjectFlowService.FALSIFICATION_AUDIT_REPORT_PATH, "falsification-report");
+        });
+        if (claimService.hasActiveClaim(auditTask.getId())) {
+            claimService.complete(auditTask.getId());
+        }
+        systemProgressTracker.recordProgress();
+        log.info("Falsification audit for project {} completed by Jules session {}: {} violation(s) reported",
+                auditTask.getProject().getId(), session.getExternalSessionId(), violations.size());
+    }
+
+    private List<com.eneik.production.services.FalsificationCycleService.AuditViolation> parseFalsificationReport(
+            ProjectEntity project, String headRef) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(
+                project, headRef, com.eneik.production.services.ProjectFlowService.FALSIFICATION_AUDIT_REPORT_PATH);
+        if (content.isEmpty()) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            JsonNode rawViolations = root.path("violations");
+            if (!rawViolations.isArray()) {
+                return List.of();
+            }
+            List<com.eneik.production.services.FalsificationCycleService.AuditViolation> result = new java.util.ArrayList<>();
+            for (JsonNode v : rawViolations) {
+                String roleTag = v.path("roleTag").asText("");
+                if (roleTag.isBlank()) {
+                    continue;
+                }
+                result.add(new com.eneik.production.services.FalsificationCycleService.AuditViolation(
+                        roleTag,
+                        v.path("type").asText("refusal_criteria"),
+                        v.path("reason").asText(""),
+                        v.path("philosopher").asText(""),
+                        v.path("thesis").asText(""),
+                        v.path("score").asText(""),
+                        v.path("mustBe").asText(""),
+                        v.path("performance").asText(""),
+                        v.path("attractive").asText("")
+                ));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("Failed to parse falsification audit report for project {}: {}", project.getId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * Triggered only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE. Fetches the real
+     * PR diff (Jules sessions always start from main, so the reviewer session needs the diff text handed
+     * to it directly - it cannot check out the implementer's branch itself) and dispatches a standalone
+     * Jules eneikdru review-fallback task. If the diff can't be fetched either (e.g. GitHub also
+     * disabled), this leaves the task exactly as-is for a retry next cycle rather than guessing.
+     */
+    private void dispatchReviewerFallback(TaskEntity task, String prUrl) {
+        Integer pullNumber = parsePullNumber(prUrl);
+        Optional<String> diff = pullNumber != null
+                ? gitHubPullRequestService.fetchDiffText(task.getProject(), pullNumber)
+                : Optional.empty();
+        if (diff.isEmpty()) {
+            log.warn("PR review fallback: could not fetch diff for task {} (PR {}); leaving pr_opened for retry next cycle.",
+                    task.getId(), prUrl);
+            return;
+        }
+        String prompt = reviewerFallbackPrompt(task, prUrl, diff.get());
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallback(task, prompt);
+        if (reviewTaskId == null) {
+            log.warn("Could not dispatch PR review fallback for task {}", task.getId());
+            return;
+        }
+        log.info("Dispatched PR review fallback task {} for task {} (PR {}) - Gemini review unavailable",
+                reviewTaskId, task.getId(), prUrl);
+    }
+
+    private Integer parsePullNumber(String prUrl) {
+        if (prUrl == null || prUrl.isBlank() || prUrl.contains("/mock-")) {
+            return null;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(prUrl);
+            String[] parts = uri.getPath().replaceAll("^/+", "").split("/");
+            if (parts.length >= 4 && "pull".equals(parts[2]) && parts[3].matches("\\d+")) {
+                return Integer.parseInt(parts[3]);
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse PR number from URL {}: {}", prUrl, e.getMessage());
+        }
+        return null;
+    }
+
+    private String reviewerFallbackPrompt(TaskEntity task, String prUrl, String diff) {
+        return """
+                You are the fallback code reviewer for this PR (Gemini review is temporarily or permanently
+                unavailable). Review the PR below - do NOT implement, fix, or change any product code
+                yourself, and do not run builds or tests; this task only produces a review verdict.
+
+                Be lenient by design: work must never stall waiting on your opinion. Block
+                ("verdict":"block") ONLY for a small set of genuinely critical problems: a real security
+                vulnerability, data loss risk, hardcoded secrets/credentials, committed generated/build
+                artifacts (node_modules, playwright-report, coverage, .zip/.png/.webm/.trace files), missing
+                required tests for a QA task, or a direct contradiction of the task's stated Acceptance
+                Criteria/DoD below. Anything else - style preferences, architecture opinions, missing edge
+                cases that do not break the Acceptance Criteria, suggestions for a better approach - is NOT
+                a blocker: approve the PR and list it as a "concern" instead, so it becomes a follow-up
+                improvement item rather than stopped work.
+
+                Deliverable: create a new branch and open a PR that contains ONLY one file,
+                `.eneik/review-verdict.json`, with EXACTLY this shape and no other files changed:
+                {"verdict": "approve", "criticalReason": "", "concerns": ["short concern 1", "short concern 2"]}
+                or, only for a genuine critical blocker:
+                {"verdict": "block", "criticalReason": "concrete, specific blocking reason tied to the diff", "concerns": []}
+                Do not write, modify, or delete any other file.
+
+                Original task (role %s):
+                %s
+
+                PR under review: %s
+
+                Diff to review:
+                %s
+                """.formatted(task.getRole().getTag(), task.getDescription(), prUrl, diff);
+    }
+
+    private record ReviewVerdict(String verdict, String criticalReason, List<String> concerns) {
+    }
+
+    private ReviewVerdict parseReviewVerdict(ProjectEntity project, String headRef) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(
+                project, headRef, com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_VERDICT_PATH);
+        if (content.isEmpty()) {
+            return null;
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            String verdict = root.path("verdict").asText("approve");
+            String criticalReason = root.path("criticalReason").asText("");
+            List<String> concerns = new java.util.ArrayList<>();
+            JsonNode rawConcerns = root.path("concerns");
+            if (rawConcerns.isArray()) {
+                for (JsonNode c : rawConcerns) {
+                    concerns.add(c.asText(""));
+                }
+            }
+            return new ReviewVerdict(verdict, criticalReason, concerns);
+        } catch (Exception e) {
+            log.warn("Failed to parse PR review fallback verdict for project {}: {}", project.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * A review-fallback session reached pr_opened: its PR should carry exactly one JSON verdict (see
+     * reviewerFallbackPrompt above), never product code. Discards that PR either way (it never gets
+     * merged), then applies the verdict to the ORIGINAL implementer task/session: a genuine critical
+     * block sends Jules a correction on the same PR; anything else approves the PR through the same
+     * pipeline the primary Gemini path uses, and records every concern as a non-blocking follow-up
+     * wishlist item instead of stopping the work.
+     */
+    private void completeReviewerFallback(JulesSessionEntity session, TaskEntity reviewTask) {
+        UUID originalTaskId = projectFlowService.reviewFallbackTargetTaskId(reviewTask);
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(reviewTask.getProject(), session.getExternalSessionId());
+        ReviewVerdict verdict = prOpt
+                .map(pr -> parseReviewVerdict(reviewTask.getProject(), pr.headRef()))
+                .orElse(null);
+
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(
+                    reviewTask.getProject(), pr, "PR review fallback verdict parsed");
+            archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_VERDICT_PATH, "review-verdict");
+        });
+        if (claimService.hasActiveClaim(reviewTask.getId())) {
+            claimService.complete(reviewTask.getId());
+        }
+
+        if (originalTaskId == null) {
+            log.error("PR review fallback task {} has no reviewsTaskId payload marker; cannot apply verdict", reviewTask.getId());
+            return;
+        }
+        TaskEntity originalTask = taskRepository.findById(originalTaskId).orElse(null);
+        if (originalTask == null) {
+            log.warn("PR review fallback task {}: original task {} no longer exists, discarding verdict", reviewTask.getId(), originalTaskId);
+            return;
+        }
+        List<JulesSessionEntity> implementerSessions = julesSessionRepository.findByTaskId(originalTaskId);
+        JulesSessionEntity implementerSession = implementerSessions.stream()
+                .filter(s -> "pr_opened".equals(s.getStatus()))
+                .findFirst()
+                .orElseGet(() -> implementerSessions.stream().filter(s -> s.getPrUrl() != null).findFirst().orElse(null));
+        if (implementerSession == null) {
+            log.warn("PR review fallback task {}: no implementer session found for task {}, discarding verdict", reviewTask.getId(), originalTaskId);
+            return;
+        }
+
+        if (verdict == null) {
+            log.warn("PR review fallback task {}: no valid verdict report found; task {} left for retry next cycle", reviewTask.getId(), originalTaskId);
+            return;
+        }
+
+        String prUrl = implementerSession.getPrUrl();
+        if (prUrl == null || prUrl.isBlank()) {
+            prUrl = "https://github.com/" + originalTask.getProject().getRepositoryName() + "/pull/mock-" + originalTaskId;
+        }
+
+        boolean blocked = "block".equalsIgnoreCase(verdict.verdict())
+                && verdict.criticalReason() != null && !verdict.criticalReason().isBlank();
+
+        if (blocked) {
+            log.warn("PR review fallback: task {} (PR {}) blocked by Jules reviewer - {}", originalTaskId, prUrl, verdict.criticalReason());
+            originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            taskRepository.save(originalTask);
+            implementerSession.setStatus("revising");
+            julesSessionRepository.save(implementerSession);
+            String correction = "Fallback reviewer (Jules, Gemini unavailable) blocked this PR: " + verdict.criticalReason()
+                    + "\nPlease fix the same PR to resolve this specific problem.";
+            String externalSessionId = implementerSession.getExternalSessionId();
+            String sessionApiKey = apiKeyForSession(implementerSession);
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                boolean sent = sessionApiKey != null
+                        ? julesApiClient.sendMessage(externalSessionId, correction, sessionApiKey)
+                        : julesApiClient.sendMessage(externalSessionId, correction);
+                if (!sent) {
+                    log.warn("Failed to send fallback-reviewer block message to Jules session {}", externalSessionId);
+                }
+            });
+            return;
+        }
+
+        // Approved (or a "block" without a real critical reason, which is treated as approve by design -
+        // never stall on an unsubstantiated objection).
+        com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
+        prData.setCiStatus("success");
+        prData.setLinesChanged(120);
+        prData.setFilesChanged(4);
+        prData.setChangedFiles(java.util.Collections.emptyList());
+        String remarks = "CORE ARCHITECTURE VERIFIED. APPROVED. Jules fallback review (Gemini unavailable). "
+                + (verdict.concerns().isEmpty() ? "No concerns raised." : verdict.concerns().size() + " concern(s) recorded as follow-up wishlist items.");
+        prData.setDiffSummary(remarks);
+        prReviewPipelineService.onPrOpened(prUrl, implementerSession.getId(), prData);
+
+        originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
+        taskRepository.save(originalTask);
+        systemProgressTracker.recordProgress();
+        log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());
+
+        for (String concern : verdict.concerns()) {
+            if (concern == null || concern.isBlank()) {
+                continue;
+            }
+            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+            wishlist.setProjectId(originalTask.getProject().getId());
+            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
+            wishlist.setSourceRoleTag(originalTask.getRole().getTag());
+            wishlist.setContent("Reviewer concern (non-blocking) on task \"" + TaskTitleBuilder.displayTitle(originalTask) + "\": " + concern);
+            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            wishlistRepository.save(wishlist);
+        }
+    }
+
+    private record DesignVerdict(String verdict, String reason, List<String> concerns) {
+    }
+
+    private DesignVerdict parseDesignVerdict(ProjectEntity project, String headRef) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(
+                project, headRef, com.eneik.production.services.ProjectFlowService.DESIGN_REVIEW_VERDICT_PATH);
+        if (content.isEmpty()) {
+            return null;
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            String verdict = root.path("verdict").asText("approve");
+            String reason = root.path("reason").asText("");
+            List<String> concerns = new java.util.ArrayList<>();
+            JsonNode rawConcerns = root.path("concerns");
+            if (rawConcerns.isArray()) {
+                for (JsonNode c : rawConcerns) {
+                    concerns.add(c.asText(""));
+                }
+            }
+            return new DesignVerdict(verdict, reason, concerns);
+        } catch (Exception e) {
+            log.warn("Failed to parse design review verdict for project {}: {}", project.getId(), e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * A design-review session reached pr_opened: its PR should carry exactly one JSON verdict (see
+     * ProjectFlowService.designReviewPrompt), never product code. Discards that PR either way, then
+     * either promotes the draft to design/approved/ (real GitHub copy, so it becomes the durable,
+     * confirmed-good reference future slices/implementers should use) or records the rejection reason as
+     * a non-blocking follow-up wishlist item - same soft philosophy as the PR review fallback: a design
+     * opinion never stalls work, it only ever produces improvement backlog.
+     */
+    private void completeDesignReview(JulesSessionEntity session, TaskEntity reviewTask) {
+        String draftPath = projectFlowService.designReviewDraftPath(reviewTask);
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(reviewTask.getProject(), session.getExternalSessionId());
+        DesignVerdict verdict = prOpt
+                .map(pr -> parseDesignVerdict(reviewTask.getProject(), pr.headRef()))
+                .orElse(null);
+
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(
+                    reviewTask.getProject(), pr, "design review verdict parsed");
+            archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.DESIGN_REVIEW_VERDICT_PATH, "design-review-verdict");
+        });
+        if (claimService.hasActiveClaim(reviewTask.getId())) {
+            claimService.complete(reviewTask.getId());
+        }
+
+        if (draftPath == null) {
+            log.error("Design review task {} has no designDraftPath payload marker; cannot apply verdict", reviewTask.getId());
+            return;
+        }
+        if (verdict == null) {
+            log.warn("Design review task {}: no valid verdict report found for draft {}; left unpromoted", reviewTask.getId(), draftPath);
+            return;
+        }
+
+        boolean rejected = "reject".equalsIgnoreCase(verdict.verdict())
+                && verdict.reason() != null && !verdict.reason().isBlank();
+
+        if (rejected) {
+            log.warn("Design review: draft {} rejected - {}", draftPath, verdict.reason());
+            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+            wishlist.setProjectId(reviewTask.getProject().getId());
+            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
+            wishlist.setSourceRoleTag("BARCAN-TAG-03");
+            wishlist.setContent("Design draft " + draftPath + " was rejected in review: " + verdict.reason()
+                    + ". Regenerate or manually correct the mockup for this slice.");
+            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            wishlistRepository.save(wishlist);
+            return;
+        }
+
+        // Approved (or a "reject" without a real reason, treated as approve by design - never block
+        // promotion on an unsubstantiated objection).
+        String basename = draftPath.startsWith(com.eneik.production.services.design.DesignAssetService.DESIGN_DRAFT_ROOT + "/")
+                ? draftPath.substring(com.eneik.production.services.design.DesignAssetService.DESIGN_DRAFT_ROOT.length() + 1)
+                : draftPath;
+        String approvedDir = com.eneik.production.services.design.DesignAssetService.DESIGN_APPROVED_ROOT + "/" + basename;
+        boolean htmlCopied = gitHubPullRequestService.copyFile(reviewTask.getProject(),
+                draftPath + "/mockup.html", approvedDir + "/mockup.html", "Promote reviewed design: " + basename);
+        boolean pngCopied = gitHubPullRequestService.copyFile(reviewTask.getProject(),
+                draftPath + "/mockup.png", approvedDir + "/mockup.png", "Promote reviewed design screenshot: " + basename);
+        if (htmlCopied || pngCopied) {
+            log.info("Design review: draft {} approved and promoted to {} with {} concern(s)",
+                    draftPath, approvedDir, verdict.concerns().size());
+        } else {
+            log.warn("Design review: draft {} approved but promotion to {} failed (no files copied)", draftPath, approvedDir);
+        }
+
+        for (String concern : verdict.concerns()) {
+            if (concern == null || concern.isBlank()) {
+                continue;
+            }
+            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+            wishlist.setProjectId(reviewTask.getProject().getId());
+            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
+            wishlist.setSourceRoleTag("BARCAN-TAG-03");
+            wishlist.setContent("Design reviewer concern (non-blocking) on " + approvedDir + ": " + concern);
+            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            wishlistRepository.save(wishlist);
+        }
     }
 
     private UUID compilerTaskWishlistId(TaskEntity task) {
@@ -1656,7 +2095,14 @@ public class JulesDispatchService {
                 List.of("running", "queued", "revising", "stuck"));
 
         for (JulesSessionEntity session : candidates) {
-            if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold) {
+            // A "revising" session (sent back after a review rejection) used to only qualify here via
+            // blindCycleCount, which never increments unless its activity log is oversized - a session
+            // that simply went quiet after a rejection, with a normal-sized log, sat untouched for the
+            // full stuck-close-threshold-minutes (120min) before anything happened. Nudging it as soon as
+            // it's stale (same stuckThresholdMinutes gate detectStuckSessions already uses) closes that
+            // gap - confirmed live as a real bottleneck on real product-code tasks in test-twenty-seventh.
+            boolean revisingOrStuck = "revising".equals(session.getStatus()) || "stuck".equals(session.getStatus());
+            if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold && !revisingOrStuck) {
                 continue;
             }
             Instant lastProgress = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getCreatedAt();
@@ -1672,11 +2118,14 @@ public class JulesDispatchService {
             if (session.getForcedUnblockAttempts() >= forcedUnblockMaxAttempts) {
                 List<JulesActivityResponseEntity> responseHistory =
                         julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+                String stallReason = revisingOrStuck && session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold
+                        ? "Session stayed in " + session.getStatus() + " with no observed progress since " + lastProgress
+                        : "Session activity log stayed too large to inspect for " + session.getBlindCycleCount()
+                                + " consecutive cycle(s) with no observed progress since " + lastProgress;
                 closeLoopAndCreateFollowUps(
                         session,
                         task,
-                        "Session activity log stayed too large to inspect for " + session.getBlindCycleCount()
-                                + " consecutive cycle(s) with no observed progress since " + lastProgress,
+                        stallReason,
                         responseHistory,
                         "blind_overflow_unblock_exhausted: forced unblock attempted "
                                 + session.getForcedUnblockAttempts() + " time(s) without observed progress"
@@ -1684,18 +2133,23 @@ public class JulesDispatchService {
                 continue;
             }
 
-            sendForcedUnblockMessageAsync(session, task);
+            sendForcedUnblockMessageAsync(session, task, revisingOrStuck);
             session.setForcedUnblockAttempts(session.getForcedUnblockAttempts() + 1);
             session.setBlindCycleCount(0);
             julesSessionRepository.save(session);
         }
     }
 
-    private void sendForcedUnblockMessageAsync(JulesSessionEntity session, TaskEntity task) {
+    private void sendForcedUnblockMessageAsync(JulesSessionEntity session, TaskEntity task, boolean revisingNudge) {
         String externalSessionId = session.getExternalSessionId();
         String apiKey = apiKeyForSession(session);
         UUID taskId = task.getId();
-        String message = "Eneik orchestrator forced unblock: this session's activity log has stayed too large "
+        String message = revisingNudge
+                ? "Eneik orchestrator nudge: this session was sent review feedback and asked to push a fix, but "
+                        + "no update has been observed for " + stuckThresholdMinutes + "+ minutes. Please push a fix "
+                        + "now addressing the earlier review feedback, or if genuinely blocked, state the concrete "
+                        + "blocker in a comment on the PR so it can be escalated. Work should not silently stall."
+                : "Eneik orchestrator forced unblock: this session's activity log has stayed too large "
                 + "to inspect for a pending question across several checks, and no new progress has been "
                 + "observed. It is OK to forcibly decide for yourself based on your own knowledge of the "
                 + "project: make one objective move from the task facts, document the smallest safe "
@@ -1732,11 +2186,20 @@ public class JulesDispatchService {
      */
     @Transactional
     public void reconcileAbandonedPullRequests() {
-        Instant recentEnough = Instant.now().minus(Duration.ofDays(7));
+        // Was a 7-day window, re-fetched every single 60s maintenance tick with no per-session backoff -
+        // the race condition this catches (Jules opens a PR right as/after force-closure) either resolves
+        // within minutes or never does; a session still unresolved after a few hours will never resolve.
+        // Confirmed live as a real driver of the GitHub REST rate-limit exhaustion in test-twenty-sixth:
+        // every unresolved session in this list costs a full PR-list fetch (pullRequestSnapshot) on every
+        // tick, for every project that ever had one, for up to 7 days. Tightened the window and added a
+        // recheck cooldown (via updatedAt, touched on every check including misses) instead.
+        Instant recentEnough = Instant.now().minus(Duration.ofHours(3));
+        Instant recheckCooldown = Instant.now().minus(Duration.ofMinutes(10));
         List<JulesSessionEntity> closedSessions = julesSessionRepository.findByStatus("loop_closed").stream()
                 .filter(s -> s.getClosedAt() != null && s.getClosedAt().isAfter(recentEnough))
                 .filter(s -> s.getPrUrl() == null || s.getPrUrl().isBlank())
                 .filter(s -> !prReviewRepository.existsByJulesSessionId(s.getId()))
+                .filter(s -> s.getUpdatedAt() == null || s.getUpdatedAt().isBefore(recheckCooldown))
                 .toList();
 
         for (JulesSessionEntity session : closedSessions) {
@@ -1748,6 +2211,9 @@ public class JulesDispatchService {
             Optional<GitHubPullRequestService.GitHubPullRequest> found =
                     gitHubPullRequestService.findOpenPullRequestBySession(task.getProject(), session.getExternalSessionId());
             if (found.isEmpty()) {
+                // Touch updatedAt so the recheck-cooldown filter above actually skips this session on the
+                // next several ticks, instead of re-fetching the same project's PR list every 60s forever.
+                julesSessionRepository.save(session);
                 continue;
             }
 

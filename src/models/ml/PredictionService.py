@@ -368,7 +368,7 @@ def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
         if not has_test_file:
             return False, "QA task PR does not appear to include test files. Add unit/integration/E2E tests that verify the Acceptance Criteria."
 
-    return True, "CORE ARCHITECTURE VERIFIED. APPROVED. Static fallback review passed because Gemini quota was unavailable: non-empty diff, no generated artifact markers, no obvious hardcoded secrets, and role-specific minimum checks passed."
+    return True, "Preflight static checks passed (non-empty diff, no generated artifact markers, no obvious hardcoded secrets, role-specific minimum checks satisfied); proceeding to Gemini review."
 
 
 def generated_artifact_remediation(marker: str) -> str:
@@ -447,8 +447,12 @@ Charter Rules:
             remarks = "CORE ARCHITECTURE VERIFIED. APPROVED."
 
     except Exception as e:
-        print(f"ML Review Exception: {e}")
-        approved, remarks = static_pr_review(role_tag, task_desc, diff_content)
+        print(f"ML Review Exception (Fail-Safe Triggered): {e}")
+        return ReviewResponse(
+            approved=False,
+            remarks=f"VERIFICATION_SERVICE_UNAVAILABLE: Gemini PR review call failed: {e}. PR blocked until retry, not treated as a rejection.",
+            newTasks=[],
+        )
     is_chess = "шахмат" in task_desc.lower() or "chess" in task_desc.lower()
 
     if is_chess:
@@ -516,7 +520,9 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
                     reason="Static analysis violation: Direct DB query or Repository usage detected inside controller file diff."
                 )
 
-    # 3. Handle via Gemini or Fallback
+    # 3. Gemini review - authoritative for this check. This governs AutoMergeService's merge gate, so
+    # it must fail closed (compliant=False) on any problem instead of assuming compliance when Gemini
+    # is unreachable, out of quota, or returns something unparseable.
     try:
         system_instruction = (
             "You are a strict code quality auditor. "
@@ -527,24 +533,20 @@ async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
         prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
         response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
 
-        # Parse response if not empty or fallback default mock
-        if response_json and response_json.strip() != "{}" and response_json.strip() != "":
-            parsed = json.loads(response_json)
-            return RefusalCriteriaResponse(
-                compliant=parsed.get("compliant", True),
-                reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
-            )
-    except Exception as e:
-        print(f"Refusal Criteria Check Fallback triggered: {e}")
+        if not response_json or response_json.strip() in ("", "{}"):
+            raise ValueError("Gemini returned an empty response")
 
-    # 4. Default fallback when Gemini is offline or not configured
-    passes = True
-    if pr_diff and ("refusal_violation" in pr_diff or "violates_criteria" in pr_diff):
-        passes = False
-    return RefusalCriteriaResponse(
-        compliant=passes,
-        reason="Code is compliant with refusal criteria." if passes else "Diff violates role refusal criteria: found violation."
-    )
+        parsed = json.loads(response_json)
+        return RefusalCriteriaResponse(
+            compliant=parsed.get("compliant", False),
+            reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
+        )
+    except Exception as e:
+        print(f"Refusal Criteria Check Fail-Safe Triggered: {e}")
+        return RefusalCriteriaResponse(
+            compliant=False,
+            reason=f"VERIFICATION_SERVICE_UNAVAILABLE: Gemini refusal-criteria check failed: {e}. Not treated as a violation by callers that check for this marker."
+        )
 
 
 @app.post("/api/v1/review/methodological-falsification", response_model=MethodologicalFalsificationResponse)
