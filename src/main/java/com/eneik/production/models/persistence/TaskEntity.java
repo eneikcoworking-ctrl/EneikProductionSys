@@ -72,7 +72,7 @@ public class TaskEntity {
 
     // The feature this task belongs to - always populated at creation (TechnicalLeadCompiler.
     // createAndSaveTask via FeatureService), either inherited from the wishlist that produced it or
-    // minted fresh if nothing set one. Scopes RoleThreadEntity continuation so unrelated features never
+    // minted fresh if nothing set one. Scopes FeatureThreadEntity continuation so unrelated features never
     // share a branch just because the same role worked on both.
     @Column(name = "feature_id")
     private UUID featureId;

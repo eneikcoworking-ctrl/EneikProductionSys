@@ -57,7 +57,7 @@ public class JulesApiClient {
     /**
      * startingBranch lets a session continue from an existing branch (its prior commits already present)
      * instead of always starting fresh from main - used for role-thread continuation, see
-     * JulesDispatchService.dispatchInternal / RoleThreadRepository.
+     * JulesDispatchService.dispatchInternal / FeatureThreadRepository.
      */
     public CreateSessionResult createSessionDetailed(String repoUrl, String taskDescription, String roleContext, String apiKey, String title, String startingBranch) {
         if (!settingsService.effectiveBoolean("jules_enabled")) {

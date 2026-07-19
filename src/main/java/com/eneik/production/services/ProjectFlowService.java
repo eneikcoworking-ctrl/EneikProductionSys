@@ -907,7 +907,7 @@ public class ProjectFlowService {
         }
 
         // All role-slices decomposed from this one wishlist item share one feature - minted once, here,
-        // before the loop, and stamped onto every slice so continuation (RoleThreadEntity) never mixes
+        // before the loop, and stamped onto every slice so continuation (FeatureThreadEntity) never mixes
         // unrelated features that happen to share a role.
         UUID featureId = featureService.resolveOrCreateFeatureId(wishlist, project.getId());
         String graphKey = emsGraphKey(featureId, "flow");

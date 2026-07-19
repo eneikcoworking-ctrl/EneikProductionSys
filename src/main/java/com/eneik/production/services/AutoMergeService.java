@@ -1,7 +1,7 @@
 package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.PrReviewEntity;
-import com.eneik.production.models.persistence.RoleThreadEntity;
+import com.eneik.production.models.persistence.FeatureThreadEntity;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.WishlistRepository;
@@ -55,7 +55,7 @@ public class AutoMergeService {
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final CodeChangeClassifier codeChangeClassifier;
-    private final com.eneik.production.repositories.RoleThreadRepository roleThreadRepository;
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -73,7 +73,7 @@ public class AutoMergeService {
                             com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                             com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                             CodeChangeClassifier codeChangeClassifier,
-                            com.eneik.production.repositories.RoleThreadRepository roleThreadRepository) {
+                            com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -90,7 +90,7 @@ public class AutoMergeService {
         this.contextService = contextService;
         this.systemProgressTracker = systemProgressTracker;
         this.codeChangeClassifier = codeChangeClassifier;
-        this.roleThreadRepository = roleThreadRepository;
+        this.featureThreadRepository = featureThreadRepository;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -372,9 +372,12 @@ public class AutoMergeService {
     /**
      * Deterministic post-merge fork: a merged PR either contained real product code or it didn't (see
      * CodeChangeClassifier). No code -&gt; the branch is disposable, delete it and close the session as
-     * closed_no_code. Real code -&gt; leave the branch alone and record it as this role's live continuation
-     * thread (RoleThreadEntity), so the next task for the same role can start its Jules session from
-     * this branch (startingBranch) instead of main - see JulesDispatchService.dispatchInternal.
+     * closed_no_code. Real code -&gt; leave the branch alone and record it as this feature's live
+     * continuation thread (FeatureThreadEntity) - scoped to the feature, not the role, since one feature
+     * routinely involves several roles working the same dependency chain and any of them may legitimately
+     * continue on the same branch - so the next task dispatched for this feature (whichever role it is)
+     * can start its Jules session from this branch (startingBranch) instead of main - see
+     * JulesDispatchService.dispatchInternal.
      */
     private void classifyAndHandleBranch(PrReviewEntity review, PullRequestTarget pullRequestTarget,
                                          com.eneik.production.models.persistence.TaskEntity task,
@@ -415,20 +418,20 @@ public class AutoMergeService {
         gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), pullNumber).ifPresent(pr -> {
             String roleTag = task.getRole().getTag();
             UUID featureId = task.getFeatureId();
-            RoleThreadEntity thread = roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(task.getProject().getId(), featureId, roleTag)
-                    .orElseGet(RoleThreadEntity::new);
+            FeatureThreadEntity thread = featureThreadRepository.findByProjectIdAndFeatureId(task.getProject().getId(), featureId)
+                    .orElseGet(FeatureThreadEntity::new);
             thread.setProjectId(task.getProject().getId());
             thread.setFeatureId(featureId);
-            thread.setRoleTag(roleTag);
+            thread.setLastRoleTag(roleTag);
             thread.setBranchName(pr.headRef());
             thread.setAccountId(session.getAccountId());
             thread.setLastPrUrl(pullRequestTarget.url());
             String summary = review.getDiffSummary();
             thread.setSummary(summary == null ? pr.title() : (summary.length() > 2000 ? summary.substring(0, 2000) : summary));
             thread.setUpdatedAt(java.time.Instant.now());
-            roleThreadRepository.save(thread);
-            log.info("AutoMergeService: PR {} classified as has-code; thread for role {} / feature {} in project {} now points to branch {}",
-                    pullRequestTarget.url(), roleTag, featureId, task.getProject().getId(), pr.headRef());
+            featureThreadRepository.save(thread);
+            log.info("AutoMergeService: PR {} classified as has-code; thread for feature {} (last role {}) in project {} now points to branch {}",
+                    pullRequestTarget.url(), featureId, roleTag, task.getProject().getId(), pr.headRef());
         });
     }
 

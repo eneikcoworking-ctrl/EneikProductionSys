@@ -72,7 +72,7 @@ public class JulesDispatchService {
     private final com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
     private final RoleRepository roleRepository;
     private final GitHubPullRequestService gitHubPullRequestService;
-    private final com.eneik.production.repositories.RoleThreadRepository roleThreadRepository;
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
@@ -153,7 +153,7 @@ public class JulesDispatchService {
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
                                 com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
-                                com.eneik.production.repositories.RoleThreadRepository roleThreadRepository,
+                                com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -173,7 +173,7 @@ public class JulesDispatchService {
         this.projectFlowService = projectFlowService;
         this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.falsificationCycleService = falsificationCycleService;
-        this.roleThreadRepository = roleThreadRepository;
+        this.featureThreadRepository = featureThreadRepository;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -331,13 +331,14 @@ public class JulesDispatchService {
             log.warn("Could not load extended rules for role {}: {}", task.getRole().getTag(), e.getMessage());
         }
 
-        // Role-thread continuation ("development from the role/feature"): if this exact feature already
-        // has a live code branch from a previously merged, real (has-code) PR for this role, start this
-        // session from that branch instead of main - the prior commits are already present, no context is
-        // lost. Scoped to (project, feature, role), not just (project, role): a role does many unrelated
-        // features over a project's lifetime, and continuing an unrelated feature's branch would corrupt
-        // it, not develop it. Threads only ever get created for roles that actually ship real product code
-        // (see AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
+        // Feature-thread continuation ("development from the feature"): if this exact feature already has
+        // a live code branch from a previously merged, real (has-code) PR, start this session from that
+        // branch instead of main - the prior commits are already present, no context is lost. Scoped to
+        // (project, feature) only, deliberately NOT role: a feature routinely involves several roles
+        // (backend, frontend, design) working the same dependency chain, and whichever role is dispatched
+        // next for this feature should pick up on the same branch, not fork a new one just because the
+        // role changed. Threads only ever get created for tasks that actually ship real product code (see
+        // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
         // fallback/design-review roles, which never earn one.
         //
         // Also pinned to the exact account that authenticated the original branch: dispatch selection
@@ -348,20 +349,21 @@ public class JulesDispatchService {
         // guess. The thread itself is untouched either way and stays available for whenever the owning
         // account comes up again.
         String startingBranch = "main";
-        var roleThreadOpt = task.getFeatureId() == null ? java.util.Optional.<com.eneik.production.models.persistence.RoleThreadEntity>empty()
-                : roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(task.getProject().getId(), task.getFeatureId(), task.getRole().getTag());
-        if (roleThreadOpt.isPresent()) {
-            var roleThread = roleThreadOpt.get();
-            if (accountId != null && accountId.equals(roleThread.getAccountId())) {
-                startingBranch = roleThread.getBranchName();
+        var featureThreadOpt = task.getFeatureId() == null ? java.util.Optional.<com.eneik.production.models.persistence.FeatureThreadEntity>empty()
+                : featureThreadRepository.findByProjectIdAndFeatureId(task.getProject().getId(), task.getFeatureId());
+        if (featureThreadOpt.isPresent()) {
+            var featureThread = featureThreadOpt.get();
+            if (accountId != null && accountId.equals(featureThread.getAccountId())) {
+                startingBranch = featureThread.getBranchName();
                 roleContextBuilder.append("\n## Continuing Prior Work\n")
-                        .append("This feature has ongoing work on branch ").append(startingBranch).append(". ")
+                        .append("This feature has ongoing work on branch ").append(startingBranch)
+                        .append(" (last worked on by role ").append(featureThread.getLastRoleTag() == null ? "unknown" : featureThread.getLastRoleTag()).append("). ")
                         .append("Build on the existing code, do not start over. Prior summary: ")
-                        .append(roleThread.getSummary() == null ? "(none)" : roleThread.getSummary()).append("\n");
+                        .append(featureThread.getSummary() == null ? "(none)" : featureThread.getSummary()).append("\n");
             } else {
-                log.info("Role thread exists for role {} / feature {} in project {} on branch {}, but this dispatch "
+                log.info("Feature thread exists for feature {} in project {} on branch {}, but this dispatch "
                                 + "went to a different account ({}); skipping continuation, starting fresh from main.",
-                        task.getRole().getTag(), task.getFeatureId(), task.getProject().getId(), roleThread.getBranchName(), accountId);
+                        task.getFeatureId(), task.getProject().getId(), featureThread.getBranchName(), accountId);
             }
         }
         String roleContext = roleContextBuilder.toString();

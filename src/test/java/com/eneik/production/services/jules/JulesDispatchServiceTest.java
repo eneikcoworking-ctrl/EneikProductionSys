@@ -39,7 +39,7 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.ClaimService claimService;
     private com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
     private com.eneik.production.services.RoleCapabilityLoader roleCapabilityLoader;
-    private com.eneik.production.repositories.RoleThreadRepository roleThreadRepository;
+    private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -59,7 +59,7 @@ class JulesDispatchServiceTest {
         com.eneik.production.repositories.TaskConflictRepository taskConflictRepository = mock(com.eneik.production.repositories.TaskConflictRepository.class);
         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         com.eneik.production.repositories.PrReviewRepository prReviewRepository = mock(com.eneik.production.repositories.PrReviewRepository.class);
-        roleThreadRepository = mock(com.eneik.production.repositories.RoleThreadRepository.class);
+        featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
@@ -67,7 +67,7 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.ProjectFlowService.class),
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             mock(com.eneik.production.services.FalsificationCycleService.class),
-            roleThreadRepository, "prefix/"
+            featureThreadRepository, "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -318,17 +318,17 @@ class JulesDispatchServiceTest {
         account.setId(accountId);
         account.setApiKey("jules-key");
 
-        // A thread exists for this exact role, on the same account, but for a DIFFERENT feature
-        // (featureA, not featureB) - if the lookup ever ignored featureId, this thread's branch would
-        // leak into featureB's dispatch. It must not: the featureB lookup below is stubbed separately
-        // and returns nothing, so startingBranch must fall back to "main".
-        com.eneik.production.models.persistence.RoleThreadEntity featureAThread =
-                new com.eneik.production.models.persistence.RoleThreadEntity();
+        // A thread exists on the same account, but for a DIFFERENT feature (featureA, not featureB) -
+        // if the lookup ever ignored featureId, this thread's branch would leak into featureB's
+        // dispatch. It must not: the featureB lookup below is stubbed separately and returns nothing,
+        // so startingBranch must fall back to "main".
+        com.eneik.production.models.persistence.FeatureThreadEntity featureAThread =
+                new com.eneik.production.models.persistence.FeatureThreadEntity();
         featureAThread.setBranchName("feature-a-branch");
         featureAThread.setAccountId(accountId);
-        when(roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(project.getId(), featureA, "BARCAN-TAG-02"))
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureA))
                 .thenReturn(Optional.of(featureAThread));
-        when(roleThreadRepository.findByProjectIdAndFeatureIdAndRoleTag(project.getId(), featureB, "BARCAN-TAG-02"))
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureB))
                 .thenReturn(Optional.empty());
 
         when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
@@ -342,6 +342,59 @@ class JulesDispatchServiceTest {
 
         assertTrue(result.dispatched());
         verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), anyString(), anyString(), eq("jules-key"), eq("API Slice"), eq("main"));
+    }
+
+    @Test
+    void aDifferentRoleOnTheSameFeatureDoesContinueTheThread() {
+        // The core correction: a feature's thread is NOT role-scoped. Backend shipped code on this
+        // feature under BARCAN-TAG-02; now a frontend (BARCAN-TAG-11) task for the SAME feature, on the
+        // SAME account, should pick up that same branch rather than starting fresh from main.
+        UUID taskId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+
+        RoleEntity frontendRole = new RoleEntity();
+        frontendRole.setTag("BARCAN-TAG-11");
+        frontendRole.setDescription("Frontend Engineer");
+        frontendRole.setRulesPath(null);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(frontendRole);
+        task.setTitle("UI Slice");
+        task.setDescription("Wire the frontend to the endpoint backend just shipped.");
+        task.setFeatureId(featureId);
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        com.eneik.production.models.persistence.FeatureThreadEntity thread =
+                new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setBranchName("feature-shared-branch");
+        thread.setAccountId(accountId);
+        thread.setLastRoleTag("BARCAN-TAG-02");
+        thread.setSummary("Backend endpoint implemented.");
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), anyString(), anyString(), eq("jules-key"), eq("UI Slice"), eq("feature-shared-branch")))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roleCapabilityLoader.loadRules("BARCAN-TAG-11")).thenReturn(null);
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task, accountId);
+
+        assertTrue(result.dispatched());
+        verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), anyString(),
+                contains("Backend endpoint implemented."), eq("jules-key"), eq("UI Slice"), eq("feature-shared-branch"));
     }
 
     @Test

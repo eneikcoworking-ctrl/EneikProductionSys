@@ -4,9 +4,17 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * One live continuation branch per feature - not per (feature, role). A feature can involve many roles
+ * (backend, frontend, design) and a role can work on many unrelated features; the unit that owns a
+ * branch is the feature, and any role can pick up and continue on it as the feature's dependency chain
+ * moves to the next slice. {@code lastRoleTag} is informational only (which role most recently shipped
+ * code here), never part of how a thread is looked up - only project, feature, and (see
+ * JulesDispatchService.dispatchInternal) the owning account gate continuation.
+ */
 @Entity
-@Table(name = "role_threads")
-public class RoleThreadEntity {
+@Table(name = "feature_threads")
+public class FeatureThreadEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
@@ -14,13 +22,11 @@ public class RoleThreadEntity {
     @Column(name = "project_id", nullable = false)
     private UUID projectId;
 
-    @Column(name = "role_tag", nullable = false)
-    private String roleTag;
-
-    // Which feature this thread's branch belongs to - narrows continuation to "same feature, same role,
-    // same account", not just "same role" (a role does many unrelated features over a project's life).
-    @Column(name = "feature_id")
+    @Column(name = "feature_id", nullable = false)
     private UUID featureId;
+
+    @Column(name = "last_role_tag")
+    private String lastRoleTag;
 
     @Column(name = "branch_name", nullable = false, length = 256)
     private String branchName;
@@ -43,10 +49,10 @@ public class RoleThreadEntity {
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
     public void setProjectId(UUID projectId) { this.projectId = projectId; }
-    public String getRoleTag() { return roleTag; }
-    public void setRoleTag(String roleTag) { this.roleTag = roleTag; }
     public UUID getFeatureId() { return featureId; }
     public void setFeatureId(UUID featureId) { this.featureId = featureId; }
+    public String getLastRoleTag() { return lastRoleTag; }
+    public void setLastRoleTag(String lastRoleTag) { this.lastRoleTag = lastRoleTag; }
     public String getBranchName() { return branchName; }
     public void setBranchName(String branchName) { this.branchName = branchName; }
     public UUID getAccountId() { return accountId; }
