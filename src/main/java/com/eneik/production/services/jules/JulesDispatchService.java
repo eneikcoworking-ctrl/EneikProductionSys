@@ -337,15 +337,29 @@ public class JulesDispatchService {
         // only ever get created for roles that actually ship real product code (see
         // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
         // fallback/design-review roles, which never earn one.
+        //
+        // Pinned to the exact account that authenticated the original branch: dispatch selection
+        // (round-robin by capacity, see ProjectFlowService.dispatchQueuedTasks) has no idea a thread
+        // exists and can hand this task to any account with free capacity. A different account has no
+        // verified relationship to a branch it didn't create - cross-account continuation on the Jules
+        // API has never been tested, so the safe default is to skip continuation entirely rather than
+        // guess. The thread itself is untouched either way and stays available for whenever the owning
+        // account comes up again.
         String startingBranch = "main";
         var roleThreadOpt = roleThreadRepository.findByProjectIdAndRoleTag(task.getProject().getId(), task.getRole().getTag());
         if (roleThreadOpt.isPresent()) {
             var roleThread = roleThreadOpt.get();
-            startingBranch = roleThread.getBranchName();
-            roleContextBuilder.append("\n## Continuing Prior Work\n")
-                    .append("This role has ongoing work on branch ").append(startingBranch).append(". ")
-                    .append("Build on the existing code, do not start over. Prior summary: ")
-                    .append(roleThread.getSummary() == null ? "(none)" : roleThread.getSummary()).append("\n");
+            if (accountId != null && accountId.equals(roleThread.getAccountId())) {
+                startingBranch = roleThread.getBranchName();
+                roleContextBuilder.append("\n## Continuing Prior Work\n")
+                        .append("This role has ongoing work on branch ").append(startingBranch).append(". ")
+                        .append("Build on the existing code, do not start over. Prior summary: ")
+                        .append(roleThread.getSummary() == null ? "(none)" : roleThread.getSummary()).append("\n");
+            } else {
+                log.info("Role thread exists for role {} in project {} on branch {}, but this dispatch went to a "
+                                + "different account ({}); skipping continuation, starting fresh from main.",
+                        task.getRole().getTag(), task.getProject().getId(), roleThread.getBranchName(), accountId);
+            }
         }
         String roleContext = roleContextBuilder.toString();
 

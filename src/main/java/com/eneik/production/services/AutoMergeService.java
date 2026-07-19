@@ -417,6 +417,7 @@ public class AutoMergeService {
             thread.setProjectId(task.getProject().getId());
             thread.setRoleTag(roleTag);
             thread.setBranchName(pr.headRef());
+            thread.setAccountId(session.getAccountId());
             thread.setLastPrUrl(pullRequestTarget.url());
             String summary = review.getDiffSummary();
             thread.setSummary(summary == null ? pr.title() : (summary.length() > 2000 ? summary.substring(0, 2000) : summary));
