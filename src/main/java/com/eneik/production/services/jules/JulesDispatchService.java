@@ -78,6 +78,7 @@ public class JulesDispatchService {
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
     private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
+    private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
@@ -154,6 +155,7 @@ public class JulesDispatchService {
                                 com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
                                 com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                                com.eneik.production.services.ClientDeliverableReadinessService readinessService,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -174,6 +176,7 @@ public class JulesDispatchService {
         this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.falsificationCycleService = falsificationCycleService;
         this.featureThreadRepository = featureThreadRepository;
+        this.readinessService = readinessService;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -278,6 +281,8 @@ public class JulesDispatchService {
             description = withTaskPromptTitle(sessionTitle, "[REVIEWER MODE]\nAudit the following code changes against docs/AI_REVIEW_GUIDELINES.md.\n" + task.getDescription());
         }
 
+        boolean buildPhase = task.getProject() != null && readinessService.isBuildPhase(task.getProject().getId());
+
         StringBuilder roleContextBuilder = new StringBuilder();
         roleContextBuilder.append("Role: ").append(task.getRole().getTag()).append("\n");
         roleContextBuilder.append("Description: ").append(task.getRole().getDescription()).append("\n");
@@ -292,6 +297,11 @@ public class JulesDispatchService {
         roleContextBuilder.append("- Hard stop: after repeated blocker feedback or eight back-and-forth replies, the orchestrator may close this session and create new short follow-up wishlist items.\n");
         if ("BARCAN-TAG-06".equals(task.getRole().getTag())) {
             roleContextBuilder.append("- QA default: if you ask whether to continue verification, continue with required test ratios and deeper AC verification; document assumptions instead of waiting.\n");
+        }
+        if (buildPhase) {
+            roleContextBuilder.append("- This project is in its build phase: trust is maximal right now. Make the call yourself from your role's own judgment (see Role Charter below) rather than hedging toward the safest generic option - the system doesn't exist yet, your judgment is what's building it. Mechanical polish gates are relaxed for this phase; your role's own refusal criteria still apply in full.\n");
+        } else {
+            roleContextBuilder.append("- This project already has a built shape: work carefully within existing patterns rather than restructuring what's already there. Prefer the smallest change consistent with how the system already works over a cleaner rewrite, unless the task explicitly asks for the rewrite.\n");
         }
 
         appendCompactRoleGuide(roleContextBuilder, task.getRole().getTag());

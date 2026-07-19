@@ -40,6 +40,7 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.MLPredictionServiceClient mlPredictionServiceClient;
     private com.eneik.production.services.RoleCapabilityLoader roleCapabilityLoader;
     private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -60,6 +61,7 @@ class JulesDispatchServiceTest {
         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         com.eneik.production.repositories.PrReviewRepository prReviewRepository = mock(com.eneik.production.repositories.PrReviewRepository.class);
         featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
+        readinessService = mock(com.eneik.production.services.ClientDeliverableReadinessService.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
@@ -67,7 +69,7 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.ProjectFlowService.class),
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             mock(com.eneik.production.services.FalsificationCycleService.class),
-            featureThreadRepository, "prefix/"
+            featureThreadRepository, readinessService, "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);

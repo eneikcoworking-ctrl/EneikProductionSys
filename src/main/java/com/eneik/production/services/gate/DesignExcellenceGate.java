@@ -28,6 +28,11 @@ public class DesignExcellenceGate implements GateCheck {
     }
 
     @Override
+    public boolean isBuildPhaseExempt() {
+        return true;
+    }
+
+    @Override
     public GateResult check(TaskEntity task) {
         String roleTag = task.getRole().getTag();
         if (!UI_TAGS.contains(roleTag)) {

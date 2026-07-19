@@ -31,6 +31,11 @@ public class BackendContractGate implements GateCheck {
     }
 
     @Override
+    public boolean isBuildPhaseExempt() {
+        return true;
+    }
+
+    @Override
     public GateResult check(TaskEntity task) {
         String roleTag = task.getRole().getTag();
         if (!BACKEND_TAGS.contains(roleTag)) {

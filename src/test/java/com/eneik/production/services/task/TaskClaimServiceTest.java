@@ -4,9 +4,12 @@ import com.eneik.production.dto.ClaimDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -52,6 +55,15 @@ public class TaskClaimServiceTest {
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private WishlistRepository wishlistRepository;
+
+    @Autowired
+    private JulesSessionRepository julesSessionRepository;
+
+    @Autowired
+    private PrReviewRepository prReviewRepository;
+
     @Test
     void testValidateTaskAvailability() {
         // Setup
@@ -91,12 +103,13 @@ public class TaskClaimServiceTest {
     }
 
     @Test
-    void completeRunsDesignGateAfterUiClaimCycle() {
+    void completeRunsDesignGateAfterUiClaimCyclePastBuildPhase() {
         ObjectNode payload = basePayload();
         ArrayNode screenshots = payload.putArray("screenshotUrls");
         screenshots.addObject().put("url", "desktop_1440.png").put("size", 3000);
         screenshots.addObject().put("url", "mobile_375.png").put("size", 1800);
         TaskEntity task = createQueuedTask("BARCAN-TAG-11", payload);
+        markProjectPastBuildPhase(task.getProject());
         AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-11");
 
         ClaimDto claim = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
@@ -110,10 +123,11 @@ public class TaskClaimServiceTest {
     }
 
     @Test
-    void completeRunsBackendGateAfterBackendClaimCycle() {
+    void completeRunsBackendGateAfterBackendClaimCyclePastBuildPhase() {
         ObjectNode payload = basePayload();
         payload.putArray("changedFiles").add("src/test/java/com/eneik/LeadControllerTest.java");
         TaskEntity task = createQueuedTask("BARCAN-TAG-02", payload);
+        markProjectPastBuildPhase(task.getProject());
         AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-02");
 
         ClaimDto claim = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
@@ -124,6 +138,56 @@ public class TaskClaimServiceTest {
         assertThat(completed.isQualityGatePassed()).isTrue();
         assertThat(checkNames(completed)).contains("backend_contract");
         assertThat(checkNames(completed)).doesNotContain("design_excellence", "not applicable");
+    }
+
+    @Test
+    void completeSkipsDesignGateDuringBuildPhaseEvenForUiTask() {
+        ObjectNode payload = basePayload();
+        ArrayNode screenshots = payload.putArray("screenshotUrls");
+        screenshots.addObject().put("url", "desktop_1440.png").put("size", 3000);
+        screenshots.addObject().put("url", "mobile_375.png").put("size", 1800);
+        TaskEntity task = createQueuedTask("BARCAN-TAG-11", payload);
+        // Fresh project, zero merged client deliverables - still in build phase by default.
+        AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-11");
+
+        ClaimDto claim = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
+        taskClaimService.complete(claim.taskId());
+
+        TaskEntity completed = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(completed.isQualityGatePassed()).isTrue();
+        assertThat(checkNames(completed)).doesNotContain("design_excellence", "backend_contract");
+    }
+
+    private void markProjectPastBuildPhase(ProjectEntity project) {
+        WishlistEntity deliverable = new WishlistEntity();
+        deliverable.setProjectId(project.getId());
+        deliverable.setSource(WishlistSource.client);
+        deliverable.setContent("Client deliverable used to simulate a merged build phase.");
+        deliverable.setCompiledByRole("BARCAN-TAG-09");
+        deliverable = wishlistRepository.saveAndFlush(deliverable);
+
+        RoleEntity role = roleRepository.findById("BARCAN-TAG-09").orElseThrow();
+        TaskEntity mergedTask = new TaskEntity();
+        mergedTask.setProject(project);
+        mergedTask.setRole(role);
+        mergedTask.setDescription("Deliverable task backing the merged build-phase simulation");
+        mergedTask.setSourceWishlistId(deliverable.getId());
+        mergedTask.setStatus(TaskStatus.done);
+        mergedTask = taskRepository.saveAndFlush(mergedTask);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(mergedTask.getId());
+        session.setExternalSessionId("sessions/fixture");
+        session.setStatus("completed");
+        session = julesSessionRepository.saveAndFlush(session);
+
+        PrReviewEntity review = new PrReviewEntity();
+        review.setJulesSessionId(session.getId());
+        review.setPrUrl("https://github.com/example/repo/pull/1");
+        review.setCiStatus("success");
+        review.setRiskLevel("low");
+        review.setMerged(true);
+        prReviewRepository.saveAndFlush(review);
     }
 
     private ObjectNode basePayload() {

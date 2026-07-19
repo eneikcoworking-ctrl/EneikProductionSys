@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskGateLogEntity;
 import com.eneik.production.repositories.TaskGateLogRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.ClientDeliverableReadinessService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -22,12 +23,15 @@ public class GateOrchestrator {
     private final TaskRepository taskRepository;
     private final TaskGateLogRepository taskGateLogRepository;
     private final ObjectMapper objectMapper;
+    private final ClientDeliverableReadinessService readinessService;
 
-    public GateOrchestrator(List<GateCheck> gateChecks, TaskRepository taskRepository, TaskGateLogRepository taskGateLogRepository, ObjectMapper objectMapper) {
+    public GateOrchestrator(List<GateCheck> gateChecks, TaskRepository taskRepository, TaskGateLogRepository taskGateLogRepository,
+            ObjectMapper objectMapper, ClientDeliverableReadinessService readinessService) {
         this.gateChecks = gateChecks;
         this.taskRepository = taskRepository;
         this.taskGateLogRepository = taskGateLogRepository;
         this.objectMapper = objectMapper;
+        this.readinessService = readinessService;
     }
 
     @Transactional
@@ -41,9 +45,13 @@ public class GateOrchestrator {
     }
 
     private void runQualityGate(TaskEntity task, Set<GateStage> stages) {
+        boolean buildPhase = task.getProject() != null
+                && readinessService.isBuildPhase(task.getProject().getId());
+
         List<GateResult> results = gateChecks.stream()
                 .filter(check -> stages.contains(check.stage()))
                 .filter(check -> check.supports(task))
+                .filter(check -> !(buildPhase && check.isBuildPhaseExempt()))
                 .map(check -> check.check(task))
                 .toList();
 
