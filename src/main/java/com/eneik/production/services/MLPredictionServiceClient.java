@@ -212,7 +212,11 @@ public class MLPredictionServiceClient {
             String cynefinDomain,
             String tocConstraintRef,
             String sixSigmaMetric,
-            boolean hasUi
+            boolean hasUi,
+            // Which "Brief #N" (0-indexed, matching the numbered briefs sent in a batched compiler prompt -
+            // see ProjectFlowService.wishlistCompilerPromptBatch) this slice addresses. A solo (non-batched)
+            // compile always uses 0.
+            int sourceIndex
     ) {}
 
     private static class MLResponse {

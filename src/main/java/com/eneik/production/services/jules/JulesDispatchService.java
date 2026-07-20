@@ -1544,14 +1544,17 @@ public class JulesDispatchService {
      * NeedsHumanReviewEntity.
      */
     private void completeWishlistCompilation(JulesSessionEntity session, TaskEntity compilerTask) {
-        UUID wishlistId = compilerTaskWishlistId(compilerTask);
-        if (wishlistId == null) {
-            log.error("Compiler task {} has no compilesWishlistId payload marker; cannot complete compilation", compilerTask.getId());
+        List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
+        if (wishlistIds.isEmpty()) {
+            log.error("Compiler task {} has no compilesWishlistIds payload marker; cannot complete compilation", compilerTask.getId());
             return;
         }
-        WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElse(null);
-        if (wishlist == null) {
-            log.warn("Compiler task {}: wishlist {} no longer exists, discarding", compilerTask.getId(), wishlistId);
+        List<WishlistEntity> wishlists = new java.util.ArrayList<>();
+        for (UUID id : wishlistIds) {
+            wishlistRepository.findById(id).ifPresent(wishlists::add);
+        }
+        if (wishlists.isEmpty()) {
+            log.warn("Compiler task {}: none of its {} wishlist(s) exist anymore, discarding", compilerTask.getId(), wishlistIds.size());
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
             }
@@ -1562,25 +1565,29 @@ public class JulesDispatchService {
         // generic blocked-task recovery flow re-dispatching a compiler task without knowing it's a compiler
         // task, racing an already-in-flight one) - without this check, every one of them independently calls
         // buildTaskGraphFromSlices below and the same brief gets fully decomposed and dispatched multiple
-        // times. Whichever compiler session reaches this point first "wins"; every later one for the same
-        // wishlist is a no-op that just closes its own PR/session cleanly.
+        // times. Whichever compiler session reaches this point first "wins" for a given wishlist; a batch
+        // where EVERY wishlist has already been finished by another session is a full no-op that just closes
+        // its own PR/session cleanly. A batch where only SOME are already finished still proceeds -
+        // buildTaskGraphFromSlices skips those specific ones internally per-source.
         //
         // Must check specifically for converted_to_task/dismissed, NOT "!= pending": dispatchWishlistCompiler
-        // flips the wishlist to `compiling` at DISPATCH time, before any session has actually completed - a
+        // flips each wishlist to `compiling` at DISPATCH time, before any session has actually completed - a
         // "!= pending" check would therefore reject every completion, including the legitimate first one,
         // since by the time ANY session gets here the status has already left `pending`. This was caught
         // live: it stuck a wishlist in an infinite compile->discard->blocked->recover->compile loop that
         // never produced real work. converted_to_task/dismissed are the only states that mean "someone
         // already finished this" - `compiling` just means "in flight", which includes the winning attempt.
-        if (wishlist.getStatus() == WishlistStatus.converted_to_task || wishlist.getStatus() == WishlistStatus.dismissed) {
-            log.warn("Compiler task {}: wishlist {} is already '{}' (compiled by another session) - discarding this duplicate compilation instead of re-decomposing the same brief.",
-                    compilerTask.getId(), wishlistId, wishlist.getStatus());
+        boolean anyStillOpen = wishlists.stream()
+                .anyMatch(w -> w.getStatus() != WishlistStatus.converted_to_task && w.getStatus() != WishlistStatus.dismissed);
+        if (!anyStillOpen) {
+            log.warn("Compiler task {}: all {} wishlist(s) in this batch are already compiled by another session - discarding this duplicate compilation instead of re-decomposing the same brief(s).",
+                    compilerTask.getId(), wishlists.size());
             Optional<GitHubPullRequestService.GitHubPullRequest> duplicatePrOpt =
                     gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
             duplicatePrOpt.ifPresent(pr -> {
                 gitHubPullRequestService.mergeRecordPullRequest(
-                        compilerTask.getProject(), pr, "duplicate wishlist compiler run discarded (wishlist already compiled)");
-                closeSessionAsNoCode(session, "Duplicate compiler run for an already-compiled wishlist; discarded.");
+                        compilerTask.getProject(), pr, "duplicate wishlist compiler run discarded (wishlist(s) already compiled)");
+                closeSessionAsNoCode(session, "Duplicate compiler run for already-compiled wishlist(s); discarded.");
             });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
@@ -1594,8 +1601,12 @@ public class JulesDispatchService {
                 .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.headRef()))
                 .orElseGet(List::of);
 
-        if (isValidCompilerPlan(slices)) {
-            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlist, slices);
+        // Validated against the FULL original batch size (wishlists.size()), not just the still-open subset
+        // - sourceIndex values in Jules's response reference the numbering the prompt actually sent, which
+        // covers every wishlist in the batch regardless of whether one of them was independently finished
+        // by another session in the meantime.
+        if (isValidCompilerPlan(slices, wishlists.size())) {
+            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlists, slices);
             prOpt.ifPresent(pr -> {
                 gitHubPullRequestService.mergeRecordPullRequest(
                         compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks");
@@ -1606,8 +1617,8 @@ public class JulesDispatchService {
                 claimService.complete(compilerTask.getId());
             }
             systemProgressTracker.recordProgress();
-            log.info("Wishlist {} compiled by Jules session {} into {} task slice(s)",
-                    wishlist.getId(), session.getExternalSessionId(), slices.size());
+            log.info("{} wishlist(s) compiled by Jules session {} into {} task slice(s)",
+                    wishlists.size(), session.getExternalSessionId(), slices.size());
             return;
         }
 
@@ -1618,7 +1629,7 @@ public class JulesDispatchService {
                         new com.eneik.production.models.persistence.NeedsHumanReviewEntity();
                 review.setTask(compilerTask);
                 review.setReason("Wishlist compiler produced no valid task plan after " + attempts
-                        + " attempt(s) for wishlist " + wishlist.getId() + " - needs manual decomposition.");
+                        + " attempt(s) for " + wishlists.size() + " wishlist(s) - needs manual decomposition.");
                 needsHumanReviewRepository.save(review);
             }
             prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
@@ -1626,7 +1637,7 @@ public class JulesDispatchService {
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
             }
-            log.error("Wishlist {} compilation failed after {} attempts; routed to human review", wishlist.getId(), attempts);
+            log.error("Compilation of {} wishlist(s) failed after {} attempts; routed to human review", wishlists.size(), attempts);
             return;
         }
 
@@ -1649,8 +1660,8 @@ public class JulesDispatchService {
                 log.warn("Failed to send compiler-plan correction to Jules session {}", externalSessionId);
             }
         });
-        log.warn("Wishlist compiler plan invalid for wishlist {} (attempt {}/{}); asked Jules to retry",
-                wishlist.getId(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES);
+        log.warn("Wishlist compiler plan invalid for {} wishlist(s) (attempt {}/{}); asked Jules to retry",
+                wishlists.size(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES);
     }
 
     /**
@@ -2080,19 +2091,23 @@ public class JulesDispatchService {
         }
     }
 
-    private UUID compilerTaskWishlistId(TaskEntity task) {
+    private List<UUID> compilerTaskWishlistIds(TaskEntity task) {
         if (task.getPayload() == null) {
-            return null;
+            return List.of();
         }
-        String raw = task.getPayload().path("compilesWishlistId").asText(null);
-        if (raw == null || raw.isBlank()) {
-            return null;
+        JsonNode idsNode = task.getPayload().path("compilesWishlistIds");
+        if (!idsNode.isArray()) {
+            return List.of();
         }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
+        List<UUID> ids = new java.util.ArrayList<>();
+        for (JsonNode idNode : idsNode) {
+            try {
+                ids.add(UUID.fromString(idNode.asText("")));
+            } catch (IllegalArgumentException ignored) {
+                // skip malformed entry, don't fail the whole batch over one bad id
+            }
         }
+        return ids;
     }
 
     private List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> parseCompilerPlan(
@@ -2127,7 +2142,8 @@ public class JulesDispatchService {
                         slice.path("cynefinDomain").asText("clear"),
                         slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
                         slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
-                        slice.path("hasUi").asBoolean(false)
+                        slice.path("hasUi").asBoolean(false),
+                        slice.path("sourceIndex").asInt(0)
                 ));
             }
             return result;
@@ -2137,9 +2153,14 @@ public class JulesDispatchService {
         }
     }
 
-    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices) {
-        if (slices.isEmpty() || slices.size() > 6) {
+    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices, int briefCount) {
+        if (slices.isEmpty() || slices.size() > 6 * Math.max(1, briefCount)) {
             return false;
+        }
+        for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
+            if (slice.sourceIndex() < 0 || slice.sourceIndex() >= Math.max(1, briefCount)) {
+                return false;
+            }
         }
         for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
             if (slice.title() == null || slice.title().isBlank()

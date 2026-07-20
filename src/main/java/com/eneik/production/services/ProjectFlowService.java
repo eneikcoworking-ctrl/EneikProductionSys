@@ -82,17 +82,28 @@ public class ProjectFlowService {
     @Value("${orchestration.max-recovery-items-per-run:3}")
     private int maxRecoveryItemsPerRun;
 
-    // Every pending wishlist item that isn't on the cheap deterministic path (role_mismatch_followup, or
-    // an already-compiled-by-role item) gets its own real Jules compiler session via dispatchWishlistCompiler
-    // - with no cap, a single orchestrate() tick could fire an unbounded burst of them the moment several
-    // pile up at once (confirmed live: multiple design-reviewer-concern wishlists arriving together each
-    // spawned their own simultaneous compiler dispatch). More simultaneous compiler sessions means more
-    // surface area for exactly the kind of same-wishlist race this project just found and fixed, and burns
-    // through the reserved compiler account's daily quota faster than the work actually needs. Capping this
-    // just spreads dispatches across more ticks - nothing is lost, a wishlist that doesn't get a slot this
-    // cycle simply gets one on the next.
-    @Value("${orchestration.max-compiler-dispatches-per-run:2}")
-    private int maxCompilerDispatchesPerRun;
+    // Pull, not push: admission to the paid Jules compiler is gated by live capacity (Kanban WIP limits),
+    // not by how many wishlist items happen to exist or how many ticks have passed. Every candidate not on
+    // the cheap deterministic path (role_mismatch_followup, or an already-compiled-by-role item) is
+    // collected across the whole orchestrate() cycle and admitted into ONE batched compiler dispatch by
+    // dispatchBatchedWishlistCompiler, up to whichever of these two limits is tighter. A candidate that
+    // doesn't fit stays `pending` and is simply reconsidered next cycle - nothing is lost, admission is
+    // just capacity-driven instead of time-driven.
+    //
+    // Project-wide: how many wishlists this project may have genuinely in flight (status=compiling) at
+    // once. More simultaneous compiler sessions is more surface area for the exact same-wishlist race this
+    // project already found and fixed once, and burns the reserved compiler account's daily quota faster
+    // than the work needs.
+    @Value("${orchestration.wip-limit-project-compiling:2}")
+    private int wipLimitProjectCompiling;
+
+    // Per-feature: how many wishlists sharing one featureId may be pending+compiling at once. This is the
+    // direct fix for "a chain of similar follow-ups piles up for one feature" (confirmed live: repeated
+    // design-review concerns on the same mockup each independently queued their own compiler dispatch) -
+    // generalizes the narrower, project-scoped MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT check in
+    // JulesDispatchService (kept as a cheap outer safety net, this is the real capacity control).
+    @Value("${orchestration.wip-limit-feature-in-flight:2}")
+    private int wipLimitFeatureInFlight;
 
 
 
@@ -314,8 +325,7 @@ public class ProjectFlowService {
         }
 
         int processedCount = 0;
-        java.util.concurrent.atomic.AtomicInteger compilerDispatchBudget =
-                new java.util.concurrent.atomic.AtomicInteger(Math.max(0, maxCompilerDispatchesPerRun));
+        java.util.List<com.eneik.production.models.persistence.WishlistEntity> compilerCandidates = new java.util.ArrayList<>();
 
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
@@ -342,44 +352,22 @@ public class ProjectFlowService {
                     continue;
                 }
 
-                if (compileWishlistIntoAtomicSlices(project, wishlist, compilerDispatchBudget)) {
+                if (tryCompileWishlistCheaply(project, wishlist)) {
                     processedCount++;
                     log.info("ProjectFlowService: Synchronously compiled wishlist {} into atomic task slices", wishlist.getId());
                     continue;
-                } else if (wishlist.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling) {
-                    // Already handed off to the async Jules compiler dispatch (dispatchWishlistCompiler) -
-                    // the legacy synchronous fallback below must not also compile this same wishlist.
-                    continue;
-                } else if (wishlist.getCompiledByRole() == null) {
-                    // Gemini-free: Jules reads the real original brief directly (see
-                    // TechnicalLeadCompiler.buildTaskDescription's "Original Brief" section), so no AI
-                    // pre-summarization is needed here either.
-                    String jtbd = fallbackTaskSlice(wishlist.getContent()).jtbd();
-                    String ac = fallbackTaskSlice(wishlist.getContent()).acceptanceCriteria();
-
-                    technicalLeadCompiler.compile(
-                        wishlist.getId(),
-                        "BARCAN-TAG-09",
-                        jtbd,
-                        com.eneik.production.models.persistence.LeanValue.essential,
-                        "TOC-CONSTRAINT-DECOMPOSITION",
-                        "Defect Rate <= 5%",
-                        "Compiled from English JTBD slice by Eneik Management System. Role refusal criteria: BARCAN-TAG-09.",
-                        ac
-                    );
-
-                    // Re-fetch after compile to get the updated entity
-                    wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
                 }
-                if (wishlist.getLeanValue() != com.eneik.production.models.persistence.LeanValue.waste) {
-                    technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
-                    processedCount++;
-                    log.info("ProjectFlowService: Synchronously compiled wishlist {} into task", wishlist.getId());
-                }
+
+                // Not cheap-path eligible - needs the paid Jules compiler. Collected here rather than
+                // dispatched immediately: dispatchBatchedWishlistCompiler (below, after this loop) admits
+                // candidates together under the WIP-limit gates and compiles several in one batched Jules
+                // session instead of one session per wishlist.
+                compilerCandidates.add(wishlist);
             } catch (Exception e) {
                 log.error("Failed to compile pending wishlist {} for project {}", wishlist.getId(), project.getId(), e);
             }
         }
+        processedCount += dispatchBatchedWishlistCompiler(project, compilerCandidates);
 
         // 3. Find all newly created tasks
         java.util.List<TaskEntity> currentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
@@ -751,9 +739,8 @@ public class ProjectFlowService {
                         .map(TaskEntity::getId)
                         .toList();
                 // role_mismatch_followup wishlists always take the cheap deterministic path inside
-                // compileWishlistIntoAtomicSlices and never reach the compiler-dispatch budget check, so an
-                // unbounded budget here is safe - it's never actually spent.
-                if (compileWishlistIntoAtomicSlices(project, wishlist, new java.util.concurrent.atomic.AtomicInteger(Integer.MAX_VALUE))) {
+                // tryCompileWishlistCheaply, so they never need to go through the batched compiler dispatch.
+                if (tryCompileWishlistCheaply(project, wishlist)) {
                     long newTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
                             .stream()
                             .map(TaskEntity::getId)
@@ -807,17 +794,23 @@ public class ProjectFlowService {
             // reopen the wishlist it was compiling so the normal dispatchWishlistCompiler path picks it up
             // fresh next cycle, and retire the stuck compiler task for good so it's never reconsidered here.
             if (isWishlistCompilerTask(task)) {
-                UUID targetWishlistId = compilerTaskWishlistIdOrNull(task);
-                WishlistEntity targetWishlist = targetWishlistId == null ? null : wishlistRepository.findById(targetWishlistId).orElse(null);
-                if (targetWishlist != null && targetWishlist.getStatus() != WishlistStatus.converted_to_task
-                        && targetWishlist.getStatus() != WishlistStatus.dismissed) {
-                    targetWishlist.setStatus(WishlistStatus.pending);
-                    wishlistRepository.save(targetWishlist);
-                    log.warn("ProjectFlowService: blocked compiler task {} reopened wishlist {} to pending for a fresh compiler dispatch",
-                            task.getId(), targetWishlistId);
+                // A batched compiler task can cover several wishlists at once - reopen every one that isn't
+                // already genuinely finished (another wishlist in the same batch may have completed via a
+                // different session in the meantime), so each gets picked up fresh next cycle.
+                int reopened = 0;
+                for (UUID targetWishlistId : compilerTaskWishlistIds(task)) {
+                    WishlistEntity targetWishlist = wishlistRepository.findById(targetWishlistId).orElse(null);
+                    if (targetWishlist != null && targetWishlist.getStatus() != WishlistStatus.converted_to_task
+                            && targetWishlist.getStatus() != WishlistStatus.dismissed) {
+                        targetWishlist.setStatus(WishlistStatus.pending);
+                        wishlistRepository.save(targetWishlist);
+                        reopened++;
+                    }
                 }
+                log.warn("ProjectFlowService: blocked compiler task {} reopened {} wishlist(s) to pending for a fresh compiler dispatch",
+                        task.getId(), reopened);
                 task.setStatus(TaskStatus.failed);
-                task.setJulesDispatchStatus("Compiler task blocked; wishlist reopened for a fresh compiler dispatch instead of generic recovery");
+                task.setJulesDispatchStatus("Compiler task blocked; wishlist(s) reopened for a fresh compiler dispatch instead of generic recovery");
                 taskRepository.save(task);
                 continue;
             }
@@ -911,8 +904,12 @@ public class ProjectFlowService {
         return value.substring(0, Math.max(0, maxLength));
     }
 
-    private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist,
-                                                     java.util.concurrent.atomic.AtomicInteger remainingCompilerDispatchBudget) {
+    // Returns true if the wishlist was fully handled via the cheap, synchronous, non-Jules path - nothing
+    // more to do this cycle. Returns false if it still needs the paid Jules compiler: the caller collects
+    // it as a candidate for dispatchBatchedWishlistCompiler instead of dispatching it immediately here, so
+    // several accumulated candidates can be admitted together under the WIP-limit gates and compiled in one
+    // batched Jules session rather than one session per wishlist.
+    private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
         if (wishlist.getCompiledByRole() != null) {
             if (wishlist.getLeanValue() != LeanValue.waste) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
@@ -954,25 +951,113 @@ public class ProjectFlowService {
         // Jules compiler session (dispatchWishlistCompiler) that decomposes it into a proper
         // JTBD/Kano/Cynefin-classified task graph - the same job Gemini used to do before its billing
         // ran out. The compiler's own PR result is what eventually calls buildTaskGraphFromSlices.
-        if (wishlist.getStatus() == WishlistStatus.pending) {
-            if (remainingCompilerDispatchBudget.get() <= 0) {
-                log.info("ProjectFlowService: compiler-dispatch budget exhausted this cycle for project {}; wishlist {} stays pending for the next cycle",
-                        project.getId(), wishlist.getId());
-                return false;
-            }
-            remainingCompilerDispatchBudget.decrementAndGet();
-            dispatchWishlistCompiler(project, wishlist);
-        }
+        // Not dispatched here - the caller (orchestrate()) collects this as a candidate and admits it
+        // through dispatchBatchedWishlistCompiler under the WIP-limit gates, batched with any other
+        // candidates from this same cycle.
         return false;
+    }
+
+    /**
+     * Pull-based admission: candidates that fell through the cheap path (see tryCompileWishlistCheaply)
+     * are admitted into ONE batched Jules compiler dispatch, up to whichever WIP limit is tighter - project
+     * wide (how many wishlists may be genuinely in flight at once) or per-feature (how many follow-ups for
+     * one feature may pile up at once). Anything not admitted simply stays `pending` and is reconsidered on
+     * the next orchestrate() cycle - capacity-gated, not time-gated. Returns how many were actually admitted
+     * (for the caller's processedCount bookkeeping).
+     */
+    // Package-private (not private) so tests in this package can call it directly - a CGLIB proxy (this
+    // class is @Transactional) doesn't intercept private methods, so invoking one reflectively hits an
+    // uninitialized proxy field, not the real bean's state.
+    int dispatchBatchedWishlistCompiler(ProjectEntity project, java.util.List<WishlistEntity> candidates) {
+        if (candidates.isEmpty()) {
+            return 0;
+        }
+
+        long compilingNow = wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling);
+        int projectBudget = (int) Math.max(0, wipLimitProjectCompiling - compilingNow);
+        if (projectBudget <= 0) {
+            log.info("ProjectFlowService: project-wide compiling WIP limit ({}) reached for project {}; {} candidate(s) stay pending for the next cycle",
+                    wipLimitProjectCompiling, project.getId(), candidates.size());
+            return 0;
+        }
+
+        // Snapshot only already-`compiling` wishlists (genuinely in flight from a prior cycle) per featureId
+        // - deliberately NOT `pending`, since every candidate in THIS batch is itself currently `pending`
+        // and would otherwise count against its own admission (every feature with >=WIP_FEATURE pending
+        // items would then permanently block all of them, since the queue itself would always already be
+        // "at the limit"). Candidates admitted within this same loop are added to the count as they go, so
+        // several candidates sharing one feature still correctly count against each other.
+        java.util.Map<UUID, Long> inFlightByFeature = wishlistRepository
+                .findByProjectIdAndStatus(project.getId(), WishlistStatus.compiling)
+                .stream()
+                .filter(w -> w.getFeatureId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
+
+        java.util.List<WishlistEntity> admitted = new java.util.ArrayList<>();
+        for (WishlistEntity candidate : candidates) {
+            if (admitted.size() >= projectBudget) {
+                break;
+            }
+            UUID featureId = candidate.getFeatureId();
+            if (featureId != null) {
+                long inFlight = inFlightByFeature.getOrDefault(featureId, 0L);
+                if (inFlight >= wipLimitFeatureInFlight) {
+                    log.info("ProjectFlowService: feature {} in-flight WIP limit ({}) reached; wishlist {} stays pending for the next cycle",
+                            featureId, wipLimitFeatureInFlight, candidate.getId());
+                    continue;
+                }
+                inFlightByFeature.put(featureId, inFlight + 1);
+            }
+            admitted.add(candidate);
+        }
+
+        if (admitted.isEmpty()) {
+            return 0;
+        }
+
+        for (WishlistEntity w : admitted) {
+            w.setStatus(WishlistStatus.compiling);
+            wishlistRepository.save(w);
+        }
+        dispatchWishlistCompiler(project, admitted);
+        return admitted.size();
     }
 
     /**
      * Turns a resolved slice list into the dependency-graph of child wishlists/tasks that used to be
      * built inline here. Called by the Jules compiler result path
      * (JulesDispatchService.completeWishlistCompilation) once a compiler session's slices are parsed
-     * and validated.
+     * and validated - possibly covering several source wishlists batched into one compiler session.
+     * Each source wishlist's slices (grouped by TaskSliceMetadata.sourceIndex, matching the numbering
+     * dispatchWishlistCompiler's prompt sent) are built into their own independent task graph - batching
+     * is a dispatch-efficiency optimization, not a merge of unrelated briefs, so two different briefs'
+     * tasks must never end up depending on each other just because they shared a compiler session.
      */
-    public boolean buildTaskGraphFromSlices(ProjectEntity project, WishlistEntity wishlist,
+    public boolean buildTaskGraphFromSlices(ProjectEntity project, java.util.List<WishlistEntity> sourceWishlists,
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
+        java.util.Map<Integer, java.util.List<MLPredictionServiceClient.TaskSliceMetadata>> slicesBySource =
+                new java.util.LinkedHashMap<>();
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
+            slicesBySource.computeIfAbsent(slice.sourceIndex(), k -> new java.util.ArrayList<>()).add(slice);
+        }
+
+        boolean anyBuilt = false;
+        for (int i = 0; i < sourceWishlists.size(); i++) {
+            WishlistEntity wishlist = sourceWishlists.get(i);
+            // Per-source idempotency: a wishlist already finished by another session in the meantime (see
+            // JulesDispatchService.completeWishlistCompilation's batch-level check) must not be re-decomposed.
+            if (wishlist.getStatus() == WishlistStatus.converted_to_task || wishlist.getStatus() == WishlistStatus.dismissed) {
+                continue;
+            }
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> mySlices = slicesBySource.getOrDefault(i, java.util.List.of());
+            if (buildTaskGraphForOneWishlist(project, wishlist, mySlices)) {
+                anyBuilt = true;
+            }
+        }
+        return anyBuilt;
+    }
+
+    private boolean buildTaskGraphForOneWishlist(ProjectEntity project, WishlistEntity wishlist,
             java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
         java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices = emsGraphSlices(wishlist, slices);
         if (graphSlices.isEmpty()) {
@@ -1338,7 +1423,8 @@ public class ProjectFlowService {
                 "clear",
                 "TOC-CONSTRAINT-DECOMPOSITION",
                 "Escaped defects <= 5%",
-                looksLikeUi(wishlistContent)
+                looksLikeUi(wishlistContent),
+                0
         );
     }
 
@@ -1374,32 +1460,36 @@ public class ProjectFlowService {
 
     public static final String WISHLIST_COMPILER_TASK_TYPE = "wishlist_compiler";
     public static final String WISHLIST_COMPILER_PAYLOAD_KEY = "taskType";
-    public static final String WISHLIST_COMPILER_WISHLIST_ID_KEY = "compilesWishlistId";
+    // Plural: one compiler task now covers a whole admitted batch (see dispatchBatchedWishlistCompiler),
+    // not a single wishlist. Kept as a JSON array of UUID strings rather than one string.
+    public static final String WISHLIST_COMPILER_WISHLIST_IDS_KEY = "compilesWishlistIds";
 
-    private void dispatchWishlistCompiler(ProjectEntity project, WishlistEntity wishlist) {
-        wishlist.setStatus(WishlistStatus.compiling);
-        wishlistRepository.save(wishlist);
-
+    private void dispatchWishlistCompiler(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
+        // Caller (dispatchBatchedWishlistCompiler) already flipped every wishlist in this batch to
+        // `compiling` before calling this method.
         RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
         if (compilerRole == null) {
-            log.error("Cannot dispatch wishlist compiler for wishlist {}: role {} not found",
-                    wishlist.getId(), ORCHESTRATOR_ROLE);
+            log.error("Cannot dispatch wishlist compiler for {} wishlist(s): role {} not found",
+                    wishlists.size(), ORCHESTRATOR_ROLE);
             return;
         }
 
         TaskEntity compilerTask = new TaskEntity();
         compilerTask.setProject(project);
         compilerTask.setRole(compilerRole);
-        // Suffixed with a short wishlist id fragment: an identical literal title across multiple compiler
-        // dispatches in the same project (a normal, legitimate occurrence) was tripping
-        // ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
-        compilerTask.setTitle("Compile wishlist into task graph (" + shortId(wishlist.getId()) + ")");
-        compilerTask.setDescription(wishlistCompilerPrompt(wishlist));
+        // Suffixed with a short id fragment of the first wishlist in the batch: an identical literal title
+        // across multiple compiler dispatches in the same project (a normal, legitimate occurrence) was
+        // tripping ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
+        compilerTask.setTitle("Compile " + wishlists.size() + " wishlist(s) into task graph (" + shortId(wishlists.get(0).getId()) + ")");
+        compilerTask.setDescription(wishlistCompilerPromptBatch(wishlists));
         compilerTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
-        payload.put(WISHLIST_COMPILER_WISHLIST_ID_KEY, wishlist.getId().toString());
+        com.fasterxml.jackson.databind.node.ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
+        for (WishlistEntity w : wishlists) {
+            idsArray.add(w.getId().toString());
+        }
         compilerTask.setPayload(payload);
 
         compilerTask = taskRepository.save(compilerTask);
@@ -1411,19 +1501,27 @@ public class ProjectFlowService {
                 && WISHLIST_COMPILER_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
     }
 
-    private UUID compilerTaskWishlistIdOrNull(TaskEntity task) {
+    private java.util.List<UUID> compilerTaskWishlistIds(TaskEntity task) {
         if (task.getPayload() == null) {
-            return null;
+            return java.util.List.of();
         }
-        String raw = task.getPayload().path(WISHLIST_COMPILER_WISHLIST_ID_KEY).asText(null);
-        if (raw == null || raw.isBlank()) {
-            return null;
+        JsonNode idsNode = task.getPayload().path(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
+        if (!idsNode.isArray()) {
+            return java.util.List.of();
         }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
+        java.util.List<UUID> ids = new java.util.ArrayList<>();
+        for (JsonNode idNode : idsNode) {
+            try {
+                ids.add(UUID.fromString(idNode.asText("")));
+            } catch (IllegalArgumentException ignored) {
+                // skip malformed entry, don't fail the whole batch over one bad id
+            }
         }
+        return ids;
+    }
+
+    private boolean isDesignConcernWishlist(WishlistEntity wishlist) {
+        return wishlist.getSource() == WishlistSource.role && "BARCAN-TAG-03".equals(wishlist.getSourceRoleTag());
     }
 
     private void dispatchCompilerTask(TaskEntity compilerTask) {
@@ -1463,18 +1561,41 @@ public class ProjectFlowService {
         }
     }
 
-    private String wishlistCompilerPrompt(WishlistEntity wishlist) {
+    // Package-private for the same reason as dispatchBatchedWishlistCompiler above.
+    String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists) {
+        StringBuilder briefsSection = new StringBuilder();
+        for (int i = 0; i < wishlists.size(); i++) {
+            WishlistEntity w = wishlists.get(i);
+            briefsSection.append("Brief #").append(i).append(":");
+            if (isDesignConcernWishlist(w)) {
+                var matcher = DESIGN_CONCERN_APPROVED_PATH_PATTERN.matcher(defaultText(w.getContent(), ""));
+                String approvedPath = matcher.find() ? matcher.group(1) : null;
+                if (approvedPath != null) {
+                    // Adequacy fix (confirmed root cause of a live chaining incident): without this,
+                    // Jules has zero signal that this brief is a correction to an already-approved mockup,
+                    // not new UI surface - it independently decides whether to generate a fresh mockup,
+                    // which gets its own design review, which finds a new concern, forever.
+                    briefsSection.append(" [CORRECTION TO ALREADY-APPROVED DESIGN - do not generate a new")
+                            .append(" mockup or design review for this brief; implement the fix directly")
+                            .append(" against ").append(approvedPath).append("/mockup.html]");
+                }
+            }
+            briefsSection.append("\n").append(defaultText(w.getContent(), "(empty brief)")).append("\n\n");
+        }
+
         return """
-                You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose the client
-                brief below into executable work items. Do NOT implement any product code, do not run
-                builds or tests - this task only produces a decomposition plan.
+                You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose EACH client
+                brief below independently into executable work items. Do NOT implement any product code,
+                do not run builds or tests - this task only produces a decomposition plan.
 
                 Output rules:
                 - All output must be in English, even when the source brief is written in another
                   language. Translate and normalize intent; never copy the raw brief text verbatim into
                   your output.
-                - Produce 1-6 work items. Each item must have exactly one owner role and one concrete
-                  result. Do not multiply one JTBD across roles.
+                - Produce 1-6 work items PER brief. Each item must have exactly one owner role and one
+                  concrete result. Do not multiply one JTBD across roles.
+                - Every item MUST include a "sourceIndex" field (integer) naming which Brief #N it
+                  addresses. Never mix work from two different briefs into one item.
                 - Do not create QA or integration items unless the brief explicitly asks to verify
                   existing code, fix merge hygiene, or review an already implemented slice.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
@@ -1523,13 +1644,14 @@ public class ProjectFlowService {
                 "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive",
                 "cynefinDomain": "clear|complicated|complex|chaotic",
                 "tocConstraintRef": "short bottleneck reference",
-                "sixSigmaMetric": "measurable quality metric", "hasUi": true}]}
+                "sixSigmaMetric": "measurable quality metric", "hasUi": true, "sourceIndex": 0}]}
                 Do not write, modify, or delete any other file.
 
-                Client brief to decompose (verbatim, may be in any language - read and understand it
-                yourself, do not rely on it already being in English):
+                %d client brief(s) to decompose below (verbatim, may be in any language - read and
+                understand each yourself, do not rely on it already being in English). Decompose each one
+                separately; tag every resulting item with the matching "sourceIndex":
                 %s
-                """.formatted(defaultText(wishlist.getContent(), "(empty brief)"));
+                """.formatted(wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and

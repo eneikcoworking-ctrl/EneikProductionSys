@@ -230,10 +230,11 @@ class ProjectFlowIntegrationTest {
                         "clear",
                         "TOC-CONSTRAINT-DECOMPOSITION",
                         "Escaped defects <= 5%",
-                        true
+                        true,
+                        0
                 ));
 
-        boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, wishlist, slices);
+        boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, java.util.List.of(wishlist), slices);
         assertThat(created).isTrue();
 
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =

@@ -69,6 +69,9 @@ class AutonomousPipelineIntegrationTest {
     private WishlistRepository wishlistRepository;
 
     @Autowired
+    private com.eneik.production.repositories.FeatureRepository featureRepository;
+
+    @Autowired
     private FalsificationCycleService falsificationCycleService;
 
     @Autowired
@@ -551,14 +554,14 @@ class AutonomousPipelineIntegrationTest {
                 "Backend validation", "Validate the incoming payload server-side.",
                 "Given an invalid payload, When it is submitted, Then the API returns a 400.",
                 "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of invalid payloads rejected", false);
+                "API connectivity", "100% of invalid payloads rejected", false, 0);
         MLPredictionServiceClient.TaskSliceMetadata dataSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Data migration", "Migrate the legacy records to the new schema.",
                 "Given legacy records, When the migration runs, Then all records match the new schema.",
                 "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of records migrated", false);
+                "Data integrity", "100% of records migrated", false, 0);
 
-        boolean built = projectFlowService.buildTaskGraphFromSlices(project, brief, List.of(backendSlice, dataSlice));
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(backendSlice, dataSlice));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
@@ -594,25 +597,25 @@ class AutonomousPipelineIntegrationTest {
                 "Order data model", "Model the order entity and its fields.",
                 "Given the domain, When the model is defined, Then it captures all required order fields.",
                 "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of fields modeled", false);
+                "Data integrity", "100% of fields modeled", false, 0);
         MLPredictionServiceClient.TaskSliceMetadata contractSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order API contract", "Define the shared order API contract.",
                 "Given the order model, When the contract is published, Then backend and AI both build against it.",
                 "BARCAN-TAG-12", LeanValue.essential, "Must-Be", "clear",
-                "Contract drift", "0 drift incidents", false);
+                "Contract drift", "0 drift incidents", false, 0);
         MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order backend", "Implement the order backend against the contract.",
                 "Given the contract, When a request arrives, Then it is handled per spec.",
                 "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of requests handled", false);
+                "API connectivity", "100% of requests handled", false, 0);
         MLPredictionServiceClient.TaskSliceMetadata aiSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order AI scoring", "Implement AI scoring against the contract.",
                 "Given the contract, When a request arrives, Then a score is returned per spec.",
                 "BARCAN-TAG-04", LeanValue.essential, "Must-Be", "clear",
-                "Scoring accuracy", "100% of requests scored", false);
+                "Scoring accuracy", "100% of requests scored", false, 0);
 
         boolean built = projectFlowService.buildTaskGraphFromSlices(
-                project, brief, List.of(modelSlice, contractSlice, backendSlice, aiSlice));
+                project, List.of(brief), List.of(modelSlice, contractSlice, backendSlice, aiSlice));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
@@ -648,14 +651,14 @@ class AutonomousPipelineIntegrationTest {
                 "Order data model", "Model the order entity and its fields.",
                 "Given the domain, When the model is defined, Then it captures all required order fields.",
                 "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of fields modeled", false);
+                "Data integrity", "100% of fields modeled", false, 0);
         MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order backend", "Implement the order backend.",
                 "Given the model, When a request arrives, Then it is handled.",
                 "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of requests handled", false);
+                "API connectivity", "100% of requests handled", false, 0);
 
-        boolean built = projectFlowService.buildTaskGraphFromSlices(project, brief, List.of(modelSlice, backendSlice));
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(modelSlice, backendSlice));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
@@ -671,5 +674,170 @@ class AutonomousPipelineIntegrationTest {
                 .filter(t -> t.getRole() != null && roleTag.equals(t.getRole().getTag()))
                 .findFirst()
                 .orElseThrow(() -> new AssertionError("No task found for role " + roleTag + " in: " + tasks));
+    }
+
+    @Test
+    void buildTaskGraphFromSlicesBatchKeepsEachSourceWishlistAsAnIndependentGraph() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Batch Independence Project");
+        project.setSlug("batch-independence-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("batch-independence-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity briefA = new WishlistEntity();
+        briefA.setProjectId(project.getId());
+        briefA.setSource(WishlistSource.client);
+        briefA.setContent("Brief A: a data model for widgets.");
+        briefA.setStatus(WishlistStatus.compiling);
+        briefA = wishlistRepository.saveAndFlush(briefA);
+
+        WishlistEntity briefB = new WishlistEntity();
+        briefB.setProjectId(project.getId());
+        briefB.setSource(WishlistSource.client);
+        briefB.setContent("Brief B: an unrelated API contract for gadgets.");
+        briefB.setStatus(WishlistStatus.compiling);
+        briefB = wishlistRepository.saveAndFlush(briefB);
+
+        MLPredictionServiceClient.TaskSliceMetadata sliceA = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Widget data model", "Model widgets.",
+                "Given a widget, When it is created, Then it is persisted.",
+                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
+                "Data integrity", "100% persisted", false, 0);
+        MLPredictionServiceClient.TaskSliceMetadata sliceB = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Gadget API contract", "Define the gadget API contract.",
+                "Given the contract, When published, Then both sides build against it.",
+                "BARCAN-TAG-12", LeanValue.essential, "Must-Be", "clear",
+                "Contract drift", "0 drift", false, 1);
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(briefA, briefB), List.of(sliceA, sliceB));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity modelTask = taskByRole(tasks, "BARCAN-TAG-08");
+        TaskEntity contractTask = taskByRole(tasks, "BARCAN-TAG-12");
+
+        // Batching is a dispatch-efficiency optimization, not a merge - two unrelated briefs' tasks must
+        // never end up depending on each other, or sharing a feature, just because they shared one
+        // compiler session.
+        assertThat(modelTask.getDependsOn()).isNull();
+        assertThat(contractTask.getDependsOn()).isNull();
+        assertThat(modelTask.getFeatureId()).isNotEqualTo(contractTask.getFeatureId());
+
+        assertThat(wishlistRepository.findById(briefA.getId()).orElseThrow().getStatus())
+                .isEqualTo(WishlistStatus.converted_to_task);
+        assertThat(wishlistRepository.findById(briefB.getId()).orElseThrow().getStatus())
+                .isEqualTo(WishlistStatus.converted_to_task);
+    }
+
+    @Test
+    void buildTaskGraphFromSlicesBatchSkipsASourceWishlistAlreadyFinishedByAnotherSession() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Batch Idempotency Project");
+        project.setSlug("batch-idempotency-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("batch-idempotency-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity alreadyDone = new WishlistEntity();
+        alreadyDone.setProjectId(project.getId());
+        alreadyDone.setSource(WishlistSource.client);
+        alreadyDone.setContent("Already finished by another session before this one completed.");
+        // Simulates another compiler session in the same batch having already finished this one.
+        alreadyDone.setStatus(WishlistStatus.converted_to_task);
+        alreadyDone = wishlistRepository.saveAndFlush(alreadyDone);
+
+        WishlistEntity stillOpen = new WishlistEntity();
+        stillOpen.setProjectId(project.getId());
+        stillOpen.setSource(WishlistSource.client);
+        stillOpen.setContent("Still open - this one should actually get built.");
+        stillOpen.setStatus(WishlistStatus.compiling);
+        stillOpen = wishlistRepository.saveAndFlush(stillOpen);
+
+        MLPredictionServiceClient.TaskSliceMetadata sliceForDone = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Should never be built", "Should never be built.",
+                "Given this brief is already done, When processed, Then nothing new is created.",
+                "BARCAN-TAG-11", LeanValue.essential, "Must-Be", "clear",
+                "N/A", "N/A", false, 0);
+        MLPredictionServiceClient.TaskSliceMetadata sliceForOpen = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Should be built", "Should be built.",
+                "Given this brief is still open, When processed, Then a task is created.",
+                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
+                "N/A", "N/A", false, 1);
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(alreadyDone, stillOpen), List.of(sliceForDone, sliceForOpen));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        assertThat(tasks.stream().anyMatch(t -> t.getRole() != null && "BARCAN-TAG-11".equals(t.getRole().getTag())))
+                .as("the already-finished source wishlist must not be re-decomposed")
+                .isFalse();
+        assertThat(taskByRole(tasks, "BARCAN-TAG-02")).isNotNull();
+    }
+
+    @Test
+    void dispatchBatchedWishlistCompilerRespectsFeatureWipLimit() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Feature WIP Limit Project");
+        project.setSlug("feature-wip-limit-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("feature-wip-limit-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        FeatureEntity feature = new FeatureEntity();
+        feature.setProjectId(project.getId());
+        feature = featureRepository.saveAndFlush(feature);
+        UUID sharedFeatureId = feature.getId();
+
+        List<WishlistEntity> candidates = new java.util.ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            WishlistEntity concern = new WishlistEntity();
+            concern.setProjectId(project.getId());
+            concern.setSource(WishlistSource.role);
+            concern.setSourceRoleTag("BARCAN-TAG-03");
+            concern.setFeatureId(sharedFeatureId);
+            concern.setContent("Design reviewer concern (non-blocking) on design/approved/x: concern #" + i);
+            concern.setStatus(WishlistStatus.pending);
+            candidates.add(wishlistRepository.saveAndFlush(concern));
+        }
+
+        int admitted = projectFlowService.dispatchBatchedWishlistCompiler(project, candidates);
+
+        // Default orchestration.wip-limit-feature-in-flight is 2: with none of the 3 already `compiling`
+        // beforehand, only 2 may be admitted in this same batch - the 3rd must stay `pending` for a later
+        // cycle instead of all 3 racing into the compiler at once for one feature.
+        assertThat(admitted).isEqualTo(2);
+        long compilingCount = candidates.stream()
+                .map(w -> wishlistRepository.findById(w.getId()).orElseThrow())
+                .filter(w -> w.getStatus() == WishlistStatus.compiling)
+                .count();
+        assertThat(compilingCount).isEqualTo(2);
+    }
+
+    @Test
+    void wishlistCompilerPromptBatchInjectsCorrectionInstructionOnlyForDesignConcerns() {
+        WishlistEntity designConcern = new WishlistEntity();
+        designConcern.setSource(WishlistSource.role);
+        designConcern.setSourceRoleTag("BARCAN-TAG-03");
+        designConcern.setContent("Design reviewer concern (non-blocking) on design/approved/20260101-mockup: contrast too low");
+
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setSource(WishlistSource.client);
+        clientBrief.setContent("Build a normal new feature from scratch.");
+
+        String prompt = projectFlowService.wishlistCompilerPromptBatch(List.of(designConcern, clientBrief));
+
+        assertThat(prompt).contains("CORRECTION TO ALREADY-APPROVED DESIGN");
+        assertThat(prompt).contains("design/approved/20260101-mockup/mockup.html");
+        // The correction annotation must be scoped to Brief #0 only - Brief #1 (a normal client brief) gets
+        // no such instruction, otherwise a real new-UI request would wrongly be told not to build a mockup.
+        int briefOneIndex = prompt.indexOf("Build a normal new feature from scratch.");
+        int correctionIndex = prompt.indexOf("CORRECTION TO ALREADY-APPROVED DESIGN");
+        assertThat(correctionIndex).isLessThan(briefOneIndex);
     }
 }
