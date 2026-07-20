@@ -752,4 +752,48 @@ class JulesDispatchServiceTest {
 
         verify(projectFlowService, never()).buildTaskGraphFromSlices(any(), any(), any());
     }
+
+    @Test
+    void firstCompilerSessionForAWishlistStillCompilingIsNotTreatedAsADuplicate() {
+        // Regression guard: dispatchWishlistCompiler flips the wishlist to `compiling` at DISPATCH time,
+        // before any session completes - so the FIRST (and only) session to reach completion also sees a
+        // non-pending status. A guard that rejects anything "!= pending" would wrongly discard this
+        // legitimate completion too, exactly like the live incident where a wishlist got stuck looping
+        // forever (compile -> wrongly discarded -> blocked -> recovery -> compile -> discarded again).
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setProjectId(projectId);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.compiling);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/first-completion");
+        session.setStatus("pr_opened");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
+        when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), eq("sessions/first-completion")))
+                .thenReturn(Optional.empty());
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(gitHubPullRequestService, never()).mergeRecordPullRequest(
+                any(), any(), eq("duplicate wishlist compiler run discarded (wishlist already compiled)"));
+    }
 }

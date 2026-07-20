@@ -1564,7 +1564,15 @@ public class JulesDispatchService {
         // buildTaskGraphFromSlices below and the same brief gets fully decomposed and dispatched multiple
         // times. Whichever compiler session reaches this point first "wins"; every later one for the same
         // wishlist is a no-op that just closes its own PR/session cleanly.
-        if (wishlist.getStatus() != WishlistStatus.pending) {
+        //
+        // Must check specifically for converted_to_task/dismissed, NOT "!= pending": dispatchWishlistCompiler
+        // flips the wishlist to `compiling` at DISPATCH time, before any session has actually completed - a
+        // "!= pending" check would therefore reject every completion, including the legitimate first one,
+        // since by the time ANY session gets here the status has already left `pending`. This was caught
+        // live: it stuck a wishlist in an infinite compile->discard->blocked->recover->compile loop that
+        // never produced real work. converted_to_task/dismissed are the only states that mean "someone
+        // already finished this" - `compiling` just means "in flight", which includes the winning attempt.
+        if (wishlist.getStatus() == WishlistStatus.converted_to_task || wishlist.getStatus() == WishlistStatus.dismissed) {
             log.warn("Compiler task {}: wishlist {} is already '{}' (compiled by another session) - discarding this duplicate compilation instead of re-decomposing the same brief.",
                     compilerTask.getId(), wishlistId, wishlist.getStatus());
             Optional<GitHubPullRequestService.GitHubPullRequest> duplicatePrOpt =
