@@ -1305,111 +1305,19 @@ public class JulesDispatchService {
                 if (prUrl == null || prUrl.isBlank()) {
                     prUrl = "https://github.com/" + task.getProject().getRepositoryName() + "/pull/mock-" + taskId;
                 }
-                
-                com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
-                prData.setCiStatus("success");
-                prData.setLinesChanged(120);
-                prData.setFilesChanged(4);
-                prData.setChangedFiles(java.util.Collections.emptyList());
 
-                // Invoke the local agent code review
-                Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), prUrl);
-                boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
-                String remarks = (String) reviewResult.get("remarks");
-                if (remarks == null || remarks.isBlank()) {
-                    remarks = "PR review rejected without detailed remarks.";
-                }
-                if (!approved && remarks.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
-                    // Gemini itself is unreachable/out of quota - this is not a real defect in Jules's code,
-                    // so neither fake-approving nor sending a rejection message asking Jules to "fix" nothing
-                    // is honest. A retry-only strategy would never resolve a genuinely dead Gemini quota, so
-                    // dispatch a real Jules eneikdru session as the reviewer instead - work keeps moving
-                    // either way, it just costs a Jules session instead of an instant Gemini call.
-                    dispatchReviewerFallback(task, prUrl);
-                    return;
-                }
-                boolean softArtifactDebt = !approved && isSoftGeneratedArtifactDebt(remarks);
-
-                if (approved || softArtifactDebt) {
-                    if (softArtifactDebt) {
-                        createRepositoryHygieneDebtWishlist(task, remarks);
-                    }
-                    prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. "
-                            + (softArtifactDebt ? "TECH_DEBT_RECORDED: minor generated/local artifact debt; product slice may continue. " : "")
-                            + remarks);
-                    prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
-
-                    // Move task to review stage so AutoMergeService can merge it
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
-                    taskRepository.save(task);
-                    systemProgressTracker.recordProgress();
-                    log.info("Local agent review passed for task {}. PR approved and task moved to REVIEW status.", task.getId());
-
-                    // Create new recommended tasks proposed by the review
-                    List<Map<String, Object>> newTasks = (List<Map<String, Object>>) reviewResult.get("newTasks");
-                    if (newTasks != null) {
-                        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                        for (Map<String, Object> nt : newTasks) {
-                            String rTag = (String) nt.get("roleTag");
-                            String desc = (String) nt.get("description");
-                            roleRepository.findById(rTag).ifPresent(role -> {
-                                TaskEntity t = new TaskEntity();
-                                t.setProject(task.getProject());
-                                t.setRole(role);
-                                t.setTitle(TaskTitleBuilder.build(rTag, desc));
-                                t.setDescription(desc);
-                                t.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
-                                
-                                com.fasterxml.jackson.databind.node.ObjectNode payloadNode = mapper.createObjectNode();
-                                payloadNode.put("technicalLeadTaskSpec", desc);
-                                t.setPayload(payloadNode);
-                                
-                                taskRepository.save(t);
-                                log.info("Created new local agent review recommended task for role {}: {}", rTag, desc);
-                            });
-                        }
-                    }
+                // Cynefin "chaotic" domain: act first to stabilize, sense/respond afterward (same intent as
+                // AutoMergeService's chaotic merge bypass, which already skips the approval-token check for
+                // these tasks) - reviewing immediately instead of waiting for the next batch tick keeps that
+                // path fast. Every other task is deferred into pending_review so processPendingReviewBatch
+                // can review it together with any sibling PRs from the same feature (fuller picture instead
+                // of each PR reviewed in total isolation).
+                if ("chaotic".equalsIgnoreCase(task.getCynefinDomain())) {
+                    executeCodeReview(task, session, prUrl, java.util.Collections.emptyList());
                 } else {
-                    prData.setDiffSummary("REVIEW REJECTED. " + remarks);
-                    prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
-
-                    List<JulesActivityResponseEntity> responseHistory =
-                            julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
-                    String reviewSignal = "PR review rejection: " + remarks;
-                    long previousSimilarReviewRejections = countPreviousSimilarQuestions(responseHistory, reviewSignal);
-                    String julesReviewMessage = buildReviewRejectionMessage(task, remarks);
-                    recordSystemReviewRejection(session, reviewSignal, julesReviewMessage, false);
-
-                    if (previousSimilarReviewRejections > 0 && !mentionsGeneratedArtifact(remarks)) {
-                        String closeReason = "repository_hygiene_review_repeated: same PR blocker persisted after prior remediation";
-                        closeLoopAndCreateFollowUps(session, task, reviewSignal, responseHistory, closeReason);
-                        return;
-                    }
-
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
                     taskRepository.save(task);
-
-                    session.setStatus("revising");
-                    julesSessionRepository.save(session);
-                    systemProgressTracker.recordProgress();
-
-                    log.info("Review rejected. Transitioning session {} to revising for task {}", session.getExternalSessionId(), task.getId());
-                    saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), julesReviewMessage, "System generated rejection");
-
-                    // Decouple the HTTP call to prevent holding the DB transaction
-                    String externalSessionId = session.getExternalSessionId();
-                    String sessionApiKey = apiKeyForSession(session);
-                    UUID finalTaskId = task.getId();
-                    java.util.concurrent.CompletableFuture.runAsync(() -> {
-                        boolean sent = sessionApiKey != null
-                                ? julesApiClient.sendMessage(externalSessionId, julesReviewMessage, sessionApiKey)
-                                : julesApiClient.sendMessage(externalSessionId, julesReviewMessage);
-                        if (sent) {
-                            log.info("Successfully sent review rejection message asynchronously to Jules session {} for task {}", externalSessionId, finalTaskId);
-                        } else {
-                            log.warn("Failed to send async message to Jules session {} for task {}. Task might be stuck in revising.", externalSessionId, finalTaskId);
-                        }
-                    });
+                    log.info("Task {} implementer PR opened; deferred to batched review (next tick).", task.getId());
                 }
             } else if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.review) {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
@@ -1422,6 +1330,185 @@ public class JulesDispatchService {
                 }
             }
         }
+    }
+
+    /**
+     * Runs the automated code-review gate for one PR and applies the same approve/reject decision this
+     * system has always made (see handlePrOpenedWorkflow git history) - extracted so it can be invoked
+     * either immediately (chaotic Cynefin domain, "act first") or from the batched review tick
+     * (processPendingReviewBatch), which is where every other task's review now happens. siblingPrUrls
+     * are other in-flight PRs sharing this task's featureId, reviewed in the same batch tick - passed
+     * through to the reviewer so it can check this PR against them (e.g. a backend/frontend pair built
+     * against the same BARCAN-TAG-12 API contract), not treat this diff in total isolation.
+     */
+    @Transactional
+    void executeCodeReview(TaskEntity task, JulesSessionEntity session, String prUrl, List<String> siblingPrUrls) {
+        com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
+        prData.setCiStatus("success");
+        prData.setLinesChanged(120);
+        prData.setFilesChanged(4);
+        prData.setChangedFiles(java.util.Collections.emptyList());
+
+        // Invoke the local agent code review
+        Map<String, Object> reviewResult = mlPredictionServiceClient.reviewPr(task.getProject().getId(), task.getId(), prUrl, siblingPrUrls);
+        boolean approved = Boolean.TRUE.equals(reviewResult.get("approved"));
+        String remarks = (String) reviewResult.get("remarks");
+        if (remarks == null || remarks.isBlank()) {
+            remarks = "PR review rejected without detailed remarks.";
+        }
+        if (!approved && remarks.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
+            // Gemini itself is unreachable/out of quota - this is not a real defect in Jules's code,
+            // so neither fake-approving nor sending a rejection message asking Jules to "fix" nothing
+            // is honest. A retry-only strategy would never resolve a genuinely dead Gemini quota, so
+            // dispatch a real Jules eneikdru session as the reviewer instead - work keeps moving
+            // either way, it just costs a Jules session instead of an instant Gemini call.
+            dispatchReviewerFallback(task, prUrl);
+            return;
+        }
+        boolean softArtifactDebt = !approved && isSoftGeneratedArtifactDebt(remarks);
+
+        if (approved || softArtifactDebt) {
+            if (softArtifactDebt) {
+                createRepositoryHygieneDebtWishlist(task, remarks);
+            }
+            prData.setDiffSummary("CORE ARCHITECTURE VERIFIED. APPROVED. "
+                    + (softArtifactDebt ? "TECH_DEBT_RECORDED: minor generated/local artifact debt; product slice may continue. " : "")
+                    + remarks);
+            prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
+
+            // Move task to review stage so AutoMergeService can merge it
+            task.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
+            taskRepository.save(task);
+            systemProgressTracker.recordProgress();
+            log.info("Local agent review passed for task {}. PR approved and task moved to REVIEW status.", task.getId());
+
+            // Create new recommended tasks proposed by the review
+            List<Map<String, Object>> newTasks = (List<Map<String, Object>>) reviewResult.get("newTasks");
+            if (newTasks != null) {
+                com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+                for (Map<String, Object> nt : newTasks) {
+                    String rTag = (String) nt.get("roleTag");
+                    String desc = (String) nt.get("description");
+                    roleRepository.findById(rTag).ifPresent(role -> {
+                        TaskEntity t = new TaskEntity();
+                        t.setProject(task.getProject());
+                        t.setRole(role);
+                        t.setTitle(TaskTitleBuilder.build(rTag, desc));
+                        t.setDescription(desc);
+                        t.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
+
+                        com.fasterxml.jackson.databind.node.ObjectNode payloadNode = mapper.createObjectNode();
+                        payloadNode.put("technicalLeadTaskSpec", desc);
+                        t.setPayload(payloadNode);
+
+                        taskRepository.save(t);
+                        log.info("Created new local agent review recommended task for role {}: {}", rTag, desc);
+                    });
+                }
+            }
+        } else {
+            prData.setDiffSummary("REVIEW REJECTED. " + remarks);
+            prReviewPipelineService.onPrOpened(prUrl, session.getId(), prData);
+
+            List<JulesActivityResponseEntity> responseHistory =
+                    julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+            String reviewSignal = "PR review rejection: " + remarks;
+            long previousSimilarReviewRejections = countPreviousSimilarQuestions(responseHistory, reviewSignal);
+            String julesReviewMessage = buildReviewRejectionMessage(task, remarks);
+            recordSystemReviewRejection(session, reviewSignal, julesReviewMessage, false);
+
+            if (previousSimilarReviewRejections > 0 && !mentionsGeneratedArtifact(remarks)) {
+                String closeReason = "repository_hygiene_review_repeated: same PR blocker persisted after prior remediation";
+                closeLoopAndCreateFollowUps(session, task, reviewSignal, responseHistory, closeReason);
+                return;
+            }
+
+            task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            taskRepository.save(task);
+
+            session.setStatus("revising");
+            julesSessionRepository.save(session);
+            systemProgressTracker.recordProgress();
+
+            log.info("Review rejected. Transitioning session {} to revising for task {}", session.getExternalSessionId(), task.getId());
+            saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), julesReviewMessage, "System generated rejection");
+
+            // Decouple the HTTP call to prevent holding the DB transaction
+            String externalSessionId = session.getExternalSessionId();
+            String sessionApiKey = apiKeyForSession(session);
+            UUID finalTaskId = task.getId();
+            java.util.concurrent.CompletableFuture.runAsync(() -> {
+                boolean sent = sessionApiKey != null
+                        ? julesApiClient.sendMessage(externalSessionId, julesReviewMessage, sessionApiKey)
+                        : julesApiClient.sendMessage(externalSessionId, julesReviewMessage);
+                if (sent) {
+                    log.info("Successfully sent review rejection message asynchronously to Jules session {} for task {}", externalSessionId, finalTaskId);
+                } else {
+                    log.warn("Failed to send async message to Jules session {} for task {}. Task might be stuck in revising.", externalSessionId, finalTaskId);
+                }
+            });
+        }
+    }
+
+    /**
+     * Batched replacement for reviewing each implementer PR the instant it opens: every ~15 minutes,
+     * gathers every task waiting in pending_review, groups them by featureId, and reviews each one with
+     * its same-feature siblings (if any) passed as context - so a backend/frontend pair built in parallel
+     * off the same BARCAN-TAG-12 contract gets reviewed with a fuller picture instead of two completely
+     * isolated diffs. Fully automated end to end; no human decision point anywhere in this pipeline.
+     */
+    @Scheduled(fixedRateString = "${pr-review.batch-rate-ms:900000}")
+    @Transactional
+    public void processPendingReviewBatch() {
+        List<TaskEntity> pending = taskRepository.findByStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
+        if (pending.isEmpty()) {
+            return;
+        }
+
+        Map<UUID, List<TaskEntity>> byFeature = new java.util.LinkedHashMap<>();
+        for (TaskEntity t : pending) {
+            byFeature.computeIfAbsent(t.getFeatureId(), k -> new java.util.ArrayList<>()).add(t);
+        }
+
+        for (Map.Entry<UUID, List<TaskEntity>> entry : byFeature.entrySet()) {
+            List<TaskEntity> siblings = entry.getValue();
+            Map<UUID, String> prUrlByTaskId = new java.util.LinkedHashMap<>();
+            Map<UUID, JulesSessionEntity> sessionByTaskId = new java.util.LinkedHashMap<>();
+            for (TaskEntity t : siblings) {
+                JulesSessionEntity session = latestOpenPrSession(t.getId());
+                if (session == null || session.getPrUrl() == null || session.getPrUrl().isBlank()) {
+                    log.warn("Task {} is pending_review but has no resolvable open-PR session; skipping this tick.", t.getId());
+                    continue;
+                }
+                sessionByTaskId.put(t.getId(), session);
+                prUrlByTaskId.put(t.getId(), session.getPrUrl());
+            }
+
+            for (TaskEntity t : siblings) {
+                JulesSessionEntity session = sessionByTaskId.get(t.getId());
+                String prUrl = prUrlByTaskId.get(t.getId());
+                if (session == null || prUrl == null) {
+                    continue;
+                }
+                List<String> siblingPrUrls = new java.util.ArrayList<>();
+                if (entry.getKey() != null) {
+                    for (Map.Entry<UUID, String> other : prUrlByTaskId.entrySet()) {
+                        if (!other.getKey().equals(t.getId())) {
+                            siblingPrUrls.add(other.getValue());
+                        }
+                    }
+                }
+                executeCodeReview(t, session, prUrl, siblingPrUrls);
+            }
+        }
+    }
+
+    private JulesSessionEntity latestOpenPrSession(UUID taskId) {
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .filter(s -> "pr_opened".equals(s.getStatus()))
+                .max(java.util.Comparator.comparing(JulesSessionEntity::getUpdatedAt,
+                        java.util.Comparator.nullsFirst(java.util.Comparator.naturalOrder())))
+                .orElse(null);
     }
 
     /**

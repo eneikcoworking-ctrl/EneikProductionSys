@@ -43,7 +43,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
             "ORDER BY t.priority DESC, t.created_at ASC", nativeQuery = true)
     List<TaskEntity> findCandidatesByProject(@Param("projectId") UUID projectId);
 
-    @Query("SELECT t FROM TaskEntity t WHERE t.project.id = :projectId AND (t.status IN (com.eneik.production.models.persistence.TaskStatus.claimed, com.eneik.production.models.persistence.TaskStatus.in_progress, com.eneik.production.models.persistence.TaskStatus.review) OR t.julesDispatchStatus = 'pr_opened')")
+    @Query("SELECT t FROM TaskEntity t WHERE t.project.id = :projectId AND (t.status IN (com.eneik.production.models.persistence.TaskStatus.claimed, com.eneik.production.models.persistence.TaskStatus.in_progress, com.eneik.production.models.persistence.TaskStatus.pending_review, com.eneik.production.models.persistence.TaskStatus.review) OR t.julesDispatchStatus = 'pr_opened')")
     List<TaskEntity> findActiveTasksByProject(@Param("projectId") UUID projectId);
 
     default Optional<TaskEntity> lockNextQueuedTask(List<String> capableTags) {

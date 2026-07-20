@@ -151,6 +151,9 @@ class ReviewRequest(BaseModel):
     githubToken: str = ""
     modelTier: str = ""
     modelOverride: str = ""
+    # Other in-flight PRs sharing this task's featureId, reviewed in the same batched tick (see
+    # JulesDispatchService.processPendingReviewBatch) - optional, empty for a solo review.
+    siblingPrUrls: list[str] = []
 
 
 class ReviewResponse(BaseModel):
@@ -409,6 +412,16 @@ async def review_pr_endpoint(request: ReviewRequest):
     if not preflight_approved:
         return ReviewResponse(approved=False, remarks=preflight_remarks, newTasks=[])
 
+    # Fetch sibling PR diffs (same feature, reviewed in the same batch tick) so the reviewer can check
+    # this PR for consistency against them (e.g. a backend/frontend pair built against the same API
+    # contract) instead of judging this diff in total isolation. Best-effort: a sibling diff that fails
+    # to fetch is just omitted, it never blocks review of the PR actually under review.
+    sibling_sections = []
+    for sibling_url in (request.siblingPrUrls or []):
+        sibling_diff = fetch_pr_diff(sibling_url, request.githubToken)
+        if sibling_diff:
+            sibling_sections.append(f"--- Sibling PR: {sibling_url} ---\n{sibling_diff}")
+
     # Prompt Gemini for real review
     approved = False
     remarks = ""
@@ -424,6 +437,13 @@ Charter Rules:
 {charter}
 """
         prompt = f"Task Description: {task_desc}\n\nPR Diff:\n{diff_content}"
+        if sibling_sections:
+            prompt += (
+                "\n\nThe following sibling PRs are being reviewed in the same batch and share this "
+                "feature. Check that the PR under review is consistent with them (e.g. matches an "
+                "agreed API contract, no divergent assumptions) - your approved/remarks verdict is "
+                "about the PR under review only, not the siblings:\n\n" + "\n\n".join(sibling_sections)
+            )
 
         response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
 

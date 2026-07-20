@@ -518,6 +518,9 @@ public class EmsMetricsService {
         if (status == TaskStatus.review) {
             return 0.75;
         }
+        if (status == TaskStatus.pending_review) {
+            return 0.65;
+        }
         if (status == TaskStatus.in_progress) {
             return 0.55;
         }
@@ -583,6 +586,7 @@ public class EmsMetricsService {
     private boolean isActiveLike(TaskEntity task) {
         return task.getStatus() == TaskStatus.claimed
                 || task.getStatus() == TaskStatus.in_progress
+                || task.getStatus() == TaskStatus.pending_review
                 || task.getStatus() == TaskStatus.review;
     }
 

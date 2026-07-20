@@ -98,6 +98,16 @@ public class MLPredictionServiceClient {
     }
 
     public Map<String, Object> reviewPr(java.util.UUID projectId, java.util.UUID taskId, String prUrl) {
+        return reviewPr(projectId, taskId, prUrl, java.util.Collections.emptyList());
+    }
+
+    /**
+     * siblingPrUrls are other in-flight PRs sharing this task's featureId, reviewed in the same batched
+     * tick (see JulesDispatchService.processPendingReviewBatch) - passed to the reviewer as extra context
+     * so e.g. a backend/frontend pair built against the same API contract gets cross-checked instead of
+     * reviewed in total isolation. Empty for a solo review (e.g. the chaotic-domain immediate path).
+     */
+    public Map<String, Object> reviewPr(java.util.UUID projectId, java.util.UUID taskId, String prUrl, java.util.List<String> siblingPrUrls) {
         String endpoint = mlServiceUrl + "/api/v1/review/pr";
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -111,6 +121,9 @@ public class MLPredictionServiceClient {
             request.put("githubToken", settingsService.effectiveValue("github_token"));
             request.put("modelTier", "pro");
             request.put("modelOverride", modelOverrideForTier("pro"));
+            if (siblingPrUrls != null && !siblingPrUrls.isEmpty()) {
+                request.put("siblingPrUrls", siblingPrUrls);
+            }
 
             Map<String, Object> result = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             aiHealthTracker.recordSuccess("reviewPr");

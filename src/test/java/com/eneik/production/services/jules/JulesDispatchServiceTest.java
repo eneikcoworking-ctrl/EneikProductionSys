@@ -442,7 +442,7 @@ class JulesDispatchServiceTest {
 
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(claimService.hasActiveClaim(taskId)).thenReturn(true);
-        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/12"))
+        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/12", List.of()))
                 .thenReturn(Map.of(
                         "approved", false,
                         "remarks", "Generated/local artifact detected in PR diff: playwright-report/.",
@@ -455,7 +455,9 @@ class JulesDispatchServiceTest {
         when(mlPredictionServiceClient.chat(anyString(), anyString()))
                 .thenReturn("Root cause: repeated artifact blocker\nKano classification: Must-Be\nCynefin domain: clear");
 
-        julesDispatchService.handlePrOpenedWorkflow(session);
+        // Review decisions now run from the batched tick (processPendingReviewBatch), not inline on
+        // pr_opened - exercise the extracted decision logic directly, same as the batch method would call it.
+        julesDispatchService.executeCodeReview(task, session, "https://github.com/org/repo/pull/12", List.of());
 
         assertEquals("pr_opened", session.getStatus());
         assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());
@@ -545,5 +547,166 @@ class JulesDispatchServiceTest {
         assertEquals("loop_closed", session.getStatus());
         verify(claimService).closeTaskAsBlocked(eq(taskId), contains("blind_overflow_unblock_exhausted"));
         verify(julesApiClient, never()).sendMessage(eq("sessions/blind-exhausted"), anyString(), anyString());
+    }
+
+    @Test
+    void nonChaoticPrOpenedDefersToPendingReviewInsteadOfReviewingInline() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/non-chaotic");
+        session.setPrUrl("https://github.com/org/repo/pull/40");
+        session.setStatus("pr_opened");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        assertEquals(com.eneik.production.models.persistence.TaskStatus.pending_review, task.getStatus());
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void chaoticDomainPrOpenedReviewsImmediatelyBypassingBatch() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+        task.setCynefinDomain("chaotic");
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/chaotic");
+        session.setPrUrl("https://github.com/org/repo/pull/41");
+        session.setStatus("pr_opened");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/41", List.of()))
+                .thenReturn(Map.of("approved", true, "remarks", "looks fine", "newTasks", List.of()));
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());
+        verify(mlPredictionServiceClient).reviewPr(projectId, taskId, "https://github.com/org/repo/pull/41", List.of());
+    }
+
+    @Test
+    void batchedReviewGroupsSiblingsBySameFeatureAndThreadsTheirPrUrls() {
+        UUID projectId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+        UUID taskAId = UUID.randomUUID();
+        UUID taskBId = UUID.randomUUID();
+        UUID taskCId = UUID.randomUUID();
+        UUID sessionAId = UUID.randomUUID();
+        UUID sessionBId = UUID.randomUUID();
+        UUID sessionCId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity backendRole = new RoleEntity();
+        backendRole.setTag("BARCAN-TAG-02");
+        RoleEntity frontendRole = new RoleEntity();
+        frontendRole.setTag("BARCAN-TAG-11");
+        RoleEntity soloRole = new RoleEntity();
+        soloRole.setTag("BARCAN-TAG-08");
+
+        TaskEntity taskA = new TaskEntity();
+        taskA.setId(taskAId);
+        taskA.setProject(project);
+        taskA.setRole(backendRole);
+        taskA.setFeatureId(featureId);
+        taskA.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
+
+        TaskEntity taskB = new TaskEntity();
+        taskB.setId(taskBId);
+        taskB.setProject(project);
+        taskB.setRole(frontendRole);
+        taskB.setFeatureId(featureId);
+        taskB.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
+
+        TaskEntity taskC = new TaskEntity();
+        taskC.setId(taskCId);
+        taskC.setProject(project);
+        taskC.setRole(soloRole);
+        taskC.setFeatureId(null);
+        taskC.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
+
+        JulesSessionEntity sessionA = new JulesSessionEntity();
+        sessionA.setId(sessionAId);
+        sessionA.setTaskId(taskAId);
+        sessionA.setExternalSessionId("sessions/a");
+        sessionA.setPrUrl("https://github.com/org/repo/pull/50");
+        sessionA.setStatus("pr_opened");
+        sessionA.setUpdatedAt(Instant.now());
+
+        JulesSessionEntity sessionB = new JulesSessionEntity();
+        sessionB.setId(sessionBId);
+        sessionB.setTaskId(taskBId);
+        sessionB.setExternalSessionId("sessions/b");
+        sessionB.setPrUrl("https://github.com/org/repo/pull/51");
+        sessionB.setStatus("pr_opened");
+        sessionB.setUpdatedAt(Instant.now());
+
+        JulesSessionEntity sessionC = new JulesSessionEntity();
+        sessionC.setId(sessionCId);
+        sessionC.setTaskId(taskCId);
+        sessionC.setExternalSessionId("sessions/c");
+        sessionC.setPrUrl("https://github.com/org/repo/pull/52");
+        sessionC.setStatus("pr_opened");
+        sessionC.setUpdatedAt(Instant.now());
+
+        when(taskRepository.findByStatus(com.eneik.production.models.persistence.TaskStatus.pending_review))
+                .thenReturn(List.of(taskA, taskB, taskC));
+        when(julesSessionRepository.findByTaskId(taskAId)).thenReturn(List.of(sessionA));
+        when(julesSessionRepository.findByTaskId(taskBId)).thenReturn(List.of(sessionB));
+        when(julesSessionRepository.findByTaskId(taskCId)).thenReturn(List.of(sessionC));
+        when(claimService.hasActiveClaim(any())).thenReturn(false);
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(mlPredictionServiceClient.reviewPr(eq(projectId), any(), anyString(), anyList()))
+                .thenReturn(Map.of("approved", true, "remarks", "ok", "newTasks", List.of()));
+
+        julesDispatchService.processPendingReviewBatch();
+
+        verify(mlPredictionServiceClient).reviewPr(projectId, taskAId, "https://github.com/org/repo/pull/50",
+                List.of("https://github.com/org/repo/pull/51"));
+        verify(mlPredictionServiceClient).reviewPr(projectId, taskBId, "https://github.com/org/repo/pull/51",
+                List.of("https://github.com/org/repo/pull/50"));
+        verify(mlPredictionServiceClient).reviewPr(projectId, taskCId, "https://github.com/org/repo/pull/52", List.of());
     }
 }
