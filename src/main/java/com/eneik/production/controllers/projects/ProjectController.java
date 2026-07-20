@@ -162,6 +162,15 @@ public class ProjectController {
         }
     }
 
+    @PostMapping("/{projectId}/pause")
+    public ResponseEntity<?> pause(@PathVariable UUID projectId) {
+        try {
+            return ResponseEntity.ok(projectFlowService.pauseProject(projectId));
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
+
     @GetMapping("/{projectId}/pull-requests")
     public ResponseEntity<?> pullRequests(@PathVariable UUID projectId) {
         try {

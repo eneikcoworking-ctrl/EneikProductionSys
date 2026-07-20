@@ -115,6 +115,30 @@ public class JulesDispatchService {
         julesSessionRepository.save(session);
     }
 
+    /**
+     * Operator-initiated cancel for a stray/duplicate/unwanted session - e.g. a second wishlist-compiler
+     * session dispatched against a brief another session already compiled. "cancelled" is a status nothing
+     * else in this codebase polls or acts on (mirrors the existing closed_no_code/loop_closed convention),
+     * so once set here the session is fully inert: pollActiveJulesSessions stops checking it (its status
+     * filter is running/queued/revising/stuck only) and it can never trigger handlePrOpenedWorkflow again,
+     * regardless of what the real remote Jules session eventually does.
+     */
+    @Transactional
+    public void cancelSession(java.util.UUID sessionId, String reason) {
+        JulesSessionEntity session = julesSessionRepository.findById(sessionId).orElse(null);
+        if (session == null) {
+            return;
+        }
+        session.setStatus("cancelled");
+        session.setClosedAt(java.time.Instant.now());
+        session.setClosureReason(reason);
+        julesSessionRepository.save(session);
+
+        if (session.getTaskId() != null) {
+            claimService.closeTaskAsFailed(session.getTaskId(), reason);
+        }
+    }
+
     @Value("${jules.stuck-threshold-minutes:30}")
     private int stuckThresholdMinutes;
 
@@ -1528,6 +1552,28 @@ public class JulesDispatchService {
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId).orElse(null);
         if (wishlist == null) {
             log.warn("Compiler task {}: wishlist {} no longer exists, discarding", compilerTask.getId(), wishlistId);
+            if (claimService.hasActiveClaim(compilerTask.getId())) {
+                claimService.complete(compilerTask.getId());
+            }
+            return;
+        }
+
+        // Idempotency guard: more than one compiler task can end up targeting the same wishlist (e.g. the
+        // generic blocked-task recovery flow re-dispatching a compiler task without knowing it's a compiler
+        // task, racing an already-in-flight one) - without this check, every one of them independently calls
+        // buildTaskGraphFromSlices below and the same brief gets fully decomposed and dispatched multiple
+        // times. Whichever compiler session reaches this point first "wins"; every later one for the same
+        // wishlist is a no-op that just closes its own PR/session cleanly.
+        if (wishlist.getStatus() != WishlistStatus.pending) {
+            log.warn("Compiler task {}: wishlist {} is already '{}' (compiled by another session) - discarding this duplicate compilation instead of re-decomposing the same brief.",
+                    compilerTask.getId(), wishlistId, wishlist.getStatus());
+            Optional<GitHubPullRequestService.GitHubPullRequest> duplicatePrOpt =
+                    gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
+            duplicatePrOpt.ifPresent(pr -> {
+                gitHubPullRequestService.mergeRecordPullRequest(
+                        compilerTask.getProject(), pr, "duplicate wishlist compiler run discarded (wishlist already compiled)");
+                closeSessionAsNoCode(session, "Duplicate compiler run for an already-compiled wishlist; discarded.");
+            });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
             }

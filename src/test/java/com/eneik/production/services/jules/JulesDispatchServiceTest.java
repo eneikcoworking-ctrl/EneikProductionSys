@@ -41,6 +41,8 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.RoleCapabilityLoader roleCapabilityLoader;
     private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private com.eneik.production.services.ClientDeliverableReadinessService readinessService;
+    private com.eneik.production.services.ProjectFlowService projectFlowService;
+    private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -58,15 +60,16 @@ class JulesDispatchServiceTest {
         mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
         com.eneik.production.repositories.RoleRepository roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
         com.eneik.production.repositories.TaskConflictRepository taskConflictRepository = mock(com.eneik.production.repositories.TaskConflictRepository.class);
-        com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         com.eneik.production.repositories.PrReviewRepository prReviewRepository = mock(com.eneik.production.repositories.PrReviewRepository.class);
         featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
         readinessService = mock(com.eneik.production.services.ClientDeliverableReadinessService.class);
+        projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
-            mock(com.eneik.production.services.ProjectFlowService.class),
+            projectFlowService,
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             mock(com.eneik.production.services.FalsificationCycleService.class),
             featureThreadRepository, readinessService, "prefix/"
@@ -708,5 +711,45 @@ class JulesDispatchServiceTest {
         verify(mlPredictionServiceClient).reviewPr(projectId, taskBId, "https://github.com/org/repo/pull/51",
                 List.of("https://github.com/org/repo/pull/50"));
         verify(mlPredictionServiceClient).reviewPr(projectId, taskCId, "https://github.com/org/repo/pull/52", List.of());
+    }
+
+    @Test
+    void duplicateCompilerSessionForAlreadyCompiledWishlistDoesNotReDecompose() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setProjectId(projectId);
+        // Already compiled by another session - this is the exact live-incident state: a second compiler
+        // task/session dispatched against a brief that was already turned into real tasks.
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/duplicate-compiler");
+        session.setStatus("pr_opened");
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
+        when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), eq("sessions/duplicate-compiler")))
+                .thenReturn(Optional.empty());
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(projectFlowService, never()).buildTaskGraphFromSlices(any(), any(), any());
     }
 }

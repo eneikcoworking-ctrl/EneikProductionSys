@@ -3,6 +3,7 @@ package com.eneik.production.controllers.jules;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.services.jules.JulesDispatchService;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -40,5 +41,15 @@ public class JulesSessionController {
         return julesSessionRepository.findAll();
     }
 
+    @PostMapping("/{id}/cancel")
+    public ResponseEntity<Void> cancel(@PathVariable UUID id, @RequestBody(required = false) CancelRequest request) {
+        String reason = (request != null && request.reason() != null && !request.reason().isBlank())
+                ? request.reason()
+                : "Cancelled by operator";
+        julesDispatchService.cancelSession(id, reason);
+        return ResponseEntity.ok().build();
+    }
+
     public record DispatchRequest(UUID taskId, UUID accountId) {}
+    public record CancelRequest(String reason) {}
 }

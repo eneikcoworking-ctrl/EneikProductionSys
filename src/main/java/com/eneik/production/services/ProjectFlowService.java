@@ -245,7 +245,20 @@ public class ProjectFlowService {
         return toProjectDto(projectRepository.save(project));
     }
 
-
+    // Frozen is the same status activateProject() already uses to sideline every other project when a new
+    // one goes active - reusing it here means pausing gets the exact guarantee that matters: this project
+    // drops out of ContinuousOrchestrationService.continuousOrchestrate's active-projects loop (wishlist
+    // compilation, blocked-work recovery, queued dispatch) on its very next tick. It does NOT stop
+    // already-dispatched Jules sessions or in-flight PR review/merge - those are cancelled separately.
+    @Transactional
+    public ProjectDto pauseProject(UUID projectId) {
+        ProjectEntity project = requireProject(projectId);
+        if (project.getStatus() == ProjectStatus.frozen) {
+            return toProjectDto(project);
+        }
+        project.setStatus(ProjectStatus.frozen);
+        return toProjectDto(projectRepository.save(project));
+    }
 
     @Transactional
     public com.eneik.production.dto.WishlistResponseDto addWishlistItem(UUID projectId, com.eneik.production.dto.WishlistRequestDto request) {

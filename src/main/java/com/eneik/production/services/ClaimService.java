@@ -293,6 +293,25 @@ public class ClaimService {
         });
     }
 
+    // Deliberately TaskStatus.failed, not .blocked: a blocked task is picked up by
+    // ProjectFlowService.recoverBlockedWork and re-decomposed/re-dispatched, which is exactly what an
+    // operator cancelling a stray/duplicate task wants to NOT happen. failed is inert - nothing revisits it.
+    @Transactional
+    public void closeTaskAsFailed(UUID taskId, String reason) {
+        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.failed);
+            claimRepository.save(claim);
+            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+        });
+
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setStatus(TaskStatus.failed);
+            task.setJulesDispatchStatus(reason);
+            taskRepository.save(task);
+        });
+    }
+
     @Transactional
     public void releaseClaimToQueue(UUID taskId, String reason) {
         claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
