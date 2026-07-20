@@ -1561,6 +1561,46 @@ public class ProjectFlowService {
         }
     }
 
+    // The reserved compiler account (dispatchCompilerTask above) is meant for genuinely low-frequency,
+    // identity-sensitive work (the wishlist compiler itself, falsification audits). PR-review-fallback and
+    // design-review both fire far more often than that assumption holds - PR-review-fallback fires on
+    // EVERY implementer PR whenever Gemini is unavailable, which is not a rare event; design-review fires
+    // on every new mockup. Stacking that volume onto one account alongside compiler traffic burns its daily
+    // Jules session quota fast (confirmed live: the operator watched it happen) for tasks that have no
+    // actual need for the reserved identity - any capable general-pool account can review a diff or a
+    // mockup. This dispatches through the same general-pool selector implementer tasks already use.
+    private void dispatchToGeneralPool(TaskEntity task) {
+        Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
+                task.getProject().getId(),
+                task.getRole().getTag(),
+                maxConcurrentJulesSessionsPerAccount,
+                taskCompilerAccountName(),
+                maxDailySessionsPerAccount
+        );
+        if (accountOpt.isEmpty()) {
+            log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
+            return;
+        }
+
+        AccountEntity account = accountOpt.get();
+        try {
+            claimService.claimSpecificTask(task.getId(), account.getId());
+            TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
+            JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+            savedTask.setJulesSessionName(dispatch.sessionName());
+            savedTask.setJulesDispatchStatus(dispatch.reason());
+            taskRepository.save(savedTask);
+            if (!dispatch.dispatched()) {
+                claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
+                log.warn("Failed to dispatch task {} to account {}: {}", savedTask.getId(), account.getName(), dispatch.reason());
+                return;
+            }
+            log.info("Dispatched task {} to general-pool account {}", savedTask.getId(), account.getName());
+        } catch (Exception e) {
+            log.error("Failed to claim/dispatch task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
+        }
+    }
+
     // Package-private for the same reason as dispatchBatchedWishlistCompiler above.
     String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists) {
         StringBuilder briefsSection = new StringBuilder();
@@ -1751,7 +1791,7 @@ public class ProjectFlowService {
         reviewTask.setPayload(payload);
 
         reviewTask = taskRepository.save(reviewTask);
-        dispatchCompilerTask(reviewTask);
+        dispatchToGeneralPool(reviewTask);
         return reviewTask.getId();
     }
 
@@ -1811,7 +1851,7 @@ public class ProjectFlowService {
         reviewTask.setPayload(payload);
 
         reviewTask = taskRepository.save(reviewTask);
-        dispatchCompilerTask(reviewTask);
+        dispatchToGeneralPool(reviewTask);
         log.info("Dispatched design review task {} for draft {} in project {}", reviewTask.getId(), draftPath, project.getName());
     }
 

@@ -61,6 +61,25 @@ public class InternalTaskController {
         if (updates.containsKey("status")) {
             task.setStatus(TaskStatus.valueOf((String) updates.get("status")));
         }
+        // Wiring fields for manually-inserted tasks (e.g. an operator patching a gap the compiler missed
+        // into the existing graph) - the compiler's own buildTaskGraphFromSlices sets these the same way,
+        // this just exposes the same two fields for a one-off manual correction.
+        if (updates.containsKey("dependsOnTaskId")) {
+            String rawId = (String) updates.get("dependsOnTaskId");
+            if (rawId == null || rawId.isBlank()) {
+                task.setDependsOn(null);
+            } else {
+                TaskEntity parent = taskRepository.findById(UUID.fromString(rawId)).orElse(null);
+                if (parent == null) {
+                    return ResponseEntity.badRequest().build();
+                }
+                task.setDependsOn(parent);
+            }
+        }
+        if (updates.containsKey("featureId")) {
+            String rawFeatureId = (String) updates.get("featureId");
+            task.setFeatureId(rawFeatureId == null || rawFeatureId.isBlank() ? null : UUID.fromString(rawFeatureId));
+        }
 
         taskRepository.save(task);
         return ResponseEntity.ok().build();
