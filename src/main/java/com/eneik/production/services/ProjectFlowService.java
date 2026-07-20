@@ -781,6 +781,30 @@ public class ProjectFlowService {
             if (hasActiveJulesSession(task.getId())) {
                 continue;
             }
+
+            // A blocked wishlist-compiler task is not "some role's work blocked" - the generic recovery
+            // below writes a vague clarify-the-blocker wishlist that has no idea it should re-decompose the
+            // client's actual brief (found live: it produced a nonsense "Delivery Plan" task while the real
+            // brief sat orphaned in `compiling` forever, since this loop then considers the blocked task
+            // "already covered" and never revisits it). Recover it the way that actually makes sense instead:
+            // reopen the wishlist it was compiling so the normal dispatchWishlistCompiler path picks it up
+            // fresh next cycle, and retire the stuck compiler task for good so it's never reconsidered here.
+            if (isWishlistCompilerTask(task)) {
+                UUID targetWishlistId = compilerTaskWishlistIdOrNull(task);
+                WishlistEntity targetWishlist = targetWishlistId == null ? null : wishlistRepository.findById(targetWishlistId).orElse(null);
+                if (targetWishlist != null && targetWishlist.getStatus() != WishlistStatus.converted_to_task
+                        && targetWishlist.getStatus() != WishlistStatus.dismissed) {
+                    targetWishlist.setStatus(WishlistStatus.pending);
+                    wishlistRepository.save(targetWishlist);
+                    log.warn("ProjectFlowService: blocked compiler task {} reopened wishlist {} to pending for a fresh compiler dispatch",
+                            task.getId(), targetWishlistId);
+                }
+                task.setStatus(TaskStatus.failed);
+                task.setJulesDispatchStatus("Compiler task blocked; wishlist reopened for a fresh compiler dispatch instead of generic recovery");
+                taskRepository.save(task);
+                continue;
+            }
+
             String taskId = task.getId().toString();
             boolean alreadyCovered = existingRecoveryContent.stream().anyMatch(content -> content.contains(taskId));
             if (alreadyCovered) {
@@ -1347,6 +1371,21 @@ public class ProjectFlowService {
     public boolean isWishlistCompilerTask(TaskEntity task) {
         return task.getPayload() != null
                 && WISHLIST_COMPILER_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    private UUID compilerTaskWishlistIdOrNull(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(WISHLIST_COMPILER_WISHLIST_ID_KEY).asText(null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     private void dispatchCompilerTask(TaskEntity compilerTask) {
