@@ -82,6 +82,18 @@ public class ProjectFlowService {
     @Value("${orchestration.max-recovery-items-per-run:3}")
     private int maxRecoveryItemsPerRun;
 
+    // Every pending wishlist item that isn't on the cheap deterministic path (role_mismatch_followup, or
+    // an already-compiled-by-role item) gets its own real Jules compiler session via dispatchWishlistCompiler
+    // - with no cap, a single orchestrate() tick could fire an unbounded burst of them the moment several
+    // pile up at once (confirmed live: multiple design-reviewer-concern wishlists arriving together each
+    // spawned their own simultaneous compiler dispatch). More simultaneous compiler sessions means more
+    // surface area for exactly the kind of same-wishlist race this project just found and fixed, and burns
+    // through the reserved compiler account's daily quota faster than the work actually needs. Capping this
+    // just spreads dispatches across more ticks - nothing is lost, a wishlist that doesn't get a slot this
+    // cycle simply gets one on the next.
+    @Value("${orchestration.max-compiler-dispatches-per-run:2}")
+    private int maxCompilerDispatchesPerRun;
+
 
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -302,6 +314,8 @@ public class ProjectFlowService {
         }
 
         int processedCount = 0;
+        java.util.concurrent.atomic.AtomicInteger compilerDispatchBudget =
+                new java.util.concurrent.atomic.AtomicInteger(Math.max(0, maxCompilerDispatchesPerRun));
 
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
@@ -328,7 +342,7 @@ public class ProjectFlowService {
                     continue;
                 }
 
-                if (compileWishlistIntoAtomicSlices(project, wishlist)) {
+                if (compileWishlistIntoAtomicSlices(project, wishlist, compilerDispatchBudget)) {
                     processedCount++;
                     log.info("ProjectFlowService: Synchronously compiled wishlist {} into atomic task slices", wishlist.getId());
                     continue;
@@ -736,7 +750,10 @@ public class ProjectFlowService {
                         .stream()
                         .map(TaskEntity::getId)
                         .toList();
-                if (compileWishlistIntoAtomicSlices(project, wishlist)) {
+                // role_mismatch_followup wishlists always take the cheap deterministic path inside
+                // compileWishlistIntoAtomicSlices and never reach the compiler-dispatch budget check, so an
+                // unbounded budget here is safe - it's never actually spent.
+                if (compileWishlistIntoAtomicSlices(project, wishlist, new java.util.concurrent.atomic.AtomicInteger(Integer.MAX_VALUE))) {
                     long newTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
                             .stream()
                             .map(TaskEntity::getId)
@@ -801,6 +818,20 @@ public class ProjectFlowService {
                 }
                 task.setStatus(TaskStatus.failed);
                 task.setJulesDispatchStatus("Compiler task blocked; wishlist reopened for a fresh compiler dispatch instead of generic recovery");
+                taskRepository.save(task);
+                continue;
+            }
+
+            // Same problem, same reason, for the other system/internal task types (falsification audit, PR
+            // review fallback, design review): none of them are "some role's feature work", so the generic
+            // clarify-the-blocker template below is meaningless for them too (confirmed live: a blocked
+            // design_review task produced the exact same kind of nonsense "Delivery Plan" follow-up). Each of
+            // these already has its own retry/re-dispatch path when it naturally reaches pr_opened again
+            // (e.g. a fresh mockup+design-review cycle, a fresh falsification pass) - so the correct recovery
+            // here is simply to stop the noise, not to fabricate bespoke recovery logic for each.
+            if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+                task.setStatus(TaskStatus.failed);
+                task.setJulesDispatchStatus("System task blocked; retired instead of generic clarify-wishlist recovery (not role feature work)");
                 taskRepository.save(task);
                 continue;
             }
@@ -880,7 +911,8 @@ public class ProjectFlowService {
         return value.substring(0, Math.max(0, maxLength));
     }
 
-    private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist) {
+    private boolean compileWishlistIntoAtomicSlices(ProjectEntity project, WishlistEntity wishlist,
+                                                     java.util.concurrent.atomic.AtomicInteger remainingCompilerDispatchBudget) {
         if (wishlist.getCompiledByRole() != null) {
             if (wishlist.getLeanValue() != LeanValue.waste) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
@@ -923,6 +955,12 @@ public class ProjectFlowService {
         // JTBD/Kano/Cynefin-classified task graph - the same job Gemini used to do before its billing
         // ran out. The compiler's own PR result is what eventually calls buildTaskGraphFromSlices.
         if (wishlist.getStatus() == WishlistStatus.pending) {
+            if (remainingCompilerDispatchBudget.get() <= 0) {
+                log.info("ProjectFlowService: compiler-dispatch budget exhausted this cycle for project {}; wishlist {} stays pending for the next cycle",
+                        project.getId(), wishlist.getId());
+                return false;
+            }
+            remainingCompilerDispatchBudget.decrementAndGet();
             dispatchWishlistCompiler(project, wishlist);
         }
         return false;
