@@ -22,6 +22,9 @@ public class AccountEntity {
     @Column(nullable = false)
     private AccountStatus status = AccountStatus.idle;
 
+    @Column(name = "status_changed_at")
+    private Instant statusChangedAt;
+
     @Column(nullable = false)
     private String capabilities; // Comma-separated strings
 
@@ -52,7 +55,13 @@ public class AccountEntity {
     public String getName() { return name; }
     public void setName(String name) { this.name = name; }
     public AccountStatus getStatus() { return status; }
-    public void setStatus(AccountStatus status) { this.status = status; }
+    public void setStatus(AccountStatus status) {
+        if (status != this.status) {
+            this.statusChangedAt = Instant.now();
+        }
+        this.status = status;
+    }
+    public Instant getStatusChangedAt() { return statusChangedAt; }
     public String getCapabilities() { return capabilities; }
     public void setCapabilities(String capabilities) { this.capabilities = capabilities; }
     public Instant getLastHeartbeat() { return lastHeartbeat; }

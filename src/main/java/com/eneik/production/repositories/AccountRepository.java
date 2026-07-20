@@ -41,6 +41,20 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited")
     int resetDailyLimitedAccounts();
 
+    // api_blocked has no clean "resets at midnight" signal like daily_limited does, so instead of a fixed
+    // cron this is retried periodically once the block has sat for at least the cooldown - self-correcting:
+    // if the account is still genuinely blocked, the very next real dispatch attempt flips it right back to
+    // api_blocked (and resets statusChangedAt via AccountEntity.setStatus), so this can never get stuck
+    // claiming a false recovery. Also catches accounts left blocked from unrelated past projects that
+    // nothing else would ever re-check.
+    @Modifying
+    @Transactional
+    @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle " +
+            "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.api_blocked " +
+            "AND a.enabled = true " +
+            "AND (a.statusChangedAt IS NULL OR a.statusChangedAt < :staleBefore)")
+    int recoverStaleBlockedAccounts(@Param("staleBefore") Instant staleBefore);
+
     @Modifying
     @Transactional
     @Query("UPDATE AccountEntity a SET a.sessionsDispatchedToday = 0")

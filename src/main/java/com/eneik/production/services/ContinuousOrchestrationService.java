@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.eneik.production.services.MLPredictionServiceClient;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 @Service
@@ -34,6 +36,9 @@ public class ContinuousOrchestrationService {
 
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes;
+
+    @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
+    private int blockedAccountRecoveryCooldownMinutes;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -204,6 +209,20 @@ public class ContinuousOrchestrationService {
             log.info("Continuous Orchestration: Reset {} Jules account(s) from daily_limited to idle", reset);
         }
         accountRepository.resetDailySessionCounts();
+    }
+
+    // api_blocked accounts otherwise stay blocked indefinitely once nothing left references them (e.g. the
+    // project that blocked them finished or was abandoned) - no other scheduled job ever revisits them, so
+    // a block picked up on one project silently starves every future project of that account forever. See
+    // AccountRepository.recoverStaleBlockedAccounts for why the cooldown-then-retry approach is safe.
+    @Scheduled(fixedRateString = "${jules.blocked-account-recovery-rate-ms:900000}")
+    @Transactional
+    public void recoverStaleBlockedAccounts() {
+        Instant staleBefore = Instant.now().minus(Duration.ofMinutes(blockedAccountRecoveryCooldownMinutes));
+        int recovered = accountRepository.recoverStaleBlockedAccounts(staleBefore);
+        if (recovered > 0) {
+            log.info("Continuous Orchestration: Reset {} Jules account(s) from api_blocked to idle after a {}-minute cooldown for retry", recovered, blockedAccountRecoveryCooldownMinutes);
+        }
     }
 
     @Transactional
