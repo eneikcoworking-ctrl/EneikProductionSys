@@ -56,6 +56,7 @@ public class AutoMergeService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final CodeChangeClassifier codeChangeClassifier;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private final ClaimService claimService;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
