@@ -135,6 +135,9 @@ public class AutoMergeService {
                 } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
                     executeMerge(review);
                 }
+            } finally {
+                LogScope.clear();
+            }
         }
     }
 
