@@ -305,6 +305,10 @@ public class ProjectFlowService {
                 && (request.sourceRoleTag() == null || request.sourceRoleTag().isBlank())) {
             throw new IllegalArgumentException("sourceRoleTag is required when source is 'role'");
         }
+        if (source == com.eneik.production.models.persistence.WishlistSource.client
+                && request.sourceRoleTag() != null && !request.sourceRoleTag().isBlank()) {
+            throw new IllegalArgumentException("sourceRoleTag must be null when source is 'client'");
+        }
         item.setSource(source);
         item.setSourceRoleTag(source == com.eneik.production.models.persistence.WishlistSource.client ? null : request.sourceRoleTag());
         item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
@@ -2606,6 +2610,10 @@ public class ProjectFlowService {
         }
     }
 
+    private static long countByStatus(List<TaskEntity> tasks, TaskStatus status) {
+        return tasks.stream().filter(t -> t.getStatus() == status).count();
+    }
+
     @Transactional(readOnly = true)
     public ProjectDashboardDto dashboard(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
@@ -2629,17 +2637,32 @@ public class ProjectFlowService {
                 })
                 .toList();
 
+        // Ф-followup (2026-07-21, operator directive, found via a live screenshot audit): system/carrier
+        // tasks (compiler, review-fallback, coverage-audit, design-review, falsification-audit) never
+        // produce anything user-facing - they're internal bookkeeping, not a real deliverable. Confirmed
+        // live on test-twenty-ninth: 9 failed pr_review_fallback tasks from a pre-fix incident cluttered
+        // the Project Tasks widget, looking like duplicated cards. Excluded regardless of status - even a
+        // successfully-completed compiler/audit task isn't something the operator asked to see here;
+        // "Project Tasks" (and the pipeline/queue counts below, computed from this SAME filtered list
+        // instead of separate unfiltered COUNT queries) should answer "what real work is happening", not
+        // "what did the system do to itself".
+        List<TaskEntity> allTaskEntities = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<TaskEntity> taskEntities = allTaskEntities.stream()
+                .filter(task -> !isWishlistCompilerTask(task) && !isFalsificationAuditTask(task)
+                        && !isReviewFallbackTask(task) && !isDesignReviewTask(task) && !isCoverageAuditTask(task))
+                .toList();
+
         QueueDashboardDto queue = new QueueDashboardDto(
                 taskRepository.queuedGroupedByProjectAndTag(projectId),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.queued)
+                countByStatus(taskEntities, TaskStatus.queued)
         );
         PipelineDashboardDto pipeline = new PipelineDashboardDto(
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.queued),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.claimed),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.in_progress),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.review),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.done),
-                taskRepository.countByProjectIdAndStatus(projectId, TaskStatus.failed)
+                countByStatus(taskEntities, TaskStatus.queued),
+                countByStatus(taskEntities, TaskStatus.claimed),
+                countByStatus(taskEntities, TaskStatus.in_progress),
+                countByStatus(taskEntities, TaskStatus.review),
+                countByStatus(taskEntities, TaskStatus.done),
+                countByStatus(taskEntities, TaskStatus.failed)
         );
         List<com.eneik.production.models.persistence.WishlistEntity> wishlistEntities = wishlistRepository.findByProjectId(projectId);
         List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistEntities
@@ -2647,7 +2670,6 @@ public class ProjectFlowService {
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
                 .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt()))
                 .toList();
-        List<TaskEntity> taskEntities = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         List<TaskDto> tasks = taskEntities.stream()
                 .map(task -> new TaskDto(
                         task.getId(),
@@ -2671,7 +2693,7 @@ public class ProjectFlowService {
                 wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending).size(),
                 queue,
                 pipeline,
-                emsMetricsService.build(taskEntities, wishlistEntities),
+                emsMetricsService.build(allTaskEntities, wishlistEntities),
                 agents,
                 wishlist,
                 tasks

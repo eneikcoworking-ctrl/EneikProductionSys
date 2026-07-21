@@ -127,6 +127,7 @@ public class ClaimService {
         taskRepository.save(task);
 
         account.setStatus(AccountStatus.busy);
+        account.setLastHeartbeat(Instant.now());
         accountRepository.save(account);
 
         return new ClaimDto(
@@ -165,6 +166,7 @@ public class ClaimService {
         taskRepository.save(task);
 
         account.setStatus(AccountStatus.busy);
+        account.setLastHeartbeat(Instant.now());
         accountRepository.save(account);
 
         return new ClaimDto(
@@ -340,7 +342,7 @@ public class ClaimService {
     }
 
     private void updateAccountStatus(AccountEntity account, AccountStatus status) {
-        accountRepository.updateStatus(account.getId(), status);
+        accountRepository.updateStatus(account.getId(), status, Instant.now());
     }
 
     /**
@@ -385,7 +387,7 @@ public class ClaimService {
             taskRepository.save(task);
 
             // 3. Mark the account as offline
-            accountRepository.updateStatus(claim.getAccount().getId(), AccountStatus.offline);
+            accountRepository.updateStatus(claim.getAccount().getId(), AccountStatus.offline, Instant.now());
         }
 
         // Self-healing: If a task has status 'claimed' but the session is 'skipped' or failed or missing,

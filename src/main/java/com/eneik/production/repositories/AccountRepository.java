@@ -31,9 +31,21 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
            "(:tag IS NULL OR a.capabilities = '*' OR CONCAT(',', a.capabilities, ',') LIKE CONCAT('%,', :tag, ',%'))")
     boolean existsOnlineWithCapability(@Param("tag") String tag, @Param("threshold") Instant threshold);
 
+    // Ф-followup (2026-07-21, operator directive - found via a live screenshot audit of the admin
+    // dashboard): lastHeartbeat used to only update at account creation and via a dedicated /heartbeat
+    // endpoint nothing in the real dispatch/claim/completion cycle ever called - confirmed live, all 5
+    // active accounts showed the identical, week-old timestamp while one was genuinely `busy` at that
+    // moment. This is the single most-hit status-transition point in the whole claim lifecycle (claim,
+    // complete, fail, release all funnel through it), so stamping lastHeartbeat here makes "Last Activity"
+    // in the admin UI finally track real usage instead of being permanently stale.
+    // CURRENT_TIMESTAMP was tried first but Hibernate 6.4's HQL type-checker rejects it here (it resolves
+    // to java.sql.Timestamp, which can't be assigned to the Instant-typed lastHeartbeat path) - confirmed
+    // live, this broke Spring context startup entirely (SemanticException at bean-creation time). Passing
+    // the instant in as a bound parameter sidesteps the type mismatch and lets the caller's clock be the
+    // single source of truth, same as every other "now" in this codebase.
     @Modifying
-    @Query("UPDATE AccountEntity a SET a.status = :status WHERE a.id = :id")
-    void updateStatus(@Param("id") UUID id, @Param("status") AccountStatus status);
+    @Query("UPDATE AccountEntity a SET a.status = :status, a.lastHeartbeat = :now WHERE a.id = :id")
+    void updateStatus(@Param("id") UUID id, @Param("status") AccountStatus status, @Param("now") Instant now);
 
     @Modifying
     @Transactional
