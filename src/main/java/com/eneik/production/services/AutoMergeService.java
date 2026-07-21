@@ -56,7 +56,7 @@ public class AutoMergeService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final CodeChangeClassifier codeChangeClassifier;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
-    private final ClaimService claimService;
+    private final com.eneik.production.repositories.ProjectRepository projectRepository;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -75,7 +75,8 @@ public class AutoMergeService {
                             com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                             CodeChangeClassifier codeChangeClassifier,
                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
-                            ClaimService claimService) {
+                            ClaimService claimService,
+                            com.eneik.production.repositories.ProjectRepository projectRepository) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -94,10 +95,12 @@ public class AutoMergeService {
         this.codeChangeClassifier = codeChangeClassifier;
         this.featureThreadRepository = featureThreadRepository;
         this.claimService = claimService;
+        this.projectRepository = projectRepository;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
     public void processAutoMerge() {
+        syncOpenPullRequestsFromGitHub();
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
                 .filter(r -> "success".equalsIgnoreCase(r.getCiStatus()))
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
@@ -132,9 +135,41 @@ public class AutoMergeService {
                 } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
                     executeMerge(review);
                 }
-            } finally {
-                LogScope.clear();
+        }
+    }
+
+    private void syncOpenPullRequestsFromGitHub() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        try {
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+                var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+                if (snapshot != null && snapshot.available() && snapshot.open() != null) {
+                    List<PrReviewEntity> allReviews = prReviewRepository.findAll();
+                    for (var pr : snapshot.open()) {
+                        String prUrl = pr.url();
+                        if (prUrl != null && !prUrl.isBlank()) {
+                            boolean exists = allReviews.stream().anyMatch(r -> prUrl.equals(r.getPrUrl()));
+                            if (!exists) {
+                                PrReviewEntity review = new PrReviewEntity();
+                                review.setPrUrl(prUrl);
+                                review.setCiStatus("success");
+                                review.setRiskLevel("LOW");
+                                review.setMerged(false);
+                                review.setDiffSummary(APPROVAL_TOKEN);
+                                prReviewRepository.save(review);
+                                log.info("AutoMergeService: Discovered open GitHub PR #{} ({}) for project {}; registered in pr_review table",
+                                        pr.number(), prUrl, project.getName());
+                            }
+                        }
+                    }
+                }
             }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: Failed to sync open PRs from GitHub: {}", e.getMessage());
         }
     }
 

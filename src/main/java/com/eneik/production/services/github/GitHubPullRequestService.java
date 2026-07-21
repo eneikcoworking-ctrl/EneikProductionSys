@@ -88,7 +88,7 @@ public class GitHubPullRequestService {
 
     public Optional<GitHubPullRequest> findOpenPullRequestBySession(ProjectEntity project, String externalSessionId) {
         String sessionToken = sessionToken(externalSessionId);
-        if (project == null || sessionToken.isBlank()) {
+        if (project == null) {
             return Optional.empty();
         }
         PullRequestSnapshot snapshot = pullRequestSnapshot(project);
@@ -96,8 +96,19 @@ public class GitHubPullRequestService {
             return Optional.empty();
         }
 
+        if (sessionToken != null && !sessionToken.isBlank()) {
+            for (GitHubPullRequest pr : snapshot.open()) {
+                if (pr.headRef() != null && pr.headRef().contains(sessionToken)) {
+                    return Optional.of(pr);
+                }
+            }
+        }
+
+        // Fallback matching for compiler PRs or PRs where branch/title follows jules-task-plan/compiler pattern
         for (GitHubPullRequest pr : snapshot.open()) {
-            if (pr.headRef().contains(sessionToken)) {
+            String head = pr.headRef() != null ? pr.headRef().toLowerCase(java.util.Locale.ROOT) : "";
+            String title = pr.title() != null ? pr.title().toLowerCase(java.util.Locale.ROOT) : "";
+            if (head.contains("task-plan") || head.contains("compiler") || title.contains("compiler") || title.contains("decomposition")) {
                 return Optional.of(pr);
             }
         }
