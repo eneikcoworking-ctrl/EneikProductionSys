@@ -470,6 +470,34 @@ public class AutoMergeService {
             }
         }
         
+        // Trivial-conflict fast path: if EVERY conflicting file is one of our own transient `.eneik/*`
+        // signaling records (task-plan.json, review-verdict.json, design-review-verdict.json, ...), this
+        // is pure bookkeeping noise, not a real code clash - resolving it never needs a Jules session.
+        // Confirmed live 2026-07-21 (test-thirty-second, PR#12): a real, complete, already-reviewed
+        // frontend PR sat unmergeable for hours purely because 4 unrelated compiler-record PRs had also
+        // touched `.eneik/task-plan.json` on main since this branch was created - the actual product code
+        // had zero overlap with anything merged. Resolve deterministically (make the branch's copy match
+        // main's) via a plain git commit and let the next merge attempt proceed normally - no attempt
+        // counter, no rebase dispatch, no recovery-task escalation, no Jules session spent.
+        if (!files.isEmpty() && files.stream().allMatch(f -> f.startsWith(".eneik/"))
+                && owner != null && repo != null && pullNumber != null) {
+            String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                    .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                    .orElse(null);
+            if (branch != null) {
+                boolean allResolved = files.stream()
+                        .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
+                if (allResolved) {
+                    log.info("AutoMergeService: PR #{} conflict was entirely within .eneik/ record files ({}); "
+                                    + "resolved via direct backend commit, no Jules session dispatched. Merge will retry next cycle.",
+                            pullNumber, files);
+                    return;
+                }
+                log.warn("AutoMergeService: PR #{} conflict looked .eneik/-only but backend resolution failed for at least one file "
+                        + "({}); falling back to the normal rebase/escalation path.", pullNumber, files);
+            }
+        }
+
         String filesJson = "[]";
         try {
             filesJson = objectMapper.writeValueAsString(files);
@@ -511,10 +539,26 @@ public class AutoMergeService {
             log.warn("Merge conflict for task {} escalated after {} attempts - queued a fresh recovery task instead of a human-review dead end.", taskId, attempts);
         } else {
             taskConflictRepository.save(conflict);
-            
+
+            // The task's existing session is still sitting at pr_opened (that's the very PR that just
+            // failed to merge on GitHub with a real conflict) - JulesDispatchService.dispatch() refuses to
+            // create a second session for a task that already has one in an ACTIVE_SESSION_STATUSES state,
+            // so without cancelling it first every "rebase attempt" below was a silent no-op: task flipped
+            // to claimed, dispatch() logged "already dispatched, skipping duplicate", and nothing ever
+            // rebased. Confirmed live (2026-07-21, test-thirty-second, PR#3/#5) - both "attempts" produced
+            // zero new sessions. Cancel the stale conflicted session first so dispatch() actually proceeds.
+            for (com.eneik.production.models.persistence.JulesSessionEntity staleSession
+                    : julesSessionRepository.findByTaskId(taskId)) {
+                if (!"cancelled".equals(staleSession.getStatus()) && !"loop_closed".equals(staleSession.getStatus())
+                        && !"closed_no_code".equals(staleSession.getStatus())) {
+                    julesDispatchService.cancelSession(staleSession.getId(),
+                            "Superseded by auto-resolve rebase attempt " + attempts + "/3 (merge conflict)");
+                }
+            }
+
             task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
             taskRepository.save(task);
-            
+
             log.info("Triggering auto-resolve rebase attempt {}/3 for task {}", attempts, taskId);
             // Re-queue or just dispatch new session directly
             UUID accountId = session.getAccountId();

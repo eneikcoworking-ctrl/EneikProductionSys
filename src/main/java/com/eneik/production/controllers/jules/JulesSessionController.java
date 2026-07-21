@@ -50,6 +50,29 @@ public class JulesSessionController {
         return ResponseEntity.ok().build();
     }
 
+    /**
+     * One-off manual correction for a session whose locally-tracked status has drifted from reality (e.g.
+     * a genuinely open PR exists but the session got marked into some terminal-ish status by an unrelated
+     * circuit breaker) - never fabricates content, only re-points our own tracking at the real PR so the
+     * normal pipeline (batch review, etc.) picks it up again. Same rationale/precedent as
+     * InternalTaskController's dependsOnTaskId/description/payload PATCH fields added earlier tonight.
+     */
+    @PatchMapping("/{id}")
+    public ResponseEntity<Void> updateSession(@PathVariable UUID id, @RequestBody java.util.Map<String, Object> updates) {
+        JulesSessionEntity session = julesSessionRepository.findById(id).orElse(null);
+        if (session == null) {
+            return ResponseEntity.notFound().build();
+        }
+        if (updates.containsKey("status")) {
+            session.setStatus((String) updates.get("status"));
+        }
+        if (updates.containsKey("prUrl")) {
+            session.setPrUrl((String) updates.get("prUrl"));
+        }
+        julesSessionRepository.save(session);
+        return ResponseEntity.ok().build();
+    }
+
     public record DispatchRequest(UUID taskId, UUID accountId) {}
     public record CancelRequest(String reason) {}
 }

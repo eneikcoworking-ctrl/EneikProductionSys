@@ -70,11 +70,14 @@ public class ContinuousOrchestrationService {
         try {
             repairMisclassifiedJulesAccountLimits();
 
-            try {
-                julesDispatchService.runSessionSafetyMaintenance();
-            } catch (Exception e) {
-                log.error("Continuous Orchestration: Failed to run Jules safety maintenance", e);
-            }
+            // runSessionSafetyMaintenance (stuck-session detection, forced blind-overflow unblock, abandoned-
+            // PR reconciliation) is NOT called here - it already has its own independent @Scheduled trigger
+            // (JulesDispatchService.detectStuck(), same ~60s rate). Calling it a second time from this
+            // unrelated scheduled method meant two independent Spring scheduled tasks (which Spring does not
+            // mutually exclude - overlap prevention only applies to a task and itself) could both find the
+            // same session eligible before either committed its update, sending the same "forced unblock"
+            // message to Jules twice within a couple of seconds. Confirmed live on test-thirty-second,
+            // operator noticed the literal duplicate message in the Jules UI.
 
             pollActiveJulesSessions();
             checkForSystemStall();

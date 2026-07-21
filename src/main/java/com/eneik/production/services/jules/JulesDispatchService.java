@@ -58,6 +58,20 @@ public class JulesDispatchService {
     // once - once the cap is hit, new concerns are logged but not turned into fresh work; they'll surface
     // again on the next real review pass if still relevant, once older items have been worked off.
     private static final int MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT = 5;
+    // Same runaway-self-generation risk as the design-review concern loop above, but on the code-review
+    // side: dispatchReviewFallback fires on EVERY implementer PR whenever Gemini is unavailable (not just
+    // design work), and its non-blocking "concerns" (e.g. "consider Postgres for prod", "CI Java version
+    // bump could break other repos") were being turned into wishlist items unconditionally - no cap, no
+    // dedup - creating the identical unbounded self-perpetuating loop, just fed by ordinary code review
+    // instead of design review, and firing far more often since it covers every PR, not just UI ones.
+    private static final int MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT = 5;
+    private static final String REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX = "Reviewer concern (non-blocking) on task \"";
+    // Coverage-audit gaps (see ProjectFlowService.dispatchCoverageAuditIfClientBrief) are inherently rare -
+    // one audit per client brief decomposition, not per PR - so a runaway storm is far less likely than the
+    // review/design concern loops above. Still capped for the same "never create tasks the system doesn't
+    // actually need" reason, and because a single sloppy brief could in principle keep re-triggering gaps
+    // across retries.
+    private static final int MAX_PENDING_COVERAGE_GAPS_PER_PROJECT = 5;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -79,6 +93,7 @@ public class JulesDispatchService {
     private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
+    private final com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
@@ -108,6 +123,26 @@ public class JulesDispatchService {
      * construction never touch product code, right after their single-file PR merges. Mirrors the shape
      * of the existing "loop_closed" circuit-breaker closure without implying anything went wrong.
      */
+    /**
+     * ClaimService.complete() is a two-call state machine designed for the real implementer->reviewer
+     * lifecycle: the first call (task not yet 'review') moves the task to TaskStatus.review; only a
+     * SECOND call (task already 'review') advances it to TaskStatus.done. System/carrier tasks (wishlist
+     * compiler, falsification audit, PR review fallback, design review, coverage audit) have no second
+     * "reviewer" phase - their one session IS the whole result - so calling complete() once left them
+     * permanently parked at TaskStatus.review forever. That status was never actually terminal:
+     * ProjectFlowService.dispatchReviewTasks scans EVERY task sitting at TaskStatus.review with no active
+     * review session and dispatches a fresh reviewer session for it, with no awareness that a system task
+     * isn't real implementer code awaiting review - so it kept re-running the SAME compiler/design-
+     * review/etc. prompt over and over, forever. Confirmed live on test-thirty-second: a single design-
+     * review task got redispatched and fully re-completed 3 times over ~50 minutes before finally landing
+     * on `failed`. Call this immediately after claimService.complete() in every system-task completion
+     * handler to give the task a real terminal state and stop dispatchReviewTasks from ever seeing it.
+     */
+    private void markSystemTaskDone(TaskEntity task) {
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+        taskRepository.save(task);
+    }
+
     private void closeSessionAsNoCode(JulesSessionEntity session, String reason) {
         session.setStatus("closed_no_code");
         session.setClosedAt(java.time.Instant.now());
@@ -180,6 +215,7 @@ public class JulesDispatchService {
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
                                 com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
                                 com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                                com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -201,6 +237,7 @@ public class JulesDispatchService {
         this.falsificationCycleService = falsificationCycleService;
         this.featureThreadRepository = featureThreadRepository;
         this.readinessService = readinessService;
+        this.persistentWorkerSessionService = persistentWorkerSessionService;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -486,11 +523,27 @@ public class JulesDispatchService {
 
 
     @Transactional
+    private static boolean isTerminalSessionStatus(String status) {
+        return "loop_closed".equals(status) || "cancelled".equals(status) || "closed_no_code".equals(status);
+    }
+
     public JulesSessionEntity pollStatus(UUID sessionId) {
         JulesSessionEntity session = julesSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Session not found: " + sessionId));
 
         if ("skipped".equals(session.getExternalSessionId()) || session.getExternalSessionId() == null) {
+            return session;
+        }
+
+        // Once we've deliberately closed a session (loop_closed/cancelled/closed_no_code), never let a
+        // stale-read poll resurrect it. Confirmed live (2026-07-21): pollActiveJulesSessions captures its
+        // candidate list on its own schedule, independent of runSessionSafetyMaintenance's; if a session
+        // gets force-closed between that capture and this call reaching it, this call still re-fetches the
+        // FRESH row above (closed), but used to blindly overwrite status back to whatever Jules's external
+        // API still reports (often still "running") - re-admitting the closed session into every future
+        // active-session poll forever, a permanent zombie that no longer matches its own task's real
+        // (failed/done) status.
+        if (isTerminalSessionStatus(session.getStatus())) {
             return session;
         }
 
@@ -1300,6 +1353,13 @@ public class JulesDispatchService {
         UUID taskId = session.getTaskId();
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task != null) {
+            // Checked first: a persistent worker's carrier task still carries the normal
+            // wishlist_compiler/pr_review_fallback type marker (so completePersistentWorkerCycle can reuse
+            // the same parse/build logic), so this must be routed here before the one-shot branches below.
+            if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
+                completePersistentWorkerCycle(session, task);
+                return;
+            }
             if (projectFlowService.isWishlistCompilerTask(task)) {
                 completeWishlistCompilation(session, task);
                 return;
@@ -1314,6 +1374,10 @@ public class JulesDispatchService {
             }
             if (projectFlowService.isDesignReviewTask(task)) {
                 completeDesignReview(session, task);
+                return;
+            }
+            if (projectFlowService.isCoverageAuditTask(task)) {
+                completeCoverageAudit(session, task);
                 return;
             }
             if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed) {
@@ -1337,7 +1401,11 @@ public class JulesDispatchService {
                 // can review it together with any sibling PRs from the same feature (fuller picture instead
                 // of each PR reviewed in total isolation).
                 if ("chaotic".equalsIgnoreCase(task.getCynefinDomain())) {
-                    executeCodeReview(task, session, prUrl, java.util.Collections.emptyList());
+                    List<PendingFallbackReview> fallback = new java.util.ArrayList<>();
+                    executeCodeReview(task, session, prUrl, java.util.Collections.emptyList(), fallback);
+                    if (!fallback.isEmpty()) {
+                        dispatchReviewerFallbackBatch(fallback);
+                    }
                 } else {
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
                     taskRepository.save(task);
@@ -1357,16 +1425,28 @@ public class JulesDispatchService {
     }
 
     /**
+     * One PR still needing a Jules fallback reviewer because Gemini was unavailable when this task's
+     * review was attempted - collected across a whole processPendingReviewBatch tick (or a single chaotic
+     * "act first" review) and dispatched together in one Jules session instead of one session per PR.
+     */
+    private record PendingFallbackReview(TaskEntity task, String prUrl) {
+    }
+
+    /**
      * Runs the automated code-review gate for one PR and applies the same approve/reject decision this
      * system has always made (see handlePrOpenedWorkflow git history) - extracted so it can be invoked
      * either immediately (chaotic Cynefin domain, "act first") or from the batched review tick
      * (processPendingReviewBatch), which is where every other task's review now happens. siblingPrUrls
      * are other in-flight PRs sharing this task's featureId, reviewed in the same batch tick - passed
      * through to the reviewer so it can check this PR against them (e.g. a backend/frontend pair built
-     * against the same BARCAN-TAG-12 API contract), not treat this diff in total isolation.
+     * against the same BARCAN-TAG-12 API contract), not treat this diff in total isolation. When Gemini
+     * is unavailable, the task is appended to fallbackCollector instead of being dispatched to Jules
+     * immediately - the caller dispatches every collected task together in one batched Jules session
+     * once it's done looping, so an outage doesn't turn into one Jules session per PR.
      */
     @Transactional
-    void executeCodeReview(TaskEntity task, JulesSessionEntity session, String prUrl, List<String> siblingPrUrls) {
+    void executeCodeReview(TaskEntity task, JulesSessionEntity session, String prUrl, List<String> siblingPrUrls,
+                            List<PendingFallbackReview> fallbackCollector) {
         com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
         prData.setCiStatus("success");
         prData.setLinesChanged(120);
@@ -1384,9 +1464,9 @@ public class JulesDispatchService {
             // Gemini itself is unreachable/out of quota - this is not a real defect in Jules's code,
             // so neither fake-approving nor sending a rejection message asking Jules to "fix" nothing
             // is honest. A retry-only strategy would never resolve a genuinely dead Gemini quota, so
-            // dispatch a real Jules eneikdru session as the reviewer instead - work keeps moving
-            // either way, it just costs a Jules session instead of an instant Gemini call.
-            dispatchReviewerFallback(task, prUrl);
+            // queue this PR for a batched Jules eneikdru fallback review instead - work keeps moving
+            // either way, it just costs a shared Jules session instead of an instant Gemini call.
+            fallbackCollector.add(new PendingFallbackReview(task, prUrl));
             return;
         }
         boolean softArtifactDebt = !approved && isSoftGeneratedArtifactDebt(remarks);
@@ -1494,6 +1574,11 @@ public class JulesDispatchService {
             byFeature.computeIfAbsent(t.getFeatureId(), k -> new java.util.ArrayList<>()).add(t);
         }
 
+        // Collected across the WHOLE tick (every feature group, every project) so every PR that hits
+        // Gemini-unavailable this tick goes out in one Jules session per project instead of one per PR -
+        // see PendingFallbackReview/executeCodeReview.
+        List<PendingFallbackReview> fallbackCollector = new java.util.ArrayList<>();
+
         for (Map.Entry<UUID, List<TaskEntity>> entry : byFeature.entrySet()) {
             List<TaskEntity> siblings = entry.getValue();
             Map<UUID, String> prUrlByTaskId = new java.util.LinkedHashMap<>();
@@ -1522,7 +1607,19 @@ public class JulesDispatchService {
                         }
                     }
                 }
-                executeCodeReview(t, session, prUrl, siblingPrUrls);
+                executeCodeReview(t, session, prUrl, siblingPrUrls, fallbackCollector);
+            }
+        }
+
+        if (!fallbackCollector.isEmpty()) {
+            // A TaskEntity can only belong to one project, so a batched fallback review session (which is
+            // itself one TaskEntity) can't span projects - group by project before dispatching.
+            Map<UUID, List<PendingFallbackReview>> byProject = new java.util.LinkedHashMap<>();
+            for (PendingFallbackReview item : fallbackCollector) {
+                byProject.computeIfAbsent(item.task().getProject().getId(), k -> new java.util.ArrayList<>()).add(item);
+            }
+            for (List<PendingFallbackReview> projectItems : byProject.values()) {
+                dispatchReviewerFallbackBatch(projectItems);
             }
         }
     }
@@ -1557,6 +1654,7 @@ public class JulesDispatchService {
             log.warn("Compiler task {}: none of its {} wishlist(s) exist anymore, discarding", compilerTask.getId(), wishlistIds.size());
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
+                markSystemTaskDone(compilerTask);
             }
             return;
         }
@@ -1591,6 +1689,7 @@ public class JulesDispatchService {
             });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
+                markSystemTaskDone(compilerTask);
             }
             return;
         }
@@ -1615,6 +1714,7 @@ public class JulesDispatchService {
             });
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
+                markSystemTaskDone(compilerTask);
             }
             systemProgressTracker.recordProgress();
             log.info("{} wishlist(s) compiled by Jules session {} into {} task slice(s)",
@@ -1636,6 +1736,7 @@ public class JulesDispatchService {
                     compilerTask.getProject(), pr, "wishlist compiler plan invalid after max retries"));
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
+                markSystemTaskDone(compilerTask);
             }
             log.error("Compilation of {} wishlist(s) failed after {} attempts; routed to human review", wishlists.size(), attempts);
             return;
@@ -1665,6 +1766,158 @@ public class JulesDispatchService {
     }
 
     /**
+     * A persistent worker's session (see PersistentWorkerSessionService) reached pr_opened - either its
+     * very first cycle, or a later one after being sent a follow-up message. Unlike the one-shot handlers
+     * above, the PR is never merged/discarded and the session is never closed here: it stays open at
+     * pr_opened, which is already the correct idle/capacity-free state for the next cycle's admission
+     * check (ProjectFlowService.dispatchToCompilerPersistentWorker /
+     * JulesDispatchService.dispatchToReviewFallbackPersistentWorker).
+     */
+    /**
+     * Read-only check ("does this session already have an answer?") used by forceUnblockOverflowedSessions
+     * before it decides a persistent-worker carrier session has truly stalled. Must NOT consume the
+     * worker's in-flight batch itself - only completePersistentWorkerCycle does that, and only once this
+     * check has confirmed there is something real to consume. Looks at the actual PR branch on GitHub
+     * (the same source of truth Jules writes to), not at our own possibly-stale session.status field.
+     */
+    private boolean persistentWorkerHasReadyAnswer(JulesSessionEntity session, TaskEntity carrierTask) {
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
+        if (prOpt.isEmpty()) {
+            return false;
+        }
+        String headRef = prOpt.get().headRef();
+        if (projectFlowService.isReviewFallbackTask(carrierTask)) {
+            return !parseReviewVerdictBatch(carrierTask.getProject(), headRef).isEmpty();
+        }
+        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices =
+                parseCompilerPlan(carrierTask.getProject(), headRef);
+        return !slices.isEmpty();
+    }
+
+    private void completePersistentWorkerCycle(JulesSessionEntity session, TaskEntity carrierTask) {
+        Optional<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> workerOpt =
+                persistentWorkerSessionService.findByCarrierTaskId(carrierTask.getId());
+
+        com.eneik.production.models.persistence.PersistentWorkerSessionEntity worker;
+        List<UUID> batchIds;
+        if (workerOpt.isPresent()) {
+            worker = workerOpt.get();
+            batchIds = persistentWorkerSessionService.consumeCurrentBatch(worker);
+            if (batchIds.isEmpty()) {
+                // No batch was in flight for this worker - a stray/duplicate pr_opened edge (or the worker
+                // is somehow idle already). This is the idempotency guard for this pipeline: only an edge
+                // that corresponds to a real in-flight batch gets processed.
+                log.info("Persistent worker {} (carrier task {}): pr_opened edge with no batch in flight, ignoring.",
+                        worker.getId(), carrierTask.getId());
+                return;
+            }
+        } else {
+            // Lazy registration: this is the very first pr_opened for a freshly-created carrier task whose
+            // worker row wasn't registered yet (its dispatch was delayed and only succeeded via the normal
+            // queued-task retry sweep - see ProjectFlowService.createFreshCompilerPersistentWorker /
+            // JulesDispatchService.createFreshReviewFallbackPersistentWorker). The carrier task's own
+            // creation-time payload IS cycle 1's batch.
+            com.eneik.production.models.persistence.PersistentWorkerPurpose purpose =
+                    projectFlowService.isReviewFallbackTask(carrierTask)
+                            ? com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
+                            : com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER;
+            batchIds = purpose == com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
+                    ? projectFlowService.reviewFallbackTargetTaskIds(carrierTask)
+                    : compilerTaskWishlistIds(carrierTask);
+            worker = persistentWorkerSessionService.registerFreshWorker(
+                    carrierTask.getProject().getId(), purpose, carrierTask.getId(), session.getId(), batchIds);
+            // The batch we just registered IS the one this pr_opened edge is responding to - consume it
+            // immediately rather than leaving it "in flight" for a phantom future edge.
+            persistentWorkerSessionService.consumeCurrentBatch(worker);
+            log.info("Persistent worker lazily registered for carrier task {} (purpose {}) on its first pr_opened",
+                    carrierTask.getId(), purpose);
+        }
+
+        if (projectFlowService.isReviewFallbackTask(carrierTask)) {
+            completePersistentReviewFallbackCycle(session, carrierTask, batchIds);
+        } else {
+            completePersistentCompilerCycle(session, carrierTask, batchIds);
+        }
+    }
+
+    private void completePersistentCompilerCycle(JulesSessionEntity session, TaskEntity carrierTask, List<UUID> wishlistIds) {
+        List<WishlistEntity> wishlists = new java.util.ArrayList<>();
+        for (UUID id : wishlistIds) {
+            wishlistRepository.findById(id).ifPresent(wishlists::add);
+        }
+        if (wishlists.isEmpty()) {
+            log.warn("Persistent compiler worker cycle (carrier task {}): none of its {} wishlist(s) exist anymore, skipping",
+                    carrierTask.getId(), wishlistIds.size());
+            return;
+        }
+        boolean anyStillOpen = wishlists.stream()
+                .anyMatch(w -> w.getStatus() != WishlistStatus.converted_to_task && w.getStatus() != WishlistStatus.dismissed);
+        if (!anyStillOpen) {
+            log.warn("Persistent compiler worker cycle (carrier task {}): all {} wishlist(s) already compiled by another path, skipping",
+                    carrierTask.getId(), wishlists.size());
+            return;
+        }
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
+        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = prOpt
+                .map(pr -> parseCompilerPlan(carrierTask.getProject(), pr.headRef()))
+                .orElseGet(List::of);
+
+        if (isValidCompilerPlan(slices, wishlists.size())) {
+            projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, slices);
+            systemProgressTracker.recordProgress();
+            log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} task slice(s) this cycle",
+                    carrierTask.getId(), wishlists.size(), slices.size());
+            return;
+        }
+
+        // Invalid plan this cycle: ask the same session to fix it, same correction message the one-shot
+        // path uses. No retry-count escalation to human review here (unlike the one-shot path) - a
+        // persistent worker's retryCount would otherwise accumulate across unrelated cycles' batches, not
+        // just retries of the current one; an occasional bad cycle just gets asked to redo it.
+        session.setStatus("revising");
+        julesSessionRepository.save(session);
+        String correction = "Your latest commit did not contain a valid `.eneik/task-plan.json` matching the "
+                + "requested schema (or it echoed a generic placeholder instead of real slices) for THIS "
+                + "cycle's brief(s). Please fix the same file on this branch: write only that one file with "
+                + "1-6 real, concrete work items decomposed from this cycle's brief(s).";
+        String externalSessionId = session.getExternalSessionId();
+        String sessionApiKey = apiKeyForSession(session);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            boolean sent = sessionApiKey != null
+                    ? julesApiClient.sendMessage(externalSessionId, correction, sessionApiKey)
+                    : julesApiClient.sendMessage(externalSessionId, correction);
+            if (!sent) {
+                log.warn("Failed to send compiler-plan correction to persistent worker session {}", externalSessionId);
+            }
+        });
+        log.warn("Persistent compiler worker (carrier task {}): invalid plan for {} wishlist(s) this cycle; asked Jules to fix it",
+                carrierTask.getId(), wishlists.size());
+    }
+
+    private void completePersistentReviewFallbackCycle(JulesSessionEntity session, TaskEntity carrierTask, List<UUID> originalTaskIds) {
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
+        List<ReviewVerdictEntry> verdicts = prOpt
+                .map(pr -> parseReviewVerdictBatch(carrierTask.getProject(), pr.headRef()))
+                .orElseGet(List::of);
+
+        for (int i = 0; i < originalTaskIds.size(); i++) {
+            UUID originalTaskId = originalTaskIds.get(i);
+            int sourceIndex = i;
+            ReviewVerdictEntry verdict = verdicts.stream()
+                    .filter(v -> v.sourceIndex() == sourceIndex)
+                    .findFirst()
+                    .orElse(null);
+            applyReviewVerdictToTask(carrierTask, originalTaskId, verdict);
+        }
+        log.info("Persistent review-fallback worker (carrier task {}): applied verdicts for {} PR(s) this cycle",
+                carrierTask.getId(), originalTaskIds.size());
+    }
+
+    /**
      * A falsification-audit session reached pr_opened: its PR should carry exactly one JSON report
      * (see FalsificationCycleService.buildAuditPrompt), never product code. Parses it, applies any
      * violations through the same wishlist-creation path Gemini's answers used to drive
@@ -1673,24 +1926,39 @@ public class JulesDispatchService {
      * this run, since the falsification cron fires again in a few hours regardless.
      */
     private void completeFalsificationAudit(JulesSessionEntity session, TaskEntity auditTask) {
+        // Idempotency: same dispatch-race class fixed in completeReviewerFallback/completeCoverageAudit/
+        // completeDesignReview tonight (the last one confirmed live on test-thirty-second) - only the
+        // session still holding the active claim should apply violations; a later duplicate completion is
+        // a discard-only no-op.
+        boolean firstCompletion = claimService.hasActiveClaim(auditTask.getId());
+
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(auditTask.getProject(), session.getExternalSessionId());
-        List<com.eneik.production.services.FalsificationCycleService.AuditViolation> violations = prOpt
-                .map(pr -> parseFalsificationReport(auditTask.getProject(), pr.headRef()))
-                .orElseGet(List::of);
+        List<com.eneik.production.services.FalsificationCycleService.AuditViolation> violations = firstCompletion
+                ? prOpt.map(pr -> parseFalsificationReport(auditTask.getProject(), pr.headRef())).orElseGet(List::of)
+                : List.of();
 
-        Integer highestPrNumber = projectFlowService.falsificationAuditHighestPrNumber(auditTask);
-        falsificationCycleService.applyAuditViolations(auditTask.getProject(), violations, highestPrNumber);
+        if (firstCompletion) {
+            Integer highestPrNumber = projectFlowService.falsificationAuditHighestPrNumber(auditTask);
+            falsificationCycleService.applyAuditViolations(auditTask.getProject(), violations, highestPrNumber);
+        }
 
+        String mergeReason = firstCompletion
+                ? "falsification audit report parsed into wishlist follow-ups"
+                : "duplicate falsification audit session discarded";
         prOpt.ifPresent(pr -> {
-            gitHubPullRequestService.mergeRecordPullRequest(
-                    auditTask.getProject(), pr, "falsification audit report parsed into wishlist follow-ups");
+            gitHubPullRequestService.mergeRecordPullRequest(auditTask.getProject(), pr, mergeReason);
             archiveRecordFile(auditTask.getProject(), com.eneik.production.services.ProjectFlowService.FALSIFICATION_AUDIT_REPORT_PATH, "falsification-report");
             closeSessionAsNoCode(session, "Falsification report merged (process/metadata only by design); branch deleted.");
         });
-        if (claimService.hasActiveClaim(auditTask.getId())) {
-            claimService.complete(auditTask.getId());
+
+        if (!firstCompletion) {
+            log.warn("Falsification audit task {}: session {} completion discarded - another session already applied this audit's violations.",
+                    auditTask.getId(), session.getId());
+            return;
         }
+        claimService.complete(auditTask.getId());
+        markSystemTaskDone(auditTask);
         systemProgressTracker.recordProgress();
         log.info("Falsification audit for project {} completed by Jules session {}: {} violation(s) reported",
                 auditTask.getProject().getId(), session.getExternalSessionId(), violations.size());
@@ -1736,30 +2004,141 @@ public class JulesDispatchService {
     }
 
     /**
-     * Triggered only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE. Fetches the real
-     * PR diff (Jules sessions always start from main, so the reviewer session needs the diff text handed
-     * to it directly - it cannot check out the implementer's branch itself) and dispatches a standalone
-     * Jules eneikdru review-fallback task. If the diff can't be fetched either (e.g. GitHub also
-     * disabled), this leaves the task exactly as-is for a retry next cycle rather than guessing.
+     * Triggered once per orchestrate() tick for every PR whose Gemini review reported
+     * VERIFICATION_SERVICE_UNAVAILABLE (see PendingFallbackReview/executeCodeReview above). Fetches the
+     * real diff for each PR (Jules sessions always start from main, so the reviewer session needs the
+     * diff text handed to it directly - it cannot check out N different implementers' branches itself)
+     * and dispatches ONE standalone Jules eneikdru review-fallback task covering all of them, instead of
+     * one session per PR. A PR whose diff can't be fetched (e.g. GitHub also disabled) is dropped from
+     * this batch and left exactly as-is for a retry next cycle rather than guessing.
      */
-    private void dispatchReviewerFallback(TaskEntity task, String prUrl) {
-        Integer pullNumber = parsePullNumber(prUrl);
-        Optional<String> diff = pullNumber != null
-                ? gitHubPullRequestService.fetchDiffText(task.getProject(), pullNumber)
-                : Optional.empty();
-        if (diff.isEmpty()) {
-            log.warn("PR review fallback: could not fetch diff for task {} (PR {}); leaving pr_opened for retry next cycle.",
-                    task.getId(), prUrl);
+    private void dispatchReviewerFallbackBatch(List<PendingFallbackReview> items) {
+        List<TaskEntity> tasks = new java.util.ArrayList<>();
+        List<String> prUrls = new java.util.ArrayList<>();
+        List<String> diffs = new java.util.ArrayList<>();
+        for (PendingFallbackReview item : items) {
+            Integer pullNumber = parsePullNumber(item.prUrl());
+            Optional<String> diff = pullNumber != null
+                    ? gitHubPullRequestService.fetchDiffText(item.task().getProject(), pullNumber)
+                    : Optional.empty();
+            if (diff.isEmpty()) {
+                log.warn("PR review fallback: could not fetch diff for task {} (PR {}); leaving pr_opened for retry next cycle.",
+                        item.task().getId(), item.prUrl());
+                continue;
+            }
+            tasks.add(item.task());
+            prUrls.add(item.prUrl());
+            diffs.add(diff.get());
+        }
+        if (tasks.isEmpty()) {
             return;
         }
-        String prompt = reviewerFallbackPrompt(task, prUrl, diff.get());
-        UUID reviewTaskId = projectFlowService.dispatchReviewFallback(task, prompt);
+        if (persistentWorkerSessionService.isEnabled()) {
+            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffs);
+            return;
+        }
+        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs);
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatch(tasks, prompt);
         if (reviewTaskId == null) {
-            log.warn("Could not dispatch PR review fallback for task {}", task.getId());
+            log.warn("Could not dispatch batched PR review fallback for {} task(s)", tasks.size());
             return;
         }
-        log.info("Dispatched PR review fallback task {} for task {} (PR {}) - Gemini review unavailable",
-                reviewTaskId, task.getId(), prUrl);
+        log.info("Dispatched batched PR review fallback task {} covering {} PR(s) - Gemini review unavailable",
+                reviewTaskId, tasks.size());
+    }
+
+    /**
+     * Persistent-worker equivalent of the block above: reuses an existing idle review-fallback worker's
+     * Jules session (send a follow-up message, no new task/branch/PR) when available, otherwise creates a
+     * fresh one exactly like the one-shot path used to unconditionally. Mirrors
+     * ProjectFlowService.dispatchToCompilerPersistentWorker - see PersistentWorkerSessionService for the
+     * shared busy/rotation bookkeeping. All items here already share one project (the caller groups by
+     * project before calling this).
+     */
+    private void dispatchToReviewFallbackPersistentWorker(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs) {
+        com.eneik.production.models.persistence.ProjectEntity project = tasks.get(0).getProject();
+        List<UUID> batchIds = tasks.stream().map(TaskEntity::getId).toList();
+        Optional<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> existingOpt =
+                persistentWorkerSessionService.findActiveWorker(project.getId(),
+                        com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK);
+
+        if (existingOpt.isPresent()) {
+            com.eneik.production.models.persistence.PersistentWorkerSessionEntity worker = existingOpt.get();
+            if (persistentWorkerSessionService.needsRotation(worker)) {
+                persistentWorkerSessionService.retire(worker, "cycle/age cap reached");
+            } else if (persistentWorkerSessionService.isIdleAndFresh(worker)) {
+                JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
+                        ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
+                        : null;
+                if (session != null && sendFollowUpMessage(session, reviewerFallbackFollowUpPromptBatch(tasks, prUrls, diffs))) {
+                    persistentWorkerSessionService.recordBatchSent(worker, batchIds);
+                    log.info("Sent follow-up review-fallback batch ({} PR(s)) to persistent worker {} (cycle {})",
+                            tasks.size(), worker.getId(), worker.getCycleCount());
+                    return;
+                }
+                log.warn("Persistent review-fallback worker {} exists but could not be messaged; {} PR(s) left pr_opened for retry next cycle",
+                        worker.getId(), tasks.size());
+                return;
+            } else {
+                log.info("Persistent review-fallback worker {} is still busy; {} PR(s) left pr_opened for retry next cycle",
+                        worker.getId(), tasks.size());
+                return;
+            }
+        }
+
+        createFreshReviewFallbackPersistentWorker(project, tasks, prUrls, diffs, batchIds);
+    }
+
+    private void createFreshReviewFallbackPersistentWorker(com.eneik.production.models.persistence.ProjectEntity project,
+            List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<UUID> batchIds) {
+        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs);
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatchAsPersistentCarrier(tasks, prompt);
+        if (reviewTaskId == null) {
+            log.warn("Could not create persistent review-fallback worker for project {} ({} task(s))", project.getId(), tasks.size());
+            return;
+        }
+        TaskEntity carrierTask = taskRepository.findById(reviewTaskId).orElse(null);
+        if (carrierTask == null || carrierTask.getJulesSessionName() == null) {
+            // No account capacity this cycle - task stays `queued`, picked up by the normal retry sweep
+            // (ProjectFlowService.dispatchQueuedTasks already knows how to redispatch a queued
+            // pr_review_fallback task via the general pool). No worker row registered yet;
+            // completePersistentWorkerCycle lazily registers one on the first pr_opened, using this task's
+            // own payload batch as cycle 1.
+            log.warn("Persistent review-fallback worker carrier task {} could not be dispatched this cycle; will retry via the normal queued-task sweep",
+                    reviewTaskId);
+            return;
+        }
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(reviewTaskId);
+        JulesSessionEntity newSession = sessions.stream()
+                .max(java.util.Comparator.comparing(JulesSessionEntity::getCreatedAt))
+                .orElse(null);
+        if (newSession == null) {
+            log.error("Persistent review-fallback worker carrier task {} dispatched but no JulesSessionEntity found", reviewTaskId);
+            return;
+        }
+        persistentWorkerSessionService.registerFreshWorker(project.getId(),
+                com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK,
+                reviewTaskId, newSession.getId(), batchIds);
+        log.info("Created persistent review-fallback worker for project {}: carrier task {}, session {}",
+                project.getId(), reviewTaskId, newSession.getId());
+    }
+
+    /**
+     * Follow-up message for an existing persistent review-fallback worker's session (cycle 2+): same body
+     * as reviewerFallbackPromptBatch, wrapped with an instruction to overwrite .eneik/review-verdict.json
+     * with only this cycle's verdicts rather than merging with a previous cycle's.
+     */
+    private String reviewerFallbackFollowUpPromptBatch(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs) {
+        String body = reviewerFallbackPromptBatch(tasks, prUrls, diffs);
+        return """
+                NEW CYCLE for the same persistent review-fallback worker session. The PR(s) below are a
+                FRESH batch, unrelated to whatever you reviewed in a previous cycle on this same branch.
+                OVERWRITE `.eneik/review-verdict.json` so it contains ONLY the verdicts for THIS cycle's
+                PR(s) - do not keep, merge, or reference any previous cycle's content. Commit the update to
+                the same branch/PR you already have open.
+
+                %s
+                """.formatted(body);
     }
 
     private Integer parsePullNumber(String prUrl) {
@@ -1778,64 +2157,87 @@ public class JulesDispatchService {
         return null;
     }
 
-    private String reviewerFallbackPrompt(TaskEntity task, String prUrl, String diff) {
-        return """
-                You are the fallback code reviewer for this PR (Gemini review is temporarily or permanently
-                unavailable). Review the PR below - do NOT implement, fix, or change any product code
-                yourself, and do not run builds or tests; this task only produces a review verdict.
+    private String reviewerFallbackPromptBatch(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs) {
+        StringBuilder prBlocks = new StringBuilder();
+        for (int i = 0; i < tasks.size(); i++) {
+            TaskEntity t = tasks.get(i);
+            prBlocks.append("""
+                    ===== PR #%d (sourceIndex %d) =====
+                    Original task (role %s):
+                    %s
 
-                Be lenient by design: work must never stall waiting on your opinion. Block
-                ("verdict":"block") ONLY for a small set of genuinely critical problems: a real security
-                vulnerability, data loss risk, hardcoded secrets/credentials, committed generated/build
-                artifacts (node_modules, playwright-report, coverage, .zip/.png/.webm/.trace files), missing
-                required tests for a QA task, or a direct contradiction of the task's stated Acceptance
-                Criteria/DoD below. Anything else - style preferences, architecture opinions, missing edge
-                cases that do not break the Acceptance Criteria, suggestions for a better approach - is NOT
-                a blocker: approve the PR and list it as a "concern" instead, so it becomes a follow-up
-                improvement item rather than stopped work.
+                    PR under review: %s
+
+                    Diff to review:
+                    %s
+
+                    """.formatted(i, i, t.getRole().getTag(), t.getDescription(), prUrls.get(i), diffs.get(i)));
+        }
+        return """
+                You are the fallback code reviewer for %d PR(s) below (Gemini review is temporarily or
+                permanently unavailable). Review EACH PR independently on its own merits - do NOT
+                implement, fix, or change any product code yourself, and do not run builds or tests; this
+                task only produces review verdicts.
+
+                Be lenient by design: work must never stall waiting on your opinion. Block a PR
+                ("verdict":"block") ONLY for a small set of genuinely critical problems on THAT PR: a real
+                security vulnerability, data loss risk, hardcoded secrets/credentials, committed
+                generated/build artifacts (node_modules, playwright-report, coverage,
+                .zip/.png/.webm/.trace files), missing required tests for a QA task, or a direct
+                contradiction of that PR's own stated Acceptance Criteria/DoD. Anything else - style
+                preferences, architecture opinions, missing edge cases that do not break the Acceptance
+                Criteria, suggestions for a better approach - is NOT a blocker: approve that PR and list it
+                as a "concern" instead, so it becomes a follow-up improvement item rather than stopped work.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
-                `.eneik/review-verdict.json`, with EXACTLY this shape and no other files changed:
-                {"verdict": "approve", "criticalReason": "", "concerns": ["short concern 1", "short concern 2"]}
-                or, only for a genuine critical blocker:
-                {"verdict": "block", "criticalReason": "concrete, specific blocking reason tied to the diff", "concerns": []}
+                `.eneik/review-verdict.json`, with EXACTLY this shape and no other files changed - one
+                entry per PR listed below, in the same order, each carrying its own "sourceIndex":
+                {"verdicts": [
+                  {"sourceIndex": 0, "verdict": "approve", "criticalReason": "", "concerns": ["short concern 1"]},
+                  {"sourceIndex": 1, "verdict": "block", "criticalReason": "concrete, specific blocking reason tied to PR #1's diff", "concerns": []}
+                ]}
+                Every PR listed below MUST have exactly one corresponding entry, matched by sourceIndex.
                 Do not write, modify, or delete any other file.
 
-                Original task (role %s):
-                %s
+                %d PR(s) to review:
 
-                PR under review: %s
-
-                Diff to review:
                 %s
-                """.formatted(task.getRole().getTag(), task.getDescription(), prUrl, diff);
+                """.formatted(tasks.size(), tasks.size(), prBlocks.toString());
     }
 
-    private record ReviewVerdict(String verdict, String criticalReason, List<String> concerns) {
+    private record ReviewVerdictEntry(int sourceIndex, String verdict, String criticalReason, List<String> concerns) {
     }
 
-    private ReviewVerdict parseReviewVerdict(ProjectEntity project, String headRef) {
+    private List<ReviewVerdictEntry> parseReviewVerdictBatch(ProjectEntity project, String headRef) {
         Optional<String> content = gitHubPullRequestService.fetchFileContent(
                 project, headRef, com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_VERDICT_PATH);
         if (content.isEmpty()) {
-            return null;
+            return List.of();
         }
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             JsonNode root = mapper.readTree(content.get());
-            String verdict = root.path("verdict").asText("approve");
-            String criticalReason = root.path("criticalReason").asText("");
-            List<String> concerns = new java.util.ArrayList<>();
-            JsonNode rawConcerns = root.path("concerns");
-            if (rawConcerns.isArray()) {
-                for (JsonNode c : rawConcerns) {
-                    concerns.add(c.asText(""));
+            List<ReviewVerdictEntry> entries = new java.util.ArrayList<>();
+            JsonNode rawVerdicts = root.path("verdicts");
+            if (rawVerdicts.isArray()) {
+                for (JsonNode v : rawVerdicts) {
+                    int sourceIndex = v.path("sourceIndex").asInt(-1);
+                    String verdict = v.path("verdict").asText("approve");
+                    String criticalReason = v.path("criticalReason").asText("");
+                    List<String> concerns = new java.util.ArrayList<>();
+                    JsonNode rawConcerns = v.path("concerns");
+                    if (rawConcerns.isArray()) {
+                        for (JsonNode c : rawConcerns) {
+                            concerns.add(c.asText(""));
+                        }
+                    }
+                    entries.add(new ReviewVerdictEntry(sourceIndex, verdict, criticalReason, concerns));
                 }
             }
-            return new ReviewVerdict(verdict, criticalReason, concerns);
+            return entries;
         } catch (Exception e) {
-            log.warn("Failed to parse PR review fallback verdict for project {}: {}", project.getId(), e.getMessage());
-            return null;
+            log.warn("Failed to parse batched PR review fallback verdict for project {}: {}", project.getId(), e.getMessage());
+            return List.of();
         }
     }
 
@@ -1848,28 +2250,57 @@ public class JulesDispatchService {
      * wishlist item instead of stopping the work.
      */
     private void completeReviewerFallback(JulesSessionEntity session, TaskEntity reviewTask) {
-        UUID originalTaskId = projectFlowService.reviewFallbackTargetTaskId(reviewTask);
+        List<UUID> originalTaskIds = projectFlowService.reviewFallbackTargetTaskIds(reviewTask);
+
+        // Idempotency: same dispatch-race risk as the coverage-audit fix above (and the original
+        // wishlist-compiler duplication incident) - a review-fallback task can end up with more than one
+        // Jules session, and only the session that still holds the active claim should apply verdicts;
+        // every later completion is a discard-only no-op.
+        boolean firstCompletion = claimService.hasActiveClaim(reviewTask.getId());
 
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(reviewTask.getProject(), session.getExternalSessionId());
-        ReviewVerdict verdict = prOpt
-                .map(pr -> parseReviewVerdict(reviewTask.getProject(), pr.headRef()))
-                .orElse(null);
+        List<ReviewVerdictEntry> verdicts = firstCompletion
+                ? prOpt.map(pr -> parseReviewVerdictBatch(reviewTask.getProject(), pr.headRef())).orElseGet(List::of)
+                : List.of();
 
+        String mergeReason = firstCompletion ? "PR review fallback verdict parsed" : "duplicate review fallback session discarded";
         prOpt.ifPresent(pr -> {
-            gitHubPullRequestService.mergeRecordPullRequest(
-                    reviewTask.getProject(), pr, "PR review fallback verdict parsed");
+            gitHubPullRequestService.mergeRecordPullRequest(reviewTask.getProject(), pr, mergeReason);
             archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_VERDICT_PATH, "review-verdict");
             closeSessionAsNoCode(session, "Review verdict merged (process/metadata only by design); branch deleted.");
         });
-        if (claimService.hasActiveClaim(reviewTask.getId())) {
-            claimService.complete(reviewTask.getId());
-        }
 
-        if (originalTaskId == null) {
-            log.error("PR review fallback task {} has no reviewsTaskId payload marker; cannot apply verdict", reviewTask.getId());
+        if (!firstCompletion) {
+            log.warn("PR review fallback task {}: session {} completion discarded - another session already applied this batch's verdicts.",
+                    reviewTask.getId(), session.getId());
             return;
         }
+        claimService.complete(reviewTask.getId());
+        markSystemTaskDone(reviewTask);
+
+        if (originalTaskIds.isEmpty()) {
+            log.error("PR review fallback task {} has no reviewsTaskIds payload marker; cannot apply verdicts", reviewTask.getId());
+            return;
+        }
+
+        for (int i = 0; i < originalTaskIds.size(); i++) {
+            UUID originalTaskId = originalTaskIds.get(i);
+            int sourceIndex = i;
+            ReviewVerdictEntry verdict = verdicts.stream()
+                    .filter(v -> v.sourceIndex() == sourceIndex)
+                    .findFirst()
+                    .orElse(null);
+            applyReviewVerdictToTask(reviewTask, originalTaskId, verdict);
+        }
+    }
+
+    /**
+     * Applies one PR's verdict (out of a batched fallback review's array response) to its original
+     * implementer task - same approve/block/concern-recording logic the single-PR pipeline always used,
+     * now looped once per PR in the batch instead of running once for a whole task.
+     */
+    private void applyReviewVerdictToTask(TaskEntity reviewTask, UUID originalTaskId, ReviewVerdictEntry verdict) {
         TaskEntity originalTask = taskRepository.findById(originalTaskId).orElse(null);
         if (originalTask == null) {
             log.warn("PR review fallback task {}: original task {} no longer exists, discarding verdict", reviewTask.getId(), originalTaskId);
@@ -1886,7 +2317,7 @@ public class JulesDispatchService {
         }
 
         if (verdict == null) {
-            log.warn("PR review fallback task {}: no valid verdict report found; task {} left for retry next cycle", reviewTask.getId(), originalTaskId);
+            log.warn("PR review fallback task {}: no valid verdict entry found for task {}; left for retry next cycle", reviewTask.getId(), originalTaskId);
             return;
         }
 
@@ -1936,19 +2367,172 @@ public class JulesDispatchService {
         systemProgressTracker.recordProgress();
         log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());
 
+        long pendingReviewConcernCount = wishlistRepository.countByProjectIdAndStatusAndContentStartingWith(
+                originalTask.getProject().getId(),
+                com.eneik.production.models.persistence.WishlistStatus.pending,
+                REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX);
+        List<com.eneik.production.models.persistence.WishlistEntity> pendingReviewWishlist = pendingReviewConcernCount > 0
+                ? wishlistRepository.findByProjectIdAndStatusAndContentStartingWith(
+                        originalTask.getProject().getId(),
+                        com.eneik.production.models.persistence.WishlistStatus.pending,
+                        REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX)
+                : List.of();
+
         for (String concern : verdict.concerns()) {
             if (concern == null || concern.isBlank()) {
                 continue;
             }
+            if (pendingReviewConcernCount >= MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT) {
+                log.info("PR review fallback: dropping non-blocking concern on task {} - project already has {} pending "
+                                + "review follow-up(s) (cap {}); will resurface on a future review pass if still real: {}",
+                        originalTaskId, pendingReviewConcernCount, MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT, concern);
+                continue;
+            }
+            String finalConcern = concern;
+            boolean alreadyPending = pendingReviewWishlist.stream().anyMatch(item ->
+                    item.getContent() != null && item.getContent().contains(finalConcern));
+            if (alreadyPending) {
+                log.info("PR review fallback: skipping duplicate non-blocking concern on task {} - already pending: {}", originalTaskId, concern);
+                continue;
+            }
+
             com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
             wishlist.setProjectId(originalTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
             wishlist.setSourceRoleTag(originalTask.getRole().getTag());
             wishlist.setFeatureId(originalTask.getFeatureId());
-            wishlist.setContent("Reviewer concern (non-blocking) on task \"" + TaskTitleBuilder.displayTitle(originalTask) + "\": " + concern);
+            wishlist.setContent(REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX + TaskTitleBuilder.displayTitle(originalTask) + "\": " + concern);
             wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
             wishlistRepository.save(wishlist);
+            pendingReviewConcernCount++;
         }
+    }
+
+    private record CoverageGap(String title, String roleTag, String jtbd, String acceptanceCriteria, String reason) {
+    }
+
+    private List<CoverageGap> parseCoverageAuditReport(ProjectEntity project, String headRef) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(
+                project, headRef, com.eneik.production.services.ProjectFlowService.COVERAGE_AUDIT_REPORT_PATH);
+        if (content.isEmpty()) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            List<CoverageGap> gaps = new java.util.ArrayList<>();
+            JsonNode rawGaps = root.path("gaps");
+            if (rawGaps.isArray()) {
+                for (JsonNode g : rawGaps) {
+                    String title = g.path("title").asText("");
+                    String roleTag = g.path("roleTag").asText("");
+                    if (title.isBlank() || roleTag.isBlank()) {
+                        continue;
+                    }
+                    gaps.add(new CoverageGap(title, roleTag, g.path("jtbd").asText(""),
+                            g.path("acceptanceCriteria").asText(""), g.path("reason").asText("")));
+                }
+            }
+            return gaps;
+        } catch (Exception e) {
+            log.warn("Failed to parse coverage audit report for project {}: {}", project.getId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    /**
+     * A coverage-audit session reached pr_opened: its PR should carry exactly one JSON report (see
+     * ProjectFlowService.dispatchCoverageAuditIfClientBrief), never product code. Discards that PR either
+     * way, then turns every reported gap into a new pending wishlist item (source=coverage_gap) carrying
+     * the same featureId as the decomposition it audited, so it flows through the normal pull-based,
+     * WIP-gated compiler cycle like any other wishlist item - never fabricated as a ready-made task
+     * directly, since a gap is still just a claim from one audit pass until the same scrutiny (adequacy
+     * filter, WIP limits, cheap-path checks) that every other wishlist item goes through has run on it.
+     */
+    private void completeCoverageAudit(JulesSessionEntity session, TaskEntity auditTask) {
+        UUID targetWishlistId = projectFlowService.coverageAuditTargetWishlistId(auditTask);
+        UUID featureId = projectFlowService.coverageAuditFeatureId(auditTask);
+
+        // Idempotency: found live on test-thirty-first - a coverage-audit task can end up with more than
+        // one Jules session dispatched to it (same dispatch-race class as the original wishlist-compiler
+        // duplication incident), and each session independently reaching pr_opened would otherwise
+        // independently re-run gap creation. The pending-content dedup below only protects against a
+        // duplicate that's still `pending` - once the FIRST session's gap gets picked up and compiled by
+        // the pull-based cycle (which can happen within seconds), it's no longer `pending`, so a second
+        // session's completion would see no duplicate and create the same gap again. hasActiveClaim is
+        // the real guard: exactly one session ever holds the active claim on this task, so only the FIRST
+        // completion to reach this point (the one that still finds the claim active) creates gaps at all -
+        // every later one just discards its own redundant PR/session as a no-op.
+        boolean firstCompletion = claimService.hasActiveClaim(auditTask.getId());
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(auditTask.getProject(), session.getExternalSessionId());
+        List<CoverageGap> gaps = firstCompletion
+                ? prOpt.map(pr -> parseCoverageAuditReport(auditTask.getProject(), pr.headRef())).orElseGet(List::of)
+                : List.of();
+
+        String mergeReason = firstCompletion ? "Coverage audit report parsed" : "duplicate coverage audit session discarded";
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(auditTask.getProject(), pr, mergeReason);
+            archiveRecordFile(auditTask.getProject(), com.eneik.production.services.ProjectFlowService.COVERAGE_AUDIT_REPORT_PATH, "coverage-audit");
+            closeSessionAsNoCode(session, "Coverage audit report merged (process/metadata only by design); branch deleted.");
+        });
+
+        if (!firstCompletion) {
+            log.warn("Coverage audit task {}: session {} completion discarded - another session already processed this audit's gaps.",
+                    auditTask.getId(), session.getId());
+            return;
+        }
+        claimService.complete(auditTask.getId());
+        markSystemTaskDone(auditTask);
+
+        if (gaps.isEmpty()) {
+            log.info("Coverage audit task {} (wishlist {}): no gaps found, plan covers the brief.", auditTask.getId(), targetWishlistId);
+            return;
+        }
+
+        long pendingGapCount = wishlistRepository.countByProjectIdAndSourceAndStatus(
+                auditTask.getProject().getId(),
+                com.eneik.production.models.persistence.WishlistSource.coverage_gap,
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+        List<com.eneik.production.models.persistence.WishlistEntity> pendingGapWishlist = pendingGapCount > 0
+                ? wishlistRepository.findByProjectIdAndSourceAndStatus(
+                        auditTask.getProject().getId(),
+                        com.eneik.production.models.persistence.WishlistSource.coverage_gap,
+                        com.eneik.production.models.persistence.WishlistStatus.pending)
+                : List.of();
+
+        int created = 0;
+        for (CoverageGap gap : gaps) {
+            if (pendingGapCount >= MAX_PENDING_COVERAGE_GAPS_PER_PROJECT) {
+                log.info("Coverage audit task {}: dropping gap \"{}\" - project already has {} pending "
+                                + "coverage-gap follow-up(s) (cap {}); will resurface on a future audit if still real",
+                        auditTask.getId(), gap.title(), pendingGapCount, MAX_PENDING_COVERAGE_GAPS_PER_PROJECT);
+                continue;
+            }
+            String finalTitle = gap.title();
+            boolean alreadyPending = pendingGapWishlist.stream().anyMatch(item ->
+                    item.getContent() != null && item.getContent().contains(finalTitle));
+            if (alreadyPending) {
+                log.info("Coverage audit task {}: skipping duplicate gap \"{}\" - already pending", auditTask.getId(), gap.title());
+                continue;
+            }
+
+            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+            wishlist.setProjectId(auditTask.getProject().getId());
+            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.coverage_gap);
+            wishlist.setSourceRoleTag(gap.roleTag());
+            wishlist.setFeatureId(featureId);
+            wishlist.setContent("Coverage audit gap [" + gap.title() + "]: " + gap.reason()
+                    + "\nJTBD: " + gap.jtbd()
+                    + "\nAcceptance Criteria: " + gap.acceptanceCriteria());
+            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            wishlistRepository.save(wishlist);
+            pendingGapCount++;
+            created++;
+        }
+        log.info("Coverage audit task {} (wishlist {}): {} gap(s) reported, {} new coverage_gap wishlist item(s) created.",
+                auditTask.getId(), targetWishlistId, gaps.size(), created);
     }
 
     private record DesignVerdict(String verdict, String reason, List<String> concerns) {
@@ -1990,21 +2574,35 @@ public class JulesDispatchService {
     private void completeDesignReview(JulesSessionEntity session, TaskEntity reviewTask) {
         String draftPath = projectFlowService.designReviewDraftPath(reviewTask);
 
+        // Idempotency: same dispatch-race class as the review-fallback/coverage-audit fixes earlier
+        // tonight, confirmed live on test-thirty-second - a design-review task can end up with more than
+        // one Jules session (two independent sessions both eventually completed, ~6 minutes apart, both
+        // trying to promote the same draft to design/approved/ - the second one hit a real GitHub 422
+        // "sha wasn't supplied" since the first had already created that path). Only the session that
+        // still holds the active claim should promote the draft / process the verdict; every later
+        // completion is a discard-only no-op.
+        boolean firstCompletion = claimService.hasActiveClaim(reviewTask.getId());
+
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(reviewTask.getProject(), session.getExternalSessionId());
-        DesignVerdict verdict = prOpt
-                .map(pr -> parseDesignVerdict(reviewTask.getProject(), pr.headRef()))
-                .orElse(null);
+        DesignVerdict verdict = firstCompletion
+                ? prOpt.map(pr -> parseDesignVerdict(reviewTask.getProject(), pr.headRef())).orElse(null)
+                : null;
 
+        String mergeReason = firstCompletion ? "design review verdict parsed" : "duplicate design review session discarded";
         prOpt.ifPresent(pr -> {
-            gitHubPullRequestService.mergeRecordPullRequest(
-                    reviewTask.getProject(), pr, "design review verdict parsed");
+            gitHubPullRequestService.mergeRecordPullRequest(reviewTask.getProject(), pr, mergeReason);
             archiveRecordFile(reviewTask.getProject(), com.eneik.production.services.ProjectFlowService.DESIGN_REVIEW_VERDICT_PATH, "design-review-verdict");
             closeSessionAsNoCode(session, "Design review verdict merged (process/metadata only by design); branch deleted.");
         });
-        if (claimService.hasActiveClaim(reviewTask.getId())) {
-            claimService.complete(reviewTask.getId());
+
+        if (!firstCompletion) {
+            log.warn("Design review task {}: session {} completion discarded - another session already processed this draft's verdict.",
+                    reviewTask.getId(), session.getId());
+            return;
         }
+        claimService.complete(reviewTask.getId());
+        markSystemTaskDone(reviewTask);
 
         if (draftPath == null) {
             log.error("Design review task {} has no designDraftPath payload marker; cannot apply verdict", reviewTask.getId());
@@ -2199,6 +2797,30 @@ public class JulesDispatchService {
         };
     }
 
+    /**
+     * Sends a new batch's prompt to an EXISTING persistent-worker Jules session (see
+     * PersistentWorkerSessionService) instead of creating a fresh session - the whole point of the
+     * persistent-worker mechanism. Flips the session to "revising" only on a successful send, so a failed
+     * send never leaves the worker looking busy when nothing was actually sent (the caller reverts its
+     * batch to pending/queued in that case). Synchronous (unlike the fire-and-forget CompletableFuture
+     * sends used for corrections elsewhere) because the caller needs to know immediately whether to record
+     * the batch as in-flight.
+     */
+    public boolean sendFollowUpMessage(JulesSessionEntity session, String message) {
+        String apiKey = apiKeyForSession(session);
+        boolean sent = apiKey != null
+                ? julesApiClient.sendMessage(session.getExternalSessionId(), message, apiKey)
+                : julesApiClient.sendMessage(session.getExternalSessionId(), message);
+        if (!sent) {
+            log.warn("Failed to send follow-up message to persistent-worker Jules session {}", session.getExternalSessionId());
+            return false;
+        }
+        session.setStatus("revising");
+        session.setLastProgressAt(Instant.now());
+        julesSessionRepository.save(session);
+        return true;
+    }
+
     private String apiKeyForSession(JulesSessionEntity session) {
         if (session.getAccountId() == null) {
             return null;
@@ -2383,6 +3005,57 @@ public class JulesDispatchService {
                 continue;
             }
 
+            // Same reasoning as ProjectFlowService's orphaned-blocked-task recovery skip-list (and
+            // dispatchReviewTasks's own skip-list, added the same night): a system/carrier task isn't
+            // "some role's feature work" - closeLoopAndCreateFollowUps's generic diagnosis/follow-up
+            // synthesis has no concept of what to do with one and produces a nonsense generic task.
+            // Confirmed live: a stuck persistent compiler worker's forced-unblock exhaustion produced a
+            // meaningless "Delivery Plan" follow-up. Close cleanly instead, no generic follow-up; for a
+            // persistent-worker carrier specifically, retire its worker row too so a fresh one is created
+            // on the next cycle instead of staying wedged pointing at a dead session.
+            boolean isSystemTask = projectFlowService.isWishlistCompilerTask(task)
+                    || projectFlowService.isFalsificationAuditTask(task)
+                    || projectFlowService.isReviewFallbackTask(task)
+                    || projectFlowService.isDesignReviewTask(task)
+                    || projectFlowService.isCoverageAuditTask(task);
+            if (isSystemTask) {
+                // Principle of charity (Davidson): a Jules session doesn't go quiet for no reason - either
+                // it already has an answer (a real, parseable result file sitting in its PR, just not yet
+                // reflected by an external-status transition we happened to observe) or it has an open
+                // question (already covered every poll cycle by answerAgentQuestions). Confirmed live
+                // (2026-07-21, test-thirty-second) that a persistent-worker session can keep reporting
+                // RUNNING from Jules's own API indefinitely even after pushing a real commit with a valid
+                // verdict/plan file - our lastProgressAt only moves on a status transition, so that
+                // genuine progress was invisible to this loop and the session got force-closed 29 minutes
+                // after real work landed, stranding it in a PR nobody would ever read again. Check for a
+                // ready answer BEFORE assuming the silence means nothing happened.
+                if (projectFlowService.isPersistentWorkerCarrierTask(task)
+                        && persistentWorkerHasReadyAnswer(session, task)) {
+                    log.info("Persistent worker carrier task {} looked stalled (no status transition for {}+ min) "
+                                    + "but its PR already has a ready, parseable result file - treating as real "
+                                    + "progress instead of closing (principle of charity), processing it now.",
+                            task.getId(), stuckThresholdMinutes);
+                    session.setLastProgressAt(Instant.now());
+                    julesSessionRepository.save(session);
+                    completePersistentWorkerCycle(session, task);
+                    continue;
+                }
+                session.setStatus("loop_closed");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason("System task session force-unblock exhausted without progress; closed without generic follow-up (not real feature work).");
+                julesSessionRepository.save(session);
+                claimService.closeTaskAsFailed(task.getId(),
+                        "blind_overflow_unblock_exhausted: system task, no generic follow-up needed");
+                if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
+                    persistentWorkerSessionService.findByCarrierTaskId(task.getId())
+                            .ifPresent(worker -> persistentWorkerSessionService.retire(worker,
+                                    "carrier session force-unblock exhausted without progress"));
+                }
+                log.warn("System task {} session {} force-unblock exhausted; closed without generic follow-up.",
+                        task.getId(), session.getExternalSessionId());
+                continue;
+            }
+
             if (session.getForcedUnblockAttempts() >= forcedUnblockMaxAttempts) {
                 List<JulesActivityResponseEntity> responseHistory =
                         julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
@@ -2423,15 +3096,16 @@ public class JulesDispatchService {
                 + "project: make one objective move from the task facts, document the smallest safe "
                 + "assumption in the PR summary, and open or update the PR now instead of waiting for "
                 + "further clarification.";
+        String logLabel = revisingNudge ? "Forced stale-revising unblock" : "Forced blind-overflow unblock";
         java.util.concurrent.CompletableFuture.runAsync(() -> {
             boolean sent = apiKey != null
                     ? julesApiClient.sendMessage(externalSessionId, message, apiKey)
                     : julesApiClient.sendMessage(externalSessionId, message);
             if (sent) {
-                log.info("Sent forced blind-overflow unblock message to Jules session {} for task {}", externalSessionId, taskId);
-                saveJulesDialogueLog(taskId, externalSessionId, message, "Forced blind-overflow unblock");
+                log.info("Sent {} message to Jules session {} for task {}", logLabel, externalSessionId, taskId);
+                saveJulesDialogueLog(taskId, externalSessionId, message, logLabel);
             } else {
-                log.warn("Failed to send forced blind-overflow unblock message to Jules session {} for task {}", externalSessionId, taskId);
+                log.warn("Failed to send {} message to Jules session {} for task {}", logLabel, externalSessionId, taskId);
             }
         });
     }

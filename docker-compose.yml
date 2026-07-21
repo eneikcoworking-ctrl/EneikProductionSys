@@ -62,6 +62,7 @@ services:
       LINEAR_TEAM_ID: ${LINEAR_TEAM_ID:-}
       LINEAR_API_URL: ${LINEAR_API_URL:-https://api.linear.app/graphql}
       JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT: ${JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT:-3}
+      ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED: ${ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED:-false}
     volumes:
       - ./data:/app/data
       - ./project-workspaces:/app/project-workspaces

@@ -7,6 +7,8 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,15 +31,18 @@ public class InternalTaskController {
     private final LinearIssueMetadataRepository metadataRepository;
     private final ClaimRepository claimRepository;
     private final JdbcTemplate jdbcTemplate;
+    private final ObjectMapper objectMapper;
 
     public InternalTaskController(TaskRepository taskRepository,
                                   LinearIssueMetadataRepository metadataRepository,
                                   ClaimRepository claimRepository,
-                                  JdbcTemplate jdbcTemplate) {
+                                  JdbcTemplate jdbcTemplate,
+                                  ObjectMapper objectMapper) {
         this.taskRepository = taskRepository;
         this.metadataRepository = metadataRepository;
         this.claimRepository = claimRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.objectMapper = objectMapper;
     }
 
     @GetMapping
@@ -57,6 +62,17 @@ public class InternalTaskController {
         }
         if (updates.containsKey("title")) {
             task.setTitle((String) updates.get("title"));
+        }
+        // Content-rewrite fields for manual task consolidation (e.g. collapsing a multi-task epic
+        // the compiler over-decomposed back down to the operator-intended scope) - same one-off
+        // manual-correction pattern as dependsOnTaskId/featureId below, content still traces back to
+        // real compiler output, only the task-boundary is hand-edited.
+        if (updates.containsKey("description")) {
+            task.setDescription((String) updates.get("description"));
+        }
+        if (updates.containsKey("payload")) {
+            Object rawPayload = updates.get("payload");
+            task.setPayload(rawPayload == null ? null : objectMapper.valueToTree(rawPayload));
         }
         if (updates.containsKey("status")) {
             task.setStatus(TaskStatus.valueOf((String) updates.get("status")));

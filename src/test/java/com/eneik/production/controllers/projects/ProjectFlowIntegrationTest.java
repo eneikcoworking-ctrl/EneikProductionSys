@@ -237,11 +237,15 @@ class ProjectFlowIntegrationTest {
         boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, java.util.List.of(wishlist), slices);
         assertThat(created).isTrue();
 
+        // A client-sourced wishlist also triggers a coverage audit dispatch alongside the real UI task
+        // (see ProjectFlowService.dispatchCoverageAuditIfClientBrief) - find the UI task by role instead of
+        // assuming it's the only task created.
         java.util.List<com.eneik.production.models.persistence.TaskEntity> tasks =
                 taskRepository.findByProjectIdOrderByCreatedAtDesc(project.id());
-        assertThat(tasks).hasSize(1);
-        com.eneik.production.models.persistence.TaskEntity uiTask = tasks.get(0);
-        assertThat(uiTask.getRole().getTag()).isEqualTo("BARCAN-TAG-11");
+        com.eneik.production.models.persistence.TaskEntity uiTask = tasks.stream()
+                .filter(t -> "BARCAN-TAG-11".equals(t.getRole().getTag()))
+                .findFirst()
+                .orElseThrow();
         assertThat(uiTask.getPayload().get("dod").asText()).contains("docs/DESIGN_SYSTEM.md");
 
         com.eneik.production.models.persistence.WishlistEntity reloaded = wishlistRepository.findById(wishlist.getId()).orElseThrow();

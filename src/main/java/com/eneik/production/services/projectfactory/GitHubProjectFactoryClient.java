@@ -36,6 +36,15 @@ public class GitHubProjectFactoryClient {
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
+    // Was hardcoded `true`. `eneikcoworking-ctrl` is a personal GitHub user account, not an organization -
+    // changing an EXISTING repo's visibility is restricted to the account owner (a collaborator's token,
+    // even with the `repo` scope, gets a 404 trying to PATCH visibility), but the creating identity can
+    // freely choose visibility at CREATION time. Public repos also get free/unlimited GitHub Actions
+    // minutes regardless of the account's billing status - operator hit exactly this (every CI check
+    // failing with "recent account payments have failed") and asked for public-by-default going forward.
+    @Value("${github.repos-private:false}")
+    private boolean reposPrivate;
+
     public GitHubProjectFactoryClient(@Value("${github.org}") String organization,
                                       @Value("${github.api-base-url:https://api.github.com}") String apiBaseUrl,
                                       @Value("${github.webhook-url:}") String webhookUrl,
@@ -64,7 +73,7 @@ public class GitHubProjectFactoryClient {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("name", project.getRepositoryName());
             body.put("description", "Eneik Product Factory workspace for " + project.getName());
-            body.put("private", true);
+            body.put("private", reposPrivate);
             body.put("auto_init", true);
 
             HttpResponse<String> response = createRepository(token, body);
@@ -124,6 +133,20 @@ public class GitHubProjectFactoryClient {
         upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
         upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
         upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
+        // Confirmed live (2026-07-21, test-thirty-second PR#12): an implementer session unrelated to the
+        // compiler committed a stray copy of `.eneik/task-plan.json` into its own branch (likely picked up
+        // from local workspace context, not an intentional edit - only the compiler/review-fallback/
+        // design-review/coverage-audit/falsification prompts ever instruct writing under `.eneik/`). That
+        // stray file later collided with a genuinely-updated `.eneik/task-plan.json` on main from an
+        // unrelated compiler cycle, blocking an otherwise-conflict-free PR for hours. Committing this
+        // .gitignore FIRST, before any Jules session ever touches the repo, means any implementer session's
+        // routine `git add .`/`git commit -am` naturally skips `.eneik/` - only sessions that explicitly
+        // `git add -f .eneik/<file>` (the compiler/review-fallback prompts do name the exact path) still
+        // commit it, which is the only case that should ever touch this directory. Defense in depth, not a
+        // replacement for AutoMergeService's backend-side conflict resolution - this prevents the accident
+        // at the source for every NEW project from here on, but does nothing for a session that force-adds
+        // anyway or for repos created before this fix.
+        upsertContent(project.getRepositoryName(), ".gitignore", "# Eneik orchestrator internal record files - never part of product code\n.eneik/\n", token, errors);
         return errors;
     }
 
@@ -257,7 +280,6 @@ public class GitHubProjectFactoryClient {
     }
 
     private HttpResponse<String> createRepository(String token, ObjectNode body) throws IOException, InterruptedException {
-        System.out.println("DEBUG: Creating repository with token: " + (token != null ? token.substring(0, Math.min(token.length(), 4)) + "..." : "null"));
         HttpRequest organizationRequest = baseRequest("/orgs/" + encode(organization) + "/repos", token)
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                 .build();

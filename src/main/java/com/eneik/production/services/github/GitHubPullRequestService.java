@@ -262,6 +262,104 @@ public class GitHubPullRequestService {
     }
 
     /**
+     * Overwrites (or removes) one path on a PR branch so it matches `main`'s current content for that
+     * path - a plain git commit, never a Jules session. Built for resolving conflicts on our own
+     * transient `.eneik/*.json` record files (task-plan/review-verdict/design-review-verdict): once
+     * another PR has already updated one of those paths on main, an older branch that also touched it
+     * shows as conflicting even though the real product code has no overlap at all - syncing this one
+     * path to main's version clears the conflict without touching anything the branch actually authored.
+     * Returns true if the branch now matches main for this path (including the no-op case where it
+     * already did).
+     */
+    public boolean resolveFileConflictWithMain(ProjectEntity project, String branch, String path) {
+        if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
+            return false;
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return false;
+        }
+        try {
+            String branchSha = fetchFileSha(project, branch, path).orElse(null);
+            Optional<byte[]> mainContent = fetchFileBytes(project, "main", path);
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/" + encodePath(path);
+
+            if (mainContent.isEmpty()) {
+                if (branchSha == null) {
+                    return true;
+                }
+                var body = objectMapper.createObjectNode();
+                body.put("message", "Resolve conflict: remove " + path + " (record file no longer present on main)");
+                body.put("sha", branchSha);
+                body.put("branch", branch);
+                HttpRequest request = baseRequest(urlPath, token)
+                        .method("DELETE", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                    return true;
+                }
+                log.warn("resolveFileConflictWithMain: delete failed for {} on branch {}: status={} body={}",
+                        path, branch, response.statusCode(), preview(response.body()));
+                return false;
+            }
+
+            var body = objectMapper.createObjectNode();
+            body.put("message", "Resolve conflict: sync " + path + " with main (system record file, not product code)");
+            body.put("content", java.util.Base64.getEncoder().encodeToString(mainContent.get()));
+            body.put("branch", branch);
+            if (branchSha != null) {
+                body.put("sha", branchSha);
+            }
+            HttpRequest request = baseRequest(urlPath, token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 || response.statusCode() == 201) {
+                return true;
+            }
+            log.warn("resolveFileConflictWithMain: update failed for {} on branch {}: status={} body={}",
+                    path, branch, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not resolve file conflict for {} on branch {} for project {}: {}",
+                    path, branch, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    private Optional<String> fetchFileSha(ProjectEntity project, String ref, String path) {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(path) + "?ref=" + encode(ref);
+            HttpRequest request = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return Optional.empty();
+            }
+            JsonNode body = objectMapper.readTree(response.body());
+            String sha = body.path("sha").asText("");
+            return sha.isBlank() ? Optional.empty() : Optional.of(sha);
+        } catch (Exception e) {
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Reads an existing committed file and re-commits its exact bytes at a new path - used to promote a
      * design draft to the approved folder once it passes review, without touching the draft (kept as a
      * permanent record).

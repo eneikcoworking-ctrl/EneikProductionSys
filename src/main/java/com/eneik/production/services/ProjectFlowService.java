@@ -20,6 +20,7 @@ import com.eneik.production.services.settings.SystemSettingsService;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -69,6 +70,7 @@ public class ProjectFlowService {
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final ClientDeliverableReadinessService readinessService;
     private final FeatureService featureService;
+    private final PersistentWorkerSessionService persistentWorkerSessionService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -132,7 +134,8 @@ public class ProjectFlowService {
                               com.eneik.production.services.design.DesignAssetService designAssetService,
                               com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                               ClientDeliverableReadinessService readinessService,
-                              FeatureService featureService) {
+                              FeatureService featureService,
+                              PersistentWorkerSessionService persistentWorkerSessionService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -159,6 +162,7 @@ public class ProjectFlowService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.readinessService = readinessService;
         this.featureService = featureService;
+        this.persistentWorkerSessionService = persistentWorkerSessionService;
     }
 
     @Transactional
@@ -822,7 +826,7 @@ public class ProjectFlowService {
             // these already has its own retry/re-dispatch path when it naturally reaches pr_opened again
             // (e.g. a fresh mockup+design-review cycle, a fresh falsification pass) - so the correct recovery
             // here is simply to stop the noise, not to fabricate bespoke recovery logic for each.
-            if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+            if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
                 task.setStatus(TaskStatus.failed);
                 task.setJulesDispatchStatus("System task blocked; retired instead of generic clarify-wishlist recovery (not role feature work)");
                 taskRepository.save(task);
@@ -973,6 +977,23 @@ public class ProjectFlowService {
             return 0;
         }
 
+        // Operator directive (2026-07-21, test-thirty-second post-mortem): never compile a NEW wishlist
+        // item - client-sourced or otherwise (coverage-audit gap, design-review concern, etc.) - while a
+        // PREVIOUS client deliverable's derived tasks aren't fully merged yet. Planning more work on top
+        // of an unstable, not-yet-landed foundation is exactly what burned Jules session budget tonight
+        // for zero durable result: 3 of 4 original tasks are still unmerged, yet the compiler kept taking
+        // on fresh wishlist items regardless. Reuses the same "genuinely merged, not just done" definition
+        // FalsificationCycleService already gates on, applied one step earlier in the pipeline (at
+        // compilation admission, not just at the falsification-cycle trigger).
+        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+        if (readiness.totalDeliverables() > 0 && readiness.mergedDeliverables() < readiness.totalDeliverables()) {
+            log.info("ProjectFlowService: {} of {} client deliverable(s) for project {} not yet merged; "
+                            + "holding {} new wishlist compile candidate(s) until the existing backlog lands on main",
+                    readiness.totalDeliverables() - readiness.mergedDeliverables(), readiness.totalDeliverables(),
+                    project.getId(), candidates.size());
+            return 0;
+        }
+
         long compilingNow = wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling);
         int projectBudget = (int) Math.max(0, wipLimitProjectCompiling - compilingNow);
         if (projectBudget <= 0) {
@@ -1019,8 +1040,145 @@ public class ProjectFlowService {
             w.setStatus(WishlistStatus.compiling);
             wishlistRepository.save(w);
         }
-        dispatchWishlistCompiler(project, admitted);
+        if (persistentWorkerSessionService.isEnabled()) {
+            dispatchToCompilerPersistentWorker(project, admitted);
+        } else {
+            dispatchWishlistCompiler(project, admitted);
+        }
         return admitted.size();
+    }
+
+    // Marks a carrier task (see PersistentWorkerSessionService) at creation time so completion routing
+    // (isPersistentWorkerCarrierTask) works even if the worker DB row hasn't been registered yet - e.g. the
+    // very first dispatch attempt hit no account capacity and only succeeded on a later retry via the
+    // normal queued-task sweep (ProjectFlowService.dispatchQueuedTasks), by which point no row exists.
+    // completePersistentWorkerCycle lazily registers the row in that case, using the carrier task's own
+    // creation-time batch as "cycle 1".
+    private static final String PERSISTENT_WORKER_CARRIER_MARKER_KEY = "persistentWorkerCarrier";
+
+    public boolean isPersistentWorkerCarrierTask(TaskEntity task) {
+        return task.getPayload() != null && task.getPayload().path(PERSISTENT_WORKER_CARRIER_MARKER_KEY).asBoolean(false);
+    }
+
+    /**
+     * Persistent-worker equivalent of dispatchWishlistCompiler: reuses an existing idle worker's Jules
+     * session (send a follow-up message, no new task/branch/PR) when one is available, otherwise creates a
+     * fresh one exactly like the one-shot path used to unconditionally. See PersistentWorkerSessionService
+     * for the busy/rotation bookkeeping this relies on.
+     */
+    private void dispatchToCompilerPersistentWorker(ProjectEntity project, java.util.List<WishlistEntity> admitted) {
+        java.util.List<UUID> batchIds = admitted.stream().map(WishlistEntity::getId).toList();
+        Optional<PersistentWorkerSessionEntity> existingOpt =
+                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER);
+
+        if (existingOpt.isPresent()) {
+            PersistentWorkerSessionEntity worker = existingOpt.get();
+            if (persistentWorkerSessionService.needsRotation(worker)) {
+                persistentWorkerSessionService.retire(worker, "cycle/age cap reached");
+            } else if (persistentWorkerSessionService.isIdleAndFresh(worker)) {
+                JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
+                        ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
+                        : null;
+                if (session != null && julesDispatchService.sendFollowUpMessage(session, wishlistCompilerFollowUpPrompt(admitted))) {
+                    persistentWorkerSessionService.recordBatchSent(worker, batchIds);
+                    log.info("Sent follow-up compiler batch ({} wishlist(s)) to persistent worker {} (cycle {})",
+                            admitted.size(), worker.getId(), worker.getCycleCount());
+                    return;
+                }
+                log.warn("Persistent compiler worker {} exists but could not be messaged; reverting {} wishlist(s) to pending for the next cycle",
+                        worker.getId(), admitted.size());
+                revertWishlistsToPending(admitted);
+                return;
+            } else {
+                // Busy (still processing a prior batch) - never queue a second message on top of an
+                // unanswered one. Same "stays pending, retried next cycle" property as a WIP-limit miss.
+                log.info("Persistent compiler worker {} is still busy; {} wishlist(s) stay pending for the next cycle",
+                        worker.getId(), admitted.size());
+                revertWishlistsToPending(admitted);
+                return;
+            }
+        }
+
+        createFreshCompilerPersistentWorker(project, admitted, batchIds);
+    }
+
+    private void revertWishlistsToPending(java.util.List<WishlistEntity> wishlists) {
+        for (WishlistEntity w : wishlists) {
+            w.setStatus(WishlistStatus.pending);
+            wishlistRepository.save(w);
+        }
+    }
+
+    private void createFreshCompilerPersistentWorker(ProjectEntity project, java.util.List<WishlistEntity> admitted,
+            java.util.List<UUID> batchIds) {
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot create persistent compiler worker for project {}: role {} not found", project.getId(), ORCHESTRATOR_ROLE);
+            revertWishlistsToPending(admitted);
+            return;
+        }
+
+        TaskEntity carrierTask = new TaskEntity();
+        carrierTask.setProject(project);
+        carrierTask.setRole(compilerRole);
+        carrierTask.setTitle("Persistent wishlist compiler worker (" + shortId(project.getId()) + ")");
+        carrierTask.setDescription(wishlistCompilerPromptBatch(admitted));
+        carrierTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
+        payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
+        for (WishlistEntity w : admitted) {
+            idsArray.add(w.getId().toString());
+        }
+        carrierTask.setPayload(payload);
+        carrierTask = taskRepository.save(carrierTask);
+
+        dispatchCompilerTask(carrierTask);
+
+        TaskEntity refreshed = taskRepository.findById(carrierTask.getId()).orElse(carrierTask);
+        if (refreshed.getJulesSessionName() == null) {
+            // No account capacity this cycle - task stays `queued`, picked up by the existing retry sweep
+            // (dispatchQueuedTasks already knows how to redispatch a queued wishlist_compiler task). No
+            // worker row is registered yet; completePersistentWorkerCycle lazily registers one on the first
+            // pr_opened, using this task's own payload batch as cycle 1 - see PERSISTENT_WORKER_CARRIER_MARKER_KEY.
+            log.warn("Persistent compiler worker carrier task {} could not be dispatched this cycle; will retry via the normal queued-task sweep",
+                    carrierTask.getId());
+            return;
+        }
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(carrierTask.getId());
+        JulesSessionEntity newSession = sessions.stream()
+                .max(java.util.Comparator.comparing(JulesSessionEntity::getCreatedAt))
+                .orElse(null);
+        if (newSession == null) {
+            log.error("Persistent compiler worker carrier task {} dispatched but no JulesSessionEntity found", carrierTask.getId());
+            return;
+        }
+        persistentWorkerSessionService.registerFreshWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER,
+                carrierTask.getId(), newSession.getId(), batchIds);
+        log.info("Created persistent compiler worker for project {}: carrier task {}, session {}",
+                project.getId(), carrierTask.getId(), newSession.getId());
+    }
+
+    /**
+     * Follow-up message for an existing persistent compiler worker's session (cycle 2+): reuses the same
+     * per-brief formatting body as wishlistCompilerPromptBatch (including the design-concern correction and
+     * follow-up-on-existing-functionality annotations), but tells Jules this is a new cycle and to
+     * OVERWRITE .eneik/task-plan.json with only this cycle's batch - keeps the file small and keeps
+     * JulesDispatchService.parseCompilerPlan completely unchanged (it just reads whatever is in the file).
+     */
+    private String wishlistCompilerFollowUpPrompt(java.util.List<WishlistEntity> wishlists) {
+        String body = wishlistCompilerPromptBatch(wishlists);
+        return """
+                NEW CYCLE for the same persistent compiler worker session. The brief(s) below are a FRESH
+                batch, unrelated to whatever you compiled in a previous cycle on this same branch.
+                OVERWRITE `.eneik/task-plan.json` so it contains ONLY the slices for THIS cycle's brief(s) -
+                do not keep, merge, or reference any previous cycle's content. Commit the update to the
+                same branch/PR you already have open.
+
+                %s
+                """.formatted(body);
     }
 
     /**
@@ -1123,6 +1281,7 @@ public class ProjectFlowService {
 
         wishlist.setStatus(WishlistStatus.converted_to_task);
         wishlistRepository.save(wishlist);
+        dispatchCoverageAuditIfClientBrief(project, wishlist, graphSlices, featureId);
         return true;
     }
 
@@ -1620,6 +1779,23 @@ public class ProjectFlowService {
                             .append(" against ").append(approvedPath).append("/mockup.html]");
                 }
             }
+            // Confirmed root cause of a live incident (test-thirty-first, 2026-07-20): the implicit-layer
+            // rule below ("if the feature needs data, add BARCAN-TAG-08...") is meant for a fresh client
+            // brief starting a feature from nothing - it has no concept of "this project already has a
+            // data model, API, and UI for this domain." Applied to a narrow follow-up item (a review
+            // concern about a typo, a coverage-audit gap on one already-existing endpoint, chaotic debt,
+            // etc.), it happily invents a brand-new schema+contract+backend+frontend set for what should
+            // be a one-line patch - observed live producing 3 full duplicate mini-decompositions from
+            // nothing more than "fix this typo" and "add pagination". Any non-client-sourced wishlist is
+            // by definition a follow-up on functionality that already exists, so tell the compiler
+            // explicitly not to apply the implicit-layer rule for it.
+            if (w.getSource() != WishlistSource.client) {
+                briefsSection.append(" [FOLLOW-UP ON ALREADY-EXISTING FUNCTIONALITY - do NOT create a new")
+                        .append(" data schema, API contract, or UI slice for this; the data model, API, and")
+                        .append(" UI for this feature already exist elsewhere in the project. Produce exactly")
+                        .append(" ONE work item that patches the existing code directly, unless this literally")
+                        .append(" cannot be done without a new layer.]");
+            }
             briefsSection.append("\n").append(defaultText(w.getContent(), "(empty brief)")).append("\n\n");
         }
 
@@ -1756,6 +1932,134 @@ public class ProjectFlowService {
         return task.getPayload().path(FALSIFICATION_AUDIT_HIGHEST_PR_KEY).asInt();
     }
 
+    // Coverage audit: right after a CLIENT brief is decomposed into real tasks (buildTaskGraphForOneWishlist
+    // below), dispatch one more Jules session that compares the ORIGINAL BRIEF against the RESULTING TASK
+    // LIST and flags two kinds of gap: (1) something the brief actually asks for, however awkwardly phrased,
+    // that no task addresses (semantic comparison, not keyword matching); (2) functionality that's a
+    // well-known standard expectation for this category of product but was never explicitly stated (the
+    // concrete trigger: a "Notes CRUD" brief mentioning "authenticated users" produced 4 tasks, none of
+    // which built authentication itself - found manually on test-thirtieth, recorded as a deferred fix, now
+    // built for real). Deliberately NOT an extension of FalsificationCycleService: falsification only
+    // validates code that already exists against what was claimed; this has no code to inspect yet, it's a
+    // semantic plan-vs-brief comparison that runs the moment the plan exists, before any implementation
+    // starts. Gaps become new wishlist items (source=coverage_gap) that flow through the normal pull-based,
+    // WIP-gated compiler cycle like any other wishlist item - no separate admission mechanism needed, and
+    // they inherit the same featureId as the tasks they're auditing so they land in the same epic.
+    public static final String COVERAGE_AUDIT_TASK_TYPE = "coverage_audit";
+    public static final String COVERAGE_AUDIT_REPORT_PATH = ".eneik/coverage-audit.json";
+    public static final String COVERAGE_AUDIT_WISHLIST_ID_KEY = "auditsWishlistId";
+    public static final String COVERAGE_AUDIT_FEATURE_ID_KEY = "auditsFeatureId";
+
+    public void dispatchCoverageAuditIfClientBrief(ProjectEntity project, WishlistEntity originalWishlist,
+            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices, UUID featureId) {
+        if (originalWishlist.getSource() != WishlistSource.client || graphSlices.isEmpty()) {
+            return;
+        }
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch coverage audit for wishlist {}: role {} not found", originalWishlist.getId(), ORCHESTRATOR_ROLE);
+            return;
+        }
+
+        StringBuilder taskList = new StringBuilder();
+        int n = 1;
+        for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
+            taskList.append(n).append(". [").append(targetRoleForSlice(originalWishlist, slice)).append("] ")
+                    .append(slice.title()).append("\n   JTBD: ").append(slice.jtbd())
+                    .append("\n   Acceptance Criteria: ").append(slice.acceptanceCriteria()).append("\n\n");
+            n++;
+        }
+
+        String prompt = """
+                You are auditing a decomposition plan for completeness, BEFORE any implementation starts.
+                Do NOT write or change any code, do not run builds or tests - this task only produces an
+                audit report.
+
+                Compare the ORIGINAL CLIENT BRIEF below against the RESULTING TASK LIST below (already
+                decomposed and about to be built). Find two kinds of gap:
+
+                1. COVERAGE gaps: something the brief actually asks for (read it yourself, in whatever
+                   language or phrasing it uses - do not rely on keyword matching) that no task in the
+                   list addresses.
+                2. DOMAIN-STANDARD gaps: functionality that isn't mentioned in the brief at all, but that
+                   any competent engineer would expect as a standard, well-known requirement for this
+                   category of product given what the brief DOES ask for (e.g. a brief that implies
+                   "accounts" or "authenticated users" needs an actual login/session mechanism even if it
+                   never says the word "auth"; a public list endpoint usually needs pagination; etc.) -
+                   only flag things clearly and concretely implied by the brief's own domain, never
+                   speculative feature ideas.
+
+                Be conservative: only report a gap you are genuinely confident about. Do NOT flag missing
+                tests, missing documentation, missing CI/CD, or generic "nice to have" polish - those are
+                not coverage gaps.
+
+                Deliverable: create a new branch and open a PR that contains ONLY one file,
+                `.eneik/coverage-audit.json`, with EXACTLY this shape and no other files changed:
+                {"gaps": [
+                  {"title": "short English title", "roleTag": "BARCAN-TAG-02", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...", "reason": "short explanation: literal brief requirement OR domain-standard expectation"}
+                ]}
+                If there are no real gaps, use an empty array: {"gaps": []}. Do not write, modify, or
+                delete any other file.
+
+                ORIGINAL CLIENT BRIEF (verbatim, may be in any language):
+                %s
+
+                RESULTING TASK LIST (%d task(s) about to be built from this brief):
+                %s
+                """.formatted(originalWishlist.getContent(), graphSlices.size(), taskList.toString());
+
+        TaskEntity auditTask = new TaskEntity();
+        auditTask.setProject(project);
+        auditTask.setRole(compilerRole);
+        auditTask.setTitle("Coverage audit: plan vs brief (" + shortId(originalWishlist.getId()) + ")");
+        auditTask.setDescription(prompt);
+        auditTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, COVERAGE_AUDIT_TASK_TYPE);
+        payload.put(COVERAGE_AUDIT_WISHLIST_ID_KEY, originalWishlist.getId().toString());
+        if (featureId != null) {
+            payload.put(COVERAGE_AUDIT_FEATURE_ID_KEY, featureId.toString());
+        }
+        auditTask.setPayload(payload);
+
+        auditTask = taskRepository.save(auditTask);
+        dispatchToGeneralPool(auditTask);
+        log.info("Dispatched coverage audit task {} for client wishlist {} ({} task(s) to verify)",
+                auditTask.getId(), originalWishlist.getId(), graphSlices.size());
+    }
+
+    public boolean isCoverageAuditTask(TaskEntity task) {
+        return task.getPayload() != null
+                && COVERAGE_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public UUID coverageAuditTargetWishlistId(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(COVERAGE_AUDIT_WISHLIST_ID_KEY).asText(null);
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    public UUID coverageAuditFeatureId(TaskEntity task) {
+        if (task.getPayload() == null || !task.getPayload().hasNonNull(COVERAGE_AUDIT_FEATURE_ID_KEY)) {
+            return null;
+        }
+        try {
+            return UUID.fromString(task.getPayload().path(COVERAGE_AUDIT_FEATURE_ID_KEY).asText());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     // Fallback reviewer, used only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE - so
     // a real outage (or a permanently depleted quota) never leaves an implementer PR stuck unreviewed
     // forever. Dispatches a standalone Jules eneikdru session (same reserved account and generic dispatch
@@ -1765,29 +2069,79 @@ public class ProjectFlowService {
     // ever accumulates improvement backlog.
     public static final String PR_REVIEW_FALLBACK_TASK_TYPE = "pr_review_fallback";
     public static final String PR_REVIEW_FALLBACK_VERDICT_PATH = ".eneik/review-verdict.json";
-    public static final String PR_REVIEW_FALLBACK_TASK_ID_KEY = "reviewsTaskId";
+    // Plural array, not a singular id: dispatchReviewFallbackBatch covers every PR that needed a Jules
+    // fallback reviewer in one orchestrate() tick, in one Jules session - firing one session per PR was
+    // the actual cause of the session-count blowup once Gemini's outage became persistent rather than
+    // transient (every implementer PR fell back individually, defeating the whole point of the 15-minute
+    // review batching, which only ever batched the Gemini call, never this fallback).
+    public static final String PR_REVIEW_FALLBACK_TASK_IDS_KEY = "reviewsTaskIds";
 
-    public UUID dispatchReviewFallback(TaskEntity originalTask, String prompt) {
+    public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, String prompt) {
+        if (originalTasks.isEmpty()) {
+            return null;
+        }
         RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
         if (compilerRole == null) {
-            log.error("Cannot dispatch PR review fallback for task {}: role {} not found",
-                    originalTask.getId(), ORCHESTRATOR_ROLE);
+            log.error("Cannot dispatch batched PR review fallback for {} task(s): role {} not found",
+                    originalTasks.size(), ORCHESTRATOR_ROLE);
             return null;
         }
 
         TaskEntity reviewTask = new TaskEntity();
-        reviewTask.setProject(originalTask.getProject());
+        reviewTask.setProject(originalTasks.get(0).getProject());
         reviewTask.setRole(compilerRole);
-        // Suffixed with the reviewed task's short id - same duplicate-title false-positive reasoning as
-        // the compiler/audit task titles above; observed live triggering
+        // Suffixed with size + the first reviewed task's short id - same duplicate-title false-positive
+        // reasoning as the compiler/audit task titles above; observed live triggering
         // ContinuousOrchestrationService's DUPLICATE TASK TITLES alarm after only 3 fallback dispatches.
-        reviewTask.setTitle("PR review fallback (Gemini unavailable, " + shortId(originalTask.getId()) + ")");
+        reviewTask.setTitle("PR review fallback (Gemini unavailable, " + originalTasks.size() + " PR(s), "
+                + shortId(originalTasks.get(0).getId()) + ")");
         reviewTask.setDescription(prompt);
         reviewTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
-        payload.put(PR_REVIEW_FALLBACK_TASK_ID_KEY, originalTask.getId().toString());
+        ArrayNode idsArray = payload.putArray(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
+        for (TaskEntity t : originalTasks) {
+            idsArray.add(t.getId().toString());
+        }
+        reviewTask.setPayload(payload);
+
+        reviewTask = taskRepository.save(reviewTask);
+        dispatchToGeneralPool(reviewTask);
+        return reviewTask.getId();
+    }
+
+    /**
+     * Same as dispatchReviewFallbackBatch, but marks the created task as a persistent-worker carrier (see
+     * PersistentWorkerSessionService/isPersistentWorkerCarrierTask) so its Jules session gets reused across
+     * cycles instead of discarded after this one batch. Called only from
+     * JulesDispatchService.createFreshReviewFallbackPersistentWorker.
+     */
+    public UUID dispatchReviewFallbackBatchAsPersistentCarrier(List<TaskEntity> originalTasks, String prompt) {
+        if (originalTasks.isEmpty()) {
+            return null;
+        }
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot create persistent review-fallback worker for {} task(s): role {} not found",
+                    originalTasks.size(), ORCHESTRATOR_ROLE);
+            return null;
+        }
+
+        TaskEntity reviewTask = new TaskEntity();
+        reviewTask.setProject(originalTasks.get(0).getProject());
+        reviewTask.setRole(compilerRole);
+        reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");
+        reviewTask.setDescription(prompt);
+        reviewTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
+        payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        ArrayNode idsArray = payload.putArray(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
+        for (TaskEntity t : originalTasks) {
+            idsArray.add(t.getId().toString());
+        }
         reviewTask.setPayload(payload);
 
         reviewTask = taskRepository.save(reviewTask);
@@ -1800,19 +2154,23 @@ public class ProjectFlowService {
                 && PR_REVIEW_FALLBACK_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
     }
 
-    public UUID reviewFallbackTargetTaskId(TaskEntity task) {
+    public List<UUID> reviewFallbackTargetTaskIds(TaskEntity task) {
         if (task.getPayload() == null) {
-            return null;
+            return List.of();
         }
-        String raw = task.getPayload().path(PR_REVIEW_FALLBACK_TASK_ID_KEY).asText(null);
-        if (raw == null || raw.isBlank()) {
-            return null;
+        JsonNode idsNode = task.getPayload().path(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
+        if (!idsNode.isArray()) {
+            return List.of();
         }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException e) {
-            return null;
+        List<UUID> ids = new ArrayList<>();
+        for (JsonNode n : idsNode) {
+            try {
+                ids.add(UUID.fromString(n.asText()));
+            } catch (IllegalArgumentException ignored) {
+                // skip malformed entries rather than failing the whole batch
+            }
         }
+        return ids;
     }
 
     // A generated design mockup used to be an orphaned artifact: DesignAssetService wrote it to the Eneik
@@ -1949,10 +2307,36 @@ public class ProjectFlowService {
                 continue;
             }
 
-            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
-                // Compiler, falsification-audit, review-fallback, and design-review tasks are pinned to
-                // the reserved compiler account, never the round-robin pool.
+            // `dependsOn` (set by buildTaskGraphFromSlices per EMS stage order - e.g. Data Schema ->
+            // API Contract -> Backend/UI) was, until now, only ever checked by the unused
+            // TaskRepository.lockNextQueuedTaskForProject path - this, the actual auto-dispatch loop,
+            // never looked at it, so sibling-stage roles routinely started in true parallel before their
+            // declared dependency was even done. Confirmed live 2026-07-21 (test-thirty-second): Backend
+            // Endpoints (depends on API Contract, which depends on Data Schema) was dispatched and merged
+            // while both of its dependencies were still mid-flight - three roles independently invented
+            // three incompatible answers (two different tech stacks, two different OpenAPI contracts) for
+            // the same feature. Enforcing the existing graph here means each stage's session starts only
+            // after the previous stage's real, merged code is on main - it sees the actual decision
+            // instead of guessing one of its own.
+            if (task.getDependsOn() != null && task.getDependsOn().getStatus() != TaskStatus.done) {
+                continue;
+            }
+
+            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task)) {
+                // Compiler and falsification-audit tasks are deliberately pinned to the reserved compiler
+                // account: both are low-frequency by design (WIP-gated batching, a multi-hour cron) and
+                // share that account's capacity comfortably instead of contending with real product work.
                 dispatchCompilerTask(task);
+                continue;
+            }
+
+            if (isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
+                // These fire once per PR / per mockup / per client brief - real per-project traffic, not
+                // rare housekeeping - so they use the general round-robin pool like implementer tasks do
+                // (see the account-concentration fix earlier this session, commit f005816: routing them
+                // through dispatchCompilerTask here would silently re-pin them to the single reserved
+                // account on this retry path even though their primary dispatch call already moved off it).
+                dispatchToGeneralPool(task);
                 continue;
             }
 
@@ -2027,6 +2411,19 @@ public class ProjectFlowService {
         List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
 
         for (TaskEntity task : reviewTasks) {
+            // Defense in depth: system/carrier tasks (compiler, falsification audit, review fallback,
+            // design review, coverage audit) should never reach here at all now that their completion
+            // handlers explicitly mark themselves `done` (JulesDispatchService.markSystemTaskDone) instead
+            // of relying on ClaimService.complete()'s two-call implementer/reviewer state machine, which
+            // used to leave them permanently parked at `review`. This dispatcher has no concept of "this
+            // isn't real implementer code" - it would happily redispatch the SAME compiler/design-review
+            // prompt forever. Confirmed live on test-thirty-second: one design-review task got fully
+            // re-completed 3 times over ~50 minutes before landing on `failed`. Kept as a safety net for
+            // any task that predates this fix or slips through some other path.
+            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task)
+                    || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPersistentWorkerCarrierTask(task)) {
+                continue;
+            }
             List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
             boolean hasActiveReviewSession = sessions.stream()
                     .anyMatch(s -> {

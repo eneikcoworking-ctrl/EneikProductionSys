@@ -72,7 +72,9 @@ class JulesDispatchServiceTest {
             projectFlowService,
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             mock(com.eneik.production.services.FalsificationCycleService.class),
-            featureThreadRepository, readinessService, "prefix/"
+            featureThreadRepository, readinessService,
+            mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+            "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -460,7 +462,7 @@ class JulesDispatchServiceTest {
 
         // Review decisions now run from the batched tick (processPendingReviewBatch), not inline on
         // pr_opened - exercise the extracted decision logic directly, same as the batch method would call it.
-        julesDispatchService.executeCodeReview(task, session, "https://github.com/org/repo/pull/12", List.of());
+        julesDispatchService.executeCodeReview(task, session, "https://github.com/org/repo/pull/12", List.of(), new java.util.ArrayList<>());
 
         assertEquals("pr_opened", session.getStatus());
         assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());

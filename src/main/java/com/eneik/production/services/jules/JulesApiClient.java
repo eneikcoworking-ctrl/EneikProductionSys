@@ -21,7 +21,16 @@ import java.net.http.HttpResponse;
 @Component
 public class JulesApiClient {
     private static final Logger log = LoggerFactory.getLogger(JulesApiClient.class);
-    private static final int MAX_ACTIVITIES_RESPONSE_BYTES = 2 * 1024 * 1024;
+
+    // Was a hardcoded 2MB - too aggressive for this system's real usage: role charters alone (the
+    // philosophical/deontic/formal-logic sections baked into every session's context, see
+    // BARCAN-*.md/RoleRulesController) run tens of KB each, and a session's activity log accumulates every
+    // tool call and message on top of that. A healthy, verbose session routinely exceeded this and got
+    // marked "blind" (question-scanning skipped) purely from legitimate volume, not from being stuck -
+    // confirmed live on test-thirty-second, operator's explicit diagnosis. Configurable, not a silently
+    // unbounded read: still protects backend memory, just at a size that matches real payloads.
+    @Value("${jules.max-activities-response-bytes:10485760}")
+    private int maxActivitiesResponseBytes;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -191,12 +200,12 @@ public class JulesApiClient {
                 return null;
             }
 
-            byte[] body = readLimited(response.body(), MAX_ACTIVITIES_RESPONSE_BYTES);
+            byte[] body = readLimited(response.body(), maxActivitiesResponseBytes);
             if (body == null) {
-                log.warn("Jules activities response for session {} exceeded {} bytes; skipping activity scan to protect backend memory", externalSessionId, MAX_ACTIVITIES_RESPONSE_BYTES);
+                log.warn("Jules activities response for session {} exceeded {} bytes; skipping activity scan to protect backend memory", externalSessionId, maxActivitiesResponseBytes);
                 ObjectNode overflow = objectMapper.createObjectNode();
                 overflow.put("activitiesOverflow", true);
-                overflow.put("maxBytes", MAX_ACTIVITIES_RESPONSE_BYTES);
+                overflow.put("maxBytes", maxActivitiesResponseBytes);
                 return overflow;
             }
             return objectMapper.readTree(body);

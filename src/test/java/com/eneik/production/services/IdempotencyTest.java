@@ -92,6 +92,7 @@ class IdempotencyTest {
             mock(com.eneik.production.services.FalsificationCycleService.class),
             mock(com.eneik.production.repositories.FeatureThreadRepository.class),
             mock(com.eneik.production.services.ClientDeliverableReadinessService.class),
+            mock(com.eneik.production.services.PersistentWorkerSessionService.class),
             "prefix/"
         );
 
