@@ -12,6 +12,7 @@ import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Logger;
 
@@ -202,21 +203,48 @@ public class MLPredictionServiceClient {
     }
 
 
+    /**
+     * One atomic task-slice within an эпик (see {@link EpicPlan}). Ф8 (2026-07-21, operator directive):
+     * kanoClass moved OFF this record entirely - Kano is a customer-value classification, meaningful at
+     * the эпик level only, never per-task. A task's own {@code jtbd} is scoped to the эпик it belongs to
+     * ("when implementing X for this эпик, I want Y so the эпик's Z works"), NOT the end customer - the
+     * customer-facing JTBD lives on {@link EpicPlan#jtbd()}. sixSigmaMetric/tocConstraintRef stay here too
+     * (operator decision: both levels carry their own - the эпик's is an aggregate business metric, the
+     * task's is its own technical one).
+     */
     public record TaskSliceMetadata(
             String title,
             String jtbd,
             String acceptanceCriteria,
             String roleTag,
             LeanValue leanValue,
-            String kanoClass,
             String cynefinDomain,
             String tocConstraintRef,
             String sixSigmaMetric,
-            boolean hasUi,
+            boolean hasUi
+    ) {}
+
+    /**
+     * Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product
+     * actually needs, by narrative/theme - never assumed to be exactly one. Every compile cycle (not just
+     * the first) must decide per эпик, semantically, whether it matches an ALREADY-EXISTING эпик in the
+     * project (existingEpicId non-null, echoed back from the candidate list handed to the compiler prompt
+     * - see ProjectFlowService.existingEpicsPromptContext) or is genuinely new (existingEpicId null).
+     */
+    public record EpicPlan(
+            String existingEpicId,
+            String title,
+            String jtbd,
+            String kanoClass,
+            String cynefinDomain,
+            String sixSigmaMetric,
+            String tocConstraintRef,
             // Which "Brief #N" (0-indexed, matching the numbered briefs sent in a batched compiler prompt -
-            // see ProjectFlowService.wishlistCompilerPromptBatch) this slice addresses. A solo (non-batched)
-            // compile always uses 0.
-            int sourceIndex
+            // see ProjectFlowService.wishlistCompilerPromptBatch) this эпик was derived from. A solo
+            // (non-batched) compile always uses 0. Every slice inside one эпик shares this same value -
+            // an эпик is never split across two different source briefs.
+            int sourceIndex,
+            List<TaskSliceMetadata> slices
     ) {}
 
     private static class MLResponse {

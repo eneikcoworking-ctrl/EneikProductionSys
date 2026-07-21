@@ -553,15 +553,18 @@ class AutonomousPipelineIntegrationTest {
         MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Backend validation", "Validate the incoming payload server-side.",
                 "Given an invalid payload, When it is submitted, Then the API returns a 400.",
-                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of invalid payloads rejected", false, 0);
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of invalid payloads rejected", false);
         MLPredictionServiceClient.TaskSliceMetadata dataSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Data migration", "Migrate the legacy records to the new schema.",
                 "Given legacy records, When the migration runs, Then all records match the new schema.",
-                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of records migrated", false, 0);
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% of records migrated", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Two-Sided Feature", "When a user submits data, I want it validated and migrated, so it is reliable.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(backendSlice, dataSlice));
 
-        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(backendSlice, dataSlice));
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
@@ -596,26 +599,28 @@ class AutonomousPipelineIntegrationTest {
         MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order data model", "Model the order entity and its fields.",
                 "Given the domain, When the model is defined, Then it captures all required order fields.",
-                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of fields modeled", false, 0);
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% of fields modeled", false);
         MLPredictionServiceClient.TaskSliceMetadata contractSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order API contract", "Define the shared order API contract.",
                 "Given the order model, When the contract is published, Then backend and AI both build against it.",
-                "BARCAN-TAG-12", LeanValue.essential, "Must-Be", "clear",
-                "Contract drift", "0 drift incidents", false, 0);
+                "BARCAN-TAG-12", LeanValue.essential, "clear",
+                "Contract drift", "0 drift incidents", false);
         MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order backend", "Implement the order backend against the contract.",
                 "Given the contract, When a request arrives, Then it is handled per spec.",
-                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of requests handled", false, 0);
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of requests handled", false);
         MLPredictionServiceClient.TaskSliceMetadata aiSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order AI scoring", "Implement AI scoring against the contract.",
                 "Given the contract, When a request arrives, Then a score is returned per spec.",
-                "BARCAN-TAG-04", LeanValue.essential, "Must-Be", "clear",
-                "Scoring accuracy", "100% of requests scored", false, 0);
+                "BARCAN-TAG-04", LeanValue.essential, "clear",
+                "Scoring accuracy", "100% of requests scored", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Order Feature", "When a customer places an order, I want it modeled, contracted, and scored, so it is handled correctly.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(modelSlice, contractSlice, backendSlice, aiSlice));
 
-        boolean built = projectFlowService.buildTaskGraphFromSlices(
-                project, List.of(brief), List.of(modelSlice, contractSlice, backendSlice, aiSlice));
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
@@ -650,15 +655,18 @@ class AutonomousPipelineIntegrationTest {
         MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order data model", "Model the order entity and its fields.",
                 "Given the domain, When the model is defined, Then it captures all required order fields.",
-                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% of fields modeled", false, 0);
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% of fields modeled", false);
         MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Order backend", "Implement the order backend.",
                 "Given the model, When a request arrives, Then it is handled.",
-                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "API connectivity", "100% of requests handled", false, 0);
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of requests handled", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Order Feature (No Frontend)", "When a customer places an order, I want it modeled and handled, so it works end-to-end.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(modelSlice, backendSlice));
 
-        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(modelSlice, backendSlice));
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
@@ -703,16 +711,22 @@ class AutonomousPipelineIntegrationTest {
         MLPredictionServiceClient.TaskSliceMetadata sliceA = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Widget data model", "Model widgets.",
                 "Given a widget, When it is created, Then it is persisted.",
-                "BARCAN-TAG-08", LeanValue.essential, "Must-Be", "clear",
-                "Data integrity", "100% persisted", false, 0);
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% persisted", false);
         MLPredictionServiceClient.TaskSliceMetadata sliceB = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Gadget API contract", "Define the gadget API contract.",
                 "Given the contract, When published, Then both sides build against it.",
-                "BARCAN-TAG-12", LeanValue.essential, "Must-Be", "clear",
-                "Contract drift", "0 drift", false, 1);
+                "BARCAN-TAG-12", LeanValue.essential, "clear",
+                "Contract drift", "0 drift", false);
+        MLPredictionServiceClient.EpicPlan epicA = new MLPredictionServiceClient.EpicPlan(
+                null, "Widgets", "When managing widgets, I want them modeled, so they persist.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(sliceA));
+        MLPredictionServiceClient.EpicPlan epicB = new MLPredictionServiceClient.EpicPlan(
+                null, "Gadgets", "When integrating gadgets, I want a shared contract, so both sides build against it.",
+                "Must-Be", "clear", "N/A", "N/A", 1, List.of(sliceB));
 
         boolean built = projectFlowService.buildTaskGraphFromSlices(
-                project, List.of(briefA, briefB), List.of(sliceA, sliceB));
+                project, List.of(briefA, briefB), List.of(epicA, epicB));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
@@ -760,16 +774,22 @@ class AutonomousPipelineIntegrationTest {
         MLPredictionServiceClient.TaskSliceMetadata sliceForDone = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Should never be built", "Should never be built.",
                 "Given this brief is already done, When processed, Then nothing new is created.",
-                "BARCAN-TAG-11", LeanValue.essential, "Must-Be", "clear",
-                "N/A", "N/A", false, 0);
+                "BARCAN-TAG-11", LeanValue.essential, "clear",
+                "N/A", "N/A", false);
         MLPredictionServiceClient.TaskSliceMetadata sliceForOpen = new MLPredictionServiceClient.TaskSliceMetadata(
                 "Should be built", "Should be built.",
                 "Given this brief is still open, When processed, Then a task is created.",
-                "BARCAN-TAG-02", LeanValue.essential, "Must-Be", "clear",
-                "N/A", "N/A", false, 1);
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "N/A", "N/A", false);
+        MLPredictionServiceClient.EpicPlan epicForDone = new MLPredictionServiceClient.EpicPlan(
+                null, "Should Never Build", "When already done, I want nothing new, so no duplicate work happens.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(sliceForDone));
+        MLPredictionServiceClient.EpicPlan epicForOpen = new MLPredictionServiceClient.EpicPlan(
+                null, "Should Build", "When still open, I want a task created, so the work proceeds.",
+                "Must-Be", "clear", "N/A", "N/A", 1, List.of(sliceForOpen));
 
         boolean built = projectFlowService.buildTaskGraphFromSlices(
-                project, List.of(alreadyDone, stillOpen), List.of(sliceForDone, sliceForOpen));
+                project, List.of(alreadyDone, stillOpen), List.of(epicForDone, epicForOpen));
         assertThat(built).isTrue();
 
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());

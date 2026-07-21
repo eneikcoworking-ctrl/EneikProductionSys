@@ -933,7 +933,7 @@ public class ProjectFlowService {
             String ownerRole = targetRoleForSlice(wishlist, slice);
             wishlist.setSourceRoleTag(ownerRole);
             wishlistRepository.save(wishlist);
-            compileSliceMetadata(project, wishlist.getId(), slice, ownerRole);
+            compileSliceMetadata(project, wishlist.getId(), slice, ownerRole, null);
             // The follow-up wishlist should already carry the originating task's featureId (propagated at
             // creation time - see AutoMergeService/JulesDispatchService follow-up creation sites) so
             // recovery work is recognized as a continuation of the same feature, not a brand-new one. Falls
@@ -1192,11 +1192,14 @@ public class ProjectFlowService {
      * tasks must never end up depending on each other just because they shared a compiler session.
      */
     public boolean buildTaskGraphFromSlices(ProjectEntity project, java.util.List<WishlistEntity> sourceWishlists,
-            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
-        java.util.Map<Integer, java.util.List<MLPredictionServiceClient.TaskSliceMetadata>> slicesBySource =
+            java.util.List<MLPredictionServiceClient.EpicPlan> epicPlans) {
+        // Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики as the product needs -
+        // grouped by epic.sourceIndex() now (was per-slice sourceIndex before эпики existed), and a single
+        // wishlist can legitimately produce MULTIPLE epic entries here, not just one.
+        java.util.Map<Integer, java.util.List<MLPredictionServiceClient.EpicPlan>> epicsBySource =
                 new java.util.LinkedHashMap<>();
-        for (MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
-            slicesBySource.computeIfAbsent(slice.sourceIndex(), k -> new java.util.ArrayList<>()).add(slice);
+        for (MLPredictionServiceClient.EpicPlan epic : epicPlans) {
+            epicsBySource.computeIfAbsent(epic.sourceIndex(), k -> new java.util.ArrayList<>()).add(epic);
         }
 
         boolean anyBuilt = false;
@@ -1207,29 +1210,69 @@ public class ProjectFlowService {
             if (wishlist.getStatus() == WishlistStatus.converted_to_task || wishlist.getStatus() == WishlistStatus.dismissed) {
                 continue;
             }
-            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> mySlices = slicesBySource.getOrDefault(i, java.util.List.of());
-            if (buildTaskGraphForOneWishlist(project, wishlist, mySlices)) {
+            java.util.List<MLPredictionServiceClient.EpicPlan> myEpics = epicsBySource.getOrDefault(i, java.util.List.of());
+            boolean wishlistBuiltAnything = false;
+            for (MLPredictionServiceClient.EpicPlan epicPlan : myEpics) {
+                if (buildTaskGraphForOneEpic(project, wishlist, epicPlan)) {
+                    wishlistBuiltAnything = true;
+                }
+            }
+            if (wishlistBuiltAnything) {
                 anyBuilt = true;
             }
+            // A wishlist is "converted" once every epic derived from it has been processed, regardless of
+            // whether each individual epic produced tasks (an epic with an empty/invalid slice list after
+            // EMS filtering is still a processed outcome, not a reason to re-decompose the whole wishlist
+            // again next cycle).
+            wishlist.setStatus(WishlistStatus.converted_to_task);
+            wishlistRepository.save(wishlist);
         }
         return anyBuilt;
     }
 
-    private boolean buildTaskGraphForOneWishlist(ProjectEntity project, WishlistEntity wishlist,
-            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices) {
+    /**
+     * Resolves the эпик (FeatureEntity) this epicPlan belongs to: reuses an existing one if the compiler
+     * matched it semantically (existingEpicId, validated against this project - a hallucinated or
+     * cross-project id falls back to creating new rather than attaching real tasks to the wrong эпик or
+     * throwing), otherwise mints a brand-new one with the epic's own content.
+     */
+    private UUID resolveEpicFeatureId(ProjectEntity project, WishlistEntity wishlist,
+            MLPredictionServiceClient.EpicPlan epicPlan) {
+        if (epicPlan.existingEpicId() != null) {
+            var existing = featureService.findExistingEpic(project.getId(), epicPlan.existingEpicId());
+            if (existing.isPresent()) {
+                return existing.get().getId();
+            }
+            log.warn("ProjectFlowService: compiler echoed existingEpicId {} for project {} but it doesn't "
+                            + "resolve to a real эпик in this project; creating a new one instead of guessing.",
+                    epicPlan.existingEpicId(), project.getId());
+        }
+        return featureService.createFeature(
+                project.getId(),
+                wishlist.getId(),
+                epicPlan.title(),
+                epicPlan.jtbd(),
+                epicPlan.kanoClass(),
+                epicPlan.cynefinDomain(),
+                epicPlan.sixSigmaMetric(),
+                epicPlan.tocConstraintRef()
+        ).getId();
+    }
+
+    private boolean buildTaskGraphForOneEpic(ProjectEntity project, WishlistEntity wishlist,
+            MLPredictionServiceClient.EpicPlan epicPlan) {
+        java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = epicPlan.slices();
         java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices = emsGraphSlices(wishlist, slices);
         if (graphSlices.isEmpty()) {
-            wishlist.setStatus(WishlistStatus.converted_to_task);
-            wishlistRepository.save(wishlist);
             return false;
         }
 
         warnIfImplicitLayerMissing(wishlist, graphSlices);
 
-        // All role-slices decomposed from this one wishlist item share one feature - minted once, here,
-        // before the loop, and stamped onto every slice so continuation (FeatureThreadEntity) never mixes
-        // unrelated features that happen to share a role.
-        UUID featureId = featureService.resolveOrCreateFeatureId(wishlist, project.getId());
+        // Every эпик is its own dependency graph - stage anchoring (below) is scoped to THIS эпик's own
+        // slices only, never spanning across sibling epics from the same wishlist, since two epics may be
+        // entirely unrelated pieces of work that just happened to originate from one client brief.
+        UUID featureId = resolveEpicFeatureId(project, wishlist, epicPlan);
         String graphKey = emsGraphKey(featureId, "flow");
 
         // graphSlices is already sorted by EmsFlowStage.graphOrderForRoleTag (see emsGraphSlices), so
@@ -1262,7 +1305,7 @@ public class ProjectFlowService {
                 sliceWishlist.setStatus(WishlistStatus.pending);
                 sliceWishlist.setFeatureId(featureId);
                 sliceWishlist = wishlistRepository.save(sliceWishlist);
-                compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole);
+                compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole, epicPlan.kanoClass());
                 TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
                         sliceWishlist.getId(),
                         stageAnchor,
@@ -1279,8 +1322,6 @@ public class ProjectFlowService {
             }
         }
 
-        wishlist.setStatus(WishlistStatus.converted_to_task);
-        wishlistRepository.save(wishlist);
         dispatchCoverageAuditIfClientBrief(project, wishlist, graphSlices, featureId);
         return true;
     }
@@ -1403,7 +1444,7 @@ public class ProjectFlowService {
         return matcher.find() ? matcher.group(1) : null;
     }
 
-    private void compileSliceMetadata(ProjectEntity project, UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole) {
+    private void compileSliceMetadata(ProjectEntity project, UUID wishlistId, MLPredictionServiceClient.TaskSliceMetadata slice, String ownerRole, String epicKanoClass) {
         String acceptanceCriteria = defaultText(slice.acceptanceCriteria(), fallbackTaskSlice("").acceptanceCriteria());
         if (slice.hasUi() || "BARCAN-TAG-11".equals(ownerRole) || "BARCAN-TAG-03".equals(ownerRole)) {
             String approvedDesignPath = approvedDesignPathFromFollowUp(wishlistId);
@@ -1447,20 +1488,26 @@ public class ProjectFlowService {
                 slice.leanValue() != null ? slice.leanValue() : LeanValue.essential,
                 defaultText(slice.tocConstraintRef(), "TOC-CONSTRAINT-DECOMPOSITION"),
                 defaultText(slice.sixSigmaMetric(), "Escaped defects <= 5%"),
-                compiledDod(ownerRole, slice),
+                compiledDod(ownerRole, slice, epicKanoClass),
                 acceptanceCriteria
         );
     }
 
-    private String compiledDod(String ownerRole, MLPredictionServiceClient.TaskSliceMetadata slice) {
+    // Ф8 (2026-07-21, operator directive): Kano moved off the task level entirely (customer-value
+    // classification only makes sense per эпик, never per task) - epicKanoClass is threaded through purely
+    // as informational context ("this task belongs to a Must-Be эпик"), nullable for the cheap/recovery
+    // compile path (tryCompileWishlistCheaply), which reuses an already-known featureId without loading
+    // that эпик's own content back out.
+    private String compiledDod(String ownerRole, MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass) {
         String roleSpecificReadiness = switch (ownerRole) {
             case "BARCAN-TAG-03" -> "UI/design readiness: follow docs/DESIGN_SYSTEM.md for layout, visual states, and interaction evidence. Deliverable is a committed HTML/CSS mockup file - a written brief or description with no mockup file is not acceptable.";
             case "BARCAN-TAG-11" -> "Frontend readiness: implement browser UI according to docs/DESIGN_SYSTEM.md and verify the user-visible interaction.";
             default -> "Role readiness: complete the smallest owner-role result without expanding scope.";
         };
         return "Compiled from English JTBD work item by Eneik Management System. Owner role: "
-                + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. Kano: "
-                + defaultText(slice.kanoClass(), "Must-Be") + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ". "
+                + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. "
+                + "Parent эпик Kano: " + defaultText(epicKanoClass, "(unclassified)")
+                + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ". "
                 + roleSpecificReadiness;
     }
 
@@ -1578,12 +1625,10 @@ public class ProjectFlowService {
                         + "Given the PR is ready, When verification runs, Then the relevant command passes and no generated artifacts are committed.",
                 inferRoleTag(label + " " + wishlistContent, looksLikeUi(wishlistContent)),
                 LeanValue.essential,
-                "Must-Be",
                 "clear",
                 "TOC-CONSTRAINT-DECOMPOSITION",
                 "Escaped defects <= 5%",
-                looksLikeUi(wishlistContent),
-                0
+                looksLikeUi(wishlistContent)
         );
     }
 
@@ -1761,6 +1806,26 @@ public class ProjectFlowService {
     }
 
     // Package-private for the same reason as dispatchBatchedWishlistCompiler above.
+    /**
+     * Ф8 (2026-07-21, operator directive): renders the project's existing эпики (id/title/jtbd only - not
+     * their tasks) as the candidate set the compiler must semantically match new content against before
+     * ever minting a brand-new эпик. Every compile cycle, not just the first, since a follow-up brief
+     * routinely belongs to something the project already has.
+     */
+    private String existingEpicsPromptContext(UUID projectId) {
+        java.util.List<com.eneik.production.models.persistence.FeatureEntity> epics = featureService.listExistingEpics(projectId);
+        if (epics.isEmpty()) {
+            return "(none yet - this project has no эпики/epics so far; every эпик you produce is new)";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (var epic : epics) {
+            sb.append("- existingEpicId=\"").append(epic.getId()).append("\": ")
+                    .append(defaultText(epic.getTitle(), "(untitled)")).append(" - ")
+                    .append(defaultText(epic.getJtbd(), "(no jtbd recorded)")).append("\n");
+        }
+        return sb.toString();
+    }
+
     String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists) {
         StringBuilder briefsSection = new StringBuilder();
         for (int i = 0; i < wishlists.size(); i++) {
@@ -1799,39 +1864,62 @@ public class ProjectFlowService {
             briefsSection.append("\n").append(defaultText(w.getContent(), "(empty brief)")).append("\n\n");
         }
 
+        UUID projectId = wishlists.get(0).getProjectId();
         return """
                 You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose EACH client
-                brief below independently into executable work items. Do NOT implement any product code,
-                do not run builds or tests - this task only produces a decomposition plan.
+                brief below independently. Do NOT implement any product code, do not run builds or tests -
+                this task only produces a decomposition plan.
+
+                TWO-LEVEL decomposition - do this in order, for every brief:
+                STEP 1 - split into эпики (epics): identify how many DISTINCT epics this brief's narrative
+                actually contains (by theme, not by role - "notes CRUD" is one epic even though it needs
+                backend+frontend+data roles; "notes CRUD" + "user profile settings" in the same brief is
+                TWO epics). A brief may produce 1 epic or several - never assume exactly one.
+                STEP 2 - for EACH epic, decide semantically against the EXISTING epics list below: does
+                this epic's narrative genuinely match one already in the project, or is it new work? If it
+                matches, set "existingEpicId" to that epic's exact id and do NOT invent a new title/jtbd/
+                kano/cynefin for it (reuse the match, do not restate it). If nothing matches, set
+                "existingEpicId" to null and provide fresh epic-level title/jtbd/kano/cynefin.
+                STEP 3 - within each epic, decompose into 1-6 task slices with the existing role/graph
+                rules below.
+
+                EXISTING EPICS IN THIS PROJECT (match against these before creating a new one):
+                %s
 
                 Output rules:
                 - All output must be in English, even when the source brief is written in another
                   language. Translate and normalize intent; never copy the raw brief text verbatim into
                   your output.
-                - Produce 1-6 work items PER brief. Each item must have exactly one owner role and one
-                  concrete result. Do not multiply one JTBD across roles.
-                - Every item MUST include a "sourceIndex" field (integer) naming which Brief #N it
-                  addresses. Never mix work from two different briefs into one item.
-                - Do not create QA or integration items unless the brief explicitly asks to verify
+                - Every epic MUST include a "sourceIndex" field (integer) naming which Brief #N it
+                  addresses. Never mix epics from two different briefs into one, and never split one
+                  epic's slices across two different epic blocks.
+                - Do not create QA or integration slices unless the brief explicitly asks to verify
                   existing code, fix merge hygiene, or review an already implemented slice.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
-                  spike/decision item instead of guessing at implementation.
+                  spike/decision slice instead of guessing at implementation.
                 - Some layers are structurally required even if the brief's narrative never explicitly
-                  asks for them: if the feature needs to persist or query structured data, you MUST
-                  include a BARCAN-TAG-08 data/schema item describing that model; if the feature needs
-                  to expose functionality to a frontend, mobile client, or external integration, you
-                  MUST include a BARCAN-TAG-02 API item describing that contract. Infer these from what
-                  the feature needs to actually work end-to-end, not only from what the client's words
-                  explicitly mention.
-                - If the feature needs BOTH a BARCAN-TAG-02 backend item and a BARCAN-TAG-11 frontend
-                  item that will be built in parallel against each other, you MUST also include a
-                  BARCAN-TAG-12 item that defines the shared API contract (endpoints, request/response
+                  asks for them: if the epic needs to persist or query structured data, you MUST include
+                  a BARCAN-TAG-08 data/schema slice describing that model; if the epic needs to expose
+                  functionality to a frontend, mobile client, or external integration, you MUST include a
+                  BARCAN-TAG-02 API slice describing that contract. Infer these from what the epic needs
+                  to actually work end-to-end, not only from what the client's words explicitly mention.
+                - If the epic needs BOTH a BARCAN-TAG-02 backend slice and a BARCAN-TAG-11 frontend slice
+                  that will be built in parallel against each other, you MUST also include a
+                  BARCAN-TAG-12 slice that defines the shared API contract (endpoints, request/response
                   shape, DTOs) they both build against - sequence it before the parallel implementation
-                  items, not alongside them.
-                - Each jtbd must be one sentence: "When..., I want..., so that...".
+                  slices, not alongside them.
+                - Epic-level "jtbd" is customer-facing: "When [the end customer]..., I want..., so
+                  that...". Task-level "jtbd" is scoped to the EPIC, not the customer: "When implementing
+                  [X] for this epic, I want [Y], so that [the epic's outcome/Z] is achieved" - never repeat
+                  the customer-facing sentence verbatim at task level.
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
-                - Classify each item with Kano: Must-Be, Performance, or Attractive.
-                - Classify implementation uncertainty with Cynefin: clear, complicated, complex, or chaotic.
+                - Classify Kano at the EPIC level ONLY (Must-Be, Performance, or Attractive) - do not
+                  repeat it per task slice.
+                - Classify implementation-uncertainty Cynefin at BOTH levels (clear, complicated, complex,
+                  or chaotic) - the epic's overall uncertainty and each task's own may differ.
+                - sixSigmaMetric and tocConstraintRef exist at BOTH levels: the epic's is an aggregate
+                  business metric/bottleneck for the whole epic, each task's is its own narrower technical
+                  one - do not just copy the epic's value onto every task.
                 - Choose roleTag from: BARCAN-TAG-00 integration/merge hygiene only; BARCAN-TAG-01
                   architecture; BARCAN-TAG-02 backend/API; BARCAN-TAG-03 UI/UX design; BARCAN-TAG-04
                   AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing existing
@@ -1839,35 +1927,40 @@ public class ProjectFlowService {
                   data/schema/storage/parsing; BARCAN-TAG-09 delivery/spike/decision; BARCAN-TAG-10
                   compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation; BARCAN-TAG-12
                   API contract definition shared by a parallel backend+frontend pair only.
-                - Set hasUi=true only when the item needs visible browser UI/design work.
-                - Avoid broad platform epics; split them into smaller user/admin/data/API items.
-                - Every item MUST end in a concrete committed file, never only a decision, brief, or
+                - Set hasUi=true only when the slice needs visible browser UI/design work.
+                - Every task slice MUST end in a concrete committed file, never only a decision, brief, or
                   discussion with nothing to show for it. Pick the artifact by domain: engineering work
                   (backend/frontend/data/AI/build/security) -> real source code; copywriting or content
                   work -> a text file containing the actual finished copy, not a description of what the
                   copy should say; marketing or pricing work -> a file containing the actual prices/offer
                   text, not a plan to define them later; UI/UX design work -> the design itself saved as
                   a committed HTML/CSS mockup file, never just a written brief describing a mockup someone
-                  else should make. A BARCAN-TAG-09 delivery/spike/decision item must still end in a
+                  else should make. A BARCAN-TAG-09 delivery/spike/decision slice must still end in a
                   written decision-record file (e.g. a short architecture-decision markdown file) - "we
                   discussed it" is not a deliverable.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
                 `.eneik/task-plan.json`, with EXACTLY this shape and no other files changed:
-                {"slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02",
-                "jtbd": "When..., I want..., so that...",
-                "acceptanceCriteria": "Given..., When..., Then...\\nGiven...",
-                "leanValue": "essential|valuable|waste", "kanoClass": "Must-Be|Performance|Attractive",
+                {"epics": [{"existingEpicId": null, "title": "short English epic title",
+                "jtbd": "When [customer]..., I want..., so that...",
+                "kanoClass": "Must-Be|Performance|Attractive",
                 "cynefinDomain": "clear|complicated|complex|chaotic",
-                "tocConstraintRef": "short bottleneck reference",
-                "sixSigmaMetric": "measurable quality metric", "hasUi": true, "sourceIndex": 0}]}
+                "sixSigmaMetric": "measurable epic-level business metric",
+                "tocConstraintRef": "epic-level bottleneck reference", "sourceIndex": 0,
+                "slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02",
+                "jtbd": "When implementing [X] for this epic, I want [Y], so that [epic outcome]...",
+                "acceptanceCriteria": "Given..., When..., Then...\\nGiven...",
+                "leanValue": "essential|valuable|waste",
+                "cynefinDomain": "clear|complicated|complex|chaotic",
+                "tocConstraintRef": "short task-level bottleneck reference",
+                "sixSigmaMetric": "measurable task-level quality metric", "hasUi": true}]}]}
                 Do not write, modify, or delete any other file.
 
                 %d client brief(s) to decompose below (verbatim, may be in any language - read and
                 understand each yourself, do not rely on it already being in English). Decompose each one
-                separately; tag every resulting item with the matching "sourceIndex":
+                separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
-                """.formatted(wishlists.size(), briefsSection.toString());
+                """.formatted(existingEpicsPromptContext(projectId), wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and

@@ -7,6 +7,8 @@ import com.eneik.production.repositories.WishlistRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -40,5 +42,54 @@ public class FeatureService {
         wishlist.setFeatureId(feature.getId());
         wishlistRepository.save(wishlist);
         return feature.getId();
+    }
+
+    /**
+     * Ф8 (2026-07-21, operator directive): every compile cycle must decide, per эпик, whether it matches
+     * an already-existing эпик in the project or is genuinely new - this list is what gets handed to the
+     * compiler prompt as the candidate set to semantically match against (id/title/jtbd only - enough for
+     * the compiler to judge a narrative match without dumping every task inside each эпик into the prompt).
+     */
+    public List<FeatureEntity> listExistingEpics(UUID projectId) {
+        return featureRepository.findByProjectId(projectId);
+    }
+
+    /**
+     * Resolves an existingEpicId the compiler echoed back against the real project's эпики - never trusts
+     * the string blindly (a hallucinated or cross-project id must fall back to creating a new эпик, not
+     * silently attach real tasks to the wrong one or throw).
+     */
+    public Optional<FeatureEntity> findExistingEpic(UUID projectId, String existingEpicIdRaw) {
+        if (existingEpicIdRaw == null || existingEpicIdRaw.isBlank()) {
+            return Optional.empty();
+        }
+        UUID id;
+        try {
+            id = UUID.fromString(existingEpicIdRaw.trim());
+        } catch (IllegalArgumentException e) {
+            return Optional.empty();
+        }
+        return featureRepository.findById(id).filter(f -> projectId.equals(f.getProjectId()));
+    }
+
+    /**
+     * Mints a brand-new эпик with its own content (title/jtbd/Kano/Cynefin/business metrics) - unlike
+     * {@link #resolveOrCreateFeatureId}, which only ever produces a bare grouping row for callers that
+     * don't have (or don't need) эпик-level content, e.g. the recovery/cheap-compile path which reuses an
+     * already-known featureId instead of classifying one from scratch.
+     */
+    @Transactional
+    public FeatureEntity createFeature(UUID projectId, UUID rootWishlistId, String title, String jtbd,
+            String kanoClass, String cynefinDomain, String sixSigmaMetric, String tocConstraintRef) {
+        FeatureEntity feature = new FeatureEntity();
+        feature.setProjectId(projectId);
+        feature.setRootWishlistId(rootWishlistId);
+        feature.setTitle(title);
+        feature.setJtbd(jtbd);
+        feature.setKanoClass(kanoClass);
+        feature.setCynefinDomain(cynefinDomain);
+        feature.setSixSigmaMetric(sixSigmaMetric);
+        feature.setTocConstraintRef(tocConstraintRef);
+        return featureRepository.save(feature);
     }
 }

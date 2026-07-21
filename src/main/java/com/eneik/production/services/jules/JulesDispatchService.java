@@ -408,30 +408,31 @@ public class JulesDispatchService {
         // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
         // fallback/design-review roles, which never earn one.
         //
-        // Also pinned to the exact account that authenticated the original branch: dispatch selection
-        // (round-robin by capacity, see ProjectFlowService.dispatchQueuedTasks) has no idea a thread
-        // exists and can hand this task to any account with free capacity. A different account has no
-        // verified relationship to a branch it didn't create - cross-account continuation on the Jules
-        // API has never been tested, so the safe default is to skip continuation entirely rather than
-        // guess. The thread itself is untouched either way and stays available for whenever the owning
-        // account comes up again.
+        // Ф7 (2026-07-21, operator directive): used to also require accountId == featureThread.getAccountId()
+        // before allowing continuation, reasoning that cross-account continuation "has never been tested".
+        // Removed after review found nothing to actually justify it: session creation authenticates purely
+        // via the per-account API key (X-Goog-Api-Key) for quota/billing, not git identity - Jules's GitHub
+        // access is repo-level (collaborator invitations sent to every account up front), and this
+        // project's branch protection isn't even active (confirmed live: GitHub returned 403 "Upgrade to
+        // GitHub Pro or make this repository public" when we tried to enable it). Nothing stops a
+        // different account's session from pushing to an existing branch. Worse, the restriction was never
+        // load-bearing anyway - AccountRepository.lockNextJulesAccountWithCapacity (the actual account
+        // picker in ProjectFlowService.dispatchQueuedTasks) has no featureId parameter at all, so it never
+        // preferred the thread's owning account - continuation only ever fired by pure chance when
+        // round-robin happened to land on it. An unverified, uncompensated-for restriction that only ever
+        // reduced how often real continuation happened - removed rather than "fixed" by also making
+        // dispatch thread-aware, since there was never evidence the restriction did anything useful.
         String startingBranch = "main";
         var featureThreadOpt = task.getFeatureId() == null ? java.util.Optional.<com.eneik.production.models.persistence.FeatureThreadEntity>empty()
                 : featureThreadRepository.findByProjectIdAndFeatureId(task.getProject().getId(), task.getFeatureId());
         if (featureThreadOpt.isPresent()) {
             var featureThread = featureThreadOpt.get();
-            if (accountId != null && accountId.equals(featureThread.getAccountId())) {
-                startingBranch = featureThread.getBranchName();
-                roleContextBuilder.append("\n## Continuing Prior Work\n")
-                        .append("This feature has ongoing work on branch ").append(startingBranch)
-                        .append(" (last worked on by role ").append(featureThread.getLastRoleTag() == null ? "unknown" : featureThread.getLastRoleTag()).append("). ")
-                        .append("Build on the existing code, do not start over. Prior summary: ")
-                        .append(featureThread.getSummary() == null ? "(none)" : featureThread.getSummary()).append("\n");
-            } else {
-                log.info("Feature thread exists for feature {} in project {} on branch {}, but this dispatch "
-                                + "went to a different account ({}); skipping continuation, starting fresh from main.",
-                        task.getFeatureId(), task.getProject().getId(), featureThread.getBranchName(), accountId);
-            }
+            startingBranch = featureThread.getBranchName();
+            roleContextBuilder.append("\n## Continuing Prior Work\n")
+                    .append("This feature has ongoing work on branch ").append(startingBranch)
+                    .append(" (last worked on by role ").append(featureThread.getLastRoleTag() == null ? "unknown" : featureThread.getLastRoleTag()).append("). ")
+                    .append("Build on the existing code, do not start over. Prior summary: ")
+                    .append(featureThread.getSummary() == null ? "(none)" : featureThread.getSummary()).append("\n");
         }
         String roleContext = roleContextBuilder.toString();
 
@@ -1696,7 +1697,7 @@ public class JulesDispatchService {
 
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
-        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = prOpt
+        List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics = prOpt
                 .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.headRef()))
                 .orElseGet(List::of);
 
@@ -1704,8 +1705,8 @@ public class JulesDispatchService {
         // - sourceIndex values in Jules's response reference the numbering the prompt actually sent, which
         // covers every wishlist in the batch regardless of whether one of them was independently finished
         // by another session in the meantime.
-        if (isValidCompilerPlan(slices, wishlists.size())) {
-            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlists, slices);
+        if (isValidCompilerPlan(epics, wishlists.size())) {
+            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlists, epics);
             prOpt.ifPresent(pr -> {
                 gitHubPullRequestService.mergeRecordPullRequest(
                         compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks");
@@ -1717,8 +1718,9 @@ public class JulesDispatchService {
                 markSystemTaskDone(compilerTask);
             }
             systemProgressTracker.recordProgress();
-            log.info("{} wishlist(s) compiled by Jules session {} into {} task slice(s)",
-                    wishlists.size(), session.getExternalSessionId(), slices.size());
+            log.info("{} wishlist(s) compiled by Jules session {} into {} эпик(s), {} task slice(s) total",
+                    wishlists.size(), session.getExternalSessionId(), epics.size(),
+                    epics.stream().mapToInt(e -> e.slices().size()).sum());
             return;
         }
 
@@ -1790,9 +1792,9 @@ public class JulesDispatchService {
         if (projectFlowService.isReviewFallbackTask(carrierTask)) {
             return !parseReviewVerdictBatch(carrierTask.getProject(), headRef).isEmpty();
         }
-        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices =
+        List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics =
                 parseCompilerPlan(carrierTask.getProject(), headRef);
-        return !slices.isEmpty();
+        return !epics.isEmpty();
     }
 
     private void completePersistentWorkerCycle(JulesSessionEntity session, TaskEntity carrierTask) {
@@ -1861,15 +1863,16 @@ public class JulesDispatchService {
 
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
-        List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = prOpt
+        List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics = prOpt
                 .map(pr -> parseCompilerPlan(carrierTask.getProject(), pr.headRef()))
                 .orElseGet(List::of);
 
-        if (isValidCompilerPlan(slices, wishlists.size())) {
-            projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, slices);
+        if (isValidCompilerPlan(epics, wishlists.size())) {
+            projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, epics);
             systemProgressTracker.recordProgress();
-            log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} task slice(s) this cycle",
-                    carrierTask.getId(), wishlists.size(), slices.size());
+            log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} эпик(s), {} task slice(s) this cycle",
+                    carrierTask.getId(), wishlists.size(), epics.size(),
+                    epics.stream().mapToInt(e -> e.slices().size()).sum());
             return;
         }
 
@@ -2708,7 +2711,12 @@ public class JulesDispatchService {
         return ids;
     }
 
-    private List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> parseCompilerPlan(
+    /**
+     * Ф8 (2026-07-21, operator directive): parses the two-level {"epics": [{...,"slices": [...]}]} shape -
+     * a wishlist splits into as many эпики (epics) as the product needs, not always exactly one, and every
+     * compile cycle decides per epic whether it matches an existing one (see existingEpicsPromptContext).
+     */
+    private List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> parseCompilerPlan(
             ProjectEntity project, String headRef) {
         Optional<String> content = gitHubPullRequestService.fetchFileContent(project, headRef, WISHLIST_COMPILER_PLAN_PATH);
         if (content.isEmpty()) {
@@ -2717,31 +2725,48 @@ public class JulesDispatchService {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             JsonNode root = mapper.readTree(content.get());
-            JsonNode rawSlices = root.path("slices");
-            if (!rawSlices.isArray()) {
+            JsonNode rawEpics = root.path("epics");
+            if (!rawEpics.isArray()) {
                 return List.of();
             }
-            List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> result = new java.util.ArrayList<>();
-            for (JsonNode slice : rawSlices) {
-                String leanValueRaw = slice.path("leanValue").asText("essential");
-                com.eneik.production.models.persistence.LeanValue leanValue;
-                try {
-                    leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
-                } catch (Exception e) {
-                    leanValue = com.eneik.production.models.persistence.LeanValue.essential;
+            List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> result = new java.util.ArrayList<>();
+            for (JsonNode epicNode : rawEpics) {
+                JsonNode rawSlices = epicNode.path("slices");
+                List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices = new java.util.ArrayList<>();
+                if (rawSlices.isArray()) {
+                    for (JsonNode slice : rawSlices) {
+                        String leanValueRaw = slice.path("leanValue").asText("essential");
+                        com.eneik.production.models.persistence.LeanValue leanValue;
+                        try {
+                            leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
+                        } catch (Exception e) {
+                            leanValue = com.eneik.production.models.persistence.LeanValue.essential;
+                        }
+                        slices.add(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                                slice.path("title").asText(""),
+                                slice.path("jtbd").asText(""),
+                                slice.path("acceptanceCriteria").asText(""),
+                                slice.path("roleTag").asText(""),
+                                leanValue,
+                                slice.path("cynefinDomain").asText("clear"),
+                                slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
+                                slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
+                                slice.path("hasUi").asBoolean(false)
+                        ));
+                    }
                 }
-                result.add(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
-                        slice.path("title").asText(""),
-                        slice.path("jtbd").asText(""),
-                        slice.path("acceptanceCriteria").asText(""),
-                        slice.path("roleTag").asText(""),
-                        leanValue,
-                        slice.path("kanoClass").asText("Must-Be"),
-                        slice.path("cynefinDomain").asText("clear"),
-                        slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
-                        slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
-                        slice.path("hasUi").asBoolean(false),
-                        slice.path("sourceIndex").asInt(0)
+                String existingEpicId = epicNode.path("existingEpicId").isNull() ? null
+                        : epicNode.path("existingEpicId").asText(null);
+                result.add(new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                        existingEpicId == null || existingEpicId.isBlank() ? null : existingEpicId,
+                        epicNode.path("title").asText(""),
+                        epicNode.path("jtbd").asText(""),
+                        epicNode.path("kanoClass").asText("Must-Be"),
+                        epicNode.path("cynefinDomain").asText("clear"),
+                        epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
+                        epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
+                        epicNode.path("sourceIndex").asInt(0),
+                        slices
                 ));
             }
             return result;
@@ -2751,26 +2776,38 @@ public class JulesDispatchService {
         }
     }
 
-    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices, int briefCount) {
-        if (slices.isEmpty() || slices.size() > 6 * Math.max(1, briefCount)) {
+    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
+        if (epics.isEmpty()) {
             return false;
         }
-        for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
-            if (slice.sourceIndex() < 0 || slice.sourceIndex() >= Math.max(1, briefCount)) {
+        int totalSlices = 0;
+        for (com.eneik.production.services.MLPredictionServiceClient.EpicPlan epic : epics) {
+            if (epic.sourceIndex() < 0 || epic.sourceIndex() >= Math.max(1, briefCount)) {
                 return false;
+            }
+            // A new epic (existingEpicId == null) must carry real content - an existing-epic match is
+            // allowed to omit it (the compiler is told to reuse the match, not restate it).
+            if (epic.existingEpicId() == null
+                    && (epic.title() == null || epic.title().isBlank()
+                        || epic.jtbd() == null || epic.jtbd().isBlank())) {
+                return false;
+            }
+            if (epic.slices().isEmpty() || epic.slices().size() > 6) {
+                return false;
+            }
+            totalSlices += epic.slices().size();
+            for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : epic.slices()) {
+                if (slice.title() == null || slice.title().isBlank()
+                        || slice.jtbd() == null || slice.jtbd().isBlank()
+                        || slice.acceptanceCriteria() == null || slice.acceptanceCriteria().isBlank()) {
+                    return false;
+                }
+                if (slice.jtbd().contains("one small verifiable capability completed")) {
+                    return false;
+                }
             }
         }
-        for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : slices) {
-            if (slice.title() == null || slice.title().isBlank()
-                    || slice.jtbd() == null || slice.jtbd().isBlank()
-                    || slice.acceptanceCriteria() == null || slice.acceptanceCriteria().isBlank()) {
-                return false;
-            }
-            if (slice.jtbd().contains("one small verifiable capability completed")) {
-                return false;
-            }
-        }
-        return true;
+        return totalSlices <= 6 * Math.max(1, briefCount);
     }
 
     /**

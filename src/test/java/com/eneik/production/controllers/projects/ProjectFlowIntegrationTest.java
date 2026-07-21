@@ -222,19 +222,23 @@ class ProjectFlowIntegrationTest {
         java.util.List<com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata> slices =
                 java.util.List.of(new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
                         "Portal homepage UI",
-                        "When a visitor opens the portal, I want a visible homepage, so that the product can be inspected.",
+                        "When implementing this for the epic, I want a visible homepage, so that the epic's portal is inspectable.",
                         "Given the homepage loads, When the visitor opens the root page, Then the main portal content is visible.",
                         "BARCAN-TAG-11",
                         com.eneik.production.models.persistence.LeanValue.essential,
-                        "Must-Be",
                         "clear",
                         "TOC-CONSTRAINT-DECOMPOSITION",
                         "Escaped defects <= 5%",
-                        true,
-                        0
+                        true
+                ));
+        java.util.List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics =
+                java.util.List.of(new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                        null, "Portal Homepage",
+                        "When a visitor opens the portal, I want a visible homepage, so that the product can be inspected.",
+                        "Must-Be", "clear", "Escaped defects <= 5%", "TOC-CONSTRAINT-DECOMPOSITION", 0, slices
                 ));
 
-        boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, java.util.List.of(wishlist), slices);
+        boolean created = projectFlowService.buildTaskGraphFromSlices(projectEntity, java.util.List.of(wishlist), epics);
         assertThat(created).isTrue();
 
         // A client-sourced wishlist also triggers a coverage audit dispatch alongside the real UI task
