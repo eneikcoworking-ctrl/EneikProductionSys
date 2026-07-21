@@ -950,7 +950,11 @@ public class ProjectFlowService {
                         ));
                     }
                 }
+                String existingEpicId = epicNode.has("existingEpicId") && !epicNode.path("existingEpicId").isNull()
+                        ? epicNode.path("existingEpicId").asText()
+                        : null;
                 result.add(new MLPredictionServiceClient.EpicPlan(
+                        existingEpicId,
                         epicNode.path("title").asText(""),
                         epicNode.path("jtbd").asText(""),
                         epicNode.path("kanoClass").asText("Must-Be"),
