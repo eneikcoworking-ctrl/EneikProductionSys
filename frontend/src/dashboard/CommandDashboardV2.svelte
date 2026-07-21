@@ -287,25 +287,6 @@
     return `${clamped}%`;
   }
 
-  function getSatisfactionColor(score: number | undefined | null): string {
-    // Clamp before deriving hue/sat/light — an out-of-range score previously produced negative
-    // saturation/lightness, an invalid CSS value that made the browser drop the whole background
-    // declaration and render an invisible bar instead of a merely-wrong color.
-    const val = Math.max(0, Math.min(100, score ?? 0));
-    const hue = 280 - (val / 100.0) * (280 - 140);
-    const sat = 85 - (val / 100.0) * (85 - 75);
-    const light = 45 - (val / 100.0) * (45 - 40);
-    return `hsl(${hue}, ${sat}%, ${light}%)`;
-  }
-
-  function stanceLabel(stance: string): string {
-    return (stance || 'unknown').replace(/_/g, ' ');
-  }
-
-  function pressureLabel(value: string): string {
-    return (value || 'none').replace(/_/g, '-');
-  }
-
   function compactNumber(value: number | undefined | null): string {
     const n = value ?? 0;
     if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
@@ -458,74 +439,12 @@
           </div>
         </div>
 
-        {#if dashboard.emsMetrics.roleDoctrineReadiness}
-          <div class="role-council">
-            <div class="card-header compact">
-              <div>
-                <h2>BARCAN Council Readiness</h2>
-                <p class="ems-note">{dashboard.emsMetrics.roleDoctrineReadiness.interpretation}</p>
-              </div>
-              <span class="council-status {dashboard.emsMetrics.roleDoctrineReadiness.statusLabel}">
-                {dashboard.emsMetrics.roleDoctrineReadiness.statusLabel}
-              </span>
-            </div>
-
-            <div class="council-summary">
-              <div>
-                <span class="label-xs">Readiness</span>
-                <strong>{score(dashboard.emsMetrics.roleDoctrineReadiness.readinessScore)}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Satisfied</span>
-                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.satisfied}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Almost</span>
-                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.almostSatisfied}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Objects</span>
-                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.objects}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Refuses</span>
-                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.refuses}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Unknown</span>
-                <strong>{dashboard.emsMetrics.roleDoctrineReadiness.unknown}</strong>
-              </div>
-            </div>
-
-            <div class="doctrine-grid">
-              {#each dashboard.emsMetrics.roleDoctrineReadiness.roles as role (role.roleTag)}
-                <article class="doctrine-card {role.stance}">
-                  <div class="doctrine-head">
-                    <div>
-                      <span class="role-tag">{role.roleTag}</span>
-                      <h3>{role.doctrineName}</h3>
-                    </div>
-                    <span class="stance-badge {role.stance}">{stanceLabel(role.stance)}</span>
-                  </div>
-                  <p class="doctrine-focus">{role.doctrineFocus}</p>
-                  <div class="doctrine-score">
-                    <div class="bar-track">
-                      <div class="bar-fill doctrine {role.stance}" style={`width: ${scoreWidth(role.satisfactionScore)}; background: ${getSatisfactionColor(role.satisfactionScore)};`}></div>
-                    </div>
-                    <strong>{score(role.satisfactionScore)}</strong>
-                  </div>
-                  <div class="doctrine-meta">
-                    <span>Kano: {pressureLabel(role.kanoPressure)}</span>
-                    <span>Confidence: {percent(role.confidence)}</span>
-                    <span>Source: {role.sourceWishlistPending}/{role.sourceWishlistTotal}</span>
-                    <span>Owner: {role.ownerTasksDone}/{role.ownerTasksTotal}</span>
-                  </div>
-                  <p class="doctrine-objection">{role.topObjection}</p>
-                </article>
-              {/each}
-            </div>
-          </div>
-        {/if}
+        <!-- Ф-followup (2026-07-21, operator directive: "все вкладки должны быть разные"): BARCAN
+             Council Readiness (role doctrine satisfaction) lived here AND on the Metrics tab, reading
+             byte-identical data from the same /dashboard emsMetrics payload - confirmed live via a
+             direct API diff for the same project (readinessScore and all 13 per-role stances matched
+             exactly). Kept the full version on MetricsView.svelte only; this tab keeps the execution-flow
+             and role-telemetry widgets below, which have no Metrics-tab equivalent. -->
 
         <div class="ems-grid">
           <div class="ems-box">

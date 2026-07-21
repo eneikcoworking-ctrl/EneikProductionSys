@@ -85,6 +85,47 @@
     if (sigma >= 3) return 'improve';
     return 'critical';
   }
+
+  // Hand-rolled SVG donut for the task status breakdown - no charting library. Backed by
+  // /api/system-status's "tasks" section, which counts real (non-system/carrier) tasks only
+  // (SystemStatusService.tasks/isSystemMetaTask) per the operator's directive that task-progress views
+  // should never be padded with compiler/audit/review-fallback plumbing.
+  const STATUS_SEGMENTS: { key: string; label: string; color: string }[] = [
+    { key: 'queued', label: 'Queued', color: 'var(--secondary)' },
+    { key: 'claimed', label: 'Claimed', color: 'var(--primary)' },
+    { key: 'in_progress', label: 'In Progress', color: 'var(--accent)' },
+    { key: 'review', label: 'Review', color: 'var(--warning)' },
+    { key: 'done', label: 'Done', color: 'var(--success)' },
+    { key: 'failed', label: 'Failed', color: 'var(--error)' }
+  ];
+
+  const DONUT_RADIUS = 42;
+  const DONUT_CIRCUMFERENCE = 2 * Math.PI * DONUT_RADIUS;
+
+  $: taskStatusCounts = STATUS_SEGMENTS.map(seg => ({
+    ...seg,
+    count: metrics?.tasks?.data?.[seg.key] ?? 0
+  }));
+
+  $: taskStatusTotal = taskStatusCounts.reduce((sum, s) => sum + s.count, 0);
+
+  $: taskStatusArcs = (() => {
+    let cumulative = 0;
+    return taskStatusCounts
+      .filter(s => s.count > 0)
+      .map(s => {
+        const fraction = taskStatusTotal > 0 ? s.count / taskStatusTotal : 0;
+        const length = fraction * DONUT_CIRCUMFERENCE;
+        const arc = {
+          ...s,
+          fraction,
+          dasharray: `${length} ${DONUT_CIRCUMFERENCE - length}`,
+          dashoffset: -cumulative
+        };
+        cumulative += length;
+        return arc;
+      });
+  })();
 </script>
 
 <div class="metrics-root">
@@ -109,6 +150,36 @@
       <section class="metric-card shadow">
         <h3>System Pipeline</h3>
         <p class="card-subtitle">Execution status for tasks and AI-agent sessions</p>
+
+        <div class="task-status-chart">
+          <svg viewBox="0 0 100 100" class="donut" role="img" aria-label="Task status breakdown">
+            <circle cx="50" cy="50" r={DONUT_RADIUS} class="donut-track" />
+            {#each taskStatusArcs as arc (arc.key)}
+              <circle
+                cx="50" cy="50" r={DONUT_RADIUS}
+                class="donut-segment"
+                stroke={arc.color}
+                stroke-dasharray={arc.dasharray}
+                stroke-dashoffset={arc.dashoffset}
+              >
+                <title>{arc.label}: {arc.count} ({percent(arc.fraction)})</title>
+              </circle>
+            {/each}
+          </svg>
+          <div class="donut-center">
+            <strong>{taskStatusTotal}</strong>
+            <span>real tasks</span>
+          </div>
+          <ul class="donut-legend">
+            {#each taskStatusCounts as seg (seg.key)}
+              <li>
+                <span class="legend-dot" style="background: {seg.color}"></span>
+                <span class="legend-label">{seg.label}</span>
+                <span class="legend-count">{seg.count}</span>
+              </li>
+            {/each}
+          </ul>
+        </div>
 
         <div class="stats-subgrid">
           <div class="stat-item">
@@ -353,6 +424,82 @@
     font-size: 12px;
     color: var(--neutral-500);
     margin-bottom: var(--space-6);
+  }
+
+  .task-status-chart {
+    display: flex;
+    align-items: center;
+    gap: var(--space-6);
+    margin-bottom: var(--space-6);
+    flex-wrap: wrap;
+  }
+  .donut {
+    width: 120px;
+    height: 120px;
+    flex-shrink: 0;
+    transform: rotate(-90deg);
+  }
+  .donut-track {
+    fill: none;
+    stroke: var(--neutral-100);
+    stroke-width: 12;
+  }
+  .donut-segment {
+    fill: none;
+    stroke-width: 12;
+    stroke-linecap: butt;
+    transition: stroke-dasharray 0.3s ease;
+  }
+  .task-status-chart {
+    position: relative;
+  }
+  .donut-center {
+    position: absolute;
+    left: 60px;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+  }
+  .donut-center strong {
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--neutral-800);
+    line-height: 1;
+  }
+  .donut-center span {
+    font-size: 10px;
+    color: var(--neutral-500);
+    font-weight: 600;
+  }
+  .donut-legend {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(2, auto);
+    gap: var(--space-2) var(--space-6);
+  }
+  .donut-legend li {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .legend-label {
+    color: var(--neutral-600);
+  }
+  .legend-count {
+    font-weight: 700;
+    color: var(--neutral-800);
   }
 
   .stats-subgrid {
