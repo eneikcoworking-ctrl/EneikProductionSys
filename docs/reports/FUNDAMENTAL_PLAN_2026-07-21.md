@@ -81,7 +81,18 @@ Recovery-эскалация (`AutoMergeService`, 3 попытки исчерпа
 
 **Сборка подтверждена зелёной** (после одной существенной коррекции): первая полная сборка реально упала (4 теста), уведомление фонового таска ошибочно показало "exit code 0" (код возврата был замаскирован пайпом через `tail`) — поймано прямой проверкой текста вывода на `[ERROR]`, а не доверием к уведомлению. Причина падения: featureId-join в Д4 требовал featureId у обеих сторон, а фикстуры `TaskClaimServiceTest`/`GateOrchestratorIntegrationTest` (`markProjectPastBuildPhase`) создают wishlist/task напрямую, без `featureId` — легитимный старый путь, не артефакт теста. Исправлено: featureId-join сделан **аддитивным** к исходному sourceWishlistId-join, а не заменой его. Пересборка подтверждена зелёной по отсутствию `[ERROR]` в выводе `mvn -q package` (тихий режим не печатает ничего при успехе).
 
-Не сделано в рамках этого прохода (осознанно отложено, не забыто): P1/P2 из версии 1 плана (обобщение "principle of charity" на реальные implementer-таски, маркировка Gemini-нарратива как гипотезы, приоритет реального ревью, mapExternalStatus FAILED/CANCELLED, детектор дублей-заголовков) — следующий проход, если останется время в рамках суток.
+## 3.1 P1/P2 — реализовано (операторское "вноси всё, доверие полное")
+
+| # | Пункт | Статус |
+|---|---|---|
+| P1.1 | Обобщить "principle of charity" на реальные implementer-таски | Исправлено: `GitHubPullRequestService.latestCommitTime` + `JulesDispatchService.hasNewProgressOnGitHub`, проверяется в `forceUnblockOverflowedSessions` перед `closeLoopAndCreateFollowUps` — новый коммит после `lastProgressAt` = реальный прогресс, сессия не закрывается |
+| P1.2 | Gemini-нарратив помечен как непроверенная гипотеза | Исправлено: префикс `[UNVERIFIED - Gemini inference...]` в `closureReason`/dialogue log (НЕ в тексте, уходящем в recovery-вишлист — там должен остаться чистый actionable текст) |
+| P2.1 | Приоритет реального ревью над системной бюрократией | Исследовано и исправлено: компилятор/falsification уже изолированы на резервном аккаунте (не конкурируют); review-fallback/design-review/coverage-audit делят общий пул с реальными задачами БЕЗ приоритета — `priority` по умолчанию 0 у всех, зависит только от TOC-bottleneck совпадения. Исправлено переупорядочиванием очереди в `dispatchQueuedTasks`: системные housekeeping-таски теперь всегда обрабатываются ПОСЛЕ всех остальных при конкуренции за ёмкость аккаунтов — структурно, не по случайности |
+| P2.2 | `mapExternalStatus` схлопывает FAILED/CANCELLED | Исправлено: `CANCELLED` → отдельный `cancelled_externally`, обновлены `isTerminalLocallyClosed`/`isTerminalSessionStatus` и тест |
+| P2.3 | Детектор дублей сравнивает шаблонные заголовки | Исправлено: сравнение по `payload.slice_title`/`description` вместо `task.title` |
+| P2.4 | Kano-эвристики не используют структурированный эпик-Kano | Частично: `TechnicalLeadCompiler.createAndSaveTask` теперь предпочитает реальный `FeatureEntity.kanoClass` через `featureService.findExistingEpic`, эвристика — только fallback. `CommandDashboardService.classifyKano` **сознательно не тронут** — его данные (`List<Map<String,Object>>`) не содержат `feature_id` вообще, откуда они берутся не прослежено; чтобы не спешить с непроверенным изменением в незнакомом потоке данных, оставлено явным follow-up |
+
+Сборка подтверждена зелёной (прямая проверка `[ERROR]` в логе, не по уведомлению).
 
 ## 4. Что НЕ трогаем повторно (подтверждено ранее, не баг)
 - Falsification-гейт 90% — работает верно, корень в мержах, не в гейте.

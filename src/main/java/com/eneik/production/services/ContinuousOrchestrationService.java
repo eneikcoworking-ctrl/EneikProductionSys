@@ -140,27 +140,53 @@ public class ContinuousOrchestrationService {
      * skimming PR titles, but invisible to every process-activity metric this system had (dispatch
      * counts, merge counts, stall detection). Direct, cheap, catches the exact class of regression.
      */
+    // Ф-followup (2026-07-21, operator directive): TaskEntity.getTitle() is a generic role-template string
+    // ("API Slice" for any BARCAN-TAG-02 slice, "UI Slice" for any BARCAN-TAG-11 slice) - confirmed live to
+    // false-positive on genuinely distinct work that just happens to share a role (3 unrelated tasks - an
+    // original CRUD endpoint slice, an unrelated auth-endpoints follow-up, and a dead-code cleanup - all
+    // flagged as "duplicates" purely because all three were BARCAN-TAG-02). Use the actual distinguishing
+    // content instead: payload.slice_title carries the real per-slice semantic content ("Internal work
+    // item N from wishlist X: <the real JTBD-derived description>"), falling back to the full description
+    // for any task that didn't go through the epic-slice compiler path.
     private void checkForDuplicateTaskTitles(ProjectEntity project) {
         try {
             List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
                     .stream()
                     .limit(30)
                     .toList();
-            java.util.Map<String, Long> titleCounts = recentTasks.stream()
-                    .map(TaskEntity::getTitle)
-                    .filter(title -> title != null && !title.isBlank())
-                    .collect(java.util.stream.Collectors.groupingBy(title -> title, java.util.stream.Collectors.counting()));
-            titleCounts.forEach((title, count) -> {
+            java.util.Map<String, Long> contentCounts = recentTasks.stream()
+                    .map(this::duplicateDetectionKey)
+                    .filter(key -> key != null && !key.isBlank())
+                    .collect(java.util.stream.Collectors.groupingBy(key -> key, java.util.stream.Collectors.counting()));
+            contentCounts.forEach((content, count) -> {
                 if (count >= 3) {
-                    log.error("DUPLICATE TASK TITLES: '{}' appears {} times among the last {} tasks for project {} - "
-                                    + "likely sign of a generation fallback producing generic/fabricated content instead of "
-                                    + "real derived work. Investigate before trusting recent throughput numbers.",
-                            title, count, recentTasks.size(), project.getName());
+                    log.error("DUPLICATE TASK CONTENT: a task with this exact content appears {} times among the "
+                                    + "last {} tasks for project {} - likely sign of a generation fallback producing "
+                                    + "generic/fabricated content instead of real derived work. Content: '{}'. "
+                                    + "Investigate before trusting recent throughput numbers.",
+                            count, recentTasks.size(), project.getName(), preview(content));
                 }
             });
         } catch (Exception e) {
             log.error("Continuous Orchestration: Failed to run duplicate-title check for project {}", project.getId(), e);
         }
+    }
+
+    private String duplicateDetectionKey(TaskEntity task) {
+        if (task.getPayload() != null) {
+            String sliceTitle = task.getPayload().path("slice_title").asText("");
+            if (!sliceTitle.isBlank()) {
+                return sliceTitle;
+            }
+        }
+        return task.getDescription();
+    }
+
+    private String preview(String text) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= 200 ? text : text.substring(0, 200) + "...";
     }
 
     /**

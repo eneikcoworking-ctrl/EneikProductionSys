@@ -2381,6 +2381,23 @@ public class ProjectFlowService {
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
 
+        // Ф-followup (2026-07-21, operator directive - the night's core complaint): review-fallback/
+        // design-review/coverage-audit tasks share the SAME general account pool as real implementer work
+        // (dispatchToGeneralPool, see below), with no priority separation from it - `priority` defaults to
+        // 0 for both and is otherwise driven entirely by TOC-bottleneck matching (BottleneckAwarePriorityService),
+        // which has no concept of "real client work vs. system housekeeping" at all. Confirmed by reading
+        // every TaskEntity.setPriority(...) call site: system/carrier tasks never get one, so they only
+        // ever outrank or tie with real work by coincidence. Rather than hand-tune priority numbers at 7
+        // different task-creation sites (fragile, easy to silently regress), reorder THIS list so every
+        // non-housekeeping task is tried for account capacity first - housekeeping only gets whatever
+        // capacity is left over, every single cycle, structurally, not by chance. Compiler/falsification
+        // tasks aren't included here - they're already isolated on their own reserved account, never
+        // competing for the general pool at all (see the dispatchCompilerTask branch below).
+        queuedTasks = queuedTasks.stream()
+                .sorted(java.util.Comparator.comparing(
+                        (TaskEntity t) -> isReviewFallbackTask(t) || isDesignReviewTask(t) || isCoverageAuditTask(t)))
+                .toList();
+
         for (TaskEntity task : queuedTasks) {
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
             if (existingSession.isPresent() && existingSession.get().getAccountId() != null) {

@@ -89,7 +89,7 @@ class JulesDispatchServiceTest {
         assertEquals("running", julesDispatchService.mapExternalStatus("RUNNING"));
         assertEquals("pr_opened", julesDispatchService.mapExternalStatus("SUCCEEDED"));
         assertEquals("failed", julesDispatchService.mapExternalStatus("FAILED"));
-        assertEquals("failed", julesDispatchService.mapExternalStatus("CANCELLED"));
+        assertEquals("cancelled_externally", julesDispatchService.mapExternalStatus("CANCELLED"));
         assertEquals("running", julesDispatchService.mapExternalStatus("UNKNOWN"));
         assertEquals("running", julesDispatchService.mapExternalStatus(null));
     }

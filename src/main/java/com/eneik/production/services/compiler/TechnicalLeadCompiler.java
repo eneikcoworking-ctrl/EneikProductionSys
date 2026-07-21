@@ -172,7 +172,18 @@ public class TechnicalLeadCompiler {
         String joinedRoles = String.join(", ", extractedRoles);
 
         String cynefin = cynefinDomain(wishlist);
-        String kano = kanoClass(wishlist, extractedRoles);
+        // Ф-followup (2026-07-21, operator directive): prefer the real, structured эпик-level Kano
+        // (FeatureEntity.kanoClass, set explicitly by the compiler - see ProjectFlowService.
+        // resolveEpicFeatureId) over the text-keyword heuristic below, when this task's wishlist actually
+        // has a featureId. Falls back to the heuristic only for wishlists with no эпик content recorded
+        // yet (e.g. older data, or the cheap/recovery compile path that reuses a featureId without
+        // reloading its content) - never fails outright.
+        String kano = wishlist.getFeatureId() != null
+                ? featureService.findExistingEpic(project.getId(), wishlist.getFeatureId().toString())
+                        .map(f -> f.getKanoClass())
+                        .filter(k -> k != null && !k.isBlank())
+                        .orElseGet(() -> kanoClass(wishlist, extractedRoles))
+                : kanoClass(wishlist, extractedRoles);
         String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal));
         task.setTitle(shortTitle);
         task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin));

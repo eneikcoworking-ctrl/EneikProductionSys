@@ -37,6 +37,55 @@ public class GitHubPullRequestService {
         this.httpClient = HttpClient.newHttpClient();
     }
 
+    /**
+     * Ф-followup (2026-07-21, operator directive): generalizes the persistent-worker "principle of
+     * charity" check (already-parseable result file = real progress) to real implementer sessions, which
+     * have no single result file to check - the closest analogous ground truth is "did a new commit land
+     * on this branch since our own tracking last saw progress". Confirmed live: a session can push a real,
+     * complete, working commit while Jules's own external API keeps reporting RUNNING indefinitely - our
+     * lastProgressAt only advances on a status transition, so genuine progress like this is otherwise
+     * invisible before a force-unblock circuit breaker closes the session as "stalled".
+     */
+    public Optional<java.time.Instant> latestCommitTime(ProjectEntity project, String branch) {
+        if (project == null || branch == null || branch.isBlank()) {
+            return Optional.empty();
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/commits?sha=" + encode(branch) + "&per_page=1";
+            HttpRequest request = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("GitHub latest-commit lookup failed for {}/{} branch={}: status={}",
+                        repoRef.owner(), repoRef.repo(), branch, response.statusCode());
+                return Optional.empty();
+            }
+            JsonNode commits = objectMapper.readTree(response.body());
+            if (!commits.isArray() || commits.isEmpty()) {
+                return Optional.empty();
+            }
+            String dateText = commits.get(0).path("commit").path("committer").path("date").asText("");
+            if (dateText.isBlank()) {
+                return Optional.empty();
+            }
+            return Optional.of(java.time.Instant.parse(dateText));
+        } catch (Exception e) {
+            log.warn("Could not fetch latest commit time for branch {} in project {}: {}", branch, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
     public Optional<GitHubPullRequest> findOpenPullRequestBySession(ProjectEntity project, String externalSessionId) {
         String sessionToken = sessionToken(externalSessionId);
         if (project == null || sessionToken.isBlank()) {

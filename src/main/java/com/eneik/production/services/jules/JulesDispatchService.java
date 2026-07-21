@@ -523,9 +523,9 @@ public class JulesDispatchService {
     }
 
 
-    @Transactional
     private static boolean isTerminalSessionStatus(String status) {
-        return "loop_closed".equals(status) || "cancelled".equals(status) || "closed_no_code".equals(status);
+        return "loop_closed".equals(status) || "cancelled".equals(status) || "closed_no_code".equals(status)
+                || "cancelled_externally".equals(status);
     }
 
     public JulesSessionEntity pollStatus(UUID sessionId) {
@@ -1076,6 +1076,7 @@ public class JulesDispatchService {
     private boolean isTerminalLocallyClosed(JulesSessionEntity session) {
         return "loop_closed".equals(session.getStatus())
                 || "failed".equals(session.getStatus())
+                || "cancelled_externally".equals(session.getStatus())
                 || "closed".equals(session.getStatus());
     }
 
@@ -1086,16 +1087,25 @@ public class JulesDispatchService {
                                              String closeReason) {
         LoopDiagnosis diagnosis = diagnoseLoop(task, latestQuestion, closeReason);
         String geminiAnalysis = geminiLoopAnalysis(task, latestQuestion, responseHistory, diagnosis, closeReason);
+        // Ф-followup (2026-07-21, operator directive): this text is Gemini's own INFERENCE from limited
+        // signal (the question/response history it was given), not a verified fact - confirmed live
+        // tonight that repeating it as ground truth produced a false report ("UI Slice stopped making
+        // objective progress") that directly contradicted hard evidence (a complete, working PR had
+        // already been committed hours earlier). Anyone reading closureReason/the dialogue log later - a
+        // future me included - must treat this block as a hypothesis to verify against GitHub/DB state,
+        // never as settled fact on its own.
+        String taggedGeminiAnalysis = "[UNVERIFIED - Gemini inference from limited signal, not a checked "
+                + "fact; verify against GitHub/DB state before treating as true]\n" + geminiAnalysis;
 
         session.setStatus("loop_closed");
         session.setClosedAt(Instant.now());
-        session.setClosureReason(closeReason + "\n\n" + diagnosis.toText() + "\n\nGemini analysis:\n" + geminiAnalysis);
+        session.setClosureReason(closeReason + "\n\n" + diagnosis.toText() + "\n\nGemini analysis:\n" + taggedGeminiAnalysis);
         julesSessionRepository.save(session);
 
         claimService.closeTaskAsBlocked(task.getId(), "Jules circuit breaker: " + closeReason);
         createCircuitBreakerWishlist(session, task, latestQuestion, diagnosis, geminiAnalysis, closeReason);
         saveJulesDialogueLog(task.getId(), session.getExternalSessionId(),
-                diagnosis.toText() + "\n\nGemini analysis:\n" + geminiAnalysis,
+                diagnosis.toText() + "\n\nGemini analysis:\n" + taggedGeminiAnalysis,
                 "Jules loop closed by Eneik circuit breaker: " + closeReason);
         log.warn("Closed Jules session {} for task {} due to {}. Follow-up wishlist generated.",
                 session.getExternalSessionId(), task.getId(), closeReason);
@@ -1795,6 +1805,23 @@ public class JulesDispatchService {
         List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics =
                 parseCompilerPlan(carrierTask.getProject(), headRef);
         return !epics.isEmpty();
+    }
+
+    /**
+     * Real-implementer-task counterpart of {@link #persistentWorkerHasReadyAnswer} - there's no single
+     * result file to check for a normal task, so the ground truth is simpler: has a commit actually landed
+     * on this session's branch after the point our own tracking last saw progress. A real, positive answer
+     * here means the session was NOT actually silent, our lastProgressAt bookkeeping just missed it.
+     */
+    private boolean hasNewProgressOnGitHub(JulesSessionEntity session, TaskEntity task, Instant lastProgress) {
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(task.getProject(), session.getExternalSessionId());
+        if (prOpt.isEmpty()) {
+            return false;
+        }
+        return gitHubPullRequestService.latestCommitTime(task.getProject(), prOpt.get().headRef())
+                .map(commitTime -> commitTime.isAfter(lastProgress))
+                .orElse(false);
     }
 
     private void completePersistentWorkerCycle(JulesSessionEntity session, TaskEntity carrierTask) {
@@ -2824,11 +2851,20 @@ public class JulesDispatchService {
     public String mapExternalStatus(String externalStatus) {
         if (externalStatus == null) return "running";
 
+        // Ф-followup (2026-07-21, operator directive): FAILED and CANCELLED used to collapse into one
+        // "failed" string, discarding which one Jules actually reported - confirmed live to cost real
+        // investigation time earlier tonight (had to dig through DB fields and this exact switch statement
+        // just to determine a session's `failed` status wasn't from our own circuit breakers). FAILED means
+        // Jules's own agent gave up; CANCELLED means something (Jules platform-side, quota, etc.) stopped
+        // the session externally - different causes, different follow-up. Kept as two distinct local
+        // status strings instead of adding a raw-status column, since the one place that checks for
+        // "failed" (isTerminalLocallyClosed) is easy to extend to also recognize the new value.
         return switch (externalStatus.toUpperCase()) {
             case "QUEUED" -> "queued";
             case "RUNNING" -> "running";
             case "SUCCEEDED" -> "pr_opened";
-            case "FAILED", "CANCELLED" -> "failed";
+            case "FAILED" -> "failed";
+            case "CANCELLED" -> "cancelled_externally";
             case "STUCK" -> "stuck";
             default -> "running"; // Default to running if unknown but alive
         };
@@ -3094,6 +3130,25 @@ public class JulesDispatchService {
             }
 
             if (session.getForcedUnblockAttempts() >= forcedUnblockMaxAttempts) {
+                // Principle of charity, generalized (2026-07-21, operator directive): the persistent-worker
+                // check above has a single result file to look for; a real implementer session doesn't -
+                // the closest ground truth is "did a new commit land on the branch since we last saw
+                // progress". Confirmed live (UI Slice, same night) that a session can push real, complete,
+                // working code while Jules's own API keeps reporting a non-terminal status forever - our
+                // lastProgressAt never moves in that case, so the session looks stalled right up until this
+                // exact close call, even though real work already landed. Check before assuming silence
+                // means nothing happened.
+                if (hasNewProgressOnGitHub(session, task, lastProgress)) {
+                    log.info("Task {} session {} looked stalled (no status transition for {}+ min) but a new "
+                                    + "commit landed on its branch after lastProgressAt - treating as real progress "
+                                    + "instead of closing (principle of charity), not spending another force-unblock "
+                                    + "attempt.", task.getId(), session.getExternalSessionId(), stuckThresholdMinutes);
+                    session.setLastProgressAt(Instant.now());
+                    session.setForcedUnblockAttempts(0);
+                    session.setBlindCycleCount(0);
+                    julesSessionRepository.save(session);
+                    continue;
+                }
                 List<JulesActivityResponseEntity> responseHistory =
                         julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
                 String stallReason = revisingOrStuck && session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold
