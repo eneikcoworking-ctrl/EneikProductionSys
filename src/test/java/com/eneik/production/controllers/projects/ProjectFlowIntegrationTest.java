@@ -123,7 +123,7 @@ class ProjectFlowIntegrationTest {
         globalAccount.setStatus(com.eneik.production.models.persistence.AccountStatus.idle);
         accountRepository.save(globalAccount);
 
-        com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Make the website beautiful and add backend API for leads");
+        com.eneik.production.dto.WishlistRequestDto req = new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Make the website beautiful and add backend API for leads");
         ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/wishlist",
                 req,
@@ -355,7 +355,7 @@ class ProjectFlowIntegrationTest {
 
         ResponseEntity<com.eneik.production.dto.WishlistResponseDto> wish = restTemplate.postForEntity(
                 "/api/projects/" + project.id() + "/wishlist",
-                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, "BARCAN-TAG-00", "Fix finding 1"),
+                new com.eneik.production.dto.WishlistRequestDto(null, com.eneik.production.models.persistence.WishlistSource.client, null, "Fix finding 1"),
                 com.eneik.production.dto.WishlistResponseDto.class
         );
         assertThat(wish.getStatusCode()).isEqualTo(HttpStatus.OK);

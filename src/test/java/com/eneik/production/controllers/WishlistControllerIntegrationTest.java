@@ -1,11 +1,12 @@
 package com.eneik.production.controllers;
 
 import com.eneik.production.dto.WishlistRequestDto;
+import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.WishlistRepository;
-import com.eneik.production.services.WishlistService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -34,19 +35,32 @@ public class WishlistControllerIntegrationTest {
     private WishlistRepository wishlistRepository;
 
     @Autowired
+    private ProjectRepository projectRepository;
+
+    @Autowired
     private ObjectMapper objectMapper;
 
-    private static final UUID VALID_PROJECT_ID = WishlistService.VALID_PROJECT_ID;
+    // Ф-followup (2026-07-21): WishlistController now delegates creation to
+    // ProjectFlowService.addWishlistItem (see WishlistController), which requires a real, active project
+    // row - the old WishlistService.VALID_PROJECT_ID placeholder ("any UUID equal to this magic constant
+    // is valid, even with no project row") no longer applies now that both wishlist-creation endpoints
+    // share one implementation.
+    private UUID validProjectId;
 
     @BeforeEach
     void setUp() {
         wishlistRepository.deleteAll();
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Wishlist Test Project");
+        project.setSlug("wishlist-test-project-" + UUID.randomUUID());
+        project.setRepositoryName("wishlist-test-project");
+        validProjectId = projectRepository.save(project).getId();
     }
 
     @Test
     void createWishlist_Client_Success() throws Exception {
         WishlistRequestDto request = new WishlistRequestDto(
-                VALID_PROJECT_ID,
+                validProjectId,
                 WishlistSource.client,
                 null,
                 "Client feedback"
@@ -57,7 +71,7 @@ public class WishlistControllerIntegrationTest {
                 .content(objectMapper.writeValueAsString(request)))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.id").exists())
-                .andExpect(jsonPath("$.projectId").value(VALID_PROJECT_ID.toString()))
+                .andExpect(jsonPath("$.projectId").value(validProjectId.toString()))
                 .andExpect(jsonPath("$.source").value("client"))
                 .andExpect(jsonPath("$.sourceRoleTag").isEmpty())
                 .andExpect(jsonPath("$.content").value("Client feedback"))
@@ -67,7 +81,7 @@ public class WishlistControllerIntegrationTest {
     @Test
     void createWishlist_Role_Success() throws Exception {
         WishlistRequestDto request = new WishlistRequestDto(
-                VALID_PROJECT_ID,
+                validProjectId,
                 WishlistSource.role,
                 "BARCAN-TAG-09",
                 "Role recommendation"
@@ -83,7 +97,7 @@ public class WishlistControllerIntegrationTest {
     @Test
     void createWishlist_Role_MissingTag_Failure() throws Exception {
         WishlistRequestDto request = new WishlistRequestDto(
-                VALID_PROJECT_ID,
+                validProjectId,
                 WishlistSource.role,
                 null,
                 "Role recommendation"
@@ -98,7 +112,7 @@ public class WishlistControllerIntegrationTest {
     @Test
     void createWishlist_Client_WithTag_Failure() throws Exception {
         WishlistRequestDto request = new WishlistRequestDto(
-                VALID_PROJECT_ID,
+                validProjectId,
                 WishlistSource.client,
                 "BARCAN-TAG-09",
                 "Client feedback"
@@ -120,15 +134,17 @@ public class WishlistControllerIntegrationTest {
                 "Feedback for non-existent project"
         );
 
+        // Now routed through ProjectFlowService.addWishlistItem (same as POST /projects/{id}/wishlist),
+        // which reports a missing project as IllegalArgumentException -> 400, not 404.
         mockMvc.perform(post("/api/wishlist")
                 .contentType(MediaType.APPLICATION_JSON)
                 .content(objectMapper.writeValueAsString(request)))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isBadRequest());
     }
 
     @Test
     void listByProject_FilterStatus() throws Exception {
-        UUID projectId = VALID_PROJECT_ID;
+        UUID projectId = validProjectId;
 
         WishlistEntity item1 = new WishlistEntity();
         item1.setProjectId(projectId);
@@ -162,7 +178,7 @@ public class WishlistControllerIntegrationTest {
     @Test
     void dismissWishlist_Success() throws Exception {
         WishlistEntity entity = new WishlistEntity();
-        entity.setProjectId(VALID_PROJECT_ID);
+        entity.setProjectId(validProjectId);
         entity.setSource(WishlistSource.client);
         entity.setContent("To be dismissed");
         entity.setStatus(WishlistStatus.pending);

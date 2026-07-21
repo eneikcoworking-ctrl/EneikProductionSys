@@ -79,6 +79,11 @@ public class AccountController {
                         account.setGithubUsername((String) updates.get("githubUsername"));
                     }
                     if (updates.containsKey("capabilities")) {
+                        // Intentional, not a bug: every account is a generalist across all 13 BARCAN
+                        // roles by design - the frontend's capabilities field is disabled/hardcoded to
+                        // "All 13 BARCAN roles" (AdminDashboard.svelte) and there is no per-account
+                        // restriction UI anywhere. Whatever value the client sends is ignored in favor
+                        // of the canonical set, same as the create() endpoint above.
                         account.setCapabilities(JulesRoleCapabilities.canonicalCapabilities());
                     }
                     if (updates.containsKey("apiKey")) {
