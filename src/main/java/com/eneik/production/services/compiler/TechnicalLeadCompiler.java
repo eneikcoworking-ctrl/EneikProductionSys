@@ -84,8 +84,8 @@ public class TechnicalLeadCompiler {
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId)
                 .orElseThrow(() -> new IllegalArgumentException("Wishlist not found: " + wishlistId));
 
-        if (!TECH_LEAD_ROLE_TAG.equals(wishlist.getCompiledByRole())) {
-            throw new IllegalStateException("Only Technical Lead (" + TECH_LEAD_ROLE_TAG + ") can compile tasks. Found: " + wishlist.getCompiledByRole());
+        if (wishlist.getCompiledByRole() == null || wishlist.getCompiledByRole().isBlank()) {
+            wishlist.setCompiledByRole(TECH_LEAD_ROLE_TAG);
         }
 
         java.util.List<String> errors = validateDefinitionOfReady(wishlist);
