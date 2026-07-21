@@ -20,8 +20,9 @@ Recovery-эскалация (`AutoMergeService`, 3 попытки исчерпа
 `computeForProject` матчит `derivedTasks` по буквальному `sourceWishlistId` оригинального client-вишлиста. Recovery-таск живёт под **новым** `source_wishlist_id` — даже если он смержится, `mergedDeliverables` для оригинала не увеличится никогда. И P0.3-гейт, и falsification 90%-гейт могут остаться заблокированы навечно, даже когда работа фактически сделана через recovery.
 **Фикс проверен на данных модели**: `AutoMergeService`'s recovery-вишлист явно наследует `featureId` (`recovery.setFeatureId(task.getFeatureId())`), а `FeatureService.resolveOrCreateFeatureId` **сохраняет** уже выставленный `featureId`, не создаёт новый (прочитал код построчно). Значит recovery-таск гарантированно окажется под тем же `featureId`, что и оригинальный client-deliverable — можно достоверно считать "смержено" по принадлежности к фиче, а не по буквальному wishlistId.
 
-### Ф6 — новая, ранее не пройденная комбинация путей в AutoMergeService rebase-фиксе — НЕ ПОДТВЕРЖДЕНО, требует проверки
-Раньше `dispatch()` после `cancelSession(...)` никогда реально не выполнялся (блокировался старой сессией). Теперь выполняется впервые. `cancelSession` → `claimService.closeTaskAsFailed(...)`, затем код руками ставит `task.status=claimed` и напрямую зовёт `dispatch()` без `claimSpecificTask` перед этим (в отличие от `dispatchQueuedTasks`, который всегда делает claim перед dispatch). Не факт, что `dispatch()` корректно работает без свежего claim сразу после `closeTaskAsFailed` — нужно прочитать оба метода до конца и решить, нужен ли явный re-claim.
+### Ф6 — новая, ранее не пройденная комбинация путей в AutoMergeService rebase-фиксе — ПОДТВЕРЖДЕНО И ИСПРАВЛЕНО
+Прочитал `closeTaskAsFailed` и `claimSpecificTask` полностью. `closeTaskAsFailed` освобождает старый `ClaimEntity` (`releasedAt=now`). Код rebase-retry ставил `task.status=claimed` напрямую и звал `dispatch()` **без** `claimSpecificTask` — то есть ни один новый `ClaimEntity` никогда не создавался. `handlePrOpenedWorkflow`'ин implementer-ветка проверяет `claimService.hasActiveClaim(taskId)` (= есть ли `ClaimEntity` с `releasedAt IS NULL`) перед вызовом `claimService.complete(...)` — без активного claim это всегда `false`, значит даже полностью успешный ребейз произвёл бы реальный PR, который наш же пайплайн никогда не смог бы довести дальше `claimed`. Этот путь вообще ни разу не исполнялся до вчерашнего фикса (`dispatch()` всегда блокировался старой сессией) — баг был невидим, потому что код никогда не доходил до этой точки.
+**Исправлено**: `task.status` теперь ставится в `queued` (не `claimed` напрямую — `claimSpecificTask`'ин лок-запрос требует именно `queued`), затем вызывается `claimService.claimSpecificTask(taskId, accountId)` (создаёт `ClaimEntity`, сам переводит в `claimed`), и уже обновлённый таск передаётся в `dispatch()` — та же последовательность, что везде в `dispatchQueuedTasks`.
 
 ### Ф7-Ф9 (без изменений с прошлого прохода, не переисследовались повторно в этом проходе)
 - Паттерн A не обобщён на реальные implementer-таски (`closeLoopAndCreateFollowUps`).
@@ -36,8 +37,8 @@ Recovery-эскалация (`AutoMergeService`, 3 попытки исчерпа
 ### Д2 — общий "genuinely merged" хелпер вместо `TaskStatus.done`
 Вынести `isTaskMerged(taskId)` из `ClientDeliverableReadinessService` в переиспользуемое место (например статический метод в `TaskRepository` или отдельный маленький сервис), использовать его и в `dispatchQueuedTasks`'ином `dependsOn`-чеке, и в readiness-сервисе. Один источник истины "смержено", а не два разных определения "готовности" в двух местах.
 
-### Д3 — repoint `dependsOn` при эскалации/заброшенности
-Добавить `TaskRepository.findByDependsOnId(UUID)`. В обоих местах, где таск окончательно "бросается" (AutoMergeService — 3 попытки исчерпаны; `closeLoopAndCreateFollowUps` — force-unblock исчерпан) — после создания replacement-таска (recovery wishlist → task, или generic follow-up) найти все даунстрим-таски с `dependsOn == заброшенный.id` и перепривязать `dependsOn` на новый replacement, как только тот появится. Если replacement появляется не сразу (сначала wishlist, потом компиляция) — оставить временный маркер (например `dependsOn` остаётся, но чек в Д2 трактует "заброшенный + есть registered replacement" как "ждать replacement", не как вечный queued без объяснения) — как минимум сделать состояние видимым в логах/полях, не тихим.
+### Д3 — repoint `dependsOn` при эскалации/заброшенности — РЕДИЗАЙН при реализации
+Исходная идея (перепривязать FK `dependsOn` на новый replacement-таск в момент эскалации) оказалась физически невозможной: в момент эскалации существует только recovery-`WishlistEntity`, реального replacement-taskId ещё нет (он появится позже, асинхронно, когда `tryCompileWishlistCheaply` его скомпилирует). Вместо перепривязки FK — сделан self-healing чек `ClientDeliverableReadinessService.isDependencySatisfied(TaskEntity dependency)`: зависимость считается удовлетворённой, если она сама смержена (`isTaskMerged`), ИЛИ если она `TaskStatus.failed` (заброшена) и существует ЛЮБОЙ другой таск с тем же `featureId` и той же ролью, который смержен. Recovery-wishlist гарантированно наследует и `featureId`, и роль оригинала (проверено в коде), так что это работает без какой-либо явной перепривязки, и естественно проходит через цепочку из нескольких эскалаций подряд (A заброшен → B тоже заброшен → C смержен — чек для A сразу найдёт C, не только B). Использован в `dispatchQueuedTasks` вместо прямого `isTaskMerged`.
 
 ### Д4 — readiness по `featureId`, не по буквальному `sourceWishlistId`
 В `ClientDeliverableReadinessService.computeForProject`: для каждого client-deliverable вишлиста брать его `featureId` (через `resolveOrCreateFeatureId` или уже сохранённое значение), считать deliverable смерженным, если **любой** таск с этим `featureId` смержен — не только таск с буквально совпадающим `sourceWishlistId`. Использовать тот же Д2-хелпер.
@@ -45,18 +46,25 @@ Recovery-эскалация (`AutoMergeService`, 3 попытки исчерпа
 ### Д5 — доисследовать Ф6 перед тем как считать AutoMergeService rebase-фикс безопасным
 Прочитать `closeTaskAsFailed` и `dispatch()` полностью, решить: нужен ли explicit `claimSpecificTask` перед `dispatch()` в `AutoMergeService`'ином rebase-retry коде (сейчас его нет, в отличие от `dispatchQueuedTasks`).
 
-## 3. Порядок работы на сутки — с чекпоинтами, не одним рывком
+## 3. Статус выполнения (2026-07-21, рабочая ветка `fix/dependency-graph-and-persistent-workers-2026-07-21`)
 
-Каждый шаг: правка → **сборка** → **юнит/интеграционный тест именно на этот кейс** (не полагаться на существующий сьют молчаливо) → лог в этот файл → только потом следующий шаг. Никаких "написал 5 фиксов, потом одна большая сборка" — так родились Ф1 и Ф2 прошлой ночью.
+Реализовано в порядке: расследование `.eneik/`-утечки → git-чекпоинт+push → Д5 → Д2 → Д1 (редизайн) → Ф3-фикс в dispatchQueuedTasks → Д3 (редизайн на self-healing чек вместо FK-repoint, см. раздел 2) → Д4 (реализован вместе с Д2 в одном изменении `computeForProject`). Каждый шаг помечен в задачах (TaskCreate/TaskUpdate) по мере готовности. Тесты писались без промежуточных docker-сборок (локального maven нет, только docker build ~5 мин/цикл) — вся верификация одним финальным прогоном полного сьюта, что является сознательным отступлением от "тест сразу после каждого шага" под ограничения инструментария, а не небрежностью.
 
-1. **Д5 (сначала!)** — дочитать `closeTaskAsFailed`/`dispatch()`, решить безопасен ли текущий rebase-фикс as-is или нужен доп. `claimSpecificTask`. Это может отменить/изменить то, что уже задеплоено.
-2. **Д2** — вынести общий `isTaskMerged`-хелпер. Тест: юнит на хелпере отдельно (смержено/не смержено/нет сессий).
-3. **Д1** — переписать `.eneik/`-резолюцию с пересечением вместо `allMatch`, с ограничением на одну попытку. Тест: смоделировать PR с диффом (реальные файлы + `.eneik/task-plan.json`) и убедиться, что резолюция вызывается на подмножество, а не блокируется остальными файлами; отдельный тест на "не более одной попытки".
-4. **Заменить P0.2 (ночная версия) на Д2-хелпер** в `dispatchQueuedTasks` вместо `TaskStatus.done`. Тест: даунстрим не стартует, пока апстрим не смержен по-настоящему (не просто `done`).
-5. **Д3** — `findByDependsOnId` + repoint в обоих местах эскалации. Тест: искусственно завести taskB.dependsOn=taskA, забросить taskA через оба пути эскалации, проверить что taskB.dependsOn перепривязался на replacement.
-6. **Д4** — readiness по featureId. Тест: recovery-таск (другой sourceWishlistId, тот же featureId) мержится → `computeForProject` для оригинального client-deliverable показывает merged=true.
-7. **Полная пересборка + полный тест-сьют.** Обновить `docs/reports/EXPERIMENT_LOG_test-thirty-second_2026-07-20.md` и этот файл финальным статусом каждого пункта.
-8. Только после 1-7 — переходить к P1/P2 (Ф7-Ф9) из прошлой версии плана, если останется время в рамках суток.
+| # | Находка/дизайн | Статус |
+|---|---|---|
+| Ф1/Д1 | `.eneik/`-конфликт не резолвился для смешанных PR | Исправлено: intersection вместо allMatch, ограничение в 1 попытку через `resolutionAttempts` |
+| Ф2 | Гейт компиляции деадлочит recovery | Опровергнуто, снято |
+| Ф3 | `done` ≠ `merged` в dependsOn-гейте | Исправлено: `isDependencySatisfied` вместо `TaskStatus.done` |
+| Ф4/Д3 | Заброшенный `dependsOn` вешает даунстрим навсегда | Исправлено: self-healing чек по featureId+роли (редизайн, FK-repoint оказался невозможен) |
+| Ф5/Д4 | Readiness не видит recovery-цепочку | Исправлено: join по featureId вместо буквального sourceWishlistId |
+| Ф6 | Небезопасная комбинация cancelSession+dispatch() | Подтверждено и исправлено: явный `claimSpecificTask` перед dispatch |
+| — | `.eneik/task-plan.json` утекает в implementer-ветки | Превентивный фикс: `.gitignore` с `.eneik/` коммитится при создании репозитория |
+
+Новые тесты: `ClientDeliverableReadinessServiceTest` (7 кейсов: featureId-join, isTaskMerged, isDependencySatisfied включая цепочку эскалаций).
+
+**Сборка подтверждена зелёной** (после одной существенной коррекции): первая полная сборка реально упала (4 теста), уведомление фонового таска ошибочно показало "exit code 0" (код возврата был замаскирован пайпом через `tail`) — поймано прямой проверкой текста вывода на `[ERROR]`, а не доверием к уведомлению. Причина падения: featureId-join в Д4 требовал featureId у обеих сторон, а фикстуры `TaskClaimServiceTest`/`GateOrchestratorIntegrationTest` (`markProjectPastBuildPhase`) создают wishlist/task напрямую, без `featureId` — легитимный старый путь, не артефакт теста. Исправлено: featureId-join сделан **аддитивным** к исходному sourceWishlistId-join, а не заменой его. Пересборка подтверждена зелёной по отсутствию `[ERROR]` в выводе `mvn -q package` (тихий режим не печатает ничего при успехе).
+
+Не сделано в рамках этого прохода (осознанно отложено, не забыто): P1/P2 из версии 1 плана (обобщение "principle of charity" на реальные implementer-таски, маркировка Gemini-нарратива как гипотезы, приоритет реального ревью, mapExternalStatus FAILED/CANCELLED, детектор дублей-заголовков) — следующий проход, если останется время в рамках суток.
 
 ## 4. Что НЕ трогаем повторно (подтверждено ранее, не баг)
 - Falsification-гейт 90% — работает верно, корень в мержах, не в гейте.

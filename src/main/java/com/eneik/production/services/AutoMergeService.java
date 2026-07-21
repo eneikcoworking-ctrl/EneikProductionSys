@@ -56,6 +56,7 @@ public class AutoMergeService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final CodeChangeClassifier codeChangeClassifier;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private final ClaimService claimService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -73,7 +74,8 @@ public class AutoMergeService {
                             com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                             com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                             CodeChangeClassifier codeChangeClassifier,
-                            com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository) {
+                            com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                            ClaimService claimService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -91,6 +93,7 @@ public class AutoMergeService {
         this.systemProgressTracker = systemProgressTracker;
         this.codeChangeClassifier = codeChangeClassifier;
         this.featureThreadRepository = featureThreadRepository;
+        this.claimService = claimService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -470,40 +473,56 @@ public class AutoMergeService {
             }
         }
         
-        // Trivial-conflict fast path: if EVERY conflicting file is one of our own transient `.eneik/*`
-        // signaling records (task-plan.json, review-verdict.json, design-review-verdict.json, ...), this
-        // is pure bookkeeping noise, not a real code clash - resolving it never needs a Jules session.
-        // Confirmed live 2026-07-21 (test-thirty-second, PR#12): a real, complete, already-reviewed
-        // frontend PR sat unmergeable for hours purely because 4 unrelated compiler-record PRs had also
-        // touched `.eneik/task-plan.json` on main since this branch was created - the actual product code
-        // had zero overlap with anything merged. Resolve deterministically (make the branch's copy match
-        // main's) via a plain git commit and let the next merge attempt proceed normally - no attempt
-        // counter, no rebase dispatch, no recovery-task escalation, no Jules session spent.
-        if (!files.isEmpty() && files.stream().allMatch(f -> f.startsWith(".eneik/"))
-                && owner != null && repo != null && pullNumber != null) {
-            String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
-                    .map(GitHubPullRequestService.GitHubPullRequest::headRef)
-                    .orElse(null);
-            if (branch != null) {
-                boolean allResolved = files.stream()
-                        .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
-                if (allResolved) {
-                    log.info("AutoMergeService: PR #{} conflict was entirely within .eneik/ record files ({}); "
-                                    + "resolved via direct backend commit, no Jules session dispatched. Merge will retry next cycle.",
-                            pullNumber, files);
-                    return;
-                }
-                log.warn("AutoMergeService: PR #{} conflict looked .eneik/-only but backend resolution failed for at least one file "
-                        + "({}); falling back to the normal rebase/escalation path.", pullNumber, files);
-            }
-        }
-
         String filesJson = "[]";
         try {
             filesJson = objectMapper.writeValueAsString(files);
         } catch (Exception e) {}
         conflict.setConflictingFiles(filesJson);
-        
+
+        // Trivial-conflict fast path: sync any of OUR OWN transient `.eneik/*` signaling records
+        // (task-plan.json, review-verdict.json, design-review-verdict.json, ...) that appear in this PR's
+        // diff to main's current content - pure bookkeeping noise, never worth a Jules session.
+        //
+        // Ф1 (2026-07-21 review, corrected from the first version of this fix): `files` is the PR's FULL
+        // changed-file list, not specifically the files actually in conflict - requiring `allMatch` meant
+        // this never fired for any PR that also carried real product code alongside a stray `.eneik/`
+        // file, which is exactly the motivating case (PR#12: real Svelte frontend + one incidental
+        // `.eneik/task-plan.json`). Fixed to act on the `.eneik/` SUBSET of files regardless of what else
+        // changed - real code is never touched by this path either way, so widening it is safe.
+        //
+        // Bounded to one attempt per conflict (`resolutionAttempts == 0`, i.e. only on the FIRST time this
+        // conflict is diagnosed): if the real conflict is elsewhere and syncing `.eneik/` alone doesn't
+        // make the PR mergeable, retrying this same sync every cycle forever would silently mask that and
+        // never fall through to the rebase/escalation path that actually handles a real code conflict.
+        List<String> eneikFiles = files.stream().filter(f -> f.startsWith(".eneik/")).toList();
+        if (!eneikFiles.isEmpty() && conflict.getResolutionAttempts() == 0
+                && owner != null && repo != null && pullNumber != null) {
+            String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                    .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                    .orElse(null);
+            if (branch != null) {
+                boolean allResolved = eneikFiles.stream()
+                        .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
+                // Record that the fast path was tried for this conflict, regardless of outcome, BEFORE
+                // deciding whether to return - this is what makes `resolutionAttempts == 0` an honest
+                // one-shot gate instead of re-triggering forever if the real conflict is elsewhere.
+                conflict.setResolutionAttempts(1);
+                taskConflictRepository.save(conflict);
+                if (allResolved) {
+                    log.info("AutoMergeService: PR #{} had .eneik/ record file(s) in conflict ({} of {} changed files); "
+                                    + "synced to main via direct backend commit, no Jules session dispatched. "
+                                    + "Merge will retry next cycle - if the conflict was ONLY in these files it "
+                                    + "will now succeed; if not, it will surface again next cycle and proceed "
+                                    + "straight to the rebase/escalation path (this fast path won't retry itself).",
+                            pullNumber, eneikFiles, files.size());
+                    return;
+                }
+                log.warn("AutoMergeService: PR #{} had .eneik/ record file(s) in conflict but backend resolution "
+                        + "failed for at least one ({}); falling through to the normal rebase/escalation path "
+                        + "this same cycle.", pullNumber, eneikFiles);
+            }
+        }
+
         review.setCiStatus("conflict");
         prReviewRepository.save(review);
         
@@ -556,13 +575,25 @@ public class AutoMergeService {
                 }
             }
 
-            task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            // Ф6 (found 2026-07-21 during a deliberate re-review, never exercised before because the
+            // dispatch() call below was always a no-op until the cancelSession loop above started working):
+            // this used to set task.status=claimed directly and call dispatch() with no ClaimEntity ever
+            // created. claimService.hasActiveClaim(taskId) - the gate handlePrOpenedWorkflow's implementer
+            // branch checks before calling claimService.complete() - would have returned false forever
+            // (the OLD claim was already released by cancelSession's closeTaskAsFailed, and nothing created
+            // a new one), so even a fully successful rebase would have produced a real PR our own pipeline
+            // could never advance past `claimed`. claimSpecificTask requires the task to be `queued`
+            // (TaskRepository.lockTaskByIdForUpdate's query), so the task must go through `queued` first,
+            // not straight to `claimed`.
+            UUID accountId = session.getAccountId();
+            task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
             taskRepository.save(task);
+            claimService.claimSpecificTask(task.getId(), accountId);
+            com.eneik.production.models.persistence.TaskEntity claimedTask =
+                    taskRepository.findById(task.getId()).orElse(task);
 
             log.info("Triggering auto-resolve rebase attempt {}/3 for task {}", attempts, taskId);
-            // Re-queue or just dispatch new session directly
-            UUID accountId = session.getAccountId();
-            julesDispatchService.dispatch(task, accountId, "IMPLEMENTER");
+            julesDispatchService.dispatch(claimedTask, accountId, "IMPLEMENTER");
         }
     }
 

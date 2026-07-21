@@ -2318,7 +2318,15 @@ public class ProjectFlowService {
             // the same feature. Enforcing the existing graph here means each stage's session starts only
             // after the previous stage's real, merged code is on main - it sees the actual decision
             // instead of guessing one of its own.
-            if (task.getDependsOn() != null && task.getDependsOn().getStatus() != TaskStatus.done) {
+            //
+            // Ф3 (2026-07-21 review): TaskStatus.done is set at review approval, independently of whether
+            // the PR itself ever actually merged (see ClientDeliverableReadinessService's class doc) - a
+            // dependency stuck in a merge conflict would still read as "done", letting the next stage start
+            // before its code is really on main, exactly what this check exists to prevent.
+            // Ф4/Д3: isDependencySatisfied also recognizes a merged REPLACEMENT task when the literal
+            // dependency was abandoned (escalated/force-unblocked) - otherwise a dependsOn edge pointing at
+            // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
+            if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
                 continue;
             }
 
