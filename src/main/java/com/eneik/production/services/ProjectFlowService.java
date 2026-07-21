@@ -338,17 +338,11 @@ public class ProjectFlowService {
 
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
-                wishlistRepository.findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending);
+                wishlistRepository.findByProjectId(project.getId()).stream()
+                        .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
+                                || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                        .collect(java.util.stream.Collectors.toList());
 
-        // Lean: the bootstrap task used to fire unconditionally on the first orchestrate() call, which
-        // ContinuousOrchestrationService triggers automatically every ~2-3 minutes for every active
-        // project - a brand-new project with no wishlist yet got a real Jules session dispatched
-        // (consuming an account slot and real cost) before the operator had asked for anything at all.
-        // Confirmed live: this confused the operator during the test-twenty-fifth experiment ("I haven't
-        // written a wishlist or pressed orchestrate yet - why is a session already running?"). Gating it
-        // on real pending demand is classic overproduction waste avoidance: don't build the scaffold until
-        // there's an actual first thing to scaffold for. The idempotency check inside
-        // ensureEnvironmentBootstrapTask still means it only ever fires once per project either way.
         if (!pendingItems.isEmpty() && ensureEnvironmentBootstrapTask(project).isPresent()) {
             processedCount++;
         }
@@ -357,7 +351,8 @@ public class ProjectFlowService {
             try {
                 // Reload from repository to ensure we have the latest compiled data
                 wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
-                if (wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.pending) {
+                if (wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.pending
+                        && wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.compiling) {
                     continue;
                 }
 
