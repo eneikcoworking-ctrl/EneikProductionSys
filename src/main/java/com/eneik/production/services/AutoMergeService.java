@@ -158,7 +158,15 @@ public class AutoMergeService {
                         if (prUrl != null && !prUrl.isBlank()) {
                             boolean exists = allReviews.stream().anyMatch(r -> prUrl.equals(r.getPrUrl()));
                             if (!exists) {
+                                UUID sessionId = julesSessionRepository.findAll().stream()
+                                        .filter(s -> taskRepository.findById(s.getTaskId())
+                                                .map(t -> t.getProject() != null && t.getProject().getId().equals(project.getId()))
+                                                .orElse(false))
+                                        .map(com.eneik.production.models.persistence.JulesSessionEntity::getId)
+                                        .findFirst()
+                                        .orElseGet(UUID::randomUUID);
                                 PrReviewEntity review = new PrReviewEntity();
+                                review.setJulesSessionId(sessionId);
                                 review.setPrUrl(prUrl);
                                 review.setCiStatus("success");
                                 review.setRiskLevel("LOW");
