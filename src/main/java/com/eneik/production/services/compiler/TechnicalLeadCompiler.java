@@ -819,15 +819,8 @@ public class TechnicalLeadCompiler {
                 boolean hasDesignSystemRef = dod.contains("docs/DESIGN_SYSTEM.md");
                 boolean hasPendingRef = dod.contains("pending: design system not yet defined");
 
-                java.io.File designSystemFile = new java.io.File("docs/DESIGN_SYSTEM.md");
-                if (designSystemFile.exists()) {
-                    if (!hasDesignSystemRef) {
-                        errors.add("Step 6 failed: UI task DoD must reference docs/DESIGN_SYSTEM.md");
-                    }
-                } else {
-                    if (!hasPendingRef) {
-                        errors.add("Step 6 failed: design system is missing, so DoD must contain 'pending: design system not yet defined'");
-                    }
+                if (!hasDesignSystemRef && !hasPendingRef) {
+                    errors.add("Step 6 failed: UI task DoD must reference docs/DESIGN_SYSTEM.md or pending fallback");
                 }
             }
         }
