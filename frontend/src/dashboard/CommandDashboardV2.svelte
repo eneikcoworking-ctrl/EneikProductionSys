@@ -397,11 +397,11 @@
           <ul class="pr-list">
             {#each prTruth.open as pr (pr.url)}
               <li>
-                <a href={pr.url} target="_blank" rel="noreferrer">#{pr.number} {pr.title}</a>
+                <a href={pr.url} target="_blank" rel="noreferrer" class="pr-feature-name" title="#{pr.number} · {pr.title}">{pr.featureName}</a>
                 <span class="pr-author">{pr.author}</span>
               </li>
             {:else}
-              <li class="empty-note">No open pull requests.</li>
+              <li class="empty-note">No open feature pull requests.</li>
             {/each}
           </ul>
         {/if}

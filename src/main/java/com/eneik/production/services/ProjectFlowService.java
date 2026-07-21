@@ -2,6 +2,7 @@ package com.eneik.production.services;
 
 import com.eneik.production.dto.*;
 import com.eneik.production.dto.dashboard.AgentDashboardDto;
+import com.eneik.production.dto.dashboard.FeaturePullRequestSnapshotDto;
 import com.eneik.production.dto.dashboard.PipelineDashboardDto;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
@@ -2698,6 +2699,83 @@ public class ProjectFlowService {
                 wishlist,
                 tasks
         );
+    }
+
+    // Operator directive (2026-07-21): GitHubPullRequestService.pullRequestSnapshot() is shared by
+    // FalsificationCycleService and ProjectOperationalContextService too, which need to see every PR
+    // including system/carrier ones - so filtering can't live there. This wraps it for the frontend-facing
+    // endpoint only: correlates each PR back to the TaskEntity that opened it (via
+    // JulesSessionEntity.prUrl), drops anything that isn't a real (non-carrier) task, and attaches a clear
+    // featureName the frontend can show instead of Jules's own raw 2-3-word PR title - the git branch/PR
+    // title itself stays whatever the backend/Jules needs it to be. Confirmed live: unmatched PRs (no
+    // owning task found, e.g. pre-dating this tracking) are dropped rather than shown as "unknown"
+    // (operator decision).
+    @Transactional(readOnly = true)
+    public FeaturePullRequestSnapshotDto featurePullRequests(UUID projectId) {
+        ProjectEntity project = requireProject(projectId);
+        com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot snapshot =
+                gitHubPullRequestService.pullRequestSnapshot(project);
+        if (!snapshot.available()) {
+            return new FeaturePullRequestSnapshotDto(false, List.of(), List.of(), snapshot.error());
+        }
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        Map<UUID, TaskEntity> tasksById = new HashMap<>();
+        for (TaskEntity t : tasks) {
+            tasksById.put(t.getId(), t);
+        }
+        List<UUID> taskIds = new ArrayList<>(tasksById.keySet());
+        List<JulesSessionEntity> sessions = taskIds.isEmpty() ? List.of() : julesSessionRepository.findByTaskIdIn(taskIds);
+        Map<String, TaskEntity> taskByPrUrl = new HashMap<>();
+        for (JulesSessionEntity session : sessions) {
+            if (session.getPrUrl() != null) {
+                TaskEntity task = tasksById.get(session.getTaskId());
+                if (task != null) {
+                    taskByPrUrl.put(session.getPrUrl(), task);
+                }
+            }
+        }
+
+        Map<UUID, FeatureEntity> featuresById = new HashMap<>();
+        for (FeatureEntity feature : featureService.listExistingEpics(projectId)) {
+            featuresById.put(feature.getId(), feature);
+        }
+
+        List<FeaturePullRequestSnapshotDto.FeaturePullRequestDto> open = new ArrayList<>();
+        for (com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest pr : snapshot.open()) {
+            FeaturePullRequestSnapshotDto.FeaturePullRequestDto dto = toFeaturePullRequest(pr, taskByPrUrl, featuresById);
+            if (dto != null) {
+                open.add(dto);
+            }
+        }
+        List<FeaturePullRequestSnapshotDto.FeaturePullRequestDto> closed = new ArrayList<>();
+        for (com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest pr : snapshot.closed()) {
+            FeaturePullRequestSnapshotDto.FeaturePullRequestDto dto = toFeaturePullRequest(pr, taskByPrUrl, featuresById);
+            if (dto != null) {
+                closed.add(dto);
+            }
+        }
+        return new FeaturePullRequestSnapshotDto(true, open, closed, null);
+    }
+
+    private FeaturePullRequestSnapshotDto.FeaturePullRequestDto toFeaturePullRequest(
+            com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest pr,
+            Map<String, TaskEntity> taskByPrUrl,
+            Map<UUID, FeatureEntity> featuresById) {
+        TaskEntity task = taskByPrUrl.get(pr.url());
+        if (task == null) {
+            return null;
+        }
+        if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task)
+                || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
+            return null;
+        }
+        FeatureEntity feature = task.getFeatureId() != null ? featuresById.get(task.getFeatureId()) : null;
+        String featureName = (feature != null && feature.getTitle() != null && !feature.getTitle().isBlank())
+                ? feature.getTitle()
+                : TaskTitleBuilder.displayTitle(task);
+        return new FeaturePullRequestSnapshotDto.FeaturePullRequestDto(
+                pr.url(), pr.number(), pr.title(), featureName, pr.author(), pr.merged());
     }
 
     @Transactional(readOnly = true)

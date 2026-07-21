@@ -19,18 +19,15 @@ public class ProjectController {
     private final ClaimService claimService;
     private final com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
-    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
                              com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
-                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
-                             com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
         this.onboardingAuditService = onboardingAuditService;
-        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @GetMapping
@@ -174,8 +171,7 @@ public class ProjectController {
     @GetMapping("/{projectId}/pull-requests")
     public ResponseEntity<?> pullRequests(@PathVariable UUID projectId) {
         try {
-            com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
-            return ResponseEntity.ok(gitHubPullRequestService.pullRequestSnapshot(project));
+            return ResponseEntity.ok(projectFlowService.featurePullRequests(projectId));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }

@@ -10,6 +10,7 @@ import java.util.UUID;
 @Repository
 public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity, UUID> {
     List<JulesSessionEntity> findByTaskId(UUID taskId);
+    List<JulesSessionEntity> findByTaskIdIn(List<UUID> taskIds);
     List<JulesSessionEntity> findByStatus(String status);
     List<JulesSessionEntity> findByStatusIn(List<String> statuses);
 }
