@@ -45,7 +45,7 @@ public class CommandDashboardService {
         }
         try {
             if (columnExists(tableName, "project_id")) {
-                return jdbcTemplate.queryForList("SELECT * FROM " + tableName + " WHERE project_id = ?", projectId);
+                return lowercaseKeys(jdbcTemplate.queryForList("SELECT * FROM " + tableName + " WHERE project_id = ?", projectId));
             } else {
                 // If no project_id column, we can't safely filter by project.
                 // For compliance with security review, we return empty instead of leaking all projects.
@@ -55,6 +55,55 @@ public class CommandDashboardService {
             statusMap.put(tableName, "error: " + e.getMessage());
             return null;
         }
+    }
+
+    // Ф-followup (2026-07-21, found via a live API check against test-twenty-ninth while chasing the
+    // system-task-pollution fix): H2's JdbcTemplate.queryForList returns column keys in the driver's
+    // native case (confirmed live: "STATUS", "QUALITY_GATE_PASSED", "CONTENT", not the lowercase
+    // snake_case calculateReadiness()/classifyKano() actually look up). That mismatch meant every
+    // t.get("status")/t.get("quality_gate_passed")/etc. call silently returned null - the Acceptance
+    // Readiness card had been unconditionally reporting "not ready"/"unknown" for every project
+    // regardless of real task state, since dataSourcesStatus wasn't set (so the code assumed "healthy
+    // data, computed false/null" rather than "lookup failed"). Normalized once here, at the single
+    // choke point all raw rows pass through, rather than patching every read site.
+    private static List<Map<String, Object>> lowercaseKeys(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> normalized = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> lower = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                lower.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
+            }
+            normalized.add(lower);
+        }
+        return normalized;
+    }
+
+    // Same marker JulesDispatchService/ProjectFlowService use to route compiler/review-fallback/audit
+    // carrier tasks around the normal pipeline (payload.taskType). Raw JDBC returns the JSON payload
+    // column as byte[] (confirmed live: base64 in the HTTP response), so it's decoded to text and
+    // pattern-matched rather than parsed as structured JSON - consistent with this file's existing
+    // string-heuristic style (see classifyKano) and avoids pulling a JSON parser into a class that
+    // otherwise works purely off raw JDBC maps.
+    private static final Set<String> SYSTEM_META_TASK_TYPES = Set.of(
+            "wishlist_compiler", "falsification_audit", "pr_review_fallback", "design_review", "coverage_audit"
+    );
+
+    private boolean isSystemMetaTaskRow(Map<String, Object> task) {
+        Object payload = task.get("payload");
+        String text;
+        if (payload instanceof byte[] bytes) {
+            text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8);
+        } else if (payload != null) {
+            text = payload.toString();
+        } else {
+            return false;
+        }
+        for (String type : SYSTEM_META_TASK_TYPES) {
+            if (text.contains("\"taskType\":\"" + type + "\"")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean tableExists(String tableName) {
@@ -86,15 +135,22 @@ public class CommandDashboardService {
         Boolean githubAccessHealthy = null;
         List<String> unmetConditions = new ArrayList<>();
 
+        // Ф-followup (2026-07-21): system/carrier tasks (compiler, review-fallback, audit, design review)
+        // never produce user-facing work, so a failed/incomplete one shouldn't flip "acceptance readiness"
+        // to not-ready - confirmed live on test-twenty-ninth, where 9 failed pr_review_fallback carrier
+        // tasks were the sole reason allTasksDone/allQualityGatesPassed read false.
+        List<Map<String, Object>> realWorkTasks = tasks == null ? null
+                : tasks.stream().filter(t -> !isSystemMetaTaskRow(t)).toList();
+
         if (dataSourcesStatus.containsKey("tasks")) {
             allTasksDone = null;
             allQualityGatesPassed = null;
-        } else if (tasks != null) {
-            allTasksDone = tasks.stream().noneMatch(t -> {
+        } else if (realWorkTasks != null) {
+            allTasksDone = realWorkTasks.stream().noneMatch(t -> {
                 String status = (String) t.get("status");
                 return status == null || !Set.of("done", "review").contains(status.toLowerCase());
             });
-            allQualityGatesPassed = tasks.stream().allMatch(t -> Boolean.TRUE.equals(t.get("quality_gate_passed")));
+            allQualityGatesPassed = realWorkTasks.stream().allMatch(t -> Boolean.TRUE.equals(t.get("quality_gate_passed")));
         }
 
         if (dataSourcesStatus.containsKey("pr_reviews")) {
@@ -129,8 +185,8 @@ public class CommandDashboardService {
                 }
             }
         }
-        if (tasks != null) {
-            for (Map<String, Object> t : tasks) {
+        if (realWorkTasks != null) {
+            for (Map<String, Object> t : realWorkTasks) {
                 String status = (String) t.get("status");
                 if (status == null || !status.equalsIgnoreCase("done")) {
                     pendingItems.add(t);

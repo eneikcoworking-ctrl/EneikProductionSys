@@ -313,14 +313,25 @@ public class SystemStatusService {
         return section;
     }
 
+    // Same marker EmsMetricsService.isSystemMetaTask() uses: compiler/falsification-audit/review-fallback/
+    // design-review/coverage-audit carrier tasks are dispatched under the orchestrator role and never
+    // produce user-facing work. This section feeds the Metrics tab's "System Pipeline" chart (task status
+    // breakdown), which the operator explicitly wants scoped to real work only (2026-07-21: "меня не
+    // интересуют задачи без кода или без полезного для пользователя контента") - counting carrier tasks
+    // here would silently reintroduce the exact debris this directive was about.
+    private boolean isSystemMetaTask(TaskEntity task) {
+        return task.getPayload() != null && task.getPayload().has("taskType");
+    }
+
     private Map<String, Object> tasks(UUID projectId) {
+        List<TaskEntity> allTasks = projectId != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)
+                : taskRepository.findAll();
+        List<TaskEntity> realWorkTasks = allTasks.stream().filter(t -> !isSystemMetaTask(t)).toList();
+
         Map<TaskStatus, Long> counts = new EnumMap<>(TaskStatus.class);
         for (TaskStatus status : TaskStatus.values()) {
-            if (projectId != null) {
-                counts.put(status, taskRepository.countByProjectIdAndStatus(projectId, status));
-            } else {
-                counts.put(status, taskRepository.countByStatus(status));
-            }
+            counts.put(status, realWorkTasks.stream().filter(t -> t.getStatus() == status).count());
         }
         Map<String, Object> section = new LinkedHashMap<>();
         counts.forEach((status, count) -> section.put(status.name(), count));

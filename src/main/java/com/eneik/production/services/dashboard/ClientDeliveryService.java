@@ -18,36 +18,36 @@ public class ClientDeliveryService {
     public ClientDeliveryDto getDelivery(UUID projectId) {
         List<Map<String, Object>> requested = new ArrayList<>();
         if (tableExists("wishlist") && columnExists("wishlist", "project_id")) {
-            requested = jdbcTemplate.queryForList(
+            requested = lowercaseKeys(jdbcTemplate.queryForList(
                 "SELECT * FROM wishlist WHERE project_id = ? AND source = 'client'", projectId
-            );
+            ));
         } else if (tableExists("wishlist_items") && columnExists("wishlist_items", "project_id")) {
-            requested = jdbcTemplate.queryForList(
+            requested = lowercaseKeys(jdbcTemplate.queryForList(
                 "SELECT * FROM wishlist_items WHERE project_id = ? AND type = 'client_wish'", projectId
-            );
+            ));
         }
 
         List<Map<String, Object>> delivered = new ArrayList<>();
         if (tableExists("tasks") && columnExists("tasks", "project_id")) {
-            delivered = jdbcTemplate.queryForList(
+            delivered = lowercaseKeys(jdbcTemplate.queryForList(
                 "SELECT * FROM tasks WHERE project_id = ? AND status = 'done'", projectId
-            );
+            ));
         }
 
         List<String> screenshots = new ArrayList<>();
         if (tableExists("pr_reviews")) {
             if (columnExists("pr_reviews", "project_id")) {
-                List<Map<String, Object>> reviews = jdbcTemplate.queryForList(
+                List<Map<String, Object>> reviews = lowercaseKeys(jdbcTemplate.queryForList(
                     "SELECT screenshot_urls FROM pr_reviews WHERE project_id = ?", projectId
-                );
+                ));
                 for (Map<String, Object> review : reviews) {
                     addScreenshots(screenshots, review.get("screenshot_urls"));
                 }
             } else if (columnExists("pr_reviews", "pr_url") && tableExists("jules_sessions") && columnExists("jules_sessions", "project_id")) {
                 // Try to join via pr_url if project_id is missing in pr_reviews but exists in jules_sessions
-                List<Map<String, Object>> reviews = jdbcTemplate.queryForList(
+                List<Map<String, Object>> reviews = lowercaseKeys(jdbcTemplate.queryForList(
                     "SELECT r.screenshot_urls FROM pr_reviews r JOIN jules_sessions s ON r.pr_url = s.pr_url WHERE s.project_id = ?", projectId
-                );
+                ));
                 for (Map<String, Object> review : reviews) {
                     addScreenshots(screenshots, review.get("screenshot_urls"));
                 }
@@ -64,13 +64,30 @@ public class ClientDeliveryService {
         String testSummary = "Data source not yet available";
         if (tableExists("github_access_status") && columnExists("github_access_status", "project_id")) {
             String orderBy = columnExists("github_access_status", "checked_at") ? "checked_at" : "id";
-            List<Map<String, Object>> status = jdbcTemplate.queryForList("SELECT ci_status FROM github_access_status WHERE project_id = ? ORDER BY " + orderBy + " DESC LIMIT 1", projectId);
+            List<Map<String, Object>> status = lowercaseKeys(jdbcTemplate.queryForList("SELECT ci_status FROM github_access_status WHERE project_id = ? ORDER BY " + orderBy + " DESC LIMIT 1", projectId));
             if (!status.isEmpty()) {
                 testSummary = "Last CI Status: " + status.get(0).get("ci_status");
             }
         }
 
         return new ClientDeliveryDto(requested, delivered, screenshots, prLinks, testSummary);
+    }
+
+    // Ф-followup (2026-07-21): same H2 raw-JDBC key-casing fragility fixed in CommandDashboardService -
+    // confirmed live via a direct /client-delivery call that H2's JdbcTemplate.queryForList returns
+    // uppercase column keys ("SCREENSHOT_URLS", "CI_STATUS"), not the lowercase snake_case this file's
+    // .get(...) calls look up, so addScreenshots()/the CI status summary silently no-op'd. Normalized once
+    // here at the same choke point every raw row passes through.
+    private static List<Map<String, Object>> lowercaseKeys(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> normalized = new ArrayList<>(rows.size());
+        for (Map<String, Object> row : rows) {
+            Map<String, Object> lower = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : row.entrySet()) {
+                lower.put(entry.getKey().toLowerCase(Locale.ROOT), entry.getValue());
+            }
+            normalized.add(lower);
+        }
+        return normalized;
     }
 
     private void addScreenshots(List<String> screenshots, Object urls) {
