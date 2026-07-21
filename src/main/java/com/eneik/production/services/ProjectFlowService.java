@@ -916,9 +916,69 @@ public class ProjectFlowService {
     // Returns true if the wishlist was fully handled via the cheap, synchronous, non-Jules path - nothing
     // more to do this cycle. Returns false if it still needs the paid Jules compiler: the caller collects
     // it as a candidate for dispatchBatchedWishlistCompiler instead of dispatching it immediately here, so
-    // several accumulated candidates can be admitted together under the WIP-limit gates and compiled in one
-    // batched Jules session rather than one session per wishlist.
+    private java.util.List<MLPredictionServiceClient.EpicPlan> parseCompilerPlanContent(String jsonContent) {
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonContent);
+            com.fasterxml.jackson.databind.JsonNode rawEpics = root.path("epics");
+            if (!rawEpics.isArray()) {
+                return java.util.List.of();
+            }
+            java.util.List<MLPredictionServiceClient.EpicPlan> result = new java.util.ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode epicNode : rawEpics) {
+                com.fasterxml.jackson.databind.JsonNode rawSlices = epicNode.path("slices");
+                java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = new java.util.ArrayList<>();
+                if (rawSlices.isArray()) {
+                    for (com.fasterxml.jackson.databind.JsonNode slice : rawSlices) {
+                        String leanValueRaw = slice.path("leanValue").asText("essential");
+                        com.eneik.production.models.persistence.LeanValue leanValue;
+                        try {
+                            leanValue = com.eneik.production.models.persistence.LeanValue.valueOf(leanValueRaw);
+                        } catch (Exception e) {
+                            leanValue = com.eneik.production.models.persistence.LeanValue.essential;
+                        }
+                        slices.add(new MLPredictionServiceClient.TaskSliceMetadata(
+                                slice.path("title").asText(""),
+                                slice.path("jtbd").asText(""),
+                                slice.path("acceptanceCriteria").asText(""),
+                                slice.path("roleTag").asText(""),
+                                leanValue,
+                                slice.path("cynefinDomain").asText("clear"),
+                                slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
+                                slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
+                                slice.path("hasUi").asBoolean(false)
+                        ));
+                    }
+                }
+                result.add(new MLPredictionServiceClient.EpicPlan(
+                        epicNode.path("title").asText(""),
+                        epicNode.path("jtbd").asText(""),
+                        epicNode.path("kanoClass").asText("Must-Be"),
+                        epicNode.path("cynefinDomain").asText("clear"),
+                        epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
+                        epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
+                        epicNode.path("sourceIndex").asInt(0),
+                        slices
+                ));
+            }
+            return result;
+        } catch (Exception e) {
+            return java.util.List.of();
+        }
+    }
     private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
+        java.util.Optional<String> planContent = gitHubPullRequestService.fetchFileContent(project, "main", ".eneik/task-plan.json");
+        if (planContent.isPresent() && !planContent.get().isBlank()) {
+            java.util.List<MLPredictionServiceClient.EpicPlan> epicPlans = parseCompilerPlanContent(planContent.get());
+            if (!epicPlans.isEmpty()) {
+                boolean built = buildTaskGraphFromSlices(project, java.util.List.of(wishlist), epicPlans);
+                if (built) {
+                    log.info("ProjectFlowService: Successfully compiled wishlist {} from .eneik/task-plan.json on main branch into real tasks", wishlist.getId());
+                    return true;
+                }
+            }
+        }
+
         if (wishlist.getCompiledByRole() != null) {
             if (wishlist.getLeanValue() != LeanValue.waste) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
