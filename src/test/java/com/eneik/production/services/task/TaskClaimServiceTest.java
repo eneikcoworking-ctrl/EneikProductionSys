@@ -158,6 +158,73 @@ public class TaskClaimServiceTest {
         assertThat(checkNames(completed)).doesNotContain("design_excellence", "backend_contract");
     }
 
+    @Test
+    void reaperReleasesClaimWithoutResurrectingTerminalTask() {
+        TaskEntity task = createQueuedTask("BARCAN-TAG-02", basePayload());
+        AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-02");
+        ClaimDto claimDto = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
+
+        ClaimEntity claim = claimRepository.findById(claimDto.claimId()).orElseThrow();
+        claim.setClaimedAt(Instant.now().minus(10, ChronoUnit.MINUTES));
+        claim.setLeaseExpiresAt(Instant.now().plus(1, ChronoUnit.HOURS));
+        claimRepository.saveAndFlush(claim);
+
+        task.setStatus(TaskStatus.done);
+        taskRepository.saveAndFlush(task);
+
+        taskClaimService.reapExpiredLeases();
+
+        TaskEntity preserved = taskRepository.findById(task.getId()).orElseThrow();
+        ClaimEntity released = claimRepository.findById(claim.getId()).orElseThrow();
+        assertThat(preserved.getStatus()).isEqualTo(TaskStatus.done);
+        assertThat(released.getReleasedAt()).isNotNull();
+        assertThat(released.getResultStatus()).isEqualTo(ClaimResultStatus.done);
+        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(task.getId())).isEmpty();
+    }
+
+    @Test
+    void releasingOneTerminalClaimKeepsAccountBusyWhileAnotherClaimIsActive() {
+        TaskEntity first = createQueuedTask("BARCAN-TAG-02", basePayload());
+        TaskEntity second = new TaskEntity();
+        second.setProject(first.getProject());
+        second.setRole(first.getRole());
+        second.setDescription("Second concurrent claim");
+        second.setPayload(basePayload());
+        second.setStatus(TaskStatus.queued);
+        second = taskRepository.saveAndFlush(second);
+        AccountEntity account = createAccount(first.getProject(), "BARCAN-TAG-02");
+
+        taskClaimService.claimSpecificTask(first.getId(), account.getId());
+        taskClaimService.claimSpecificTask(second.getId(), account.getId());
+
+        first.setStatus(TaskStatus.done);
+        taskRepository.saveAndFlush(first);
+        taskClaimService.releaseTerminalClaim(first.getId());
+        assertThat(accountRepository.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.busy);
+
+        second.setStatus(TaskStatus.done);
+        taskRepository.saveAndFlush(second);
+        taskClaimService.releaseTerminalClaim(second.getId());
+        assertThat(accountRepository.findById(account.getId()).orElseThrow().getStatus()).isEqualTo(AccountStatus.idle);
+    }
+
+    @Test
+    void lateFailureCallbacksCannotReopenDoneTask() {
+        TaskEntity task = createQueuedTask("BARCAN-TAG-02", basePayload());
+        AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-02");
+        taskClaimService.claimSpecificTask(task.getId(), account.getId());
+        task.setStatus(TaskStatus.done);
+        taskRepository.saveAndFlush(task);
+
+        taskClaimService.closeTaskAsFailed(task.getId(), "late failed callback");
+        taskClaimService.closeTaskAsBlocked(task.getId(), "late blocked callback");
+        taskClaimService.releaseClaimToQueue(task.getId(), "late retry callback");
+        taskClaimService.fail(task.getId());
+
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.done);
+        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(task.getId())).isEmpty();
+    }
+
     private void markProjectPastBuildPhase(ProjectEntity project) {
         WishlistEntity deliverable = new WishlistEntity();
         deliverable.setProjectId(project.getId());

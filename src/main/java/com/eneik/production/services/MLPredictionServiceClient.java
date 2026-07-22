@@ -51,6 +51,17 @@ public class MLPredictionServiceClient {
         return "";
     }
 
+    private boolean geminiEnabled() {
+        if (settingsService == null) {
+            return true;
+        }
+        try {
+            return settingsService.effectiveBoolean("gemini_enabled");
+        } catch (Exception e) {
+            return true;
+        }
+    }
+
     private String modelOverrideForTier(String modelTier) {
         if (settingsService == null) {
             return "";
@@ -109,6 +120,14 @@ public class MLPredictionServiceClient {
      * reviewed in total isolation. Empty for a solo review (e.g. the chaotic-domain immediate path).
      */
     public Map<String, Object> reviewPr(java.util.UUID projectId, java.util.UUID taskId, String prUrl, java.util.List<String> siblingPrUrls) {
+        if (!geminiEnabled()) {
+            aiHealthTracker.recordFailure("reviewPr", "gemini disabled by setting");
+            return Map.of(
+                "approved", false,
+                "remarks", "VERIFICATION_SERVICE_UNAVAILABLE: Gemini disabled by incident-control setting.",
+                "newTasks", java.util.Collections.emptyList()
+            );
+        }
         String endpoint = mlServiceUrl + "/api/v1/review/pr";
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -141,6 +160,13 @@ public class MLPredictionServiceClient {
     }
 
     public Map<String, Object> checkRefusalCriteria(String prDiff, String refusalCriteria) {
+        if (!geminiEnabled()) {
+            aiHealthTracker.recordFailure("checkRefusalCriteria", "gemini disabled by setting");
+            return Map.of(
+                "compliant", false,
+                "reason", "VERIFICATION_SERVICE_UNAVAILABLE: Gemini disabled by incident-control setting."
+            );
+        }
         String endpoint = mlServiceUrl + "/api/v1/review/refusal-criteria";
         try {
             HttpHeaders headers = new HttpHeaders();
@@ -174,6 +200,10 @@ public class MLPredictionServiceClient {
     }
 
     private String chatWithTier(String prompt, String systemInstruction, String modelTier) {
+        if (!geminiEnabled()) {
+            aiHealthTracker.recordFailure("chat", "gemini disabled by setting");
+            return "The assistant is temporarily unavailable. Gemini disabled by incident-control setting.";
+        }
         String endpoint = mlServiceUrl + "/api/v1/assistant/chat";
         try {
             HttpHeaders headers = new HttpHeaders();

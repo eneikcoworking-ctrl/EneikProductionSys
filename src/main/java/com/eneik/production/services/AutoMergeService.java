@@ -16,6 +16,7 @@ import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.logging.LogScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -38,6 +39,8 @@ import java.util.HashMap;
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
     private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
+    @Value("${auto-recovery.followup.enabled:false}")
+    private boolean autoRecoveryFollowupEnabled;
 
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
@@ -102,9 +105,10 @@ public class AutoMergeService {
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
     public void processAutoMerge() {
         syncOpenPullRequestsFromGitHub();
+        reconcileMergedTaskOutcomes();
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
-                .filter(r -> "success".equalsIgnoreCase(r.getCiStatus()))
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+                .filter(AutoMergeService::isReviewPollCandidate)
                 .filter(r -> !isAlreadyResolvedSpike(r))
                 .toList();
 
@@ -128,6 +132,9 @@ public class AutoMergeService {
                 LogScope.system();
             }
             try {
+                if (task != null && reconcileReviewAgainstTaskOutcome(review, task)) {
+                    continue;
+                }
                 if (isChaotic) {
                     // Cynefin "chaotic" domain: act first to stabilize, sense/respond afterward — the merge
                     // proceeds on green CI alone, and executeMerge() below unconditionally records a
@@ -142,6 +149,15 @@ public class AutoMergeService {
         }
     }
 
+    static boolean isReviewPollCandidate(PrReviewEntity review) {
+        String ciStatus = review.getCiStatus();
+        if (ciStatus == null || ciStatus.isBlank()) {
+            return true;
+        }
+        return java.util.Set.of("success", "pending", "unavailable")
+                .contains(ciStatus.toLowerCase(java.util.Locale.ROOT));
+    }
+
     private void syncOpenPullRequestsFromGitHub() {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
@@ -152,30 +168,42 @@ public class AutoMergeService {
             for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
                 var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
                 if (snapshot != null && snapshot.available() && snapshot.open() != null) {
-                    List<PrReviewEntity> allReviews = prReviewRepository.findAll();
+                    List<com.eneik.production.models.persistence.JulesSessionEntity> projectSessions =
+                            julesSessionRepository.findAll().stream()
+                                    .filter(session -> taskRepository.findById(session.getTaskId())
+                                            .map(task -> task.getProject() != null
+                                                    && project.getId().equals(task.getProject().getId()))
+                                            .orElse(false))
+                                    .toList();
                     for (var pr : snapshot.open()) {
                         String prUrl = pr.url();
-                        if (prUrl != null && !prUrl.isBlank()) {
-                            boolean exists = allReviews.stream().anyMatch(r -> prUrl.equals(r.getPrUrl()));
-                            if (!exists) {
-                                UUID sessionId = julesSessionRepository.findAll().stream()
-                                        .filter(s -> taskRepository.findById(s.getTaskId())
-                                                .map(t -> t.getProject() != null && t.getProject().getId().equals(project.getId()))
-                                                .orElse(false))
-                                        .map(com.eneik.production.models.persistence.JulesSessionEntity::getId)
-                                        .findFirst()
-                                        .orElseGet(UUID::randomUUID);
-                                PrReviewEntity review = new PrReviewEntity();
-                                review.setJulesSessionId(sessionId);
-                                review.setPrUrl(prUrl);
-                                review.setCiStatus("success");
-                                review.setRiskLevel("LOW");
-                                review.setMerged(false);
-                                review.setDiffSummary(APPROVAL_TOKEN);
-                                prReviewRepository.save(review);
-                                log.info("AutoMergeService: Discovered open GitHub PR #{} ({}) for project {}; registered in pr_review table",
-                                        pr.number(), prUrl, project.getName());
-                            }
+                        if (prUrl == null || prUrl.isBlank()) {
+                            continue;
+                        }
+
+                        com.eneik.production.models.persistence.JulesSessionEntity matchingSession =
+                                findMatchingSession(projectSessions, pr);
+                        if (matchingSession == null) {
+                            // An unowned PR may be stale process output or a manual branch. Never attach it
+                            // to an arbitrary project session and never manufacture an approval/green CI.
+                            log.debug("AutoMergeService: Open PR #{} ({}) has no exact Jules session-token match in project {}; leaving it unowned",
+                                    pr.number(), prUrl, project.getName());
+                            continue;
+                        }
+
+                        boolean changed = !prUrl.equals(matchingSession.getPrUrl());
+                        matchingSession.setPrUrl(prUrl);
+                        String status = matchingSession.getStatus();
+                        if ("queued".equals(status) || "running".equals(status)
+                                || "revising".equals(status) || "stuck".equals(status)) {
+                            matchingSession.setStatus("pr_opened");
+                            matchingSession.setLastProgressAt(Instant.now());
+                            changed = true;
+                        }
+                        if (changed) {
+                            julesSessionRepository.save(matchingSession);
+                            log.info("AutoMergeService: Linked open GitHub PR #{} ({}) to exact Jules session {} for project {}",
+                                    pr.number(), prUrl, matchingSession.getExternalSessionId(), project.getName());
                         }
                     }
                 }
@@ -183,6 +211,23 @@ public class AutoMergeService {
         } catch (Exception e) {
             log.warn("AutoMergeService: Failed to sync open PRs from GitHub: {}", e.getMessage());
         }
+    }
+
+    private com.eneik.production.models.persistence.JulesSessionEntity findMatchingSession(
+            List<com.eneik.production.models.persistence.JulesSessionEntity> projectSessions,
+            GitHubPullRequestService.GitHubPullRequest pr) {
+        for (com.eneik.production.models.persistence.JulesSessionEntity session : projectSessions) {
+            String externalId = session.getExternalSessionId();
+            if (GitHubPullRequestService.matchesSessionToken(pr, externalId)) {
+                return session;
+            }
+        }
+        for (com.eneik.production.models.persistence.JulesSessionEntity session : projectSessions) {
+            if (pr.url().equals(session.getPrUrl())) {
+                return session;
+            }
+        }
+        return null;
     }
 
     // A "complex" Cynefin-domain spike marks its task spike_completed and leaves review.merged = false
@@ -202,7 +247,7 @@ public class AutoMergeService {
 
     @Transactional
     protected void executeMerge(PrReviewEntity review) {
-        log.info("AutoMergeService: Merging PR {} due to valid approval token and green CI", review.getPrUrl());
+        log.info("AutoMergeService: Evaluating approved PR {} for merge", review.getPrUrl());
         PullRequestTarget pullRequestTarget = null;
         
         // 1. Check Cynefin complex domain spike handling and Role Philosophical Filter
@@ -272,15 +317,19 @@ public class AutoMergeService {
                             } else {
                                 log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
 
-                                com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-                                wishlist.setProjectId(task.getProject().getId());
-                                wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
-                                wishlist.setSourceRoleTag(roleTag);
-                                wishlist.setFeatureId(task.getFeatureId());
-                                wishlist.setContent("Role mismatch cleanup required: " + reason);
-                                wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-                                wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
-                                wishlistRepository.save(wishlist);
+                                if (autoRecoveryFollowupEnabled) {
+                                    com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
+                                    wishlist.setProjectId(task.getProject().getId());
+                                    wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
+                                    wishlist.setSourceRoleTag(roleTag);
+                                    wishlist.setFeatureId(task.getFeatureId());
+                                    wishlist.setContent("Role mismatch cleanup required: " + reason);
+                                    wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                                    wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+                                    wishlistRepository.save(wishlist);
+                                } else {
+                                    log.warn("AutoMergeService: auto-recovery follow-up disabled; not creating role_mismatch_followup for task {}", task.getId());
+                                }
                             }
                         }
                     }
@@ -290,6 +339,50 @@ public class AutoMergeService {
 
         boolean mergeSuccess = false;
         boolean isConflictSimulated = review.getPrUrl() != null && (review.getPrUrl().contains("conflict") || review.getPrUrl().contains("dirty"));
+
+        // Local review approval is necessary but not sufficient. GitHub's real checks are the merge
+        // authority; the old discovery fallback synthesized ciStatus=success and merged several red PRs.
+        if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
+            com.eneik.production.models.persistence.JulesSessionEntity reviewSession = sessionForReview(review);
+            com.eneik.production.models.persistence.TaskEntity reviewTask = reviewSession == null
+                    ? null
+                    : taskRepository.findById(reviewSession.getTaskId()).orElse(null);
+            if (reviewSession == null || reviewTask == null || reviewTask.getProject() == null) {
+                review.setCiStatus("unowned");
+                prReviewRepository.save(review);
+                log.warn("AutoMergeService: Refusing to merge PR {} because its review has no owning task/project",
+                        review.getPrUrl());
+                return;
+            }
+            if (pullRequestTarget == null) {
+                pullRequestTarget = resolvePullRequestTarget(review);
+            }
+            if (pullRequestTarget == null) {
+                review.setCiStatus("invalid_pr");
+                prReviewRepository.save(review);
+                return;
+            }
+            GitHubPullRequestService.GitHubPullRequest githubPr = gitHubPullRequestService
+                    .fetchPullRequestByNumber(reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()))
+                    .orElse(null);
+            if (!GitHubPullRequestService.matchesSessionToken(githubPr, reviewSession.getExternalSessionId())) {
+                review.setCiStatus("owner_mismatch");
+                prReviewRepository.save(review);
+                log.warn("AutoMergeService: Refusing to merge PR {} because branch {} does not contain Jules session token {}",
+                        review.getPrUrl(), githubPr == null ? "<unavailable>" : githubPr.headRef(),
+                        reviewSession.getExternalSessionId());
+                return;
+            }
+            GitHubPullRequestService.PullRequestChecks checks = gitHubPullRequestService.pullRequestChecks(
+                    reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()));
+            review.setCiStatus(checks.status());
+            prReviewRepository.save(review);
+            if (!checks.available() || !checks.successful()) {
+                log.warn("AutoMergeService: Refusing to merge PR {} because GitHub CI is {}: {}",
+                        review.getPrUrl(), checks.status(), checks.detail());
+                return;
+            }
+        }
         
         // Execute real merge on GitHub if enabled
         if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
@@ -367,6 +460,7 @@ public class AutoMergeService {
                     taskRepository.findById(taskId).ifPresent(task -> {
                         task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
                         taskRepository.save(task);
+                        claimService.releaseTerminalClaim(taskId);
                         log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
 
                         classifyAndHandleBranch(review, mergedPrTarget, task, session);
@@ -419,6 +513,13 @@ public class AutoMergeService {
         }
     }
 
+    private com.eneik.production.models.persistence.JulesSessionEntity sessionForReview(PrReviewEntity review) {
+        if (review.getJulesSessionId() == null) {
+            return null;
+        }
+        return julesSessionRepository.findById(review.getJulesSessionId()).orElse(null);
+    }
+
     /**
      * Deterministic post-merge fork: a merged PR either contained real product code or it didn't (see
      * CodeChangeClassifier). No code -&gt; the branch is disposable, delete it and close the session as
@@ -468,6 +569,11 @@ public class AutoMergeService {
         gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), pullNumber).ifPresent(pr -> {
             String roleTag = task.getRole().getTag();
             UUID featureId = task.getFeatureId();
+            if (featureId == null) {
+                log.warn("AutoMergeService: PR {} classified as has-code for task {}, but task has no featureId; skipping feature-thread update.",
+                        pullRequestTarget.url(), task.getId());
+                return;
+            }
             FeatureThreadEntity thread = featureThreadRepository.findByProjectIdAndFeatureId(task.getProject().getId(), featureId)
                     .orElseGet(FeatureThreadEntity::new);
             thread.setProjectId(task.getProject().getId());
@@ -494,6 +600,10 @@ public class AutoMergeService {
         var taskOpt = taskRepository.findById(taskId);
         if (taskOpt.isEmpty()) return;
         var task = taskOpt.get();
+
+        if (reconcileReviewAgainstTaskOutcome(review, task)) {
+            return;
+        }
         
         var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(taskId, "pending");
         TaskConflictEntity conflict;
@@ -586,13 +696,14 @@ public class AutoMergeService {
             conflict.setResolutionStatus("escalated");
             taskConflictRepository.save(conflict);
 
-            WishlistEntity recovery = new WishlistEntity();
-            recovery.setProjectId(task.getProject().getId());
-            recovery.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
-            recovery.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
-            recovery.setFeatureId(task.getFeatureId());
-            recovery.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-            recovery.setContent(("""
+            if (autoRecoveryFollowupEnabled) {
+                WishlistEntity recovery = new WishlistEntity();
+                recovery.setProjectId(task.getProject().getId());
+                recovery.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
+                recovery.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
+                recovery.setFeatureId(task.getFeatureId());
+                recovery.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                recovery.setContent(("""
                     [Auto recovery: merge conflict unresolved after 3 attempts]
                     Task %s's branch (PR %s) hit repeated merge conflicts across 3 auto-resolve attempts.
 
@@ -600,9 +711,12 @@ public class AutoMergeService {
                     work without touching the abandoned branch. One atomic slice, one PR, one objective
                     acceptance criterion.
                     """).formatted(taskId, review.getPrUrl()));
-            wishlistRepository.save(recovery);
+                wishlistRepository.save(recovery);
 
-            log.warn("Merge conflict for task {} escalated after {} attempts - queued a fresh recovery task instead of a human-review dead end.", taskId, attempts);
+                log.warn("Merge conflict for task {} escalated after {} attempts - queued a fresh recovery task instead of a human-review dead end.", taskId, attempts);
+            } else {
+                log.warn("Merge conflict for task {} escalated after {} attempts - auto-recovery follow-up disabled, no new recovery wishlist created.", taskId, attempts);
+            }
         } else {
             taskConflictRepository.save(conflict);
 
@@ -641,6 +755,131 @@ public class AutoMergeService {
 
             log.info("Triggering auto-resolve rebase attempt {}/3 for task {}", attempts, taskId);
             julesDispatchService.dispatch(claimedTask, accountId, "IMPLEMENTER");
+        }
+    }
+
+    boolean reconcileReviewAgainstTaskOutcome(PrReviewEntity review,
+                                               com.eneik.production.models.persistence.TaskEntity task) {
+        List<com.eneik.production.models.persistence.JulesSessionEntity> taskSessions =
+                julesSessionRepository.findByTaskId(task.getId());
+        List<UUID> sessionIds = taskSessions.stream()
+                .map(com.eneik.production.models.persistence.JulesSessionEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        boolean hasMergedSibling = !sessionIds.isEmpty()
+                && prReviewRepository.existsByJulesSessionIdInAndMergedTrue(sessionIds);
+        boolean terminal = task.getStatus() == TaskStatus.done
+                || task.getStatus() == TaskStatus.failed
+                || task.getStatus() == TaskStatus.blocked
+                || task.getStatus() == TaskStatus.spike_completed;
+
+        if (!hasMergedSibling && !terminal) {
+            return false;
+        }
+
+        if (hasMergedSibling) {
+            task.setStatus(TaskStatus.done);
+            taskRepository.save(task);
+            claimService.releaseTerminalClaim(task.getId());
+        }
+
+        if (!Boolean.TRUE.equals(review.getMerged())) {
+            review.setCiStatus("superseded");
+            prReviewRepository.save(review);
+        }
+
+        taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending")
+                .ifPresent(conflict -> {
+                    conflict.setResolutionStatus("superseded");
+                    conflict.setResolvedAt(Instant.now());
+                    taskConflictRepository.save(conflict);
+                });
+
+        for (com.eneik.production.models.persistence.JulesSessionEntity session : taskSessions) {
+            if (List.of("queued", "running", "revising", "stuck", "pr_opened").contains(session.getStatus())) {
+                session.setStatus("cancelled");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason(hasMergedSibling
+                        ? "Superseded by an already merged PR for the same task"
+                        : "Task is already terminal; stale review/session retired");
+                julesSessionRepository.save(session);
+            }
+        }
+
+        log.info("AutoMergeService: Retired stale review {} for terminal task {} (status={}, merged sibling={})",
+                review.getPrUrl(), task.getId(), task.getStatus(), hasMergedSibling);
+        return true;
+    }
+
+    void reconcileMergedTaskOutcomes() {
+        List<PrReviewEntity> reviews = prReviewRepository.findAll();
+        Map<UUID, PrReviewEntity> reviewBySession = reviews.stream()
+                .filter(review -> review.getJulesSessionId() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        PrReviewEntity::getJulesSessionId,
+                        review -> review,
+                        (first, second) -> second));
+
+        for (PrReviewEntity mergedReview : reviews) {
+            if (!Boolean.TRUE.equals(mergedReview.getMerged()) || mergedReview.getJulesSessionId() == null) {
+                continue;
+            }
+            com.eneik.production.models.persistence.JulesSessionEntity winningSession =
+                    julesSessionRepository.findById(mergedReview.getJulesSessionId()).orElse(null);
+            if (winningSession == null || winningSession.getTaskId() == null) {
+                continue;
+            }
+            com.eneik.production.models.persistence.TaskEntity task =
+                    taskRepository.findById(winningSession.getTaskId()).orElse(null);
+            if (task == null) {
+                continue;
+            }
+
+            List<com.eneik.production.models.persistence.JulesSessionEntity> taskSessions =
+                    julesSessionRepository.findByTaskId(task.getId());
+            List<com.eneik.production.models.persistence.JulesSessionEntity> activeDuplicates = taskSessions.stream()
+                    .filter(session -> List.of("queued", "running", "revising", "stuck", "pr_opened")
+                            .contains(session.getStatus()))
+                    .toList();
+            List<PrReviewEntity> staleReviews = taskSessions.stream()
+                    .map(session -> reviewBySession.get(session.getId()))
+                    .filter(java.util.Objects::nonNull)
+                    .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
+                    .filter(review -> !"superseded".equals(review.getCiStatus()))
+                    .toList();
+            boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
+
+            if (!taskNeedsRepair && activeDuplicates.isEmpty() && staleReviews.isEmpty()) {
+                continue;
+            }
+
+            if (taskNeedsRepair) {
+                task.setStatus(TaskStatus.done);
+                taskRepository.save(task);
+            }
+            claimService.releaseTerminalClaim(task.getId());
+
+            for (com.eneik.production.models.persistence.JulesSessionEntity session : activeDuplicates) {
+                session.setStatus("cancelled");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason("Superseded by merged PR " + mergedReview.getPrUrl() + " for the same task");
+                julesSessionRepository.save(session);
+            }
+            for (PrReviewEntity staleReview : staleReviews) {
+                staleReview.setCiStatus("superseded");
+                prReviewRepository.save(staleReview);
+            }
+            taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending")
+                    .ifPresent(conflict -> {
+                        conflict.setResolutionStatus("superseded");
+                        conflict.setResolvedAt(Instant.now());
+                        taskConflictRepository.save(conflict);
+                    });
+
+            log.info("Poka-yoke: reconciled merged outcome for task {} from PR {}; repaired status={}, "
+                            + "retired sessions={}, superseded reviews={}",
+                    task.getId(), mergedReview.getPrUrl(), taskNeedsRepair,
+                    activeDuplicates.size(), staleReviews.size());
         }
     }
 

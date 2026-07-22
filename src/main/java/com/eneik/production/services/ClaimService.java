@@ -199,7 +199,7 @@ public class ClaimService {
 
             task.setStatus(TaskStatus.done);
             taskRepository.save(task);
-            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            refreshAccountStatusAfterClaimRelease(claim.getAccount());
         } else {
             // Implementer finished, move to review stage
             task.setStatus(TaskStatus.review);
@@ -219,7 +219,7 @@ public class ClaimService {
                 claim.setReleasedAt(Instant.now());
                 claim.setResultStatus(ClaimResultStatus.failed);
                 claimRepository.save(claim);
-                updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+                refreshAccountStatusAfterClaimRelease(claim.getAccount());
             } else {
                 // Task passed the quality gate. Move to manual/AI review normally.
                 claim.setReleasedAt(Instant.now());
@@ -227,7 +227,7 @@ public class ClaimService {
                 claimRepository.save(claim);
 
                 taskRepository.save(task);
-                updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+                refreshAccountStatusAfterClaimRelease(claim.getAccount());
             }
         }
     }
@@ -267,6 +267,12 @@ public class ClaimService {
 
     @Transactional
     public void fail(UUID taskId) {
+        TaskEntity currentTask = taskRepository.findById(taskId).orElse(null);
+        if (currentTask != null && isTerminal(currentTask.getStatus())) {
+            releaseTerminalClaim(taskId);
+            log.info("Poka-yoke: ignored fail transition for terminal task {} ({})", taskId, currentTask.getStatus());
+            return;
+        }
         ClaimEntity claim = findActiveClaimByTaskId(taskId);
         claim.setReleasedAt(Instant.now());
         claim.setResultStatus(ClaimResultStatus.failed);
@@ -276,16 +282,22 @@ public class ClaimService {
         task.setStatus(TaskStatus.queued);
         taskRepository.save(task);
 
-        updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+        refreshAccountStatusAfterClaimRelease(claim.getAccount());
     }
 
     @Transactional
     public void closeTaskAsBlocked(UUID taskId, String reason) {
+        TaskEntity currentTask = taskRepository.findById(taskId).orElse(null);
+        if (currentTask != null && isTerminal(currentTask.getStatus())) {
+            releaseTerminalClaim(taskId);
+            log.info("Poka-yoke: ignored blocked transition for terminal task {} ({})", taskId, currentTask.getStatus());
+            return;
+        }
         claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
-            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
         taskRepository.findById(taskId).ifPresent(task -> {
@@ -300,11 +312,17 @@ public class ClaimService {
     // operator cancelling a stray/duplicate task wants to NOT happen. failed is inert - nothing revisits it.
     @Transactional
     public void closeTaskAsFailed(UUID taskId, String reason) {
+        TaskEntity currentTask = taskRepository.findById(taskId).orElse(null);
+        if (currentTask != null && isTerminal(currentTask.getStatus())) {
+            releaseTerminalClaim(taskId);
+            log.info("Poka-yoke: ignored failed transition for terminal task {} ({})", taskId, currentTask.getStatus());
+            return;
+        }
         claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
-            updateAccountStatus(claim.getAccount(), AccountStatus.idle);
+            refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
         taskRepository.findById(taskId).ifPresent(task -> {
@@ -316,17 +334,18 @@ public class ClaimService {
 
     @Transactional
     public void releaseClaimToQueue(UUID taskId, String reason) {
+        TaskEntity currentTask = taskRepository.findById(taskId).orElse(null);
+        if (currentTask != null && isTerminal(currentTask.getStatus())) {
+            releaseTerminalClaim(taskId);
+            log.info("Poka-yoke: ignored requeue transition for terminal task {} ({})", taskId, currentTask.getStatus());
+            return;
+        }
         claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
 
-            accountRepository.findById(claim.getAccount().getId()).ifPresent(account -> {
-                if (account.getStatus() != AccountStatus.daily_limited && account.getStatus() != AccountStatus.api_blocked) {
-                    account.setStatus(AccountStatus.idle);
-                    accountRepository.save(account);
-                }
-            });
+            refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
         taskRepository.findById(taskId).ifPresent(task -> {
@@ -341,8 +360,49 @@ public class ClaimService {
                 .orElseThrow(() -> new IllegalStateException("No active claim for task " + taskId));
     }
 
-    private void updateAccountStatus(AccountEntity account, AccountStatus status) {
-        accountRepository.updateStatus(account.getId(), status, Instant.now());
+    private void refreshAccountStatusAfterClaimRelease(AccountEntity account) {
+        refreshAccountStatusAfterClaimRelease(account, AccountStatus.idle);
+    }
+
+    private void refreshAccountStatusAfterClaimRelease(AccountEntity account, AccountStatus noActiveClaimStatus) {
+        claimRepository.flush();
+        accountRepository.findById(account.getId()).ifPresent(current -> {
+            if (current.getStatus() == AccountStatus.daily_limited || current.getStatus() == AccountStatus.api_blocked) {
+                return;
+            }
+            AccountStatus next = claimRepository.existsByAccountIdAndReleasedAtIsNull(account.getId())
+                    ? AccountStatus.busy
+                    : noActiveClaimStatus;
+            current.setStatus(next);
+            current.setLastHeartbeat(Instant.now());
+            accountRepository.save(current);
+        });
+    }
+
+    @Transactional
+    public void releaseTerminalClaim(UUID taskId) {
+        taskRepository.findById(taskId).ifPresent(task -> {
+            if (!isTerminal(task.getStatus())) {
+                return;
+            }
+            claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)
+                    .ifPresent(claim -> closeClaimForTerminalTask(claim, task, "task reached terminal status"));
+        });
+    }
+
+    private boolean isTerminal(TaskStatus status) {
+        return status == TaskStatus.done || status == TaskStatus.failed || status == TaskStatus.spike_completed;
+    }
+
+    private void closeClaimForTerminalTask(ClaimEntity claim, TaskEntity task, String trigger) {
+        claim.setReleasedAt(Instant.now());
+        claim.setResultStatus(task.getStatus() == TaskStatus.failed
+                ? ClaimResultStatus.failed
+                : ClaimResultStatus.done);
+        claimRepository.save(claim);
+        refreshAccountStatusAfterClaimRelease(claim.getAccount());
+        log.info("Maintenance: Released claim for terminal task {} ({}) without changing task status {}",
+                task.getId(), trigger, task.getStatus());
     }
 
     /**
@@ -365,6 +425,11 @@ public class ClaimService {
         List<ClaimEntity> expired = claimRepository.findByReleasedAtIsNullAndLeaseExpiresAtBefore(Instant.now());
 
         for (ClaimEntity claim : expired) {
+            TaskEntity task = claim.getTask();
+            if (isTerminal(task.getStatus())) {
+                closeClaimForTerminalTask(claim, task, "lease expired");
+                continue;
+            }
             if (hasActiveExternalJulesSession(claim.getTask().getId())) {
                 claim.setLeaseExpiresAt(Instant.now().plus(LEASE_TTL));
                 claimRepository.save(claim);
@@ -382,12 +447,11 @@ public class ClaimService {
             claimRepository.save(claim);
 
             // 2. Return task to the queue
-            TaskEntity task = claim.getTask();
             task.setStatus(TaskStatus.queued);
             taskRepository.save(task);
 
-            // 3. Mark the account as offline
-            accountRepository.updateStatus(claim.getAccount().getId(), AccountStatus.offline, Instant.now());
+            // 3. Mark the account offline only if no other concurrent claim is still active.
+            refreshAccountStatusAfterClaimRelease(claim.getAccount(), AccountStatus.offline);
         }
 
         // Self-healing: If a task has status 'claimed' but the session is 'skipped' or failed or missing,
@@ -400,6 +464,10 @@ public class ClaimService {
             }
 
             TaskEntity task = claim.getTask();
+            if (isTerminal(task.getStatus())) {
+                closeClaimForTerminalTask(claim, task, "session closed, failed, or missing");
+                continue;
+            }
             List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
             boolean isAlive = false;
             for (JulesSessionEntity s : sessions) {
@@ -416,12 +484,7 @@ public class ClaimService {
                 task.setStatus(TaskStatus.queued);
                 taskRepository.save(task);
 
-                accountRepository.findById(claim.getAccount().getId()).ifPresent(acc -> {
-                    if (acc.getStatus() != AccountStatus.daily_limited && acc.getStatus() != AccountStatus.api_blocked) {
-                        acc.setStatus(AccountStatus.idle);
-                        accountRepository.save(acc);
-                    }
-                });
+                refreshAccountStatusAfterClaimRelease(claim.getAccount());
             }
         }
 

@@ -85,6 +85,9 @@ public class ProjectFlowService {
     @Value("${orchestration.max-recovery-items-per-run:3}")
     private int maxRecoveryItemsPerRun;
 
+    @Value("${auto-recovery.followup.enabled:false}")
+    private boolean autoRecoveryFollowupEnabled;
+
     // Pull, not push: admission to the paid Jules compiler is gated by live capacity (Kanban WIP limits),
     // not by how many wishlist items happen to exist or how many ticks have passed. Every candidate not on
     // the cheap deterministic path (role_mismatch_followup, or an already-compiled-by-role item) is
@@ -560,6 +563,11 @@ public class ProjectFlowService {
 
     @Transactional
     public Optional<UUID> createSessionPostmortemWishlist(UUID projectId, UUID sessionId, String reason) {
+        if (!autoRecoveryFollowupEnabled) {
+            log.warn("ProjectFlowService: auto-recovery follow-up disabled; not creating session postmortem wishlist for session {}", sessionId);
+            return Optional.empty();
+        }
+
         ProjectEntity project = requireActiveProject(projectId);
         JulesSessionEntity session = julesSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Jules session not found: " + sessionId));
@@ -836,6 +844,14 @@ public class ProjectFlowService {
             String taskId = task.getId().toString();
             boolean alreadyCovered = existingRecoveryContent.stream().anyMatch(content -> content.contains(taskId));
             if (alreadyCovered) {
+                continue;
+            }
+
+            if (!autoRecoveryFollowupEnabled) {
+                log.warn("ProjectFlowService: auto-recovery follow-up disabled; not creating blocked-task recovery wishlist for task {}", task.getId());
+                task.setStatus(TaskStatus.failed);
+                task.setJulesDispatchStatus("Blocked task retired; auto-recovery follow-up disabled during task-expansion incident");
+                taskRepository.save(task);
                 continue;
             }
 
@@ -2501,6 +2517,14 @@ public class ProjectFlowService {
             // dependency was abandoned (escalated/force-unblocked) - otherwise a dependsOn edge pointing at
             // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
             if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
+                if (!autoRecoveryFollowupEnabled && task.getDependsOn().getStatus() == TaskStatus.failed) {
+                    task.setStatus(TaskStatus.failed);
+                    task.setJulesDispatchStatus("Dependency " + task.getDependsOn().getId()
+                            + " failed and auto-recovery is disabled; dependent task retired instead of waiting indefinitely");
+                    taskRepository.save(task);
+                    log.warn("ProjectFlowService: retired queued task {} because dependency {} failed and auto-recovery is disabled",
+                            task.getId(), task.getDependsOn().getId());
+                }
                 continue;
             }
 

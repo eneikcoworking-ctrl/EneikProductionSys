@@ -37,7 +37,11 @@ public class DashboardController {
     @GetMapping("/agents")
     public List<AgentDashboardDto> getAgents() {
         return accountRepository.findAll().stream().map(account -> {
-            ClaimEntity activeClaim = claimRepository.findByAccountIdAndReleasedAtIsNull(account.getId()).orElse(null);
+            ClaimEntity activeClaim = claimRepository
+                    .findByAccountIdAndReleasedAtIsNullOrderByClaimedAtDesc(account.getId())
+                    .stream()
+                    .findFirst()
+                    .orElse(null);
             return new AgentDashboardDto(
                 account.getId(),
                 account.getName(),

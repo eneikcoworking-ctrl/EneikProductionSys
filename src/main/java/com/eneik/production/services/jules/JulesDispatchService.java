@@ -6,6 +6,7 @@ import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
@@ -45,6 +46,8 @@ public class JulesDispatchService {
     private static final Logger log = LoggerFactory.getLogger(JulesDispatchService.class);
     private static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
+    private static final int DAVIDSON_TRUST_WINDOW_MINUTES = 60;
+    private static final int DAVIDSON_CLOSE_WINDOW_MINUTES = 120;
     private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
     private static final int FOLLOW_UP_CONTENT_MAX_LENGTH = 7_500;
     private static final String REVIEW_REJECTION_ACTIVITY_NAME = "system-pr-review-rejection";
@@ -57,21 +60,21 @@ public class JulesDispatchService {
     // loop). Cap how much *pending* non-blocking backlog one project's design role is allowed to carry at
     // once - once the cap is hit, new concerns are logged but not turned into fresh work; they'll surface
     // again on the next real review pass if still relevant, once older items have been worked off.
-    private static final int MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT = 5;
+    private static final int MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT = 0;
     // Same runaway-self-generation risk as the design-review concern loop above, but on the code-review
     // side: dispatchReviewFallback fires on EVERY implementer PR whenever Gemini is unavailable (not just
     // design work), and its non-blocking "concerns" (e.g. "consider Postgres for prod", "CI Java version
     // bump could break other repos") were being turned into wishlist items unconditionally - no cap, no
     // dedup - creating the identical unbounded self-perpetuating loop, just fed by ordinary code review
     // instead of design review, and firing far more often since it covers every PR, not just UI ones.
-    private static final int MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT = 5;
+    private static final int MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT = 0;
     private static final String REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX = "Reviewer concern (non-blocking) on task \"";
     // Coverage-audit gaps (see ProjectFlowService.dispatchCoverageAuditIfClientBrief) are inherently rare -
     // one audit per client brief decomposition, not per PR - so a runaway storm is far less likely than the
     // review/design concern loops above. Still capped for the same "never create tasks the system doesn't
     // actually need" reason, and because a single sloppy brief could in principle keep re-triggering gaps
     // across retries.
-    private static final int MAX_PENDING_COVERAGE_GAPS_PER_PROJECT = 5;
+    private static final int MAX_PENDING_COVERAGE_GAPS_PER_PROJECT = 0;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -170,11 +173,18 @@ public class JulesDispatchService {
         julesSessionRepository.save(session);
 
         if (session.getTaskId() != null) {
-            claimService.closeTaskAsFailed(session.getTaskId(), reason);
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task != null && isTerminalTask(task)) {
+                claimService.releaseTerminalClaim(task.getId());
+                log.info("Cancelled session {} without changing already-terminal task {} ({})",
+                        session.getExternalSessionId(), task.getId(), task.getStatus());
+            } else {
+                claimService.closeTaskAsFailed(session.getTaskId(), reason);
+            }
         }
     }
 
-    @Value("${jules.stuck-threshold-minutes:30}")
+    @Value("${jules.stuck-threshold-minutes:60}")
     private int stuckThresholdMinutes;
 
     @Value("${jules.max-agent-dialog-responses:8}")
@@ -194,6 +204,9 @@ public class JulesDispatchService {
 
     @Value("${jules.forced-unblock-max-attempts:2}")
     private int forcedUnblockMaxAttempts;
+
+    @Value("${auto-recovery.followup.enabled:false}")
+    private boolean autoRecoveryFollowupEnabled;
 
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
@@ -525,7 +538,7 @@ public class JulesDispatchService {
 
     private static boolean isTerminalSessionStatus(String status) {
         return "loop_closed".equals(status) || "cancelled".equals(status) || "closed_no_code".equals(status)
-                || "cancelled_externally".equals(status);
+                || "cancelled_externally".equals(status) || "closed_terminal_task".equals(status);
     }
 
     public JulesSessionEntity pollStatus(UUID sessionId) {
@@ -545,6 +558,20 @@ public class JulesDispatchService {
         // active-session poll forever, a permanent zombie that no longer matches its own task's real
         // (failed/done) status.
         if (isTerminalSessionStatus(session.getStatus())) {
+            return session;
+        }
+
+        TaskEntity currentTask = taskRepository.findById(session.getTaskId()).orElse(null);
+        if (currentTask != null && isTerminalTask(currentTask)) {
+            closeSessionForTerminalTask(session, currentTask);
+            return session;
+        }
+        if (currentTask != null && reviewFallbackTargetsAreTerminal(currentTask)) {
+            closeSessionAsNoCode(session, "Poka-yoke: review fallback retired because every target task is terminal");
+            markSystemTaskDone(currentTask);
+            claimService.releaseTerminalClaim(currentTask.getId());
+            log.info("Poka-yoke: retired obsolete review fallback task {} / session {} before provider polling",
+                    currentTask.getId(), session.getExternalSessionId());
             return session;
         }
 
@@ -1103,12 +1130,12 @@ public class JulesDispatchService {
         julesSessionRepository.save(session);
 
         claimService.closeTaskAsBlocked(task.getId(), "Jules circuit breaker: " + closeReason);
-        createCircuitBreakerWishlist(session, task, latestQuestion, diagnosis, geminiAnalysis, closeReason);
+        boolean followUpCreated = createCircuitBreakerWishlist(session, task, latestQuestion, diagnosis, geminiAnalysis, closeReason);
         saveJulesDialogueLog(task.getId(), session.getExternalSessionId(),
                 diagnosis.toText() + "\n\nGemini analysis:\n" + taggedGeminiAnalysis,
                 "Jules loop closed by Eneik circuit breaker: " + closeReason);
-        log.warn("Closed Jules session {} for task {} due to {}. Follow-up wishlist generated.",
-                session.getExternalSessionId(), task.getId(), closeReason);
+        log.warn("Closed Jules session {} for task {} due to {}. Follow-up wishlist created={}.",
+                session.getExternalSessionId(), task.getId(), closeReason, followUpCreated);
     }
 
     private LoopDiagnosis diagnoseLoop(TaskEntity task, String latestQuestion, String closeReason) {
@@ -1206,14 +1233,18 @@ public class JulesDispatchService {
                 + "\nDefinition of Done: " + firstLine(diagnosis.followUpBody());
     }
 
-    private void createCircuitBreakerWishlist(JulesSessionEntity session,
-                                              TaskEntity task,
-                                              String latestQuestion,
-                                              LoopDiagnosis diagnosis,
-                                              String geminiAnalysis,
-                                              String closeReason) {
+    private boolean createCircuitBreakerWishlist(JulesSessionEntity session,
+                                                 TaskEntity task,
+                                                 String latestQuestion,
+                                                 LoopDiagnosis diagnosis,
+                                                 String geminiAnalysis,
+                                                 String closeReason) {
         if (task.getProject() == null) {
-            return;
+            return false;
+        }
+        if (!autoRecoveryFollowupEnabled) {
+            log.warn("JulesDispatchService: auto-recovery follow-up disabled; not creating circuit-breaker wishlist for session {}", session.getId());
+            return false;
         }
         UUID projectId = task.getProject().getId();
         String marker = "Circuit breaker source session: " + session.getId();
@@ -1221,7 +1252,7 @@ public class JulesDispatchService {
                 .map(WishlistEntity::getContent)
                 .anyMatch(content -> content != null && content.contains(marker));
         if (alreadyExists) {
-            return;
+            return false;
         }
 
         WishlistEntity followUp = new WishlistEntity();
@@ -1268,6 +1299,7 @@ public class JulesDispatchService {
                 truncate(latestQuestion, 1_500)
         ), FOLLOW_UP_CONTENT_MAX_LENGTH));
         wishlistRepository.save(followUp);
+        return true;
     }
 
     private String generatedArtifactFollowUp(TaskEntity task) {
@@ -1357,6 +1389,47 @@ public class JulesDispatchService {
             return value;
         }
         return value.substring(0, maxLength);
+    }
+
+    /**
+     * Replays the implementer hand-off when the durable session edge was saved but the task transition
+     * did not finish. pollStatus persists pr_opened before invoking handlePrOpenedWorkflow; a process
+     * restart or exception in between used to leave task=claimed/session=pr_opened forever because the
+     * active poller deliberately ignores already-open PRs and lease maintenance treats them as alive.
+     *
+     * The task-state predicate is the idempotency key. A successful replay moves the task away from
+     * claimed, so later ticks do nothing. Review/pending-review sessions are intentionally not replayed
+     * here because a pr_opened session at those stages may be a reviewer rather than the implementer.
+     */
+    @Scheduled(fixedRateString = "${jules.pr-opened-reconcile-rate-ms:60000}")
+    public int reconcileStrandedPrOpenedWorkflows() {
+        int replayed = 0;
+        List<JulesSessionEntity> openPrSessions = julesSessionRepository.findByStatus("pr_opened");
+        for (JulesSessionEntity session : openPrSessions) {
+            TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task == null || task.getStatus() != TaskStatus.claimed
+                    || session.getPrUrl() == null || session.getPrUrl().isBlank()) {
+                continue;
+            }
+            // A persistent worker intentionally parks at pr_opened between batches. Its carrier task is
+            // not an implementer hand-off and may remain claimed while the worker has no batch in flight;
+            // replaying it every minute only produces a durable no-op and noisy DB/log traffic.
+            if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
+                continue;
+            }
+            try {
+                log.warn("Replaying stranded pr_opened workflow for task {} / session {} / PR {}",
+                        task.getId(), session.getExternalSessionId(), session.getPrUrl());
+                handlePrOpenedWorkflow(session);
+                if (task.getStatus() != TaskStatus.claimed) {
+                    replayed++;
+                }
+            } catch (Exception e) {
+                log.error("Failed to replay stranded pr_opened workflow for task {} / session {}: {}",
+                        task.getId(), session.getExternalSessionId(), e.getMessage(), e);
+            }
+        }
+        return replayed;
     }
 
     @Transactional
@@ -1572,7 +1645,9 @@ public class JulesDispatchService {
      * off the same BARCAN-TAG-12 contract gets reviewed with a fuller picture instead of two completely
      * isolated diffs. Fully automated end to end; no human decision point anywhere in this pipeline.
      */
-    @Scheduled(fixedRateString = "${pr-review.batch-rate-ms:900000}")
+    @Scheduled(
+            fixedRateString = "${pr-review.batch-rate-ms:900000}",
+            initialDelayString = "${pr-review.batch-initial-delay-ms:60000}")
     @Transactional
     public void processPendingReviewBatch() {
         List<TaskEntity> pending = taskRepository.findByStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
@@ -2043,10 +2118,25 @@ public class JulesDispatchService {
      * this batch and left exactly as-is for a retry next cycle rather than guessing.
      */
     private void dispatchReviewerFallbackBatch(List<PendingFallbackReview> items) {
+        if (items == null || items.isEmpty()) {
+            return;
+        }
+        UUID projectId = items.get(0).task().getProject().getId();
+        Set<UUID> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsInFlight(projectId));
         List<TaskEntity> tasks = new java.util.ArrayList<>();
         List<String> prUrls = new java.util.ArrayList<>();
         List<String> diffs = new java.util.ArrayList<>();
         for (PendingFallbackReview item : items) {
+            if (isTerminalTask(item.task())) {
+                log.info("PR review fallback: target task {} is already terminal; skipping obsolete review dispatch.",
+                        item.task().getId());
+                continue;
+            }
+            if (!scheduledTargets.add(item.task().getId())) {
+                log.info("PR review fallback: task {} is already covered by an active fallback task; skipping duplicate dispatch.",
+                        item.task().getId());
+                continue;
+            }
             Integer pullNumber = parsePullNumber(item.prUrl());
             Optional<String> diff = pullNumber != null
                     ? gitHubPullRequestService.fetchDiffText(item.task().getProject(), pullNumber)
@@ -2075,6 +2165,25 @@ public class JulesDispatchService {
         }
         log.info("Dispatched batched PR review fallback task {} covering {} PR(s) - Gemini review unavailable",
                 reviewTaskId, tasks.size());
+    }
+
+    Set<UUID> reviewFallbackTargetsInFlight(UUID projectId) {
+        return taskRepository.findAll().stream()
+                .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
+                .filter(projectFlowService::isReviewFallbackTask)
+                .filter(task -> !isTerminalTask(task))
+                .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    boolean reviewFallbackTargetsAreTerminal(TaskEntity reviewTask) {
+        if (!projectFlowService.isReviewFallbackTask(reviewTask)) {
+            return false;
+        }
+        List<UUID> targetIds = projectFlowService.reviewFallbackTargetTaskIds(reviewTask);
+        return !targetIds.isEmpty() && targetIds.stream()
+                .map(taskRepository::findById)
+                .allMatch(target -> target.isPresent() && isTerminalTask(target.get()));
     }
 
     /**
@@ -2281,6 +2390,15 @@ public class JulesDispatchService {
      */
     private void completeReviewerFallback(JulesSessionEntity session, TaskEntity reviewTask) {
         List<UUID> originalTaskIds = projectFlowService.reviewFallbackTargetTaskIds(reviewTask);
+
+        if (reviewFallbackTargetsAreTerminal(reviewTask)) {
+            closeSessionAsNoCode(session, "Poka-yoke: review fallback result ignored because every target task is terminal");
+            markSystemTaskDone(reviewTask);
+            claimService.releaseTerminalClaim(reviewTask.getId());
+            log.info("Poka-yoke: ignored obsolete review fallback completion for task {} targeting {}",
+                    reviewTask.getId(), originalTaskIds);
+            return;
+        }
 
         // Idempotency: same dispatch-race risk as the coverage-audit fix above (and the original
         // wishlist-compiler duplication incident) - a review-fallback task can end up with more than one
@@ -2991,15 +3109,56 @@ public class JulesDispatchService {
     }
 
     public void runSessionSafetyMaintenance() {
-        claimService.detectStuckSessions(stuckThresholdMinutes);
+        closeSessionsForTerminalTasks();
+        claimService.detectStuckSessions(effectiveStuckThresholdMinutes());
         closeOverdueStuckSessions();
         forceUnblockOverflowedSessions();
         reconcileAbandonedPullRequests();
     }
 
+    int effectiveStuckThresholdMinutes() {
+        return Math.max(DAVIDSON_TRUST_WINDOW_MINUTES, stuckThresholdMinutes);
+    }
+
+    private int effectiveStuckCloseThresholdMinutes() {
+        return Math.max(DAVIDSON_CLOSE_WINDOW_MINUTES, stuckCloseThresholdMinutes);
+    }
+
+    @Transactional
+    public void closeSessionsForTerminalTasks() {
+        List<JulesSessionEntity> candidates = julesSessionRepository.findByStatusIn(ACTIVE_SESSION_STATUSES);
+        for (JulesSessionEntity session : candidates) {
+            taskRepository.findById(session.getTaskId())
+                    .filter(this::isTerminalTask)
+                    .ifPresent(task -> closeSessionForTerminalTask(session, task));
+        }
+    }
+
+    private boolean isTerminalTask(TaskEntity task) {
+        return task.getStatus() == TaskStatus.done
+                || task.getStatus() == TaskStatus.failed
+                // A blocked task may be recovered later by a fresh session, but the session that caused
+                // the block is finished. Treating it as pollable let stale API responses resurrect that
+                // old session every ~30 minutes while the task itself remained blocked.
+                || task.getStatus() == TaskStatus.blocked
+                || task.getStatus() == TaskStatus.spike_completed;
+    }
+
+    private void closeSessionForTerminalTask(JulesSessionEntity session, TaskEntity task) {
+        session.setStatus("closed_terminal_task");
+        session.setClosedAt(Instant.now());
+        session.setClosureReason("Session retired because its task is already terminal (" + task.getStatus()
+                + "); no polling, unblock, or follow-up is allowed.");
+        julesSessionRepository.save(session);
+        claimService.releaseTerminalClaim(task.getId());
+        log.info("Session {} closed locally because task {} is already terminal ({})",
+                session.getExternalSessionId(), task.getId(), task.getStatus());
+    }
+
     @Transactional
     public void closeOverdueStuckSessions() {
-        Instant threshold = Instant.now().minus(Duration.ofMinutes(stuckCloseThresholdMinutes));
+        int closeThresholdMinutes = effectiveStuckCloseThresholdMinutes();
+        Instant threshold = Instant.now().minus(Duration.ofMinutes(closeThresholdMinutes));
         List<JulesSessionEntity> stuckSessions = julesSessionRepository.findByStatus("stuck");
         if (stuckSessions == null || stuckSessions.isEmpty()) {
             return;
@@ -3021,6 +3180,13 @@ public class JulesDispatchService {
                 julesSessionRepository.save(session);
                 continue;
             }
+            if (isTerminalTask(task)) {
+                closeSessionForTerminalTask(session, task);
+                continue;
+            }
+            if (honorDavidsonProgressEvidence(session, task, reference)) {
+                continue;
+            }
             List<JulesActivityResponseEntity> responseHistory =
                     julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
             String latestQuestion = responseHistory.stream()
@@ -3033,7 +3199,7 @@ public class JulesDispatchService {
                     task,
                     latestQuestion,
                     responseHistory,
-                    "stuck_session_timeout: stuck for at least " + stuckCloseThresholdMinutes + " minutes"
+                    "stuck_session_timeout: stuck for at least " + closeThresholdMinutes + " minutes"
             );
             closed++;
         }
@@ -3053,7 +3219,11 @@ public class JulesDispatchService {
      */
     @Transactional
     public void forceUnblockOverflowedSessions() {
-        Instant staleSince = Instant.now().minus(Duration.ofMinutes(stuckThresholdMinutes));
+        Instant now = Instant.now();
+        int trustWindowMinutes = effectiveStuckThresholdMinutes();
+        int closeWindowMinutes = effectiveStuckCloseThresholdMinutes();
+        Instant staleSince = now.minus(Duration.ofMinutes(trustWindowMinutes));
+        Instant closeSince = now.minus(Duration.ofMinutes(closeWindowMinutes));
         List<JulesSessionEntity> candidates = julesSessionRepository.findByStatusIn(
                 List.of("running", "queued", "revising", "stuck"));
 
@@ -3062,19 +3232,32 @@ public class JulesDispatchService {
             // blindCycleCount, which never increments unless its activity log is oversized - a session
             // that simply went quiet after a rejection, with a normal-sized log, sat untouched for the
             // full stuck-close-threshold-minutes (120min) before anything happened. Nudging it as soon as
-            // it's stale (same stuckThresholdMinutes gate detectStuckSessions already uses) closes that
+            // it's stale (same effective trust-window gate detectStuckSessions uses) closes that
             // gap - confirmed live as a real bottleneck on real product-code tasks in test-twenty-seventh.
             boolean revisingOrStuck = "revising".equals(session.getStatus()) || "stuck".equals(session.getStatus());
             if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold && !revisingOrStuck) {
                 continue;
             }
             Instant lastProgress = session.getLastProgressAt() != null ? session.getLastProgressAt() : session.getCreatedAt();
-            if (lastProgress.isAfter(staleSince)) {
+            // Davidson trust invariant: absence of an observable status transition is not evidence that
+            // Jules stopped working. A session may legitimately stay silent for the full 60-minute
+            // window. Configuration may extend this window, but can never shorten it.
+            if (!lastProgress.isBefore(staleSince)) {
+                continue;
+            }
+            Instant nextActionAt = lastProgress
+                    .plus(Duration.ofMinutes(trustWindowMinutes))
+                    .plus(STUCK_RECOVERY_MESSAGE_INTERVAL.multipliedBy(session.getForcedUnblockAttempts()));
+            if (!now.isAfter(nextActionAt)) {
                 continue;
             }
 
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
             if (task == null) {
+                continue;
+            }
+            if (isTerminalTask(task)) {
+                closeSessionForTerminalTask(session, task);
                 continue;
             }
 
@@ -3091,28 +3274,25 @@ public class JulesDispatchService {
                     || projectFlowService.isReviewFallbackTask(task)
                     || projectFlowService.isDesignReviewTask(task)
                     || projectFlowService.isCoverageAuditTask(task);
+            if (honorDavidsonProgressEvidence(session, task, lastProgress)) {
+                continue;
+            }
+
+            if (session.getForcedUnblockAttempts() < forcedUnblockMaxAttempts) {
+                sendForcedUnblockMessageAsync(session, task, revisingOrStuck, trustWindowMinutes);
+                session.setForcedUnblockAttempts(session.getForcedUnblockAttempts() + 1);
+                session.setBlindCycleCount(0);
+                julesSessionRepository.save(session);
+                continue;
+            }
+
+            // Two unanswered nudges are still not proof of failure. Preserve the charitable interpretation
+            // until the independent long close window has elapsed.
+            if (!lastProgress.isBefore(closeSince)) {
+                continue;
+            }
+
             if (isSystemTask) {
-                // Principle of charity (Davidson): a Jules session doesn't go quiet for no reason - either
-                // it already has an answer (a real, parseable result file sitting in its PR, just not yet
-                // reflected by an external-status transition we happened to observe) or it has an open
-                // question (already covered every poll cycle by answerAgentQuestions). Confirmed live
-                // (2026-07-21, test-thirty-second) that a persistent-worker session can keep reporting
-                // RUNNING from Jules's own API indefinitely even after pushing a real commit with a valid
-                // verdict/plan file - our lastProgressAt only moves on a status transition, so that
-                // genuine progress was invisible to this loop and the session got force-closed 29 minutes
-                // after real work landed, stranding it in a PR nobody would ever read again. Check for a
-                // ready answer BEFORE assuming the silence means nothing happened.
-                if (projectFlowService.isPersistentWorkerCarrierTask(task)
-                        && persistentWorkerHasReadyAnswer(session, task)) {
-                    log.info("Persistent worker carrier task {} looked stalled (no status transition for {}+ min) "
-                                    + "but its PR already has a ready, parseable result file - treating as real "
-                                    + "progress instead of closing (principle of charity), processing it now.",
-                            task.getId(), stuckThresholdMinutes);
-                    session.setLastProgressAt(Instant.now());
-                    julesSessionRepository.save(session);
-                    completePersistentWorkerCycle(session, task);
-                    continue;
-                }
                 session.setStatus("loop_closed");
                 session.setClosedAt(Instant.now());
                 session.setClosureReason("System task session force-unblock exhausted without progress; closed without generic follow-up (not real feature work).");
@@ -3129,57 +3309,57 @@ public class JulesDispatchService {
                 continue;
             }
 
-            if (session.getForcedUnblockAttempts() >= forcedUnblockMaxAttempts) {
-                // Principle of charity, generalized (2026-07-21, operator directive): the persistent-worker
-                // check above has a single result file to look for; a real implementer session doesn't -
-                // the closest ground truth is "did a new commit land on the branch since we last saw
-                // progress". Confirmed live (UI Slice, same night) that a session can push real, complete,
-                // working code while Jules's own API keeps reporting a non-terminal status forever - our
-                // lastProgressAt never moves in that case, so the session looks stalled right up until this
-                // exact close call, even though real work already landed. Check before assuming silence
-                // means nothing happened.
-                if (hasNewProgressOnGitHub(session, task, lastProgress)) {
-                    log.info("Task {} session {} looked stalled (no status transition for {}+ min) but a new "
-                                    + "commit landed on its branch after lastProgressAt - treating as real progress "
-                                    + "instead of closing (principle of charity), not spending another force-unblock "
-                                    + "attempt.", task.getId(), session.getExternalSessionId(), stuckThresholdMinutes);
-                    session.setLastProgressAt(Instant.now());
-                    session.setForcedUnblockAttempts(0);
-                    session.setBlindCycleCount(0);
-                    julesSessionRepository.save(session);
-                    continue;
-                }
-                List<JulesActivityResponseEntity> responseHistory =
-                        julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
-                String stallReason = revisingOrStuck && session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold
-                        ? "Session stayed in " + session.getStatus() + " with no observed progress since " + lastProgress
-                        : "Session activity log stayed too large to inspect for " + session.getBlindCycleCount()
-                                + " consecutive cycle(s) with no observed progress since " + lastProgress;
-                closeLoopAndCreateFollowUps(
-                        session,
-                        task,
-                        stallReason,
-                        responseHistory,
-                        "blind_overflow_unblock_exhausted: forced unblock attempted "
-                                + session.getForcedUnblockAttempts() + " time(s) without observed progress"
-                );
-                continue;
-            }
-
-            sendForcedUnblockMessageAsync(session, task, revisingOrStuck);
-            session.setForcedUnblockAttempts(session.getForcedUnblockAttempts() + 1);
-            session.setBlindCycleCount(0);
-            julesSessionRepository.save(session);
+            List<JulesActivityResponseEntity> responseHistory =
+                    julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(session.getId());
+            String stallReason = revisingOrStuck && session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold
+                    ? "Session stayed in " + session.getStatus() + " with no observed progress since " + lastProgress
+                    : "Session activity log stayed too large to inspect for " + session.getBlindCycleCount()
+                            + " consecutive cycle(s) with no observed progress since " + lastProgress;
+            closeLoopAndCreateFollowUps(
+                    session,
+                    task,
+                    stallReason,
+                    responseHistory,
+                    "blind_overflow_unblock_exhausted: forced unblock attempted "
+                            + session.getForcedUnblockAttempts() + " time(s) without observed progress"
+            );
         }
     }
 
-    private void sendForcedUnblockMessageAsync(JulesSessionEntity session, TaskEntity task, boolean revisingNudge) {
+    private boolean honorDavidsonProgressEvidence(JulesSessionEntity session, TaskEntity task, Instant lastProgress) {
+        // Principle of charity (Davidson): check the artifact-producing system of record before inferring
+        // failure from silence in the status channel.
+        if (projectFlowService.isPersistentWorkerCarrierTask(task)
+                && persistentWorkerHasReadyAnswer(session, task)) {
+            log.info("Persistent worker carrier task {} looked stalled but its PR already has a ready, "
+                            + "parseable result file; processing it instead of closing the session.", task.getId());
+            session.setLastProgressAt(Instant.now());
+            julesSessionRepository.save(session);
+            completePersistentWorkerCycle(session, task);
+            return true;
+        }
+        if (task.getProject() != null && hasNewProgressOnGitHub(session, task, lastProgress)) {
+            log.info("Task {} session {} looked stalled but a new commit landed after lastProgressAt; "
+                            + "treating the commit as positive progress evidence instead of closing.",
+                    task.getId(), session.getExternalSessionId());
+            session.setStatus("running");
+            session.setLastProgressAt(Instant.now());
+            session.setForcedUnblockAttempts(0);
+            session.setBlindCycleCount(0);
+            julesSessionRepository.save(session);
+            return true;
+        }
+        return false;
+    }
+
+    private void sendForcedUnblockMessageAsync(JulesSessionEntity session, TaskEntity task, boolean revisingNudge,
+                                                int trustWindowMinutes) {
         String externalSessionId = session.getExternalSessionId();
         String apiKey = apiKeyForSession(session);
         UUID taskId = task.getId();
         String message = revisingNudge
                 ? "Eneik orchestrator nudge: this session was sent review feedback and asked to push a fix, but "
-                        + "no update has been observed for " + stuckThresholdMinutes + "+ minutes. Please push a fix "
+                        + "no update has been observed for " + trustWindowMinutes + "+ minutes. Please push a fix "
                         + "now addressing the earlier review feedback, or if genuinely blocked, state the concrete "
                         + "blocker in a comment on the PR so it can be escalated. Work should not silently stall."
                 : "Eneik orchestrator forced unblock: this session's activity log has stayed too large "
@@ -3280,6 +3460,11 @@ public class JulesDispatchService {
                 log.info("Reconciled abandoned PR {} for closed session {} (task {}) - approved by auto-review, queued for AutoMergeService.",
                         pr.url(), session.getExternalSessionId(), task.getId());
             } else {
+                if (!autoRecoveryFollowupEnabled) {
+                    log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - auto-review rejected, but auto-recovery follow-up is disabled.",
+                            pr.url(), session.getExternalSessionId(), task.getId());
+                    continue;
+                }
                 WishlistEntity followUp = new WishlistEntity();
                 followUp.setProjectId(task.getProject().getId());
                 followUp.setSource(WishlistSource.role_mismatch_followup);

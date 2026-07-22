@@ -18,7 +18,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
+@SpringBootTest(properties = "auto-recovery.followup.enabled=true")
 @ActiveProfiles("test")
 @Transactional
 class AutonomousPipelineIntegrationTest {

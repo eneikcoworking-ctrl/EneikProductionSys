@@ -546,6 +546,88 @@ public class GitHubPullRequestService {
     }
 
     /**
+     * Reads the real GitHub check-runs for a PR head. Auto-merge must fail closed here: a locally
+     * generated review verdict is not evidence that GitHub CI ran, and treating every discovered PR as
+     * green previously merged a sequence of red branches into main.
+     */
+    public PullRequestChecks pullRequestChecks(ProjectEntity project, int pullNumber) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return PullRequestChecks.unavailable("GitHub integration is disabled");
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return PullRequestChecks.unavailable("GitHub token is missing");
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String pullPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/pulls/" + pullNumber;
+            HttpResponse<String> pullResponse = httpClient.send(
+                    baseRequest(pullPath, token).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (pullResponse.statusCode() != 200) {
+                return PullRequestChecks.unavailable("GitHub PR fetch returned HTTP " + pullResponse.statusCode());
+            }
+            String headSha = objectMapper.readTree(pullResponse.body()).path("head").path("sha").asText("");
+            if (headSha.isBlank()) {
+                return PullRequestChecks.unavailable("GitHub PR head SHA is missing");
+            }
+
+            String checksPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/commits/" + encode(headSha) + "/check-runs?per_page=100";
+            HttpResponse<String> checksResponse = httpClient.send(
+                    baseRequest(checksPath, token).GET().build(),
+                    HttpResponse.BodyHandlers.ofString());
+            if (checksResponse.statusCode() != 200) {
+                return PullRequestChecks.unavailable("GitHub check-runs returned HTTP " + checksResponse.statusCode());
+            }
+
+            return evaluateCheckRuns(objectMapper.readTree(checksResponse.body()).path("check_runs"));
+        } catch (Exception e) {
+            return PullRequestChecks.unavailable(e.getMessage());
+        }
+    }
+
+    static PullRequestChecks evaluateCheckRuns(JsonNode checkRuns) {
+        if (checkRuns == null || !checkRuns.isArray() || checkRuns.isEmpty()) {
+            return new PullRequestChecks(true, false, "pending", "No GitHub check-runs exist for the PR head");
+        }
+
+        java.util.List<String> failures = new java.util.ArrayList<>();
+        boolean pending = false;
+        for (JsonNode checkRun : checkRuns) {
+            String name = checkRun.path("name").asText("unnamed-check");
+            String status = checkRun.path("status").asText("");
+            String conclusion = checkRun.path("conclusion").asText("");
+            if (!"completed".equalsIgnoreCase(status)) {
+                pending = true;
+                continue;
+            }
+            if (!java.util.Set.of("success", "neutral", "skipped").contains(conclusion.toLowerCase(java.util.Locale.ROOT))) {
+                failures.add(name + "=" + (conclusion.isBlank() ? "unknown" : conclusion));
+            }
+        }
+        if (pending) {
+            return new PullRequestChecks(true, false, "pending", "One or more GitHub checks are still running");
+        }
+        if (!failures.isEmpty()) {
+            return new PullRequestChecks(true, false, "failure", String.join(", ", failures));
+        }
+        return new PullRequestChecks(true, true, "success", "All GitHub check-runs completed successfully");
+    }
+
+    public static boolean matchesSessionToken(GitHubPullRequest pullRequest, String externalSessionId) {
+        if (pullRequest == null || pullRequest.headRef() == null || externalSessionId == null
+                || externalSessionId.isBlank() || "skipped".equals(externalSessionId)) {
+            return false;
+        }
+        String token = externalSessionId.startsWith("sessions/")
+                ? externalSessionId.substring("sessions/".length())
+                : externalSessionId;
+        return !token.isBlank() && pullRequest.headRef().contains(token);
+    }
+
+    /**
      * Closes exactly one PR (unlike {@link #closeOpenPullRequests}, which closes every open PR for the
      * project). Used only when a record PR could not be validly parsed (e.g. an invalid compiler plan) -
      * there is nothing worth keeping in history in that case.
@@ -679,6 +761,12 @@ public class GitHubPullRequestService {
     private record RepoRef(String owner, String repo) {}
 
     public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged) {}
+
+    public record PullRequestChecks(boolean available, boolean successful, String status, String detail) {
+        static PullRequestChecks unavailable(String detail) {
+            return new PullRequestChecks(false, false, "unavailable", detail == null ? "Unknown GitHub error" : detail);
+        }
+    }
 
     public record PullRequestCloseResult(
             int number,

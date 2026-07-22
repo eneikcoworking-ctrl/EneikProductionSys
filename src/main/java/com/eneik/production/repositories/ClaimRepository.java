@@ -19,7 +19,8 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
            "GROUP BY c.account.id")
     List<ExpiredStatDto> expiredCountByAccountSince(@Param("since") Instant since);
 
-    Optional<ClaimEntity> findByAccountIdAndReleasedAtIsNull(UUID accountId);
+    List<ClaimEntity> findByAccountIdAndReleasedAtIsNullOrderByClaimedAtDesc(UUID accountId);
+    boolean existsByAccountIdAndReleasedAtIsNull(UUID accountId);
     Optional<ClaimEntity> findByAccountIdAndTaskProjectIdAndReleasedAtIsNull(UUID accountId, UUID projectId);
     List<ClaimEntity> findByAccountIdAndTaskProjectIdAndReleasedAtIsNullOrderByClaimedAtDesc(UUID accountId, UUID projectId);
     Optional<ClaimEntity> findByTaskIdAndReleasedAtIsNull(UUID taskId);

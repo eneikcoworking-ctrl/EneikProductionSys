@@ -6,6 +6,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.MLPredictionServiceClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,16 +19,24 @@ public class RoleAdviceLoopService {
     private final TaskRepository taskRepository;
     private final WishlistRepository wishlistRepository;
     private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final boolean enabled;
 
     public RoleAdviceLoopService(TaskRepository taskRepository, WishlistRepository wishlistRepository,
-                                 MLPredictionServiceClient mlPredictionServiceClient) {
+                                 MLPredictionServiceClient mlPredictionServiceClient,
+                                 @Value("${role-advice-loop.enabled:false}") boolean enabled) {
         this.taskRepository = taskRepository;
         this.wishlistRepository = wishlistRepository;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.enabled = enabled;
     }
 
     @Transactional
     public void afterTaskComplete(UUID taskId) {
+        if (!enabled) {
+            log.info("RoleAdviceLoopService: disabled; skipping follow-up advice for task {}", taskId);
+            return;
+        }
+
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
 

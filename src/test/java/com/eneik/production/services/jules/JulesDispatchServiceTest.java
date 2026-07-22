@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -21,6 +22,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -77,7 +79,9 @@ class JulesDispatchServiceTest {
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
+        ReflectionTestUtils.setField(julesDispatchService, "stuckCloseThresholdMinutes", 120);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
+        ReflectionTestUtils.setField(julesDispatchService, "autoRecoveryFollowupEnabled", true);
         ReflectionTestUtils.setField(julesDispatchService, "loopCloseSimilarThreshold", 3);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockBlindCycleThreshold", 5);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
@@ -124,7 +128,7 @@ class JulesDispatchServiceTest {
         julesDispatchService.detectStuck();
 
         // Then
-        verify(claimService, times(1)).detectStuckSessions(30);
+        verify(claimService, times(1)).detectStuckSessions(60);
     }
 
     @Test
@@ -477,7 +481,29 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void forceUnblockSendsDeterministicMessageWhenBlindAndStale() {
+    void forceUnblockTrustsSilentSessionForFullDavidsonWindow() {
+        UUID sessionId = UUID.randomUUID();
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(UUID.randomUUID());
+        session.setExternalSessionId("sessions/charitable-silence");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setLastProgressAt(Instant.now().minus(45, ChronoUnit.MINUTES));
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals("running", session.getStatus());
+        assertEquals(0, session.getForcedUnblockAttempts());
+        verifyNoInteractions(taskRepository);
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString());
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void forceUnblockSendsDeterministicMessageAfterDavidsonWindow() {
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
@@ -490,7 +516,7 @@ class JulesDispatchServiceTest {
         session.setStatus("running");
         session.setBlindCycleCount(6);
         session.setForcedUnblockAttempts(0);
-        session.setLastProgressAt(Instant.now().minus(45, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(65, ChronoUnit.MINUTES));
 
         AccountEntity account = new AccountEntity();
         account.setId(accountId);
@@ -533,7 +559,7 @@ class JulesDispatchServiceTest {
         session.setStatus("running");
         session.setBlindCycleCount(7);
         session.setForcedUnblockAttempts(2);
-        session.setLastProgressAt(Instant.now().minus(90, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(130, ChronoUnit.MINUTES));
 
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
@@ -552,6 +578,116 @@ class JulesDispatchServiceTest {
         assertEquals("loop_closed", session.getStatus());
         verify(claimService).closeTaskAsBlocked(eq(taskId), contains("blind_overflow_unblock_exhausted"));
         verify(julesApiClient, never()).sendMessage(eq("sessions/blind-exhausted"), anyString(), anyString());
+    }
+
+    @Test
+    void forceUnblockDoesNotCloseAfterNudgesBeforeLongCloseWindow() {
+        UUID taskId = UUID.randomUUID();
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/still-charitable");
+        session.setStatus("running");
+        session.setBlindCycleCount(7);
+        session.setForcedUnblockAttempts(2);
+        session.setLastProgressAt(Instant.now().minus(90, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals("running", session.getStatus());
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString());
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void closesActiveSessionForTerminalTaskWithoutRecoveryOrStatusMutation() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/already-done");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.done);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        julesDispatchService.closeSessionsForTerminalTasks();
+
+        assertEquals("closed_terminal_task", session.getStatus());
+        assertEquals(TaskStatus.done, task.getStatus());
+        verify(claimService).releaseTerminalClaim(taskId);
+        verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
+        verify(claimService, never()).closeTaskAsFailed(any(), anyString());
+        verify(claimService, never()).closeTaskAsBlocked(any(), anyString());
+    }
+
+    @Test
+    void closesStaleActiveSessionForBlockedTaskWithoutReopeningTask() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/already-blocked");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        julesDispatchService.closeSessionsForTerminalTasks();
+
+        assertEquals("closed_terminal_task", session.getStatus());
+        assertEquals(TaskStatus.blocked, task.getStatus());
+        verify(julesApiClient, never()).getSessionStatus(anyString());
+        verify(claimService, never()).closeTaskAsFailed(any(), anyString());
+        verify(claimService, never()).closeTaskAsBlocked(any(), anyString());
+    }
+
+    @Test
+    void pollStatusNeverCallsExternalApiForTerminalTask() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/terminal-before-poll");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.failed);
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        assertEquals("closed_terminal_task", result.getStatus());
+        verify(julesApiClient, never()).getSessionStatus(anyString());
+        verify(julesApiClient, never()).getSessionStatus(anyString(), anyString());
+        verify(claimService).releaseTerminalClaim(taskId);
     }
 
     @Test
@@ -588,6 +724,88 @@ class JulesDispatchServiceTest {
 
         assertEquals(com.eneik.production.models.persistence.TaskStatus.pending_review, task.getStatus());
         verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void replaysClaimedPrOpenedWorkflowAfterMissedDurableEdge() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-08");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setStatus(TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/missed-edge");
+        session.setPrUrl("https://github.com/org/repo/pull/42");
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.findByStatus("pr_opened")).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        int replayed = julesDispatchService.reconcileStrandedPrOpenedWorkflows();
+
+        assertEquals(1, replayed);
+        assertEquals(TaskStatus.pending_review, task.getStatus());
+        verify(claimService).complete(taskId);
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void prOpenedReplayIsIdempotentOnceTaskLeftClaimed() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.pending_review);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setPrUrl("https://github.com/org/repo/pull/43");
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.findByStatus("pr_opened")).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        assertEquals(0, julesDispatchService.reconcileStrandedPrOpenedWorkflows());
+        verify(claimService, never()).complete(any());
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void prOpenedReplaySkipsIdlePersistentWorkerCarrier() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setPrUrl("https://github.com/org/repo/pull/44");
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.findByStatus("pr_opened")).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(projectFlowService.isPersistentWorkerCarrierTask(task)).thenReturn(true);
+
+        assertEquals(0, julesDispatchService.reconcileStrandedPrOpenedWorkflows());
+        verify(claimService, never()).complete(any());
+        verify(taskRepository, never()).save(any());
     }
 
     @Test
@@ -797,5 +1015,106 @@ class JulesDispatchServiceTest {
 
         verify(gitHubPullRequestService, never()).mergeRecordPullRequest(
                 any(), any(), eq("duplicate wishlist compiler run discarded (wishlist already compiled)"));
+    }
+
+    @Test
+    void activeReviewFallbackPreventsDuplicateDispatchForSameOriginalTask() {
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity activeFallback = new TaskEntity();
+        activeFallback.setId(UUID.randomUUID());
+        activeFallback.setProject(project);
+        activeFallback.setStatus(TaskStatus.claimed);
+
+        when(taskRepository.findAll()).thenReturn(List.of(activeFallback));
+        when(projectFlowService.isReviewFallbackTask(activeFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(activeFallback)).thenReturn(List.of(targetTaskId));
+
+        assertEquals(Set.of(targetTaskId), julesDispatchService.reviewFallbackTargetsInFlight(projectId));
+    }
+
+    @Test
+    void completedReviewFallbackDoesNotBlockLaterRetry() {
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity completedFallback = new TaskEntity();
+        completedFallback.setId(UUID.randomUUID());
+        completedFallback.setProject(project);
+        completedFallback.setStatus(TaskStatus.done);
+
+        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+
+        assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
+    }
+
+    @Test
+    void cancellingLateSessionDoesNotDowngradeCompletedTask() {
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.done);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/late-duplicate");
+        session.setStatus("running");
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        julesDispatchService.cancelSession(sessionId, "superseded");
+
+        assertEquals("cancelled", session.getStatus());
+        assertEquals(TaskStatus.done, task.getStatus());
+        verify(claimService).releaseTerminalClaim(taskId);
+        verify(claimService, never()).closeTaskAsFailed(any(), anyString());
+    }
+
+    @Test
+    void reviewFallbackBecomesObsoleteWhenAllTargetsAreTerminal() {
+        UUID targetId = UUID.randomUUID();
+        TaskEntity fallback = new TaskEntity();
+        fallback.setId(UUID.randomUUID());
+        fallback.setStatus(TaskStatus.claimed);
+        TaskEntity target = new TaskEntity();
+        target.setId(targetId);
+        target.setStatus(TaskStatus.done);
+
+        when(projectFlowService.isReviewFallbackTask(fallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(fallback)).thenReturn(List.of(targetId));
+        when(taskRepository.findById(targetId)).thenReturn(Optional.of(target));
+
+        assertTrue(julesDispatchService.reviewFallbackTargetsAreTerminal(fallback));
+    }
+
+    @Test
+    void activeTargetKeepsReviewFallbackAlive() {
+        UUID targetId = UUID.randomUUID();
+        TaskEntity fallback = new TaskEntity();
+        fallback.setId(UUID.randomUUID());
+        fallback.setStatus(TaskStatus.claimed);
+        TaskEntity target = new TaskEntity();
+        target.setId(targetId);
+        target.setStatus(TaskStatus.pending_review);
+
+        when(projectFlowService.isReviewFallbackTask(fallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(fallback)).thenReturn(List.of(targetId));
+        when(taskRepository.findById(targetId)).thenReturn(Optional.of(target));
+
+        assertFalse(julesDispatchService.reviewFallbackTargetsAreTerminal(fallback));
     }
 }
