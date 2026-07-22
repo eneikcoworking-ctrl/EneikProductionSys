@@ -197,6 +197,10 @@ public class TechnicalLeadCompiler {
         payload.put("source_role_tag", joinedRoles);
         payload.put("short_title", shortTitle);
         payload.put("slice_title", sliceTitle(wishlist));
+        String displayTitle = sliceDisplayTitle(wishlist);
+        if (displayTitle != null) {
+            payload.put("slice_display_title", displayTitle);
+        }
         payload.put("role_atomic_goal", atomicGoal);
         payload.put("jtbd", englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist)));
         payload.put("lean_value", wishlist.getLeanValue().name());
@@ -1118,6 +1122,33 @@ public class TechnicalLeadCompiler {
             return compactLines(englishMetadata(content, "Compiled JTBD slice " + shortId(wishlist.getId())), 140);
         }
         return "Compiled JTBD slice " + shortId(wishlist.getId());
+    }
+
+    // Ф-followup (2026-07-23, operator directive): "на фронтенде все должно быть предельно
+    // информативно... не должно быть одинаковых названий" - task.title itself is a fixed per-role
+    // template ("API Slice", "UI Slice"), identical across every task sharing a role, and
+    // payload.role_atomic_goal is equally generic (one fixed sentence per role, confirmed live: byte-
+    // identical across every "UI Slice" task in a project). The one genuinely distinguishing per-task
+    // string that already exists is buried inside the wishlist content wrapper
+    // (ProjectFlowService.internalSliceContent: "Internal work item N (ROLE) from wishlist <uuid>:
+    // <the real slice title>\n\n<parent brief>") - extracts just that title segment (e.g. "Bookmarks
+    // Management UI", "Authentication Backend API") so the frontend can show it as the primary label
+    // instead of the repeated role template. Backend naming (task.title, Jules session titles) is
+    // unaffected - this is purely an additional display-only payload field.
+    private String sliceDisplayTitle(WishlistEntity wishlist) {
+        String content = wishlist.getContent();
+        if (content == null || !(content.startsWith("Internal slice ") || content.startsWith("Internal UI slice ")
+                || content.startsWith("Internal work item ") || content.startsWith("Internal UI work item "))) {
+            return null;
+        }
+        int colonIdx = content.indexOf(": ");
+        if (colonIdx < 0) {
+            return null;
+        }
+        String afterColon = content.substring(colonIdx + 2);
+        int newlineIdx = afterColon.indexOf('\n');
+        String title = (newlineIdx >= 0 ? afterColon.substring(0, newlineIdx) : afterColon).trim();
+        return title.isBlank() ? null : title;
     }
 
     private String fileScopeSource(WishlistEntity wishlist) {

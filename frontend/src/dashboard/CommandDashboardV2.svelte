@@ -702,7 +702,7 @@
                     <span class="badge-status {task.status}">{task.status}</span>
                     <CynefinBadge domain={task.cynefinDomain} />
                   </div>
-                  <p class="task-title-line" title={task.description}>{task.title || task.payload?.short_title || 'Task Slice'}</p>
+                  <p class="task-title-line" title={task.description}>{task.payload?.slice_display_title || task.title || task.payload?.short_title || 'Task Slice'}</p>
                   <p class="task-description" title={task.description}>{task.payload?.role_atomic_goal || task.payload?.slice_title || task.description}</p>
                   <div class="task-footer">
                     <span class="gate-badge {task.qualityGatePassed ? 'pass' : 'fail'}">
