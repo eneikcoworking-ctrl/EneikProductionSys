@@ -869,10 +869,23 @@ public class ProjectFlowService {
         return value.substring(0, Math.max(0, maxLength));
     }
 
-    // Returns true if the wishlist was fully handled via the cheap, synchronous, non-Jules path - nothing
-    // more to do this cycle. Returns false if it still needs the paid Jules compiler: the caller collects
-    // it as a candidate for dispatchBatchedWishlistCompiler instead of dispatching it immediately here, so
-    private java.util.List<MLPredictionServiceClient.EpicPlan> parseCompilerPlanContent(String jsonContent) {
+    @Transactional
+    public boolean ingestPlanFromContent(UUID projectId, String jsonContent) {
+        ProjectEntity project = requireProject(projectId);
+        java.util.List<WishlistEntity> wishlists = wishlistRepository.findByProjectId(projectId).stream()
+                .filter(w -> w.getStatus() == WishlistStatus.pending || w.getStatus() == WishlistStatus.compiling)
+                .toList();
+        if (wishlists.isEmpty()) {
+            wishlists = wishlistRepository.findByProjectId(projectId);
+        }
+        var epicPlans = parseCompilerPlanContent(jsonContent);
+        if (epicPlans.isEmpty()) {
+            return false;
+        }
+        return buildTaskGraphFromSlices(project, wishlists, epicPlans);
+    }
+
+    public java.util.List<MLPredictionServiceClient.EpicPlan> parseCompilerPlanContent(String jsonContent) {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonContent);
@@ -944,6 +957,28 @@ public class ProjectFlowService {
         return java.util.List.copyOf(values);
     }
     private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
+        try {
+            String token = settingsService.effectiveValue("github_token");
+            if (token != null && !token.isBlank() && settingsService.effectiveBoolean("github_enabled")) {
+                java.net.URI uri = java.net.URI.create("https://raw.githubusercontent.com/" + project.getOwner() + "/" + project.getRepositoryName() + "/main/.eneik/task-plan.json");
+                java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+                java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(uri)
+                        .header("Authorization", "Bearer " + token)
+                        .GET()
+                        .build();
+                java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
+                if (resp.statusCode() == 200 && resp.body() != null && !resp.body().isBlank()) {
+                    var epicPlans = parseCompilerPlanContent(resp.body());
+                    if (!epicPlans.isEmpty()) {
+                        log.info("ProjectFlowService: found merged .eneik/task-plan.json on main for project {}; instantiating task graph", project.getId());
+                        return buildTaskGraphFromSlices(project, java.util.List.of(wishlist), epicPlans);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("ProjectFlowService: error checking merged task-plan.json for project {}: {}", project.getId(), e.getMessage());
+        }
+
         if (wishlist.getCompiledByRole() != null) {
             if (wishlist.getLeanValue() != LeanValue.waste) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
