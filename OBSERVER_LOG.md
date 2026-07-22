@@ -2232,3 +2232,11 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 - **Live State Remediation**: The duplicate carrier tasks (`edca3fd6...` and `14c92fec...`) were marked `failed` via internal API. Exactly **1 active compiler task** (`07fb14c6...` / `sessions/9156355911402013882`) remains active for project `leadgen-telegram-bot`.
 - **Deployment**: Backend rebuilt with unit/integration tests and restarted.
 
+## 2026-07-22T15:48:00+04:00 - Log Entry & Anomaly Observation: Jules Account Status Mismatch
+
+### Observed System Anomaly
+- **Observation**: Operator reported that the frontend interface displays Jules accounts as `busy` / `occupied`, even though the Jules accounts are actually free and have zero active executions.
+- **Root Cause & Impact**: `ClaimEntity` or `AccountEntity` locks retained `claimed` status or high concurrent session counts from prior cancelled carrier tasks, causing the frontend UI dashboard `/agents` / `/queue` endpoints to display accounts as occupied.
+- **Plan Graph Ingestion Status**: `.eneik/task-plan.json` successfully ingested into DB (`14 tasks` across `5 Epics` created in status `queued`). Initial wishlist `051b5b53` marked `converted_to_task`.
+
+
