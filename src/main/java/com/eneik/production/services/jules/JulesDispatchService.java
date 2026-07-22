@@ -616,6 +616,28 @@ public class JulesDispatchService {
                 }
             }
 
+            // Ф-followup (2026-07-23, operator directive): "опрос статуса джулс впринципе ненадежная
+            // вещь ... статус должен жёстко устанавливаться бекендом" - Jules's own raw status API is
+            // not treated as authoritative once a real PR has been independently confirmed to exist.
+            // Confirmed live: Jules's API kept reporting "running" for a session that had already opened
+            // a real GitHub PR (AutoMergeService's own sync confirmed it), so this poll unconditionally
+            // wrote "running" back over "pr_opened" on every single cycle - a silent downgrade with two
+            // real costs, not just a cosmetic flap: (1) it starved the running/revising->pr_opened edge
+            // trigger of a stable transition to fire on, repeatedly delaying task completion; (2) capacity
+            // accounting (AccountRepository.lockNextJulesAccountWithCapacity) counts a session against its
+            // account's slot limit while status is queued/running/revising/stuck, but NOT pr_opened - so a
+            // falsely-downgraded session kept occupying a capacity slot on an account that had, in every
+            // real sense, already finished its work. A confirmed PR is strictly more authoritative than
+            // Jules's own self-reported liveness state; once we independently know a PR exists, silence or
+            // "still running" from the raw API is expected and fine (see the 60-minute Davidson trust
+            // window elsewhere in this class), never a reason to erase that fact.
+            boolean wouldDowngradeConfirmedPr = session.getPrUrl() != null && !session.getPrUrl().isBlank()
+                    && "pr_opened".equals(oldStatus)
+                    && List.of("queued", "running", "revising", "stuck").contains(mappedStatus);
+            if (wouldDowngradeConfirmedPr) {
+                mappedStatus = "pr_opened";
+            }
+
             if (!mappedStatus.equals(oldStatus)) {
                 // Any real status transition (running->pr_opened, stuck->running, etc.) is genuine
                 // forward progress, unlike updatedAt which refreshes on every save regardless.
