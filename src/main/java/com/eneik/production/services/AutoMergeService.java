@@ -16,7 +16,6 @@ import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.logging.LogScope;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,9 +38,6 @@ import java.util.HashMap;
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
     private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
-    @Value("${auto-recovery.followup.enabled:false}")
-    private boolean autoRecoveryFollowupEnabled;
-
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
@@ -317,19 +313,8 @@ public class AutoMergeService {
                             } else {
                                 log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
 
-                                if (autoRecoveryFollowupEnabled) {
-                                    com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-                                    wishlist.setProjectId(task.getProject().getId());
-                                    wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
-                                    wishlist.setSourceRoleTag(roleTag);
-                                    wishlist.setFeatureId(task.getFeatureId());
-                                    wishlist.setContent("Role mismatch cleanup required: " + reason);
-                                    wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-                                    wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
-                                    wishlistRepository.save(wishlist);
-                                } else {
-                                    log.warn("AutoMergeService: auto-recovery follow-up disabled; not creating role_mismatch_followup for task {}", task.getId());
-                                }
+                                log.warn("Poka-yoke: role mismatch recorded for task {} without creating "
+                                        + "follow-up wishlist work; falsification owns next-iteration generation.", task.getId());
                             }
                         }
                     }
@@ -485,19 +470,10 @@ public class AutoMergeService {
                             log.error("AutoMergeService: Failed to trigger Veo Video walkthrough: " + e.getMessage());
                         }
                         
-                        // Create chaotic_debt wishlist entry if it was chaotic
+                        // Chaotic findings stay observable but cannot open a parallel product iteration.
                         if ("chaotic".equalsIgnoreCase(task.getCynefinDomain())) {
-                            com.eneik.production.models.persistence.WishlistEntity debt = new com.eneik.production.models.persistence.WishlistEntity();
-                            debt.setProjectId(task.getProject().getId());
-                            debt.setSource(com.eneik.production.models.persistence.WishlistSource.chaotic_debt);
-                            debt.setSourceRoleTag(task.getRole().getTag());
-                            debt.setFeatureId(task.getFeatureId());
-                            debt.setContent("Emergency chaotic debt cleanup: Refactor changes introduced in chaotic task " + task.getId());
-                            debt.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-                            debt.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
-                            debt.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-                            wishlistRepository.save(debt);
-                            log.info("Created chaotic_debt wishlist item for refactoring.");
+                            log.warn("Poka-yoke: chaotic debt observed after task {} merged; no wishlist was "
+                                    + "created. Falsification owns next-iteration generation.", task.getId());
                         }
 
                         // Call advice loop here upon successful merge
@@ -696,27 +672,8 @@ public class AutoMergeService {
             conflict.setResolutionStatus("escalated");
             taskConflictRepository.save(conflict);
 
-            if (autoRecoveryFollowupEnabled) {
-                WishlistEntity recovery = new WishlistEntity();
-                recovery.setProjectId(task.getProject().getId());
-                recovery.setSource(com.eneik.production.models.persistence.WishlistSource.role_mismatch_followup);
-                recovery.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
-                recovery.setFeatureId(task.getFeatureId());
-                recovery.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-                recovery.setContent(("""
-                    [Auto recovery: merge conflict unresolved after 3 attempts]
-                    Task %s's branch (PR %s) hit repeated merge conflicts across 3 auto-resolve attempts.
-
-                    Goal: start one fresh, short Jules session against current main that reimplements this
-                    work without touching the abandoned branch. One atomic slice, one PR, one objective
-                    acceptance criterion.
-                    """).formatted(taskId, review.getPrUrl()));
-                wishlistRepository.save(recovery);
-
-                log.warn("Merge conflict for task {} escalated after {} attempts - queued a fresh recovery task instead of a human-review dead end.", taskId, attempts);
-            } else {
-                log.warn("Merge conflict for task {} escalated after {} attempts - auto-recovery follow-up disabled, no new recovery wishlist created.", taskId, attempts);
-            }
+            log.warn("Poka-yoke: merge conflict for task {} escalated after {} attempts; no recovery "
+                    + "wishlist was created. The original task remains the only work identity.", taskId, attempts);
         } else {
             taskConflictRepository.save(conflict);
 

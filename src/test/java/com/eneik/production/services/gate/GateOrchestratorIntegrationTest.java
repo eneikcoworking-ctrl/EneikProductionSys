@@ -1,6 +1,7 @@
 package com.eneik.production.services.gate;
 
 import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.FeatureEntity;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
@@ -9,6 +10,8 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.FeatureRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -62,6 +65,9 @@ class GateOrchestratorIntegrationTest {
 
     @Autowired
     private WishlistRepository wishlistRepository;
+
+    @Autowired
+    private FeatureRepository featureRepository;
 
     @Autowired
     private JulesSessionRepository julesSessionRepository;
@@ -160,9 +166,24 @@ class GateOrchestratorIntegrationTest {
     }
 
     private void markProjectPastBuildPhase(ProjectEntity project) {
+        WishlistEntity root = new WishlistEntity();
+        root.setProjectId(project.getId());
+        root.setSource(WishlistSource.client);
+        root.setStatus(WishlistStatus.converted_to_task);
+        root.setContent("Compiled client brief used by the build-phase fixture.");
+        root = wishlistRepository.save(root);
+
+        FeatureEntity feature = new FeatureEntity();
+        feature.setProjectId(project.getId());
+        feature.setRootWishlistId(root.getId());
+        feature.setTitle("Fixture feature");
+        feature = featureRepository.save(feature);
+
         WishlistEntity deliverable = new WishlistEntity();
         deliverable.setProjectId(project.getId());
         deliverable.setSource(WishlistSource.client);
+        deliverable.setStatus(WishlistStatus.converted_to_task);
+        deliverable.setFeatureId(feature.getId());
         deliverable.setContent("Client deliverable used to simulate a merged build phase.");
         deliverable.setCompiledByRole("BARCAN-TAG-09");
         deliverable = wishlistRepository.save(deliverable);

@@ -418,8 +418,11 @@
       <section class="ems-panel">
         <div class="ems-summary">
           <div>
-            <span class="label-xs">EMS weighted progress</span>
-            <strong>{percent(dashboard.emsMetrics.flowChart.weightedProgress)}</strong>
+            <span class="label-xs">Product merge readiness</span>
+            <strong>{percent(dashboard.productReadiness?.mergedRatio ?? 0)}</strong>
+            {#if dashboard.productReadiness}
+              <small>{dashboard.productReadiness.mergedPlannedTasks}/{dashboard.productReadiness.totalPlannedTasks} tasks · {dashboard.productReadiness.completeFeatures}/{dashboard.productReadiness.totalFeatures} features</small>
+            {/if}
           </div>
           <div>
             <span class="label-xs">Graph coverage</span>

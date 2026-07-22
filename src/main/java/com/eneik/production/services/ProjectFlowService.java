@@ -4,6 +4,7 @@ import com.eneik.production.dto.*;
 import com.eneik.production.dto.dashboard.AgentDashboardDto;
 import com.eneik.production.dto.dashboard.FeaturePullRequestSnapshotDto;
 import com.eneik.production.dto.dashboard.PipelineDashboardDto;
+import com.eneik.production.dto.dashboard.ProductReadinessDto;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
@@ -110,6 +111,9 @@ public class ProjectFlowService {
     // JulesDispatchService (kept as a cheap outer safety net, this is the real capacity control).
     @Value("${orchestration.wip-limit-feature-in-flight:2}")
     private int wipLimitFeatureInFlight;
+
+    @Value("${falsification.readiness-threshold:0.9}")
+    private double falsificationReadinessThreshold;
 
 
 
@@ -503,9 +507,14 @@ public class ProjectFlowService {
 
     private Optional<WishlistEntity> findEnvironmentBootstrapWishlist(UUID projectId) {
         return wishlistRepository.findByProjectId(projectId).stream()
-                .filter(wishlist -> ENVIRONMENT_BOOTSTRAP_TOC.equals(wishlist.getTocConstraintRef())
-                        || (wishlist.getContent() != null && wishlist.getContent().contains("EMS bootstrap: define the repository execution boundary")))
+                .filter(this::isEnvironmentBootstrapWishlist)
                 .findFirst();
+    }
+
+    private boolean isEnvironmentBootstrapWishlist(WishlistEntity wishlist) {
+        return ENVIRONMENT_BOOTSTRAP_TOC.equals(wishlist.getTocConstraintRef())
+                || (wishlist.getContent() != null
+                && wishlist.getContent().contains("EMS bootstrap: define the repository execution boundary"));
     }
 
     private Optional<TaskEntity> findEnvironmentBootstrapTask(UUID projectId) {
@@ -743,29 +752,20 @@ public class ProjectFlowService {
                 .limit(limit)
                 .toList();
 
-        int created = 0;
+        int dismissed = 0;
         for (WishlistEntity wishlist : pendingRecovery) {
-            try {
-                List<UUID> before = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
-                        .stream()
-                        .map(TaskEntity::getId)
-                        .toList();
-                // role_mismatch_followup wishlists always take the cheap deterministic path inside
-                // tryCompileWishlistCheaply, so they never need to go through the batched compiler dispatch.
-                if (tryCompileWishlistCheaply(project, wishlist)) {
-                    long newTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
-                            .stream()
-                            .map(TaskEntity::getId)
-                            .filter(id -> !before.contains(id))
-                            .count();
-                    created += Math.max(1, (int) newTasks);
-                }
-            } catch (Exception e) {
-                log.error("ProjectFlowService: failed to compile recovery wishlist {} for project {}",
-                        wishlist.getId(), project.getName(), e);
-            }
+            wishlist.setStatus(WishlistStatus.dismissed);
+            wishlistRepository.save(wishlist);
+            dismissed++;
+            log.warn("ProjectFlowService: dismissed out-of-cycle recovery wishlist {} for project {}; "
+                            + "no task identity was created",
+                    wishlist.getId(), project.getName());
         }
-        return created;
+        if (dismissed > 0) {
+            log.warn("ProjectFlowService: dismissed {} out-of-cycle recovery wishlist item(s) for project {}",
+                    dismissed, project.getName());
+        }
+        return 0;
     }
 
     private boolean isAutonomousRecoveryWishlist(WishlistEntity wishlist) {
@@ -781,13 +781,6 @@ public class ProjectFlowService {
         if (blockedTasks.isEmpty()) {
             return 0;
         }
-
-        List<String> existingRecoveryContent = wishlistRepository.findByProjectId(project.getId())
-                .stream()
-                .filter(this::isAutonomousRecoveryWishlist)
-                .map(WishlistEntity::getContent)
-                .filter(Objects::nonNull)
-                .toList();
 
         int created = 0;
         for (TaskEntity task : blockedTasks) {
@@ -841,60 +834,12 @@ public class ProjectFlowService {
                 continue;
             }
 
-            String taskId = task.getId().toString();
-            boolean alreadyCovered = existingRecoveryContent.stream().anyMatch(content -> content.contains(taskId));
-            if (alreadyCovered) {
-                continue;
-            }
-
-            if (!autoRecoveryFollowupEnabled) {
-                log.warn("ProjectFlowService: auto-recovery follow-up disabled; not creating blocked-task recovery wishlist for task {}", task.getId());
-                task.setStatus(TaskStatus.failed);
-                task.setJulesDispatchStatus("Blocked task retired; auto-recovery follow-up disabled during task-expansion incident");
-                taskRepository.save(task);
-                continue;
-            }
-
-            WishlistEntity followUp = new WishlistEntity();
-            followUp.setProjectId(project.getId());
-            followUp.setSource(WishlistSource.role_mismatch_followup);
-            followUp.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : ORCHESTRATOR_ROLE);
-            followUp.setStatus(WishlistStatus.pending);
-            followUp.setFeatureId(task.getFeatureId());
-            followUp.setContent(truncate("""
-                    [Auto recovery from blocked task]
-                    Auto recovery source task: %s
-                    Original role: %s
-                    Previous dispatch status: %s
-                    Previous retry count: %s
-
-                    Goal:
-                    Replace the blocked attempt with one fresh, short Jules session.
-
-                    Scope rule:
-                    - Do not continue the old branch conversation.
-                    - Do not revive the old oversized task as-is.
-                    - Start one atomic slice with one objective acceptance criterion.
-                    - If more work is discovered, write it as a separate wishlist item.
-
-                    Original task:
-                    %s
-
-                    DoD:
-                    One small branch, one PR, at most two tightly related source areas, explicit verification command, no generated artifacts.
-                    """.formatted(
-                    taskId,
-                    task.getRole() != null ? task.getRole().getTag() : "unknown-role",
-                    valueOrUnset(task.getJulesDispatchStatus()),
-                    task.getRetryCount(),
-                    task.getDescription()
-            ), 7_500));
-            wishlistRepository.save(followUp);
-            existingRecoveryContent = new ArrayList<>(existingRecoveryContent);
-            existingRecoveryContent.add(followUp.getContent());
-            created++;
-            log.info("ProjectFlowService: created recovery wishlist for blocked task {} in project {}",
-                    task.getId(), project.getName());
+            log.warn("ProjectFlowService: retiring blocked task {} without creating a recovery wishlist/task; "
+                            + "product recovery reuses an existing planned task ID or enters through self_falsification",
+                    task.getId());
+            task.setStatus(TaskStatus.failed);
+            task.setJulesDispatchStatus("Blocked task retired by iteration-admission poka-yoke; no child work created");
+            taskRepository.save(task);
         }
         return created;
     }
@@ -957,7 +902,8 @@ public class ProjectFlowService {
                                 slice.path("cynefinDomain").asText("clear"),
                                 slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
                                 slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
-                                slice.path("hasUi").asBoolean(false)
+                                slice.path("hasUi").asBoolean(false),
+                                jsonStringList(slice.path("requirementRefs"))
                         ));
                     }
                 }
@@ -973,6 +919,8 @@ public class ProjectFlowService {
                         epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
                         epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
                         epicNode.path("sourceIndex").asInt(0),
+                        jsonStringList(epicNode.path("requirements")),
+                        epicNode.path("coverageComplete").asBoolean(false),
                         slices
                 ));
             }
@@ -981,19 +929,21 @@ public class ProjectFlowService {
             return java.util.List.of();
         }
     }
-    private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
-        java.util.Optional<String> planContent = gitHubPullRequestService.fetchFileContent(project, "main", ".eneik/task-plan.json");
-        if (planContent.isPresent() && !planContent.get().isBlank()) {
-            java.util.List<MLPredictionServiceClient.EpicPlan> epicPlans = parseCompilerPlanContent(planContent.get());
-            if (!epicPlans.isEmpty()) {
-                boolean built = buildTaskGraphFromSlices(project, java.util.List.of(wishlist), epicPlans);
-                if (built) {
-                    log.info("ProjectFlowService: Successfully compiled wishlist {} from .eneik/task-plan.json on main branch into real tasks", wishlist.getId());
-                    return true;
-                }
+
+    private java.util.List<String> jsonStringList(com.fasterxml.jackson.databind.JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> values = new java.util.ArrayList<>();
+        for (com.fasterxml.jackson.databind.JsonNode item : node) {
+            String value = item.asText("").trim();
+            if (!value.isBlank()) {
+                values.add(value);
             }
         }
-
+        return java.util.List.copyOf(values);
+    }
+    private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
         if (wishlist.getCompiledByRole() != null) {
             if (wishlist.getLeanValue() != LeanValue.waste) {
                 technicalLeadCompiler.createTaskFromWishlist(wishlist.getId());
@@ -1592,8 +1542,13 @@ public class ProjectFlowService {
     }
 
     private String targetRoleForSlice(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice) {
+        if (parent.getSource() == WishlistSource.self_falsification) {
+            // One falsification audit produces one consolidated wishlist. The compiler may split its
+            // findings across several owner roles; provenance remains BARCAN-TAG-09 on the parent, while
+            // each implementation slice keeps its own explicit owner.
+            return normalizeRoleTag(slice.roleTag(), slice);
+        }
         if (parent.getSource() == WishlistSource.role_mismatch_followup
-                || parent.getSource() == WishlistSource.self_falsification
                 || parent.getSource() == WishlistSource.chaotic_debt) {
             return normalizeRoleTag(parent.getSourceRoleTag(), slice);
         }
@@ -1960,8 +1915,11 @@ public class ProjectFlowService {
                 matches, set "existingEpicId" to that epic's exact id and do NOT invent a new title/jtbd/
                 kano/cynefin for it (reuse the match, do not restate it). If nothing matches, set
                 "existingEpicId" to null and provide fresh epic-level title/jtbd/kano/cynefin.
-                STEP 3 - within each epic, decompose into 1-6 task slices with the existing role/graph
-                rules below.
+                STEP 3 - within each epic, extract an exhaustive numbered requirement list (R1, R2, ...)
+                from the brief, then decompose it into 1-8 task slices with the existing role/graph rules
+                below. Every requirement MUST be referenced by at least one task and every task MUST name
+                the requirements it fulfils. Set coverageComplete=true only after checking that no explicit
+                or structurally required requirement is omitted.
 
                 EXISTING EPICS IN THIS PROJECT (match against these before creating a new one):
                 %s
@@ -1973,6 +1931,11 @@ public class ProjectFlowService {
                 - Every epic MUST include a "sourceIndex" field (integer) naming which Brief #N it
                   addresses. Never mix epics from two different briefs into one, and never split one
                   epic's slices across two different epic blocks.
+                - Every input Brief #N MUST be represented by at least one epic. Omitting a brief is an
+                  invalid plan.
+                - "requirements" must contain stable entries formatted "R1: concrete requirement". Each
+                  slice's "requirementRefs" may contain only ids declared by that epic. The union of all
+                  slice requirementRefs MUST equal the epic requirement-id set.
                 - Do not create QA or integration slices unless the brief explicitly asks to verify
                   existing code, fix merge hygiene, or review an already implemented slice.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
@@ -2027,13 +1990,16 @@ public class ProjectFlowService {
                 "cynefinDomain": "clear|complicated|complex|chaotic",
                 "sixSigmaMetric": "measurable epic-level business metric",
                 "tocConstraintRef": "epic-level bottleneck reference", "sourceIndex": 0,
+                "requirements": ["R1: concrete requirement", "R2: concrete requirement"],
+                "coverageComplete": true,
                 "slices": [{"title": "short English title", "roleTag": "BARCAN-TAG-02",
                 "jtbd": "When implementing [X] for this epic, I want [Y], so that [epic outcome]...",
                 "acceptanceCriteria": "Given..., When..., Then...\\nGiven...",
                 "leanValue": "essential|valuable|waste",
                 "cynefinDomain": "clear|complicated|complex|chaotic",
                 "tocConstraintRef": "short task-level bottleneck reference",
-                "sixSigmaMetric": "measurable task-level quality metric", "hasUi": true}]}]}
+                "sixSigmaMetric": "measurable task-level quality metric", "hasUi": true,
+                "requirementRefs": ["R1", "R2"]}]}]}
                 Do not write, modify, or delete any other file.
 
                 %d client brief(s) to decompose below (verbatim, may be in any language - read and
@@ -2053,6 +2019,20 @@ public class ProjectFlowService {
     public static final String FALSIFICATION_AUDIT_HIGHEST_PR_KEY = "highestPrNumberAudited";
 
     public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber) {
+        boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(this::isFalsificationAuditTask)
+                .anyMatch(task -> task.getStatus() == TaskStatus.queued
+                        || task.getStatus() == TaskStatus.claimed
+                        || task.getStatus() == TaskStatus.in_progress
+                        || task.getStatus() == TaskStatus.pending_review
+                        || task.getStatus() == TaskStatus.review
+                        || task.getStatus() == TaskStatus.blocked);
+        if (auditAlreadyActive) {
+            log.info("Poka-yoke: project {} already has an active falsification audit; duplicate dispatch skipped",
+                    project.getId());
+            return null;
+        }
+
         RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
         if (compilerRole == null) {
             log.error("Cannot dispatch falsification audit for project {}: role {} not found",
@@ -2086,16 +2066,42 @@ public class ProjectFlowService {
                 && FALSIFICATION_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
     }
 
-    /** True for implementation work compiled from a role/role_mismatch_followup/self_falsification/etc.
-     *  wishlist item rather than the client's own brief - the category the BUILD-phase gate defers. Tasks
-     *  with no recorded source wishlist (bootstrap, one-off infra tasks) are never gated here. */
+    /** True for implementation work compiled from a non-client iteration source. */
     private boolean isSelfGeneratedWork(TaskEntity task) {
         if (task.getSourceWishlistId() == null) {
             return false;
         }
         return wishlistRepository.findById(task.getSourceWishlistId())
-                .map(w -> w.getSource() != WishlistSource.client)
+                .map(w -> w.getSource() != WishlistSource.client && !isEnvironmentBootstrapWishlist(w))
                 .orElse(false);
+    }
+
+    private boolean isOutOfCycleGeneratedWork(TaskEntity task) {
+        if (task.getSourceWishlistId() == null) {
+            return false;
+        }
+        return wishlistRepository.findById(task.getSourceWishlistId())
+                .map(w -> !isEnvironmentBootstrapWishlist(w)
+                        && (w.getSource() == WishlistSource.role
+                        || w.getSource() == WishlistSource.role_mismatch_followup))
+                .orElse(false);
+    }
+
+    private void quarantineOutOfCycleGeneratedWork(TaskEntity task) {
+        String reason = "Poka-yoke: out-of-cycle generated work is quarantined; product improvements "
+                + "must enter through the bounded self_falsification iteration";
+        task.setStatus(TaskStatus.failed);
+        task.setJulesDispatchStatus(reason);
+        taskRepository.save(task);
+        wishlistRepository.findById(task.getSourceWishlistId()).ifPresent(wishlist -> {
+            if (wishlist.getStatus() != WishlistStatus.dismissed) {
+                wishlist.setStatus(WishlistStatus.dismissed);
+                wishlistRepository.save(wishlist);
+            }
+        });
+        log.warn("ProjectFlowService: quarantined out-of-cycle generated task {} from wishlist {}; "
+                        + "no Jules session, replacement task, or new wishlist was created",
+                task.getId(), task.getSourceWishlistId());
     }
 
     public Integer falsificationAuditHighestPrNumber(TaskEntity task) {
@@ -2517,13 +2523,16 @@ public class ProjectFlowService {
             // dependency was abandoned (escalated/force-unblocked) - otherwise a dependsOn edge pointing at
             // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
             if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
-                if (!autoRecoveryFollowupEnabled && task.getDependsOn().getStatus() == TaskStatus.failed) {
-                    task.setStatus(TaskStatus.failed);
-                    task.setJulesDispatchStatus("Dependency " + task.getDependsOn().getId()
-                            + " failed and auto-recovery is disabled; dependent task retired instead of waiting indefinitely");
-                    taskRepository.save(task);
-                    log.warn("ProjectFlowService: retired queued task {} because dependency {} failed and auto-recovery is disabled",
-                            task.getId(), task.getDependsOn().getId());
+                if (task.getDependsOn().getStatus() == TaskStatus.failed) {
+                    String waitingStatus = "Waiting for failed dependency " + task.getDependsOn().getId()
+                            + "; no replacement task or wishlist was created";
+                    if (!waitingStatus.equals(task.getJulesDispatchStatus())) {
+                        task.setJulesDispatchStatus(waitingStatus);
+                        taskRepository.save(task);
+                        log.warn("ProjectFlowService: kept planned task {} queued behind failed dependency {}; "
+                                        + "bounded recovery may resume the same dependency once, but no child work is created",
+                                task.getId(), task.getDependsOn().getId());
+                    }
                 }
                 continue;
             }
@@ -2543,6 +2552,11 @@ public class ProjectFlowService {
                 // through dispatchCompilerTask here would silently re-pin them to the single reserved
                 // account on this retry path even though their primary dispatch call already moved off it).
                 dispatchToGeneralPool(task);
+                continue;
+            }
+
+            if (isOutOfCycleGeneratedWork(task)) {
+                quarantineOutOfCycleGeneratedWork(task);
                 continue;
             }
 
@@ -2771,12 +2785,29 @@ public class ProjectFlowService {
                 ))
                 .toList();
 
+        ClientDeliverableReadinessService.Readiness productReadiness = readinessService.computeForProject(projectId);
+        boolean falsificationEligible = productReadiness.decompositionComplete()
+                && productReadiness.ratio() >= falsificationReadinessThreshold;
+        ProductReadinessDto productReadinessDto = new ProductReadinessDto(
+                productReadiness.totalFeatures(),
+                productReadiness.completeFeatures(),
+                productReadiness.totalDeliverables(),
+                productReadiness.mergedDeliverables(),
+                productReadiness.ratio(),
+                productReadiness.decompositionComplete(),
+                falsificationReadinessThreshold,
+                falsificationEligible,
+                falsificationEligible ? "ready_for_falsification"
+                        : (productReadiness.decompositionComplete() ? "building" : "decomposing")
+        );
+
         return new ProjectDashboardDto(
                 toProjectDto(project),
                 agents.size(),
                 wishlistRepository.findByProjectIdAndStatus(projectId, com.eneik.production.models.persistence.WishlistStatus.pending).size(),
                 queue,
                 pipeline,
+                productReadinessDto,
                 emsMetricsService.build(allTaskEntities, wishlistEntities),
                 agents,
                 wishlist,

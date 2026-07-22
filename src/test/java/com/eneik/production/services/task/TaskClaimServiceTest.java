@@ -4,6 +4,7 @@ import com.eneik.production.dto.ClaimDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
+import com.eneik.production.repositories.FeatureRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -57,6 +58,9 @@ public class TaskClaimServiceTest {
 
     @Autowired
     private WishlistRepository wishlistRepository;
+
+    @Autowired
+    private FeatureRepository featureRepository;
 
     @Autowired
     private JulesSessionRepository julesSessionRepository;
@@ -226,9 +230,24 @@ public class TaskClaimServiceTest {
     }
 
     private void markProjectPastBuildPhase(ProjectEntity project) {
+        WishlistEntity root = new WishlistEntity();
+        root.setProjectId(project.getId());
+        root.setSource(WishlistSource.client);
+        root.setStatus(WishlistStatus.converted_to_task);
+        root.setContent("Compiled client brief used by the build-phase fixture.");
+        root = wishlistRepository.saveAndFlush(root);
+
+        FeatureEntity feature = new FeatureEntity();
+        feature.setProjectId(project.getId());
+        feature.setRootWishlistId(root.getId());
+        feature.setTitle("Fixture feature");
+        feature = featureRepository.saveAndFlush(feature);
+
         WishlistEntity deliverable = new WishlistEntity();
         deliverable.setProjectId(project.getId());
         deliverable.setSource(WishlistSource.client);
+        deliverable.setStatus(WishlistStatus.converted_to_task);
+        deliverable.setFeatureId(feature.getId());
         deliverable.setContent("Client deliverable used to simulate a merged build phase.");
         deliverable.setCompiledByRole("BARCAN-TAG-09");
         deliverable = wishlistRepository.saveAndFlush(deliverable);

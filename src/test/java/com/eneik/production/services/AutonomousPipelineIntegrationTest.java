@@ -239,8 +239,7 @@ class AutonomousPipelineIntegrationTest {
         List<WishlistEntity> wishlistItems = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.chaotic_debt)
                 .toList();
-        assertThat(wishlistItems).hasSize(1);
-        assertThat(wishlistItems.get(0).getTocConstraintRef()).isEqualTo("HIGH_PRIORITY_DEBT");
+        assertThat(wishlistItems).isEmpty();
     }
 
     @Test
@@ -280,13 +279,11 @@ class AutonomousPipelineIntegrationTest {
         assertThat(updatedReview.getMerged()).isTrue();
 
         List<WishlistEntity> wishlistItems = wishlistRepository.findByProjectId(project.getId());
-        assertThat(wishlistItems).isNotEmpty();
-        assertThat(wishlistItems.get(0).getSource()).isEqualTo(WishlistSource.role_mismatch_followup);
-        assertThat(wishlistItems.get(0).getSourceRoleTag()).isEqualTo("BARCAN-TAG-02");
+        assertThat(wishlistItems).isEmpty();
     }
 
     @Test
-    void testBlockedWorkIsRecoveredIntoFreshAtomicTaskWithoutOperatorSelectingTaskId() {
+    void blockedWorkDoesNotCreateOutOfCycleRecoveryIdentities() {
         ProjectEntity project = new ProjectEntity();
         project.setName("Blocked Recovery Project");
         project.setSlug("blocked-recovery-project");
@@ -316,14 +313,13 @@ class AutonomousPipelineIntegrationTest {
         continuousOrchestrationService.continuousOrchestrate();
 
         TaskEntity oldTask = taskRepository.findById(blockedTaskId).orElseThrow();
-        assertThat(oldTask.getStatus()).isEqualTo(TaskStatus.blocked);
+        assertThat(oldTask.getStatus()).isEqualTo(TaskStatus.failed);
+        assertThat(oldTask.getJulesDispatchStatus()).contains("no child work created");
 
         List<WishlistEntity> recoveryWishlist = wishlistRepository.findByProjectId(projectId).stream()
                 .filter(w -> w.getSource() == WishlistSource.role_mismatch_followup)
                 .toList();
-        assertThat(recoveryWishlist).hasSize(1);
-        assertThat(recoveryWishlist.get(0).getStatus()).isEqualTo(WishlistStatus.converted_to_task);
-        assertThat(recoveryWishlist.get(0).getContent()).contains("Auto recovery source task: " + blockedTaskId);
+        assertThat(recoveryWishlist).isEmpty();
 
         List<TaskEntity> replacementTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(task -> !task.getId().equals(blockedTaskId))
@@ -332,9 +328,7 @@ class AutonomousPipelineIntegrationTest {
                 .filter(task -> task.getPayload() == null
                         || !"BOOTSTRAP-ENVIRONMENT-BOUNDARY".equals(task.getPayload().path("toc_constraint_ref").asText()))
                 .toList();
-        assertThat(replacementTasks).hasSize(1);
-        assertThat(replacementTasks.get(0).getStatus()).isIn(TaskStatus.queued, TaskStatus.claimed);
-        assertThat(replacementTasks.get(0).getDescription()).contains("Role: BARCAN-TAG-11");
+        assertThat(replacementTasks).isEmpty();
     }
 
     @Test
@@ -413,12 +407,8 @@ class AutonomousPipelineIntegrationTest {
         FalsificationRunEntity run = runs.get(0);
         assertThat(run.getRolesCheckedCount()).isEqualTo(13);
 
-        // 2. Falsification creates wishlist follow-ups only; task creation is reserved for Orchestrate.
-        // tasksCreatedCount tracks those follow-up wishlist items (not TaskEntity rows - see the "no
-        // chaotic tasks" assertion below), so with zero pre-existing suppression it equals the violation
-        // count. Previously this was hardcoded to 0 regardless of what actually got created - fixed as
-        // part of the test-twenty-eighth post-mortem (the field silently lied about its own effect).
-        assertThat(run.getTasksCreatedCount()).isEqualTo(13);
+        // 2. One audit creates one bounded, consolidated wishlist. Orchestrate later decomposes it.
+        assertThat(run.getTasksCreatedCount()).isEqualTo(1);
         assertThat(run.getViolationsFoundCount()).isEqualTo(13);
 
         final UUID targetProjectId = project.getId();
@@ -430,7 +420,66 @@ class AutonomousPipelineIntegrationTest {
         List<WishlistEntity> followUps = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.self_falsification)
                 .toList();
-        assertThat(followUps).hasSize(13);
+        assertThat(followUps).hasSize(1);
+        assertThat(followUps.get(0).getContent()).contains("Finding 1 [", "Finding 13 [");
+    }
+
+    @Test
+    void dispatchQuarantinesOutOfCycleRoleWorkButPreservesEnvironmentBootstrap() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Iteration Admission Project");
+        project.setSlug("iteration-admission-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("iteration-admission-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity concern = new WishlistEntity();
+        concern.setProjectId(project.getId());
+        concern.setSource(WishlistSource.role);
+        concern.setSourceRoleTag("BARCAN-TAG-11");
+        concern.setStatus(WishlistStatus.converted_to_task);
+        concern.setContent("Non-blocking design concern from an earlier review.");
+        concern = wishlistRepository.saveAndFlush(concern);
+
+        TaskEntity concernTask = new TaskEntity();
+        concernTask.setProject(project);
+        concernTask.setRole(roleRepository.findById("BARCAN-TAG-11").orElseThrow());
+        concernTask.setDescription("Out-of-cycle UI follow-up");
+        concernTask.setSourceWishlistId(concern.getId());
+        concernTask.setStatus(TaskStatus.queued);
+        concernTask = taskRepository.saveAndFlush(concernTask);
+
+        WishlistEntity bootstrap = new WishlistEntity();
+        bootstrap.setProjectId(project.getId());
+        bootstrap.setSource(WishlistSource.role);
+        bootstrap.setSourceRoleTag("BARCAN-TAG-01");
+        bootstrap.setStatus(WishlistStatus.converted_to_task);
+        bootstrap.setTocConstraintRef("BOOTSTRAP-ENVIRONMENT-BOUNDARY");
+        bootstrap.setContent("EMS bootstrap: define the repository execution boundary and local runtime contract before feature implementation.");
+        bootstrap = wishlistRepository.saveAndFlush(bootstrap);
+
+        TaskEntity bootstrapTask = new TaskEntity();
+        bootstrapTask.setProject(project);
+        bootstrapTask.setRole(roleRepository.findById("BARCAN-TAG-01").orElseThrow());
+        bootstrapTask.setDescription("Environment bootstrap fallback");
+        bootstrapTask.setSourceWishlistId(bootstrap.getId());
+        bootstrapTask.setStatus(TaskStatus.queued);
+        bootstrapTask = taskRepository.saveAndFlush(bootstrapTask);
+
+        projectFlowService.dispatchQueuedTasks(project.getId());
+
+        TaskEntity quarantined = taskRepository.findById(concernTask.getId()).orElseThrow();
+        assertThat(quarantined.getStatus()).isEqualTo(TaskStatus.failed);
+        assertThat(quarantined.getJulesDispatchStatus()).contains("out-of-cycle generated work is quarantined");
+        assertThat(wishlistRepository.findById(concern.getId()).orElseThrow().getStatus())
+                .isEqualTo(WishlistStatus.dismissed);
+        assertThat(julesSessionRepository.findByTaskId(concernTask.getId())).isEmpty();
+
+        assertThat(taskRepository.findById(bootstrapTask.getId()).orElseThrow().getStatus())
+                .isEqualTo(TaskStatus.queued);
+        assertThat(wishlistRepository.findById(bootstrap.getId()).orElseThrow().getStatus())
+                .isEqualTo(WishlistStatus.converted_to_task);
     }
 
     @Test

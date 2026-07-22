@@ -22,14 +22,6 @@ import java.util.UUID;
 public class FalsificationCycleService {
     private static final Logger log = LoggerFactory.getLogger(FalsificationCycleService.class);
 
-    /**
-     * A still-unresolved violation must not spawn a fresh self_falsification wishlist item every single
-     * night forever: once one has fired for a role in this window, later runs skip it (regardless of
-     * whether the earlier item is still pending or has already been compiled into a task) and let the
-     * existing follow-up run its course.
-     */
-    private static final Duration FOLLOWUP_SUPPRESSION_WINDOW = Duration.ofDays(3);
-
     private static final int MAX_MERGED_PRS_PER_AUDIT = 5;
     private static final int MAX_DIFF_CHARS_PER_PR = 6000;
 
@@ -87,10 +79,11 @@ public class FalsificationCycleService {
         }
     }
 
-    private boolean hasRecentFollowUp(UUID projectId, String roleTag) {
-        return wishlistRepository.existsByProjectIdAndSourceRoleTagAndSourceAndCreatedAtAfter(
-                projectId, roleTag, WishlistSource.self_falsification,
-                Instant.now().minus(FOLLOWUP_SUPPRESSION_WINDOW));
+    private boolean hasOpenFalsificationWishlist(UUID projectId) {
+        return wishlistRepository.countByProjectIdAndSourceAndStatus(
+                projectId, WishlistSource.self_falsification, WishlistStatus.pending) > 0
+                || wishlistRepository.countByProjectIdAndSourceAndStatus(
+                        projectId, WishlistSource.self_falsification, WishlistStatus.compiling) > 0;
     }
 
     // Deliberately Gemini-free: refusal-criteria and methodological-falsification checks used to call
@@ -103,17 +96,25 @@ public class FalsificationCycleService {
     // product-implementation dispatch.
     public void executeCycleForProject(ProjectEntity project) {
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        if (readiness.ratio() < readinessThreshold) {
+        if (!readiness.decompositionComplete() || readiness.ratio() < readinessThreshold) {
             // Auditing before there's a real object to audit just spends a reserved eneikdru session on
             // whatever process/design artifacts happen to be in main yet (confirmed live in
             // test-twenty-eighth: the first cycle ran against zero merged product code and found only
             // metadata-formatting nitpicks). Wait until most of what the client actually asked for has
             // really shipped (merged, not just review-approved - see ClientDeliverableReadinessService)
             // before spending capacity looking for violations in it.
-            log.info("FalsificationCycleService: Project {} not ready for falsification yet ({}/{} client deliverable(s) merged, "
-                            + "{}% < {}% threshold); skipping this cycle instead of auditing an incomplete project",
+            log.info("FalsificationCycleService: Project {} not ready for falsification yet ({}/{} planned task(s) merged, "
+                            + "{}/{} feature(s) complete, decompositionComplete={}, {}% < {}% threshold); "
+                            + "skipping this cycle instead of auditing an incomplete product iteration",
                     project.getName(), readiness.mergedDeliverables(), readiness.totalDeliverables(),
+                    readiness.completeFeatures(), readiness.totalFeatures(), readiness.decompositionComplete(),
                     Math.round(readiness.ratio() * 100), Math.round(readinessThreshold * 100));
+            return;
+        }
+
+        if (hasOpenFalsificationWishlist(project.getId())) {
+            log.info("FalsificationCycleService: Project {} already has an open self_falsification wishlist; "
+                    + "skipping instead of creating a parallel improvement cycle", project.getName());
             return;
         }
 
@@ -205,6 +206,9 @@ public class FalsificationCycleService {
         int rolesCheckedCount = (int) roleRepository.findAll().stream().filter(RoleEntity::isActive).count();
         int violationsFoundCount = 0;
         int followUpsCreatedCount = 0;
+        List<AuditViolation> validViolations = violations.stream()
+                .filter(v -> v.roleTag() != null && !v.roleTag().isBlank())
+                .toList();
 
         for (AuditViolation violation : violations) {
             String roleTag = violation.roleTag();
@@ -213,19 +217,19 @@ public class FalsificationCycleService {
             }
             violationsFoundCount++;
 
-            if (hasRecentFollowUp(project.getId(), roleTag)) {
-                log.info("FalsificationCycleService: Skipping duplicate self_falsification wishlist for role {} — a follow-up was already created within {}", roleTag, FOLLOWUP_SUPPRESSION_WINDOW);
+            if (followUpsCreatedCount > 0 || hasOpenFalsificationWishlist(project.getId())) {
+                log.info("FalsificationCycleService: Skipping duplicate finding for role {}; "
+                        + "this audit already created or found an open consolidated self_falsification wishlist", roleTag);
                 continue;
             }
 
             WishlistEntity wishlist = new WishlistEntity();
             wishlist.setProjectId(project.getId());
             wishlist.setSource(WishlistSource.self_falsification);
-            wishlist.setSourceRoleTag(roleTag);
+            wishlist.setSourceRoleTag("BARCAN-TAG-09");
             wishlist.setStatus(WishlistStatus.pending);
             wishlist.setLeanValue(LeanValue.essential);
             wishlist.setTocConstraintRef("HIGH_PRIORITY_DEBT");
-            wishlist.setCompiledByRole("BARCAN-TAG-09");
             wishlist.setSixSigmaMetric("falsification_run_rate");
             wishlist.setDod("BARCAN-TAG-09: Falsification regression fixed");
 
@@ -250,9 +254,17 @@ public class FalsificationCycleService {
                 log.warn("FalsificationCycleService: Code violation detected for role {}: {}", roleTag, violation.reason());
             }
 
+            wishlist.setContent(consolidatedViolationContent(validViolations));
+            wishlist.setJtbd("When a product iteration is mostly shipped, I want confirmed contradictions fixed, "
+                    + "so that the next iteration improves the real product without expanding blindly");
+            wishlist.setAcceptanceCriteria("Given the confirmed findings, When this wishlist is compiled, "
+                    + "Then every finding maps to an explicit feature requirement and bounded task; "
+                    + "Given those tasks merge, When readiness is recalculated, Then every finding has merge evidence");
+            wishlist.setDod("All confirmed falsification findings are decomposed into bounded features and merged fixes");
             wishlist = wishlistRepository.save(wishlist);
             followUpsCreatedCount++;
-            log.info("FalsificationCycleService: Created self_falsification wishlist item {} for role {}", wishlist.getId(), roleTag);
+            log.info("FalsificationCycleService: Created one consolidated self_falsification wishlist item {} for {} confirmed violation(s)",
+                    wishlist.getId(), validViolations.size());
         }
 
         // Never regress the dedup watermark: if this particular run only found local-workspace content
@@ -275,6 +287,25 @@ public class FalsificationCycleService {
 
         log.info("FalsificationCycleService: Completed audit for project {}. Checked roles: {}, Violations: {}, Follow-up wishlist items created: {}",
                 project.getName(), rolesCheckedCount, violationsFoundCount, followUpsCreatedCount);
+    }
+
+    private String consolidatedViolationContent(List<AuditViolation> violations) {
+        StringBuilder content = new StringBuilder(
+                "Self-falsification improvement cycle. Resolve only the confirmed findings below; do not invent adjacent scope.\n");
+        int index = 1;
+        for (AuditViolation violation : violations) {
+            content.append("\nFinding ").append(index++).append(" [")
+                    .append(violation.roleTag()).append("/").append(violation.type()).append("]: ");
+            if ("methodological".equalsIgnoreCase(violation.type())) {
+                content.append(violation.philosopher()).append(" - ").append(violation.thesis())
+                        .append("; Must-Be: ").append(violation.mustBe())
+                        .append("; Performance: ").append(violation.performance())
+                        .append("; Attractive: ").append(violation.attractive());
+            } else {
+                content.append(violation.reason());
+            }
+        }
+        return content.toString();
     }
 
     private String readRawRules(RoleEntity role) {

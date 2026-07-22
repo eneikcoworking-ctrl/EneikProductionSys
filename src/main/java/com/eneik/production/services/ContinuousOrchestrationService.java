@@ -33,6 +33,7 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.repositories.TaskRepository taskRepository;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.settings.SystemSettingsService settingsService;
+    private final PlannedWorkRecoveryService plannedWorkRecoveryService;
 
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes;
@@ -50,7 +51,8 @@ public class ContinuousOrchestrationService {
                                          MLPredictionServiceClient mlPredictionServiceClient,
                                          com.eneik.production.repositories.TaskRepository taskRepository,
                                          com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
-                                         com.eneik.production.services.settings.SystemSettingsService settingsService) {
+                                         com.eneik.production.services.settings.SystemSettingsService settingsService,
+                                         PlannedWorkRecoveryService plannedWorkRecoveryService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -62,6 +64,7 @@ public class ContinuousOrchestrationService {
         this.taskRepository = taskRepository;
         this.systemProgressTracker = systemProgressTracker;
         this.settingsService = settingsService;
+        this.plannedWorkRecoveryService = plannedWorkRecoveryService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -90,6 +93,13 @@ public class ContinuousOrchestrationService {
             LogScope.project(project.getId());
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
+
+                int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
+                if (resumedPlanTasks > 0) {
+                    log.warn("Continuous Orchestration: Resumed {} existing planned task(s) for project {}; "
+                                    + "no new task or wishlist identity was created",
+                            resumedPlanTasks, project.getName());
+                }
 
                 // Compile any pending wishlist items into tasks. This is the step that used to only run when a
                 // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation

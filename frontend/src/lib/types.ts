@@ -198,12 +198,25 @@ export type EmsDashboardMetrics = {
   rules: string[];
 };
 
+export type ProductReadiness = {
+  totalFeatures: number;
+  completeFeatures: number;
+  totalPlannedTasks: number;
+  mergedPlannedTasks: number;
+  mergedRatio: number;
+  decompositionComplete: boolean;
+  falsificationThreshold: number;
+  falsificationEligible: boolean;
+  status: 'decomposing' | 'building' | 'ready_for_falsification' | string;
+};
+
 export type ProjectDashboard = {
   project: ProjectSummary;
   agentCount: number;
   openWishlistCount: number;
   queue: QueueData;
   pipeline: PipelineData;
+  productReadiness?: ProductReadiness;
   emsMetrics?: EmsDashboardMetrics;
   agents: Agent[];
   wishlist: WishlistItem[];

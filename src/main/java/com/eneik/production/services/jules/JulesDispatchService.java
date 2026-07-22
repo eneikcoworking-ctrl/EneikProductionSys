@@ -49,7 +49,6 @@ public class JulesDispatchService {
     private static final int DAVIDSON_TRUST_WINDOW_MINUTES = 60;
     private static final int DAVIDSON_CLOSE_WINDOW_MINUTES = 120;
     private static final int DESTRUCTIVE_LOOP_REPEAT_THRESHOLD = 2;
-    private static final int FOLLOW_UP_CONTENT_MAX_LENGTH = 7_500;
     private static final String REVIEW_REJECTION_ACTIVITY_NAME = "system-pr-review-rejection";
     // A design-review "approved, but here are some concerns" verdict is by definition non-blocking - it
     // must never gate the design-review-loop.dispatch on its own findings, only ever add backlog. But an
@@ -204,9 +203,6 @@ public class JulesDispatchService {
 
     @Value("${jules.forced-unblock-max-attempts:2}")
     private int forcedUnblockMaxAttempts;
-
-    @Value("${auto-recovery.followup.enabled:false}")
-    private boolean autoRecoveryFollowupEnabled;
 
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
@@ -965,37 +961,9 @@ public class JulesDispatchService {
         if (task == null || task.getProject() == null || task.getProject().getId() == null) {
             return;
         }
-        String content = """
-                Repository hygiene technical debt from a delivered PR.
-                Source: minor generated/local artifact was detected during review, but it is non-secret and should not block product flow.
-                JTBD: When the project has delivered value with small local artifacts, I want repository hygiene cleaned in a separate short task, so delivery continues without normalizing artifact debt.
-                Owner role: BARCAN-TAG-00.
-                Kano: Performance.
-                Cynefin: clear.
-                DoD: Remove minor generated/local artifacts if present, update ignore rules where needed, and verify no secrets or heavy generated folders are tracked.
-                Review note: %s
-                """.formatted(truncate(remarks, 700));
-        boolean exists = wishlistRepository.findByProjectId(task.getProject().getId()).stream()
-                .anyMatch(item -> item.getContent() != null
-                        && item.getContent().contains("Repository hygiene technical debt from a delivered PR")
-                        && item.getContent().contains(task.getId().toString()));
-        if (exists) {
-            return;
-        }
-        WishlistEntity wishlist = new WishlistEntity();
-        wishlist.setProjectId(task.getProject().getId());
-        wishlist.setSource(WishlistSource.role);
-        wishlist.setSourceRoleTag("BARCAN-TAG-00");
-        wishlist.setStatus(WishlistStatus.pending);
-        wishlist.setFeatureId(task.getFeatureId());
-        wishlist.setContent(content + "\nOriginal task: " + task.getId());
-        wishlist.setJtbd("When minor repository artifacts exist after delivery, clean them as separate technical debt without blocking product flow.");
-        wishlist.setTocConstraintRef("REPOSITORY-HYGIENE-DEBT");
-        wishlist.setSixSigmaMetric("closed_unmerged_pr_and_artifact_debt");
-        wishlist.setDod("Minor artifacts are removed or documented, ignore rules are adjusted, and no secrets/heavy generated folders are tracked.");
-        wishlist.setAcceptanceCriteria("Given repository hygiene debt exists, When cleanup runs, Then product functionality remains unchanged and artifact risk is reduced.");
-        wishlist.setCompiledByRole("BARCAN-TAG-00");
-        wishlistRepository.save(wishlist);
+        log.warn("Poka-yoke: recorded repository-hygiene observation for task {} without creating "
+                        + "follow-up wishlist work; falsification is the only next-iteration generator. Review note: {}",
+                task.getId(), truncate(remarks, 700));
     }
 
     private String generatedArtifactRemediation(TaskEntity task, long previousSimilarQuestions) {
@@ -1239,67 +1207,10 @@ public class JulesDispatchService {
                                                  LoopDiagnosis diagnosis,
                                                  String geminiAnalysis,
                                                  String closeReason) {
-        if (task.getProject() == null) {
-            return false;
-        }
-        if (!autoRecoveryFollowupEnabled) {
-            log.warn("JulesDispatchService: auto-recovery follow-up disabled; not creating circuit-breaker wishlist for session {}", session.getId());
-            return false;
-        }
-        UUID projectId = task.getProject().getId();
-        String marker = "Circuit breaker source session: " + session.getId();
-        boolean alreadyExists = wishlistRepository.findByProjectId(projectId).stream()
-                .map(WishlistEntity::getContent)
-                .anyMatch(content -> content != null && content.contains(marker));
-        if (alreadyExists) {
-            return false;
-        }
-
-        WishlistEntity followUp = new WishlistEntity();
-        followUp.setProjectId(projectId);
-        followUp.setSource(WishlistSource.role_mismatch_followup);
-        followUp.setSourceRoleTag(diagnosis.roleTag());
-        followUp.setStatus(WishlistStatus.pending);
-        followUp.setFeatureId(task.getFeatureId());
-        followUp.setContent(truncate("""
-                [Auto follow-up from Jules circuit breaker]
-                Circuit breaker source session: %s
-                External Jules session: %s
-                Original task: %s
-                Closure reason: %s
-
-                Gemini/Kano/Cynefin analysis:
-                %s
-
-                Eneik classification:
-                - Kano: %s
-                - Cynefin: %s
-                - Root cause: %s
-
-                New short Jules session:
-                %s
-
-                Scope rule:
-                - One branch, one atomic result, no broad redesign.
-                - If more work is discovered, stop after the smallest verified slice and write the remaining work as another wishlist item.
-                - Dialogue budget: no more than 8 orchestrator replies; repeated blocker means close and re-plan.
-
-                Latest blocker evidence:
-                %s
-                """.formatted(
-                session.getId(),
-                valueOrUnset(session.getExternalSessionId()),
-                task.getId(),
-                closeReason,
-                geminiAnalysis,
-                diagnosis.kanoClass(),
-                diagnosis.cynefinDomain(),
-                diagnosis.rootCause(),
-                diagnosis.followUpBody(),
-                truncate(latestQuestion, 1_500)
-        ), FOLLOW_UP_CONTENT_MAX_LENGTH));
-        wishlistRepository.save(followUp);
-        return true;
+        log.warn("Poka-yoke: circuit breaker closed session {} for task {} without creating "
+                        + "follow-up wishlist work; falsification owns next-iteration generation. Reason: {}",
+                session.getId(), task.getId(), closeReason);
+        return false;
     }
 
     private String generatedArtifactFollowUp(TaskEntity task) {
@@ -1835,9 +1746,10 @@ public class JulesDispatchService {
         julesSessionRepository.save(session);
 
         String correction = "Your PR did not contain a valid `.eneik/task-plan.json` matching the requested "
-                + "schema (or it echoed a generic placeholder instead of real slices). Please fix the same "
-                + "PR: write only that one file with 1-6 real, concrete work items decomposed from the "
-                + "original client brief in the task description above.";
+                + "schema (or it omitted explicit requirement coverage). Please fix the same PR: write only "
+                + "that file with exhaustive epic requirements, coverageComplete=true, and 1-8 concrete "
+                + "slices per epic. Every requirement must be covered by slice requirementRefs and every "
+                + "input brief must be represented.";
         String externalSessionId = session.getExternalSessionId();
         String sessionApiKey = apiKeyForSession(session);
         java.util.concurrent.CompletableFuture.runAsync(() -> {
@@ -1985,9 +1897,10 @@ public class JulesDispatchService {
         session.setStatus("revising");
         julesSessionRepository.save(session);
         String correction = "Your latest commit did not contain a valid `.eneik/task-plan.json` matching the "
-                + "requested schema (or it echoed a generic placeholder instead of real slices) for THIS "
-                + "cycle's brief(s). Please fix the same file on this branch: write only that one file with "
-                + "1-6 real, concrete work items decomposed from this cycle's brief(s).";
+                + "requested schema or explicit requirement coverage for THIS cycle's brief(s). Please fix "
+                + "the same file with exhaustive epic requirements, coverageComplete=true, and 1-8 concrete "
+                + "slices per epic. Every requirement must be covered by slice requirementRefs and every "
+                + "input brief must be represented.";
         String externalSessionId = session.getExternalSessionId();
         String sessionApiKey = apiKeyForSession(session);
         java.util.concurrent.CompletableFuture.runAsync(() -> {
@@ -2122,7 +2035,7 @@ public class JulesDispatchService {
             return;
         }
         UUID projectId = items.get(0).task().getProject().getId();
-        Set<UUID> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsInFlight(projectId));
+        Set<UUID> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
         List<TaskEntity> tasks = new java.util.ArrayList<>();
         List<String> prUrls = new java.util.ArrayList<>();
         List<String> diffs = new java.util.ArrayList<>();
@@ -2133,7 +2046,7 @@ public class JulesDispatchService {
                 continue;
             }
             if (!scheduledTargets.add(item.task().getId())) {
-                log.info("PR review fallback: task {} is already covered by an active fallback task; skipping duplicate dispatch.",
+                log.info("Poka-yoke: PR review fallback was already attempted for task {}; automatic retry is disabled.",
                         item.task().getId());
                 continue;
             }
@@ -2172,6 +2085,14 @@ public class JulesDispatchService {
                 .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
                 .filter(projectFlowService::isReviewFallbackTask)
                 .filter(task -> !isTerminalTask(task))
+                .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
+                .collect(java.util.stream.Collectors.toSet());
+    }
+
+    Set<UUID> reviewFallbackTargetsEverAttempted(UUID projectId) {
+        return taskRepository.findAll().stream()
+                .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
+                .filter(projectFlowService::isReviewFallbackTask)
                 .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
                 .collect(java.util.stream.Collectors.toSet());
     }
@@ -2515,44 +2436,12 @@ public class JulesDispatchService {
         systemProgressTracker.recordProgress();
         log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());
 
-        long pendingReviewConcernCount = wishlistRepository.countByProjectIdAndStatusAndContentStartingWith(
-                originalTask.getProject().getId(),
-                com.eneik.production.models.persistence.WishlistStatus.pending,
-                REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX);
-        List<com.eneik.production.models.persistence.WishlistEntity> pendingReviewWishlist = pendingReviewConcernCount > 0
-                ? wishlistRepository.findByProjectIdAndStatusAndContentStartingWith(
-                        originalTask.getProject().getId(),
-                        com.eneik.production.models.persistence.WishlistStatus.pending,
-                        REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX)
-                : List.of();
-
         for (String concern : verdict.concerns()) {
             if (concern == null || concern.isBlank()) {
                 continue;
             }
-            if (pendingReviewConcernCount >= MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT) {
-                log.info("PR review fallback: dropping non-blocking concern on task {} - project already has {} pending "
-                                + "review follow-up(s) (cap {}); will resurface on a future review pass if still real: {}",
-                        originalTaskId, pendingReviewConcernCount, MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT, concern);
-                continue;
-            }
-            String finalConcern = concern;
-            boolean alreadyPending = pendingReviewWishlist.stream().anyMatch(item ->
-                    item.getContent() != null && item.getContent().contains(finalConcern));
-            if (alreadyPending) {
-                log.info("PR review fallback: skipping duplicate non-blocking concern on task {} - already pending: {}", originalTaskId, concern);
-                continue;
-            }
-
-            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-            wishlist.setProjectId(originalTask.getProject().getId());
-            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
-            wishlist.setSourceRoleTag(originalTask.getRole().getTag());
-            wishlist.setFeatureId(originalTask.getFeatureId());
-            wishlist.setContent(REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX + TaskTitleBuilder.displayTitle(originalTask) + "\": " + concern);
-            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-            wishlistRepository.save(wishlist);
-            pendingReviewConcernCount++;
+            log.info("Poka-yoke: recorded non-blocking review concern for task {} without creating wishlist work: {}",
+                    originalTaskId, concern);
         }
     }
 
@@ -2765,16 +2654,8 @@ public class JulesDispatchService {
                 && verdict.reason() != null && !verdict.reason().isBlank();
 
         if (rejected) {
-            log.warn("Design review: draft {} rejected - {}", draftPath, verdict.reason());
-            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-            wishlist.setProjectId(reviewTask.getProject().getId());
-            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
-            wishlist.setSourceRoleTag("BARCAN-TAG-03");
-            wishlist.setFeatureId(reviewTask.getFeatureId());
-            wishlist.setContent("Design draft " + draftPath + " was rejected in review: " + verdict.reason()
-                    + ". Regenerate or manually correct the mockup for this slice.");
-            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-            wishlistRepository.save(wishlist);
+            log.warn("Poka-yoke: design draft {} rejected without creating follow-up wishlist work; "
+                    + "the finding is deferred to falsification: {}", draftPath, verdict.reason());
             return;
         }
 
@@ -2795,45 +2676,12 @@ public class JulesDispatchService {
             log.warn("Design review: draft {} approved but promotion to {} failed (no files copied)", draftPath, approvedDir);
         }
 
-        long pendingConcernCount = wishlistRepository.countByProjectIdAndSourceAndSourceRoleTagAndStatus(
-                reviewTask.getProject().getId(),
-                com.eneik.production.models.persistence.WishlistSource.role,
-                "BARCAN-TAG-03",
-                com.eneik.production.models.persistence.WishlistStatus.pending);
-        List<com.eneik.production.models.persistence.WishlistEntity> pendingDesignWishlist = pendingConcernCount > 0
-                ? wishlistRepository.findByProjectIdAndStatus(reviewTask.getProject().getId(),
-                        com.eneik.production.models.persistence.WishlistStatus.pending)
-                : List.of();
-
         for (String concern : verdict.concerns()) {
             if (concern == null || concern.isBlank()) {
                 continue;
             }
-            if (pendingConcernCount >= MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT) {
-                log.info("Design review: dropping non-blocking concern on {} - project already has {} pending "
-                                + "design-review follow-up(s) (cap {}); will resurface on a future review pass if still real: {}",
-                        approvedDir, pendingConcernCount, MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT, concern);
-                continue;
-            }
-            String finalConcern = concern;
-            boolean alreadyPending = pendingDesignWishlist.stream().anyMatch(item ->
-                    "BARCAN-TAG-03".equals(item.getSourceRoleTag())
-                            && item.getContent() != null
-                            && item.getContent().contains(finalConcern));
-            if (alreadyPending) {
-                log.info("Design review: skipping duplicate non-blocking concern on {} - already pending: {}", approvedDir, concern);
-                continue;
-            }
-
-            com.eneik.production.models.persistence.WishlistEntity wishlist = new com.eneik.production.models.persistence.WishlistEntity();
-            wishlist.setProjectId(reviewTask.getProject().getId());
-            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.role);
-            wishlist.setSourceRoleTag("BARCAN-TAG-03");
-            wishlist.setFeatureId(reviewTask.getFeatureId());
-            wishlist.setContent("Design reviewer concern (non-blocking) on " + approvedDir + ": " + concern);
-            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
-            wishlistRepository.save(wishlist);
-            pendingConcernCount++;
+            log.info("Poka-yoke: recorded non-blocking design concern for {} without creating wishlist work: {}",
+                    approvedDir, concern);
         }
     }
 
@@ -2896,7 +2744,8 @@ public class JulesDispatchService {
                                 slice.path("cynefinDomain").asText("clear"),
                                 slice.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
                                 slice.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
-                                slice.path("hasUi").asBoolean(false)
+                                slice.path("hasUi").asBoolean(false),
+                                jsonStringList(slice.path("requirementRefs"))
                         ));
                     }
                 }
@@ -2911,6 +2760,8 @@ public class JulesDispatchService {
                         epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
                         epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
                         epicNode.path("sourceIndex").asInt(0),
+                        jsonStringList(epicNode.path("requirements")),
+                        epicNode.path("coverageComplete").asBoolean(false),
                         slices
                 ));
             }
@@ -2921,13 +2772,39 @@ public class JulesDispatchService {
         }
     }
 
-    private boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
+    private List<String> jsonStringList(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> values = new java.util.ArrayList<>();
+        for (JsonNode item : node) {
+            String value = item.asText("").trim();
+            if (!value.isBlank()) {
+                values.add(value);
+            }
+        }
+        return List.copyOf(values);
+    }
+
+    private static final int MAX_EPICS_PER_BRIEF = 12;
+    private static final int MAX_SLICES_PER_EPIC = 8;
+    private static final int MAX_TOTAL_SLICES_PER_BRIEF = 48;
+
+    static boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
         if (epics.isEmpty()) {
             return false;
         }
-        int totalSlices = 0;
+        int normalizedBriefCount = Math.max(1, briefCount);
+        java.util.Map<Integer, Integer> epicsByBrief = new java.util.HashMap<>();
+        java.util.Map<Integer, Integer> slicesByBrief = new java.util.HashMap<>();
+        java.util.Set<Integer> representedBriefs = new java.util.HashSet<>();
         for (com.eneik.production.services.MLPredictionServiceClient.EpicPlan epic : epics) {
-            if (epic.sourceIndex() < 0 || epic.sourceIndex() >= Math.max(1, briefCount)) {
+            if (epic.sourceIndex() < 0 || epic.sourceIndex() >= normalizedBriefCount) {
+                return false;
+            }
+            representedBriefs.add(epic.sourceIndex());
+            int epicCount = epicsByBrief.merge(epic.sourceIndex(), 1, Integer::sum);
+            if (epicCount > MAX_EPICS_PER_BRIEF) {
                 return false;
             }
             // A new epic (existingEpicId == null) must carry real content - an existing-epic match is
@@ -2937,10 +2814,25 @@ public class JulesDispatchService {
                         || epic.jtbd() == null || epic.jtbd().isBlank())) {
                 return false;
             }
-            if (epic.slices().isEmpty() || epic.slices().size() > 6) {
+            if (!epic.coverageComplete() || epic.requirements() == null || epic.requirements().isEmpty()) {
                 return false;
             }
-            totalSlices += epic.slices().size();
+            if (epic.slices().isEmpty() || epic.slices().size() > MAX_SLICES_PER_EPIC) {
+                return false;
+            }
+            int sliceCount = slicesByBrief.merge(epic.sourceIndex(), epic.slices().size(), Integer::sum);
+            if (sliceCount > MAX_TOTAL_SLICES_PER_BRIEF) {
+                return false;
+            }
+
+            java.util.Set<String> requirementIds = new java.util.LinkedHashSet<>();
+            for (String requirement : epic.requirements()) {
+                String id = requirementId(requirement);
+                if (id.isBlank() || !requirementIds.add(id)) {
+                    return false;
+                }
+            }
+            java.util.Set<String> coveredRequirementIds = new java.util.LinkedHashSet<>();
             for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : epic.slices()) {
                 if (slice.title() == null || slice.title().isBlank()
                         || slice.jtbd() == null || slice.jtbd().isBlank()
@@ -2950,9 +2842,32 @@ public class JulesDispatchService {
                 if (slice.jtbd().contains("one small verifiable capability completed")) {
                     return false;
                 }
+                if (slice.requirementRefs() == null || slice.requirementRefs().isEmpty()) {
+                    return false;
+                }
+                for (String ref : slice.requirementRefs()) {
+                    String normalizedRef = ref == null ? "" : ref.trim().toUpperCase(java.util.Locale.ROOT);
+                    if (!requirementIds.contains(normalizedRef)) {
+                        return false;
+                    }
+                    coveredRequirementIds.add(normalizedRef);
+                }
+            }
+            if (!coveredRequirementIds.equals(requirementIds)) {
+                return false;
             }
         }
-        return totalSlices <= 6 * Math.max(1, briefCount);
+        return representedBriefs.size() == normalizedBriefCount;
+    }
+
+    private static String requirementId(String requirement) {
+        if (requirement == null) {
+            return "";
+        }
+        String normalized = requirement.trim().toUpperCase(java.util.Locale.ROOT);
+        int separator = normalized.indexOf(':');
+        String id = separator >= 0 ? normalized.substring(0, separator).trim() : normalized;
+        return id.matches("R[1-9][0-9]*") ? id : "";
     }
 
     /**
@@ -3460,28 +3375,9 @@ public class JulesDispatchService {
                 log.info("Reconciled abandoned PR {} for closed session {} (task {}) - approved by auto-review, queued for AutoMergeService.",
                         pr.url(), session.getExternalSessionId(), task.getId());
             } else {
-                if (!autoRecoveryFollowupEnabled) {
-                    log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - auto-review rejected, but auto-recovery follow-up is disabled.",
-                            pr.url(), session.getExternalSessionId(), task.getId());
-                    continue;
-                }
-                WishlistEntity followUp = new WishlistEntity();
-                followUp.setProjectId(task.getProject().getId());
-                followUp.setSource(WishlistSource.role_mismatch_followup);
-                followUp.setSourceRoleTag(task.getRole() != null ? task.getRole().getTag() : null);
-                followUp.setStatus(WishlistStatus.pending);
-                followUp.setContent(("""
-                        [Auto recovery: abandoned PR flagged by auto-review]
-                        Found existing PR %s left behind by a force-closed session for task %s.
-                        Auto-review verdict: rejected. Remarks: %s
-
-                        Goal: start one fresh, short Jules session that addresses the remarks above and
-                        replaces this abandoned attempt. Do not continue the old branch. One atomic slice,
-                        one PR, one objective acceptance criterion.
-                        """).formatted(pr.url(), task.getId(), remarks));
-                wishlistRepository.save(followUp);
-                log.warn("Reconciled abandoned PR {} for closed session {} (task {}) - auto-review rejected, queued a fresh recovery task instead of a human-review dead end.",
-                        pr.url(), session.getExternalSessionId(), task.getId());
+                log.warn("Poka-yoke: abandoned PR {} for closed session {} (task {}) was rejected by "
+                                + "auto-review; no recovery wishlist was created. Remarks: {}",
+                        pr.url(), session.getExternalSessionId(), task.getId(), remarks);
             }
         }
     }

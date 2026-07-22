@@ -251,8 +251,16 @@ public class MLPredictionServiceClient {
             String cynefinDomain,
             String tocConstraintRef,
             String sixSigmaMetric,
-            boolean hasUi
-    ) {}
+            boolean hasUi,
+            List<String> requirementRefs
+    ) {
+        public TaskSliceMetadata(String title, String jtbd, String acceptanceCriteria, String roleTag,
+                LeanValue leanValue, String cynefinDomain, String tocConstraintRef,
+                String sixSigmaMetric, boolean hasUi) {
+            this(title, jtbd, acceptanceCriteria, roleTag, leanValue, cynefinDomain,
+                    tocConstraintRef, sixSigmaMetric, hasUi, List.of());
+        }
+    }
 
     /**
      * Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product
@@ -274,8 +282,17 @@ public class MLPredictionServiceClient {
             // (non-batched) compile always uses 0. Every slice inside one эпик shares this same value -
             // an эпик is never split across two different source briefs.
             int sourceIndex,
+            List<String> requirements,
+            boolean coverageComplete,
             List<TaskSliceMetadata> slices
-    ) {}
+    ) {
+        public EpicPlan(String existingEpicId, String title, String jtbd, String kanoClass,
+                String cynefinDomain, String sixSigmaMetric, String tocConstraintRef,
+                int sourceIndex, List<TaskSliceMetadata> slices) {
+            this(existingEpicId, title, jtbd, kanoClass, cynefinDomain, sixSigmaMetric,
+                    tocConstraintRef, sourceIndex, List.of(), false, slices);
+        }
+    }
 
     private static class MLResponse {
         @JsonProperty("risk_score")

@@ -1,6 +1,7 @@
 package com.eneik.production.services.jules;
 
 import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.RoleEntity;
@@ -81,7 +82,6 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "stuckCloseThresholdMinutes", 120);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
-        ReflectionTestUtils.setField(julesDispatchService, "autoRecoveryFollowupEnabled", true);
         ReflectionTestUtils.setField(julesDispatchService, "loopCloseSimilarThreshold", 3);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockBlindCycleThreshold", 5);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
@@ -132,7 +132,7 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void closesLoopAndCreatesWishlistWhenDialogueBudgetExceeded() throws Exception {
+    void closesLoopWithoutCreatingWishlistWhenDialogueBudgetExceeded() throws Exception {
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID accountId = UUID.randomUUID();
@@ -202,12 +202,7 @@ class JulesDispatchServiceTest {
         assertEquals("loop_closed", result.getStatus());
         verify(julesApiClient, never()).sendMessage(eq("sessions/abc"), anyString(), eq("jules-key"));
         verify(claimService).closeTaskAsBlocked(eq(taskId), contains("dialog_limit_exceeded"));
-        verify(wishlistRepository).save(argThat(item ->
-                item instanceof WishlistEntity
-                        && ((WishlistEntity) item).getContent().contains("Kano: Must-Be")
-                        && ((WishlistEntity) item).getContent().contains("Cynefin: clear")
-                        && ((WishlistEntity) item).getContent().contains("one atomic result")
-        ));
+        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
     }
 
     @Test
@@ -473,11 +468,7 @@ class JulesDispatchServiceTest {
         verify(julesApiClient, never()).sendMessage(anyString(), anyString());
         verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
         verify(claimService, never()).closeTaskAsBlocked(eq(taskId), contains("repository_hygiene_review_repeated"));
-        verify(wishlistRepository).save(argThat(item ->
-                item instanceof WishlistEntity
-                        && ((WishlistEntity) item).getContent().contains("Repository hygiene technical debt")
-                        && ((WishlistEntity) item).getContent().contains("minor generated/local artifact")
-        ));
+        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
     }
 
     @Test
@@ -1038,7 +1029,7 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void completedReviewFallbackDoesNotBlockLaterRetry() {
+    void completedReviewFallbackPreventsAutomaticRetryForSameTarget() {
         UUID projectId = UUID.randomUUID();
         UUID targetTaskId = UUID.randomUUID();
 
@@ -1055,6 +1046,7 @@ class JulesDispatchServiceTest {
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
 
         assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
+        assertEquals(Set.of(targetTaskId), julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
     }
 
     @Test
@@ -1116,5 +1108,50 @@ class JulesDispatchServiceTest {
         when(taskRepository.findById(targetId)).thenReturn(Optional.of(target));
 
         assertFalse(julesDispatchService.reviewFallbackTargetsAreTerminal(fallback));
+    }
+
+    @Test
+    void compilerPlanRequiresCompleteRequirementCoverage() {
+        var slice = new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                "Implement API", "When implementing API for this epic, I want validation, so the flow is safe",
+                "Given valid input, When submitted, Then it is stored\nGiven invalid input, When submitted, Then it is rejected",
+                "BARCAN-TAG-02", LeanValue.essential, "complicated", "API", "all tests pass", false,
+                List.of("R1", "R2"));
+        var epic = new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                null, "Campaigns", "When an operator runs campaigns, I want safe orchestration, so outreach is controlled",
+                "Must-Be", "complicated", "zero invalid campaigns", "campaign integrity", 0,
+                List.of("R1: create campaigns", "R2: reject invalid campaigns"), true, List.of(slice));
+
+        assertTrue(JulesDispatchService.isValidCompilerPlan(List.of(epic), 1));
+    }
+
+    @Test
+    void compilerPlanRejectsCoverageClaimWithUnmappedRequirement() {
+        var slice = new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                "Implement API", "When implementing API for this epic, I want validation, so the flow is safe",
+                "Given valid input, When submitted, Then it is stored",
+                "BARCAN-TAG-02", LeanValue.essential, "complicated", "API", "all tests pass", false,
+                List.of("R1"));
+        var epic = new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                null, "Campaigns", "When an operator runs campaigns, I want safe orchestration, so outreach is controlled",
+                "Must-Be", "complicated", "zero invalid campaigns", "campaign integrity", 0,
+                List.of("R1: create campaigns", "R2: reject invalid campaigns"), true, List.of(slice));
+
+        assertFalse(JulesDispatchService.isValidCompilerPlan(List.of(epic), 1));
+    }
+
+    @Test
+    void compilerPlanRejectsOmittedInputBrief() {
+        var slice = new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
+                "Implement API", "When implementing API for this epic, I want validation, so the flow is safe",
+                "Given valid input, When submitted, Then it is stored",
+                "BARCAN-TAG-02", LeanValue.essential, "clear", "API", "all tests pass", false,
+                List.of("R1"));
+        var epic = new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                null, "Campaigns", "When an operator runs campaigns, I want safe orchestration, so outreach is controlled",
+                "Must-Be", "clear", "zero invalid campaigns", "campaign integrity", 0,
+                List.of("R1: create campaigns"), true, List.of(slice));
+
+        assertFalse(JulesDispatchService.isValidCompilerPlan(List.of(epic), 2));
     }
 }

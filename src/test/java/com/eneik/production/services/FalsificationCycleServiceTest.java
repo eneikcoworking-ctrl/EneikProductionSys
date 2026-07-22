@@ -3,6 +3,8 @@ package com.eneik.production.services;
 import com.eneik.production.models.persistence.FalsificationRunEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.RoleEntity;
+import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.repositories.FalsificationRunRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.RoleRepository;
@@ -23,6 +25,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -184,5 +187,68 @@ class FalsificationCycleServiceTest {
         service.executeCycleForProject(project);
 
         verify(projectFlowService, never()).dispatchFalsificationAudit(any(), any(), any());
+    }
+
+    @Test
+    void incompleteDecompositionBlocksAuditEvenWhenCurrentMergeRatioIsOne() {
+        GitHubPullRequestService gitHub = mock(GitHubPullRequestService.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        ClientDeliverableReadinessService readiness = mock(ClientDeliverableReadinessService.class);
+        when(readiness.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, false));
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                mock(WishlistRepository.class), mock(FalsificationRunRepository.class),
+                mock(SystemSettingsService.class), gitHub, flow, readiness);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("still-decomposing");
+
+        service.executeCycleForProject(project);
+
+        verify(flow, never()).dispatchFalsificationAudit(any(), any(), any());
+        verify(gitHub, never()).pullRequestSnapshot(any());
+    }
+
+    @Test
+    void oneAuditCreatesOneConsolidatedWishlistForSeveralViolations() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        RoleRepository roles = mock(RoleRepository.class);
+        FalsificationRunRepository runs = mock(FalsificationRunRepository.class);
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-02"), role("BARCAN-TAG-11")));
+        when(wishlistRepository.save(any(WishlistEntity.class))).thenAnswer(invocation -> {
+            WishlistEntity item = invocation.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, runs, mock(SystemSettingsService.class),
+                mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
+                mock(ClientDeliverableReadinessService.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("bounded-cycle");
+        List<FalsificationCycleService.AuditViolation> violations = List.of(
+                new FalsificationCycleService.AuditViolation(
+                        "BARCAN-TAG-02", "refusal_criteria", "API accepts invalid input",
+                        "", "", "", "", "", ""),
+                new FalsificationCycleService.AuditViolation(
+                        "BARCAN-TAG-11", "methodological", "",
+                        "Davidson", "UI contradicts the shared contract", "3",
+                        "render correct state", "keep latency visible", "add recovery affordance")
+        );
+
+        service.applyAuditViolations(project, violations, 41);
+
+        ArgumentCaptor<WishlistEntity> wishlistCaptor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository, times(1)).save(wishlistCaptor.capture());
+        WishlistEntity created = wishlistCaptor.getValue();
+        assertEquals(WishlistSource.self_falsification, created.getSource());
+        assertEquals("BARCAN-TAG-09", created.getSourceRoleTag());
+        assertEquals(null, created.getCompiledByRole(), "the new cycle must pass through feature/task decomposition");
+        assertTrue(created.getContent().contains("Finding 1 [BARCAN-TAG-02/refusal_criteria]"));
+        assertTrue(created.getContent().contains("Finding 2 [BARCAN-TAG-11/methodological]"));
     }
 }
