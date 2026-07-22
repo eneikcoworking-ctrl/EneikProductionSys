@@ -956,11 +956,21 @@ public class ProjectFlowService {
         }
         return java.util.List.copyOf(values);
     }
+    private String projectOwner(ProjectEntity project) {
+        if (project != null && project.getRepoUrl() != null && project.getRepoUrl().contains("github.com/")) {
+            String[] parts = project.getRepoUrl().split("github.com/")[1].split("/");
+            if (parts.length >= 1 && !parts[0].isBlank()) {
+                return parts[0];
+            }
+        }
+        return "eneikcoworking-ctrl";
+    }
+
     private boolean tryCompileWishlistCheaply(ProjectEntity project, WishlistEntity wishlist) {
         try {
             String token = settingsService.effectiveValue("github_token");
             if (token != null && !token.isBlank() && settingsService.effectiveBoolean("github_enabled")) {
-                java.net.URI uri = java.net.URI.create("https://raw.githubusercontent.com/" + project.getOwner() + "/" + project.getRepositoryName() + "/main/.eneik/task-plan.json");
+                java.net.URI uri = java.net.URI.create("https://raw.githubusercontent.com/" + projectOwner(project) + "/" + project.getRepositoryName() + "/main/.eneik/task-plan.json");
                 java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
                 java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(uri)
                         .header("Authorization", "Bearer " + token)
