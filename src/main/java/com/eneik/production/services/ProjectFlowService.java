@@ -1405,7 +1405,8 @@ public class ProjectFlowService {
             }
         }
 
-        dispatchCoverageAuditIfClientBrief(project, wishlist, graphSlices, featureId);
+        // Automatic coverage audit task dispatch disabled to prevent non-product task clutter
+        // dispatchCoverageAuditIfClientBrief(project, wishlist, graphSlices, featureId);
         return true;
     }
 
@@ -1555,7 +1556,8 @@ public class ProjectFlowService {
                         if (!designResult.repoDraftPath().isBlank()) {
                             acceptanceCriteria = acceptanceCriteria + "\n\nDESIGN_MOCKUP_ASSET (draft, pending design review - read directly from this repo checkout): "
                                     + designResult.repoDraftPath() + "/mockup.html";
-                            dispatchDesignReview(project, designResult.repoDraftPath(), brief);
+                            // Automatic design review task dispatch disabled to prevent non-product task clutter
+                            // dispatchDesignReview(project, designResult.repoDraftPath(), brief);
                         }
                     }
                 } catch (Exception e) {
