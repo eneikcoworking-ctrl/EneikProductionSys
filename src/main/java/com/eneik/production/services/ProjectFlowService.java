@@ -1007,6 +1007,15 @@ public class ProjectFlowService {
             return 0;
         }
 
+        boolean hasActiveCompilerTask = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed)
+                .anyMatch(this::isWishlistCompilerTask);
+        if (hasActiveCompilerTask) {
+            log.info("ProjectFlowService: An active compiler task already exists for project {}; holding {} wishlist compile candidate(s) until current compilation finishes",
+                    project.getId(), candidates.size());
+            return 0;
+        }
+
         // Operator directive (2026-07-21, test-thirty-second post-mortem): never compile a NEW wishlist
         // item - client-sourced or otherwise (coverage-audit gap, design-review concern, etc.) - while a
         // PREVIOUS client deliverable's derived tasks aren't fully merged yet. Planning more work on top
