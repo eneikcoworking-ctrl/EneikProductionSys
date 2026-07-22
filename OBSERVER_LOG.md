@@ -2156,3 +2156,20 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 
 ### Verdict
 - Stable bounded state. Readiness and all watched counts are unchanged, fallback retries are actively rejected, and no intervention is required.
+
+## 2026-07-22T15:08:14+04:00 - Fresh test launch: project `leadgen-telegram-bot`
+
+### Operational actions performed
+- Previous project `test-thirty-third` (`54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab`) moved to `accepted` / `frozen` state.
+- Created new greenfield test project `leadgen-telegram-bot` (`0d282193-8356-407b-8e13-303af28d5ea8`).
+- Provisioned workspace `/app/project-workspaces/leadgen-telegram-bot` and GitHub repository `https://github.com/eneikcoworking-ctrl/leadgen-telegram-bot`.
+- Saved initial client wishlist `051b5b53-c245-4013-a2ab-93d530cbdb99` containing the complete Technical Assignment (ТЗ) for the Telegram LeadGen Bot (Spring Boot 21 + Svelte + PostgreSQL + Telegram Client / TDLib + LLM Dialog Engine + SOCKS5/HTTP Proxy Session Manager + Spintax + Live Chat CRM).
+- Status set to `active`; initial Technical Lead Compiler task dispatched to Jules session `sessions/8343570224131861922` (`Dispatched to Jules`).
+
+### Enforced safety & poka-yoke controls
+- Product Readiness decomposition gate: `falsificationEligible` remains `false` during initial task-graph decomposition.
+- Wishlist expansion prevention: `openWishlistCount` remains `0`.
+- Davidson trust window: silence for the first 60 minutes is treated as active work.
+- Strict session-PR matching and monotonic merge truth active for all discovered PRs.
+- Single-attempt review fallback cap enforced across all historical target IDs.
+
