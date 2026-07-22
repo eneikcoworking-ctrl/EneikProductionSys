@@ -119,7 +119,7 @@ public class ProjectWorkspaceFactoryService {
                         if: hashFiles('pom.xml') != ''
                         with:
                           distribution: temurin
-                          java-version: '17'
+                          java-version: '21'
                       - uses: actions/setup-python@v5
                         if: hashFiles('requirements.txt') != ''
                         with:
