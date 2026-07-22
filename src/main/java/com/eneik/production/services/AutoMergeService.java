@@ -191,16 +191,32 @@ public class AutoMergeService {
                         boolean changed = !prUrl.equals(matchingSession.getPrUrl());
                         matchingSession.setPrUrl(prUrl);
                         String status = matchingSession.getStatus();
-                        if ("queued".equals(status) || "running".equals(status)
-                                || "revising".equals(status) || "stuck".equals(status)) {
+                        // Ф-followup (2026-07-23, confirmed live on test-thirty-fifth): setting the status
+                        // field directly here used to never trigger handlePrOpenedWorkflow - that edge-
+                        // trigger only lives inside JulesDispatchService.pollStatus's own oldStatus/mappedStatus
+                        // comparison within ONE call, so a status flip written by a completely different
+                        // scheduled method (this one) is invisible to it. Worse, once this method sets prUrl,
+                        // pollStatus's OWN fallback GitHub-lookup is permanently skipped (guarded on blank
+                        // prUrl), so pollStatus can only reach pr_opened by Jules's raw API independently
+                        // reporting it - if Jules's API keeps reporting "running" (observed live), pollStatus
+                        // unconditionally writes that status back every poll, stomping this method's pr_opened
+                        // every cycle in an infinite loop that never calls the completion workflow. Confirmed
+                        // live: a compiler task's session sat at prUrl-set/status="running" for 20+ minutes,
+                        // "Linked open GitHub PR" re-logging every single cycle, zero progress.
+                        boolean transitionedToPrOpened = "queued".equals(status) || "running".equals(status)
+                                || "revising".equals(status) || "stuck".equals(status);
+                        if (transitionedToPrOpened) {
                             matchingSession.setStatus("pr_opened");
                             matchingSession.setLastProgressAt(Instant.now());
                             changed = true;
                         }
                         if (changed) {
-                            julesSessionRepository.save(matchingSession);
+                            matchingSession = julesSessionRepository.save(matchingSession);
                             log.info("AutoMergeService: Linked open GitHub PR #{} ({}) to exact Jules session {} for project {}",
                                     pr.number(), prUrl, matchingSession.getExternalSessionId(), project.getName());
+                        }
+                        if (transitionedToPrOpened) {
+                            julesDispatchService.handlePrOpenedWorkflow(matchingSession);
                         }
                     }
                 }
