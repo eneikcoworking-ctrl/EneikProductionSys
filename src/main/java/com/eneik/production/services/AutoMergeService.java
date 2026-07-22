@@ -102,6 +102,7 @@ public class AutoMergeService {
     public void processAutoMerge() {
         syncOpenPullRequestsFromGitHub();
         reconcileMergedTaskOutcomes();
+        reconcileMergedGitHubPullRequests();
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
                 .filter(AutoMergeService::isReviewPollCandidate)
@@ -770,12 +771,6 @@ public class AutoMergeService {
 
     void reconcileMergedTaskOutcomes() {
         List<PrReviewEntity> reviews = prReviewRepository.findAll();
-        Map<UUID, PrReviewEntity> reviewBySession = reviews.stream()
-                .filter(review -> review.getJulesSessionId() != null)
-                .collect(java.util.stream.Collectors.toMap(
-                        PrReviewEntity::getJulesSessionId,
-                        review -> review,
-                        (first, second) -> second));
 
         for (PrReviewEntity mergedReview : reviews) {
             if (!Boolean.TRUE.equals(mergedReview.getMerged()) || mergedReview.getJulesSessionId() == null) {
@@ -791,53 +786,154 @@ public class AutoMergeService {
             if (task == null) {
                 continue;
             }
-
-            List<com.eneik.production.models.persistence.JulesSessionEntity> taskSessions =
-                    julesSessionRepository.findByTaskId(task.getId());
-            List<com.eneik.production.models.persistence.JulesSessionEntity> activeDuplicates = taskSessions.stream()
-                    .filter(session -> List.of("queued", "running", "revising", "stuck", "pr_opened")
-                            .contains(session.getStatus()))
-                    .toList();
-            List<PrReviewEntity> staleReviews = taskSessions.stream()
-                    .map(session -> reviewBySession.get(session.getId()))
-                    .filter(java.util.Objects::nonNull)
-                    .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
-                    .filter(review -> !"superseded".equals(review.getCiStatus()))
-                    .toList();
-            boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
-
-            if (!taskNeedsRepair && activeDuplicates.isEmpty() && staleReviews.isEmpty()) {
-                continue;
-            }
-
-            if (taskNeedsRepair) {
-                task.setStatus(TaskStatus.done);
-                taskRepository.save(task);
-            }
-            claimService.releaseTerminalClaim(task.getId());
-
-            for (com.eneik.production.models.persistence.JulesSessionEntity session : activeDuplicates) {
-                session.setStatus("cancelled");
-                session.setClosedAt(Instant.now());
-                session.setClosureReason("Superseded by merged PR " + mergedReview.getPrUrl() + " for the same task");
-                julesSessionRepository.save(session);
-            }
-            for (PrReviewEntity staleReview : staleReviews) {
-                staleReview.setCiStatus("superseded");
-                prReviewRepository.save(staleReview);
-            }
-            taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending")
-                    .ifPresent(conflict -> {
-                        conflict.setResolutionStatus("superseded");
-                        conflict.setResolvedAt(Instant.now());
-                        taskConflictRepository.save(conflict);
-                    });
-
-            log.info("Poka-yoke: reconciled merged outcome for task {} from PR {}; repaired status={}, "
-                            + "retired sessions={}, superseded reviews={}",
-                    task.getId(), mergedReview.getPrUrl(), taskNeedsRepair,
-                    activeDuplicates.size(), staleReviews.size());
+            repairTaskForConfirmedMerge(task, winningSession, mergedReview.getPrUrl());
         }
+    }
+
+    // Ф-followup (2026-07-23, operator directive - confirmed live on two separate projects,
+    // test-thirty-third and test-thirty-fourth): reconcileMergedTaskOutcomes() above only repairs a task
+    // when a LOCAL PrReviewEntity row already exists with merged=true. Two independent live incidents
+    // proved that assumption false: (1) a session can reach pr_opened through the GitHub-lookup fallback
+    // in JulesDispatchService.pollStatus (detectOpenPullRequestFromGitHub) without ever crossing the
+    // running/revising -> pr_opened edge that creates the review record, so handlePrOpenedWorkflow never
+    // fires; (2) an operator can merge a PR manually on GitHub before the app's own batched review ever
+    // runs. In both cases zero PrReviewEntity rows exist for the affected task, so
+    // reconcileMergedTaskOutcomes has nothing to reconcile from and the owning task - plus everything
+    // depending on it via the dependency graph - stays stuck forever even though GitHub already reports
+    // merged=true. Confirmed live: test-thirty-fourth had 0 PrReviewEntity rows total for the whole
+    // project while 2 of its 4 root tasks had already-merged PRs (#4, #5) and were still `pending_review`/
+    // `claimed`, stalling the system for 3.5+ hours with idle Jules capacity sitting unused. This checks
+    // GitHub's own merge truth directly as a second, independent signal that does not require any local
+    // review record to exist at all.
+    private void reconcileMergedGitHubPullRequests() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        try {
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+                var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+                if (snapshot == null || !snapshot.available() || snapshot.closed() == null) {
+                    continue;
+                }
+                java.util.Set<String> mergedPrUrls = snapshot.closed().stream()
+                        .filter(GitHubPullRequestService.GitHubPullRequest::merged)
+                        .map(GitHubPullRequestService.GitHubPullRequest::url)
+                        .collect(java.util.stream.Collectors.toSet());
+                if (mergedPrUrls.isEmpty()) {
+                    continue;
+                }
+
+                List<com.eneik.production.models.persistence.JulesSessionEntity> mergedSessions =
+                        julesSessionRepository.findAll().stream()
+                                .filter(session -> session.getPrUrl() != null && mergedPrUrls.contains(session.getPrUrl()))
+                                .toList();
+                for (var session : mergedSessions) {
+                    com.eneik.production.models.persistence.TaskEntity task =
+                            taskRepository.findById(session.getTaskId()).orElse(null);
+                    if (task == null || task.getProject() == null
+                            || !project.getId().equals(task.getProject().getId())) {
+                        continue;
+                    }
+                    repairTaskForConfirmedMerge(task, session, session.getPrUrl());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: Failed to reconcile merged GitHub PRs: {}", e.getMessage());
+        }
+    }
+
+    private void repairTaskForConfirmedMerge(com.eneik.production.models.persistence.TaskEntity task,
+            com.eneik.production.models.persistence.JulesSessionEntity winningSession, String mergedPrUrl) {
+        List<com.eneik.production.models.persistence.JulesSessionEntity> taskSessions =
+                julesSessionRepository.findByTaskId(task.getId());
+        List<com.eneik.production.models.persistence.JulesSessionEntity> activeDuplicates = taskSessions.stream()
+                .filter(session -> winningSession == null || !session.getId().equals(winningSession.getId()))
+                .filter(session -> List.of("queued", "running", "revising", "stuck", "pr_opened")
+                        .contains(session.getStatus()))
+                .toList();
+        Map<UUID, PrReviewEntity> reviewBySession = prReviewRepository.findAll().stream()
+                .filter(review -> review.getJulesSessionId() != null)
+                .collect(java.util.stream.Collectors.toMap(
+                        PrReviewEntity::getJulesSessionId,
+                        review -> review,
+                        (first, second) -> second));
+        List<PrReviewEntity> staleReviews = taskSessions.stream()
+                .filter(session -> winningSession == null || !session.getId().equals(winningSession.getId()))
+                .map(session -> reviewBySession.get(session.getId()))
+                .filter(java.util.Objects::nonNull)
+                .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
+                .filter(review -> !"superseded".equals(review.getCiStatus()))
+                .toList();
+        boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
+        // Ф-followup (2026-07-23): the GitHub-truth reconciliation path (reconcileMergedGitHubPullRequests)
+        // calls this with a winning session that has no PrReviewEntity at all yet - without one,
+        // ClientDeliverableReadinessService.isTaskMerged/isDependencySatisfied can never see this task as
+        // merged (they specifically require a merged=true review row, not just TaskStatus.done), so every
+        // task depending on it would stay queued forever even after this "repair". Synthesize the missing
+        // review here, classifying hasCode the same way the normal merge path does (classifyAndHandleBranch),
+        // so non-TAG-09 dependents correctly require real code, not just a done status.
+        boolean reviewNeedsSynthesis = winningSession != null && reviewBySession.get(winningSession.getId()) == null;
+
+        if (!taskNeedsRepair && !reviewNeedsSynthesis && activeDuplicates.isEmpty() && staleReviews.isEmpty()) {
+            return;
+        }
+
+        if (reviewNeedsSynthesis) {
+            PrReviewEntity synthesized = new PrReviewEntity();
+            synthesized.setJulesSessionId(winningSession.getId());
+            synthesized.setPrUrl(mergedPrUrl);
+            synthesized.setCiStatus("success");
+            synthesized.setRiskLevel("LOW");
+            synthesized.setMerged(true);
+            synthesized.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
+            prReviewRepository.save(synthesized);
+        }
+
+        if (taskNeedsRepair) {
+            task.setStatus(TaskStatus.done);
+            taskRepository.save(task);
+        }
+        claimService.releaseTerminalClaim(task.getId());
+
+        for (com.eneik.production.models.persistence.JulesSessionEntity session : activeDuplicates) {
+            session.setStatus("cancelled");
+            session.setClosedAt(Instant.now());
+            session.setClosureReason("Superseded by merged PR " + mergedPrUrl + " for the same task");
+            julesSessionRepository.save(session);
+        }
+        for (PrReviewEntity staleReview : staleReviews) {
+            staleReview.setCiStatus("superseded");
+            prReviewRepository.save(staleReview);
+        }
+        taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending")
+                .ifPresent(conflict -> {
+                    conflict.setResolutionStatus("superseded");
+                    conflict.setResolvedAt(Instant.now());
+                    taskConflictRepository.save(conflict);
+                });
+
+        log.info("Poka-yoke: reconciled merged outcome for task {} from PR {}; repaired status={}, "
+                        + "retired sessions={}, superseded reviews={}",
+                task.getId(), mergedPrUrl, taskNeedsRepair,
+                activeDuplicates.size(), staleReviews.size());
+    }
+
+    private boolean classifyHasCodeForMergedPr(String prUrl) {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        PullRequestTarget target = parseGithubPullRequestUrl(prUrl);
+        if (target == null) {
+            return false;
+        }
+        List<String> changedFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
+        return codeChangeClassifier.hasCode(changedFiles);
     }
 
     private void resolveActiveConflict(UUID julesSessionId) {
