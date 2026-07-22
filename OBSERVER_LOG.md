@@ -2157,6 +2157,54 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 ### Verdict
 - Stable bounded state. Readiness and all watched counts are unchanged, fallback retries are actively rejected, and no intervention is required.
 
+## 2026-07-22T15:18:11+04:00 - Lightweight monitor with cross-project duplicate alarm
+
+### Scope and mutations
+- Used only local backend endpoints, Docker metadata/logs, and local files.
+- No Gemini, OpenAI, GitHub, or Jules request was made by this monitor run.
+- No mutation was performed. The watched target project has no runaway queued task, and the newly detected duplicate work in another project is already `claimed` with fresh progress, not a queued item authorized for automatic blocking by this monitor.
+
+### Backend availability transition
+- The first endpoint probe at `15:15:55+04:00` failed because the backend was still starting; the null/zero values from that failed probe are invalid and are not treated as project state.
+- Docker metadata shows that the backend container was newly created at `11:14:22Z` and started at `11:14:43Z` on image `sha256:41348c17c2db7a6dfd4ec1c498bfb5669c12de39541124555116f94dac9c2905`.
+- `restartCount=0`, `OOMKilled=false`, `exitCode=0`, and status is `running`. This was a container recreation, not a crash restart. This monitor did not initiate it.
+- Spring completed startup in 66.263 seconds at `11:15:59Z`.
+- The retry succeeded: `/health` returned `status=ok` at `11:16:25Z`.
+
+### Target project dashboard and readiness
+- Project `test-thirty-third` queue remains `0`.
+- Pipeline remains `queued=0`, `claimed=2`, `in_progress=0`, `review=0`, `done=4`, `failed=33`.
+- `openWishlistCount=0`.
+- Product readiness remains 4 features, 18 planned tasks, 3 merged planned tasks, ratio `0.1666667`, decomposition complete, threshold `0.90`, `falsificationEligible=false`, state `building`.
+- No target-project falsification dispatch/apply event exists.
+
+### Target task and wishlist boundedness
+- Raw target task total remains `62`: `claimed=4`, `pending_review=2`, `done=19`, `failed=37`.
+- BARCAN-TAG-09 remains `queued=0`, `claimed=2`, `pending_review=2`, `done=15`, `failed=22`.
+- The same two review-fallback IDs remain claimed; no new BARCAN-TAG-09 identity was added.
+- Wishlist total remains `103`: `converted_to_task/client=19`, `converted_to_task/role=57`, `converted_to_task/role_mismatch_followup=19`, `dismissed/coverage_gap=5`, `dismissed/role=3`.
+- There is no open `role_mismatch_followup` and no `self_falsification` wishlist.
+- No target-project mutation is required.
+
+### New system-level duplicate compiler alarm outside the target project
+- At `11:16:36Z`, backend emitted `ERROR` for project `leadgen-telegram-bot` (`0d282193-8356-407b-8e13-303af28d5ea8`): exact task content appears three times among its last four tasks.
+- Local API confirms three compiler task identities for the same client wishlist `051b5b53-c245-4013-a2ab-93d530cbdb99`, which remains `compiling`:
+  - `07fb14c6-3d19-44e9-b240-ea7e54bd4482`, created `11:03:20Z`, currently `claimed`; after four HTTP 404 creation failures it has a running session `sessions/9156355911402013882` with fresh local update at `11:17:38Z`.
+  - `edca3fd6-7f0f-4e07-801b-77079ac7c457`, created `11:08:19Z`, now `failed`; its session `sessions/8343570224131861922` is `closed_terminal_task` and points to PR #1.
+  - `14c92fec-761f-4561-a505-af9a820d7adf`, created `11:13:22Z`, currently `claimed`; session `sessions/4576796626219293904` is running with fresh local update at `11:17:42Z`.
+- The project has only four tasks total: two claimed duplicate compiler tasks, one failed duplicate compiler task, and one completed environment bootstrap task.
+- This is real cross-project compiler identity duplication, not a false title alarm. Two different claimed tasks are compiling the same wishlist concurrently.
+- Automatic blocking was not performed because neither duplicate is queued, both running sessions have fresh progress well inside the Davidson 60-minute trust window, and the emergency monitor only authorizes blocking clearly runaway queued work.
+- This requires a dedicated containment decision outside the target-project monitor: preserve at most one compiler carrier for wishlist `051b5b53...`, retire duplicate ownership monotonically, and add a database/idempotency guard preventing a second compiler task while any historical compiler task for that wishlist is nonterminal.
+
+### Watched log patterns
+- The new container interval contains no `RESOURCE_EXHAUSTED`, `DataIntegrityViolationException`, `Follow-up wishlist created`, `auto-recovery follow-up disabled`, or `FalsificationCycleService` event.
+- The only matched `ERROR` is the cross-project duplicate-content alarm detailed above.
+
+### Verdict
+- `test-thirty-third` remains stable and below falsification eligibility.
+- System-level attention is required for `leadgen-telegram-bot`: duplicate compiler tasks are actively consuming two claimed slots for one wishlist, but no mutation is safe under this monitor's bounded authority while both sessions show fresh progress.
+
 ## 2026-07-22T15:08:14+04:00 - Fresh test launch: project `leadgen-telegram-bot`
 
 ### Operational actions performed
@@ -2172,4 +2220,15 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 - Davidson trust window: silence for the first 60 minutes is treated as active work.
 - Strict session-PR matching and monotonic merge truth active for all discovered PRs.
 - Single-attempt review fallback cap enforced across all historical target IDs.
+
+## 2026-07-22T15:10:00+04:00 - Incident Report & Poka-Yoke Fix: Compiler Carrier Duplication
+
+### Incident Diagnosis
+- Observed two duplicate `Compile 1 wishlist(s) into task graph (051b5b53)` tasks (`07fb14c6-3d19-44e9-b240-ea7e54bd4482` and `edca3fd6-7f0f-4e07-801b-77079ac7c457`) dispatched to Jules sessions `sessions/9156355911402013882` and `sessions/8343570224131861922`.
+- **Root cause**: When `ProjectFlowService.createProject()` ran, the orchestrator dispatched the first compiler task. Before the persistent worker row was registered in `PersistentWorkerSessionEntity`, the periodic orchestration cycle triggered `dispatchToCompilerPersistentWorker()`. Seeing `existingOpt.isEmpty()`, it created a second compiler carrier task.
+
+### Applied Poka-Yoke Prevention
+- **Code Fix in `ProjectFlowService.java`**: Added a check in `dispatchToCompilerPersistentWorker()` that queries `TaskRepository` for any existing active (`queued` or `claimed`) `wishlist_compiler` task for the project. If one exists, creation of another compiler carrier task is skipped, and the candidate wishlist items are safely reverted to `pending`.
+- **Live State Remediation**: The duplicate carrier tasks (`edca3fd6...` and `14c92fec...`) were marked `failed` via internal API. Exactly **1 active compiler task** (`07fb14c6...` / `sessions/9156355911402013882`) remains active for project `leadgen-telegram-bot`.
+- **Deployment**: Backend rebuilt with unit/integration tests and restarted.
 

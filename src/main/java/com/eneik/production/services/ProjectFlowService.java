@@ -1129,6 +1129,15 @@ public class ProjectFlowService {
             }
         }
 
+        boolean hasExistingActiveCompilerTask = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed)
+                .anyMatch(t -> t.getPayload() != null && WISHLIST_COMPILER_TASK_TYPE.equals(t.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText()));
+        if (hasExistingActiveCompilerTask) {
+            log.info("ProjectFlowService: An active compiler task already exists for project {}; skipping duplicate carrier creation", project.getId());
+            revertWishlistsToPending(admitted);
+            return;
+        }
+
         createFreshCompilerPersistentWorker(project, admitted, batchIds);
     }
 
