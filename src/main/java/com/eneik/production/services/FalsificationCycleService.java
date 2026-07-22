@@ -135,7 +135,7 @@ public class FalsificationCycleService {
             return;
         }
 
-        String prompt = buildAuditPrompt(activeRoles, recentChanges.text());
+        String prompt = buildAuditPrompt(project, activeRoles, recentChanges.text());
 
         UUID taskId = projectFlowService.dispatchFalsificationAudit(project, prompt, recentChanges.highestPrNumber());
         if (taskId == null) {
@@ -146,7 +146,19 @@ public class FalsificationCycleService {
                 taskId, project.getName(), activeRoles.size());
     }
 
-    private String buildAuditPrompt(List<RoleEntity> activeRoles, String latestDiff) {
+    private String buildAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String latestDiff) {
+        StringBuilder briefSection = new StringBuilder();
+        List<WishlistEntity> clientBriefs = wishlistRepository.findByProjectId(project.getId()).stream()
+                .filter(w -> w.getSource() == WishlistSource.client)
+                .toList();
+        if (!clientBriefs.isEmpty()) {
+            briefSection.append("\n\n=== ORIGINAL CLIENT SPECIFICATION & DECOMPOSITION COVERAGE ===\n");
+            for (WishlistEntity brief : clientBriefs) {
+                briefSection.append("Client Brief Content:\n").append(brief.getContent()).append("\n---\n");
+            }
+            briefSection.append("Audit Objective: Compare the above client specification against all merged PRs and actual code implementation below. Verify whether any requirements were missed, incomplete, or deviated from.\n");
+        }
+
         StringBuilder charters = new StringBuilder();
         for (RoleEntity role : activeRoles) {
             String rawRules = readRawRules(role);
@@ -158,18 +170,19 @@ public class FalsificationCycleService {
 
         return """
                 You are the falsification auditor for this project (BARCAN-TAG-09 role). Audit the CURRENT
-                real code and recent activity below against every role charter provided. Do NOT implement,
-                fix, or change any product code, and do not run builds or tests - this task only produces an
-                audit report.
+                real code, merged PRs, and client specification coverage below against every role charter provided.
+                Do NOT implement, fix, or change any product code, and do not run builds or tests - this task only
+                produces an audit report.
 
                 Report only violations you can point to concretely in the diff/logs below - never invent a
                 violation to have something to report, and never omit a real one. An empty violations list
                 is a completely valid, honest result if nothing is actually wrong.
 
-                For each role charter, check two things:
+                For each role charter and client specification:
                 1. Refusal criteria: does the current code/diff violate that role's stated REFUSAL CRITERIA?
                 2. Methodological falsification: applying that charter's philosophical framing, is there a
                    confirmed systemic contradiction (not a stylistic nitpick)?
+                3. Specification & Coverage Audit: compare merged PRs and actual codebase against the client brief.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
                 `.eneik/falsification-report.json`, with EXACTLY this shape and no other files changed:
@@ -180,12 +193,15 @@ public class FalsificationCycleService {
                 ]}
                 Use "violations": [] if you find nothing wrong. Do not write, modify, or delete any other file.
 
+                Client Specification & Coverage Input:
+                %s
+
                 Recent diff and operational activity to audit:
                 %s
 
                 Role charters to audit against:
                 %s
-                """.formatted(latestDiff, charters);
+                """.formatted(briefSection.toString(), latestDiff, charters);
     }
 
     public record AuditViolation(
