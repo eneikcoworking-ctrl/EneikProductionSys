@@ -2115,3 +2115,44 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 - Hierarchical readiness and the 90% falsification gate are implemented and live.
 - The first cycle is not yet at 90%, so an actual falsification event is intentionally not present. The next valid threshold is 17/18 merged planned tasks.
 - The system is progressing through existing PRs, not stalled, and the audited automatic feedback paths cannot create an unbounded product backlog.
+
+## 2026-07-22T14:45:56+04:00 - Lightweight duplication and falsification monitor
+
+### Scope and mutations
+- Used only local backend endpoints, Docker logs, and local files.
+- No Gemini, OpenAI, GitHub, or Jules request was made by this monitor run.
+- No mutation was performed. No queued runaway task or open generated wishlist exists.
+
+### Dashboard and readiness
+- Project queue remains `0`; no queue tag is present.
+- Pipeline remains `queued=0`, `claimed=2`, `in_progress=0`, `review=0`, `done=4`, `failed=33`.
+- `openWishlistCount=0`.
+- Product readiness is unchanged: 4 features, 0 fully complete features, 18 planned tasks, 3 merged planned tasks, ratio `0.1666667`.
+- Decomposition remains complete; threshold is `0.90`; `falsificationEligible=false`; state is `building`.
+- No falsification dispatch/apply event is expected before at least 17 of 18 planned tasks are merged.
+
+### Task boundedness
+- Raw project task total remains `62`: `claimed=4`, `pending_review=2`, `done=19`, `failed=37`.
+- BARCAN-TAG-09 totals are stable: `claimed=2`, `pending_review=2`, `done=15`, `failed=22`, `queued=0`.
+- The two claimed BARCAN-TAG-09 rows are the same bounded review-fallback tasks recorded at deployment:
+  - `3aa58929-355e-4cd6-807b-8ed461789c63`, target `94453aca-0935-4d34-b4ae-d1f8f15b37de`.
+  - `2a4deeb6-057a-467a-8a9d-566b48b65538`, target `233231df-c85c-4c60-b6f3-129a1593e2ee`.
+- No new BARCAN-TAG-09 queued/claimed identity appeared and no task count growth occurred.
+- At `10:46:00Z`, backend again rejected automatic fallback retries for both target IDs under the lifetime Poka-yoke guard.
+
+### Wishlist boundedness
+- Wishlist total remains `103`.
+- Counts remain `converted_to_task/client=19`, `converted_to_task/role=57`, `converted_to_task/role_mismatch_followup=19`, `dismissed/coverage_gap=5`, `dismissed/role=3`.
+- All 19 historical `role_mismatch_followup` rows remain terminal `converted_to_task`; none is pending, compiling, or approved.
+- No `self_falsification` row exists.
+- No wishlist status/source count changed from the final deployment snapshot.
+
+### Error-line diagnosis
+- Two `ERROR` entries occurred at `10:40:15Z` in `GlobalExceptionHandler`.
+- Both stack traces are `org.apache.catalina.connector.ClientAbortException: java.io.IOException: Broken pipe` while Jackson was serializing GET responses.
+- This means two HTTP clients disconnected before the backend finished writing their large JSON responses. It is transport noise, not a scheduler, database, task-state, provider, or merge failure.
+- The backend continued processing normally afterward, linked existing PRs to exact sessions, ran orchestration, and served this monitor's endpoints successfully.
+- No `RESOURCE_EXHAUSTED`, `DataIntegrityViolationException`, `Follow-up wishlist created`, or `FalsificationCycleService` event appeared in the inspected interval.
+
+### Verdict
+- Stable bounded state. Readiness and all watched counts are unchanged, fallback retries are actively rejected, and no intervention is required.
