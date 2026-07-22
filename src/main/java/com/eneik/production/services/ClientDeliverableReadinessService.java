@@ -88,6 +88,16 @@ public class ClientDeliverableReadinessService {
     }
 
     public Readiness computeForProject(UUID projectId) {
+        return computeForProject(projectId, null);
+    }
+
+    /**
+     * Same hierarchy as {@link #computeForProject(UUID)}, scoped to the features rooted at exactly one
+     * wishlist when {@code rootWishlistId} is non-null - used to decide "is THIS wishlist's own work fully
+     * merged", independent of everything else going on in the project (e.g. gating a coverage audit that
+     * must run once per wishlist, not once for the whole project's aggregate progress).
+     */
+    public Readiness computeForProject(UUID projectId, UUID rootWishlistId) {
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
         for (WishlistEntity item : allWishlist) {
@@ -99,6 +109,7 @@ public class ClientDeliverableReadinessService {
                     WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
                     return root != null && PRODUCT_ITERATION_SOURCES.contains(root.getSource());
                 })
+                .filter(feature -> rootWishlistId == null || rootWishlistId.equals(feature.getRootWishlistId()))
                 .toList();
         Set<UUID> productFeatureIds = productFeatures.stream()
                 .map(FeatureEntity::getId)
@@ -108,6 +119,7 @@ public class ClientDeliverableReadinessService {
         List<WishlistEntity> iterationRoots = allWishlist.stream()
                 .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
                 .filter(w -> w.getCompiledByRole() == null)
+                .filter(w -> rootWishlistId == null || rootWishlistId.equals(w.getId()))
                 .toList();
         boolean everyRootCompiled = !iterationRoots.isEmpty() && iterationRoots.stream()
                 .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task

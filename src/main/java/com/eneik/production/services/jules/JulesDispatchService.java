@@ -68,8 +68,8 @@ public class JulesDispatchService {
     // instead of design review, and firing far more often since it covers every PR, not just UI ones.
     private static final int MAX_PENDING_REVIEW_CONCERNS_PER_PROJECT = 0;
     private static final String REVIEW_FALLBACK_CONCERN_CONTENT_PREFIX = "Reviewer concern (non-blocking) on task \"";
-    // Coverage-audit gaps (see ProjectFlowService.dispatchCoverageAuditIfClientBrief) are inherently rare -
-    // one audit per client brief decomposition, not per PR - so a runaway storm is far less likely than the
+    // Coverage-audit gaps (see ProjectFlowService.checkAndDispatchCoverageAudits) are inherently rare -
+    // one audit per fully-merged client wishlist, not per PR - so a runaway storm is far less likely than the
     // review/design concern loops above. Still capped for the same "never create tasks the system doesn't
     // actually need" reason, and because a single sloppy brief could in principle keep re-triggering gaps
     // across retries.
@@ -2479,7 +2479,7 @@ public class JulesDispatchService {
 
     /**
      * A coverage-audit session reached pr_opened: its PR should carry exactly one JSON report (see
-     * ProjectFlowService.dispatchCoverageAuditIfClientBrief), never product code. Discards that PR either
+     * ProjectFlowService.checkAndDispatchCoverageAudits), never product code. Discards that PR either
      * way, then turns every reported gap into a new pending wishlist item (source=coverage_gap) carrying
      * the same featureId as the decomposition it audited, so it flows through the normal pull-based,
      * WIP-gated compiler cycle like any other wishlist item - never fabricated as a ready-made task
@@ -2488,7 +2488,6 @@ public class JulesDispatchService {
      */
     private void completeCoverageAudit(JulesSessionEntity session, TaskEntity auditTask) {
         UUID targetWishlistId = projectFlowService.coverageAuditTargetWishlistId(auditTask);
-        UUID featureId = projectFlowService.coverageAuditFeatureId(auditTask);
 
         // Idempotency: found live on test-thirty-first - a coverage-audit task can end up with more than
         // one Jules session dispatched to it (same dispatch-race class as the original wishlist-compiler
@@ -2559,7 +2558,10 @@ public class JulesDispatchService {
             wishlist.setProjectId(auditTask.getProject().getId());
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.coverage_gap);
             wishlist.setSourceRoleTag(gap.roleTag());
-            wishlist.setFeatureId(featureId);
+            // Left unset (unlike the pre-redesign version): a coverage audit now runs once against the
+            // WHOLE wishlist's shipped code, potentially spanning several эпики, so there is no single
+            // correct feature to inherit anymore - resolveOrCreateFeatureId gives it its own grouping,
+            // same fallback every other un-featured wishlist item already gets.
             wishlist.setContent("Coverage audit gap [" + gap.title() + "]: " + gap.reason()
                     + "\nJTBD: " + gap.jtbd()
                     + "\nAcceptance Criteria: " + gap.acceptanceCriteria());

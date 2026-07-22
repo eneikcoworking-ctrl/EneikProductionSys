@@ -1415,8 +1415,9 @@ public class ProjectFlowService {
             }
         }
 
-        // Automatic coverage audit task dispatch disabled to prevent non-product task clutter
-        // dispatchCoverageAuditIfClientBrief(project, wishlist, graphSlices, featureId);
+        // Coverage audit no longer fires here (per epic, before any code exists) - it now runs once per
+        // wishlist, after all its planned tasks are genuinely merged, checked against real code on main.
+        // See checkAndDispatchCoverageAudits, called from ContinuousOrchestrationService each tick.
         return true;
     }
 
@@ -2176,55 +2177,76 @@ public class ProjectFlowService {
         return task.getPayload().path(FALSIFICATION_AUDIT_HIGHEST_PR_KEY).asInt();
     }
 
-    // Coverage audit: right after a CLIENT brief is decomposed into real tasks (buildTaskGraphForOneWishlist
-    // below), dispatch one more Jules session that compares the ORIGINAL BRIEF against the RESULTING TASK
-    // LIST and flags two kinds of gap: (1) something the brief actually asks for, however awkwardly phrased,
-    // that no task addresses (semantic comparison, not keyword matching); (2) functionality that's a
-    // well-known standard expectation for this category of product but was never explicitly stated (the
-    // concrete trigger: a "Notes CRUD" brief mentioning "authenticated users" produced 4 tasks, none of
-    // which built authentication itself - found manually on test-thirtieth, recorded as a deferred fix, now
-    // built for real). Deliberately NOT an extension of FalsificationCycleService: falsification only
-    // validates code that already exists against what was claimed; this has no code to inspect yet, it's a
-    // semantic plan-vs-brief comparison that runs the moment the plan exists, before any implementation
-    // starts. Gaps become new wishlist items (source=coverage_gap) that flow through the normal pull-based,
-    // WIP-gated compiler cycle like any other wishlist item - no separate admission mechanism needed, and
-    // they inherit the same featureId as the tasks they're auditing so they land in the same epic.
+    // Coverage audit: operator directive (2026-07-23) - the original design dispatched one audit task per
+    // EPIC, immediately after decomposition, comparing the brief against the (not-yet-built) planned task
+    // list. Confirmed live (test-thirty-third) that this fires N audit tasks per wishlist (one per epic,
+    // observed 3 for a single brief) and burns worker slots before any real code exists to actually check
+    // against - the operator called this "громоздко с костылями" (clunky, hacky) and asked for a redesign:
+    // exactly ONE audit task per WISHLIST (not per epic), dispatched only once ALL of that wishlist's
+    // planned tasks are genuinely merged, comparing the brief against the REAL code now on main - not a
+    // text description of a plan. Still deliberately NOT an extension of FalsificationCycleService: that
+    // gate validates code against what was *claimed* about it; this validates the brief against what was
+    // *actually built*, a different question, run once per wishlist rather than per-project. Idempotency:
+    // checkAndDispatchCoverageAudits (called every orchestration tick, see ContinuousOrchestrationService)
+    // never dispatches twice for the same wishlist - see isCoverageAuditTask/coverageAuditTargetWishlistId.
     public static final String COVERAGE_AUDIT_TASK_TYPE = "coverage_audit";
     public static final String COVERAGE_AUDIT_REPORT_PATH = ".eneik/coverage-audit.json";
     public static final String COVERAGE_AUDIT_WISHLIST_ID_KEY = "auditsWishlistId";
-    public static final String COVERAGE_AUDIT_FEATURE_ID_KEY = "auditsFeatureId";
 
-    public void dispatchCoverageAuditIfClientBrief(ProjectEntity project, WishlistEntity originalWishlist,
-            java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices, UUID featureId) {
-        if (originalWishlist.getSource() != WishlistSource.client || graphSlices.isEmpty()) {
+    @Transactional
+    public void checkAndDispatchCoverageAudits(UUID projectId) {
+        List<WishlistEntity> clientWishlists = wishlistRepository.findByProjectId(projectId).stream()
+                .filter(w -> w.getSource() == WishlistSource.client)
+                .filter(w -> w.getCompiledByRole() == null)
+                .filter(w -> w.getStatus() == WishlistStatus.converted_to_task)
+                .toList();
+        if (clientWishlists.isEmpty()) {
             return;
         }
+        List<TaskEntity> existingAuditTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(this::isCoverageAuditTask)
+                .toList();
+        java.util.Set<UUID> alreadyAudited = existingAuditTasks.stream()
+                .map(this::coverageAuditTargetWishlistId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+
+        for (WishlistEntity wishlist : clientWishlists) {
+            if (alreadyAudited.contains(wishlist.getId())) {
+                continue;
+            }
+            ClientDeliverableReadinessService.Readiness readiness =
+                    readinessService.computeForProject(projectId, wishlist.getId());
+            boolean fullyMerged = readiness.decompositionComplete()
+                    && readiness.totalDeliverables() > 0
+                    && readiness.mergedDeliverables() >= readiness.totalDeliverables();
+            if (!fullyMerged) {
+                continue;
+            }
+            ProjectEntity project = requireProject(projectId);
+            dispatchCoverageAuditForCompletedWishlist(project, wishlist);
+        }
+    }
+
+    private void dispatchCoverageAuditForCompletedWishlist(ProjectEntity project, WishlistEntity originalWishlist) {
         RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
         if (compilerRole == null) {
             log.error("Cannot dispatch coverage audit for wishlist {}: role {} not found", originalWishlist.getId(), ORCHESTRATOR_ROLE);
             return;
         }
 
-        StringBuilder taskList = new StringBuilder();
-        int n = 1;
-        for (MLPredictionServiceClient.TaskSliceMetadata slice : graphSlices) {
-            taskList.append(n).append(". [").append(targetRoleForSlice(originalWishlist, slice)).append("] ")
-                    .append(slice.title()).append("\n   JTBD: ").append(slice.jtbd())
-                    .append("\n   Acceptance Criteria: ").append(slice.acceptanceCriteria()).append("\n\n");
-            n++;
-        }
-
         String prompt = """
-                You are auditing a decomposition plan for completeness, BEFORE any implementation starts.
-                Do NOT write or change any code, do not run builds or tests - this task only produces an
-                audit report.
+                You are auditing SHIPPED product code for completeness against the original client brief.
+                Every planned task for this brief has already been merged to main - do NOT write or change
+                any code, do not run builds or tests, this task only produces an audit report.
 
-                Compare the ORIGINAL CLIENT BRIEF below against the RESULTING TASK LIST below (already
-                decomposed and about to be built). Find two kinds of gap:
+                Check out `main` and read the ACTUAL code now present in the repository (not a task list,
+                not a plan - the real files). Compare it against the ORIGINAL CLIENT BRIEF below. Find two
+                kinds of gap:
 
                 1. COVERAGE gaps: something the brief actually asks for (read it yourself, in whatever
-                   language or phrasing it uses - do not rely on keyword matching) that no task in the
-                   list addresses.
+                   language or phrasing it uses - do not rely on keyword matching) that the real code does
+                   not implement.
                 2. DOMAIN-STANDARD gaps: functionality that isn't mentioned in the brief at all, but that
                    any competent engineer would expect as a standard, well-known requirement for this
                    category of product given what the brief DOES ask for (e.g. a brief that implies
@@ -2233,9 +2255,10 @@ public class ProjectFlowService {
                    only flag things clearly and concretely implied by the brief's own domain, never
                    speculative feature ideas.
 
-                Be conservative: only report a gap you are genuinely confident about. Do NOT flag missing
-                tests, missing documentation, missing CI/CD, or generic "nice to have" polish - those are
-                not coverage gaps.
+                Be conservative: only report a gap you are genuinely confident about, and only if you
+                verified it's genuinely missing by reading the real code, not by assumption. Do NOT flag
+                missing tests, missing documentation, missing CI/CD, or generic "nice to have" polish -
+                those are not coverage gaps.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
                 `.eneik/coverage-audit.json`, with EXACTLY this shape and no other files changed:
@@ -2247,30 +2270,24 @@ public class ProjectFlowService {
 
                 ORIGINAL CLIENT BRIEF (verbatim, may be in any language):
                 %s
-
-                RESULTING TASK LIST (%d task(s) about to be built from this brief):
-                %s
-                """.formatted(originalWishlist.getContent(), graphSlices.size(), taskList.toString());
+                """.formatted(originalWishlist.getContent());
 
         TaskEntity auditTask = new TaskEntity();
         auditTask.setProject(project);
         auditTask.setRole(compilerRole);
-        auditTask.setTitle("Coverage audit: plan vs brief (" + shortId(originalWishlist.getId()) + ")");
+        auditTask.setTitle("Coverage audit: brief vs shipped code (" + shortId(originalWishlist.getId()) + ")");
         auditTask.setDescription(prompt);
         auditTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, COVERAGE_AUDIT_TASK_TYPE);
         payload.put(COVERAGE_AUDIT_WISHLIST_ID_KEY, originalWishlist.getId().toString());
-        if (featureId != null) {
-            payload.put(COVERAGE_AUDIT_FEATURE_ID_KEY, featureId.toString());
-        }
         auditTask.setPayload(payload);
 
         auditTask = taskRepository.save(auditTask);
         dispatchToGeneralPool(auditTask);
-        log.info("Dispatched coverage audit task {} for client wishlist {} ({} task(s) to verify)",
-                auditTask.getId(), originalWishlist.getId(), graphSlices.size());
+        log.info("Dispatched coverage audit task {} for fully-merged client wishlist {} (one task per wishlist, checked against real code on main)",
+                auditTask.getId(), originalWishlist.getId());
     }
 
     public boolean isCoverageAuditTask(TaskEntity task) {
@@ -2293,16 +2310,6 @@ public class ProjectFlowService {
         }
     }
 
-    public UUID coverageAuditFeatureId(TaskEntity task) {
-        if (task.getPayload() == null || !task.getPayload().hasNonNull(COVERAGE_AUDIT_FEATURE_ID_KEY)) {
-            return null;
-        }
-        try {
-            return UUID.fromString(task.getPayload().path(COVERAGE_AUDIT_FEATURE_ID_KEY).asText());
-        } catch (IllegalArgumentException e) {
-            return null;
-        }
-    }
 
     // Fallback reviewer, used only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE - so
     // a real outage (or a permanently depleted quota) never leaves an implementer PR stuck unreviewed

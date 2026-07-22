@@ -135,6 +135,12 @@ public class ContinuousOrchestrationService {
                     log.error("Continuous Orchestration: Failed for project {}", project.getId(), e);
                 }
 
+                try {
+                    projectFlowService.checkAndDispatchCoverageAudits(project.getId());
+                } catch (Exception e) {
+                    log.error("Continuous Orchestration: Failed to check coverage-audit eligibility for project {}", project.getId(), e);
+                }
+
                 checkForDuplicateTaskTitles(project);
             } finally {
                 LogScope.clear();
