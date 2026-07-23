@@ -128,7 +128,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed')
-              ) < :maxSessions
+              ) < COALESCE(a.max_concurrent_sessions, :maxSessions)
             ORDER BY (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -161,7 +161,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed')
-              ) < :maxSessions
+              ) < COALESCE(a.max_concurrent_sessions, :maxSessions)
             ORDER BY a.last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<AccountEntity> lockAccountByNameWithCapacity(@Param("name") String name,

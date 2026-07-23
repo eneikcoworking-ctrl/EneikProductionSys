@@ -48,6 +48,12 @@ public class AccountEntity {
     @Column(name = "sessions_dispatched_today", nullable = false)
     private int sessionsDispatchedToday = 0;
 
+    // Per-account override for the global jules.max-concurrent-sessions-per-account default - null means
+    // "use the global default". Lets one account (e.g. a higher-tier Jules account) run more concurrent
+    // sessions than the rest of the pool without changing the shared default for everyone.
+    @Column(name = "max_concurrent_sessions")
+    private Integer maxConcurrentSessions;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -78,4 +84,6 @@ public class AccountEntity {
     public void setEnabled(boolean enabled) { this.enabled = enabled; }
     public int getSessionsDispatchedToday() { return sessionsDispatchedToday; }
     public void setSessionsDispatchedToday(int sessionsDispatchedToday) { this.sessionsDispatchedToday = sessionsDispatchedToday; }
+    public Integer getMaxConcurrentSessions() { return maxConcurrentSessions; }
+    public void setMaxConcurrentSessions(Integer maxConcurrentSessions) { this.maxConcurrentSessions = maxConcurrentSessions; }
 }
