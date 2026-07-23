@@ -7,12 +7,15 @@ import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.dashboard.BottleneckDetectionService;
+import com.eneik.production.services.dashboard.TaskWaitTimeService;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -23,15 +26,18 @@ public class DashboardController {
     private final ClaimRepository claimRepository;
     private final TaskRepository taskRepository;
     private final BottleneckDetectionService bottleneckDetectionService;
+    private final TaskWaitTimeService taskWaitTimeService;
 
     public DashboardController(AccountRepository accountRepository,
                                ClaimRepository claimRepository,
                                TaskRepository taskRepository,
-                               BottleneckDetectionService bottleneckDetectionService) {
+                               BottleneckDetectionService bottleneckDetectionService,
+                               TaskWaitTimeService taskWaitTimeService) {
         this.accountRepository = accountRepository;
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.bottleneckDetectionService = bottleneckDetectionService;
+        this.taskWaitTimeService = taskWaitTimeService;
     }
 
     @GetMapping("/agents")
@@ -65,6 +71,11 @@ public class DashboardController {
     @GetMapping("/bottlenecks")
     public List<BottleneckDto> getBottlenecks() {
         return bottleneckDetectionService.detect();
+    }
+
+    @GetMapping("/wait-time")
+    public WaitTimeBreakdownDto getWaitTime(@RequestParam UUID projectId) {
+        return taskWaitTimeService.computeForProject(projectId);
     }
 
     @GetMapping("/pipeline")

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
+  import { roleDisplayName } from '../lib/roleDisplay';
 
   export let projectId: string = '';
 
@@ -320,8 +321,8 @@
 
     <!-- BLOCK 3: Role Metrics -->
     <section class="roles-metrics-section">
-      <h3>BARCAN Council Readiness</h3>
-      <p class="section-desc">Doctrine satisfaction for all 13 BARCAN roles, separated from execution workload.</p>
+      <h3>AI Team Readiness</h3>
+      <p class="section-desc">Readiness across all AI specialists, separated from execution workload.</p>
 
       {#if metrics.emsMetrics?.data?.roleDoctrineReadiness}
         <div class="role-readiness-summary">
@@ -357,10 +358,9 @@
           {#each metrics.emsMetrics.data.roleDoctrineReadiness.roles as role}
             <article class="role-metric-card doctrine {role.stance}">
               <div class="role-header">
-                <span class="role-tag-badge">{role.roleTag}</span>
                 <span class="role-status-badge {role.stance}">{stanceLabel(role.stance)}</span>
               </div>
-              <h4>{role.doctrineName}</h4>
+              <h4>{roleDisplayName(role.roleTag)}</h4>
               <p class="role-focus">{role.doctrineFocus}</p>
               <div class="role-score-row">
                 <div class="role-score-track">
@@ -369,7 +369,7 @@
                 <strong>{score(role.satisfactionScore)}</strong>
               </div>
               <div class="role-body">
-                <p class="label-xs">Doctrine pressure:</p>
+                <p class="label-xs">Work pressure:</p>
                 <p class="role-metric-name">{pressureLabel(role.kanoPressure)} / {role.cynefinBias}</p>
                 <p class="label-xs mt-2">Evidence:</p>
                 <p class="role-metric-value">Source {role.sourceWishlistPending}/{role.sourceWishlistTotal} · Owner {role.ownerTasksDone}/{role.ownerTasksTotal} · Confidence {percent(role.confidence)}</p>

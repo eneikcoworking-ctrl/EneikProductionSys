@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import ActivityTicker from './ActivityTicker.svelte';
-  import CynefinBadge from './CynefinBadge.svelte';
   import Skeleton from './Skeleton.svelte';
+  import { roleDisplayName } from '../lib/roleDisplay';
 
   export let projectId: string;
 
@@ -22,7 +21,6 @@
   let acceptConfirmationText = '';
   let acceptingProject = false;
   let prTruth: any = null;
-  let recentActivity: string[] = [];
 
   const ORCHESTRATE_COOLDOWN_SECONDS = 300;
 
@@ -92,7 +90,7 @@
       })
     });
     if (response.ok) {
-      statusMsg = `Added ${finding.roleTag} finding to wishlist successfully.`;
+      statusMsg = `Added ${roleDisplayName(finding.roleTag)} finding to wishlist successfully.`;
       await fetchDashboard();
     } else {
       const err = await response.json();
@@ -127,17 +125,12 @@
     }
   }
 
-  // Real GitHub PR state + this project's own scoped activity log — the "truth" panel. Kept in its
-  // own try/catch (rather than the Promise.all above) so a GitHub-disabled/misconfigured project
-  // never blocks the rest of the dashboard from loading.
+  // Real GitHub PR state - the "truth" panel. Kept in its own try/catch (rather than the Promise.all
+  // above) so a GitHub-disabled/misconfigured project never blocks the rest of the dashboard from loading.
   async function fetchProjectTruth() {
     try {
-      const [prRes, activityRes] = await Promise.all([
-        fetch(`${API_BASE}/api/projects/${projectId}/pull-requests`),
-        fetch(`${API_BASE}/api/projects/${projectId}/recent-activity?limit=60`)
-      ]);
+      const prRes = await fetch(`${API_BASE}/api/projects/${projectId}/pull-requests`);
       prTruth = prRes.ok ? await prRes.json() : null;
-      recentActivity = activityRes.ok ? (await activityRes.json()).lines ?? [] : [];
     } catch {
       // Non-fatal — the truth panel just shows its own empty state.
     }
@@ -248,20 +241,6 @@
       loadOrchestrateCooldown();
       fetchDashboard();
     }
-  }
-
-  function getKanoCategory(tag: string): { label: string, colorClass: string } {
-    const normalizedTag = (tag || '').toUpperCase();
-    if (normalizedTag.includes('TAG-00') || normalizedTag.includes('TAG-05') || normalizedTag.includes('TAG-07')) {
-      return { label: 'Must-Be', colorClass: 'kano-must' };
-    }
-    if (normalizedTag.includes('TAG-02') || normalizedTag.includes('TAG-06') || normalizedTag.includes('TAG-08')) {
-      return { label: 'Linear', colorClass: 'kano-linear' };
-    }
-    if (normalizedTag.includes('TAG-03') || normalizedTag.includes('TAG-11')) {
-      return { label: 'Attractive', colorClass: 'kano-attractive' };
-    }
-    return { label: 'Indifferent', colorClass: 'kano-indifferent' };
   }
 
   // percent()/score() are clamped to [0,100] to match width()/scoreWidth() — they render the label next
@@ -378,11 +357,11 @@
       </div>
     </header>
 
-    <!-- GitHub Truth + Recent Activity — real state, not the system's own bookkeeping -->
+    <!-- GitHub Truth — real state, not the system's own bookkeeping -->
     <section class="truth-panel">
       <div class="truth-col">
         <div class="card-header compact">
-          <h2>Pull Requests (GitHub truth)</h2>
+          <h2>Pull Requests</h2>
         </div>
         {#if prTruth === null}
           <p class="empty-note">Loading…</p>
@@ -398,19 +377,12 @@
             {#each prTruth.open as pr (pr.url)}
               <li>
                 <a href={pr.url} target="_blank" rel="noreferrer" class="pr-feature-name" title="#{pr.number} · {pr.title}">{pr.featureName}</a>
-                <span class="pr-author">{pr.author}</span>
               </li>
             {:else}
               <li class="empty-note">No open feature pull requests.</li>
             {/each}
           </ul>
         {/if}
-      </div>
-      <div class="truth-col">
-        <div class="card-header compact">
-          <h2>Recent Project Activity</h2>
-        </div>
-        <ActivityTicker lines={recentActivity} emptyText="No scoped activity logged yet for this project." />
       </div>
     </section>
 
@@ -424,35 +396,12 @@
               <small>{dashboard.productReadiness.mergedPlannedTasks}/{dashboard.productReadiness.totalPlannedTasks} tasks · {dashboard.productReadiness.completeFeatures}/{dashboard.productReadiness.totalFeatures} features</small>
             {/if}
           </div>
-          <div>
-            <span class="label-xs">Graph coverage</span>
-            <strong>{percent(dashboard.emsMetrics.graphHealth.graphCoverage)}</strong>
-          </div>
-          <div>
-            <span class="label-xs">Dependency coverage</span>
-            <strong>{percent(dashboard.emsMetrics.graphHealth.dependencyCoverage)}</strong>
-          </div>
-          <div>
-            <span class="label-xs">Open defect work</span>
-            <strong>{dashboard.emsMetrics.defectWork.openDefectWork}</strong>
-          </div>
-          <div>
-            <span class="label-xs">DPMO</span>
-            <strong>{compactNumber(dashboard.emsMetrics.defectWork.dpmo)}</strong>
-          </div>
         </div>
-
-        <!-- Ф-followup (2026-07-21, operator directive: "все вкладки должны быть разные"): BARCAN
-             Council Readiness (role doctrine satisfaction) lived here AND on the Metrics tab, reading
-             byte-identical data from the same /dashboard emsMetrics payload - confirmed live via a
-             direct API diff for the same project (readinessScore and all 13 per-role stances matched
-             exactly). Kept the full version on MetricsView.svelte only; this tab keeps the execution-flow
-             and role-telemetry widgets below, which have no Metrics-tab equivalent. -->
 
         <div class="ems-grid">
           <div class="ems-box">
             <div class="card-header compact">
-              <h2>Execution Flow</h2>
+              <h2>Progress</h2>
               <span class="indicator">{dashboard.emsMetrics.flowChart.totalTasks} tasks</span>
             </div>
             <div class="flow-chart">
@@ -473,15 +422,15 @@
 
           <div class="ems-box">
             <div class="card-header compact">
-              <h2>Role Execution Telemetry</h2>
-              <span class="indicator">{dashboard.emsMetrics.roleKpis.length} owner roles</span>
+              <h2>Team Progress</h2>
+              <span class="indicator">{dashboard.emsMetrics.roleKpis.length} specialists</span>
             </div>
             <div class="role-kpi-list">
               {#each dashboard.emsMetrics.roleKpis as role (role.roleTag)}
                 <div class="role-kpi-row">
                   <div class="flow-label">
-                    <strong>{role.roleTag}</strong>
-                    <span>{role.done}/{role.total} done / open {role.queued + role.active + role.blocked + role.failed} / D:{role.defectWork}</span>
+                    <strong>{roleDisplayName(role.roleTag)}</strong>
+                    <span>{role.done}/{role.total} done</span>
                   </div>
                   <div class="bar-track">
                     <div class="bar-fill kpi {role.statusLabel}" style={`width: ${scoreWidth(role.kpiScore)}`}></div>
@@ -490,32 +439,6 @@
                 </div>
               {/each}
             </div>
-          </div>
-
-          <div class="ems-box">
-            <div class="card-header compact">
-              <h2>Defects & Graph Health</h2>
-              <span class="indicator">CP {dashboard.emsMetrics.graphHealth.criticalPathLength}</span>
-            </div>
-            <div class="health-grid">
-              <div>
-                <span class="label-xs">Blocked by dependency</span>
-                <strong>{dashboard.emsMetrics.graphHealth.blockedByDependency}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Duplicate semantic keys</span>
-                <strong>{dashboard.emsMetrics.graphHealth.duplicateSemanticKeys}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Retry load</span>
-                <strong>{dashboard.emsMetrics.defectWork.retryLoad}</strong>
-              </div>
-              <div>
-                <span class="label-xs">Defect pressure</span>
-                <strong>{percent(dashboard.emsMetrics.defectWork.defectPressure)}</strong>
-              </div>
-            </div>
-            <p class="ems-note">{dashboard.emsMetrics.graphHealth.interpretation}</p>
           </div>
         </div>
       </section>
@@ -546,7 +469,7 @@
           <!-- Right pane: Audit Findings list with interactive wishlist adding -->
           <div class="findings-pane card">
             <h3>Architectural Violations ({onboardingFindings.length})</h3>
-            <p class="section-desc">You can review the violations detected by the 12 system roles. Click 'Add to Wishlist' to queue a finding for fixing.</p>
+            <p class="section-desc">You can review the violations detected by our AI specialists. Click 'Add to Wishlist' to queue a finding for fixing.</p>
 
             <div class="findings-list">
               {#if onboardingFindings.length === 0}
@@ -556,7 +479,7 @@
                   <div class="finding-card {finding.severity}">
                     <div class="finding-header">
                       <span class="finding-badge {finding.severity}">{finding.severity}</span>
-                      <span class="role-tag">{finding.roleTag}</span>
+                      <span class="role-tag">{roleDisplayName(finding.roleTag)}</span>
                     </div>
                     <p class="finding-text">{finding.findingText}</p>
                     {#if finding.filePath}
@@ -632,9 +555,7 @@
 
           {#if commandDashboard.acceptanceReadiness.kanoRecommendation}
             <div class="kano-box">
-              <div class="kano-title">
-                <span>Kano</span> Model Evaluation
-              </div>
+              <div class="kano-title">Priority note</div>
               <p>{commandDashboard.acceptanceReadiness.kanoRecommendation}</p>
             </div>
           {/if}
@@ -697,18 +618,15 @@
               {#each dashboard.tasks as task (task.id)}
                 <article class="task-item">
                   <div class="item-header">
-                    <span class="role-tag">{task.tag}</span>
-                    <span class="kano-badge {getKanoCategory(task.tag).colorClass}">{getKanoCategory(task.tag).label}</span>
+                    <span class="role-tag">{roleDisplayName(task.tag)}</span>
                     <span class="badge-status {task.status}">{task.status}</span>
-                    <CynefinBadge domain={task.cynefinDomain} />
                   </div>
                   <p class="task-title-line" title={task.description}>{task.payload?.slice_display_title || task.title || task.payload?.short_title || 'Task Slice'}</p>
                   <p class="task-description" title={task.description}>{task.payload?.role_atomic_goal || task.payload?.slice_title || task.description}</p>
                   <div class="task-footer">
                     <span class="gate-badge {task.qualityGatePassed ? 'pass' : 'fail'}">
-                      Gate: {task.qualityGatePassed ? 'Passed' : 'Pending'}
+                      Quality check: {task.qualityGatePassed ? 'Passed' : 'Pending'}
                     </span>
-                    <span class="dispatch-status">{task.julesDispatchStatus || 'Pending dispatch'}</span>
                   </div>
                 </article>
               {/each}
@@ -719,45 +637,25 @@
 
       <!-- COLUMN 3: Team Pool & Queue -->
       <section class="grid-col team-col">
-        <!-- Energy Pool -->
+        <!-- AI Team -->
         <div class="card">
           <div class="card-header">
-            <h2>Jules Energy Pool</h2>
-            <span class="indicator">{dashboard.agentCount} Jules</span>
+            <h2>AI Team</h2>
+            <span class="indicator">{dashboard.agentCount} working</span>
           </div>
 
           <div class="agent-list scrollable">
             {#each dashboard.agents as agent (agent.accountId)}
               <article class="agent-card">
                 <div class="agent-header">
-                  <strong>{agent.name}</strong>
+                  <strong>{roleDisplayName(agent.currentRoleTag)}</strong>
                   <span class="badge-status {agent.status}">{agent.status}</span>
                 </div>
                 <div class="agent-body">
-                  <p class="role"><span class="label-xs">Active Role:</span> {agent.currentRoleTag || 'None'}</p>
-                  <p class="task-desc"><span class="label-xs">Task:</span> {agent.currentTaskDescription || 'Idle, waiting for constraints...'}</p>
+                  <p class="task-desc">{agent.currentTaskDescription || 'Idle, waiting for the next task...'}</p>
                 </div>
               </article>
             {/each}
-          </div>
-        </div>
-
-        <!-- Role Queue -->
-        <div class="card">
-          <div class="card-header">
-            <h2>Role Queue Bottlenecks</h2>
-          </div>
-          <div class="queue-list">
-            {#if dashboard.queue.byTag.length === 0}
-              <p class="empty-state">Queue is empty. Everything processed!</p>
-            {:else}
-              {#each dashboard.queue.byTag as item (item.tag)}
-                <div class="queue-item">
-                  <span class="role-tag">{item.tag}</span>
-                  <span class="queue-count badge {item.count > 1 ? 'warning' : 'success'}">{item.count} tasks</span>
-                </div>
-              {/each}
-            {/if}
           </div>
         </div>
       </section>
@@ -827,7 +725,7 @@
   .truth-panel {
     display: grid;
     gap: var(--space-4);
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr);
+    grid-template-columns: minmax(0, 1fr);
   }
   .truth-col {
     background: var(--surface);
@@ -917,11 +815,6 @@
   .pr-list a:hover {
     color: var(--primary);
   }
-  .pr-author {
-    color: var(--neutral-500);
-    flex: none;
-    font-size: 12px;
-  }
   .empty-note {
     color: var(--neutral-500);
     font-size: 13px;
@@ -1000,29 +893,27 @@
   }
   .ems-summary {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
     background: var(--surface);
     border: 1px solid var(--neutral-200);
     border-radius: 8px;
     padding: var(--space-3);
   }
-  .ems-summary > div,
-  .health-grid > div {
+  .ems-summary > div {
     display: flex;
     flex-direction: column;
     gap: 2px;
     min-width: 0;
   }
-  .ems-summary strong,
-  .health-grid strong {
+  .ems-summary strong {
     font-size: 20px;
     color: var(--neutral-800);
     line-height: 1.1;
   }
   .ems-grid {
     display: grid;
-    grid-template-columns: 1fr 1.15fr 0.85fr;
+    grid-template-columns: 1fr 1fr;
     gap: var(--space-3);
   }
   .ems-box {
@@ -1124,18 +1015,6 @@
     background: #fee2e2;
     color: #991b1b;
   }
-  .health-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-3);
-  }
-  .ems-note {
-    margin: var(--space-3) 0 0;
-    color: var(--neutral-500);
-    font-size: 11px;
-    line-height: 1.4;
-  }
-
   /* Dashboard Grid Layout */
   .dashboard-grid {
     display: grid;
@@ -1429,40 +1308,6 @@
     color: var(--neutral-500);
   }
 
-  .kano-badge {
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-    padding: 2px 6px;
-    border-radius: 4px;
-    margin: 0 var(--space-1);
-    display: inline-block;
-  }
-  .kano-badge.kano-must {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-  .kano-badge.kano-linear {
-    background: #dbeafe;
-    color: #1e40af;
-  }
-  .kano-badge.kano-attractive {
-    background: #ecfdf5;
-    color: #047857;
-  }
-  .kano-badge.kano-indifferent {
-    background: #f1f5f9;
-    color: #475569;
-  }
-
-  .dispatch-status {
-    color: var(--neutral-500);
-    font-style: italic;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* Agent list pool */
   .agent-card {
     background: var(--neutral-50);
@@ -1484,10 +1329,6 @@
     font-size: 12px;
     line-height: 1.4;
   }
-  .agent-body .role {
-    font-weight: 600;
-    color: var(--neutral-700);
-  }
   .agent-body .task-desc {
     color: var(--neutral-500);
     margin-top: 2px;
@@ -1502,27 +1343,6 @@
     text-transform: uppercase;
     color: var(--neutral-400);
     font-weight: 700;
-  }
-
-  /* Role Queue */
-  .queue-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-  }
-  .queue-item {
-    display: flex;
-    align-items: center;
-    gap: var(--space-1);
-    background: var(--neutral-50);
-    border: 1px solid var(--neutral-200);
-    border-radius: 6px;
-    padding: var(--space-1) var(--space-2);
-  }
-  .queue-count {
-    font-size: 10px;
-    padding: 1px 6px;
-    border-radius: 4px;
   }
 
   /* Badges status generic */
