@@ -726,6 +726,134 @@ class AutonomousPipelineIntegrationTest {
         assertThat(backendTask.getDependsOn().getId()).isEqualTo(modelTask.getId());
     }
 
+    @Test
+    void apiContractDependentsStartEarlyWhenContractPrIsOpenButNotMerged() {
+        // Lean-waste fix (2026-07-23, operator directive): a dependent on an API-contract-stage task only
+        // needs the contract's content, which exists as soon as its PR is open - it should not have to wait
+        // for the contract to be fully merged. Reuses the exact same-stage-parallel graph fixture as
+        // buildTaskGraphFromSlicesAnchorsSameStageRolesOnTheContractStageInParallel.
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Early Unblock Project");
+        project.setSlug("early-unblock-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("early-unblock-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        AccountEntity account = new AccountEntity();
+        account.setName("Early Unblock Jules");
+        account.setCapabilities("*");
+        account.setStatus(AccountStatus.idle);
+        account.setEnabled(true);
+        accountRepository.saveAndFlush(account);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Model first, then a shared API contract, then backend and AI work in parallel.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order data model", "Model the order entity and its fields.",
+                "Given the domain, When the model is defined, Then it captures all required order fields.",
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% of fields modeled", false);
+        MLPredictionServiceClient.TaskSliceMetadata contractSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order API contract", "Define the shared order API contract.",
+                "Given the order model, When the contract is published, Then backend and AI both build against it.",
+                "BARCAN-TAG-12", LeanValue.essential, "clear",
+                "Contract drift", "0 drift incidents", false);
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order backend", "Implement the order backend against the contract.",
+                "Given the contract, When a request arrives, Then it is handled per spec.",
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of requests handled", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Order Feature", "When a customer places an order, I want it modeled and contracted, so it is handled correctly.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(modelSlice, contractSlice, backendSlice));
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity contractTask = taskByRole(tasks, "BARCAN-TAG-12");
+        TaskEntity backendTask = taskByRole(tasks, "BARCAN-TAG-02");
+
+        // Contract's PR is open (a Jules session opened it) but genuinely NOT merged - no PrReviewEntity at
+        // all exists for it, so isDependencySatisfied(contractTask) is definitely false.
+        contractTask.setStatus(TaskStatus.review);
+        taskRepository.saveAndFlush(contractTask);
+
+        projectFlowService.dispatchQueuedTasks(project.getId());
+
+        // The payload marker is stamped unconditionally inside the early-unblock branch, before any
+        // downstream claim/dispatch attempt is even made - it is the definitive proof this task was let
+        // through instead of hitting the dependency-gate `continue`, independent of whatever the mocked
+        // Jules dispatch call itself subsequently does with it.
+        TaskEntity refreshedBackend = taskRepository.findById(backendTask.getId()).orElseThrow();
+        assertThat(refreshedBackend.getPayload().path("earlyUnblockedContractTask").asBoolean(false)).isTrue();
+    }
+
+    @Test
+    void nonContractStageDependencyInReviewDoesNotEarlyUnblock() {
+        // Regression for the same Lean-waste fix: the early-unblock is scoped to EmsFlowStage.API_CONTRACT
+        // specifically - a dependency on any OTHER stage (here BARCAN-TAG-08, the data-model stage) must
+        // keep requiring a full merge, even though it's likewise merely "in review" (PR open, unmerged).
+        ProjectEntity project = new ProjectEntity();
+        project.setName("No Early Unblock Project");
+        project.setSlug("no-early-unblock-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("no-early-unblock-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        AccountEntity account = new AccountEntity();
+        account.setName("No Early Unblock Jules");
+        account.setCapabilities("*");
+        account.setStatus(AccountStatus.idle);
+        account.setEnabled(true);
+        accountRepository.saveAndFlush(account);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Model first, then backend only - no frontend in this feature.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        MLPredictionServiceClient.TaskSliceMetadata modelSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order data model", "Model the order entity and its fields.",
+                "Given the domain, When the model is defined, Then it captures all required order fields.",
+                "BARCAN-TAG-08", LeanValue.essential, "clear",
+                "Data integrity", "100% of fields modeled", false);
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order backend", "Implement the order backend.",
+                "Given the model, When a request arrives, Then it is handled.",
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of requests handled", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Order Feature (No Frontend)", "When a customer places an order, I want it modeled and handled, so it works end-to-end.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(modelSlice, backendSlice));
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity modelTask = taskByRole(tasks, "BARCAN-TAG-08");
+        TaskEntity backendTask = taskByRole(tasks, "BARCAN-TAG-02");
+
+        modelTask.setStatus(TaskStatus.review);
+        taskRepository.saveAndFlush(modelTask);
+
+        projectFlowService.dispatchQueuedTasks(project.getId());
+
+        TaskEntity refreshedBackend = taskRepository.findById(backendTask.getId()).orElseThrow();
+        assertThat(refreshedBackend.getStatus()).isEqualTo(TaskStatus.queued);
+        assertThat(refreshedBackend.getPayload() == null
+                || !refreshedBackend.getPayload().path("earlyUnblockedContractTask").asBoolean(false)).isTrue();
+    }
+
     private TaskEntity taskByRole(List<TaskEntity> tasks, String roleTag) {
         return tasks.stream()
                 .filter(t -> t.getRole() != null && roleTag.equals(t.getRole().getTag()))
@@ -864,7 +992,7 @@ class AutonomousPipelineIntegrationTest {
         UUID sharedFeatureId = feature.getId();
 
         List<WishlistEntity> candidates = new java.util.ArrayList<>();
-        for (int i = 0; i < 3; i++) {
+        for (int i = 0; i < 4; i++) {
             WishlistEntity concern = new WishlistEntity();
             concern.setProjectId(project.getId());
             concern.setSource(WishlistSource.role);
@@ -877,15 +1005,15 @@ class AutonomousPipelineIntegrationTest {
 
         int admitted = projectFlowService.dispatchBatchedWishlistCompiler(project, candidates);
 
-        // Default orchestration.wip-limit-feature-in-flight is 2: with none of the 3 already `compiling`
-        // beforehand, only 2 may be admitted in this same batch - the 3rd must stay `pending` for a later
-        // cycle instead of all 3 racing into the compiler at once for one feature.
-        assertThat(admitted).isEqualTo(2);
+        // Default orchestration.wip-limit-feature-in-flight is 3 (raised from 2, 2026-07-23): with none of
+        // the 4 already `compiling` beforehand, only 3 may be admitted in this same batch - the 4th must
+        // stay `pending` for a later cycle instead of all 4 racing into the compiler at once for one feature.
+        assertThat(admitted).isEqualTo(3);
         long compilingCount = candidates.stream()
                 .map(w -> wishlistRepository.findById(w.getId()).orElseThrow())
                 .filter(w -> w.getStatus() == WishlistStatus.compiling)
                 .count();
-        assertThat(compilingCount).isEqualTo(2);
+        assertThat(compilingCount).isEqualTo(3);
     }
 
     @Test

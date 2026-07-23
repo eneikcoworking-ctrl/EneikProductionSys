@@ -882,6 +882,13 @@ public class TechnicalLeadCompiler {
         sb.append("Boundaries:\n");
         sb.append("- Write your own clear English PR title and summary describing what you actually built - do not paste the raw Original Brief verbatim into the PR narrative.\n");
         sb.append("- Do not implement adjacent slices or other roles.\n");
+        sb.append("- Never create, write, modify, or commit anything under a path starting with `.eneik/` "
+                + "(e.g. `.eneik/records/...`, `.eneik/review-verdict.json`, `.eneik/task-plan.json`). That "
+                + "directory belongs exclusively to the orchestration system's own internal bookkeeping, never "
+                + "to feature work - if any local tool, script, or verification step you run happens to produce "
+                + "files there, delete them or exclude them from your commit before opening the PR. Committing "
+                + "anything under `.eneik/` will cause your PR to be rejected by review even if the rest of "
+                + "your work is correct.\n");
         sb.append("- If the session reaches 8 back-and-forth messages, stop with a concrete blocker instead of looping.\n\n");
         sb.append("Execution Notes:\n").append(executionNotesForRole(roleTag));
         return sb.toString();

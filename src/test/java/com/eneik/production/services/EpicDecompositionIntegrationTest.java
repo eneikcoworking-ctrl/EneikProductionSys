@@ -62,6 +62,15 @@ class EpicDecompositionIntegrationTest {
         return wishlistRepository.saveAndFlush(wishlist);
     }
 
+    private WishlistEntity createSelfFalsificationWishlist(UUID projectId) {
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(projectId);
+        wishlist.setSource(WishlistSource.self_falsification);
+        wishlist.setContent("Falsification audit follow-up");
+        wishlist.setStatus(WishlistStatus.compiling);
+        return wishlistRepository.saveAndFlush(wishlist);
+    }
+
     private MLPredictionServiceClient.TaskSliceMetadata slice(String roleTag) {
         return new MLPredictionServiceClient.TaskSliceMetadata(
                 "Slice for " + roleTag,
@@ -172,5 +181,125 @@ class EpicDecompositionIntegrationTest {
         List<FeatureEntity> epics = featureRepository.findByProjectId(project.getId());
         assertThat(epics).hasSize(1);
         assertThat(epics.get(0).getTitle()).isEqualTo("Fallback Epic");
+    }
+
+    @Test
+    void selfFalsificationEpicWithNullIdAttachesToDeterministicallyMatchedExistingEpic() {
+        ProjectEntity project = createProject();
+        WishlistEntity clientWishlist = createClientWishlist(project.getId());
+        String title = "Notes CRUD";
+        String jtbd = "When a user manages notes, I want CRUD, so I can track information.";
+        MLPredictionServiceClient.EpicPlan clientEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        projectFlowService.buildTaskGraphFromSlices(project, List.of(clientWishlist), List.of(clientEpic));
+        List<FeatureEntity> afterFirst = featureRepository.findByProjectId(project.getId());
+        assertThat(afterFirst).hasSize(1);
+        UUID existingEpicId = afterFirst.get(0).getId();
+
+        WishlistEntity falsificationWishlist = createSelfFalsificationWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan falsificationEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(falsificationWishlist), List.of(falsificationEpic));
+
+        assertThat(built).isTrue();
+        List<FeatureEntity> afterSecond = featureRepository.findByProjectId(project.getId());
+        assertThat(afterSecond).hasSize(1).extracting(FeatureEntity::getId).containsExactly(existingEpicId);
+
+        List<TaskEntity> falsificationTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(t -> t.getRole() != null && "BARCAN-TAG-11".equals(t.getRole().getTag()))
+                .toList();
+        assertThat(falsificationTasks).hasSize(1);
+        assertThat(falsificationTasks.get(0).getFeatureId()).isEqualTo(existingEpicId);
+    }
+
+    @Test
+    void selfFalsificationEpicWithNoRealMatchStillCreatesNewEpic() {
+        ProjectEntity project = createProject();
+        WishlistEntity clientWishlist = createClientWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan clientEpic = new MLPredictionServiceClient.EpicPlan(
+                null, "Notes CRUD", "When a user manages notes, I want CRUD, so I can track information.",
+                "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        projectFlowService.buildTaskGraphFromSlices(project, List.of(clientWishlist), List.of(clientEpic));
+        assertThat(featureRepository.findByProjectId(project.getId())).hasSize(1);
+
+        WishlistEntity falsificationWishlist = createSelfFalsificationWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan unrelatedEpic = new MLPredictionServiceClient.EpicPlan(
+                null, "Billing Export", "When an admin reconciles accounts, I want a CSV invoice export, so bookkeeping is faster.",
+                "Attractive", "complex", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(falsificationWishlist), List.of(unrelatedEpic));
+
+        assertThat(built).isTrue();
+        List<FeatureEntity> epics = featureRepository.findByProjectId(project.getId());
+        assertThat(epics).hasSize(2);
+        assertThat(epics).extracting(FeatureEntity::getTitle)
+                .containsExactlyInAnyOrder("Notes CRUD", "Billing Export");
+    }
+
+    @Test
+    void clientSourcedWishlistNeverInvokesMatcherEvenWithDuplicateContent() {
+        ProjectEntity project = createProject();
+        String title = "Notes CRUD";
+        String jtbd = "When a user manages notes, I want CRUD, so I can track information.";
+
+        WishlistEntity firstClientWishlist = createClientWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan firstEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        projectFlowService.buildTaskGraphFromSlices(project, List.of(firstClientWishlist), List.of(firstEpic));
+        assertThat(featureRepository.findByProjectId(project.getId())).hasSize(1);
+
+        // Second client wishlist submits byte-identical title/jtbd/kano/cynefin with existingEpicId=null.
+        // If the matcher ran for client-sourced work it would certainly attach (identical content scores
+        // 1.0) - proving it creates a duplicate instead proves the matcher is never invoked for `client`.
+        WishlistEntity secondClientWishlist = createClientWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan duplicateEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(secondClientWishlist), List.of(duplicateEpic));
+
+        assertThat(built).isTrue();
+        List<FeatureEntity> epics = featureRepository.findByProjectId(project.getId());
+        assertThat(epics).hasSize(2);
+        assertThat(epics).extracting(FeatureEntity::getTitle).containsExactly(title, title);
+    }
+
+    @Test
+    void ambiguousSelfFalsificationMatchFallsBackToCreatingNew() {
+        ProjectEntity project = createProject();
+        String title = "Notes CRUD";
+        String jtbd = "When a user manages notes, I want CRUD, so I can track information.";
+
+        // Two existing эпики with identical title/jtbd/Kano/Cynefin - legitimate under `client` (matcher
+        // never runs there, see clientSourcedWishlistNeverInvokesMatcherEvenWithDuplicateContent) - means
+        // any self_falsification candidate scores identically against both, so the ambiguity guard must
+        // refuse to guess which one to attach to.
+        WishlistEntity firstClientWishlist = createClientWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan firstEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        projectFlowService.buildTaskGraphFromSlices(project, List.of(firstClientWishlist), List.of(firstEpic));
+        WishlistEntity secondClientWishlist = createClientWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan secondEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-02"))
+        );
+        projectFlowService.buildTaskGraphFromSlices(project, List.of(secondClientWishlist), List.of(secondEpic));
+        assertThat(featureRepository.findByProjectId(project.getId())).hasSize(2);
+
+        WishlistEntity falsificationWishlist = createSelfFalsificationWishlist(project.getId());
+        MLPredictionServiceClient.EpicPlan falsificationEpic = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+        boolean built = projectFlowService.buildTaskGraphFromSlices(
+                project, List.of(falsificationWishlist), List.of(falsificationEpic));
+
+        assertThat(built).isTrue();
+        assertThat(featureRepository.findByProjectId(project.getId())).hasSize(3);
     }
 }

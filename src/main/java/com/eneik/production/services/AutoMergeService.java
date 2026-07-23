@@ -23,6 +23,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -38,6 +39,7 @@ import java.util.HashMap;
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
     private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
+    private static final String EARLY_UNBLOCK_CONTRACT_NOTIFIED_KEY = "earlyUnblockContractNotified";
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
@@ -146,12 +148,27 @@ public class AutoMergeService {
         }
     }
 
+    // Systemic fix (2026-07-23, confirmed live on test-thirty-fifth, task 17e3f9ae / PR#28): "conflict" used
+    // to be EXCLUDED here, alongside genuinely terminal statuses like "unowned"/"invalid_pr"/"superseded".
+    // That was a real self-inflicted deadlock, not a deliberate terminal state: handleMergeConflict sets
+    // ciStatus="conflict" the moment it detects a conflict and asks Jules to resolve it in place - but the
+    // ONLY code that re-attempts the real merge (which both verifies whether that fix actually worked
+    // AND, on a fresh 405/409, drives the next resolution attempt) is executeMerge, which this exact filter
+    // prevented from ever running again for that review. Confirmed live: Jules pushed a conflict-resolution
+    // commit and CI went green, but GitHub's own mergeable check still reported a real conflict afterward -
+    // and the review sat invisible to executeMerge from that point on, so nothing ever re-checked GitHub's
+    // verdict or asked for a second attempt. There is no separate "did the fix actually work" check to add -
+    // the real merge attempt against live GitHub IS that check, it just needs to be allowed to run again.
+    // "conflict" must stay a poll candidate for as long as its TaskConflictEntity is still "pending" (i.e.
+    // within handleMergeConflict's own 3-attempt cap) - see the "escalated" terminal status set
+    // once that cap is reached, which correctly falls OUT of this candidate set once retries are genuinely
+    // exhausted, instead of retrying (or silently sitting stuck) forever.
     static boolean isReviewPollCandidate(PrReviewEntity review) {
         String ciStatus = review.getCiStatus();
         if (ciStatus == null || ciStatus.isBlank()) {
             return true;
         }
-        return java.util.Set.of("success", "pending", "unavailable")
+        return java.util.Set.of("success", "pending", "unavailable", "conflict")
                 .contains(ciStatus.toLowerCase(java.util.Locale.ROOT));
     }
 
@@ -467,6 +484,15 @@ public class AutoMergeService {
 
                         classifyAndHandleBranch(review, mergedPrTarget, task, session);
 
+                        // Lean-waste fix (2026-07-23): if this just-merged task was an API-contract-stage
+                        // task, any dependent that started early (see ProjectFlowService.dispatchQueuedTasks'
+                        // EARLY_UNBLOCK_CONTRACT_KEY marker) may have begun against a pre-review draft of the
+                        // contract - give its still-active session an FYI to reconcile against the final one.
+                        if (task.getRole() != null
+                                && EmsFlowStage.forRoleTag(task.getRole().getTag()) == EmsFlowStage.API_CONTRACT) {
+                            notifyEarlyUnblockedDependents(task);
+                        }
+
                         // Automatically generate a walkthrough video for the merged task!
                         try {
                             var context = contextService.build(task.getProject().getId(), task.getProject().getName());
@@ -511,6 +537,35 @@ public class AutoMergeService {
             return null;
         }
         return julesSessionRepository.findById(review.getJulesSessionId()).orElse(null);
+    }
+
+    /**
+     * Lean-waste fix (2026-07-23): finds tasks that were early-unblocked against this just-merged
+     * API-contract task (see ProjectFlowService.EARLY_UNBLOCK_CONTRACT_KEY) and, for any still running an
+     * active Jules session, sends a one-time informational note so the session can reconcile against the
+     * now-final contract if it was revised during its own review. Fail-closed: never blocks the merge that
+     * just happened.
+     */
+    private void notifyEarlyUnblockedDependents(com.eneik.production.models.persistence.TaskEntity contractTask) {
+        try {
+            for (com.eneik.production.models.persistence.TaskEntity dependent
+                    : taskRepository.findByDependsOnId(contractTask.getId())) {
+                JsonNode payload = dependent.getPayload();
+                if (!(payload instanceof ObjectNode payloadNode)
+                        || !payloadNode.path(ProjectFlowService.EARLY_UNBLOCK_CONTRACT_KEY).asBoolean(false)) {
+                    continue;
+                }
+                julesSessionRepository.findByTaskId(dependent.getId()).stream()
+                        .filter(s -> List.of("queued", "running", "revising", "stuck", "pr_opened").contains(s.getStatus()))
+                        .findFirst()
+                        .ifPresent(session -> julesDispatchService.notifyContractFinalized(dependent, session, contractTask));
+                payloadNode.put(EARLY_UNBLOCK_CONTRACT_NOTIFIED_KEY, true);
+                taskRepository.save(dependent);
+            }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: failed to notify early-unblocked dependents of contract task {}: {}",
+                    contractTask.getId(), e.getMessage(), e);
+        }
     }
 
     /**
@@ -584,7 +639,9 @@ public class AutoMergeService {
         });
     }
 
-    private void handleMergeConflict(PrReviewEntity review, String owner, String repo, String pullNumber, String token) {
+    // Package-private (not private), matching reconcileReviewAgainstTaskOutcome's existing convention in
+    // this class, so the escalation branch's terminal ciStatus transition can be tested directly.
+    void handleMergeConflict(PrReviewEntity review, String owner, String repo, String pullNumber, String token) {
         if (review.getJulesSessionId() == null) return;
         var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
         if (sessionOpt.isEmpty()) return;
@@ -689,37 +746,52 @@ public class AutoMergeService {
             conflict.setResolutionStatus("escalated");
             taskConflictRepository.save(conflict);
 
+            // Now that "conflict" is a valid poll candidate again (see isReviewPollCandidate), this review
+            // must get an explicit, genuinely terminal ciStatus once retries are truly exhausted - otherwise
+            // it would re-enter pendingReviews every tick forever, re-attempt the merge, hit 409 again, and
+            // re-escalate a BRAND NEW TaskConflictEntity indefinitely (findFirstByTaskIdAndResolutionStatus
+            // only finds "pending" ones, so a fresh row would be created every cycle once this one is
+            // "escalated" instead of "pending"). Deliberately reuses the exact same string as
+            // TaskConflictEntity.resolutionStatus's own "escalated" value above - one word for one real-world
+            // event, on both records. (ci_status is VARCHAR(16) - confirmed live: a first attempt at this fix
+            // used "conflict_escalated", 18 chars, and threw DataIntegrityViolationException on save, rolling
+            // back the whole escalation transaction every time attempt 3 was reached - never actually fix a
+            // status value without checking the column's real length constraint.)
+            review.setCiStatus("escalated");
+            prReviewRepository.save(review);
+
             log.warn("Poka-yoke: merge conflict for task {} escalated after {} attempts; no recovery "
                     + "wishlist was created. The original task remains the only work identity.", taskId, attempts);
         } else {
             taskConflictRepository.save(conflict);
 
-            // The task's existing session is still sitting at pr_opened (that's the very PR that just
-            // failed to merge on GitHub with a real conflict) - JulesDispatchService.dispatch() refuses to
-            // create a second session for a task that already has one in an ACTIVE_SESSION_STATUSES state,
-            // so without cancelling it first every "rebase attempt" below was a silent no-op: task flipped
-            // to claimed, dispatch() logged "already dispatched, skipping duplicate", and nothing ever
-            // rebased. Confirmed live (2026-07-21, test-thirty-second, PR#3/#5) - both "attempts" produced
-            // zero new sessions. Cancel the stale conflicted session first so dispatch() actually proceeds.
+            // Operator directive (2026-07-23): prefer resolving the conflict IN PLACE - same session, same
+            // branch, same PR - instead of abandoning the session and re-implementing the task from scratch
+            // in a brand new one. Mirrors JulesDispatchService.applyReviewVerdictToTask's "blocked" branch,
+            // which already does exactly this (sendMessage + revising) for real implementer PRs rejected by
+            // quality-gate review. Confirmed live (test-thirty-fifth PR#3, 2026-07-23) that the old
+            // cancel+redispatch path worked but was wasteful: it burned a whole second Jules session to
+            // re-derive code Jules already had full context for, AND left the original PR (#3) permanently
+            // open and orphaned on GitHub (cancelSession only updates our own DB, never closes the real PR).
+            boolean resolvedInPlace = julesDispatchService.requestMergeConflictResolution(task, session, files, attempts);
+            if (resolvedInPlace) {
+                log.info("Requested in-place conflict resolution (attempt {}/3) for task {} - same session, same PR", attempts, taskId);
+                return;
+            }
+
+            // Fallback only: the session is no longer messageable (missing/expired external session id).
+            // Same cancel+redispatch recovery this method used exclusively before 2026-07-23 - kept as a
+            // safety net so a dead session doesn't permanently strand the task.
+            log.warn("Session for task {} is not messageable; falling back to cancel+redispatch for conflict attempt {}/3", taskId, attempts);
             for (com.eneik.production.models.persistence.JulesSessionEntity staleSession
                     : julesSessionRepository.findByTaskId(taskId)) {
                 if (!"cancelled".equals(staleSession.getStatus()) && !"loop_closed".equals(staleSession.getStatus())
                         && !"closed_no_code".equals(staleSession.getStatus())) {
                     julesDispatchService.cancelSession(staleSession.getId(),
-                            "Superseded by auto-resolve rebase attempt " + attempts + "/3 (merge conflict)");
+                            "Superseded by auto-resolve rebase attempt " + attempts + "/3 (merge conflict, session unmessageable)");
                 }
             }
 
-            // Ф6 (found 2026-07-21 during a deliberate re-review, never exercised before because the
-            // dispatch() call below was always a no-op until the cancelSession loop above started working):
-            // this used to set task.status=claimed directly and call dispatch() with no ClaimEntity ever
-            // created. claimService.hasActiveClaim(taskId) - the gate handlePrOpenedWorkflow's implementer
-            // branch checks before calling claimService.complete() - would have returned false forever
-            // (the OLD claim was already released by cancelSession's closeTaskAsFailed, and nothing created
-            // a new one), so even a fully successful rebase would have produced a real PR our own pipeline
-            // could never advance past `claimed`. claimSpecificTask requires the task to be `queued`
-            // (TaskRepository.lockTaskByIdForUpdate's query), so the task must go through `queued` first,
-            // not straight to `claimed`.
             UUID accountId = session.getAccountId();
             task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
             taskRepository.save(task);

@@ -72,8 +72,13 @@ public class JulesDispatchService {
     // one audit per fully-merged client wishlist, not per PR - so a runaway storm is far less likely than the
     // review/design concern loops above. Still capped for the same "never create tasks the system doesn't
     // actually need" reason, and because a single sloppy brief could in principle keep re-triggering gaps
-    // across retries.
-    private static final int MAX_PENDING_COVERAGE_GAPS_PER_PROJECT = 0;
+    // across retries. Was 0 (observation-only: gaps were reported but never turned into work) while this
+    // was being live-verified; operator directive (2026-07-23) after seeing the first real audit run "6
+    // gaps found, 0 created" - each real gap should become its own wishlist item, one эпик per gap (the
+    // compiler's own rules already guarantee this: every brief becomes at least one epic, epics from
+    // different briefs are never merged, and a non-client-sourced brief is told to produce exactly ONE
+    // work item rather than a full schema+API+UI decomposition).
+    private static final int MAX_PENDING_COVERAGE_GAPS_PER_PROJECT = 10;
 
     private final JulesApiClient julesApiClient;
     private final JulesSessionRepository julesSessionRepository;
@@ -183,6 +188,79 @@ public class JulesDispatchService {
         }
     }
 
+    /**
+     * Asks the SAME session to resolve a real GitHub merge conflict on its own already-open PR, instead of
+     * abandoning the session/PR and re-implementing the task from scratch in a brand new one. Mirrors the
+     * exact pattern {@link #applyReviewVerdictToTask}'s "blocked" branch already uses for quality-gate
+     * rejections on real implementer PRs (sendMessage + revising, same branch, same context) - merge
+     * conflicts get the same treatment for the same reason: Jules already has full context of the code it
+     * wrote, so asking it to rebase onto main and resolve the conflict is cheaper and faster than a cold
+     * restart, and it never leaves an orphaned duplicate PR behind (AutoMergeService's older cancel+
+     * redispatch path did, confirmed live on test-thirty-fifth PR#3 2026-07-23).
+     */
+    @Transactional
+    public boolean requestMergeConflictResolution(TaskEntity task, JulesSessionEntity session,
+                                                   java.util.List<String> conflictingFiles, int attempt) {
+        if (session == null || session.getExternalSessionId() == null) {
+            return false;
+        }
+        session.setStatus("revising");
+        julesSessionRepository.save(session);
+
+        String fileList = conflictingFiles == null || conflictingFiles.isEmpty()
+                ? "(file list unavailable)"
+                : String.join(", ", conflictingFiles);
+        String correction = "Your PR could not be merged into main - GitHub reports a real merge conflict "
+                + "(attempt " + attempt + "/3) in: " + fileList + ". Please rebase or merge the latest main "
+                + "into your branch, resolve the conflict(s) directly in these files (keep your own feature "
+                + "work, reconcile with whatever main added), verify the build/tests still pass, and push the "
+                + "fix to this same branch/PR. Do not open a new PR.";
+        String externalSessionId = session.getExternalSessionId();
+        String sessionApiKey = apiKeyForSession(session);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            boolean sent = sessionApiKey != null
+                    ? julesApiClient.sendMessage(externalSessionId, correction, sessionApiKey)
+                    : julesApiClient.sendMessage(externalSessionId, correction);
+            if (!sent) {
+                log.warn("Failed to send merge-conflict correction to Jules session {} for task {}", externalSessionId, task.getId());
+            }
+        });
+        log.info("Requested in-place merge-conflict resolution from session {} for task {} (attempt {}/3, files: {})",
+                externalSessionId, task.getId(), attempt, fileList);
+        return true;
+    }
+
+    /**
+     * Lean-waste fix (2026-07-23): companion to the early-unblock in ProjectFlowService.dispatchQueuedTasks
+     * - a dependent that started against an API-contract task's still-unmerged PR gets a one-time,
+     * informational (not corrective) note once that contract actually merges, in case it was revised during
+     * its own review. Deliberately does not set the session to "revising" - nothing may need to change, this
+     * is a heads-up, not a rejection.
+     */
+    public void notifyContractFinalized(TaskEntity dependent, JulesSessionEntity session, TaskEntity contractTask) {
+        if (session == null || session.getExternalSessionId() == null) {
+            return;
+        }
+        String message = "FYI: the API contract task you started against ('" + contractTask.getDescription()
+                + "') has now been finalized and merged into main. It may have been revised during its own "
+                + "review after you began (you started as soon as its PR was open, not after merge, to avoid "
+                + "waiting idle). Please double-check your implementation still matches the final merged "
+                + "contract before finishing, and adjust if anything drifted.";
+        String externalSessionId = session.getExternalSessionId();
+        String sessionApiKey = apiKeyForSession(session);
+        java.util.concurrent.CompletableFuture.runAsync(() -> {
+            boolean sent = sessionApiKey != null
+                    ? julesApiClient.sendMessage(externalSessionId, message, sessionApiKey)
+                    : julesApiClient.sendMessage(externalSessionId, message);
+            if (!sent) {
+                log.warn("Failed to send contract-finalized notice to session {} for task {}",
+                        externalSessionId, dependent.getId());
+            }
+        });
+        log.info("Notified session {} (task {}) that its early-unblocked contract dependency {} is now finalized",
+                externalSessionId, dependent.getId(), contractTask.getId());
+    }
+
     @Value("${jules.stuck-threshold-minutes:60}")
     private int stuckThresholdMinutes;
 
@@ -258,6 +336,21 @@ public class JulesDispatchService {
     @Transactional
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId) {
         return dispatch(task, accountId, "IMPLEMENTER");
+    }
+
+    /**
+     * Single source of truth for "does this task already have a session dispatch() would treat as active
+     * and refuse to duplicate" - exposed so callers (e.g. ProjectFlowService.dispatchReviewTasks) can check
+     * BEFORE calling dispatch(), instead of calling it speculatively every tick and then either duplicating
+     * this same status list themselves (which drifted out of sync once already - confirmed live on
+     * test-thirty-fifth 2026-07-23, a stale local copy missing "pr_opened" caused a silent no-op reviewer
+     * dispatch to look like a real success in the logs every single orchestration tick) or misreading
+     * dispatch()'s own return value (its `dispatched` field means "is dispatched", true for both a genuinely
+     * new dispatch AND an already-active skip - it does not distinguish the two).
+     */
+    public boolean hasActiveSession(UUID taskId) {
+        return julesSessionRepository.findByTaskId(taskId).stream()
+                .anyMatch(s -> ACTIVE_SESSION_STATUSES.contains(s.getStatus()));
     }
 
     @Transactional
@@ -2057,18 +2150,14 @@ public class JulesDispatchService {
             return;
         }
         UUID projectId = items.get(0).task().getProject().getId();
-        Set<UUID> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
+        Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
         List<TaskEntity> tasks = new java.util.ArrayList<>();
         List<String> prUrls = new java.util.ArrayList<>();
         List<String> diffs = new java.util.ArrayList<>();
+        List<String> diffHashes = new java.util.ArrayList<>();
         for (PendingFallbackReview item : items) {
             if (isTerminalTask(item.task())) {
                 log.info("PR review fallback: target task {} is already terminal; skipping obsolete review dispatch.",
-                        item.task().getId());
-                continue;
-            }
-            if (!scheduledTargets.add(item.task().getId())) {
-                log.info("Poka-yoke: PR review fallback was already attempted for task {}; automatic retry is disabled.",
                         item.task().getId());
                 continue;
             }
@@ -2081,19 +2170,36 @@ public class JulesDispatchService {
                         item.task().getId(), item.prUrl());
                 continue;
             }
+            // Keyed by (task, PR URL, diff content hash) - not just task, and not just PR URL either. A
+            // task can get a brand new PR later (a merge-conflict rebase, a cancel+redispatch recovery -
+            // different prUrl, correctly a new key). But a PR can ALSO get new commits pushed to the SAME
+            // URL after a "blocked" review's correction request (applyReviewVerdictToTask's sendMessage +
+            // revising round-trip) - same prUrl, genuinely different content, and it must be re-reviewed
+            // too. The diff's own content hash is the one signal that's true in both cases: unchanged
+            // content is truly already-covered, changed content (new PR OR new commits) never is. Confirmed
+            // live (test-thirty-fifth PR#10, 2026-07-23): 2 commits on the PR, second one never reviewed
+            // because the old prUrl-only key still matched.
+            String diffHash = Integer.toHexString(diff.get().hashCode());
+            String targetKey = item.task().getId() + "::" + item.prUrl() + "::" + diffHash;
+            if (!scheduledTargets.add(targetKey)) {
+                log.info("Poka-yoke: PR review fallback was already attempted for task {} PR {} at this content revision; automatic retry is disabled.",
+                        item.task().getId(), item.prUrl());
+                continue;
+            }
             tasks.add(item.task());
             prUrls.add(item.prUrl());
             diffs.add(diff.get());
+            diffHashes.add(diffHash);
         }
         if (tasks.isEmpty()) {
             return;
         }
         if (persistentWorkerSessionService.isEnabled()) {
-            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffs);
+            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffs, diffHashes);
             return;
         }
         String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs);
-        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatch(tasks, prompt);
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatch(tasks, prUrls, diffHashes, prompt);
         if (reviewTaskId == null) {
             log.warn("Could not dispatch batched PR review fallback for {} task(s)", tasks.size());
             return;
@@ -2111,12 +2217,26 @@ public class JulesDispatchService {
                 .collect(java.util.stream.Collectors.toSet());
     }
 
-    Set<UUID> reviewFallbackTargetsEverAttempted(UUID projectId) {
-        return taskRepository.findAll().stream()
+    // "taskId::prUrl::diffHash" composite keys, not bare task ids - see PR_REVIEW_FALLBACK_PR_URLS_KEY /
+    // PR_REVIEW_FALLBACK_DIFF_HASH_KEY. A task whose only past review targeted a since-superseded PR, or an
+    // earlier revision of the SAME PR (pre-correction), must NOT be treated as covered for its current PR
+    // content.
+    Set<String> reviewFallbackTargetsEverAttempted(UUID projectId) {
+        Set<String> keys = new java.util.HashSet<>();
+        taskRepository.findAll().stream()
                 .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
                 .filter(projectFlowService::isReviewFallbackTask)
-                .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
-                .collect(java.util.stream.Collectors.toSet());
+                .forEach(task -> {
+                    List<UUID> ids = projectFlowService.reviewFallbackTargetTaskIds(task);
+                    List<String> urls = projectFlowService.reviewFallbackTargetPrUrls(task);
+                    List<String> hashes = projectFlowService.reviewFallbackTargetDiffHashes(task);
+                    for (int i = 0; i < ids.size(); i++) {
+                        String url = i < urls.size() ? urls.get(i) : "";
+                        String hash = i < hashes.size() ? hashes.get(i) : "";
+                        keys.add(ids.get(i) + "::" + url + "::" + hash);
+                    }
+                });
+        return keys;
     }
 
     boolean reviewFallbackTargetsAreTerminal(TaskEntity reviewTask) {
@@ -2137,7 +2257,7 @@ public class JulesDispatchService {
      * shared busy/rotation bookkeeping. All items here already share one project (the caller groups by
      * project before calling this).
      */
-    private void dispatchToReviewFallbackPersistentWorker(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs) {
+    private void dispatchToReviewFallbackPersistentWorker(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<String> diffHashes) {
         com.eneik.production.models.persistence.ProjectEntity project = tasks.get(0).getProject();
         List<UUID> batchIds = tasks.stream().map(TaskEntity::getId).toList();
         Optional<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> existingOpt =
@@ -2168,13 +2288,13 @@ public class JulesDispatchService {
             }
         }
 
-        createFreshReviewFallbackPersistentWorker(project, tasks, prUrls, diffs, batchIds);
+        createFreshReviewFallbackPersistentWorker(project, tasks, prUrls, diffs, diffHashes, batchIds);
     }
 
     private void createFreshReviewFallbackPersistentWorker(com.eneik.production.models.persistence.ProjectEntity project,
-            List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<UUID> batchIds) {
+            List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<String> diffHashes, List<UUID> batchIds) {
         String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs);
-        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatchAsPersistentCarrier(tasks, prompt);
+        UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatchAsPersistentCarrier(tasks, prUrls, diffHashes, prompt);
         if (reviewTaskId == null) {
             log.warn("Could not create persistent review-fallback worker for project {} ({} task(s))", project.getId(), tasks.size());
             return;

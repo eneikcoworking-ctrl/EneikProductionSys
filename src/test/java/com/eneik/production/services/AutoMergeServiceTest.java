@@ -23,12 +23,83 @@ class AutoMergeServiceTest {
         assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("success")));
         assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("pending")));
         assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("unavailable")));
+        // Systemic fix (2026-07-23, confirmed live on test-thirty-fifth, task 17e3f9ae / PR#28): "conflict"
+        // genuinely CAN still become mergeable - that's the entire premise of handleMergeConflict's 3-attempt
+        // in-place resolution. Excluding it here used to permanently deadlock the retry loop: it was the
+        // ONLY code path that could ever re-check GitHub's real mergeable state or drive a second attempt,
+        // and this filter prevented it from ever running again after the first conflict. Confirmed live:
+        // Jules pushed a fix commit, CI went green, but GitHub still reported a real conflict - and nothing
+        // ever re-checked because the review had already dropped out of pendingReviews for good.
+        assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("conflict")));
 
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("failure")));
-        assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("conflict")));
+        // Genuinely terminal - handleMergeConflict's own 3-attempt cap is exhausted, so unlike plain
+        // "conflict" this must NOT be retried (it would re-escalate a brand new TaskConflictEntity forever).
+        assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("escalated")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("owner_mismatch")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("unowned")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("invalid_pr")));
+    }
+
+    @Test
+    void escalatedConflictGetsTerminalCiStatusSoItStopsBeingRetried() {
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var sessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var conflicts = mock(com.eneik.production.repositories.TaskConflictRepository.class);
+        var claims = mock(ClaimService.class);
+        AutoMergeService service = new AutoMergeService(
+                prReviews, sessions, tasks,
+                mock(com.eneik.production.services.settings.SystemSettingsService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                conflicts, mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                mock(com.eneik.production.services.github.GitHubPullRequestService.class),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                claims, mock(com.eneik.production.repositories.ProjectRepository.class));
+
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setStatus("pr_opened");
+        session.setExternalSessionId("sessions/conflict-escalation");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.review);
+
+        PrReviewEntity review = reviewWithStatus("conflict");
+        review.setJulesSessionId(sessionId);
+        review.setPrUrl("https://github.com/org/repo/pull/28");
+        review.setMerged(false);
+
+        com.eneik.production.models.persistence.TaskConflictEntity existingConflict =
+                new com.eneik.production.models.persistence.TaskConflictEntity();
+        existingConflict.setTask(task);
+        existingConflict.setResolutionAttempts(2);
+        existingConflict.setResolutionStatus("pending");
+
+        when(sessions.findById(sessionId)).thenReturn(Optional.of(session));
+        when(sessions.findByTaskId(taskId)).thenReturn(List.of(session));
+        when(tasks.findById(taskId)).thenReturn(Optional.of(task));
+        when(prReviews.existsByJulesSessionIdInAndMergedTrue(List.of(sessionId))).thenReturn(false);
+        when(conflicts.findFirstByTaskIdAndResolutionStatus(taskId, "pending")).thenReturn(Optional.of(existingConflict));
+
+        // Third attempt (existing conflict already at 2) - crosses the 3-attempt cap this same call.
+        service.handleMergeConflict(review, null, null, null, null);
+
+        assertEquals("escalated", existingConflict.getResolutionStatus());
+        assertEquals("escalated", review.getCiStatus());
+        // The whole point: once genuinely exhausted, this must fall OUT of the poll-candidate set, or the
+        // next tick would create a brand new TaskConflictEntity and re-escalate forever.
+        assertFalse(AutoMergeService.isReviewPollCandidate(review));
     }
 
     @Test

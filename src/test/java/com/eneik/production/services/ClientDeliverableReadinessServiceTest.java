@@ -158,6 +158,49 @@ class ClientDeliverableReadinessServiceTest {
         assertFalse(service.isTaskMerged(taskId));
     }
 
+    @Test
+    void apiContractTaskWithOpenPrIsEarlyUnblockable() {
+        TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
+        contractTask.setStatus(TaskStatus.review);
+        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+
+        contractTask.setStatus(TaskStatus.pending_review);
+        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+
+        contractTask.setStatus(TaskStatus.done);
+        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+    }
+
+    @Test
+    void apiContractTaskStillQueuedIsNotEarlyUnblockable() {
+        TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
+        contractTask.setStatus(TaskStatus.queued);
+        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+
+        contractTask.setStatus(TaskStatus.claimed);
+        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+
+        contractTask.setStatus(TaskStatus.failed);
+        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+    }
+
+    @Test
+    void nonContractRoleIsNeverEarlyUnblockableEvenInReview() {
+        TaskEntity backendTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-02");
+        backendTask.setStatus(TaskStatus.review);
+        assertFalse(service.isApiContractPrOpenButUnmerged(backendTask));
+    }
+
+    @Test
+    void nullDependencyOrRoleIsNeverEarlyUnblockable() {
+        assertFalse(service.isApiContractPrOpenButUnmerged(null));
+
+        TaskEntity noRole = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
+        noRole.setRole(null);
+        noRole.setStatus(TaskStatus.review);
+        assertFalse(service.isApiContractPrOpenButUnmerged(noRole));
+    }
+
     private void stubPlan(UUID projectId, WishlistEntity root, FeatureEntity feature,
                           List<WishlistEntity> items, List<TaskEntity> tasks) {
         List<WishlistEntity> all = new ArrayList<>();

@@ -59,8 +59,21 @@ public class ClientDeliverableReadinessService {
         this.prReviewRepository = prReviewRepository;
     }
 
+    // Deliberately scoped to CLIENT-sourced work only, not computeForProject's full
+    // PRODUCT_ITERATION_SOURCES (client + coverage_gap + self_falsification). Confirmed live
+    // (test-thirty-fifth, 2026-07-23): the moment a self_falsification wishlist gets decomposed into its
+    // own tasks, computeForProject's project-wide totalDeliverables jumps from "just the client's items"
+    // to "client + self-generated items", which can flip a project that had genuinely finished 100% of the
+    // client's own brief back to <100% (or below buildPhaseDeliverableCount, for any brief smaller than
+    // that threshold) - and since THIS SAME isBuildPhase gate is what keeps self-generated work from ever
+    // dispatching in the first place, that self-generated work can never merge, so the denominator it
+    // just inflated can never catch up. A real deadlock: 8 client tasks (100% merged, correctly out of
+    // build phase) + falsification's own 8 follow-up tasks (0% merged) reads as 8/16 = 50%, permanently
+    // re-entering build phase and freezing the very follow-up work that caused the reading to change.
+    // "Has the client's own brief shipped" must never be measured using a denominator the answer to that
+    // exact question controls.
     public boolean isBuildPhase(UUID projectId) {
-        Readiness readiness = computeForProject(projectId);
+        Readiness readiness = computeForClientBriefOnly(projectId);
         if (!readiness.decompositionComplete() || readiness.totalDeliverables() == 0) {
             return true;
         }
@@ -98,6 +111,17 @@ public class ClientDeliverableReadinessService {
      * must run once per wishlist, not once for the whole project's aggregate progress).
      */
     public Readiness computeForProject(UUID projectId, UUID rootWishlistId) {
+        return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+    }
+
+    private static final Set<WishlistSource> CLIENT_BRIEF_SOURCE = EnumSet.of(WishlistSource.client);
+
+    /** See the comment on {@link #isBuildPhase}: excludes self-generated (coverage_gap, self_falsification) work. */
+    private Readiness computeForClientBriefOnly(UUID projectId) {
+        return computeForSources(projectId, null, CLIENT_BRIEF_SOURCE);
+    }
+
+    private Readiness computeForSources(UUID projectId, UUID rootWishlistId, Set<WishlistSource> sources) {
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
         for (WishlistEntity item : allWishlist) {
@@ -107,7 +131,7 @@ public class ClientDeliverableReadinessService {
         List<FeatureEntity> productFeatures = featureRepository.findByProjectId(projectId).stream()
                 .filter(feature -> {
                     WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
-                    return root != null && PRODUCT_ITERATION_SOURCES.contains(root.getSource());
+                    return root != null && sources.contains(root.getSource());
                 })
                 .filter(feature -> rootWishlistId == null || rootWishlistId.equals(feature.getRootWishlistId()))
                 .toList();
@@ -117,7 +141,7 @@ public class ClientDeliverableReadinessService {
 
         // Raw iteration wishlists are containers. Derived work-item wishlists always carry compiledByRole.
         List<WishlistEntity> iterationRoots = allWishlist.stream()
-                .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
+                .filter(w -> sources.contains(w.getSource()))
                 .filter(w -> w.getCompiledByRole() == null)
                 .filter(w -> rootWishlistId == null || rootWishlistId.equals(w.getId()))
                 .toList();
@@ -127,7 +151,7 @@ public class ClientDeliverableReadinessService {
 
         List<WishlistEntity> plannedItems = allWishlist.stream()
                 .filter(w -> w.getCompiledByRole() != null)
-                .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
+                .filter(w -> sources.contains(w.getSource()))
                 .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(w.getFeatureId()))
                 .toList();
         if (productFeatures.isEmpty() || plannedItems.isEmpty()) {
@@ -187,6 +211,29 @@ public class ClientDeliverableReadinessService {
             return List.of();
         }
         return prReviewRepository.findByJulesSessionIdInAndMergedTrue(sessionIds);
+    }
+
+    /**
+     * Lean-waste fix (2026-07-23, operator directive): an API-contract-stage dependency
+     * ({@link EmsFlowStage#API_CONTRACT}) is a small, isolated spec deliverable, not "a huge chunk of
+     * code" - a dependent only actually needs the contract's content, which exists as soon as its PR is
+     * open, not once it's fully merged. Deliberately scoped to this ONE stage: every other dependency edge
+     * (data-model -> contract, implementation -> operations, etc.) still requires
+     * {@link #isDependencySatisfied} (full merge) - see the dispatch-gate call site in
+     * ProjectFlowService.dispatchQueuedTasks for how the two are composed. `review`/`pending_review`/`done`
+     * is the existing "a PR has been opened for this task" signal used throughout the pipeline - no new
+     * status was introduced for this.
+     */
+    public boolean isApiContractPrOpenButUnmerged(TaskEntity dependency) {
+        if (dependency == null || dependency.getRole() == null) {
+            return false;
+        }
+        if (EmsFlowStage.forRoleTag(dependency.getRole().getTag()) != EmsFlowStage.API_CONTRACT) {
+            return false;
+        }
+        return dependency.getStatus() == TaskStatus.review
+                || dependency.getStatus() == TaskStatus.pending_review
+                || dependency.getStatus() == TaskStatus.done;
     }
 
     /**

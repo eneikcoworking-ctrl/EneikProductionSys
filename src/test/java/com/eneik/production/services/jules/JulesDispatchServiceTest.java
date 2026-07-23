@@ -1044,9 +1044,12 @@ class JulesDispatchServiceTest {
         when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("abc123"));
 
         assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
-        assertEquals(Set.of(targetTaskId), julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
+        assertEquals(Set.of(targetTaskId + "::https://github.com/org/repo/pull/1::abc123"),
+                julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
     }
 
     @Test
