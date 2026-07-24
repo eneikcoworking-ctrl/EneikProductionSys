@@ -388,21 +388,13 @@
 
     {#if dashboard.emsMetrics}
       <section class="ems-panel">
-        <div class="ems-summary">
-          <div>
-            <span class="label-xs">Product merge readiness</span>
-            <strong>{percent(dashboard.productReadiness?.mergedRatio ?? 0)}</strong>
-            {#if dashboard.productReadiness}
-              <small>{dashboard.productReadiness.mergedPlannedTasks}/{dashboard.productReadiness.totalPlannedTasks} tasks · {dashboard.productReadiness.completeFeatures}/{dashboard.productReadiness.totalFeatures} features</small>
-            {/if}
-          </div>
-        </div>
-
         <div class="ems-grid">
           <div class="ems-box">
             <div class="card-header compact">
               <h2>Progress</h2>
-              <span class="indicator">{dashboard.emsMetrics.flowChart.totalTasks} tasks</span>
+              <span class="indicator">
+                {percent(dashboard.emsMetrics.flowChart.completionRate)} · {dashboard.emsMetrics.flowChart.totalTasks} tasks{#if dashboard.productReadiness} · {dashboard.productReadiness.completeFeatures}/{dashboard.productReadiness.totalFeatures} features{/if}
+              </span>
             </div>
             <div class="flow-chart">
               {#each dashboard.emsMetrics.flowChart.stages as stage (stage.label)}

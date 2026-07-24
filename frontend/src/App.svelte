@@ -145,18 +145,6 @@
     </div>
   </section>
 
-  <!-- Project Selector (Only Active Project Shown Prominently) -->
-  {#if activeView === 'dashboard' && dashboard}
-    <section class="active-project-hero">
-      <div class="active-project-card">
-        <p class="eyebrow">Active Project In Production</p>
-        <h2>{dashboard.project.name}</h2>
-        <span class="badge {dashboard.project.status}">{dashboard.project.status}</span>
-        <code class="path">{dashboard.project.repositoryName || 'no repo'}</code>
-      </div>
-    </section>
-  {/if}
-
   <!-- View Content Slot -->
   {#if activeView === 'admin'}
     <AdminDashboard />
@@ -330,43 +318,6 @@
     background: var(--neutral-200);
   }
 
-  .active-project-hero {
-    margin-bottom: var(--space-4);
-  }
-  .active-project-card {
-    background: var(--surface);
-    border: 1px solid var(--neutral-200);
-    border-radius: 12px;
-    padding: var(--space-6);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.02);
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    min-width: 0;
-  }
-  .active-project-card h2 {
-    font-size: 24px;
-    margin: 0;
-    color: var(--neutral-800);
-  }
-  .active-project-card .badge {
-    text-transform: uppercase;
-    font-weight: 700;
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 12px;
-  }
-  .active-project-card .badge.active {
-    background: #d1fae5;
-    color: #065f46;
-  }
-  .active-project-card .badge.accepted { background: #dbeafe; color: #1e40af; }
-  .active-project-card .badge.waiting { background: #fef3c7; color: #92400e; }
-  .active-project-card .badge.frozen { background: #fee2e2; color: #b91c1c; }
-  .active-project-card .badge.analyzing { background: #eff6ff; color: #1e40af; }
-  .active-project-card .badge.archived { background: var(--neutral-200); color: var(--neutral-600); }
-
   .other-projects-section {
     margin-top: var(--space-8);
   }
@@ -417,13 +368,6 @@
   .project-details-item .badge.frozen { background: #fee2e2; color: #b91c1c; }
   .project-details-item .badge.analyzing { background: #eff6ff; color: #1e40af; }
   .project-details-item .badge.archived { background: var(--neutral-200); color: var(--neutral-600); }
-
-  .active-project-card .path {
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 
   .loading-state {
     align-items: center;

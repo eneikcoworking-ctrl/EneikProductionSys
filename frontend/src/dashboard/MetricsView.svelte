@@ -45,7 +45,14 @@
   }
 
   function percent(value: number | undefined | null): string {
-    const clamped = Math.max(0, Math.min(100, Math.round((value ?? 0) * 100)));
+    // null/undefined means "no data yet" (0 opportunities) - the backend deliberately no longer sends 0
+    // for that case (2026-07-24 fix), since 0% previously read as "worst possible score" for the exact
+    // same condition the sigma chip already renders as best-possible (6.00σ) - a direct contradiction on
+    // the same card. Only an actual numeric 0 (real data, genuinely zero yield) renders as "0%".
+    if (value === null || value === undefined) {
+      return 'N/A';
+    }
+    const clamped = Math.max(0, Math.min(100, Math.round(value * 100)));
     return `${clamped}%`;
   }
 

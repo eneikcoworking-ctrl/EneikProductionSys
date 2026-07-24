@@ -23,8 +23,13 @@
 
   --neutral-50: #F8F9FF;
   --neutral-100: #EFF4FF;
-  --neutral-200: #E5EEFF;
-  --neutral-300: #D3E4FE;
+  /* neutral-200/300 are used as the default border color for nearly every card, panel, and input in
+     the app (see app.css + every dashboard component). The original Stitch tokens (#E5EEFF, #D3E4FE)
+     sit at ~1.05:1 / ~1.15:1 contrast against --surface (#F8F9FF) - effectively invisible, forcing the
+     operator to squint to find panel edges. Deepened both while keeping the same blue-neutral hue
+     family, targeting real (~3:1+) separation from --surface without breaking the restrained palette. */
+  --neutral-200: #C7D6F5;
+  --neutral-300: #A8BEEA;
   --neutral-400: #C4C5D9;
   --neutral-500: #747688;
   --neutral-600: #565E74;
