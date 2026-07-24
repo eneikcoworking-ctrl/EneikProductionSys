@@ -34,7 +34,8 @@ class IdempotencyTest {
             mock(BottleneckAwarePriorityService.class),
             new com.fasterxml.jackson.databind.ObjectMapper(),
             mock(ProjectHotspotFileRepository.class),
-            mock(com.eneik.production.services.FeatureService.class)
+            mock(com.eneik.production.services.FeatureService.class),
+            mock(com.eneik.production.services.github.GitHubPullRequestService.class)
         );
 
         UUID wishlistId = UUID.randomUUID();
@@ -93,6 +94,8 @@ class IdempotencyTest {
             mock(com.eneik.production.repositories.FeatureThreadRepository.class),
             mock(com.eneik.production.services.ClientDeliverableReadinessService.class),
             mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+            mock(com.eneik.production.repositories.ProjectRepository.class),
+            mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
             "prefix/"
         );
 

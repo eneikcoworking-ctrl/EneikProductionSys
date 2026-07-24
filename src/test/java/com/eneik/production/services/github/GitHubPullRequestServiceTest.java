@@ -75,6 +75,8 @@ class GitHubPullRequestServiceTest {
                 "Implement schema",
                 "jules/sessions-12568286363758467645-schema",
                 "jules",
+                false,
+                "main",
                 false);
 
         assertTrue(GitHubPullRequestService.matchesSessionToken(

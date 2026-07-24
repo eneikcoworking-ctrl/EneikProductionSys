@@ -41,6 +41,7 @@ class PlannedWorkRecoveryServiceTest {
         when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
         when(sessionRepository.findByTaskId(task.getId())).thenReturn(List.of());
         when(readinessService.isTaskMerged(task.getId())).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued)).thenReturn(1);
 
         assertEquals(1, service.resumeNextFrontier(project));
         assertEquals(TaskStatus.queued, task.getStatus());
@@ -71,6 +72,7 @@ class PlannedWorkRecoveryServiceTest {
         when(readinessService.isDependencySatisfied(dependency)).thenReturn(true);
         when(sessionRepository.findByTaskId(child.getId())).thenReturn(List.of());
         when(readinessService.isTaskMerged(child.getId())).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(child.getId(), TaskStatus.failed, TaskStatus.queued)).thenReturn(1);
         assertEquals(1, service.resumeNextFrontier(project));
     }
 

@@ -57,7 +57,8 @@ class FalsificationCycleServiceTest {
                 mock(SystemSettingsService.class),
                 gitHubPullRequestService,
                 projectFlowService,
-                readinessService
+                readinessService,
+                mock(WishlistContentSimilarityMatcher.class)
         );
     }
 
@@ -85,18 +86,18 @@ class FalsificationCycleServiceTest {
         when(runRepository.findTopByProjectIdOrderByRunAtDesc(project.getId())).thenReturn(Optional.empty());
 
         GitHubPullRequestService.GitHubPullRequest mergedPr = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true);
+                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false);
         when(gitHub.pullRequestSnapshot(project)).thenReturn(
                 new GitHubPullRequestService.PullRequestSnapshot(true, "org", "repo", List.of(), List.of(mergedPr), ""));
         String realDiff = "diff --git a/src/Spintax.java b/src/Spintax.java\n+public class Spintax {\n+    // real code change\n+}\n";
         when(gitHub.fetchDiffText(project, 42)).thenReturn(Optional.of(realDiff));
-        when(projectFlowService.dispatchFalsificationAudit(eq(project), any(), any())).thenReturn(UUID.randomUUID());
+        when(projectFlowService.dispatchFalsificationAudit(eq(project), any(), any(), any())).thenReturn(UUID.randomUUID());
 
         service.executeCycleForProject(project);
 
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
         ArgumentCaptor<Integer> prNumberCaptor = ArgumentCaptor.forClass(Integer.class);
-        verify(projectFlowService).dispatchFalsificationAudit(eq(project), promptCaptor.capture(), prNumberCaptor.capture());
+        verify(projectFlowService).dispatchFalsificationAudit(eq(project), promptCaptor.capture(), prNumberCaptor.capture(), any());
         String prompt = promptCaptor.getValue();
 
         assertTrue(prompt.contains("real code change"), "prompt must contain the actual fetched diff content");
@@ -126,19 +127,19 @@ class FalsificationCycleServiceTest {
         when(runRepository.findTopByProjectIdOrderByRunAtDesc(project.getId())).thenReturn(Optional.of(previousRun));
 
         GitHubPullRequestService.GitHubPullRequest alreadyAudited = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true);
+                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false);
         GitHubPullRequestService.GitHubPullRequest newlyMerged = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/43", 43, "Fix account proxy binding", "jules-branch-2", "eneikdru", true);
+                "https://github.com/org/repo/pull/43", 43, "Fix account proxy binding", "jules-branch-2", "eneikdru", true, "main", false);
         when(gitHub.pullRequestSnapshot(project)).thenReturn(
                 new GitHubPullRequestService.PullRequestSnapshot(true, "org", "repo", List.of(), List.of(alreadyAudited, newlyMerged), ""));
         when(gitHub.fetchDiffText(project, 43)).thenReturn(Optional.of("diff --git a/src/Proxy.java b/src/Proxy.java\n+// proxy fix\n"));
-        when(projectFlowService.dispatchFalsificationAudit(eq(project), any(), any())).thenReturn(UUID.randomUUID());
+        when(projectFlowService.dispatchFalsificationAudit(eq(project), any(), any(), any())).thenReturn(UUID.randomUUID());
 
         service.executeCycleForProject(project);
 
         verify(gitHub, never()).fetchDiffText(project, 42);
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(projectFlowService).dispatchFalsificationAudit(eq(project), promptCaptor.capture(), eq(43));
+        verify(projectFlowService).dispatchFalsificationAudit(eq(project), promptCaptor.capture(), eq(43), any());
         assertTrue(promptCaptor.getValue().contains("proxy fix"));
         assertFalse(promptCaptor.getValue().contains("PR #42"), "already-audited PR #42 must not be re-fetched or re-included");
     }
@@ -163,7 +164,7 @@ class FalsificationCycleServiceTest {
 
         service.executeCycleForProject(project);
 
-        verify(projectFlowService, never()).dispatchFalsificationAudit(any(), any(), any());
+        verify(projectFlowService, never()).dispatchFalsificationAudit(any(), any(), any(), any());
     }
 
     @Test
@@ -186,7 +187,7 @@ class FalsificationCycleServiceTest {
 
         service.executeCycleForProject(project);
 
-        verify(projectFlowService, never()).dispatchFalsificationAudit(any(), any(), any());
+        verify(projectFlowService, never()).dispatchFalsificationAudit(any(), any(), any(), any());
     }
 
     @Test
@@ -200,14 +201,15 @@ class FalsificationCycleServiceTest {
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class),
-                mock(SystemSettingsService.class), gitHub, flow, readiness);
+                mock(SystemSettingsService.class), gitHub, flow, readiness,
+                mock(WishlistContentSimilarityMatcher.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("still-decomposing");
 
         service.executeCycleForProject(project);
 
-        verify(flow, never()).dispatchFalsificationAudit(any(), any(), any());
+        verify(flow, never()).dispatchFalsificationAudit(any(), any(), any(), any());
         verify(gitHub, never()).pullRequestSnapshot(any());
     }
 
@@ -226,7 +228,7 @@ class FalsificationCycleServiceTest {
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
                 mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
-                mock(ClientDeliverableReadinessService.class));
+                mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("bounded-cycle");

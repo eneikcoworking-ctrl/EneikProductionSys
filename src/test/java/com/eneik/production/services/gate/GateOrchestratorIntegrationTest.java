@@ -188,7 +188,10 @@ class GateOrchestratorIntegrationTest {
         deliverable.setCompiledByRole("BARCAN-TAG-09");
         deliverable = wishlistRepository.save(deliverable);
 
-        RoleEntity role = roleRepository.findById("BARCAN-TAG-09").orElseThrow();
+        // Deliberately a code-producing role (BARCAN-TAG-02), not BARCAN-TAG-09: the readiness ratio
+        // (2026-07-24 fix) no longer counts DECISION-stage/non-code work toward "shipped", so simulating a
+        // real merged client deliverable requires a role the engine actually recognizes as code-producing.
+        RoleEntity role = roleRepository.findById("BARCAN-TAG-02").orElseThrow();
         TaskEntity mergedTask = new TaskEntity();
         mergedTask.setProject(project);
         mergedTask.setRole(role);
@@ -209,6 +212,7 @@ class GateOrchestratorIntegrationTest {
         review.setCiStatus("success");
         review.setRiskLevel("low");
         review.setMerged(true);
+        review.setHasCode(true);
         prReviewRepository.save(review);
     }
 

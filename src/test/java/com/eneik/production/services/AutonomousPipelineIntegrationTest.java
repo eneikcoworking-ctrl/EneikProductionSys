@@ -792,7 +792,68 @@ class AutonomousPipelineIntegrationTest {
         // through instead of hitting the dependency-gate `continue`, independent of whatever the mocked
         // Jules dispatch call itself subsequently does with it.
         TaskEntity refreshedBackend = taskRepository.findById(backendTask.getId()).orElseThrow();
-        assertThat(refreshedBackend.getPayload().path("earlyUnblockedContractTask").asBoolean(false)).isTrue();
+        assertThat(refreshedBackend.getPayload().path("earlyUnblockedSpecTask").asBoolean(false)).isTrue();
+    }
+
+    @Test
+    void architectureDependentsStartEarlyWhenArchitecturePrIsOpenButNotMerged() {
+        // Generalization regression (2026-07-24): EmsFlowStage.isSpecStage now covers ARCHITECTURE
+        // (previously only API_CONTRACT). Same shape as
+        // apiContractDependentsStartEarlyWhenContractPrIsOpenButNotMerged, but proves a second,
+        // previously-excluded spec stage exercises the same dispatch-gate path end to end.
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Architecture Early Unblock Project");
+        project.setSlug("architecture-early-unblock-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("architecture-early-unblock-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        AccountEntity account = new AccountEntity();
+        account.setName("Architecture Early Unblock Jules");
+        account.setCapabilities("*");
+        account.setStatus(AccountStatus.idle);
+        account.setEnabled(true);
+        accountRepository.saveAndFlush(account);
+
+        WishlistEntity brief = new WishlistEntity();
+        brief.setProjectId(project.getId());
+        brief.setSource(WishlistSource.client);
+        brief.setContent("Architect the order service first, then implement it.");
+        brief.setStatus(WishlistStatus.pending);
+        brief = wishlistRepository.saveAndFlush(brief);
+
+        MLPredictionServiceClient.TaskSliceMetadata architectureSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order service architecture", "Define the service boundaries for order handling.",
+                "Given the domain, When the architecture is defined, Then service boundaries are documented.",
+                "BARCAN-TAG-01", LeanValue.essential, "clear",
+                "Architecture clarity", "boundaries documented", false);
+        MLPredictionServiceClient.TaskSliceMetadata backendSlice = new MLPredictionServiceClient.TaskSliceMetadata(
+                "Order backend", "Implement the order backend per the architecture.",
+                "Given the architecture, When a request arrives, Then it is handled per the documented boundaries.",
+                "BARCAN-TAG-02", LeanValue.essential, "clear",
+                "API connectivity", "100% of requests handled", false);
+        MLPredictionServiceClient.EpicPlan epic = new MLPredictionServiceClient.EpicPlan(
+                null, "Order Feature (Architecture First)", "When a customer places an order, I want it architected and handled, so it works end-to-end.",
+                "Must-Be", "clear", "N/A", "N/A", 0, List.of(architectureSlice, backendSlice));
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(brief), List.of(epic));
+        assertThat(built).isTrue();
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        TaskEntity architectureTask = taskByRole(tasks, "BARCAN-TAG-01");
+        TaskEntity backendTask = taskByRole(tasks, "BARCAN-TAG-02");
+        assertThat(backendTask.getDependsOn().getId()).isEqualTo(architectureTask.getId());
+
+        // Architecture's PR is open but genuinely NOT merged - no PrReviewEntity exists for it, so
+        // isDependencySatisfied(architectureTask) is definitely false.
+        architectureTask.setStatus(TaskStatus.review);
+        taskRepository.saveAndFlush(architectureTask);
+
+        projectFlowService.dispatchQueuedTasks(project.getId());
+
+        TaskEntity refreshedBackend = taskRepository.findById(backendTask.getId()).orElseThrow();
+        assertThat(refreshedBackend.getPayload().path("earlyUnblockedSpecTask").asBoolean(false)).isTrue();
     }
 
     @Test
@@ -851,7 +912,7 @@ class AutonomousPipelineIntegrationTest {
         TaskEntity refreshedBackend = taskRepository.findById(backendTask.getId()).orElseThrow();
         assertThat(refreshedBackend.getStatus()).isEqualTo(TaskStatus.queued);
         assertThat(refreshedBackend.getPayload() == null
-                || !refreshedBackend.getPayload().path("earlyUnblockedContractTask").asBoolean(false)).isTrue();
+                || !refreshedBackend.getPayload().path("earlyUnblockedSpecTask").asBoolean(false)).isTrue();
     }
 
     private TaskEntity taskByRole(List<TaskEntity> tasks, String roleTag) {
@@ -1027,7 +1088,7 @@ class AutonomousPipelineIntegrationTest {
         clientBrief.setSource(WishlistSource.client);
         clientBrief.setContent("Build a normal new feature from scratch.");
 
-        String prompt = projectFlowService.wishlistCompilerPromptBatch(List.of(designConcern, clientBrief));
+        String prompt = projectFlowService.wishlistCompilerPromptBatch(List.of(designConcern, clientBrief), ".eneik/records/task-plan-test.json");
 
         assertThat(prompt).contains("CORRECTION TO ALREADY-APPROVED DESIGN");
         assertThat(prompt).contains("design/approved/20260101-mockup/mockup.html");

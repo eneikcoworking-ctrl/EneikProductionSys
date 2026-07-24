@@ -229,6 +229,25 @@ public class TaskClaimServiceTest {
         assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(task.getId())).isEmpty();
     }
 
+    // Proves the atomic guard TaskRepository.writeStatusUnlessTerminal actually closes the race window
+    // that the check-then-act version of these methods left open: a task observed as non-terminal at
+    // method entry, but that reaches a terminal status via a CONCURRENT write before this method's own
+    // status write executes (e.g. reapExpiredLeases and a normal completion callback interleaving on two
+    // scheduler threads). This is deliberately independent of ClaimService's own isTerminal() pre-check,
+    // which only proves the row was non-terminal at the READ - not at the WRITE.
+    @Test
+    void writeStatusUnlessTerminalRefusesOnceARowReachesTerminal() {
+        TaskEntity task = createQueuedTask("BARCAN-TAG-02", basePayload());
+        assertThat(taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.done)).isEqualTo(1);
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.done);
+
+        // A second writer racing in behind it (simulating a concurrent transaction) must be refused - 0
+        // rows affected, done must not be overwritten back to queued.
+        assertThat(taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.queued)).isEqualTo(0);
+        assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.done);
+    }
+
+
     private void markProjectPastBuildPhase(ProjectEntity project) {
         WishlistEntity root = new WishlistEntity();
         root.setProjectId(project.getId());
@@ -252,7 +271,10 @@ public class TaskClaimServiceTest {
         deliverable.setCompiledByRole("BARCAN-TAG-09");
         deliverable = wishlistRepository.saveAndFlush(deliverable);
 
-        RoleEntity role = roleRepository.findById("BARCAN-TAG-09").orElseThrow();
+        // Deliberately a code-producing role (BARCAN-TAG-02), not BARCAN-TAG-09: the readiness ratio
+        // (2026-07-24 fix) no longer counts DECISION-stage/non-code work toward "shipped", so simulating a
+        // real merged client deliverable requires a role the engine actually recognizes as code-producing.
+        RoleEntity role = roleRepository.findById("BARCAN-TAG-02").orElseThrow();
         TaskEntity mergedTask = new TaskEntity();
         mergedTask.setProject(project);
         mergedTask.setRole(role);
@@ -273,6 +295,7 @@ public class TaskClaimServiceTest {
         review.setCiStatus("success");
         review.setRiskLevel("low");
         review.setMerged(true);
+        review.setHasCode(true);
         prReviewRepository.saveAndFlush(review);
     }
 

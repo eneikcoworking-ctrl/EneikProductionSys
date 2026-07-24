@@ -39,6 +39,8 @@ class AutoMergeServiceTest {
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("owner_mismatch")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("unowned")));
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("invalid_pr")));
+        // Genuinely terminal (2026-07-24) - a PR closed without merging is dead, never retry it.
+        assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("closed_unmerged")));
     }
 
     @Test
@@ -61,7 +63,8 @@ class AutoMergeServiceTest {
                 mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
                 mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
-                claims, mock(com.eneik.production.repositories.ProjectRepository.class));
+                claims, mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class));
 
         UUID taskId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -122,7 +125,8 @@ class AutoMergeServiceTest {
                 mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
                 mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
-                claims, mock(com.eneik.production.repositories.ProjectRepository.class));
+                claims, mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class));
 
         UUID taskId = UUID.randomUUID();
         JulesSessionEntity staleSession = new JulesSessionEntity();
@@ -172,7 +176,8 @@ class AutoMergeServiceTest {
                 mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
                 mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
-                claims, mock(com.eneik.production.repositories.ProjectRepository.class));
+                claims, mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class));
 
         UUID taskId = UUID.randomUUID();
         JulesSessionEntity winner = new JulesSessionEntity();

@@ -77,6 +77,8 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.FalsificationCycleService.class),
             featureThreadRepository, readinessService,
             mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+            mock(com.eneik.production.repositories.ProjectRepository.class),
+            mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
@@ -195,6 +197,10 @@ class JulesDispatchServiceTest {
         when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
         when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(history);
         when(mlPredictionServiceClient.chat(anyString(), anyString())).thenReturn("Root cause: repeated artifact blocker\nKano classification: Must-Be\nCynefin domain: clear");
+        // Pre-close deep-read classification (operator directive 2026-07-24: read everything Jules wrote
+        // before closing) - this scenario is a genuinely repeated identical blocker across 8 rounds with no
+        // new reasoning, so the classifier should read it as STUCK, not silently default there.
+        when(mlPredictionServiceClient.chatCritical(anyString(), anyString())).thenReturn("VERDICT: STUCK\nBLOCKER: n/a\nFIX: n/a");
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
 
         JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
@@ -563,6 +569,9 @@ class JulesDispatchServiceTest {
         when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of());
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        // Pre-close deep-read classification: empty activity history and a genuinely exhausted blind-cycle
+        // overflow is a real STUCK signal, not a technical AI-unavailable case.
+        when(mlPredictionServiceClient.chatCritical(anyString(), anyString())).thenReturn("VERDICT: STUCK\nBLOCKER: n/a\nFIX: n/a");
 
         julesDispatchService.forceUnblockOverflowedSessions();
 

@@ -49,4 +49,23 @@ class EmsFlowStageTest {
         assertThat(EmsFlowStage.graphOrderForRoleTag("BARCAN-TAG-99")).isEqualTo(35);
         assertThat(EmsFlowStage.labelForRoleTag("BARCAN-TAG-99")).isEqualTo("implementation");
     }
+
+    @Test
+    void isSpecStageTrueOnlyForDecisionArchitectureContractAndCompliance() {
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-09")).isTrue();  // DECISION
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-01")).isTrue();  // ARCHITECTURE
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-12")).isTrue();  // API_CONTRACT
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-10")).isTrue();  // COMPLIANCE
+
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-08")).isFalse(); // DATA_MODEL
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-02")).isFalse(); // IMPLEMENTATION
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-04")).isFalse();
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-07")).isFalse();
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-03")).isFalse(); // EXPERIENCE
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-11")).isFalse();
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-05")).isFalse(); // OPERATIONS
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-06")).isFalse(); // VERIFICATION
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-00")).isFalse(); // INTEGRATION
+        assertThat(EmsFlowStage.isSpecStage("BARCAN-TAG-99")).isFalse(); // unknown role
+    }
 }

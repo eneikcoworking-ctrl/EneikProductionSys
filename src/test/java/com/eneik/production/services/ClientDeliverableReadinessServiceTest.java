@@ -24,9 +24,12 @@ class ClientDeliverableReadinessServiceTest {
     private final TaskRepository taskRepository = mock(TaskRepository.class);
     private final JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
     private final PrReviewRepository prReviewRepository = mock(PrReviewRepository.class);
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository =
+            mock(com.eneik.production.repositories.FeatureThreadRepository.class);
 
     private final ClientDeliverableReadinessService service = new ClientDeliverableReadinessService(
-            wishlistRepository, featureRepository, taskRepository, julesSessionRepository, prReviewRepository);
+            wishlistRepository, featureRepository, taskRepository, julesSessionRepository, prReviewRepository,
+            featureThreadRepository);
 
     @Test
     void oneMergedTaskDoesNotCompleteFourItemFeature() {
@@ -82,7 +85,46 @@ class ClientDeliverableReadinessServiceTest {
     }
 
     @Test
-    void deliveryDecisionRecordMayCountWithoutCode() {
+    void mergeIntoOpenFeatureThreadDoesNotCountUntilThreadClosesIntoMain() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, tasks);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        PrReviewEntity review = new PrReviewEntity();
+        review.setMerged(true);
+        review.setHasCode(true);
+        review.setBaseRef("feat/some-thread-branch");
+        when(julesSessionRepository.findByTaskId(tasks.get(0).getId())).thenReturn(List.of(session));
+        when(prReviewRepository.findByJulesSessionIdInAndMergedTrue(List.of(session.getId())))
+                .thenReturn(List.of(review));
+
+        com.eneik.production.models.persistence.FeatureThreadEntity thread =
+                new com.eneik.production.models.persistence.FeatureThreadEntity();
+        when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId()))
+                .thenReturn(java.util.Optional.of(thread));
+
+        assertEquals(0, service.computeForProject(projectId).mergedDeliverables());
+        assertFalse(service.reachedMain(tasks.get(0)));
+
+        thread.setMergedToMainAt(java.time.Instant.now());
+
+        assertEquals(1, service.computeForProject(projectId).mergedDeliverables());
+        assertTrue(service.reachedMain(tasks.get(0)));
+    }
+
+    @Test
+    void deliveryDecisionRecordIsExcludedFromCodeMergeRatioEntirely() {
+        // Operator directive 2026-07-24 (sharpened over two rounds of correction): the readiness ratio
+        // must only count tasks that produce code, not decision/spike/review/other auxiliary work.
+        // Superseded behavior: a BARCAN-TAG-09 (EmsFlowStage.DECISION) task used to count as "merged"
+        // via a special-case in hasRequiredMergeEvidence even without code - now it is excluded from the
+        // ratio entirely (contributes to neither total nor merged), not force-counted as done.
         UUID projectId = UUID.randomUUID();
         UUID rootId = UUID.randomUUID();
         FeatureEntity feature = feature(projectId, rootId);
@@ -92,7 +134,35 @@ class ClientDeliverableReadinessServiceTest {
         stubPlan(projectId, root, feature, items, tasks);
         stubMerged(tasks.get(0), false);
 
-        assertEquals(1, service.computeForProject(projectId).mergedDeliverables());
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+        assertEquals(0, readiness.totalDeliverables());
+        assertEquals(0, readiness.mergedDeliverables());
+        // Nothing left in scope to measure - must read as "not applicable", never as "0% done".
+        assertEquals(1.0, readiness.ratio(), 0.0001);
+    }
+
+    @Test
+    void spikeTaskIsExcludedFromCodeMergeRatioEvenThoughItsPrNeverMerges() {
+        // The live bug that triggered this fix: AutoMergeService deliberately never merges a
+        // `complex`-Cynefin spike's PR (its deliverable is a decision record, not shippable code), so the
+        // old formula's "requires a merged review" check could never pass for it - permanently deflating
+        // the denominator with zero relation to duplication or any other confirmed bug. A code-producing
+        // role (BARCAN-TAG-02) makes this deliberate, not a DECISION-stage coincidence.
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        tasks.get(0).setCynefinDomain("complex");
+        tasks.get(0).setStatus(TaskStatus.spike_completed);
+        stubPlan(projectId, root, feature, items, tasks);
+        // Deliberately no stubMerged() - a spike's review is never merged=true by design.
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+        assertEquals(0, readiness.totalDeliverables());
+        assertEquals(0, readiness.mergedDeliverables());
+        assertTrue(readiness.decompositionComplete());
     }
 
     @Test
@@ -162,43 +232,70 @@ class ClientDeliverableReadinessServiceTest {
     void apiContractTaskWithOpenPrIsEarlyUnblockable() {
         TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
         contractTask.setStatus(TaskStatus.review);
-        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
         contractTask.setStatus(TaskStatus.pending_review);
-        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
         contractTask.setStatus(TaskStatus.done);
-        assertTrue(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
     }
 
     @Test
     void apiContractTaskStillQueuedIsNotEarlyUnblockable() {
         TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
         contractTask.setStatus(TaskStatus.queued);
-        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
         contractTask.setStatus(TaskStatus.claimed);
-        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
         contractTask.setStatus(TaskStatus.failed);
-        assertFalse(service.isApiContractPrOpenButUnmerged(contractTask));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
     }
 
     @Test
-    void nonContractRoleIsNeverEarlyUnblockableEvenInReview() {
+    void nonSpecRoleIsNeverEarlyUnblockableEvenInReview() {
         TaskEntity backendTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-02");
         backendTask.setStatus(TaskStatus.review);
-        assertFalse(service.isApiContractPrOpenButUnmerged(backendTask));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(backendTask));
     }
 
     @Test
     void nullDependencyOrRoleIsNeverEarlyUnblockable() {
-        assertFalse(service.isApiContractPrOpenButUnmerged(null));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(null));
 
         TaskEntity noRole = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
         noRole.setRole(null);
         noRole.setStatus(TaskStatus.review);
-        assertFalse(service.isApiContractPrOpenButUnmerged(noRole));
+        assertFalse(service.isSpecDependencyPrOpenButUnmerged(noRole));
+    }
+
+    @Test
+    void decisionArchitectureAndComplianceRolesAreEarlyUnblockableWhenPrIsOpen() {
+        for (String roleTag : List.of("BARCAN-TAG-09", "BARCAN-TAG-01", "BARCAN-TAG-10")) {
+            TaskEntity specTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), roleTag);
+
+            specTask.setStatus(TaskStatus.review);
+            assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " in review");
+
+            specTask.setStatus(TaskStatus.pending_review);
+            assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " in pending_review");
+
+            specTask.setStatus(TaskStatus.done);
+            assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " when done");
+        }
+    }
+
+    @Test
+    void operationsAndVerificationRolesAreNeverEarlyUnblockableEvenInReview() {
+        // Not previously covered at all - explicit re-confirmation these two stay excluded (real deploy
+        // config / real test results, not a reference document a dependent can build against pre-merge).
+        for (String roleTag : List.of("BARCAN-TAG-05", "BARCAN-TAG-06")) {
+            TaskEntity task = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), roleTag);
+            task.setStatus(TaskStatus.review);
+            assertFalse(service.isSpecDependencyPrOpenButUnmerged(task), roleTag + " must stay excluded");
+        }
     }
 
     private void stubPlan(UUID projectId, WishlistEntity root, FeatureEntity feature,

@@ -302,4 +302,67 @@ class EpicDecompositionIntegrationTest {
         assertThat(built).isTrue();
         assertThat(featureRepository.findByProjectId(project.getId())).hasSize(3);
     }
+
+    @Test
+    void twoEpicPlansInSameBatchWithSameSourceIndexCollapseIntoOneFeature() {
+        // Reproduces the live bug (2026-07-24): one LLM decomposition response listed the same эпик theme
+        // twice under one sourceIndex ("Campaign Configuration & Ingestion UI" appeared in two separate
+        // epicPlan entries) - both went through resolveEpicFeatureId independently, minting two
+        // FeatureEntity rows and spawning two full, independently-running Jules session chains for the
+        // same work. This is `client`-sourced (the matcher used to be self_falsification-only) and both
+        // epicPlans arrive in ONE buildTaskGraphFromSlices call (same batch), unlike
+        // clientSourcedWishlistNeverInvokesMatcherEvenWithDuplicateContent above, which uses two SEPARATE
+        // calls and must keep creating 2 features.
+        ProjectEntity project = createProject();
+        WishlistEntity wishlist = createClientWishlist(project.getId());
+        String title = "Campaign Configuration & Ingestion UI";
+        String jtbd = "When a marketer sets up a campaign, I want to configure and ingest its data, "
+                + "so the campaign runs correctly.";
+
+        MLPredictionServiceClient.EpicPlan epicA = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        MLPredictionServiceClient.EpicPlan epicB = new MLPredictionServiceClient.EpicPlan(
+                null, title, jtbd, "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(wishlist), List.of(epicA, epicB));
+
+        assertThat(built).isTrue();
+        List<FeatureEntity> epics = featureRepository.findByProjectId(project.getId());
+        assertThat(epics).hasSize(1);
+        assertThat(epics.get(0).getTitle()).isEqualTo(title);
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(t -> t.getRole() != null
+                        && ("BARCAN-TAG-08".equals(t.getRole().getTag()) || "BARCAN-TAG-11".equals(t.getRole().getTag())))
+                .toList();
+        assertThat(tasks).hasSize(2);
+        assertThat(tasks).allMatch(t -> epics.get(0).getId().equals(t.getFeatureId()));
+
+        assertThat(wishlistRepository.findById(wishlist.getId()).orElseThrow().getStatus())
+                .isEqualTo(WishlistStatus.converted_to_task);
+    }
+
+    @Test
+    void distinctEpicPlansInSameBatchWithSameSourceIndexStillGetSeparateFeatures() {
+        // Regression guard alongside the collapse test: two genuinely different epics under one
+        // sourceIndex must NOT be merged just because they arrived in the same batch.
+        ProjectEntity project = createProject();
+        WishlistEntity wishlist = createClientWishlist(project.getId());
+
+        MLPredictionServiceClient.EpicPlan notesEpic = new MLPredictionServiceClient.EpicPlan(
+                null, "Notes CRUD", "When a user manages notes, I want CRUD, so I can track information.",
+                "Must-Be", "complicated", "metric", "toc", 0, List.of(slice("BARCAN-TAG-08"))
+        );
+        MLPredictionServiceClient.EpicPlan billingEpic = new MLPredictionServiceClient.EpicPlan(
+                null, "Billing Export", "When an admin reconciles accounts, I want a CSV invoice export, so bookkeeping is faster.",
+                "Attractive", "complex", "metric", "toc", 0, List.of(slice("BARCAN-TAG-11"))
+        );
+
+        boolean built = projectFlowService.buildTaskGraphFromSlices(project, List.of(wishlist), List.of(notesEpic, billingEpic));
+
+        assertThat(built).isTrue();
+        assertThat(featureRepository.findByProjectId(project.getId())).hasSize(2);
+    }
 }
