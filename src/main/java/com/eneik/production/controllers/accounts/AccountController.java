@@ -95,6 +95,10 @@ public class AccountController {
                     if (updates.containsKey("status")) {
                         account.setStatus(AccountStatus.valueOf((String) updates.get("status")));
                     }
+                    if (updates.containsKey("maxConcurrentSessions")) {
+                        Object raw = updates.get("maxConcurrentSessions");
+                        account.setMaxConcurrentSessions(raw == null ? null : ((Number) raw).intValue());
+                    }
 
                     if (account.getGithubUsername() == null || account.getGithubUsername().trim().isEmpty()) {
                         account.setGithubUsername(account.getName());
@@ -165,7 +169,8 @@ public class AccountController {
                 account.getCurrentProjectId(),
                 masked,
                 account.getGithubUsername(),
-                account.isEnabled()
+                account.isEnabled(),
+                account.getMaxConcurrentSessions()
         );
     }
 

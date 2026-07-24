@@ -193,10 +193,23 @@ public class ProjectFlowService {
         // 1. Freeze current active project only if greenfield
         if ("greenfield".equalsIgnoreCase(mode)) {
             projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active)
-                    .ifPresent(p -> {
-                        p.setStatus(ProjectStatus.frozen);
-                        projectRepository.save(p);
-                    });
+                    .ifPresent(p -> freezeProjectAndCancelWork(p,
+                            "Project frozen: superseded by a new greenfield project"));
+            // This system works one project at a time - freezing the old active project above stops the
+            // orchestrator from touching it, but it does NOT release the claims its accounts were holding
+            // (ContinuousOrchestrationService only iterates ProjectStatus.active, so a frozen/accepted
+            // project's claims just sit there forever with releasedAt=null). That leaves accounts showing
+            // as busy/leased against work belonging to a project nobody is doing anymore. Confirmed live
+            // 2026-07-23: 5 unreleased claims from 4 different old projects (some frozen, some merely
+            // "accepted" and never explicitly frozen either) were still occupying accounts when a brand
+            // new greenfield project was created. Since a brand-new project can't have any claims of its
+            // own yet, releasing every currently-unreleased claim here is safe - it just requeues those old
+            // tasks (harmless, since their frozen/accepted projects are never processed again) and frees
+            // the accounts for the new project.
+            for (ClaimEntity staleClaim : claimRepository.findByReleasedAtIsNull()) {
+                claimService.releaseClaimToQueue(staleClaim.getTask().getId(),
+                        "Released: new greenfield project created, account freed from a stale prior-project claim");
+            }
         }
 
         // 2. Create new project
@@ -274,8 +287,7 @@ public class ProjectFlowService {
         projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)
                 .forEach(p -> {
                     if (!p.getId().equals(projectId)) {
-                        p.setStatus(ProjectStatus.frozen);
-                        projectRepository.save(p);
+                        freezeProjectAndCancelWork(p, "Project frozen: superseded by another project being activated");
                     }
                 });
 
@@ -283,19 +295,71 @@ public class ProjectFlowService {
         return toProjectDto(projectRepository.save(project));
     }
 
+    // Frozen means zero background activity in any form, not just "orchestrator stops picking new work"
+    // (operator directive 2026-07-24: "софт предполагает ничего ни в каком виде не делать с замороженными
+    // проектами - все задачи снимать"). Freezing alone only drops a project out of
+    // ContinuousOrchestrationService.continuousOrchestrate's active-projects loop - several other scheduled
+    // loops (pollActiveJulesSessions, JulesDispatchService.runSessionSafetyMaintenance,
+    // reconcileStrandedPrOpenedWorkflows, AutoMergeService's merge-execution half) are project-status-BLIND,
+    // keyed purely on Jules session/task/PR-review state, so a frozen project's in-flight sessions and open
+    // PRs kept being polled/merged forever regardless of status. cancelAllActiveWorkForProject cancels every
+    // non-terminal task's active session (which naturally drops it out of every session-status-filtered
+    // loop above) and closes any still-open GitHub PRs, so those status-blind loops have nothing left to
+    // find for this project.
+    private void freezeProjectAndCancelWork(ProjectEntity project, String reason) {
+        project.setStatus(ProjectStatus.frozen);
+        projectRepository.save(project);
+        cancelAllActiveWorkForProject(project, reason);
+    }
+
     // Frozen is the same status activateProject() already uses to sideline every other project when a new
     // one goes active - reusing it here means pausing gets the exact guarantee that matters: this project
     // drops out of ContinuousOrchestrationService.continuousOrchestrate's active-projects loop (wishlist
-    // compilation, blocked-work recovery, queued dispatch) on its very next tick. It does NOT stop
-    // already-dispatched Jules sessions or in-flight PR review/merge - those are cancelled separately.
+    // compilation, blocked-work recovery, queued dispatch) on its very next tick, AND every already-
+    // dispatched Jules session and in-flight PR is actively cancelled/closed (see freezeProjectAndCancelWork)
+    // rather than left to finish on their own.
     @Transactional
     public ProjectDto pauseProject(UUID projectId) {
         ProjectEntity project = requireProject(projectId);
         if (project.getStatus() == ProjectStatus.frozen) {
             return toProjectDto(project);
         }
-        project.setStatus(ProjectStatus.frozen);
-        return toProjectDto(projectRepository.save(project));
+        freezeProjectAndCancelWork(project, "Project paused by operator");
+        return toProjectDto(project);
+    }
+
+    private void cancelAllActiveWorkForProject(ProjectEntity project, String reason) {
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        for (TaskEntity task : tasks) {
+            TaskStatus status = task.getStatus();
+            if (status == TaskStatus.done || status == TaskStatus.failed || status == TaskStatus.spike_completed) {
+                continue;
+            }
+            JulesSessionEntity activeSession = julesSessionRepository.findByTaskId(task.getId()).stream()
+                    .filter(session -> {
+                        String sessionStatus = session.getStatus();
+                        return session.getExternalSessionId() != null
+                                && !"skipped".equals(session.getExternalSessionId())
+                                && ("queued".equals(sessionStatus)
+                                || "running".equals(sessionStatus)
+                                || "revising".equals(sessionStatus)
+                                || "pr_opened".equals(sessionStatus)
+                                || "stuck".equals(sessionStatus));
+                    })
+                    .findFirst()
+                    .orElse(null);
+            if (activeSession != null) {
+                julesDispatchService.cancelSession(activeSession.getId(), reason);
+            } else {
+                claimService.closeTaskAsFailed(task.getId(), reason);
+            }
+        }
+        try {
+            gitHubPullRequestService.closeOpenPullRequests(project, reason);
+        } catch (Exception e) {
+            log.warn("ProjectFlowService: failed to close open GitHub PRs while freezing project {}: {}",
+                    project.getId(), e.getMessage());
+        }
     }
 
     @Transactional
@@ -1120,7 +1184,7 @@ public class ProjectFlowService {
             String token = settingsService.effectiveValue("github_token");
             if (token != null && !token.isBlank() && settingsService.effectiveBoolean("github_enabled")) {
                 java.net.URI uri = java.net.URI.create("https://raw.githubusercontent.com/" + projectOwner(project) + "/" + project.getRepositoryName() + "/main/.eneik/task-plan.json");
-                java.net.http.HttpClient client = java.net.http.HttpClient.newHttpClient();
+                java.net.http.HttpClient client = java.net.http.HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
                 java.net.http.HttpRequest req = java.net.http.HttpRequest.newBuilder(uri)
                         .header("Authorization", "Bearer " + token)
                         .GET()
@@ -1269,16 +1333,31 @@ public class ProjectFlowService {
             return 0;
         }
 
+        // Atomic compare-and-swap (2026-07-24 fix - see WishlistRepository.compareAndSetStatus javadoc):
+        // only wishlists THIS call actually wins the pending->compiling transition for get dispatched. A
+        // concurrent overlapping call (e.g. another admission cycle firing before this one's own DB write
+        // committed) loses the race for any wishlist it also picked and correctly skips it here instead of
+        // both callers independently dispatching a duplicate compiler session against the same content.
+        java.util.List<WishlistEntity> won = new java.util.ArrayList<>();
         for (WishlistEntity w : admitted) {
-            w.setStatus(WishlistStatus.compiling);
-            wishlistRepository.save(w);
+            int updated = wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.pending, WishlistStatus.compiling);
+            if (updated == 1) {
+                w.setStatus(WishlistStatus.compiling);
+                won.add(w);
+            } else {
+                log.info("ProjectFlowService: wishlist {} was concurrently claimed by another compile-admission "
+                        + "call; skipping here to avoid dispatching a duplicate compiler session", w.getId());
+            }
+        }
+        if (won.isEmpty()) {
+            return 0;
         }
         if (persistentWorkerSessionService.isEnabled()) {
-            dispatchToCompilerPersistentWorker(project, admitted);
+            dispatchToCompilerPersistentWorker(project, won);
         } else {
-            dispatchWishlistCompiler(project, admitted);
+            dispatchWishlistCompiler(project, won);
         }
-        return admitted.size();
+        return won.size();
     }
 
     // Marks a carrier task (see PersistentWorkerSessionService) at creation time so completion routing
@@ -1312,7 +1391,13 @@ public class ProjectFlowService {
                 JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
                         ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
                         : null;
-                if (session != null && julesDispatchService.sendFollowUpMessage(session, wishlistCompilerFollowUpPrompt(admitted))) {
+                // Same planPath as this worker's original dispatch (or its very first cycle's) - a
+                // follow-up cycle OVERWRITES that same file/branch/PR, it must never generate a fresh path.
+                TaskEntity workerCarrierTask = worker.getCarrierTaskId() != null
+                        ? taskRepository.findById(worker.getCarrierTaskId()).orElse(null)
+                        : null;
+                String planPath = workerCarrierTask != null ? compilerPlanPath(workerCarrierTask) : WISHLIST_COMPILER_PLAN_PATH;
+                if (session != null && julesDispatchService.sendFollowUpMessage(session, wishlistCompilerFollowUpPrompt(admitted, planPath))) {
                     persistentWorkerSessionService.recordBatchSent(worker, batchIds);
                     log.info("Sent follow-up compiler batch ({} wishlist(s)) to persistent worker {} (cycle {})",
                             admitted.size(), worker.getId(), worker.getCycleCount());
@@ -1364,12 +1449,14 @@ public class ProjectFlowService {
         carrierTask.setProject(project);
         carrierTask.setRole(compilerRole);
         carrierTask.setTitle("Persistent wishlist compiler worker (" + shortId(project.getId()) + ")");
-        carrierTask.setDescription(wishlistCompilerPromptBatch(admitted));
+        String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
+        carrierTask.setDescription(wishlistCompilerPromptBatch(admitted, planPath));
         carrierTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
         payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        payload.put(WISHLIST_COMPILER_PLAN_PATH_KEY, planPath);
         ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
         for (WishlistEntity w : admitted) {
             idsArray.add(w.getId().toString());
@@ -1407,20 +1494,21 @@ public class ProjectFlowService {
      * Follow-up message for an existing persistent compiler worker's session (cycle 2+): reuses the same
      * per-brief formatting body as wishlistCompilerPromptBatch (including the design-concern correction and
      * follow-up-on-existing-functionality annotations), but tells Jules this is a new cycle and to
-     * OVERWRITE .eneik/task-plan.json with only this cycle's batch - keeps the file small and keeps
-     * JulesDispatchService.parseCompilerPlan completely unchanged (it just reads whatever is in the file).
+     * OVERWRITE the same per-worker planPath (see compilerPlanPath) with only this cycle's batch - keeps
+     * the file small and keeps JulesDispatchService.parseCompilerPlan completely unchanged (it just reads
+     * whatever is in the file at the path it's given).
      */
-    private String wishlistCompilerFollowUpPrompt(java.util.List<WishlistEntity> wishlists) {
-        String body = wishlistCompilerPromptBatch(wishlists);
+    private String wishlistCompilerFollowUpPrompt(java.util.List<WishlistEntity> wishlists, String planPath) {
+        String body = wishlistCompilerPromptBatch(wishlists, planPath);
         return """
                 NEW CYCLE for the same persistent compiler worker session. The brief(s) below are a FRESH
                 batch, unrelated to whatever you compiled in a previous cycle on this same branch.
-                OVERWRITE `.eneik/task-plan.json` so it contains ONLY the slices for THIS cycle's brief(s) -
+                OVERWRITE `%s` so it contains ONLY the slices for THIS cycle's brief(s) -
                 do not keep, merge, or reference any previous cycle's content. Commit the update to the
                 same branch/PR you already have open.
 
                 %s
-                """.formatted(body);
+                """.formatted(planPath, body);
     }
 
     /**
@@ -1454,19 +1542,39 @@ public class ProjectFlowService {
             }
             java.util.List<MLPredictionServiceClient.EpicPlan> myEpics = epicsBySource.getOrDefault(i, java.util.List.of());
             boolean wishlistBuiltAnything = false;
+            // Poka-yoke (live bug, 2026-07-24): one LLM decomposition response can list the same эпик
+            // theme twice under one sourceIndex (confirmed live - two epicPlans both titled "Campaign
+            // Configuration & Ingestion UI" spawned two independently-running Jules session chains for the
+            // same work). This list is scoped to THIS wishlist's own epic list only - reset every loop
+            // iteration, never persisted across buildTaskGraphFromSlices calls - so later epicPlans in
+            // myEpics can attach to a feature already created moments ago by an earlier epicPlan in the
+            // same list, without touching cross-cycle behavior (see
+            // EpicDecompositionIntegrationTest.clientSourcedWishlistNeverInvokesMatcherEvenWithDuplicateContent,
+            // which exercises two SEPARATE calls and must keep creating 2 features there).
+            List<FeatureEntity> epicsResolvedThisWishlist = new ArrayList<>();
+            // Live incident, 2026-07-24 (found by monitoring, not speculative): reserving a Flyway version
+            // number used to do its own read+write of ProjectEntity for every single Data-Schema task -
+            // confirmed live on test-thirty-seventh as a real contributing factor to a
+            // PessimisticLockingFailureException retry storm on the `projects` table (7 failed
+            // reconcileStrandedPrOpenedWorkflows attempts, ~7 minutes, before one finally succeeded). This
+            // holder lets every эпик in THIS wishlist's batch share one in-memory counter, persisted in
+            // exactly one write via flushFlywayVersionReservation below instead of once per Data-Schema task.
+            TechnicalLeadCompiler.FlywayVersionReservation flywayCache = new TechnicalLeadCompiler.FlywayVersionReservation();
             for (MLPredictionServiceClient.EpicPlan epicPlan : myEpics) {
-                if (buildTaskGraphForOneEpic(project, wishlist, epicPlan)) {
+                if (buildTaskGraphForOneEpic(project, wishlist, epicPlan, epicsResolvedThisWishlist, flywayCache)) {
                     wishlistBuiltAnything = true;
                 }
             }
+            technicalLeadCompiler.flushFlywayVersionReservation(project.getId(), flywayCache);
             if (wishlistBuiltAnything) {
                 anyBuilt = true;
             }
-            // A wishlist is "converted" once every epic derived from it has been processed, regardless of
-            // whether each individual epic produced tasks (an epic with an empty/invalid slice list after
-            // EMS filtering is still a processed outcome, not a reason to re-decompose the whole wishlist
-            // again next cycle).
-            wishlist.setStatus(WishlistStatus.converted_to_task);
+            // A wishlist is "converted" once every epic derived from it has been processed - but only if
+            // at least one epic actually produced new work. A wishlist whose every epic collapsed into
+            // pre-existing features/tasks (same-batch duplicates, or an empty/invalid slice list after EMS
+            // filtering) never converted into anything new; `dismissed` says that honestly instead of
+            // falsely claiming a real conversion happened (Ф-honesty fix, 2026-07-24).
+            wishlist.setStatus(wishlistBuiltAnything ? WishlistStatus.converted_to_task : WishlistStatus.dismissed);
             wishlistRepository.save(wishlist);
         }
         return anyBuilt;
@@ -1479,7 +1587,7 @@ public class ProjectFlowService {
      * throwing), otherwise mints a brand-new one with the epic's own content.
      */
     private UUID resolveEpicFeatureId(ProjectEntity project, WishlistEntity wishlist,
-            MLPredictionServiceClient.EpicPlan epicPlan) {
+            MLPredictionServiceClient.EpicPlan epicPlan, List<FeatureEntity> epicsResolvedThisWishlist) {
         if (epicPlan.existingEpicId() != null) {
             var existing = featureService.findExistingEpic(project.getId(), epicPlan.existingEpicId());
             if (existing.isPresent()) {
@@ -1507,7 +1615,22 @@ public class ProjectFlowService {
                         project.getId(), e.getMessage(), e);
             }
         }
-        return featureService.createFeature(
+        // Poka-yoke, universal to every WishlistSource (2026-07-24): same-batch dedup against эпики already
+        // minted moments ago for THIS wishlist's own epic list. In-memory only, never a DB read, so unlike
+        // the self_falsification block above it cannot see anything from a prior or later
+        // buildTaskGraphFromSlices call - strictly same-batch. Reuses the matcher's existing deterministic
+        // Jaccard scoring as-is (it's source-agnostic despite the class name).
+        if (!epicsResolvedThisWishlist.isEmpty()) {
+            Optional<UUID> sameBatchMatch =
+                    selfFalsificationEpicMatcher.findLikelyExistingEpic(epicsResolvedThisWishlist, epicPlan);
+            if (sameBatchMatch.isPresent()) {
+                log.info("Poka-yoke: эпик '{}' matched another эпик already created earlier in this same "
+                                + "decomposition batch ({}); attaching instead of creating a duplicate.",
+                        epicPlan.title(), sameBatchMatch.get());
+                return sameBatchMatch.get();
+            }
+        }
+        FeatureEntity created = featureService.createFeature(
                 project.getId(),
                 wishlist.getId(),
                 epicPlan.title(),
@@ -1516,11 +1639,14 @@ public class ProjectFlowService {
                 epicPlan.cynefinDomain(),
                 epicPlan.sixSigmaMetric(),
                 epicPlan.tocConstraintRef()
-        ).getId();
+        );
+        epicsResolvedThisWishlist.add(created);
+        return created.getId();
     }
 
     private boolean buildTaskGraphForOneEpic(ProjectEntity project, WishlistEntity wishlist,
-            MLPredictionServiceClient.EpicPlan epicPlan) {
+            MLPredictionServiceClient.EpicPlan epicPlan, List<FeatureEntity> epicsResolvedThisWishlist,
+            TechnicalLeadCompiler.FlywayVersionReservation flywayCache) {
         java.util.List<MLPredictionServiceClient.TaskSliceMetadata> slices = epicPlan.slices();
         java.util.List<MLPredictionServiceClient.TaskSliceMetadata> graphSlices = emsGraphSlices(wishlist, slices);
         if (graphSlices.isEmpty()) {
@@ -1532,7 +1658,7 @@ public class ProjectFlowService {
         // Every эпик is its own dependency graph - stage anchoring (below) is scoped to THIS эпик's own
         // slices only, never spanning across sibling epics from the same wishlist, since two epics may be
         // entirely unrelated pieces of work that just happened to originate from one client brief.
-        UUID featureId = resolveEpicFeatureId(project, wishlist, epicPlan);
+        UUID featureId = resolveEpicFeatureId(project, wishlist, epicPlan, epicsResolvedThisWishlist);
         String graphKey = emsGraphKey(featureId, "flow");
 
         // graphSlices is already sorted by EmsFlowStage.graphOrderForRoleTag (see emsGraphSlices), so
@@ -1572,7 +1698,8 @@ public class ProjectFlowService {
                         graphKey,
                         index,
                         graphSlices.size(),
-                        dependencyEdgeReason(stageAnchor, ownerRole)
+                        dependencyEdgeReason(stageAnchor, ownerRole),
+                        flywayCache
                 );
                 lastInStage = createdTask != null ? createdTask : lastInStage;
                 index++;
@@ -1935,6 +2062,17 @@ public class ProjectFlowService {
     // Plural: one compiler task now covers a whole admitted batch (see dispatchBatchedWishlistCompiler),
     // not a single wishlist. Kept as a JSON array of UUID strings rather than one string.
     public static final String WISHLIST_COMPILER_WISHLIST_IDS_KEY = "compilesWishlistIds";
+    // Fixed-path collision fix (2026-07-24, same root cause diagnosed for PR_REVIEW_FALLBACK_VERDICT_PATH/
+    // DESIGN_REVIEW_VERDICT_PATH/COVERAGE_AUDIT_REPORT_PATH): every compiler session used to write
+    // `.eneik/task-plan.json`, a single shared path - any two compiler sessions open at the same time
+    // (one-shot batch + persistent worker, or two persistent workers across projects sharing a branch
+    // namespace) guaranteed a merge conflict on this exact file. Kept only as the fallback for tasks
+    // dispatched before this fix (see compilerPlanPath); the real path is now generated fresh per one-shot
+    // dispatch or per persistent-worker carrier (reused across that one worker's own follow-up cycles,
+    // which is correct - the collision was always ACROSS different branches/workers, never within one) and
+    // stashed in the dispatching task's own payload, same idiom as PR_REVIEW_FALLBACK_VERDICT_PATH_KEY.
+    private static final String WISHLIST_COMPILER_PLAN_PATH = ".eneik/task-plan.json";
+    public static final String WISHLIST_COMPILER_PLAN_PATH_KEY = "taskPlanPath";
 
     private void dispatchWishlistCompiler(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
         // Caller (dispatchBatchedWishlistCompiler) already flipped every wishlist in this batch to
@@ -1953,11 +2091,13 @@ public class ProjectFlowService {
         // across multiple compiler dispatches in the same project (a normal, legitimate occurrence) was
         // tripping ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
         compilerTask.setTitle("Compile " + wishlists.size() + " wishlist(s) into task graph (" + shortId(wishlists.get(0).getId()) + ")");
-        compilerTask.setDescription(wishlistCompilerPromptBatch(wishlists));
+        String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
+        compilerTask.setDescription(wishlistCompilerPromptBatch(wishlists, planPath));
         compilerTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
+        payload.put(WISHLIST_COMPILER_PLAN_PATH_KEY, planPath);
         com.fasterxml.jackson.databind.node.ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
         for (WishlistEntity w : wishlists) {
             idsArray.add(w.getId().toString());
@@ -1966,6 +2106,15 @@ public class ProjectFlowService {
 
         compilerTask = taskRepository.save(compilerTask);
         dispatchCompilerTask(compilerTask);
+    }
+
+    /** Falls back to the old shared constant for tasks dispatched before this fix. */
+    public String compilerPlanPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return WISHLIST_COMPILER_PLAN_PATH;
+        }
+        String raw = task.getPayload().path(WISHLIST_COMPILER_PLAN_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? WISHLIST_COMPILER_PLAN_PATH : raw;
     }
 
     public boolean isWishlistCompilerTask(TaskEntity task) {
@@ -2100,7 +2249,7 @@ public class ProjectFlowService {
         return sb.toString();
     }
 
-    String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists) {
+    String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists, String planPath) {
         StringBuilder briefsSection = new StringBuilder();
         for (int i = 0; i < wishlists.size(); i++) {
             WishlistEntity w = wishlists.get(i);
@@ -2148,7 +2297,12 @@ public class ProjectFlowService {
                 STEP 1 - split into эпики (epics): identify how many DISTINCT epics this brief's narrative
                 actually contains (by theme, not by role - "notes CRUD" is one epic even though it needs
                 backend+frontend+data roles; "notes CRUD" + "user profile settings" in the same brief is
-                TWO epics). A brief may produce 1 epic or several - never assume exactly one.
+                TWO epics). A brief may produce 1 epic or several - never assume exactly one. Before
+                deciding epic count, actively enumerate the distinct, independently-describable
+                capabilities/sub-features the brief mentions within each theme (not just the theme's
+                headline) - a module that bundles several genuinely separate capabilities under one theme
+                name is a signal to look closer at STEP 3's sizing, not a reason to treat it as one small
+                unit of work.
                 STEP 2 - for EACH epic, decide semantically against the EXISTING epics list below: does
                 this epic's narrative genuinely match one already in the project, or is it new work? If it
                 matches, set "existingEpicId" to that epic's exact id and do NOT invent a new title/jtbd/
@@ -2185,6 +2339,11 @@ public class ProjectFlowService {
                   functionality to a frontend, mobile client, or external integration, you MUST include a
                   BARCAN-TAG-02 API slice describing that contract. Infer these from what the epic needs
                   to actually work end-to-end, not only from what the client's words explicitly mention.
+                  This rule is a FLOOR, not a CEILING: it guarantees each needed layer gets AT LEAST one
+                  slice, it does not cap a role at exactly one. If a role (e.g. BARCAN-TAG-02) is needed
+                  for several requirements that are not naturally one cohesive code change, give that role
+                  multiple slices - one per genuinely separate requirement/capability - instead of
+                  force-fitting everything the role touches into a single generic slice.
                 - If the epic needs BOTH a BARCAN-TAG-02 backend slice and a BARCAN-TAG-11 frontend slice
                   that will be built in parallel against each other, you MUST also include a
                   BARCAN-TAG-12 slice that defines the shared API contract (endpoints, request/response
@@ -2222,7 +2381,7 @@ public class ProjectFlowService {
                   discussed it" is not a deliverable.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file,
-                `.eneik/task-plan.json`, with EXACTLY this shape and no other files changed:
+                `%s`, with EXACTLY this shape and no other files changed:
                 {"epics": [{"existingEpicId": null, "title": "short English epic title",
                 "jtbd": "When [customer]..., I want..., so that...",
                 "kanoClass": "Must-Be|Performance|Attractive",
@@ -2245,7 +2404,7 @@ public class ProjectFlowService {
                 understand each yourself, do not rely on it already being in English). Decompose each one
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
-                """.formatted(existingEpicsPromptContext(projectId), wishlists.size(), briefsSection.toString());
+                """.formatted(existingEpicsPromptContext(projectId), planPath, wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and
@@ -2254,10 +2413,27 @@ public class ProjectFlowService {
     // (dispatchCompilerTask is generic) - the falsification cron only fires every few hours, so it shares
     // that account's capacity comfortably instead of contending with real product-implementation dispatch.
     public static final String FALSIFICATION_AUDIT_TASK_TYPE = "falsification_audit";
-    public static final String FALSIFICATION_AUDIT_REPORT_PATH = ".eneik/falsification-report.json";
+    // Fixed-path collision fix (2026-07-24): kept only as the fallback for tasks dispatched before this fix
+    // (see falsificationAuditReportPath) - the real path is now generated fresh per task and stashed in
+    // payload. Low real-world risk for this one specifically (dispatchFalsificationAudit already refuses to
+    // start a second audit while one is active per project), fixed anyway for consistency with every other
+    // record-file type that shares this exact pattern.
+    private static final String FALSIFICATION_AUDIT_REPORT_PATH = ".eneik/falsification-report.json";
     public static final String FALSIFICATION_AUDIT_HIGHEST_PR_KEY = "highestPrNumberAudited";
+    public static final String FALSIFICATION_AUDIT_REPORT_PATH_KEY = "auditsReportPath";
 
-    public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber) {
+    // @Transactional so the project-row lock below is held for the whole check-then-create span, not just
+    // for the single lockProjectForUpdate query - a check-then-INSERT race (this method's ID uniqueness
+    // depends on no OTHER concurrent call also passing the auditAlreadyActive check before either commits)
+    // cannot be closed by a per-row compare-and-swap the way a status UPDATE can, since the row being
+    // raced over doesn't exist yet at check time. A second concurrent caller now blocks on the lock and
+    // correctly observes "already active" once the first commits, instead of both creating a duplicate
+    // audit task. Falsification-audit dispatch is rare (at most a handful of times per project lifecycle),
+    // so holding the lock across the dispatchCompilerTask() network call below is an acceptable, honest
+    // trade for a hard duplication guarantee rather than a latency-sensitive one.
+    @Transactional
+    public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber, String reportPath) {
+        projectRepository.lockProjectForUpdate(project.getId());
         boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .filter(this::isFalsificationAuditTask)
                 .anyMatch(task -> task.getStatus() == TaskStatus.queued
@@ -2293,6 +2469,9 @@ public class ProjectFlowService {
         if (highestPrNumber != null) {
             payload.put(FALSIFICATION_AUDIT_HIGHEST_PR_KEY, highestPrNumber);
         }
+        if (reportPath != null && !reportPath.isBlank()) {
+            payload.put(FALSIFICATION_AUDIT_REPORT_PATH_KEY, reportPath);
+        }
         auditTask.setPayload(payload);
 
         auditTask = taskRepository.save(auditTask);
@@ -2303,6 +2482,15 @@ public class ProjectFlowService {
     public boolean isFalsificationAuditTask(TaskEntity task) {
         return task.getPayload() != null
                 && FALSIFICATION_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    /** Falls back to the old shared constant for tasks dispatched before this fix. */
+    public String falsificationAuditReportPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return FALSIFICATION_AUDIT_REPORT_PATH;
+        }
+        String raw = task.getPayload().path(FALSIFICATION_AUDIT_REPORT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? FALSIFICATION_AUDIT_REPORT_PATH : raw;
     }
 
     /**
@@ -2367,8 +2555,11 @@ public class ProjectFlowService {
     // checkAndDispatchCoverageAudits (called every orchestration tick, see ContinuousOrchestrationService)
     // never dispatches twice for the same wishlist - see isCoverageAuditTask/coverageAuditTargetWishlistId.
     public static final String COVERAGE_AUDIT_TASK_TYPE = "coverage_audit";
-    public static final String COVERAGE_AUDIT_REPORT_PATH = ".eneik/coverage-audit.json";
+    // Fixed-path collision fix (2026-07-24): kept only as the fallback for tasks dispatched before this fix
+    // (see coverageAuditReportPath) - the real path is now generated fresh per task and stashed in payload.
+    private static final String COVERAGE_AUDIT_REPORT_PATH = ".eneik/coverage-audit.json";
     public static final String COVERAGE_AUDIT_WISHLIST_ID_KEY = "auditsWishlistId";
+    public static final String COVERAGE_AUDIT_REPORT_PATH_KEY = "auditsReportPath";
 
     // Watermark, same idiom FalsificationCycleService already uses (FalsificationRunEntity.
     // highestPrNumberAudited): the highest merged PR number that existed on main at the moment THIS audit
@@ -2381,15 +2572,23 @@ public class ProjectFlowService {
     // main and its 6 gap findings were mostly stale by the time the real code landed).
     public static final String COVERAGE_AUDIT_HIGHEST_PR_KEY = "auditsHighestPrNumber";
 
-    // Lean-waste fix (2026-07-23): marks a task that started before its API-contract dependency actually
-    // merged (see the dependsOn gate in dispatchQueuedTasks and
-    // ClientDeliverableReadinessService.isApiContractPrOpenButUnmerged) - read by
-    // AutoMergeService.notifyEarlyUnblockedDependents once that contract task finally merges, so the
-    // dependent's still-active Jules session gets an FYI to reconcile against the finalized contract.
-    public static final String EARLY_UNBLOCK_CONTRACT_KEY = "earlyUnblockedContractTask";
+    // Lean-waste fix (2026-07-23, generalized 2026-07-24 from API-contract-only to every EmsFlowStage
+    // "spec" stage - see EmsFlowStage.isSpecStage): marks a task that started before its spec-stage
+    // dependency (decision/architecture/api-contract/compliance) actually merged (see the dependsOn gate
+    // in dispatchQueuedTasks and ClientDeliverableReadinessService.isSpecDependencyPrOpenButUnmerged) -
+    // read by AutoMergeService.notifyEarlyUnblockedDependents once that spec task finally merges, so the
+    // dependent's still-active Jules session gets an FYI to reconcile against the finalized artifact.
+    public static final String EARLY_UNBLOCK_SPEC_KEY = "earlyUnblockedSpecTask";
 
+    // Same admission-mutex reasoning as dispatchFalsificationAudit: hasActiveAudit (below, per wishlist) is
+    // a check-then-INSERT race across CONCURRENT invocations of this method for the same project (e.g. two
+    // overlapping orchestration ticks) - a per-row CAS cannot guard a row that doesn't exist yet at check
+    // time. Locking the project row for the whole method serializes concurrent calls so the second one
+    // correctly re-reads "already active" after the first commits, instead of both dispatching a duplicate
+    // audit for the same wishlist (the exact PR#56/#57 duplicate-implementation incident class, 2026-07-24).
     @Transactional
     public void checkAndDispatchCoverageAudits(UUID projectId) {
+        projectRepository.lockProjectForUpdate(projectId);
         List<WishlistEntity> clientWishlists = wishlistRepository.findByProjectId(projectId).stream()
                 .filter(w -> w.getSource() == WishlistSource.client)
                 .filter(w -> w.getCompiledByRole() == null)
@@ -2449,16 +2648,67 @@ public class ProjectFlowService {
         }
     }
 
+    /**
+     * Live incident, 2026-07-24 (operator: "ковер важнее сейчас. он сломан?" - confirmed yes): coverage
+     * audits were chasing their own tail. This watermark is "has anything new merged for this project since
+     * the last audit" - but it counted EVERY merged PR project-wide, including the audit's own record-only
+     * report PR (`.eneik/records/coverage-audit-*.json`, never product code). Each audit's own merge bumped
+     * the watermark, immediately qualifying as "stale" and re-dispatching another audit, forever - confirmed
+     * live: PR#52 (audit 1's report) triggered audit 2, whose own PR#53 triggered audit 3, with no end
+     * condition. Fixed by excluding PRs whose owning task carries the "taskType" system-task payload marker
+     * (coverage_audit, wishlist_compiler, pr_review_fallback, design_review, falsification_audit - same
+     * signal EmsMetricsService.isSystemMetaTask already uses elsewhere) - only a REAL product-code merge
+     * should ever re-trigger a fresh audit.
+     */
     private Integer highestMergedPrNumber(ProjectEntity project) {
         var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
         if (!snapshot.available()) {
             return null;
         }
+        List<JulesSessionEntity> projectSessions = julesSessionRepository.findAll().stream()
+                .filter(s -> s.getTaskId() != null)
+                .filter(s -> {
+                    TaskEntity t = taskRepository.findById(s.getTaskId()).orElse(null);
+                    return t != null && t.getProject() != null && project.getId().equals(t.getProject().getId());
+                })
+                .toList();
         return snapshot.closed().stream()
                 .filter(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::merged)
+                .filter(pr -> !isSystemRecordPr(pr, projectSessions))
                 .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::number)
                 .max(Integer::compareTo)
                 .orElse(null);
+    }
+
+    private boolean isSystemRecordPr(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest pr,
+            List<JulesSessionEntity> candidateSessions) {
+        JulesSessionEntity delimitedMatch = null;
+        JulesSessionEntity substringMatch = null;
+        for (JulesSessionEntity session : candidateSessions) {
+            if (!com.eneik.production.services.github.GitHubPullRequestService.matchesSessionToken(pr, session.getExternalSessionId())) {
+                continue;
+            }
+            String token = session.getExternalSessionId() == null ? "" : session.getExternalSessionId();
+            if (token.startsWith("sessions/")) {
+                token = token.substring("sessions/".length());
+            }
+            boolean delimited = !token.isBlank() && java.util.regex.Pattern
+                    .compile("(?<![A-Za-z0-9])" + java.util.regex.Pattern.quote(token) + "(?![A-Za-z0-9])")
+                    .matcher(pr.headRef() == null ? "" : pr.headRef()).find();
+            if (delimited) {
+                delimitedMatch = session;
+                break;
+            }
+            if (substringMatch == null) {
+                substringMatch = session;
+            }
+        }
+        JulesSessionEntity matched = delimitedMatch != null ? delimitedMatch : substringMatch;
+        if (matched == null) {
+            return false;
+        }
+        TaskEntity task = taskRepository.findById(matched.getTaskId()).orElse(null);
+        return task != null && task.getPayload() != null && task.getPayload().has(WISHLIST_COMPILER_PAYLOAD_KEY);
     }
 
     private void dispatchCoverageAuditForCompletedWishlist(ProjectEntity project, WishlistEntity originalWishlist, Integer highestMergedPrNumber) {
@@ -2467,6 +2717,7 @@ public class ProjectFlowService {
             log.error("Cannot dispatch coverage audit for wishlist {}: role {} not found", originalWishlist.getId(), ORCHESTRATOR_ROLE);
             return;
         }
+        String reportPath = ".eneik/records/coverage-audit-" + UUID.randomUUID() + ".json";
 
         String prompt = """
                 You are auditing SHIPPED product code for completeness against the original client brief.
@@ -2493,8 +2744,9 @@ public class ProjectFlowService {
                 missing tests, missing documentation, missing CI/CD, or generic "nice to have" polish -
                 those are not coverage gaps.
 
-                Deliverable: create a new branch and open a PR that contains ONLY one file,
-                `.eneik/coverage-audit.json`, with EXACTLY this shape and no other files changed:
+                Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
+                (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY
+                this shape and no other files changed:
                 {"gaps": [
                   {"title": "short English title", "roleTag": "BARCAN-TAG-02", "jtbd": "When..., I want..., so that...", "acceptanceCriteria": "Given..., When..., Then...", "reason": "short explanation: literal brief requirement OR domain-standard expectation"}
                 ]}
@@ -2503,7 +2755,7 @@ public class ProjectFlowService {
 
                 ORIGINAL CLIENT BRIEF (verbatim, may be in any language):
                 %s
-                """.formatted(originalWishlist.getContent());
+                """.formatted(reportPath, originalWishlist.getContent());
 
         TaskEntity auditTask = new TaskEntity();
         auditTask.setProject(project);
@@ -2515,6 +2767,7 @@ public class ProjectFlowService {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, COVERAGE_AUDIT_TASK_TYPE);
         payload.put(COVERAGE_AUDIT_WISHLIST_ID_KEY, originalWishlist.getId().toString());
+        payload.put(COVERAGE_AUDIT_REPORT_PATH_KEY, reportPath);
         if (highestMergedPrNumber != null) {
             payload.put(COVERAGE_AUDIT_HIGHEST_PR_KEY, highestMergedPrNumber);
         }
@@ -2553,6 +2806,15 @@ public class ProjectFlowService {
         }
     }
 
+    /** Falls back to the old shared constant for tasks dispatched before this fix. */
+    public String coverageAuditReportPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return COVERAGE_AUDIT_REPORT_PATH;
+        }
+        String raw = task.getPayload().path(COVERAGE_AUDIT_REPORT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? COVERAGE_AUDIT_REPORT_PATH : raw;
+    }
+
 
     // Fallback reviewer, used only when Gemini's PR review reports VERIFICATION_SERVICE_UNAVAILABLE - so
     // a real outage (or a permanently depleted quota) never leaves an implementer PR stuck unreviewed
@@ -2562,7 +2824,14 @@ public class ProjectFlowService {
     // recorded as follow-up wishlist items - so work never stalls waiting on a reviewer's opinion, it only
     // ever accumulates improvement backlog.
     public static final String PR_REVIEW_FALLBACK_TASK_TYPE = "pr_review_fallback";
-    public static final String PR_REVIEW_FALLBACK_VERDICT_PATH = ".eneik/review-verdict.json";
+    // Fixed-path collision fix (2026-07-24, the live incident that started this whole investigation - see
+    // OBSERVER_LOG.md): kept only as the fallback for tasks dispatched before this fix (see
+    // reviewFallbackVerdictPath). The real path is now generated fresh per dispatch (one-shot batch) or per
+    // persistent-worker carrier (reused across that one worker's follow-up cycles, which is correct - the
+    // collision was always ACROSS different branches/workers, never within one) and stashed in the
+    // dispatching task's own payload.
+    private static final String PR_REVIEW_FALLBACK_VERDICT_PATH = ".eneik/review-verdict.json";
+    public static final String PR_REVIEW_FALLBACK_VERDICT_PATH_KEY = "reviewsVerdictPath";
     // Plural array, not a singular id: dispatchReviewFallbackBatch covers every PR that needed a Jules
     // fallback reviewer in one orchestrate() tick, in one Jules session - firing one session per PR was
     // the actual cause of the session-count blowup once Gemini's outage became persistent rather than
@@ -2587,7 +2856,7 @@ public class ProjectFlowService {
     // "already covered" from "needs re-review" in that case, since the URL alone doesn't change.
     public static final String PR_REVIEW_FALLBACK_DIFF_HASH_KEY = "reviewsDiffHash";
 
-    public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt) {
+    public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
         if (originalTasks.isEmpty()) {
             return null;
         }
@@ -2611,6 +2880,9 @@ public class ProjectFlowService {
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
+        if (verdictPath != null && !verdictPath.isBlank()) {
+            payload.put(PR_REVIEW_FALLBACK_VERDICT_PATH_KEY, verdictPath);
+        }
         ArrayNode idsArray = payload.putArray(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
         for (TaskEntity t : originalTasks) {
             idsArray.add(t.getId().toString());
@@ -2636,7 +2908,7 @@ public class ProjectFlowService {
      * cycles instead of discarded after this one batch. Called only from
      * JulesDispatchService.createFreshReviewFallbackPersistentWorker.
      */
-    public UUID dispatchReviewFallbackBatchAsPersistentCarrier(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt) {
+    public UUID dispatchReviewFallbackBatchAsPersistentCarrier(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
         if (originalTasks.isEmpty()) {
             return null;
         }
@@ -2657,6 +2929,9 @@ public class ProjectFlowService {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
         payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        if (verdictPath != null && !verdictPath.isBlank()) {
+            payload.put(PR_REVIEW_FALLBACK_VERDICT_PATH_KEY, verdictPath);
+        }
         ArrayNode idsArray = payload.putArray(PR_REVIEW_FALLBACK_TASK_IDS_KEY);
         for (TaskEntity t : originalTasks) {
             idsArray.add(t.getId().toString());
@@ -2734,6 +3009,15 @@ public class ProjectFlowService {
         return hashes;
     }
 
+    /** Falls back to the old shared constant for tasks dispatched before this fix. */
+    public String reviewFallbackVerdictPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return PR_REVIEW_FALLBACK_VERDICT_PATH;
+        }
+        String raw = task.getPayload().path(PR_REVIEW_FALLBACK_VERDICT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? PR_REVIEW_FALLBACK_VERDICT_PATH : raw;
+    }
+
     // A generated design mockup used to be an orphaned artifact: DesignAssetService wrote it to the Eneik
     // backend's own local disk, and the only "reference" a task ever got was that local path pasted into
     // Acceptance Criteria text - unreachable by any Jules session, which only ever sees its own GitHub
@@ -2745,8 +3029,15 @@ public class ProjectFlowService {
     // promotion, everything else is approved with concerns recorded as follow-up wishlist work (same soft
     // philosophy as the PR review fallback above: work never stalls waiting on a reviewer's opinion).
     public static final String DESIGN_REVIEW_TASK_TYPE = "design_review";
-    public static final String DESIGN_REVIEW_VERDICT_PATH = ".eneik/design-review-verdict.json";
+    // Fixed-path collision fix (2026-07-24): this used to be a single shared constant every design-review
+    // session wrote to - two concurrently-open design-review PRs guaranteed a merge conflict on this one
+    // path, the same root cause diagnosed live for PR_REVIEW_FALLBACK_VERDICT_PATH. Kept only as the label
+    // prefix now; the real path is generated fresh per task (designReviewVerdictPath) and stashed in the
+    // task's own payload, same idiom as DESIGN_REVIEW_DRAFT_PATH_KEY.
+    private static final String DESIGN_REVIEW_VERDICT_LABEL = "design-review-verdict";
+    private static final String DESIGN_REVIEW_VERDICT_PATH = ".eneik/design-review-verdict.json";
     public static final String DESIGN_REVIEW_DRAFT_PATH_KEY = "designDraftPath";
+    public static final String DESIGN_REVIEW_VERDICT_PATH_KEY = "designVerdictPath";
     private static final String DESIGNER_ROLE = "BARCAN-TAG-03";
 
     public void dispatchDesignReview(ProjectEntity project, String draftPath, String brief) {
@@ -2756,17 +3047,19 @@ public class ProjectFlowService {
             return;
         }
         String charter = readRawRoleRules(DESIGNER_ROLE);
+        String verdictPath = ".eneik/records/" + DESIGN_REVIEW_VERDICT_LABEL + "-" + UUID.randomUUID() + ".json";
 
         TaskEntity reviewTask = new TaskEntity();
         reviewTask.setProject(project);
         reviewTask.setRole(compilerRole);
         reviewTask.setTitle("Design review (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
-        reviewTask.setDescription(designReviewPrompt(draftPath, brief, charter));
+        reviewTask.setDescription(designReviewPrompt(draftPath, brief, charter, verdictPath));
         reviewTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, DESIGN_REVIEW_TASK_TYPE);
         payload.put(DESIGN_REVIEW_DRAFT_PATH_KEY, draftPath);
+        payload.put(DESIGN_REVIEW_VERDICT_PATH_KEY, verdictPath);
         reviewTask.setPayload(payload);
 
         reviewTask = taskRepository.save(reviewTask);
@@ -2785,6 +3078,17 @@ public class ProjectFlowService {
         }
         String raw = task.getPayload().path(DESIGN_REVIEW_DRAFT_PATH_KEY).asText(null);
         return raw == null || raw.isBlank() ? null : raw;
+    }
+
+    /** Falls back to the old shared constant for tasks dispatched before this fix - never a collision risk
+     * for THOSE historical tasks specifically (there's at most one still in flight at upgrade time), only
+     * going forward would repeated collisions occur, and every new task gets its own unique path. */
+    public String designReviewVerdictPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return DESIGN_REVIEW_VERDICT_PATH;
+        }
+        String raw = task.getPayload().path(DESIGN_REVIEW_VERDICT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? DESIGN_REVIEW_VERDICT_PATH : raw;
     }
 
     private static final java.time.format.DateTimeFormatter FILE_TIME_SUFFIX =
@@ -2806,7 +3110,7 @@ public class ProjectFlowService {
         return "";
     }
 
-    private String designReviewPrompt(String draftPath, String brief, String charter) {
+    private String designReviewPrompt(String draftPath, String brief, String charter, String verdictPath) {
         return """
                 You are the design reviewer for this project (BARCAN-TAG-03 role - UI/UX Designer). A
                 draft mockup was just generated and committed to THIS repository at `%s/mockup.html`
@@ -2828,8 +3132,9 @@ public class ProjectFlowService {
                 it as a "concern" instead, so it becomes a follow-up improvement item rather than
                 stopped work.
 
-                Deliverable: create a new branch and open a PR that contains ONLY one file,
-                `.eneik/design-review-verdict.json`, with EXACTLY this shape and no other files changed:
+                Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
+                (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY
+                this shape and no other files changed:
                 {"verdict": "approve", "reason": "", "concerns": ["short concern 1"]}
                 or, only for a genuine severe blocker:
                 {"verdict": "reject", "reason": "concrete, specific reason tied to the file", "concerns": []}
@@ -2840,7 +3145,7 @@ public class ProjectFlowService {
 
                 Your role charter:
                 %s
-                """.formatted(draftPath, draftPath, brief, charter);
+                """.formatted(draftPath, draftPath, verdictPath, brief, charter);
     }
 
     @Transactional
@@ -2906,19 +3211,20 @@ public class ProjectFlowService {
             // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
             TaskEntity dependency = task.getDependsOn();
             if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
-                // Lean-waste fix (2026-07-23, operator directive): a dependency on an API-contract-stage
-                // task (BARCAN-TAG-12) is only ever a small spec, not "a huge chunk of code" - the dependent
-                // only needs the contract's content, which exists as soon as its PR is open. Every other
-                // dependency edge is completely unaffected - this early-unblock is provably scoped to
-                // ClientDeliverableReadinessService.isApiContractPrOpenButUnmerged, which itself is scoped
-                // to EmsFlowStage.API_CONTRACT alone.
-                if (readinessService.isApiContractPrOpenButUnmerged(dependency)) {
+                // Lean-waste fix (2026-07-23, generalized 2026-07-24): a dependency on a spec-stage task
+                // (decision/architecture/api-contract/compliance) is only ever a small reference document,
+                // not "a huge chunk of code" - the dependent only needs the artifact's content, which
+                // exists as soon as its PR is open. Every other dependency edge is completely unaffected -
+                // this early-unblock is provably scoped to
+                // ClientDeliverableReadinessService.isSpecDependencyPrOpenButUnmerged, which itself is
+                // scoped to EmsFlowStage.isSpecStage alone.
+                if (readinessService.isSpecDependencyPrOpenButUnmerged(dependency)) {
                     JsonNode payloadNode = task.getPayload();
                     if (payloadNode instanceof ObjectNode payload
-                            && !payload.path(EARLY_UNBLOCK_CONTRACT_KEY).asBoolean(false)) {
-                        payload.put(EARLY_UNBLOCK_CONTRACT_KEY, true);
+                            && !payload.path(EARLY_UNBLOCK_SPEC_KEY).asBoolean(false)) {
+                        payload.put(EARLY_UNBLOCK_SPEC_KEY, true);
                         taskRepository.save(task);
-                        log.info("Poka-yoke Lean fix: task {} early-unblocked on contract task {} (PR open, "
+                        log.info("Poka-yoke Lean fix: task {} early-unblocked on spec task {} (PR open, "
                                         + "not yet merged) - starting in parallel instead of waiting for merge.",
                                 task.getId(), dependency.getId());
                     }
@@ -3106,7 +3412,16 @@ public class ProjectFlowService {
 
         project.setStatus(ProjectStatus.accepted);
         project.setAcceptedAt(Instant.now());
-        return toProjectDto(projectRepository.save(project));
+        projectRepository.save(project);
+
+        // Operator directive 2026-07-24 (same immediate-stop treatment as freezeProjectAndCancelWork,
+        // confirmed to apply here too): accepted is a terminal "client took final delivery" status, same
+        // as frozen it must mean zero further background activity, not "let whatever's in flight finish
+        // on its own." Cancels every non-terminal task's active session and closes any open GitHub PRs -
+        // see cancelAllActiveWorkForProject's own comment for why this is necessary (several scheduled
+        // loops are project-status-blind and would otherwise keep polling/merging this project forever).
+        cancelAllActiveWorkForProject(project, "Project accepted: client took final delivery");
+        return toProjectDto(project);
     }
 
     private void saveFinalReport(UUID projectId, ClientDeliveryDto snapshot) {
@@ -3200,8 +3515,19 @@ public class ProjectFlowService {
                 .toList();
 
         ClientDeliverableReadinessService.Readiness productReadiness = readinessService.computeForProject(projectId);
+        // Operator directive 2026-07-24 ("надо считать по фичам!"), explicit choice via AskUserQuestion
+        // over 3 concrete alternatives (task ratio 66.7%, feature ratio 25%, thread-closeout ratio 75%):
+        // falsification readiness now gates on EPIC completion (completeFeatures/totalFeatures), not task
+        // merge ratio. Deliberately stricter than the old task-based gate for a project with many
+        // multi-task epics still in progress - a feature only counts once EVERY one of its code-producing
+        // items has reached main (see ClientDeliverableReadinessService.computeForSources), not just "some
+        // task somewhere merged". ratio()/mergedRatio in the DTO below is left as the task-level number -
+        // still useful as an informational progress indicator, just no longer what gates falsification.
+        double featureRatio = productReadiness.totalFeatures() > 0
+                ? (double) productReadiness.completeFeatures() / productReadiness.totalFeatures()
+                : 0.0;
         boolean falsificationEligible = productReadiness.decompositionComplete()
-                && productReadiness.ratio() >= falsificationReadinessThreshold;
+                && featureRatio >= falsificationReadinessThreshold;
         ProductReadinessDto productReadinessDto = new ProductReadinessDto(
                 productReadiness.totalFeatures(),
                 productReadiness.completeFeatures(),

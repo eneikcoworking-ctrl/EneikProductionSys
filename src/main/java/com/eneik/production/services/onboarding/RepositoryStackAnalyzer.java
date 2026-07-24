@@ -13,6 +13,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 
 @Service
@@ -23,7 +24,7 @@ public class RepositoryStackAnalyzer {
     private final String apiBaseUrl;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
 
     public record FileEntry(String path, long size, String sha) {}
     public record AnalysisResult(StackProfile profile, List<FileEntry> filesToScan) {}

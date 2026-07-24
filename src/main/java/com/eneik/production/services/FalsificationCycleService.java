@@ -9,11 +9,6 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
@@ -34,6 +29,7 @@ public class FalsificationCycleService {
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
     private final ClientDeliverableReadinessService readinessService;
+    private final WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
@@ -46,7 +42,8 @@ public class FalsificationCycleService {
                                      SystemSettingsService settingsService,
                                      com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                                      @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
-                                     ClientDeliverableReadinessService readinessService) {
+                                     ClientDeliverableReadinessService readinessService,
+                                     WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -56,6 +53,7 @@ public class FalsificationCycleService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.projectFlowService = projectFlowService;
         this.readinessService = readinessService;
+        this.wishlistContentSimilarityMatcher = wishlistContentSimilarityMatcher;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -135,9 +133,10 @@ public class FalsificationCycleService {
             return;
         }
 
-        String prompt = buildAuditPrompt(project, activeRoles, recentChanges.text());
+        String reportPath = ".eneik/records/falsification-report-" + java.util.UUID.randomUUID() + ".json";
+        String prompt = buildAuditPrompt(project, activeRoles, recentChanges.text(), reportPath);
 
-        UUID taskId = projectFlowService.dispatchFalsificationAudit(project, prompt, recentChanges.highestPrNumber());
+        UUID taskId = projectFlowService.dispatchFalsificationAudit(project, prompt, recentChanges.highestPrNumber(), reportPath);
         if (taskId == null) {
             log.warn("FalsificationCycleService: Could not dispatch falsification audit for project {}", project.getName());
             return;
@@ -146,7 +145,7 @@ public class FalsificationCycleService {
                 taskId, project.getName(), activeRoles.size());
     }
 
-    private String buildAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String latestDiff) {
+    private String buildAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String latestDiff, String reportPath) {
         StringBuilder briefSection = new StringBuilder();
         List<WishlistEntity> clientBriefs = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.client)
@@ -184,8 +183,9 @@ public class FalsificationCycleService {
                    confirmed systemic contradiction (not a stylistic nitpick)?
                 3. Specification & Coverage Audit: compare merged PRs and actual codebase against the client brief.
 
-                Deliverable: create a new branch and open a PR that contains ONLY one file,
-                `.eneik/falsification-report.json`, with EXACTLY this shape and no other files changed:
+                Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
+                (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY
+                this shape and no other files changed:
                 {"violations": [
                   {"roleTag": "BARCAN-TAG-02", "type": "refusal_criteria", "reason": "concrete reason tied to the diff"},
                   {"roleTag": "BARCAN-TAG-07", "type": "methodological", "philosopher": "name", "thesis": "...",
@@ -201,7 +201,7 @@ public class FalsificationCycleService {
 
                 Role charters to audit against:
                 %s
-                """.formatted(briefSection.toString(), latestDiff, charters);
+                """.formatted(reportPath, briefSection.toString(), latestDiff, charters);
     }
 
     public record AuditViolation(
@@ -226,6 +226,15 @@ public class FalsificationCycleService {
                 .filter(v -> v.roleTag() != null && !v.roleTag().isBlank())
                 .toList();
 
+        // Semantic-duplication guard (2026-07-24), same class as the coverage-audit fix and same reason:
+        // hasOpenFalsificationWishlist only ever blocks while a self_falsification wishlist is still OPEN;
+        // once it converts to a task (the successful case), a later audit re-confirming "the same"
+        // contradiction in different wording sails through unchecked. Lower urgency than coverage-audit
+        // here (already gated to at most one consolidated wishlist per call), added for symmetry/rigor.
+        List<WishlistEntity> liveFalsificationWishlists = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(), WishlistSource.self_falsification,
+                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.converted_to_task));
+
         for (AuditViolation violation : violations) {
             String roleTag = violation.roleTag();
             if (roleTag == null || roleTag.isBlank()) {
@@ -236,6 +245,14 @@ public class FalsificationCycleService {
             if (followUpsCreatedCount > 0 || hasOpenFalsificationWishlist(project.getId())) {
                 log.info("FalsificationCycleService: Skipping duplicate finding for role {}; "
                         + "this audit already created or found an open consolidated self_falsification wishlist", roleTag);
+                continue;
+            }
+            String consolidatedContent = consolidatedViolationContent(validViolations);
+            java.util.Optional<UUID> semanticDuplicate =
+                    wishlistContentSimilarityMatcher.findLikelyDuplicate(liveFalsificationWishlists, consolidatedContent);
+            if (semanticDuplicate.isPresent()) {
+                log.info("FalsificationCycleService: skipping consolidated finding for role {} - content matches existing wishlist {}",
+                        roleTag, semanticDuplicate.get());
                 continue;
             }
 
@@ -337,28 +354,6 @@ public class FalsificationCycleService {
             log.warn("FalsificationCycleService: Failed to read raw rules for role {}: {}", role.getTag(), e.getMessage());
         }
         return "";
-    }
-
-    private boolean checkActuatorHealth(ProjectEntity project) {
-        try {
-            String simulatedHealth = settingsService.effectiveValue("simulated_actuator_health");
-            if ("DOWN".equalsIgnoreCase(simulatedHealth) || "500".equals(simulatedHealth)) {
-                return false; // critical regression
-            }
-
-            String healthUrl = "http://localhost:8080/actuator/health";
-            HttpClient client = HttpClient.newBuilder()
-                    .connectTimeout(Duration.ofSeconds(2))
-                    .build();
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(healthUrl))
-                    .GET()
-                    .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
-            return response.statusCode() == 200 && response.body().contains("UP");
-        } catch (Exception e) {
-            return false; // connection failed -> critical regression
-        }
     }
 
     /**

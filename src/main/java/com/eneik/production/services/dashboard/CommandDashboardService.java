@@ -25,7 +25,7 @@ public class CommandDashboardService {
         }
 
         List<Map<String, Object>> tasks = fetchData(projectId, "tasks", dataSourcesStatus);
-        List<Map<String, Object>> julesSessions = fetchData(projectId, "jules_sessions", dataSourcesStatus);
+        List<Map<String, Object>> julesSessions = fetchJulesSessions(projectId, dataSourcesStatus);
         List<Map<String, Object>> prReviews = fetchData(projectId, "pr_reviews", dataSourcesStatus);
         List<Map<String, Object>> githubAccessStatus = fetchData(projectId, "github_access_status", dataSourcesStatus);
         List<Map<String, Object>> linearIssueMetadata = fetchData(projectId, "linear_issue_metadata", dataSourcesStatus);
@@ -53,6 +53,28 @@ public class CommandDashboardService {
             }
         } catch (Exception e) {
             statusMap.put(tableName, "error: " + e.getMessage());
+            return null;
+        }
+    }
+
+    // Ф-fix (2026-07-24): jules_sessions has no project_id column of its own - only task_id (confirmed via
+    // JulesSessionEntity, not via the debug SQL endpoint - that endpoint is deliberately disabled by
+    // default, see project_eneik_deferred_backlog memory). The generic fetchData() correctly refuses to
+    // leak all projects when a table has no project_id column, which meant this dashboard's julesSessions
+    // array was permanently empty for every project regardless of real session activity. jules_sessions
+    // only reaches a project through tasks.project_id, so join through it instead of routing this table
+    // through the generic helper.
+    private List<Map<String, Object>> fetchJulesSessions(UUID projectId, Map<String, String> statusMap) {
+        if (!tableExists("jules_sessions") || !tableExists("tasks")) {
+            statusMap.put("jules_sessions", "data source not yet available");
+            return null;
+        }
+        try {
+            return lowercaseKeys(jdbcTemplate.queryForList(
+                    "SELECT js.* FROM jules_sessions js JOIN tasks t ON js.task_id = t.id WHERE t.project_id = ?",
+                    projectId));
+        } catch (Exception e) {
+            statusMap.put("jules_sessions", "error: " + e.getMessage());
             return null;
         }
     }

@@ -27,8 +27,10 @@ public class TechnicalLeadCompiler {
     private final ObjectMapper objectMapper;
     private final ProjectHotspotFileRepository projectHotspotFileRepository;
     private final FeatureService featureService;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
+    private static final String FLYWAY_MIGRATION_DIR = "src/main/resources/db/migration";
 
     public TechnicalLeadCompiler(WishlistRepository wishlistRepository,
                                  TaskRepository taskRepository,
@@ -39,7 +41,8 @@ public class TechnicalLeadCompiler {
                                  BottleneckAwarePriorityService bottleneckAwarePriorityService,
                                  ObjectMapper objectMapper,
                                  ProjectHotspotFileRepository projectHotspotFileRepository,
-                                 FeatureService featureService) {
+                                 FeatureService featureService,
+                                 com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
@@ -50,6 +53,66 @@ public class TechnicalLeadCompiler {
         this.objectMapper = objectMapper;
         this.projectHotspotFileRepository = projectHotspotFileRepository;
         this.featureService = featureService;
+        this.gitHubPullRequestService = gitHubPullRequestService;
+    }
+
+    /**
+     * Operator directive 2026-07-24 (a real live incident found by monitoring, not speculative): the
+     * original per-call implementation below did its own findById+save on ProjectEntity every single time
+     * a Data-Schema task was created - 4 separate writes to the `projects` row in rapid succession for one
+     * decomposition batch. Confirmed live on test-thirty-seventh: this new write pressure (only ~8 total
+     * call sites write to `projects` in the whole codebase; this was a new one) coincided with a
+     * PessimisticLockingFailureException retry storm (7 failed attempts, ~7 minutes, H2 "Timeout trying to
+     * lock table PROJECTS") on `reconcileStrandedPrOpenedWorkflows`. This holder lets one whole compile
+     * batch (all эпики for one wishlist - see ProjectFlowService.buildTaskGraphFromSlices) share ONE
+     * in-memory counter, reserving numbers purely in memory and persisting to the DB exactly ONCE via
+     * {@link #flushFlywayVersionReservation}, instead of once per Data-Schema task.
+     */
+    /**
+     * Vestigial - {@link #reserveNextFlywayVersion} no longer needs a shared mutable counter (see its
+     * javadoc), so this holder carries no state anymore. Kept as an empty class only so every existing call
+     * site's signature (threaded through several batch-building methods in this class and
+     * ProjectFlowService) keeps compiling unchanged.
+     */
+    public static final class FlywayVersionReservation {
+    }
+
+    private static final java.time.format.DateTimeFormatter FLYWAY_VERSION_TIMESTAMP =
+            java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS").withZone(java.time.ZoneOffset.UTC);
+
+    // Guarantees strictly-increasing values even for two calls issued in the same millisecond (a
+    // synchronous per-эпик loop can easily do this) - never persisted, never seeded from any repo state,
+    // so a JVM restart just resumes from real wall-clock time with no continuity requirement.
+    private static final java.util.concurrent.atomic.AtomicLong LAST_FLYWAY_VERSION_MILLIS =
+            new java.util.concurrent.atomic.AtomicLong(0);
+
+    /**
+     * Operator directive 2026-07-24 ("я уверен это давно решено математически" - after two live incidents
+     * in one session: PR#32 got "found more than one migration with version 4" because two DIFFERENT
+     * feature-thread branches each independently reserved V4 via the old DB-counter mechanism below, and
+     * neither branch's compile batch could see what version the OTHER branch's still-open, not-yet-merged
+     * work had already claimed - the counter only ever knew "the highest version on main," which is
+     * necessarily blind to any open sibling thread). The old mechanism (a single mutable `nextFlywayVersion`
+     * counter row on ProjectEntity, read-incremented-written with no optimistic/pessimistic lock) also had
+     * a genuine unprotected race even for compile batches on the SAME branch, on top of the cross-branch
+     * blindness. Replaced with the standard, well-established fix for exactly this scenario (used widely
+     * outside this codebase for multi-branch Flyway/database-migration workflows): a version number derived
+     * from wall-clock time at millisecond resolution (`yyyyMMddHHmmssSSS`, e.g. `V20260724094512123`).
+     * Two independent processes computing the same value down to the millisecond is astronomically
+     * unlikely, and unlike the old counter, this needs zero shared state, zero DB row, and zero visibility
+     * into what any other branch is doing - it cannot race or go stale, by construction. Note: this fixes
+     * only the VERSION-NUMBER collision class. It does not by itself prevent two branches from independently
+     * writing semantically duplicate migrations (same table, different version numbers) - that is a
+     * separate, harder cross-branch schema-visibility problem, not a numbering problem.
+     */
+    private java.util.Optional<String> reserveNextFlywayVersion(UUID projectId, FlywayVersionReservation cache) {
+        long millis = LAST_FLYWAY_VERSION_MILLIS.updateAndGet(prev -> Math.max(prev + 1, System.currentTimeMillis()));
+        return java.util.Optional.of(FLYWAY_VERSION_TIMESTAMP.format(java.time.Instant.ofEpochMilli(millis)));
+    }
+
+    /** No-op - {@link #reserveNextFlywayVersion} no longer defers any write here. Kept for call-site compatibility. */
+    @Transactional
+    public void flushFlywayVersionReservation(UUID projectId, FlywayVersionReservation cache) {
     }
 
     @Transactional
@@ -81,6 +144,22 @@ public class TechnicalLeadCompiler {
                                              int graphOrder,
                                              int graphSize,
                                              String graphEdgeReason) {
+        return createTaskFromWishlist(wishlistId, dependsOn, emsGraphKey, graphOrder, graphSize, graphEdgeReason, null);
+    }
+
+    // Batch overload (2026-07-24): identical behavior, plus an optional shared FlywayVersionReservation so
+    // an entire compile pass (all эпики for one wishlist) can amortize its Data-Schema version reservation
+    // into a single DB write instead of one per task - see reserveNextFlywayVersion's javadoc for the live
+    // incident this fixes. Every other call site keeps using the 6-arg overload above (flywayCache=null),
+    // unaffected.
+    @Transactional
+    public TaskEntity createTaskFromWishlist(UUID wishlistId,
+                                             TaskEntity dependsOn,
+                                             String emsGraphKey,
+                                             int graphOrder,
+                                             int graphSize,
+                                             String graphEdgeReason,
+                                             FlywayVersionReservation flywayCache) {
         WishlistEntity wishlist = wishlistRepository.findById(wishlistId)
                 .orElseThrow(() -> new IllegalArgumentException("Wishlist not found: " + wishlistId));
 
@@ -117,7 +196,10 @@ public class TechnicalLeadCompiler {
 
         java.util.Optional<TaskEntity> duplicate = findExistingSemanticTask(project.getId(), semanticKey);
         if (duplicate.isPresent()) {
-            wishlist.setStatus(WishlistStatus.converted_to_task);
+            // Ф-honesty fix (2026-07-24): this specific wishlist row never got its own task - it collapsed
+            // into an already-existing semantic duplicate. `converted_to_task` previously claimed a real
+            // conversion happened; `dismissed` says honestly that no separate task was spawned for it.
+            wishlist.setStatus(WishlistStatus.dismissed);
             wishlistRepository.save(wishlist);
             return duplicate.get();
         }
@@ -131,7 +213,8 @@ public class TechnicalLeadCompiler {
                 isIntegrationTask,
                 false,
                 createdTasks,
-                new EmsTaskMetadata(semanticKey, emsGraphKey, graphOrder, graphSize, graphEdgeReason));
+                new EmsTaskMetadata(semanticKey, emsGraphKey, graphOrder, graphSize, graphEdgeReason),
+                flywayCache);
 
         // Atomic update of wishlist status after task creation
         wishlist.setStatus(WishlistStatus.converted_to_task);
@@ -161,7 +244,8 @@ public class TechnicalLeadCompiler {
                                          String atomicGoal, String dod, TaskEntity dependsOn,
                                          boolean isIntegrationTask, boolean hasIntegrationTask,
                                          java.util.List<TaskEntity> createdTasks,
-                                         EmsTaskMetadata emsMetadata) {
+                                         EmsTaskMetadata emsMetadata,
+                                         FlywayVersionReservation flywayCache) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
 
@@ -184,9 +268,17 @@ public class TechnicalLeadCompiler {
                         .filter(k -> k != null && !k.isBlank())
                         .orElseGet(() -> kanoClass(wishlist, extractedRoles))
                 : kanoClass(wishlist, extractedRoles);
-        String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal));
+        // Ф-fix (2026-07-24): TaskTitleBuilder's role-default titles ("API Slice", "UI Slice", etc.) are
+        // deliberately generic and repeat across every slice for a role - the 4 system/meta task types
+        // already got a unique shortId suffix for this exact reason (see ProjectFlowService's
+        // compiler/falsification/PR-review-fallback/design-review task titles); ordinary role slices never
+        // did, so the Jules session list and task titles across a project were full of indistinguishable
+        // "API Slice" entries. Each slice already has its own unique wishlist id (sliceWishlist, created
+        // per-slice in buildTaskGraphForOneEpic) - reuse it as the distinguishing suffix.
+        String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal))
+                + " (" + shortId(wishlist.getId()) + ")";
         task.setTitle(shortTitle);
-        task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin));
+        task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin, flywayCache));
 
         RoleEntity role = roleRepository.findById(roleTag)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleTag));
@@ -838,7 +930,8 @@ public class TechnicalLeadCompiler {
     }
 
     private String buildTaskDescription(WishlistEntity wishlist, String roleTag, String atomicGoal,
-                                        String dod, String kano, String cynefin) {
+                                        String dod, String kano, String cynefin,
+                                        FlywayVersionReservation flywayCache) {
         String jtbd = englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist));
         String acceptanceCriteria = englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist));
 
@@ -874,6 +967,31 @@ public class TechnicalLeadCompiler {
                     .append(compactLines(originalBrief, 4000))
                     .append("\n\n");
         }
+        // Operator directive 2026-07-24 (live incident, test-thirty-seventh PR#6 vs PR#8): this used to be
+        // gated to roleTag.equals("BARCAN-TAG-08") only, on the assumption that Data Schema is the sole
+        // owner of db/migration/. Confirmed live that assumption is false - a BARCAN-TAG-02 (API Slice) task
+        // decided on its own to add its own migration file for tables its slice needed, picked its own
+        // version number, and collided with a concurrently-reserved Data Schema version (both V4, different
+        // filenames, only visible by diffing the two PRs' file lists - the exact gap the V1 incident already
+        // taught us to check for). Any role can end up needing a migration file; reserving one version per
+        // task in the batch (in-memory cache, flushed once) is nearly free even for the many tasks that never
+        // use it - Flyway does not require contiguous version numbers, an unused reservation is simply never
+        // written as a file.
+        java.util.Optional<String> reservedVersion = reserveNextFlywayVersion(wishlist.getProjectId(), flywayCache);
+        if (reservedVersion.isPresent()) {
+            sb.append("MANDATORY Flyway version (a timestamp-derived version reserved by the orchestrator - "
+                            + "unique by construction, never collides with any other branch's work, even work "
+                            + "on a sibling feature-thread branch this task's branch cannot see): IF this task "
+                            + "ends up needing to add a new Flyway migration file for any reason, use exactly V")
+                    .append(reservedVersion.get())
+                    .append(". Do NOT scan the migration directory and pick your own number. Before writing any "
+                            + "CREATE TABLE, also check whether an existing migration already defines that exact "
+                            + "table (in this branch's own db/migration/ AND in what you know of already-shipped "
+                            + "work) - do not re-create a table that already exists elsewhere. Keep it to a "
+                            + "single migration file; if you genuinely need more than one, note that as a "
+                            + "follow-up instead of self-assigning additional version numbers. If this task does "
+                            + "not touch the database schema at all, ignore this instruction.\n\n");
+        }
         sb.append("Definition of Done:\n");
         sb.append("- ").append(dod).append("\n");
         sb.append("- One branch and one PR are opened for this role only.\n");
@@ -889,7 +1007,30 @@ public class TechnicalLeadCompiler {
                 + "files there, delete them or exclude them from your commit before opening the PR. Committing "
                 + "anything under `.eneik/` will cause your PR to be rejected by review even if the rest of "
                 + "your work is correct.\n");
-        sb.append("- If the session reaches 8 back-and-forth messages, stop with a concrete blocker instead of looping.\n\n");
+        sb.append("- Never edit the ROOT `.gitignore` (the top-level file, not `frontend/.gitignore` or any "
+                + "other nested one). Operator directive 2026-07-24 (live incident): every branch that added "
+                + "its own ignore rule to the root file independently caused a real merge conflict against "
+                + "every OTHER parallel branch doing the same thing, even though none of them touched any "
+                + "real product code - this was the single largest source of stuck PRs on a recent project. "
+                + "The root .gitignore already covers the orchestrator's own paths; if your slice genuinely "
+                + "needs to ignore build artifacts, add or extend a nested `.gitignore` scoped to your own "
+                + "package/directory (e.g. `frontend/.gitignore`) instead - never the shared root file.\n");
+        sb.append("- If the session reaches 8 back-and-forth messages, stop with a concrete blocker instead of looping.\n");
+        sb.append("- If you read a status/lifecycle field (an enum with a terminal value like done, failed, "
+                + "confirmed, or settled) to decide whether a transition is allowed, and later write a new value "
+                + "in a separate statement, that write must be an atomically-guarded database update "
+                + "(`UPDATE ... WHERE id = ? AND status = ?`, or your ORM's equivalent conditional/optimistic "
+                + "update), never a plain read-then-save. A plain read-then-save leaves a window where a "
+                + "concurrent request can change the same row in between, silently resurrecting or duplicating "
+                + "work that already finished - a real incident class, not a style preference.\n");
+        sb.append("- Any `Random`/`math.random`-style nondeterministic source, current-time value, or generated "
+                + "ID that feeds a code path a test asserts against must be injectable/seedable, and the test "
+                + "must supply a fixed seed so its outcome is reproducible. Any floating-point value that "
+                + "crosses a JSON serialization boundary and is compared in a test must use an explicit, "
+                + "type-safe comparison (parse to a known numeric type, or an approximate/tolerance comparison) "
+                + "- never a raw ordering assertion against a JSON-path-extracted value. JSON has no canonical "
+                + "numeric type in most languages' JSON libraries; comparing across two different inferred "
+                + "types for the same value is a real, reproducible test failure, not a flake to ignore.\n\n");
         sb.append("Execution Notes:\n").append(executionNotesForRole(roleTag));
         return sb.toString();
     }

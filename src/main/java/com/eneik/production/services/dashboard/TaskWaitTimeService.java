@@ -65,7 +65,7 @@ public class TaskWaitTimeService {
     private WaitReason classify(TaskEntity task, boolean buildPhase) {
         TaskEntity dependency = task.getDependsOn();
         if (dependency != null && !readinessService.isDependencySatisfied(dependency)
-                && !readinessService.isApiContractPrOpenButUnmerged(dependency)) {
+                && !readinessService.isSpecDependencyPrOpenButUnmerged(dependency)) {
             return WaitReason.BLOCKED_BY_DEPENDENCY;
         }
         if (buildPhase && projectFlowService.isSelfGeneratedWork(task)) {

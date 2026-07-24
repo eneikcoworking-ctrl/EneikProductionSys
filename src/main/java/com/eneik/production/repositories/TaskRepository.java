@@ -4,6 +4,7 @@ import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,6 +27,41 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // at a task that will never reach TaskStatus.done (or ever merge) leaves the downstream task silently
     // stuck in `queued` forever, with no error, no alarm, nothing to search for.
     List<TaskEntity> findByDependsOnId(UUID dependsOnId);
+
+    // Feature-thread closeout (2026-07-24): is every task for this feature in a terminal status? See
+    // ClientDeliverableReadinessService.isFeatureReadyForCloseout.
+    List<TaskEntity> findByFeatureId(UUID featureId);
+
+    // Live incident, 2026-07-24: a terminal (failed) task got silently resurrected back to queued/claimed
+    // by a read-then-write race (self-healing, lease-expiry, and PlannedWorkRecoveryService each read
+    // task.getStatus() in Java, then wrote a new status in a later statement with no re-check in between -
+    // a concurrent transaction could terminal-ize the same row in the gap). Same atomic compare-and-swap
+    // primitive as WishlistRepository.compareAndSetStatus: the write only lands if the row is still in the
+    // exact expected status at the instant of the UPDATE, closing the race at the database engine level
+    // instead of trusting an in-memory check that can go stale. Every "revive a task" write site must use
+    // this instead of task.setStatus(...)+save() - a plain save() can never be race-safe here.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE TaskEntity t SET t.status = :newStatus WHERE t.id = :id AND t.status = :expectedStatus")
+    int compareAndSetStatus(@Param("id") UUID id, @Param("expectedStatus") TaskStatus expectedStatus, @Param("newStatus") TaskStatus newStatus);
+
+    // Generalizes compareAndSetStatus for callers that only know "not terminal" at call time, not the exact
+    // prior status. Guards BOTH directions with the same single invariant - "once a row enters {done,
+    // failed, spike_completed}, no further write may change it" - so the identical guard serves two call
+    // shapes: (a) reviving a task back into the dispatch queue (ClaimService.fail/releaseClaimToQueue/
+    // reopenWithAmendedBrief - each reads the task once to decide "is this terminal?" and only later writes
+    // queued, so the exact non-terminal status at write time may differ from what was read), and (b) writing
+    // TO a terminal/blocked value without downgrading a row that already reached a DIFFERENT terminal status
+    // in a race (ClaimService.closeTaskAsFailed/closeTaskAsBlocked - a task that legitimately finished as
+    // `done` in one transaction must never be overwritten to `failed` by a second, stale-read transaction).
+    // The write is a no-op (0 rows) the instant a concurrent transaction has already moved the row into the
+    // terminal set, so a terminal task can never be resurrected or overwritten no matter which caller races
+    // to get here first.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE TaskEntity t SET t.status = :newStatus WHERE t.id = :id AND t.status NOT IN (" +
+            "com.eneik.production.models.persistence.TaskStatus.done, " +
+            "com.eneik.production.models.persistence.TaskStatus.failed, " +
+            "com.eneik.production.models.persistence.TaskStatus.spike_completed)")
+    int writeStatusUnlessTerminal(@Param("id") UUID id, @Param("newStatus") TaskStatus newStatus);
 
     @Query("SELECT new com.eneik.production.dto.dashboard.QueueDashboardDto$TagCountDto(" +
             "t.role.tag, COUNT(t), " +

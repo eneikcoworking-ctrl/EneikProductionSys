@@ -17,6 +17,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 @Component
 public class JulesApiClient {
@@ -40,7 +41,13 @@ public class JulesApiClient {
     public JulesApiClient(ObjectMapper objectMapper,
                           @Value("${jules.api-base-url:https://jules.googleapis.com/v1alpha}") String apiBaseUrl,
                           SystemSettingsService settingsService) {
-        this.httpClient = HttpClient.newBuilder().build();
+        // Live incident, 2026-07-24/25: a transient network blip left several scheduling threads hung
+        // indefinitely inside this client's HTTP calls (no timeout at all, connect or otherwise), starving
+        // the shared 10-thread scheduling pool down to effectively one live thread and cascading into a
+        // "SYSTEM STALLED" alarm project-wide. Same connectTimeout convention already proven safe elsewhere
+        // in this codebase (StitchClient, GoogleAiResourceService) - a bounded external call on a shared,
+        // finite thread pool, never unbounded.
+        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
         this.objectMapper = objectMapper;
         this.apiBaseUrl = apiBaseUrl;
         this.settingsService = settingsService;

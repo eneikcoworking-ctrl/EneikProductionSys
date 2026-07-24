@@ -1,7 +1,9 @@
 package com.eneik.production.controllers.jules;
 
 import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.jules.JulesDispatchService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -15,11 +17,14 @@ public class JulesSessionController {
 
     private final JulesDispatchService julesDispatchService;
     private final JulesSessionRepository julesSessionRepository;
+    private final ProjectRepository projectRepository;
 
     public JulesSessionController(JulesDispatchService julesDispatchService,
-                                  JulesSessionRepository julesSessionRepository) {
+                                  JulesSessionRepository julesSessionRepository,
+                                  ProjectRepository projectRepository) {
         this.julesDispatchService = julesDispatchService;
         this.julesSessionRepository = julesSessionRepository;
+        this.projectRepository = projectRepository;
     }
 
     @PostMapping("/dispatch")
@@ -69,10 +74,35 @@ public class JulesSessionController {
         if (updates.containsKey("prUrl")) {
             session.setPrUrl((String) updates.get("prUrl"));
         }
+        // Live incident, 2026-07-24: a conflict-resolution session got created with taskId pointing at an
+        // already-terminal (failed/duplicate) task instead of the real task whose branch it was actually
+        // continuing - same "manual correction for drifted tracking" precedent as status/prUrl above.
+        if (updates.containsKey("taskId")) {
+            Object rawTaskId = updates.get("taskId");
+            session.setTaskId(rawTaskId == null ? null : UUID.fromString((String) rawTaskId));
+        }
         julesSessionRepository.save(session);
+        return ResponseEntity.ok().build();
+    }
+
+    /**
+     * One-off ad-hoc dispatch onto an EXISTING branch, no TaskEntity/PrReviewEntity created - for an
+     * already-open PR from that branch that just needs one more push (a failing CI check, a merge conflict
+     * the automated closeout path hasn't triggered for). Mirrors dispatchCloseoutConflictResolution's
+     * mechanics via the shared dispatchAdHocSessionToBranch primitive; same "manual correction" precedent
+     * as the PATCH endpoint above.
+     */
+    @PostMapping("/dispatch-to-branch")
+    public ResponseEntity<Void> dispatchToBranch(@RequestBody AdHocBranchDispatchRequest request) {
+        ProjectEntity project = projectRepository.findById(request.projectId()).orElse(null);
+        if (project == null) {
+            return ResponseEntity.notFound().build();
+        }
+        julesDispatchService.dispatchAdHocSessionToBranch(project, request.branchName(), request.description(), request.title());
         return ResponseEntity.ok().build();
     }
 
     public record DispatchRequest(UUID taskId, UUID accountId) {}
     public record CancelRequest(String reason) {}
+    public record AdHocBranchDispatchRequest(UUID projectId, String branchName, String description, String title) {}
 }

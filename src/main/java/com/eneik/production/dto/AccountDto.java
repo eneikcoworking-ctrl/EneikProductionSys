@@ -13,5 +13,6 @@ public record AccountDto(
     UUID currentProjectId,
     String apiKeyMasked,
     String githubUsername,
-    boolean enabled
+    boolean enabled,
+    Integer maxConcurrentSessions
 ) {}

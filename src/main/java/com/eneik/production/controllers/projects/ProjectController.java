@@ -19,15 +19,18 @@ public class ProjectController {
     private final ClaimService claimService;
     private final com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
+    private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
                              com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
-                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService) {
+                             com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
+                             com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
         this.onboardingAuditService = onboardingAuditService;
+        this.readinessService = readinessService;
     }
 
     @GetMapping
@@ -109,6 +112,16 @@ public class ProjectController {
     @GetMapping("/{projectId}/dashboard")
     public ProjectDashboardDto dashboard(@PathVariable UUID projectId) {
         return projectFlowService.dashboard(projectId);
+    }
+
+    // Read-only verification endpoint (2026-07-24, operator directive: "перечислить все 12 эпиков и докажи
+    // что ты не лжёшь") - lists the real FeatureEntity rows behind productReadiness.totalFeatures/
+    // completeFeatures, so those aggregate numbers can be checked against ground truth. No writes, no SQL
+    // execution surface (unlike the deliberately-disabled debug SQL endpoint) - just a typed projection of
+    // one existing table, filtered exactly the same way the dashboard number itself is computed.
+    @GetMapping("/{projectId}/epics")
+    public List<com.eneik.production.services.ClientDeliverableReadinessService.EpicDiagnostic> epics(@PathVariable UUID projectId) {
+        return readinessService.listEpicDiagnostics(projectId);
     }
 
 

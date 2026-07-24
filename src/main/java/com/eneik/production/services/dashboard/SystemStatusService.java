@@ -438,7 +438,7 @@ public class SystemStatusService {
         long conflictsAllTime = allConflicts.size();
         long totalAttemptsAllTime = mergedAllTime + conflictsAllTime;
         double dpmoAllTime = totalAttemptsAllTime > 0 ? (double) conflictsAllTime / totalAttemptsAllTime * 1_000_000 : 0;
-        double yieldAllTime = yieldRate(conflictsAllTime, totalAttemptsAllTime);
+        Double yieldAllTime = yieldRate(conflictsAllTime, totalAttemptsAllTime);
 
         long mergedLast7Days = allReviews.stream()
                 .filter(r -> Boolean.TRUE.equals(r.getMerged()))
@@ -449,7 +449,7 @@ public class SystemStatusService {
                 .count();
         long totalAttemptsLast7Days = mergedLast7Days + conflictsLast7Days;
         double dpmoLast7Days = totalAttemptsLast7Days > 0 ? (double) conflictsLast7Days / totalAttemptsLast7Days * 1_000_000 : 0;
-        double yieldLast7Days = yieldRate(conflictsLast7Days, totalAttemptsLast7Days);
+        Double yieldLast7Days = yieldRate(conflictsLast7Days, totalAttemptsLast7Days);
 
         List<TaskConflictEntity> activeConflicts = allConflicts.stream()
                 .filter(c -> !"auto_resolved".equals(c.getResolutionStatus()))
@@ -482,15 +482,15 @@ public class SystemStatusService {
         data.put("dpmoLast7Days", round(dpmoLast7Days));
         data.put("totalMergeAttempts", totalAttemptsAllTime);
         data.put("conflicts", conflictsAllTime);
-        data.put("yieldRate", round(yieldAllTime));
+        data.put("yieldRate", yieldAllTime == null ? null : round(yieldAllTime));
         data.put("sigmaLevel", round(sigmaLevel(dpmoAllTime)));
-        data.put("last7Days", Map.of(
-                "totalMergeAttempts", totalAttemptsLast7Days,
-                "conflicts", conflictsLast7Days,
-                "dpmo", round(dpmoLast7Days),
-                "yieldRate", round(yieldLast7Days),
-                "sigmaLevel", round(sigmaLevel(dpmoLast7Days))
-        ));
+        Map<String, Object> last7DaysMap = new java.util.LinkedHashMap<>();
+        last7DaysMap.put("totalMergeAttempts", totalAttemptsLast7Days);
+        last7DaysMap.put("conflicts", conflictsLast7Days);
+        last7DaysMap.put("dpmo", round(dpmoLast7Days));
+        last7DaysMap.put("yieldRate", yieldLast7Days == null ? null : round(yieldLast7Days));
+        last7DaysMap.put("sigmaLevel", round(sigmaLevel(dpmoLast7Days)));
+        data.put("last7Days", last7DaysMap);
         data.put("conflictTypePareto", conflictTypePareto);
         data.put("resolutionStatusPareto", resolutionStatusPareto);
         data.put("activeConflicts", activeList);
@@ -582,9 +582,13 @@ public class SystemStatusService {
         return "Run DMAIC on top CTQ: " + top.getOrDefault("ctq", top.getOrDefault("name", "unknown")) + ".";
     }
 
-    private double yieldRate(long defects, long opportunities) {
+    // Nullable (not a primitive double) on purpose: 0 opportunities means "no data to measure yet," not
+    // "0% yield" - conflating the two previously made this tile show the worst possible score for the
+    // exact same condition sigmaLevel() already treats as the BEST possible score (6.0), a direct
+    // contradiction on the same dashboard. Fixed 2026-07-24; callers must render null as "N/A", not "0%".
+    private Double yieldRate(long defects, long opportunities) {
         if (opportunities <= 0) {
-            return 0.0;
+            return null;
         }
         return Math.max(0.0, Math.min(1.0, 1.0 - defects / (double) opportunities));
     }

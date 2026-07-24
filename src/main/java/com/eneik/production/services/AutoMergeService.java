@@ -39,7 +39,7 @@ import java.util.HashMap;
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
     private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
-    private static final String EARLY_UNBLOCK_CONTRACT_NOTIFIED_KEY = "earlyUnblockContractNotified";
+    private static final String EARLY_UNBLOCK_SPEC_NOTIFIED_KEY = "earlyUnblockedSpecNotified";
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
@@ -59,6 +59,7 @@ public class AutoMergeService {
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private final ClaimService claimService;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
+    private final ClientDeliverableReadinessService readinessService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -78,7 +79,8 @@ public class AutoMergeService {
                             CodeChangeClassifier codeChangeClassifier,
                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
                             ClaimService claimService,
-                            com.eneik.production.repositories.ProjectRepository projectRepository) {
+                            com.eneik.production.repositories.ProjectRepository projectRepository,
+                            ClientDeliverableReadinessService readinessService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -98,6 +100,7 @@ public class AutoMergeService {
         this.featureThreadRepository = featureThreadRepository;
         this.claimService = claimService;
         this.projectRepository = projectRepository;
+        this.readinessService = readinessService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -105,6 +108,9 @@ public class AutoMergeService {
         syncOpenPullRequestsFromGitHub();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
+        resurrectTriviallyEscalatedConflicts();
+        resurrectAlreadyMergedReviews();
+        closeOutReadyFeatureThreads();
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
                 .filter(AutoMergeService::isReviewPollCandidate)
@@ -170,6 +176,337 @@ public class AutoMergeService {
         }
         return java.util.Set.of("success", "pending", "unavailable", "conflict")
                 .contains(ciStatus.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    // Operator directive 2026-07-24 (live incident, 6 simultaneous escalations on test-thirty-seventh, all
+    // traced to orchestrator-owned files not real code - "чинить это сейчас и навсегда"): the 3-attempt
+    // escalation path above is correct to stop burning Jules retries on a conflict that keeps failing, but
+    // once ciStatus="escalated" the review is permanently excluded from isReviewPollCandidate - a genuine
+    // dead end even for the class of conflict the widened fast path (see handleMergeConflict) can now
+    // resolve for free. This runs every processAutoMerge tick (cheap - escalated rows are rare by
+    // definition) and gives exactly that class one more chance: re-fetches the PR's CURRENT file list from
+    // GitHub and syncs whichever files fall in the auto-resolvable set (`.eneik/*`, root `.gitignore`) to
+    // main, then re-queues the review for a normal merge attempt next cycle.
+    //
+    // Same correction as Ф1 in handleMergeConflict's fast path (2026-07-21) applies here, and was missed in
+    // the first version of this method: `fetchPrFiles` returns the PR's FULL changed-file list, not just
+    // the files actually in conflict - a real feature PR always has dozens of legitimate Java/SQL files
+    // alongside the one or two stray orchestrator files, so requiring `allMatch` on the WHOLE list meant
+    // this never fired for any real PR (confirmed live: zero resurrections in the first ~5 minutes after
+    // deploy, all 6 escalated PRs have 20-35 real files each). Fixed to act on the auto-resolvable SUBSET
+    // regardless of what else changed - real code is never touched by this path, and if the actual conflict
+    // turns out to be in one of those other files too, the next merge attempt simply fails 405 again and
+    // falls straight back through the normal rebase/escalation path, so widening this is safe.
+    private void resurrectTriviallyEscalatedConflicts() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return;
+        }
+        List<PrReviewEntity> escalated = prReviewRepository.findAll().stream()
+                .filter(r -> "escalated".equalsIgnoreCase(r.getCiStatus()))
+                .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+                .toList();
+        for (PrReviewEntity review : escalated) {
+            try {
+                PullRequestTarget target = resolvePullRequestTarget(review);
+                if (target == null || review.getJulesSessionId() == null) {
+                    continue;
+                }
+                List<String> allFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
+                List<String> files = allFiles.stream()
+                        .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
+                        .toList();
+                if (files.isEmpty()) {
+                    continue;
+                }
+                var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
+                if (sessionOpt.isEmpty()) {
+                    continue;
+                }
+                UUID taskId = sessionOpt.get().getTaskId();
+                var taskOpt = taskRepository.findById(taskId);
+                if (taskOpt.isEmpty()) {
+                    continue;
+                }
+                var task = taskOpt.get();
+                String branch = gitHubPullRequestService.fetchPullRequestByNumber(
+                                task.getProject(), Integer.parseInt(target.pullNumber()))
+                        .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                        .orElse(null);
+                if (branch == null) {
+                    continue;
+                }
+                boolean allResolved = files.stream()
+                        .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
+                if (!allResolved) {
+                    log.warn("AutoMergeService: resurrection attempt for escalated PR {} failed to sync all "
+                            + "orchestrator-owned files; leaving escalated", review.getPrUrl());
+                    continue;
+                }
+                taskConflictRepository.findFirstByTaskIdAndResolutionStatus(taskId, "escalated").ifPresent(c -> {
+                    c.setResolutionStatus("pending");
+                    c.setResolutionAttempts(0);
+                    taskConflictRepository.save(c);
+                });
+                review.setCiStatus("conflict");
+                prReviewRepository.save(review);
+                log.info("Poka-yoke: resurrected escalated review for task {} (PR {}) - its conflict was entirely "
+                                + "in orchestrator-owned files ({}), now synced to main and re-queued for a normal "
+                                + "merge attempt next cycle; no Jules session spent.",
+                        taskId, review.getPrUrl(), files);
+            } catch (Exception e) {
+                log.warn("AutoMergeService: error while attempting to resurrect escalated review {}: {}",
+                        review.getPrUrl(), e.getMessage());
+            }
+        }
+    }
+
+    // Operator directive 2026-07-24 (live incident: a feature-thread branch accumulates every subsequent
+    // task's merges but NOTHING ever opened a PR from it back to main - confirmed live, 11 of 25 merged
+    // PRs on a real project sat in 4 different thread branches, diverged from main by dozens of commits
+    // each, indefinitely). Self-contained by design: does NOT touch PrReviewEntity/JulesSessionEntity at
+    // all, tracked only via FeatureThreadEntity.closeoutPrUrl - reusing the normal processAutoMerge
+    // review/session pipeline for a closeout PR was verified unsafe (its head branch is the last task's own
+    // Jules branch name, so syncOpenPullRequestsFromGitHub's session matcher would silently overwrite that
+    // already-terminal session's prUrl to point at the closeout PR instead, while the closeout PR itself
+    // never gets a PrReviewEntity and so never enters the merge loop - it would sit open forever while
+    // corrupting unrelated session data as a side effect).
+    private void closeOutReadyFeatureThreads() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = projectRepository
+                .findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+        for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+            for (FeatureThreadEntity thread : featureThreadRepository.findByProjectIdAndMergedToMainAtIsNullAndAbandonedAtIsNull(project.getId())) {
+                try {
+                    // Continuous drift prevention (Part 3): keep every still-open thread from wandering far
+                    // from main before its eventual closeout - a real merge commit via GitHub's own "merge a
+                    // branch" endpoint, not the Contents-API single-file patch already proven unreliable for
+                    // making a PR's own cached mergeable field trust a branch (that lesson was specifically
+                    // about the /pulls/{n}/merge endpoint's stale cache - this /merges call always performs a
+                    // fresh git computation, no cache involved, so it's not subject to the same problem).
+                    var syncResult = gitHubPullRequestService.mergeBranch(project, thread.getBranchName(), "main",
+                            "Sync main into feature thread " + thread.getFeatureId());
+                    // Operator directive 2026-07-24 (live incident: PR#35 sat CONFLICTING for hours purely on
+                    // root .gitignore, re-diverging every time ANY other PR landed on main, because this drift-
+                    // sync had no way to auto-resolve a real textual conflict, only to prevent one starting from
+                    // zero). Root .gitignore is orchestrator-owned, not product code (see the task-brief
+                    // boundary added earlier today) - safe to unconditionally sync it to main's content and
+                    // retry once, same reasoning as the regular-PR trivial-conflict fast path.
+                    if (syncResult == GitHubPullRequestService.MergeBranchResult.CONFLICT) {
+                        boolean synced = gitHubPullRequestService.resolveFileConflictWithMain(project, thread.getBranchName(), ".gitignore");
+                        if (synced) {
+                            var retry = gitHubPullRequestService.mergeBranch(project, thread.getBranchName(), "main",
+                                    "Sync main into feature thread " + thread.getFeatureId() + " (retry after .gitignore sync)");
+                            if (retry == GitHubPullRequestService.MergeBranchResult.MERGED) {
+                                log.info("AutoMergeService: thread {} (feature {}) drift-sync conflict was only root .gitignore - synced and merged",
+                                        thread.getBranchName(), thread.getFeatureId());
+                            }
+                        }
+                    }
+                    // Operator-found gap (2026-07-24 live incident, PR#37): dispatchCloseoutConflictResolution
+                    // opens a standalone Jules session with no TaskEntity/PrReviewEntity, so nothing was ever
+                    // watching for the fix PR it produces - it sat open forever needing a manual merge. That
+                    // fix PR's base is always thread.branchName (Jules opens branch+PR against whatever
+                    // startingBranch it was given, regardless of prompt wording asking it to push directly).
+                    if (thread.getCloseoutConflictEscalatedAt() != null && thread.getMergedToMainAt() == null) {
+                        mergeConflictFixPrIfReady(project, thread);
+                    }
+                    progressCloseout(project, thread);
+                } catch (Exception e) {
+                    log.warn("AutoMergeService: closeout tick failed for thread {} (feature {}): {}",
+                            thread.getId(), thread.getFeatureId(), e.getMessage());
+                }
+            }
+        }
+    }
+
+    private void progressCloseout(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+        if (thread.getCloseoutPrUrl() == null) {
+            if (!readinessService.isFeatureReadyForCloseout(project.getId(), thread.getFeatureId())) {
+                return;
+            }
+            var opened = gitHubPullRequestService.createPullRequest(project, thread.getBranchName(), "main",
+                    "Closeout: integrate feature " + thread.getFeatureId() + " into main",
+                    "Automated closeout PR - brings feature " + thread.getFeatureId()
+                            + "'s accumulated work (last role: " + thread.getLastRoleTag()
+                            + ") from its continuation branch into main. "
+                            + (thread.getSummary() == null ? "" : thread.getSummary()));
+            if (opened.isEmpty()) {
+                log.warn("AutoMergeService: closeout PR open failed for thread {} (feature {}); will retry next cycle",
+                        thread.getId(), thread.getFeatureId());
+                return;
+            }
+            thread.setCloseoutPrUrl(opened.get().url());
+            featureThreadRepository.save(thread);
+            log.info("AutoMergeService: opened closeout PR {} for feature {} (branch {} -> main)",
+                    opened.get().url(), thread.getFeatureId(), thread.getBranchName());
+            return; // give GitHub a tick to compute mergeable/checks before acting on it
+        }
+
+        PullRequestTarget target = parseGithubPullRequestUrl(thread.getCloseoutPrUrl());
+        if (target == null) {
+            return;
+        }
+        int pullNumber;
+        try {
+            pullNumber = Integer.parseInt(target.pullNumber());
+        } catch (NumberFormatException e) {
+            return;
+        }
+
+        // Live incident, 2026-07-24: a closeout PR merged manually by the operator via the GitHub web UI
+        // (not through mergePullRequest below) silently stayed "not closed out" forever - every subsequent
+        // tick called mergePullRequest again, got a 405 (already merged, GitHub refuses a second merge
+        // call), returned false, and never reached the mergedToMainAt assignment. Checking real merged
+        // state FIRST makes this idempotent regardless of who actually performed the merge.
+        var prState = gitHubPullRequestService.fetchPullRequestByNumber(project, pullNumber);
+        if (prState.isPresent() && prState.get().merged()) {
+            thread.setMergedToMainAt(java.time.Instant.now());
+            featureThreadRepository.save(thread);
+            log.info("AutoMergeService: closeout PR {} was already merged (not necessarily by this service) - feature {} is now in main",
+                    thread.getCloseoutPrUrl(), thread.getFeatureId());
+            return;
+        }
+
+        var checks = gitHubPullRequestService.pullRequestChecks(project, pullNumber);
+        if (!checks.available() || !checks.successful()) {
+            return; // still pending/failing/unavailable - leave it, recheck next cycle
+        }
+        var mergeableState = gitHubPullRequestService.mergeableState(project, pullNumber);
+        if (mergeableState.isPresent() && mergeableState.get().mergeable() == null) {
+            return; // GitHub still computing mergeable - same race the trivial-conflict fast path handles
+        }
+        if (gitHubPullRequestService.mergePullRequest(project, pullNumber)) {
+            thread.setMergedToMainAt(java.time.Instant.now());
+            featureThreadRepository.save(thread);
+            log.info("AutoMergeService: closeout PR {} merged - feature {} is now in main",
+                    thread.getCloseoutPrUrl(), thread.getFeatureId());
+            return;
+        }
+        if (mergeableState.isPresent() && Boolean.FALSE.equals(mergeableState.get().mergeable())) {
+            escalateCloseoutConflict(project, thread);
+        }
+    }
+
+    // Finds and merges the fix PR a closeout-conflict-resolution session opened against thread.branchName
+    // (see escalateCloseoutConflict/dispatchCloseoutConflictResolution) - same CI-gated authority as every
+    // other merge in this class. Once this merges, thread.branchName contains the conflict fix, so the next
+    // tick's normal progressCloseout attempt on the real closeout PR (thread -> main) should succeed on its
+    // own with no further special-casing needed here.
+    private void mergeConflictFixPrIfReady(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+        var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+        if (snapshot == null || !snapshot.available() || snapshot.open() == null) {
+            return;
+        }
+        var fixPr = snapshot.open().stream()
+                .filter(pr -> thread.getBranchName().equals(pr.baseRef()))
+                .findFirst()
+                .orElse(null);
+        if (fixPr == null) {
+            return; // not opened yet (or already merged) - nothing to do this tick
+        }
+        var checks = gitHubPullRequestService.pullRequestChecks(project, fixPr.number());
+        if (!checks.available() || !checks.successful()) {
+            return;
+        }
+        var mergeableState = gitHubPullRequestService.mergeableState(project, fixPr.number());
+        if (mergeableState.isPresent() && mergeableState.get().mergeable() == null) {
+            return;
+        }
+        if (Boolean.FALSE.equals(mergeableState.map(GitHubPullRequestService.MergeableState::mergeable).orElse(null))) {
+            return; // the fix itself conflicts with the thread branch - leave for a human, don't loop
+        }
+        if (gitHubPullRequestService.mergePullRequest(project, fixPr.number())) {
+            log.info("AutoMergeService: merged conflict-fix PR {} into thread branch {} (feature {}) - closeout will retry against it next cycle",
+                    fixPr.url(), thread.getBranchName(), thread.getFeatureId());
+        }
+    }
+
+    // Operator directive 2026-07-24: "нужна автоматика - три попытки и закрыть удалить ветку, удалить
+    // цепочку. написать в вишлист подробные причины и рекомендации." Up to CLOSEOUT_CONFLICT_MAX_ATTEMPTS
+    // Jules-mediated conflict-resolution rounds (unlike a regular PR conflict there is no live Jules
+    // session to message in-place - the thread's last session is long-terminal - so each attempt dispatches
+    // a fresh one). A cooldown prevents piling a new session on top of one that might still be working.
+    // Once the cap is reached, the thread is abandoned outright rather than left hanging forever.
+    private static final int CLOSEOUT_CONFLICT_MAX_ATTEMPTS = 3;
+    private static final java.time.Duration CLOSEOUT_CONFLICT_RETRY_COOLDOWN = java.time.Duration.ofMinutes(15);
+
+    private void escalateCloseoutConflict(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+        if (thread.getCloseoutConflictAttempts() >= CLOSEOUT_CONFLICT_MAX_ATTEMPTS) {
+            abandonFeatureThread(project, thread);
+            return;
+        }
+        if (thread.getCloseoutConflictEscalatedAt() != null
+                && thread.getCloseoutConflictEscalatedAt().isAfter(
+                        java.time.Instant.now().minus(CLOSEOUT_CONFLICT_RETRY_COOLDOWN))) {
+            return; // previous attempt may still be in flight - don't dispatch a second one on top of it
+        }
+        int attempt = thread.getCloseoutConflictAttempts() + 1;
+        thread.setCloseoutConflictAttempts(attempt);
+        thread.setCloseoutConflictEscalatedAt(java.time.Instant.now());
+        featureThreadRepository.save(thread);
+        julesDispatchService.dispatchCloseoutConflictResolution(project, thread.getBranchName(), thread.getFeatureId());
+        log.warn("AutoMergeService: closeout PR {} for feature {} has a real conflict against main; dispatched "
+                        + "Jules session to rebase branch {} (attempt {}/{})",
+                thread.getCloseoutPrUrl(), thread.getFeatureId(), thread.getBranchName(), attempt, CLOSEOUT_CONFLICT_MAX_ATTEMPTS);
+    }
+
+    // Terminal path once CLOSEOUT_CONFLICT_MAX_ATTEMPTS is exhausted: this feature's code will never reach
+    // main via this branch. Deletes the now-dead branch chain, closes the closeout PR, and records a
+    // detailed closeout_abandoned wishlist item so a human or a future decomposition cycle has the real
+    // reason and a concrete recommendation to act on - never a silent, unexplained dead end.
+    private void abandonFeatureThread(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+        if (thread.getAbandonedAt() != null) {
+            return;
+        }
+        if (thread.getCloseoutPrUrl() != null) {
+            PullRequestTarget target = parseGithubPullRequestUrl(thread.getCloseoutPrUrl());
+            if (target != null) {
+                try {
+                    gitHubPullRequestService.fetchPullRequestByNumber(project, Integer.parseInt(target.pullNumber()))
+                            .ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(project, pr,
+                                    "Abandoned: " + CLOSEOUT_CONFLICT_MAX_ATTEMPTS + " automated conflict-resolution "
+                                            + "attempts failed - see the closeout_abandoned wishlist item for this feature"));
+                } catch (NumberFormatException e) {
+                    log.warn("AutoMergeService: could not parse closeout PR number from {} while abandoning thread {}",
+                            thread.getCloseoutPrUrl(), thread.getId());
+                }
+            }
+        }
+        gitHubPullRequestService.deleteBranch(project, thread.getBranchName());
+        thread.setAbandonedAt(java.time.Instant.now());
+        featureThreadRepository.save(thread);
+        recordCloseoutAbandonmentWishlist(project, thread);
+        log.error("AutoMergeService: feature {} thread ABANDONED after {} failed conflict-resolution attempts - "
+                        + "branch {} deleted, closeout PR closed, findings recorded to wishlist.",
+                thread.getFeatureId(), CLOSEOUT_CONFLICT_MAX_ATTEMPTS, thread.getBranchName());
+    }
+
+    private void recordCloseoutAbandonmentWishlist(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+        var wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.closeout_abandoned);
+        wishlist.setFeatureId(thread.getFeatureId());
+        wishlist.setSourceRoleTag(thread.getLastRoleTag());
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        wishlist.setContent("Feature " + thread.getFeatureId() + "'s accumulated work (last role: "
+                + thread.getLastRoleTag() + ", branch " + thread.getBranchName() + ", closeout PR "
+                + thread.getCloseoutPrUrl() + ") could not be reconciled with main after "
+                + CLOSEOUT_CONFLICT_MAX_ATTEMPTS + " automated Jules-mediated rebase attempts - this branch's "
+                + "real code was NEVER MERGED into main and the branch has now been deleted.\n\n"
+                + "Last known work summary: " + (thread.getSummary() == null ? "(none recorded)" : thread.getSummary())
+                + "\n\nRecommendation: this consistently indicates either (a) the conflict is symptomatic of a "
+                + "deeper design clash with other work already on main (two features independently editing the "
+                + "same real file/table/endpoint) that needs a human decision before any retry, not just another "
+                + "automated rebase, or (b) the thread's own work has simply drifted too far from main's current "
+                + "state to salvage - in that case, re-implementing this feature's remaining scope fresh from "
+                + "current main is more reliable than trying to rescue the abandoned branch.");
+        wishlistRepository.save(wishlist);
     }
 
     private void syncOpenPullRequestsFromGitHub() {
@@ -243,14 +580,40 @@ public class AutoMergeService {
         }
     }
 
+    // Operator directive 2026-07-24 (live incident: PR#32's branch
+    // "jules-10277038075121427427-d75cb1f6-6325105784558859532" legitimately contains an OLDER,
+    // already-terminal session's full token as a real substring - it's a feature-thread continuation
+    // branch, built by appending the new session's own token onto the parent branch's name. The old
+    // matchesSessionToken(...).contains(token) check matched whichever session came first in iteration
+    // order, silently overwriting that terminal session's prUrl with a PR it never authored). A pure
+    // suffix/boundary check isn't reliable either - confirmed live, some branches append a random hex
+    // suffix after the token instead of ending with it (e.g. "jules-17437099639885264223-ec18478e"), so
+    // "must end with the token" would miss real matches. Instead: collect every session whose token
+    // appears anywhere in the branch (unavoidable given the naming isn't fully consistent), then prefer
+    // (a) a token that appears as a delimited whole segment (bounded by `-`/`/`/start/end, not a
+    // coincidental digit-substring of a longer token) over a loose match, then (b) a still-active session
+    // over an already-terminal one (a terminal session is never the one newly opening a PR), then
+    // (c) the most recently created session (the newest work is the most plausible author of a brand-new
+    // PR). This does not require exact-suffix naming, just breaks ties correctly when multiple real tokens
+    // legitimately co-occur in one branch name.
+    private static final java.util.Set<String> TERMINAL_SESSION_STATUSES = java.util.Set.of(
+            "closed_terminal_task", "closed_no_code", "cancelled", "failed", "closed");
+
     private com.eneik.production.models.persistence.JulesSessionEntity findMatchingSession(
             List<com.eneik.production.models.persistence.JulesSessionEntity> projectSessions,
             GitHubPullRequestService.GitHubPullRequest pr) {
-        for (com.eneik.production.models.persistence.JulesSessionEntity session : projectSessions) {
-            String externalId = session.getExternalSessionId();
-            if (GitHubPullRequestService.matchesSessionToken(pr, externalId)) {
-                return session;
-            }
+        List<com.eneik.production.models.persistence.JulesSessionEntity> candidates = projectSessions.stream()
+                .filter(session -> GitHubPullRequestService.matchesSessionToken(pr, session.getExternalSessionId()))
+                .toList();
+        if (!candidates.isEmpty()) {
+            return candidates.stream()
+                    .min(java.util.Comparator
+                            .comparing((com.eneik.production.models.persistence.JulesSessionEntity s) ->
+                                    isDelimitedTokenMatch(pr.headRef(), s.getExternalSessionId()) ? 0 : 1)
+                            .thenComparing(s -> TERMINAL_SESSION_STATUSES.contains(s.getStatus()) ? 1 : 0)
+                            .thenComparing(com.eneik.production.models.persistence.JulesSessionEntity::getCreatedAt,
+                                    java.util.Comparator.reverseOrder()))
+                    .orElse(null);
         }
         for (com.eneik.production.models.persistence.JulesSessionEntity session : projectSessions) {
             if (pr.url().equals(session.getPrUrl())) {
@@ -258,6 +621,21 @@ public class AutoMergeService {
             }
         }
         return null;
+    }
+
+    private boolean isDelimitedTokenMatch(String headRef, String externalSessionId) {
+        if (headRef == null || externalSessionId == null) {
+            return false;
+        }
+        String token = externalSessionId.startsWith("sessions/")
+                ? externalSessionId.substring("sessions/".length()) : externalSessionId;
+        if (token.isBlank()) {
+            return false;
+        }
+        // Bounded on both sides by a non-alphanumeric delimiter (or string start/end) - rejects a token
+        // that's merely a digit-substring of a different, longer token sitting in the same branch name.
+        return java.util.regex.Pattern.compile("(?<![A-Za-z0-9])" + java.util.regex.Pattern.quote(token) + "(?![A-Za-z0-9])")
+                .matcher(headRef).find();
     }
 
     // A "complex" Cynefin-domain spike marks its task spike_completed and leaves review.merged = false
@@ -357,6 +735,7 @@ public class AutoMergeService {
         }
 
         boolean mergeSuccess = false;
+        boolean alreadyMergedExternally = false;
         boolean isConflictSimulated = review.getPrUrl() != null && (review.getPrUrl().contains("conflict") || review.getPrUrl().contains("dirty"));
 
         // Local review approval is necessary but not sufficient. GitHub's real checks are the merge
@@ -384,6 +763,33 @@ public class AutoMergeService {
             GitHubPullRequestService.GitHubPullRequest githubPr = gitHubPullRequestService
                     .fetchPullRequestByNumber(reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()))
                     .orElse(null);
+            // Live incident, 2026-07-24 (operator manually closed PR#57 as a duplicate; the merge-retry loop
+            // never found out and kept retrying a 405 "not mergeable" every ~60s forever): a PR that's
+            // closed without ever merging is permanently dead, not a transient conflict to retry. Nothing
+            // upstream of this call tells the review polling loop that "closed" happened outside our own
+            // executeMerge/progressCloseout paths (an operator's manual GitHub-UI close, another automated
+            // cleanup, etc.) - checking real GitHub state here catches it regardless of cause and stops the
+            // wasted retries for good, mirroring the already-merged idempotency check right below it.
+            if (githubPr != null && githubPr.closed() && !githubPr.merged()) {
+                review.setCiStatus("closed_unmerged");
+                prReviewRepository.save(review);
+                log.info("AutoMergeService: PR {} is closed without ever merging (not by this service) - "
+                        + "marking its review terminal instead of retrying a dead merge forever.", review.getPrUrl());
+                return;
+            }
+            // Live incident, 2026-07-24 (root cause of "Live Chat CRM" epic silently stuck at 3/4 merged
+            // despite all 4 of its real PRs being merged on GitHub): GitHub's PUT .../merge returns 405 for
+            // BOTH "already merged" and "real conflict" - indistinguishable by status code alone. The merge
+            // attempt below used to treat every 405 as a conflict and call handleMergeConflict even when the
+            // PR was already fine (merged by something other than this exact code path - a manual GitHub
+            // merge, GitHub's own auto-merge setting, a retry race). Checking real merged state first (same
+            // fix already applied to the closeout path in progressCloseout) makes this idempotent regardless
+            // of who/what actually performed the merge - skips the owner-token/CI checks entirely, since a
+            // PR that's already merged has already passed whatever gates it needed to.
+            if (githubPr != null && githubPr.merged()) {
+                log.info("AutoMergeService: PR {} was already merged (not necessarily by this service); recording as merged instead of re-attempting.", review.getPrUrl());
+                alreadyMergedExternally = true;
+            } else {
             if (!GitHubPullRequestService.matchesSessionToken(githubPr, reviewSession.getExternalSessionId())) {
                 review.setCiStatus("owner_mismatch");
                 prReviewRepository.save(review);
@@ -401,10 +807,14 @@ public class AutoMergeService {
                         review.getPrUrl(), checks.status(), checks.detail());
                 return;
             }
+            }
         }
         
         // Execute real merge on GitHub if enabled
-        if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
+        if (alreadyMergedExternally) {
+            mergeSuccess = true;
+            resolveActiveConflict(review.getJulesSessionId());
+        } else if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
             String token = settingsService.effectiveValue("github_token");
             if (token != null && !token.isBlank()) {
                 try {
@@ -425,7 +835,7 @@ public class AutoMergeService {
                     String pullNumber = pullRequestTarget.pullNumber();
 
                     String mergeUrl = "https://api.github.com/repos/" + owner + "/" + repoName + "/pulls/" + pullNumber + "/merge";
-                        HttpClient client = HttpClient.newHttpClient();
+                        HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
                         HttpRequest mergeRequest = HttpRequest.newBuilder()
                                 .uri(URI.create(mergeUrl))
                                 .header("Authorization", "Bearer " + token)
@@ -466,6 +876,17 @@ public class AutoMergeService {
         }
 
         if (mergeSuccess) {
+            recordSuccessfulMerge(review, pullRequestTarget);
+        }
+    }
+
+    /**
+     * Extracted 2026-07-24 (root cause of "Live Chat CRM" epic silently stuck at 3/4 despite all 4 real PRs
+     * being merged on GitHub) so this exact bookkeeping - task-done, feature-thread classification, video
+     * walkthrough, advice loop - can also run for a review {@link #resurrectAlreadyMergedReviews} finds was
+     * merged externally, not just one this method's own PUT call just merged.
+     */
+    private void recordSuccessfulMerge(PrReviewEntity review, PullRequestTarget pullRequestTarget) {
             review.setMerged(true);
             prReviewRepository.save(review);
             systemProgressTracker.recordProgress();
@@ -484,12 +905,12 @@ public class AutoMergeService {
 
                         classifyAndHandleBranch(review, mergedPrTarget, task, session);
 
-                        // Lean-waste fix (2026-07-23): if this just-merged task was an API-contract-stage
-                        // task, any dependent that started early (see ProjectFlowService.dispatchQueuedTasks'
-                        // EARLY_UNBLOCK_CONTRACT_KEY marker) may have begun against a pre-review draft of the
-                        // contract - give its still-active session an FYI to reconcile against the final one.
-                        if (task.getRole() != null
-                                && EmsFlowStage.forRoleTag(task.getRole().getTag()) == EmsFlowStage.API_CONTRACT) {
+                        // Lean-waste fix (2026-07-23, generalized 2026-07-24 from API-contract-only to
+                        // every EmsFlowStage.isSpecStage): if this just-merged task was a spec-stage task,
+                        // any dependent that started early (see ProjectFlowService.EARLY_UNBLOCK_SPEC_KEY
+                        // marker) may have begun against a pre-review draft of the artifact - give its
+                        // still-active session an FYI to reconcile against the final one.
+                        if (task.getRole() != null && EmsFlowStage.isSpecStage(task.getRole().getTag())) {
                             notifyEarlyUnblockedDependents(task);
                         }
 
@@ -529,6 +950,47 @@ public class AutoMergeService {
                     });
                 });
             }
+    }
+
+    // Live incident, 2026-07-24: same 405-ambiguity root cause as the already-merged check inline in
+    // executeMerge above, but for reviews that got stuck in a TERMINAL ciStatus (owner_mismatch, invalid_pr,
+    // unowned, etc.) before this fix existed - isReviewPollCandidate permanently excludes those from
+    // executeMerge ever running again, exactly the same class of dead end resurrectTriviallyEscalatedConflicts
+    // already fixed for "escalated". Runs every tick, checks EVERY still-unmerged review's real GitHub state
+    // regardless of its stored ciStatus (cheap - one fetchPullRequestByNumber call per still-open review),
+    // and runs the exact same success bookkeeping a fresh merge would via recordSuccessfulMerge.
+    private void resurrectAlreadyMergedReviews() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        List<PrReviewEntity> unmerged = prReviewRepository.findAll().stream()
+                .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+                .toList();
+        for (PrReviewEntity review : unmerged) {
+            try {
+                PullRequestTarget target = resolvePullRequestTarget(review);
+                if (target == null) {
+                    continue;
+                }
+                var sessionOpt = review.getJulesSessionId() == null
+                        ? java.util.Optional.<com.eneik.production.models.persistence.JulesSessionEntity>empty()
+                        : julesSessionRepository.findById(review.getJulesSessionId());
+                var taskOpt = sessionOpt.map(s -> taskRepository.findById(s.getTaskId()).orElse(null));
+                var project = taskOpt.map(t -> t == null ? null : t.getProject()).orElse(null);
+                if (project == null) {
+                    continue;
+                }
+                var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(project, Integer.parseInt(target.pullNumber()));
+                if (githubPr.isPresent() && githubPr.get().merged()) {
+                    log.info("AutoMergeService: resurrected review for PR {} - was already merged on GitHub but "
+                                    + "stuck at ciStatus={}, never re-checked; recording as merged now.",
+                            review.getPrUrl(), review.getCiStatus());
+                    recordSuccessfulMerge(review, target);
+                }
+            } catch (Exception e) {
+                log.warn("AutoMergeService: resurrectAlreadyMergedReviews failed for review {} (PR {}): {}",
+                        review.getId(), review.getPrUrl(), e.getMessage());
+            }
         }
     }
 
@@ -540,31 +1002,34 @@ public class AutoMergeService {
     }
 
     /**
-     * Lean-waste fix (2026-07-23): finds tasks that were early-unblocked against this just-merged
-     * API-contract task (see ProjectFlowService.EARLY_UNBLOCK_CONTRACT_KEY) and, for any still running an
-     * active Jules session, sends a one-time informational note so the session can reconcile against the
-     * now-final contract if it was revised during its own review. Fail-closed: never blocks the merge that
-     * just happened.
+     * Lean-waste fix (2026-07-23, generalized 2026-07-24): finds tasks that were early-unblocked against
+     * this just-merged spec-stage task (see ProjectFlowService.EARLY_UNBLOCK_SPEC_KEY) and, for any still
+     * running an active Jules session, sends a one-time informational note so the session can reconcile
+     * against the now-final artifact if it was revised during its own review. Guarded on
+     * EARLY_UNBLOCK_SPEC_NOTIFIED_KEY so a dependent is never notified twice even if this method somehow
+     * runs again for the same task (previously stamped but never checked - latent double-send, fixed here).
+     * Fail-closed: never blocks the merge that just happened.
      */
-    private void notifyEarlyUnblockedDependents(com.eneik.production.models.persistence.TaskEntity contractTask) {
+    private void notifyEarlyUnblockedDependents(com.eneik.production.models.persistence.TaskEntity specTask) {
         try {
             for (com.eneik.production.models.persistence.TaskEntity dependent
-                    : taskRepository.findByDependsOnId(contractTask.getId())) {
+                    : taskRepository.findByDependsOnId(specTask.getId())) {
                 JsonNode payload = dependent.getPayload();
                 if (!(payload instanceof ObjectNode payloadNode)
-                        || !payloadNode.path(ProjectFlowService.EARLY_UNBLOCK_CONTRACT_KEY).asBoolean(false)) {
+                        || !payloadNode.path(ProjectFlowService.EARLY_UNBLOCK_SPEC_KEY).asBoolean(false)
+                        || payloadNode.path(EARLY_UNBLOCK_SPEC_NOTIFIED_KEY).asBoolean(false)) {
                     continue;
                 }
                 julesSessionRepository.findByTaskId(dependent.getId()).stream()
                         .filter(s -> List.of("queued", "running", "revising", "stuck", "pr_opened").contains(s.getStatus()))
                         .findFirst()
-                        .ifPresent(session -> julesDispatchService.notifyContractFinalized(dependent, session, contractTask));
-                payloadNode.put(EARLY_UNBLOCK_CONTRACT_NOTIFIED_KEY, true);
+                        .ifPresent(session -> julesDispatchService.notifySpecTaskFinalized(dependent, session, specTask));
+                payloadNode.put(EARLY_UNBLOCK_SPEC_NOTIFIED_KEY, true);
                 taskRepository.save(dependent);
             }
         } catch (Exception e) {
-            log.warn("AutoMergeService: failed to notify early-unblocked dependents of contract task {}: {}",
-                    contractTask.getId(), e.getMessage(), e);
+            log.warn("AutoMergeService: failed to notify early-unblocked dependents of spec task {}: {}",
+                    specTask.getId(), e.getMessage(), e);
         }
     }
 
@@ -605,7 +1070,11 @@ public class AutoMergeService {
 
         if (!hasCode) {
             gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), pullNumber)
-                    .ifPresent(pr -> gitHubPullRequestService.deleteBranch(task.getProject(), pr.headRef()));
+                    .ifPresent(pr -> {
+                        review.setBaseRef(pr.baseRef());
+                        prReviewRepository.save(review);
+                        gitHubPullRequestService.deleteBranch(task.getProject(), pr.headRef());
+                    });
             session.setStatus("closed_no_code");
             session.setClosedAt(java.time.Instant.now());
             session.setClosureReason("Merged PR contained no product code (process/config/docs only); branch deleted.");
@@ -615,6 +1084,8 @@ public class AutoMergeService {
         }
 
         gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), pullNumber).ifPresent(pr -> {
+            review.setBaseRef(pr.baseRef());
+            prReviewRepository.save(review);
             String roleTag = task.getRole().getTag();
             UUID featureId = task.getFeatureId();
             if (featureId == null) {
@@ -633,6 +1104,13 @@ public class AutoMergeService {
             String summary = review.getDiffSummary();
             thread.setSummary(summary == null ? pr.title() : (summary.length() > 2000 ? summary.substring(0, 2000) : summary));
             thread.setUpdatedAt(java.time.Instant.now());
+            // Closeout tracking (2026-07-24): this merge just moved the thread's tip forward - a NEW commit
+            // that has never reached main, even if this same feature closed out once before. Reset the
+            // closeout state so the next processAutoMerge tick treats it as freshly reopened rather than
+            // silently trusting a stale "already in main" timestamp for code that isn't there.
+            thread.setMergedToMainAt(null);
+            thread.setCloseoutPrUrl(null);
+            thread.setCloseoutConflictEscalatedAt(null);
             featureThreadRepository.save(thread);
             log.info("AutoMergeService: PR {} classified as has-code; thread for feature {} (last role {}) in project {} now points to branch {}",
                     pullRequestTarget.url(), featureId, roleTag, task.getProject().getId(), pr.headRef());
@@ -686,29 +1164,41 @@ public class AutoMergeService {
         } catch (Exception e) {}
         conflict.setConflictingFiles(filesJson);
 
-        // Trivial-conflict fast path: sync any of OUR OWN transient `.eneik/*` signaling records
-        // (task-plan.json, review-verdict.json, design-review-verdict.json, ...) that appear in this PR's
-        // diff to main's current content - pure bookkeeping noise, never worth a Jules session.
+        // Trivial-conflict fast path: sync any file the ORCHESTRATOR itself owns - not something the task
+        // was asked to write as its deliverable - that appears in this PR's diff, to main's current content.
+        // Two categories, both pure noise never worth a Jules session or a human judgment call:
+        //   - `.eneik/*` transient signaling records (task-plan.json, review-verdict.json,
+        //     design-review-verdict.json, ...) - our own bookkeeping, briefs explicitly forbid tasks from
+        //     touching this path at all (see TechnicalLeadCompiler's Boundaries section).
+        //   - the ROOT `.gitignore` - operator directive 2026-07-24 (live incident: 5 of 6 simultaneous
+        //     merge-conflict escalations on test-thirty-seventh traced to root .gitignore, NOT real code -
+        //     every conflicting branch had already created its own scoped `frontend/.gitignore` with the
+        //     ignore rules it actually needed; its root-level edit was redundant boilerplate every time).
+        //     Root .gitignore is the orchestrator's file (`.eneik/`, `target/`); a task's real per-package
+        //     ignore needs belong in a nested .gitignore, never here - discarding a branch's root-level edit
+        //     in favor of main's never loses anything the branch actually needed.
         //
         // Ф1 (2026-07-21 review, corrected from the first version of this fix): `files` is the PR's FULL
         // changed-file list, not specifically the files actually in conflict - requiring `allMatch` meant
         // this never fired for any PR that also carried real product code alongside a stray `.eneik/`
         // file, which is exactly the motivating case (PR#12: real Svelte frontend + one incidental
-        // `.eneik/task-plan.json`). Fixed to act on the `.eneik/` SUBSET of files regardless of what else
+        // `.eneik/task-plan.json`). Fixed to act on this SUBSET of files regardless of what else
         // changed - real code is never touched by this path either way, so widening it is safe.
         //
         // Bounded to one attempt per conflict (`resolutionAttempts == 0`, i.e. only on the FIRST time this
-        // conflict is diagnosed): if the real conflict is elsewhere and syncing `.eneik/` alone doesn't
+        // conflict is diagnosed): if the real conflict is elsewhere and syncing these alone doesn't
         // make the PR mergeable, retrying this same sync every cycle forever would silently mask that and
         // never fall through to the rebase/escalation path that actually handles a real code conflict.
-        List<String> eneikFiles = files.stream().filter(f -> f.startsWith(".eneik/")).toList();
-        if (!eneikFiles.isEmpty() && conflict.getResolutionAttempts() == 0
+        List<String> autoResolvableFiles = files.stream()
+                .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
+                .toList();
+        if (!autoResolvableFiles.isEmpty() && conflict.getResolutionAttempts() == 0
                 && owner != null && repo != null && pullNumber != null) {
             String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
                     .map(GitHubPullRequestService.GitHubPullRequest::headRef)
                     .orElse(null);
             if (branch != null) {
-                boolean allResolved = eneikFiles.stream()
+                boolean allResolved = autoResolvableFiles.stream()
                         .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
                 // Record that the fast path was tried for this conflict, regardless of outcome, BEFORE
                 // deciding whether to return - this is what makes `resolutionAttempts == 0` an honest
@@ -716,26 +1206,46 @@ public class AutoMergeService {
                 conflict.setResolutionAttempts(1);
                 taskConflictRepository.save(conflict);
                 if (allResolved) {
-                    log.info("AutoMergeService: PR #{} had .eneik/ record file(s) in conflict ({} of {} changed files); "
+                    log.info("AutoMergeService: PR #{} had orchestrator-owned file(s) in conflict ({} of {} changed files); "
                                     + "synced to main via direct backend commit, no Jules session dispatched. "
                                     + "Merge will retry next cycle - if the conflict was ONLY in these files it "
                                     + "will now succeed; if not, it will surface again next cycle and proceed "
                                     + "straight to the rebase/escalation path (this fast path won't retry itself).",
-                            pullNumber, eneikFiles, files.size());
+                            pullNumber, autoResolvableFiles, files.size());
                     return;
                 }
-                log.warn("AutoMergeService: PR #{} had .eneik/ record file(s) in conflict but backend resolution "
+                log.warn("AutoMergeService: PR #{} had orchestrator-owned file(s) in conflict but backend resolution "
                         + "failed for at least one ({}); falling through to the normal rebase/escalation path "
-                        + "this same cycle.", pullNumber, eneikFiles);
+                        + "this same cycle.", pullNumber, autoResolvableFiles);
             }
         }
 
         review.setCiStatus("conflict");
         prReviewRepository.save(review);
-        
+        taskConflictRepository.save(conflict);
+
+        // Operator directive 2026-07-24 (live incident: 3 escalated-then-resurrected PRs bounced straight
+        // back to escalated within ~2 minutes, even though `git merge-tree` confirmed zero real conflicts
+        // left after the fast-path sync above). Root cause: GitHub computes `mergeable` asynchronously -
+        // for some seconds right after any push it reports null/"unknown", not yet true/false. The merge
+        // PUT this method is reacting to (a 405) can be exactly that stale window, not a real conflict. If
+        // GitHub itself is still undecided, don't spend one of the 3 tries on a race it was never going to
+        // win - leave resolutionAttempts untouched (conflict is already saved above so no row is lost) and
+        // let the next tick's merge attempt (by which point GitHub has almost always finished computing) be
+        // the one that actually counts.
+        if (owner != null && repo != null && pullNumber != null) {
+            var mergeableState = gitHubPullRequestService.mergeableState(task.getProject(), Integer.parseInt(pullNumber));
+            if (mergeableState.isPresent() && mergeableState.get().mergeable() == null) {
+                log.info("AutoMergeService: PR #{} mergeable state still unknown to GitHub (mergeStateStatus={}) - "
+                                + "not counting this as a resolution attempt, will recheck next cycle.",
+                        pullNumber, mergeableState.get().mergeStateStatus());
+                return;
+            }
+        }
+
         int attempts = conflict.getResolutionAttempts() + 1;
         conflict.setResolutionAttempts(attempts);
-        
+
         if (attempts >= 3) {
             // Three auto-resolve attempts have failed - this branch is unrecoverable, not worth a
             // fourth rebase. No human ever looks at this system day-to-day, so escalating to a
@@ -976,6 +1486,7 @@ public class AutoMergeService {
             synthesized.setRiskLevel("LOW");
             synthesized.setMerged(true);
             synthesized.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
+            synthesized.setBaseRef(baseRefForMergedPr(task.getProject(), mergedPrUrl));
             prReviewRepository.save(synthesized);
         }
 
@@ -1024,6 +1535,27 @@ public class AutoMergeService {
         return codeChangeClassifier.hasCode(changedFiles);
     }
 
+    // Dashboard-number correctness (2026-07-24) - mirrors classifyHasCodeForMergedPr's pattern for the same
+    // GitHub-truth reconciliation path, so a synthesized PrReviewEntity gets a real baseRef instead of
+    // silently staying null (which reachedMain() treats as "legacy/unknown, fail open" - correct for old
+    // data, but this path creates NEW rows, so it should populate it properly when it can).
+    private String baseRefForMergedPr(com.eneik.production.models.persistence.ProjectEntity project, String prUrl) {
+        if (project == null) {
+            return null;
+        }
+        PullRequestTarget target = parseGithubPullRequestUrl(prUrl);
+        if (target == null) {
+            return null;
+        }
+        try {
+            return gitHubPullRequestService.fetchPullRequestByNumber(project, Integer.parseInt(target.pullNumber()))
+                    .map(GitHubPullRequestService.GitHubPullRequest::baseRef)
+                    .orElse(null);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
     private void resolveActiveConflict(UUID julesSessionId) {
         if (julesSessionId == null) return;
         julesSessionRepository.findById(julesSessionId).ifPresent(session -> {
@@ -1040,7 +1572,7 @@ public class AutoMergeService {
     private List<String> fetchPrFiles(String token, String owner, String repo, String pullNumber) {
         try {
             String filesUrl = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber + "/files";
-            HttpClient client = HttpClient.newHttpClient();
+            HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(filesUrl))
                     .header("Authorization", "Bearer " + token)
@@ -1067,7 +1599,7 @@ public class AutoMergeService {
     private String fetchPrDiff(String token, String owner, String repo, String pullNumber) {
         try {
             String url = "https://api.github.com/repos/" + owner + "/" + repo + "/pulls/" + pullNumber;
-            HttpClient client = HttpClient.newHttpClient();
+            HttpClient client = HttpClient.newBuilder().connectTimeout(java.time.Duration.ofSeconds(20)).build();
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(url))
                     .header("Authorization", "Bearer " + token)

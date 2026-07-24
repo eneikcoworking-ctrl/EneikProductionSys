@@ -278,9 +278,10 @@ public class ClaimService {
         claim.setResultStatus(ClaimResultStatus.failed);
         claimRepository.save(claim);
 
-        TaskEntity task = claim.getTask();
-        task.setStatus(TaskStatus.queued);
-        taskRepository.save(task);
+        int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
+        if (revived == 0) {
+            log.info("ClaimService.fail: skipped requeue for task {} - it reached a terminal status concurrently", taskId);
+        }
 
         refreshAccountStatusAfterClaimRelease(claim.getAccount());
     }
@@ -300,11 +301,15 @@ public class ClaimService {
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
-        taskRepository.findById(taskId).ifPresent(task -> {
-            task.setStatus(TaskStatus.blocked);
-            task.setJulesDispatchStatus(reason);
-            taskRepository.save(task);
-        });
+        int updated = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        if (updated == 0) {
+            log.info("ClaimService.closeTaskAsBlocked: skipped for task {} - it reached a terminal status concurrently", taskId);
+        } else {
+            taskRepository.findById(taskId).ifPresent(task -> {
+                task.setJulesDispatchStatus(reason);
+                taskRepository.save(task);
+            });
+        }
     }
 
     // Deliberately TaskStatus.failed, not .blocked: a blocked task is picked up by
@@ -325,11 +330,15 @@ public class ClaimService {
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
-        taskRepository.findById(taskId).ifPresent(task -> {
-            task.setStatus(TaskStatus.failed);
-            task.setJulesDispatchStatus(reason);
-            taskRepository.save(task);
-        });
+        int updated = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.failed);
+        if (updated == 0) {
+            log.info("ClaimService.closeTaskAsFailed: skipped for task {} - it reached a terminal status concurrently", taskId);
+        } else {
+            taskRepository.findById(taskId).ifPresent(task -> {
+                task.setJulesDispatchStatus(reason);
+                taskRepository.save(task);
+            });
+        }
     }
 
     @Transactional
@@ -348,11 +357,48 @@ public class ClaimService {
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
-        taskRepository.findById(taskId).ifPresent(task -> {
-            task.setStatus(TaskStatus.queued);
-            task.setJulesDispatchStatus(reason);
-            taskRepository.save(task);
+        int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
+        if (revived == 0) {
+            log.info("ClaimService.releaseClaimToQueue: skipped requeue for task {} - it reached a terminal status concurrently", taskId);
+        } else {
+            taskRepository.findById(taskId).ifPresent(task -> {
+                task.setJulesDispatchStatus(reason);
+                taskRepository.save(task);
+            });
+        }
+    }
+
+    // Same requeue mechanics as releaseClaimToQueue, but also rewrites the task's own brief. Used when a
+    // Jules session honestly rejected the task over a concrete external fact (e.g. a Flyway version
+    // collision) rather than looping or going silent: the task keeps its ID (so nothing depending on it
+    // needs rewiring), but the next session starts already knowing the blocker instead of re-discovering
+    // it from scratch. See JulesDispatchService.closeLoopAndCreateFollowUps's REASONED_BLOCKER branch.
+    @Transactional
+    public void reopenWithAmendedBrief(UUID taskId, String amendedDescription, String reason) {
+        TaskEntity currentTask = taskRepository.findById(taskId).orElse(null);
+        if (currentTask != null && isTerminal(currentTask.getStatus())) {
+            releaseTerminalClaim(taskId);
+            log.info("Poka-yoke: ignored amended-brief requeue for terminal task {} ({})", taskId, currentTask.getStatus());
+            return;
+        }
+        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+            claim.setReleasedAt(Instant.now());
+            claim.setResultStatus(ClaimResultStatus.failed);
+            claimRepository.save(claim);
+
+            refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
+
+        int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
+        if (revived == 0) {
+            log.info("ClaimService.reopenWithAmendedBrief: skipped requeue for task {} - it reached a terminal status concurrently", taskId);
+        } else {
+            taskRepository.findById(taskId).ifPresent(task -> {
+                task.setDescription(amendedDescription);
+                task.setJulesDispatchStatus(reason);
+                taskRepository.save(task);
+            });
+        }
     }
 
     private ClaimEntity findActiveClaimByTaskId(UUID taskId) {
@@ -446,9 +492,13 @@ public class ClaimService {
             claim.setResultStatus(ClaimResultStatus.expired);
             claimRepository.save(claim);
 
-            // 2. Return task to the queue
-            task.setStatus(TaskStatus.queued);
-            taskRepository.save(task);
+            // 2. Return task to the queue - atomic CAS (see compareAndSetStatus javadoc), not
+            // task.setStatus()+save(): the isTerminal() check above is a stale read by the time this
+            // write executes if a concurrent transaction terminal-izes the task in between.
+            int revived = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.claimed, TaskStatus.queued);
+            if (revived == 0) {
+                log.info("Maintenance: skipped requeue for task {} on lease expiry - it left 'claimed' concurrently (already terminal or reclaimed elsewhere)", task.getId());
+            }
 
             // 3. Mark the account offline only if no other concurrent claim is still active.
             refreshAccountStatusAfterClaimRelease(claim.getAccount(), AccountStatus.offline);
@@ -481,8 +531,15 @@ public class ClaimService {
                 claim.setResultStatus(ClaimResultStatus.failed);
                 claimRepository.save(claim);
 
-                task.setStatus(TaskStatus.queued);
-                taskRepository.save(task);
+                // Atomic CAS, not task.setStatus()+save(): the isTerminal() check above only proves the
+                // task was non-terminal at that read - a concurrent transaction (e.g. the task's own
+                // completion callback) can still terminal-ize it before this write lands. The requeue must
+                // only apply if the row is still exactly 'claimed' at this instant, or a terminal task can
+                // be silently resurrected and redispatched as a duplicate (live incident, 2026-07-24).
+                int revived = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.claimed, TaskStatus.queued);
+                if (revived == 0) {
+                    log.info("Self-healing: skipped requeue for task {} - it left 'claimed' concurrently (already terminal or reclaimed elsewhere)", task.getId());
+                }
 
                 refreshAccountStatusAfterClaimRelease(claim.getAccount());
             }

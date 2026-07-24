@@ -83,6 +83,19 @@ public class PlannedWorkRecoveryService {
                 continue;
             }
 
+            // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
+            // are both stale reads by the time this write executes - two overlapping scheduler ticks (or
+            // this method racing the self-healing/lease-expiry paths in ClaimService) could otherwise both
+            // pass the checks and resume the same failed task twice, producing two live claims/sessions for
+            // one task identity (the exact IncorrectResultSizeDataAccessException incident, 2026-07-24).
+            // The status flip only lands if the row is still exactly 'failed' at this instant; a concurrent
+            // resume attempt sees 0 rows affected and correctly backs off instead of resurrecting it again.
+            int revived = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued);
+            if (revived == 0) {
+                log.info("PlannedWorkRecoveryService: skipped resume for task {} - it left 'failed' concurrently (already resumed elsewhere)", task.getId());
+                continue;
+            }
+
             ObjectNode payload = objectPayload(task.getPayload());
             payload.put(RESUME_COUNT_KEY, 1);
             payload.put("ems_bounded_plan_resume_at", Instant.now().toString());

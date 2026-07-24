@@ -45,6 +45,33 @@ public class FeatureThreadEntity {
     @Column(name = "updated_at", nullable = false)
     private Instant updatedAt = Instant.now();
 
+    // Closeout tracking (2026-07-24): a feature-thread branch is a live continuation point, never
+    // automatically folded back into main by itself - see AutoMergeService.closeOutReadyFeatureThreads.
+    // null mergedToMainAt = this thread's current tip has not (yet) reached main. closeoutPrUrl tracks an
+    // in-flight closeout PR so the job is idempotent across ticks.
+    @Column(name = "merged_to_main_at")
+    private Instant mergedToMainAt;
+
+    @Column(name = "closeout_pr_url", length = 256)
+    private String closeoutPrUrl;
+
+    // Bounded escalation (2026-07-24, operator directive: "три попытки и закрыть, удалить ветку, удалить
+    // цепочку, написать в вишлист причины") - up to 3 Jules-mediated conflict-resolution attempts, each
+    // dispatched no more than once per cooldown window (see AutoMergeService's closeout-conflict logic);
+    // closeoutConflictEscalatedAt is the timestamp of the MOST RECENT dispatch (not a one-shot flag
+    // anymore), used only to avoid re-dispatching while the previous attempt might still be working.
+    // Once closeoutConflictAttempts reaches the cap, the thread is abandoned: branch deleted, closeout PR
+    // closed, abandonedAt set, and a closeout_abandoned wishlist item records the real failure reason and
+    // a recommendation for a human/future decomposition cycle to act on.
+    @Column(name = "closeout_conflict_escalated_at")
+    private Instant closeoutConflictEscalatedAt;
+
+    @Column(name = "closeout_conflict_attempts", nullable = false)
+    private int closeoutConflictAttempts = 0;
+
+    @Column(name = "abandoned_at")
+    private Instant abandonedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -63,4 +90,14 @@ public class FeatureThreadEntity {
     public void setSummary(String summary) { this.summary = summary; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public Instant getMergedToMainAt() { return mergedToMainAt; }
+    public void setMergedToMainAt(Instant mergedToMainAt) { this.mergedToMainAt = mergedToMainAt; }
+    public String getCloseoutPrUrl() { return closeoutPrUrl; }
+    public void setCloseoutPrUrl(String closeoutPrUrl) { this.closeoutPrUrl = closeoutPrUrl; }
+    public Instant getCloseoutConflictEscalatedAt() { return closeoutConflictEscalatedAt; }
+    public void setCloseoutConflictEscalatedAt(Instant closeoutConflictEscalatedAt) { this.closeoutConflictEscalatedAt = closeoutConflictEscalatedAt; }
+    public int getCloseoutConflictAttempts() { return closeoutConflictAttempts; }
+    public void setCloseoutConflictAttempts(int closeoutConflictAttempts) { this.closeoutConflictAttempts = closeoutConflictAttempts; }
+    public Instant getAbandonedAt() { return abandonedAt; }
+    public void setAbandonedAt(Instant abandonedAt) { this.abandonedAt = abandonedAt; }
 }

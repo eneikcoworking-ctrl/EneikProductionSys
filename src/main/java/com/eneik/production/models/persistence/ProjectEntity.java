@@ -33,6 +33,14 @@ public class ProjectEntity {
     @Column(name = "github_repository_id", length = 128)
     private String githubRepositoryId;
 
+    // Atomic Flyway-version reservation counter (operator directive 2026-07-24, after two Data Schema
+    // tasks born in the same decomposition burst both independently guessed V1 and collided on main). Null
+    // until the first BARCAN-TAG-08 task in this project reserves a number - see
+    // TechnicalLeadCompiler.reserveNextFlywayVersion, which lazily seeds it from the real repo state on
+    // first use rather than assuming migrations start at 1.
+    @Column(name = "next_flyway_version")
+    private Integer nextFlywayVersion;
+
     @Column(name = "linear_project_status", length = 512)
     private String linearProjectStatus;
 
@@ -84,6 +92,8 @@ public class ProjectEntity {
     public void setGithubRepositoryStatus(String githubRepositoryStatus) { this.githubRepositoryStatus = githubRepositoryStatus; }
     public String getGithubRepositoryId() { return githubRepositoryId; }
     public void setGithubRepositoryId(String githubRepositoryId) { this.githubRepositoryId = githubRepositoryId; }
+    public Integer getNextFlywayVersion() { return nextFlywayVersion; }
+    public void setNextFlywayVersion(Integer nextFlywayVersion) { this.nextFlywayVersion = nextFlywayVersion; }
     public String getLinearProjectStatus() { return linearProjectStatus; }
     public void setLinearProjectStatus(String linearProjectStatus) { this.linearProjectStatus = linearProjectStatus; }
     public String getLinearProjectId() { return linearProjectId; }

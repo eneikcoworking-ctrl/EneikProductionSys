@@ -67,7 +67,13 @@ public class DecompositionService {
                     RoleEntity role = roleRepository.findById(tag)
                             .orElseThrow(() -> new RuntimeException("Role not found: " + tag));
                     task.setRole(role);
-                    task.setTitle(TaskTitleBuilder.build(tag, requirementText));
+                    // Ф-fix (2026-07-24): role-default titles ("API Slice", etc.) repeat identically across
+                    // every requirement matching the same tag - append the per-requirement id (shared by
+                    // every task this one decompose() call produces, distinct from every other call) so the
+                    // Jules session list and task titles are distinguishable, matching the same fix applied
+                    // to TechnicalLeadCompiler's slice titles.
+                    task.setTitle(TaskTitleBuilder.build(tag, requirementText)
+                            + " (" + sourceRequirementId.toString().substring(0, 8) + ")");
                     task.setDescription("[" + tag + "] " + requirementText);
                     task.setStatus(TaskStatus.queued);
 

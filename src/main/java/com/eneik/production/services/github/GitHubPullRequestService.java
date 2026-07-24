@@ -15,6 +15,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -34,7 +35,9 @@ public class GitHubPullRequestService {
         this.githubConfig = githubConfig;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
-        this.httpClient = HttpClient.newHttpClient();
+        // Bounded connect timeout (2026-07-24/25 incident) - see JulesApiClient for the full incident note;
+        // same fix applied uniformly across every outbound HTTP client in the codebase.
+        this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
     }
 
     /**
@@ -240,6 +243,65 @@ public class GitHubPullRequestService {
             return Optional.of(java.util.Base64.getMimeDecoder().decode(rawContent));
         } catch (Exception e) {
             log.warn("Could not fetch file {} at ref {} for project {}: {}", path, ref, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Lists a directory's entries via the GitHub contents API and returns the highest Flyway `V<N>__`
+     * version number found - used to atomically reserve the next migration number at decomposition time
+     * instead of letting each Jules session independently scan the directory and guess (see
+     * TechnicalLeadCompiler.buildTaskDescription's BARCAN-TAG-08 branch). Optional.empty() means "could not
+     * determine" (missing repo, directory doesn't exist yet, API error) - callers must NOT treat that as
+     * "zero migrations exist", since asserting a wrong reservation is worse than making none at all.
+     */
+    public Optional<Integer> highestFlywayVersion(ProjectEntity project, String ref, String directoryPath) {
+        if (project == null || ref == null || ref.isBlank() || directoryPath == null || directoryPath.isBlank()) {
+            return Optional.empty();
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(directoryPath) + "?ref=" + encode(ref);
+            HttpRequest request = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 404) {
+                // Directory doesn't exist yet on this branch - genuinely zero migrations, not an error.
+                return Optional.of(0);
+            }
+            if (response.statusCode() != 200) {
+                log.warn("GitHub directory listing failed for {}/{} path={} ref={}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), directoryPath, ref, response.statusCode(), preview(response.body()));
+                return Optional.empty();
+            }
+            JsonNode entries = objectMapper.readTree(response.body());
+            if (!entries.isArray()) {
+                return Optional.empty();
+            }
+            java.util.regex.Pattern versionPattern = java.util.regex.Pattern.compile("^V(\\d+)__");
+            int highest = 0;
+            for (JsonNode entry : entries) {
+                String name = entry.path("name").asText("");
+                java.util.regex.Matcher matcher = versionPattern.matcher(name);
+                if (matcher.find()) {
+                    highest = Math.max(highest, Integer.parseInt(matcher.group(1)));
+                }
+            }
+            return Optional.of(highest);
+        } catch (Exception e) {
+            log.warn("Could not list migration directory {} at ref {} for project {}: {}",
+                    directoryPath, ref, project.getId(), e.getMessage());
             return Optional.empty();
         }
     }
@@ -537,7 +599,9 @@ public class GitHubPullRequestService {
                     pr.path("title").asText(""),
                     pr.path("head").path("ref").asText(""),
                     pr.path("user").path("login").asText(""),
-                    pr.hasNonNull("merged_at")
+                    pr.hasNonNull("merged_at"),
+                    pr.path("base").path("ref").asText(""),
+                    "closed".equals(pr.path("state").asText(""))
             ));
         } catch (Exception e) {
             log.warn("Could not fetch PR #{} for project {}: {}", pullNumber, project.getId(), e.getMessage());
@@ -673,7 +737,9 @@ public class GitHubPullRequestService {
                     pr.path("title").asText(""),
                     pr.path("head").path("ref").asText(""),
                     pr.path("user").path("login").asText(""),
-                    pr.hasNonNull("merged_at")
+                    pr.hasNonNull("merged_at"),
+                    pr.path("base").path("ref").asText(""),
+                    "closed".equals(pr.path("state").asText(""))
             ));
         }
         return result;
@@ -760,7 +826,177 @@ public class GitHubPullRequestService {
 
     private record RepoRef(String owner, String repo) {}
 
-    public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged) {}
+    // closed (2026-07-24): distinguishes "closed without merging" (state=closed, merged=false) from "still
+    // open, being worked on" - previously indistinguishable, causing AutoMergeService to retry merging a
+    // manually-closed PR forever (confirmed live: PR#57, closed by the operator, kept getting a 405 "not
+    // mergeable" retry every ~60s since nothing ever told the review polling loop the PR was dead).
+    public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged, String baseRef, boolean closed) {}
+
+    /**
+     * `mergeable`: null while GitHub is still computing it asynchronously (this is the normal state for a
+     * few seconds right after any push to the branch), true/false once computed. `mergeStateStatus`: GitHub's
+     * own richer status ("clean", "dirty", "unknown", "blocked", ...).
+     */
+    public record MergeableState(Boolean mergeable, String mergeStateStatus) {}
+
+    /**
+     * Operator directive 2026-07-24 (live incident): right after this service's own trivial-conflict fast
+     * path pushes a commit resolving a `.gitignore`/`.eneik/*` conflict, GitHub has not yet finished
+     * recomputing `mergeable` for that PR - it stays null/"unknown" for some seconds. The next scheduled
+     * tick's merge attempt used to fire blind into this window, get a stale 405, and count it as a real
+     * failed resolution attempt - three of those in the ~2 minutes it took GitHub to catch up burned the
+     * whole 3-attempt budget and re-escalated a PR that had ZERO real conflicts left (confirmed via local
+     * `git merge-tree` against the same commit). This lets a caller check the real, current state first and
+     * skip an attempt entirely while GitHub is still computing, instead of spending one of the 3 tries on
+     * a race it can never win.
+     */
+    public Optional<MergeableState> mergeableState(ProjectEntity project, int pullNumber) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
+            HttpRequest request = baseRequest(path, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                return Optional.empty();
+            }
+            JsonNode pr = objectMapper.readTree(response.body());
+            Boolean mergeable = pr.hasNonNull("mergeable") ? pr.path("mergeable").asBoolean() : null;
+            String mergeStateStatus = pr.path("mergeable_state").asText(null);
+            return Optional.of(new MergeableState(mergeable, mergeStateStatus));
+        } catch (Exception e) {
+            log.warn("Could not fetch mergeable state for PR #{} for project {}: {}", pullNumber, project.getId(), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Opens a real PR head-&gt;base with no Jules session involved - used for feature-thread closeout
+     * (AutoMergeService.closeOutReadyFeatureThreads), where the "task" is folding an already-reviewed
+     * accumulation branch back into main, not a fresh piece of work.
+     */
+    public Optional<GitHubPullRequest> createPullRequest(ProjectEntity project, String head, String base,
+            String title, String body) {
+        if (project == null || head == null || head.isBlank() || base == null || base.isBlank()
+                || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls";
+            var bodyNode = objectMapper.createObjectNode();
+            bodyNode.put("title", title);
+            bodyNode.put("head", head);
+            bodyNode.put("base", base);
+            bodyNode.put("body", body == null ? "" : body);
+            HttpRequest request = baseRequest(path, token)
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(bodyNode)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 201) {
+                JsonNode pr = objectMapper.readTree(response.body());
+                return Optional.of(new GitHubPullRequest(
+                        pr.path("html_url").asText(""), pr.path("number").asInt(), pr.path("title").asText(""),
+                        pr.path("head").path("ref").asText(""), pr.path("user").path("login").asText(""),
+                        pr.hasNonNull("merged_at"), pr.path("base").path("ref").asText(""),
+                        "closed".equals(pr.path("state").asText(""))));
+            }
+            // 422 "No commits between base and head" is a real, expected outcome when the thread branch has
+            // already fully landed elsewhere or has nothing new relative to base - not an error to retry loudly.
+            log.warn("GitHub create-PR failed for {}/{} head={} base={}: status={} body={}",
+                    repoRef.owner(), repoRef.repo(), head, base, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not create PR {}->{} for project {}: {}", head, base, project.getId(), e.getMessage());
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Raw "click the merge button" call, extracted so both AutoMergeService.executeMerge's own inline PUT
+     * and the feature-thread closeout job (which has no PrReviewEntity/session to hang side effects off)
+     * can share it. Deliberately has no side effects of its own (no branch cleanup, no conflict handling,
+     * no status writes) - callers own all of that, matching how executeMerge's inline version already works.
+     */
+    public boolean mergePullRequest(ProjectEntity project, int pullNumber) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber + "/merge";
+            HttpRequest request = baseRequest(path, token).PUT(HttpRequest.BodyPublishers.ofString("{}")).build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return true;
+            }
+            log.warn("GitHub merge failed for PR #{} in {}/{}: status={} body={}",
+                    pullNumber, repoRef.owner(), repoRef.repo(), response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not merge PR #{} for project {}: {}", pullNumber, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    public enum MergeBranchResult { MERGED, UP_TO_DATE, CONFLICT, ERROR, SKIPPED }
+
+    /**
+     * `POST /repos/{owner}/{repo}/merges` - GitHub's plain "merge a branch" endpoint (distinct from the
+     * Pulls "merge a pull request" one above): creates a real merge commit combining `head` into `base` and
+     * moves `base`'s ref forward, with no PR involved at all. Used to keep an still-open feature-thread
+     * branch from drifting far from main while work on it is ongoing (AutoMergeService.
+     * closeOutReadyFeatureThreads calls this every tick with base=thread branch, head="main") - continuous
+     * drift-prevention, not the eventual thread-&gt;main closeout itself (that goes through a real
+     * reviewable PR via createPullRequest/mergePullRequest above).
+     */
+    public MergeBranchResult mergeBranch(ProjectEntity project, String base, String head, String commitMessage) {
+        if (project == null || base == null || base.isBlank() || head == null || head.isBlank()
+                || !settingsService.effectiveBoolean("github_enabled")) {
+            return MergeBranchResult.SKIPPED;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return MergeBranchResult.SKIPPED;
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/merges";
+            var body = objectMapper.createObjectNode();
+            body.put("base", base);
+            body.put("head", head);
+            body.put("commit_message", commitMessage == null ? "" : commitMessage);
+            HttpRequest request = baseRequest(path, token)
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return switch (response.statusCode()) {
+                case 201 -> MergeBranchResult.MERGED;
+                case 204 -> MergeBranchResult.UP_TO_DATE;
+                case 409 -> MergeBranchResult.CONFLICT;
+                default -> {
+                    log.warn("GitHub branch-merge failed base={} head={} for {}/{}: status={} body={}",
+                            base, head, repoRef.owner(), repoRef.repo(), response.statusCode(), preview(response.body()));
+                    yield MergeBranchResult.ERROR;
+                }
+            };
+        } catch (Exception e) {
+            log.warn("Could not merge branch {} into {} for project {}: {}", head, base, project.getId(), e.getMessage());
+            return MergeBranchResult.ERROR;
+        }
+    }
 
     public record PullRequestChecks(boolean available, boolean successful, String status, String detail) {
         static PullRequestChecks unavailable(String detail) {

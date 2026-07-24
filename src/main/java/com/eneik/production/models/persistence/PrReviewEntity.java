@@ -42,6 +42,13 @@ public class PrReviewEntity {
     @Column(name = "has_code")
     private Boolean hasCode;
 
+    // Dashboard-number correctness (2026-07-24): which branch this PR actually merged into - "main" or a
+    // feature-thread branch (see FeatureThreadEntity). null = predates this fix, or local/mock-merge mode.
+    // See ClientDeliverableReadinessService.reachedMain - a task's work only really "shipped" once this is
+    // main, or the owning feature's thread has itself since closed into main.
+    @Column(name = "base_ref", length = 256)
+    private String baseRef;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getJulesSessionId() { return julesSessionId; }
@@ -70,4 +77,6 @@ public class PrReviewEntity {
     public void setMerged(Boolean merged) { this.merged = merged; }
     public Boolean getHasCode() { return hasCode; }
     public void setHasCode(Boolean hasCode) { this.hasCode = hasCode; }
+    public String getBaseRef() { return baseRef; }
+    public void setBaseRef(String baseRef) { this.baseRef = baseRef; }
 }
