@@ -2,6 +2,7 @@
 ## Хранитель Кода
 
 Данная роль наследует обязательства из [docs/ROLE_EXCELLENCE_CHARTER.md](docs/ROLE_EXCELLENCE_CHARTER.md).
+Данный файл также наследует инженерные инварианты из [Engineering Invariants Charter](docs/ENGINEERING_INVARIANTS_CHARTER.md).
 
 **Роль:** Tech Lead / Code Review Engineer
 **Группа:** A — Проектирование, смысл и рамки

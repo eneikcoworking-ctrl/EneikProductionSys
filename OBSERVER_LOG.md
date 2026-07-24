@@ -2286,11 +2286,1583 @@ Project: 	est-thirty-third / 54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab
 3. **Audit Preemption Prohibition**: Never reserve or lock worker accounts for automatic coverage/design audit tasks; tasks should only be claimed when workers are free and assigned directly to real product feature slices.
 *(Note: Per explicit operator directive, no code or database changes are to be applied during the active experiment run; these directives will be implemented post-experiment).*
 
+## 2026-07-23T22:05:00+04:00 - Claude Code monitoring session begins (test-thirty-sixth)
 
+Log author from this point on is Claude Code (this session), not Antigravity/Codex. Continuing the same
+append-only convention for continuity across tool restarts.
 
+**Context**: operator pushed 3 commits of pending backend/dashboard work to `main` (per-account max-
+concurrent-sessions override, task wait-time dashboard widget + role-name cleanup, and a batch of
+lean-waste/reliability fixes: SelfFalsificationEpicMatcher, API-contract early-unblock, merge-conflict
+in-place resolution, PR-review-fallback dedup by diff content hash, `.eneik/` write guard). Rebuilt and
+redeployed via `docker compose up -d --build backend`: build succeeded, Flyway validated all 50
+migrations including the new `V50__add_account_max_concurrent_sessions`, container started clean.
 
+Operator then asked for a formal monitoring role (status/session tracking, stuck-task detection,
+Jules-time-vs-queue-time distinction) and supplied a full Technical Spec for a new "LeadGen Bot"
+(Telegram outreach automation platform) as a client wishlist for a brand-new test project.
 
+**Project created**: `test-thirty-sixth` (id `b4708ad6-2ae0-4a47-a845-77dff03f11b6`), greenfield,
+GitHub repo `eneikcoworking-ctrl/test-thirty-sixth` created (Linear project creation failed as usual -
+known pre-existing GraphQL validation issue, not new). Initial wishlist = the LeadGen Bot spec (client
+source). No project was in `active` status at creation time, so nothing was frozen by this create.
 
+**First monitoring cycle findings**:
+- (a) Normal: wishlist compiled into 2 tasks (17:55:59Z); backend scaffold (pom.xml,
+  application.properties) deterministically created; compiler task `3562af93-793a-44b7-a75e-2eeb98f5d11e`
+  now genuinely running in Jules (`sessions/10453808971020784433`, confirmed via
+  `/api/jules-sessions?taskId=...`).
+- (c) Transient, self-healed - not a regression: first 2 session-creation attempts for `3562af93` failed
+  with Jules API `404 "Requested entity was not found"` (17:55:59Z, 17:56:00Z) - GitHub repo was created
+  seconds earlier and Jules's own GitHub App indexing hadn't caught up yet. Next orchestration tick
+  (17:56:49Z) retried and succeeded (17:56:53Z). ~54s self-heal, no manual intervention. Worth expecting
+  on every freshly-created project, not a code defect.
+- (c) Minor unfixed defect, low priority: deterministic backend scaffold's `.gitignore` commit failed
+  with GitHub `422 "sha" wasn't supplied` - repo has no `.gitignore`. Logged, not fixed (per operator's
+  "don't fix, report first" instruction).
 
+**Account pool check** (operator noted "all Jules accounts connected, nearly all free"): `/api/dashboard/agents`
+shows 7 non-decommissioned account rows out of 22 total (15 are stale `decommissioned` rotations). Of the
+7: 2 busy (`eneikdru` on the new project's wishlist compile, `dmitriieneik-rgb` on an API Contract task
+elsewhere), 5 idle (`dmitrefrem-eneik`, `sixdmitrsix-ops`, `fivedmitr-sys`, `eneikcoworking-ctrl`,
+`EneikGroup`) - some with stale `lastHeartbeat` (last activity, not a liveness timer, so not inherently a
+problem). Flagged as something to watch in later cycles if dispatch concentrates on 1-2 accounts despite
+5 idle ones being reported "available."
 
+**Monitoring cadence set up**: recurring cron job (originally `1023575c`, replaced below by `d57b111b`),
+`7,37 * * * *` (every 30 min), session-only (dies when this Claude Code session exits, auto-expires after
+7 days). Runs the full wait-time/bottleneck/session-cross-check/log-repetition checklist against
+`test-thirty-sixth` each cycle and reports using the (a) moving-normally / (b) waiting-on-a-real-dependency
+/ (c) stuck-or-regression format. No self-fixing without reporting first, per operator instruction.
 
+## 2026-07-23T22:20:00+04:00 - Root-caused and fixed: stale claims from old projects blocking account status
+
+Operator flagged (correctly) that account availability was being polluted by leftover state from OLD
+projects, not just the current one, and directed: only the current project's tasks should ever affect
+account status; free all accounts.
+
+**Root cause, confirmed with evidence**: `ProjectFlowService.createProject()` only froze the previously
+`active` project on greenfield creation - it never released that project's (or any other non-active
+project's) unreleased `ClaimEntity` rows. `/api/dashboard/agents`'s "current role/task" columns are
+sourced directly from `ClaimEntity` rows where `releasedAt IS NULL` (`DashboardController.getAgents()`),
+so any claim nobody explicitly closed stays visible forever, regardless of the owning project's status.
+Pulled every `claimed` task via `GET /internal/tasks` and cross-referenced project status: found 5 stale
+unreleased claims - `60b6c56b...` (test-thirty-second, frozen), `27f97079...` + `852247f8...`
+(test-thirty-third, accepted - never explicitly frozen either), `2d9723e1...` (test-thirty-fourth,
+frozen), `02a889ce...` (test-thirty-fifth, accepted, PR #25). Confirmed `ContinuousOrchestrationService`
+only ever iterates `ProjectStatus.active` projects, so releasing these back to `queued` on their own
+(never-again-processed) projects is inert/safe - no risk of resurrecting old work.
+
+**Fix shipped** (rebuilt + redeployed, Flyway still at v50, no new migration needed):
+- `ProjectFlowService.createProject()`: on every greenfield project creation, after freezing the old
+  active project, now also releases (`ClaimService.releaseClaimToQueue`) every currently-unreleased claim
+  system-wide - a brand-new project can't own any claims yet, so this is always safe and makes "old
+  projects never affect account status" the default going forward, not a one-off manual fix.
+- New `POST /api/tasks/{id}/release` endpoint (`ClaimController`) - manual admin escape hatch for a stuck
+  claim, same mechanism, for cases outside project creation.
+- `AccountController` PATCH now accepts `maxConcurrentSessions`; `AccountDto`/`toDto` expose it in GET
+  responses (the DB column existed since the earlier `V50` migration/commit today, but no controller
+  wired it up yet).
+
+**Applied immediately** (since the auto-release above only fires on the *next* project creation, not
+retroactively): called the new `/release` endpoint on all 5 stale task ids above. Verified via
+`/api/dashboard/agents`: all 6 non-`eneikdru` accounts now show `status=idle`, `currentRoleTag=null`,
+`currentTaskDescription=null` - clean. `eneikdru` correctly still shows `busy` on its own real
+`test-thirty-sixth` wishlist-compile work.
+
+**Concurrency config verified**: global default `jules.max-concurrent-sessions-per-account=3` was already
+the code default (`ProjectFlowService` line ~78) - matches operator's "3 sessions per account" directive,
+no change needed. `eneikdru.maxConcurrentSessions=15` was found ALREADY set in the DB (before this
+session issued any PATCH) - likely seeded when the per-account-override feature/migration was originally
+built earlier today, per the code comment naming eneikdru specifically as "the reserved compiler/
+falsification account." Confirmed via fresh `GET /api/accounts/{id}`, not asserted from memory. All other
+6 active accounts confirmed `maxConcurrentSessions=null` (inherit the shared default of 3).
+
+Cron job recreated as `d57b111b` (same `7,37 * * * *` schedule) with an added instruction to append its
+own findings to this file each cycle going forward.
+
+## 2026-07-23T22:21:30+04:00 - Monitoring cycle (test-thirty-sixth)
+
+- (a) Normal: compiler task's PR #1 ("chore: Decompose wishlist into task plan") opened - cross-checked DB
+  vs real GitHub via `gh pr view 1 --repo eneikcoworking-ctrl/test-thirty-sixth`: `state=OPEN`,
+  `mergeable=MERGEABLE`, `mergeStateStatus=CLEAN`, both `quality` CI checks `SUCCESS`. No drift between DB
+  (`pr_opened`) and reality. Wishlist dedup poka-yoke fired correctly (merged 3 similar items into one
+  survivor, dismissed 2 duplicates). New task `4b4dcdea` ("Delivery Plan") dispatched to `eneikdru`.
+  Accounts still clean post-cleanup (only `eneikdru` busy).
+- (b) Expected wait: `/wait-time` shows 2 tasks `blocked_by_dependency`, `oldestWaitingMinutes=5` - real,
+  fresh dependency wait, not stuck.
+- (c) None found. `/bottlenecks` empty.
+- Today's fixes (self_falsification poka-yoke, contract early-unblock, reviewer-loop regression,
+  merge-conflict retry): nothing to check yet - project still in early decomposition, no reviews/merge
+  conflicts have occurred.
+
+Summary: no issues, 1 task active in Jules, 2 queued on a real 5-min-old dependency, 0 suspicious.
+
+## 2026-07-23T22:38:00+04:00 - Analysis only, no changes (operator asked to observe, not intervene)
+
+Operator asked two things: (1) confirm whether dependents start as soon as the root's PR opens, (2) why
+the wishlist produced "so few" epics. Analysis-only, nothing fixed, per explicit instruction.
+
+**Dependents-vs-root-PR**: clarified this is NOT a blanket rule. Today's early-unblock fix
+(`ClientDeliverableReadinessService.isApiContractPrOpenButUnmerged`) is deliberately scoped to dependents
+of an `API_CONTRACT` (BARCAN-TAG-12) stage task only - every other stage edge still needs a full merge.
+Checked real task graph: `7baed7a9` (TAG-08 Data) depends on `4b4dcdea` (TAG-09 Delivery Plan, still
+mid-flight, no PR yet) and correctly sits `queued` - not eligible for early-unblock since TAG-09 isn't
+API_CONTRACT. None of the project's 3 TAG-12 tasks (`d83598ae`, `b3319ac9`, `b536fb37`) have opened a PR
+yet - the early-unblock path hasn't had a chance to fire in this project yet. Will watch for it once one
+does.
+
+**Wishlist duplication found** (analysis only, not remediated): `/api/projects/.../dashboard` `wishlist`
+array (24 entries) shows the same "Internal UI work item N (ROLE)" combination appearing 2-3x each (e.g.
+"item 1 TAG-09" appears as 3 separate wishlist rows: `e6fef752`, `23e2269d`, `1cc78933`) - the same
+symptom as the 2026-07-20 "compiler re-ran 3x on same brief" incident nominally fixed by `184625b`. A
+task-level dedup guard appears to have prevented most duplicate TASKS from actually being created (only
+15-17 real tasks exist vs the ~21+ the wishlist duplication would imply 1:1), but the wishlist rows that
+got collapsed are mislabeled `converted_to_task` instead of `dismissed`/duplicate (only 1 of ~7 duplicate
+groups, `2a0c6fba`, is correctly marked `dismissed`) - makes the wishlist table an unreliable audit trail
+even though the task graph itself doesn't look inflated. Flagging for operator awareness; not fixed.
+
+**Epic count**: `productReadiness.totalFeatures=5`, `totalPlannedTasks=20`. Pattern observed: compiler
+appears to map 1 feature/epic per spec MODULE (client spec has 5 modules: FEAT-ACC/CMP/AI/CRM/BAN), not
+per individual FEAT-ID row (~20 total in the client's own table), and applies a fixed 5-task pipeline per
+epic (`ems_graph_size: 5` on every chain seen: Delivery Plan -> Data -> API Contract -> {Frontend,
+Backend}). This is the likely explanation for "few epics" - 5 module-level epics rather than ~20
+FEAT-ID-level ones. `decompositionComplete=false` (`status=decomposing`) - too early to tell whether each
+module-epic's fixed pipeline will substantively cover all of that module's individual FEAT-IDs; the
+existing coverage-audit mechanism (post-merge, real-code-based) is the actual test for this once
+decomposition finishes. Not intervened.
+
+Operator response to the analysis above: agreed, defer all 4 items (generalize early-unblock beyond
+API_CONTRACT with a design TBD - possibly baking a "dependency PR open but unmerged, verify again after
+merge" note into the dependent's own generation prompt; fix the wishlist-duplication root cause; fix
+`converted_to_task` mislabeling on collapsed duplicates; revisit fixed-shape-per-epic once real coverage
+results are in). All 4 recorded in `project_eneik_deferred_backlog` memory - not implemented, per operator
+instruction to just mark and revisit later.
+
+## 2026-07-23T22:51:00+04:00 - Monitoring cycle (test-thirty-sixth)
+
+- (a) Real progress: task graph now 20 tasks (was 15 last cycle) - 5 done, 5 claimed, 1 pending_review, 9
+  queued. PR #2 and #3 (both Data Schema tasks, `e117e319`/`e41f43ba`) MERGED at 18:41:31Z/18:41:37Z -
+  cross-checked live via `gh pr view 2/3 --json state,mergedAt`, matches DB (`done`). Their downstream API
+  Contract tasks (`b3319ac9`, `b536fb37`) started as designed.
+  **Early-unblock fix confirmed firing live for the first time**: `b3319ac9` (API Contract) reached
+  `pending_review` with PR #5 open (cross-checked: GitHub `state=OPEN, mergeable=MERGEABLE,
+  mergeStateStatus=CLEAN`, both CI checks SUCCESS - matches DB exactly). Found the exact expected log
+  line 3 times: `"Poka-yoke Lean fix: task <id> early-unblocked on contract task b3319ac9... (PR open, not
+  yet merged) - starting in parallel instead of waiting for merge"` for its 3 real dependents (`451ffd3c`,
+  `ec6c17bd`, `1a396e65`), all now `claimed`. Working exactly as designed.
+- (b) Expected wait: `/wait-time` jumped to `blocked_by_dependency: count=9, oldestWaitingMinutes=33`.
+  Dug into the oldest one per instructions: it's chain 1's root, `4b4dcdea` ("Delivery Plan", a `complex`
+  Cynefin architecture-decision spike), still `claimed` with Jules session `status=running`,
+  freshly-polled (`lastStatusCheckAt` matches current time) - genuinely in-flight, not stuck. Its
+  dependents (`7baed7a9` -> `d83598ae` -> ...) are correctly queued behind it. Per the Jules-time-vs-
+  queue-time principle, this is normal, not a Lean loss - the "33 min" is dependency depth, not idle
+  queue time.
+- (c) Low-severity, investigated not fixed: `"Jules activities fetch failed: status=404"` recurs every
+  orchestration tick (~every 30-60s) for 40+ min straight. Read the code
+  (`JulesDispatchService.answerAgentQuestions` / `JulesApiClient.getSessionActivities`): on this failure
+  the method just returns early with no side effects - it only skips that cycle's auto-answer-agent-
+  questions scan, no state corruption, no dispatch/merge impact (directly observed: PRs kept opening and
+  merging throughout this same window). Not a stuck-task risk, but flagging since it's been failing every
+  single tick with no self-heal - worth a future look at why (which session, why 404).
+- Reviewer-dispatch-loop regression check: no repeats of "Auto-dispatched reviewer for task..." found in
+  this window - clean.
+
+Summary: real progress (20 tasks, 2 PRs merged, early-unblock fix confirmed live), 33-min wait fully
+explained (dependency depth on a legitimately-running spike task, not stuck), one low-severity recurring
+warning (Jules activities 404) investigated and confirmed harmless.
+
+## 2026-07-23T23:15:00+04:00 - Confirmed real duplicate tasks (operator spotted on frontend, analysis only)
+
+Operator noticed obvious duplicates on the frontend dashboard and asked to confirm. Investigated task
+graph (22 tasks now) by cross-referencing `slice_display_title` + `dependsOn` (not just generic titles
+like "UI Slice" which are known to repeat legitimately - see the pre-existing "API Slice generic task
+title" backlog item). Found 3 real duplicate pairs, each sharing an identical slice title + identical
+`dependsOn` target but under two DIFFERENT `featureId`s:
+- "Account Dashboard & Onboarding UI": `0246958f` (feature `4185d1e6`) vs `93b7fcb1` (feature `dc5886b1`)
+  - both `queued`, no work wasted yet.
+- "Campaign Configuration & Ingestion UI": `ec6c17bd` (feature `17c16180`) vs `1a396e65` (feature
+  `3d184727`) - **both had Jules sessions `status=running` simultaneously** - confirmed via
+  `/api/jules-sessions?taskId=...` on both, two separate sessions actively building the identical slice
+  at the same time.
+- "Unified Svelte CRM Dashboard": `f0237556` (feature `08fb14c5`, `running`) vs `31afe4e2` (feature
+  `37f6b9fb`) - the second had already reached `pr_opened` with real PR #9 open. Real duplicate PR risk,
+  not just wasted compute.
+
+This corrects my earlier (2026-07-23T22:38) read that "a task-level dedup guard is catching most of it
+before duplicate TASKS get created" - that was wrong. The dedup guard apparently only checks within a
+single feature/epic's own numbered slices, not across two different features that both trace back to
+duplicate wishlist rows from the same over-run compiler pass. Updated `project_eneik_deferred_backlog`
+memory with this correction. Not fixed - operator confirmed defer, analysis only.
+
+Side finding while investigating (not the main issue, noted for later): `GET
+/internal/tasks/{id}/active-claim` returns a malformed/truncated response body for at least these 3
+tasks' claims (valid JSON up to `"hibernateLazyInitializer"` then an extra `{"error":"Internal Server
+Error",...}` object appended) - looks like a Hibernate lazy-proxy Jackson serialization failure on the
+`account` relation happening after the 200 status line was already sent. Minor, unrelated to the
+duplicate-task finding above; not investigated further.
+
+## 2026-07-23T23:19:00+04:00 - Non-metaphorical root cause for the epic duplication + monitoring cycle
+
+Operator asked for the epic-duplication mechanism explained precisely, no metaphors, to know how to fix
+it. Traced the exact call chain in `ProjectFlowService.java`:
+- Compiler ran exactly ONCE for this project (one carrier task `3562af93`, one Jules session, one PR #1) -
+  not a re-dispatch bug. The LLM's own single decomposition response's `epicPlans` list itself contained
+  overlapping/duplicate epic entries.
+- `buildTaskGraphFromSlices` (~1451) loops every `epicPlan` in that one response, calling
+  `buildTaskGraphForOneEpic` (~1473) for each with no cross-epic similarity check.
+- `resolveEpicFeatureId` (~1496) only reuses an эпик if the LLM itself set `existingEpicId` pointing to a
+  sibling in the same batch (it didn't, for the 3 pairs found) - otherwise always mints a new `featureId`.
+- The only deterministic duplicate-эпик guard, `SelfFalsificationEpicMatcher`, is gated to
+  `wishlist.getSource() == WishlistSource.self_falsification` only (~1511) - `client`-sourced wishlists
+  (every normal initial brief) get no such check.
+- Candidate fix (not implemented, operator said don't touch): generalize that source-gate so epic-level
+  dedup runs for every source, checked against sibling epics within the same `epicPlans` batch. Recorded
+  with exact line numbers in `project_eneik_deferred_backlog` memory.
+
+**Monitoring cycle** (19:19 UTC) - major finding, escalating past "just a wait":
+- (c) **CONFIRMED real deadlock, not a slow-but-fine wait**: `/wait-time` `oldestWaitingMinutes` kept
+  climbing (33 -> 56 -> 63 min) chain 1's root. Investigated why: `4b4dcdea` reached `spike_completed`
+  (`cynefinDomain=complex`) with PR #7 open (`mergeStateStatus=DIRTY` on GitHub, `mergedAt=null`). Read
+  `AutoMergeService.executeMerge` (~292): a `complex`-domain spike's PR is DELIBERATELY never merged
+  (`review.setMerged(false)`, logged "Cynefin Domain complex: ... spike completed. Not merging branch.") -
+  correct behavior on its own, spikes aren't shippable code. But
+  `ClientDeliverableReadinessService.isDependencySatisfied()` (~244) only ever returns true via
+  `isTaskMerged(...)` - no path recognizes `spike_completed` as sufficient, and the one early-unblock
+  exception that exists (`isApiContractPrOpenButUnmerged`) only covers API_CONTRACT/TAG-12, not TAG-09
+  spikes. Confirmed via full-codebase grep for `spike_completed`: no file wires it into dependency
+  satisfaction. **Result: chain 1 (`7baed7a9` -> `d83598ae` -> `0246958f`/`54199a90`/`93b7fcb1`) is
+  permanently deadlocked**, not going to self-heal. Recorded as a CONFIRMED bug (not a "candidate") in
+  `project_eneik_deferred_backlog`, flagged as higher-priority than the epic-duplication items once fixes
+  are authorized. Not fixed - reporting only, per operator instruction.
+- (a) Otherwise real progress: 22 tasks, 9 done, task graph continues growing normally elsewhere (chains 2
+  and 3 unaffected - those roots were ordinary Data Schema tasks that merged normally, not spikes).
+- Reviewer-dispatch-loop regression check and self_falsification poka-yoke: no matching log lines in this
+  window (nothing to check yet - no self-falsification wishlist and no repeated reviewer-dispatch attempts
+  occurred).
+- Duplicate-task pairs from the last cycle: unchanged, still both members of each pair alive (no new
+  wasted work beyond what was already reported, but also not resolved).
+
+Summary: found a confirmed permanent deadlock (spike-completion never satisfies a dependency) affecting
+chain 1 of 5 in this project - reported with full root cause and fix location, not touched. Other chains
+progressing normally.
+
+## 2026-07-23T23:36:00+04:00 - Operator authorized two live fixes; both shipped and verified
+
+Operator authorized, in the same conversation: (1) kill the losing task in each of the 3 duplicate pairs
+found earlier (2026-07-23T23:15), keeping whichever sibling was further along; (2) fix the spike-
+dependency deadlock found in the previous entry, immediately, once the mechanism was explained.
+
+**Duplicate-pair resolution** - decided winner = further progress (has a PR > running with no PR > queued
+with no session), tiebreak on earlier creation time when equal:
+- "Account Dashboard & Onboarding UI": kept `0246958f` (created 18:22:03, first), closed `93b7fcb1`
+  (created 18:32:17, both `queued`/no session) via new `POST /api/tasks/{id}/close-failed`.
+- "Campaign Configuration & Ingestion UI": kept `ec6c17bd` (session started 18:47:05.966), cancelled
+  `1a396e65`'s session (started 18:47:08.914, ~3s later) via `POST /api/jules-sessions/{id}/cancel`.
+- "Unified Svelte CRM Dashboard": kept `31afe4e2` (already `pr_opened`, PR #9), cancelled `f0237556`'s
+  session (still `running`, no PR) via the same cancel endpoint.
+Verified after: `93b7fcb1`/`1a396e65`/`f0237556` all `status=failed` (inert, never revisited);
+`0246958f`/`ec6c17bd`/`31afe4e2` untouched and still progressing.
+
+**Spike-dependency deadlock fix**: added `POST /api/tasks/{id}/close-failed` (`ClaimController`, wraps
+`ClaimService.closeTaskAsFailed` - needed for the duplicate-pair task that never got a Jules session, so
+`/cancel` didn't apply) and, in `ClientDeliverableReadinessService.isDependencySatisfied()`, added `if
+(dependency.getStatus() == TaskStatus.spike_completed) return true;` right after the existing
+`isTaskMerged` check. Rebuilt + redeployed (`docker compose up -d --build backend`) - clean start, all 50
+migrations validated, container healthy. Verified live: within one orchestration tick after redeploy,
+`7baed7a9` (blocked since 18:15, ~4h behind spike `4b4dcdea`) transitioned `queued` -> `claimed` with a
+real Jules session (`sessions/12259251783128397742`, `status=running`). Chain 1 of 5 unblocked. Both fixes
+recorded as resolved (not just candidates) in `project_eneik_deferred_backlog` memory.
+
+## 2026-07-23T23:49:44+04:00 - Monitoring cycle (test-thirty-sixth) - spike-fix confirmed holding, one repeating-log pattern investigated and cleared
+
+- (a) Spike-deadlock fix confirmed holding post-redeploy: `7baed7a9` session (`sessions/12259251783128397742`)
+  `status=running`, freshly polled (`lastStatusCheckAt` = now). 23 tasks total (was 22): 10 done, 5
+  claimed, 3 queued, 3 failed (the 3 killed duplicates, correctly inert), 1 `spike_completed`, 1
+  `pending_review`. New periodic PR-review-fallback batches (`a5a571b5`, `a7e39d33`, `1ecb63ca`, all
+  `done`, ~every 15 min) - healthy recurring activity, not a duplicate-decomposition regression (checked
+  their content: genuine "fallback code reviewer" batches, Gemini still unavailable).
+- (b) Expected wait, root cause fully explained: `/wait-time` `oldestWaitingMinutes=93` looks alarming but
+  is a metric-definition artifact, not a live problem - `d83598ae` (the oldest queued item) has been
+  `queued` since 18:15:56, and most of that 93 minutes is the PRE-FIX deadlock period; it's correctly
+  waiting on `7baed7a9`, which only started actually running at ~19:35 (right after redeploy) and is
+  healthy (~14 min in, normal). `0246958f`/`54199a90` correctly queued behind `d83598ae` in turn. Real
+  Lean-waste window here going forward is small, not 93 minutes.
+- (c) Investigated a genuinely repeating log line per instruction #4, concluded self-healing (not a bug):
+  `"Jules activities payload for session sessions/17937517862200993158 exceeded the backend safety limit"`
+  fired every tick for 40+ min, `blindCycleCount` climbing 26->31 with no reset - traced to task `451ffd3c`
+  (API Slice, one of the earlier early-unblocked dependents of `b3319ac9`). Its session is `running` with
+  `lastProgressAt=18:50:53` - 59 minutes before the current `jules.stuck-threshold-minutes=60` trust
+  window. Read `JulesDispatchService.forceUnblockOverflowedSessions` (~3280): this is the system's own
+  designed safety net - it deliberately waits out the full 60-min "Davidson trust invariant" window
+  (silence isn't evidence of being stuck) before sending a corrective nudge, and was about to become
+  eligible within ~1 minute of this check. Not a regression, not stuck - the large activity log just means
+  lots of tool calls, and the auto-recovery mechanism is functioning as designed. No action taken.
+- Reviewer-dispatch-loop regression / self_falsification poka-yoke / early-unblock / merge-conflict-retry
+  checks: no matching log lines in the last 20 min (nothing new to verify this cycle). Spot-checked PR #3
+  against GitHub per instruction #3: `state=MERGED`, matches DB.
+
+Summary: spike-fix holding, 93-min wait fully explained (pre-fix deadlock residue + normal short queue,
+not new waste), one repeating-warning investigated and confirmed as working-as-designed self-heal, not
+touched. 5 tasks active in Jules, 3 genuinely queued (on real deps).
+
+## 2026-07-24T00:12:00+04:00 - Explained two frontend metrics; found a real bug in one (recorded, not fixed)
+
+Operator asked to explain two frontend numbers that looked inconsistent: "14 real tasks" (donut + stat
+cards, `MetricsView.svelte`) vs "Product merge readiness 12% - 4/34 tasks - 0/8 features"
+(`CommandDashboardV2.svelte`). Traced both to their exact backend sources:
+
+- "14 real tasks": `/api/system-status?projectId=...` -> `SystemStatusService.tasks()` (~326) - filters
+  out system/bookkeeping tasks (compiler + PR-review-fallback carriers, identified by
+  `payload.taskType`), returns counts for all 8 `TaskStatus` values. Live for test-thirty-sixth: 23 tasks
+  total in DB, 5 system-meta (all `done`), 18 real: 3 queued/3 claimed/0 in_progress/3 pending_review/0
+  review/5 done/3 failed/1 spike_completed. The frontend widget only sums 6 of those 8 statuses
+  (queued+claimed+in_progress+review+done+failed=14) - `pending_review` (3) and `spike_completed` (1) are
+  computed by the backend but have no slot in the widget's legend, so 4 real tasks are invisible in its
+  displayed total. Minor frontend gap, not a backend bug.
+- "4/34, 0/8": `ClientDeliverableReadinessService.computeForProject` - an entirely different metric
+  (merge-completion, not current task status), confirmed live-matching (`totalPlannedTasks=34`,
+  `mergedPlannedTasks=4`, `totalFeatures=8`, `completeFeatures=0`, `decompositionComplete=true` - just
+  finished since the last cycle, up from 5 features/20 planned earlier today).
+
+**Operator then raised a sharp, correct point**: this "readiness" percentage should be computed from real
+tasks only, and definitely should never count a duplicate branch that was just killed. Verified this is a
+genuine, confirmed bug, not just a style preference - see full write-up in `project_eneik_deferred_backlog`
+memory. Summary: `computeForSources`'s `plannedItems`/`total` denominator (~152-189) is a flat count of
+wishlist rows with no filter on the associated task's status - a wishlist item whose only task is
+terminally `failed` (including the 3 duplicate tasks killed earlier tonight) stays in the denominator
+forever with zero chance of ever satisfying `hasRequiredMergeEvidence`. This directly feeds
+`falsificationEligible = decompositionComplete && ratio >= falsificationReadinessThreshold(0.9)`
+(`ProjectFlowService.dashboard()` ~3218) - enough permanently-dead planned items could push the achievable
+ceiling below 0.9 and silently block coverage-audit/falsification from ever becoming eligible. Current
+live numbers still have headroom (ceiling ~31/34 ~91% with today's 3 kills), but the mechanism has no
+floor and will get worse with every future duplicate-kill or unreplaced failure. Recorded with exact fix
+location (exclude wishlist items whose associated tasks are all terminally failed with no live
+replacement from `total`) - not implemented, operator said record only.
+
+**Operator sharpened the point further**: the bug isn't specifically about duplicates - it's that the
+formula requires "merged code" from task categories that structurally never produce mergeable code.
+Verified on a non-duplicate example: the legitimate spike `4b4dcdea` is ALSO permanently stuck in the
+denominator (its review is deliberately never `merged=true`, same as the duplicates, for an unrelated
+reason). Found the existing `if ("BARCAN-TAG-09".equals(roleTag)) return true;` special-case in
+`hasRequiredMergeEvidence` (~200) is dead code for exactly this scenario - it sits after
+`mergedReviews.isEmpty()` returns early, so it only ever helps a TAG-09 task that already has a merged
+review, never a complex-domain spike. Full corrected write-up in `project_eneik_deferred_backlog`. Not
+fixed - record only.
+
+## 2026-07-24T00:20:00+04:00 - Real, live blocking bug: two parallel Data Schema branches both claimed Flyway V1
+
+Investigating a "Data Schema" task transcript the operator pasted (task `7baed7a9`, chain 1): Jules issued
+an honest, correct rejection - "V1 already occupied by two files" - per its own BARCAN-TAG-08 role
+charter's Obligatory migration-numbering pre-check. Verified live via `gh api
+repos/.../contents/src/main/resources/db/migration` on test-thirty-sixth's main: **both
+`V1__campaigns_leads_schema.sql` and `V1__create_dialogs_and_messages.sql` are actually on main right
+now** - a genuine Flyway version collision. Root cause: chain 2's and chain 3's Data Schema PRs (#2, #3)
+merged 6 seconds apart (18:41:31Z / 18:41:37Z per `gh pr view`) - each branch independently scanned the
+migration directory and picked "V1" before either could see the other's file; git saw no conflict (different
+filenames) so AutoMergeService merged both cleanly. Jules (chain 1) correctly refused to compound the mess
+by inventing its own number on top of an already-inconsistent state.
+
+**Monitoring gap owned**: my own GitHub cross-check (checklist item #3) only ever inspects
+`state`/`mergeable`/`mergeStateStatus`/`statusCheckRollup` - git-level signals - never diffs migration file
+CONTENTS across independently-merging PRs. Both PR #2 and #3 were individually checked and reported clean
+in earlier cycles; the semantic collision between them was invisible to that checklist. AutoMergeService
+itself has no domain-specific check for sequential-numbering files either.
+
+Operator proposed the real fix direction (not implemented, record only): stop having Jules agents each
+independently guess the next Flyway number by scanning the directory - have the orchestrator atomically
+reserve/assign the exact version number at DECOMPOSITION time and bake it into the task's DoD as a hard
+constraint. Recorded with full reasoning in `project_eneik_deferred_backlog`.
+
+## 2026-07-24T00:38:00+04:00 - Power outage (operator-confirmed, not investigated as a system bug) + real collateral damage from it
+
+Operator: "было отключение электричества". Backend logs confirm: last activity before the gap
+20:18:06Z (`AutoMergeService: Failed to fetch PR files: EOF reached while reading` - network dying), next
+log line `Started EneikProductionApplication` at 22:15:58Z - ~2 hour gap with the whole stack down.
+Confirmed clean recovery: Flyway re-validated all 50 migrations on restart, H2 file DB (bind-mounted
+volume) survived intact, no data loss.
+
+**Real collateral damage found on restart, not a coincidence**: within seconds of coming back up, the
+`jules.stuck-close-threshold-minutes=120` circuit breaker retroactively closed 2 sessions and permanently
+failed their tasks - `7baed7a9` (the migration-collision-blocked task above) and `c884329a` ("AI Context",
+chain 3, no known blocker) - both logged `"stuck_session_timeout: stuck for at least 120 minutes...
+Follow-up wishlist created=false"`, then `ProjectFlowService: retiring blocked task ... without creating a
+recovery wishlist/task`. Neither gets automatic recovery - only via `self_falsification` later.
+
+**Mechanism concern worth flagging** (not a bug in the traditional sense, a design gap): the 120-minute
+stuck clock is wall-clock time since `lastProgressAt`, with no way to distinguish "Jules itself went
+stuck" from "our own orchestrator was down and simply couldn't poll." Jules sessions run on Google's own
+infrastructure independent of this backend - `c884329a` in particular had no known blocker, so it's
+plausible real progress happened during the outage window that we simply never observed. Any future outage
+of this backend longer than 120 minutes will retroactively auto-fail whatever was mid-flight at the time,
+regardless of whether Jules was actually stuck. Recorded in `project_eneik_deferred_backlog` as a distinct
+item from the migration-collision one above.
+
+**Net effect on chain 1**: `d83598ae` (API Contract, depends on the now-failed `7baed7a9`) is confirmed
+stuck behind a genuinely-failed (not just slow) dependency - log: `"kept planned task d83598ae ... queued
+behind failed dependency 7baed7a9 ... no child work is created"`. This chain will not self-heal without
+operator/self_falsification intervention. The underlying V1 migration collision on main is also still
+unresolved (moot for now since nothing is actively retrying against it).
+
+**Rest of the project unaffected and progressing**: `b87ca98a` now `review`, `ec6c17bd`/`451ffd3c`/
+`31afe4e2` all `pending_review`, `b3319ac9`/`b536fb37` merged. No self_falsification-poka-yoke or
+reviewer-dispatch-loop-regression log lines in the post-restart window (too early in the project's
+lifecycle for either to have fired yet).
+
+## 2026-07-24T02:38:00+04:00 - Fixed the 120-min circuit breaker design gap; unrelated frontend fix (duplication + low-contrast borders)
+
+Operator paused active monitoring to work through this session's backlog one item at a time, starting
+with the 120-minute stuck-session mechanism itself: "мы доверяем джулсу как рациональному агенту. И если
+120 минут никакого отклика - то мы не ставим крест на нем - а пытаемся глубже понять." (we trust Jules as
+a rational agent; 120 minutes of silence is not grounds to write it off - we try to understand more
+deeply first). Confirmed via code trace that the existing mechanism generated a Gemini analysis of the
+session's dialogue before closing (`geminiLoopAnalysis`) but never actually used it to decide anything -
+`diagnoseLoop` branched purely on the deterministic `closeReason` string and always returned the same
+generic "Restart the blocked work as a fresh atomic session" verdict for a timeout close, regardless of
+what Jules actually wrote. Downstream, `ProjectFlowService`'s blocked-task recovery loop (~line 1001) then
+just marks the task `failed` with no child work created for any non-system task - confirmed this is
+exactly what happened to both `7baed7a9` (honest rejection over the V1 migration collision) and
+`c884329a` after the power-outage restart logged above: same generic treatment regardless of very
+different underlying content.
+
+**Fix** (`JulesDispatchService.java`, `ClaimService.java`, both `closeOverdueStuckSessions` and
+`forceUnblockOverflowedSessions` call sites): before a stalled session can be closed, a new
+`classifyBeforeClosing` step reads the full dialogue/activity history and classifies it as PROGRESSING,
+REASONED_BLOCKER, or STUCK (fails safe to STUCK if the classifier is unusable, preserving old behavior
+rather than trusting indefinitely on an unverifiable claim):
+- **PROGRESSING** - refuse to close, reset the trust-window counters, keep the session alive. Operator
+  confirmed depth/slowness alone must never be treated as failure.
+- **REASONED_BLOCKER** (operator's chosen design: "закрыть сессию, но эскалировать честно") - close the
+  session (Jules genuinely can't proceed on this branch without an external fix), but instead of the
+  generic dead-end, requeue the SAME task (same ID, so no dependent-chain rewiring needed) via new
+  `ClaimService.reopenWithAmendedBrief`, with the exact blocker + corrective action Jules identified baked
+  into the task's brief for the next session. Closure reason is honestly framed as "external blocker
+  identified, not an agent failure." Bounded to 2 retries so a blocker nobody actually fixes externally
+  can't churn Jules sessions forever.
+- **STUCK** (or classifier unavailable) - original generic circuit-breaker path, unchanged.
+
+Verified: `docker compose build backend` succeeded with real tests executing (SpringBootTest integration
+tests ran against H2, no `-DskipTests`, no ERROR/BUILD FAILURE in the log), redeployed
+`docker compose up -d backend`, confirmed clean startup - Flyway validated all 50 migrations, H2 file DB
+survived. Not yet observed live against a real stalled session (none currently stalled long enough to
+trigger it) - will confirm the next time the classifier actually fires.
+
+**Unrelated, same session**: operator flagged (via a pasted screenshot) that the "Active Project In
+Production" hero card in `App.svelte` duplicated information already shown by `CommandDashboardV2`'s own
+header (name/status/path shown twice), and that panel borders were "почти невидимые" (near-invisible),
+causing real cognitive strain. Root cause of the second one: `--neutral-200`/`--neutral-300` in `app.css`
+(`#E5EEFF`/`#D3E4FE`) sit at roughly 1.05:1/1.15:1 contrast against `--surface` (`#F8F9FF`) - i.e. actually
+invisible, and these are the default border color for nearly every card/panel/input in the app. Fixed by
+removing the redundant `active-project-hero` section entirely (single source of truth is now
+`CommandDashboardV2`'s richer header, which also shows the Linear key and workspace path) and deepening
+the two neutral tokens (`#C7D6F5`/`#A8BEEA`) to give real, app-wide border contrast without changing the
+restrained Stitch-generated palette. Frontend build verified clean; rebuilt+redeployed the frontend image
+(no bind mount - image must be rebuilt for source changes to take effect, per prior finding). Operator has
+not yet visually confirmed the redeployed result.
+
+Next up per operator's explicit ordering: Flyway V1 migration-collision fix on `test-thirty-sixth`'s main
+branch (the still-broken repo state from the entry above), then the atomic-version-reservation-at-
+decomposition-time design, then the "Product merge readiness" formula fix.
+
+## 2026-07-24T02:51:00+04:00 - Operator correction to the circuit-breaker fix; Flyway V1 collision fixed live on test-thirty-sixth
+
+**Operator caught a real design flaw in the fix above before it shipped**: the original `classifyBeforeClosing`
+fail-safe silently treated "AI classifier unavailable/unreachable" the same as verdict STUCK (closing the
+session, failing the task). Operator: "вольное трактование!!! если ии недоступен это не значит что ты
+имеешь право сохранять нерабочие решения!!" (unauthorized liberal interpretation - AI being unavailable
+does not grant permission to fall back to a destructive default). Correct framing: an unreachable
+classifier is an absence of information, not evidence of anything about the session - closing/failing a
+task because our own infra hiccuped would be exactly the kind of "non-working decision" this whole fix
+exists to prevent.
+
+**Fix to the fix**: added a fourth `LoopVerdict.UNAVAILABLE`, distinct from `STUCK`. On classifier
+failure/unusable response, `closeLoopAndCreateFollowUps` now does neither close-as-failed nor
+close-as-blocker - it returns `false` (not closed), touches no trust/retry counters, logs a clear WARN,
+and lets the next maintenance tick (`jules.detect-stuck-rate-ms`, ~60s) retry classification for real. A
+session only ever gets closed on an actual, working, content-based verdict.
+
+This also surfaced 2 pre-existing unit tests (`JulesDispatchServiceTest.
+closesLoopWithoutCreatingWishlistWhenDialogueBudgetExceeded`,
+`.forceUnblockEscalatesToLoopClosureAfterMaxAttempts`) that had never stubbed `chatCritical` - meaning they
+were unknowingly relying on the old "unavailable defaults to close" behavior. Both scenarios ARE
+genuinely STUCK by test design (repeated identical blocker across 8 rounds; empty activity history plus
+exhausted blind-cycle overflow), so fixed by explicitly stubbing a `VERDICT: STUCK` response rather than
+changing the assertions - the tests now verify the real intended behavior instead of an accidental one.
+Confirmed live: piped Docker build output showed `Tests run: 229, Failures: 2` on the first attempt (the
+task-completion notification claimed exit code 0 - reconfirms the standing note that piped exit codes are
+not trustworthy, always grep the actual log). Second build after the test fix: clean, no `[ERROR]`,
+image exported. Redeployed, backend came up clean, Flyway validated 50 migrations, DB intact.
+
+**Flyway V1 collision fixed live on `test-thirty-sixth`'s `main`** (the actual blocking bug from the
+earlier entry, now resolved rather than just documented): cloned the repo, confirmed via `gh pr list
+--json mergedAt` which PR actually landed first (PR #2 "Campaign & Lead Ingestion Schema" merged
+18:41:31Z, PR #3 "...Dialogs and Messages" merged 18:41:37Z, 6 seconds later), renamed the later PR's
+`V1__create_dialogs_and_messages.sql`/`U1` pair to `V2`/`U2` (plus their self-referencing header
+comments), kept the earlier campaigns/leads migration as `V1`. `main` is a protected branch - direct push
+was rejected (`GH006`), so pushed to a branch, opened PR #18, waited for CI (`Eneik Project CI` / quality
+check) to go green, then merged via `gh pr merge --squash --delete-branch`. Confirmed on `main` via
+`gh api .../contents/.../db/migration`: now `U1__campaigns_leads_schema.sql`,
+`V1__campaigns_leads_schema.sql`, `U2__create_dialogs_and_messages.sql`,
+`V2__create_dialogs_and_messages.sql` - no more collision. This does not by itself un-fail `7baed7a9`
+(still `failed` from the earlier outage) or un-stick `d83598ae` - that needs either self_falsification or
+a manual requeue, not yet done.
+
+Next per operator's ordering: atomic Flyway-version-reservation-at-decomposition-time design, then the
+"Product merge readiness" formula fix. Frontend fix from the previous entry still awaiting operator's
+visual confirmation.
+
+## 2026-07-24T02:59:00+04:00 - Atomic Flyway-version reservation at decomposition time, shipped
+
+Implements the systemic fix behind the V1 collision fixed above - operator's own proposal from earlier in
+this session: "жестко захардкодить на бекенде еще на этапе декомпозиции, чтобы номера они не выдумывали,
+а использовали те которые им дали" (hard-code it at decomposition time so agents use assigned numbers
+instead of inventing their own).
+
+New pieces:
+- `ProjectEntity.nextFlywayVersion` (V51 migration, nullable `INT`) - a per-project counter, lazily seeded
+  rather than assumed to start at 1.
+- `GitHubPullRequestService.highestFlywayVersion(project, ref, dir)` - lists the migration directory via
+  the GitHub contents API, returns the highest existing `V<N>__` number (0 if the directory doesn't exist
+  yet - genuinely no migrations - vs `Optional.empty()` if the real state couldn't be determined at all,
+  e.g. GitHub unreachable; callers must never conflate the two).
+- `TechnicalLeadCompiler.reserveNextFlywayVersion(projectId)` - on first use per project, seeds the
+  counter from the real repo state via the method above; every call after that just reads-increments-saves
+  the persisted counter. Returns empty (not a guessed number) if the initial seed couldn't be determined,
+  so the fallback for that one task is the old "figure it out yourself" behavior rather than a
+  confidently-wrong assertion.
+- Wired into `TechnicalLeadCompiler.buildTaskDescription`: any BARCAN-TAG-08 (Data) task's brief now gets a
+  "MANDATORY Flyway version: use exactly VN" line with an explicit instruction not to scan the directory
+  and self-assign, plus a note about what happened last time an agent did that. Scoped to one migration
+  file per task (matches the existing "one atomic slice" task-shape convention) - deliberately did not
+  try to reserve a range for multi-file tasks, since that would require knowing the file count in advance
+  and risks a different kind of counter drift.
+
+Explicitly does not fix a collision between two independent decomposition cycles that both start from an
+already-stale `main` (per operator's own scoping) - only eliminates the case that actually happened here,
+where both colliding tasks were born in the same decomposition burst.
+
+Fixed the one existing test that constructs `TechnicalLeadCompiler` directly (`IdempotencyTest`) to pass
+a mocked `GitHubPullRequestService` for the new constructor parameter - that test's wishlist is
+`BARCAN-TAG-09`, so the new branch never fires and no further stubbing was needed. Built clean, redeployed,
+Flyway applied V51 on the live DB with no issues (`Successfully applied 1 migration ... now at version
+v51`).
+
+Next: "Product merge readiness" formula fix (last item in the operator's queue for this session).
+
+## 2026-07-24T03:11:00+04:00 - Product merge readiness formula fixed (last backlog item this session); full session backlog now closed
+
+Implements the operator's twice-corrected principle from earlier: "формулу надо считать только по задачам
+с кодом, а не спайкам, ревью и прочему вспомогательному" (the ratio must only count code-producing tasks,
+not spikes/reviews/other auxiliary work).
+
+`ClientDeliverableReadinessService.computeForSources`: planned items are now split into a
+`codeProducingItems` subset (excludes any planned item whose every associated task is either
+`EmsFlowStage.DECISION`-role (BARCAN-TAG-09) or `cynefinDomain=complex`) used only for the
+merge-ratio/feature-completeness numbers; `everyRootCompiled`/`everyFeaturePlanned`/`decompositionComplete`
+stay computed against the FULL unfiltered set, since "has this been planned" must not be held hostage by
+items about to be excluded from "how much of it merged". A scope with zero code-producing items now
+reports `ratio=1.0`/`total=0` (nothing to measure) instead of a misleading 0%.
+
+**Caught my own near-miss before shipping**: first draft kept the wishlist row's `compiledByRole` field to
+decide DECISION-stage exclusion - that field is the COMPILER's own role tag (near-always BARCAN-TAG-09,
+"Technical Lead", regardless of what role executes the resulting task), not the executing role. Using it
+would have misclassified nearly every planned item in the project as auxiliary, not just spikes -
+caught via the readiness test suite's own `plannedItems()` helper, which stamps every wishlist row
+BARCAN-TAG-09 for unrelated reasons while giving each task its own distinct role. Fixed to key off
+`task.getRole().getTag()` from the actual TaskEntity instead.
+
+**Second real regression, caught by the build (not blind luck)**: the same `computeForSources` engine also
+backs `isBuildPhase` (a structurally different, more sensitive gate - controls whether the
+`backend_contract`/`design_excellence` polish gates apply, and whether self-generated falsification work
+is allowed to dispatch at all). Two integration test fixtures
+(`GateOrchestratorIntegrationTest`/`TaskClaimServiceTest`'s `markProjectPastBuildPhase`) simulated "a real
+merged client deliverable" using a single BARCAN-TAG-09 (decision-only) task with a merged review - exactly
+the loophole this fix closes, so both fixtures stopped working (`Tests run: 230, Failures: 4`, again
+initially reported as exit 0 by the task notification - third time this session the piped-exit-code note
+proved necessary). Judged this was the fixture being stale, not the fix being wrong: a decision record
+alone was never a legitimate stand-in for "real code shipped", so fixed both fixtures to use a
+code-producing role (BARCAN-TAG-02, with `review.setHasCode(true)`) instead of weakening the production fix.
+
+Verified live on `test-thirty-sixth`: `productReadiness` moved from `4/34 (12%)` to `4/32 (12.5%)` -
+numerator unchanged, denominator dropped by exactly the 2 non-code-producing planned items in that
+project, confirming the fix behaves as intended without touching real progress.
+
+**This closes every item in this session's backlog**: 120-min circuit breaker deep-read (+ the
+UNAVAILABLE-verdict correction), frontend duplication/contrast, Flyway V1 collision (live fix), atomic
+Flyway version reservation, and this readiness formula fix. Frontend change is the only one still awaiting
+the operator's own visual confirmation.
+
+## 2026-07-24T03:50:00+04:00 - Second backlog pass: same-batch эпик dedup, epic-shape prompt, and 3 quick display/hygiene fixes (Phases 1-3 of a new plan)
+
+Operator: "это все очень важно! как ты посмел пропустить это!" (all of this is very important, how dare
+you skip it) after I listed the still-open items from an earlier backlog check. Entered plan mode, ran 3
+parallel Explore passes + 1 Plan pass to get exact root causes/fix points before writing any code, got the
+operator's approval on the written plan, then implemented Phases 1-3 (Phase 4 - investigate-then-fix items
+- next).
+
+**Phase 1 (priority) - same-batch duplicate эпики + honest wishlist status.** Root cause: one LLM
+decomposition response's `epicPlans` (grouped by `sourceIndex` into `myEpics`) had zero memory across
+sibling epics in `ProjectFlowService.resolveEpicFeatureId` - the only dedup guard
+(`SelfFalsificationEpicMatcher`, deterministic Jaccard similarity) was gated to `self_falsification` only.
+Confirmed live: two `epicPlans` both titled "Campaign Configuration & Ingestion UI" in one response minted
+two `FeatureEntity` rows and two independently-running Jules session chains for the same work. Fix: added
+a batch-local `List<FeatureEntity> epicsResolvedThisWishlist`, scoped per wishlist iteration (never across
+separate `buildTaskGraphFromSlices` calls, to keep cross-cycle behavior - and the existing test locking
+that in - untouched), threaded through `buildTaskGraphForOneEpic`/`resolveEpicFeatureId`. A new universal
+(all sources) check reuses `SelfFalsificationEpicMatcher` against this batch-local list before creating a
+feature. Also fixed the related honesty issue: `buildTaskGraphFromSlices`'s top-level wishlist status is
+now `dismissed` (not `converted_to_task`) when zero epics actually built anything, and
+`TechnicalLeadCompiler.createTaskFromWishlist`'s duplicate-task branch now marks the slice-wishlist
+`dismissed` instead of falsely claiming a conversion. Added 2 new tests to
+`EpicDecompositionIntegrationTest` reproducing the live bug (2 epicPlans, same sourceIndex, one call -> 1
+feature) and guarding against over-eager collapsing (2 genuinely different epics, same sourceIndex -> still
+2 features).
+
+**Phase 2 - epic task-shape.** Confirmed NOT hardcoded anywhere in Java (`isValidCompilerPlan` only bounds
+slices to [1,8] per epic) - the ~5-task shape is emergent LLM behavior from the prompt's "structurally
+required layers" rule, with zero FEAT-ID/sub-feature signal anywhere in the input pipeline. Operator chose
+prompt-only strengthening (no hard validator): STEP 1 now explicitly asks the LLM to enumerate distinct
+sub-features before deciding epic count; the structurally-required-layers rule is now explicitly framed as
+a floor, not a ceiling - multiple requirements for one role should get multiple slices for that role, not
+one slice force-fitting everything. No deterministic test possible for this one - judge on the next live
+decomposition.
+
+**Phase 3 - quick confirmed-bug fixes.**
+- "Merge Conflict CTQ" 0.00% yield for 0/0: `SystemStatusService.yieldRate` now returns `Double` (nullable)
+  instead of a primitive defaulting to 0.0 for the no-data case - it previously contradicted `sigmaLevel`,
+  which already treats 0 opportunities as best-case (6.00σ) right next to a tile reading worst-case (0%).
+  `MetricsView.svelte`'s `percent()` now renders "N/A" for null/undefined instead of coercing to "0%".
+- "API Slice"/generic task titles: `TechnicalLeadCompiler`/`DecompositionService` now append a short
+  distinguishing id suffix to `TaskTitleBuilder`'s role-default titles, matching the pattern already used
+  for the 4 system/meta task types.
+- Removed dead `checkActuatorHealth()` in `FalsificationCycleService` (zero call sites) + its now-unused
+  HTTP-client imports.
+- BARCAN Council Readiness: confirmed already fixed in a prior session (git status showed no pending
+  change to `EmsMetricsService`) - corrected the backlog memory entry instead of re-fixing.
+
+Hit one real compile error mid-build: added a `shortId(UUID)` helper to `TechnicalLeadCompiler` without
+grepping first - one already existed at line ~1259 with an equivalent implementation. Removed the
+duplicate, rebuilt clean. Backend built, redeployed, Flyway still at v51 (no schema change this pass),
+startup clean. Frontend rebuilt+redeployed for the Six Sigma display fix.
+
+Next: Phase 4 (investigate-then-fix: command-dashboard `julesSessions` empty, `fivedmitr-sys` account
+state, GitHub rate limiting) - diagnosing live state before writing any code, per the approved plan.
+
+## 2026-07-24T03:58:00+04:00 - Phase 4 (final): fivedmitr-sys resolved on its own, jules_sessions dashboard bug fixed, GitHub rate-limiting investigation surfaced a bigger separate question
+
+**`fivedmitr-sys` account**: live check found 3 rows under this name - 2 stale `decommissioned` rows from
+early July, and the current one `status=idle`, `lastHeartbeat=2026-07-23T18:19:28Z` (yesterday, within the
+current test-thirty-sixth window). Not stuck `api_blocked` anymore - self-resolved via the existing
+15-minute recovery sweep (`AccountRepository.recoverStaleBlockedAccounts`) at some point since the original
+2026-07-18 report. No code change needed.
+
+**`command-dashboard`'s `julesSessions` empty - real bug, fixed.** Confirmed via `JulesSessionEntity` (not
+the debug SQL endpoint - deliberately left disabled, per the existing security note) that `jules_sessions`
+has no `project_id` column at all, only `task_id`. `CommandDashboardService.fetchData`'s generic
+`columnExists(table, "project_id")` guard correctly refused to leak all projects for a table with no such
+column - meaning this dashboard's `julesSessions` array was permanently empty for every project, by design
+of the safe-fallback, not a query bug. Fix: new `fetchJulesSessions(projectId, statusMap)` joins through
+`tasks.project_id` (`SELECT js.* FROM jules_sessions js JOIN tasks t ON js.task_id = t.id WHERE
+t.project_id = ?`) instead of routing this one table through the generic helper. Verified live on
+test-thirty-sixth: `julesSessions` now returns 22 real rows (was 0) via `GET
+/api/projects/{id}/command-dashboard`.
+
+**GitHub rate-limiting from over-polling - investigation surfaced a different, more important question,
+did NOT force a fix.** `AutoMergeService.syncOpenPullRequestsFromGitHub`/`reconcileMergedTaskOutcomes`
+(the two PR-sync loops) both filter to `ProjectStatus.active` only. Live check: none of the 9 current
+projects are `active` (5 `frozen`, 4 `accepted` - test-thirty-sixth itself is `accepted`). Yet PRs clearly
+merge autonomously on test-thirty-sixth (observed directly all session - `b3319ac9`/`b536fb37` merged, PR
+#18 etc.). This means either (a) a separate reconciliation path exists for `accepted` projects that I
+haven't located, or (b) this project-wide sync loop is currently a no-op for every live project and
+per-session polling elsewhere (`JulesDispatchService.pollStatus`) is quietly carrying the whole load
+without it. Did not guess or touch `AutoMergeService`'s status filter - this is a different, bigger
+question than the original "stop polling dead projects" rate-limit concern (this is closer to "is the
+polling scope right at all anymore"), reported to the operator rather than fixed blind.
+
+**Session backlog fully closed** except: (1) the `AutoMergeService` status-filter question just found,
+needing operator input before any code change, and (2) confirming the epic-shape prompt tweak's real
+effect, which needs a live decomposition to observe.
+
+## 2026-07-24T04:17:00+04:00 - Frozen projects now get zero further background activity (operator directive, in response to the AutoMergeService status-filter finding above)
+
+Operator, in response to that finding: "сейчас софт предполагает ничего ни в каком виде не делать с
+замороженными проектами - все задачи снимать. и игнорировать неактуальные проекты" (the software is
+supposed to do nothing in any form with frozen projects - pull/cancel all their tasks - and ignore
+irrelevant projects). Investigated before writing code (`ProjectFlowService.pauseProject`'s own long-
+standing comment already promised "already-dispatched Jules sessions or in-flight PR review/merge... are
+cancelled separately" - confirmed via full-codebase search that no such cancellation code actually existed
+anywhere; the comment described intended, never-implemented behavior).
+
+Also clarified project-status semantics while investigating (corrects my own earlier mis-read): `accepted`
+is NOT "actively building" - it's the terminal "client accepted the final delivery" status
+(`acceptProject`, `requireActiveProject` blocks new work on it). `active` is the real normal working
+status (project-creation default, `activateProject`'s target). PRs merging live on test-thirty-sixth
+(which is `accepted`) despite `AutoMergeService`'s two GitHub-discovery loops being `active`-only is
+explained by several OTHER scheduled loops being entirely project-status-blind, keyed only on Jules
+session/task/PR-review state: `ContinuousOrchestrationService.pollActiveJulesSessions`/`checkForSystemStall`,
+`JulesDispatchService.runSessionSafetyMaintenance`/`reconcileStrandedPrOpenedWorkflows`, and
+`AutoMergeService`'s own merge-execution half (`processAutoMerge`'s main loop + `reconcileMergedTaskOutcomes`,
+both driven off `prReviewRepository.findAll()` with no project join at all). These loops don't care whether
+a project is `active`/`frozen`/`accepted` - they just keep working whatever sessions/reviews are in a
+non-terminal state, which is *why* freezing a project historically achieved nothing beyond stopping new
+dispatch.
+
+**Fix, `ProjectFlowService.java`**: new `freezeProjectAndCancelWork(project, reason)` wraps the status flip
+plus a new `cancelAllActiveWorkForProject(project, reason)` - for every non-terminal task, cancels its
+active Jules session via the existing `JulesDispatchService.cancelSession` (which the code's own comment
+confirms makes a session fully inert: "cancelled" is a status nothing else polls or acts on, so it drops
+out of every session-status-filtered loop above), or `claimService.closeTaskAsFailed` directly if no active
+session exists; then closes any still-open GitHub PRs via the already-implemented (but previously never
+called) `GitHubPullRequestService.closeOpenPullRequests`. Wired into all 3 places that freeze a project:
+`pauseProject` (the explicit pause/freeze endpoint), `activateProject` (sidelining every other active
+project), and `createProject`'s greenfield-freeze of the previous active project. Built, tested, redeployed,
+clean startup.
+
+**Known residual gap, not fixed this pass** (judged out of scope for the value/complexity tradeoff): a
+`PrReviewEntity` row that was already CI-passed+approved at the exact moment of freezing keeps its
+`merged=false`/passing `ciStatus`, so `AutoMergeService`'s unfiltered merge-execution loop could still
+attempt one merge call against the now-closed GitHub PR - which will simply fail at GitHub's API (PR
+already closed), not a real ongoing cost, just log noise. Plugging this fully would mean threading
+`PrReviewRepository` into `ProjectFlowService` (new constructor dependency) to mark those rows inert too -
+noted for later if it turns out to matter in practice.
+
+**Not yet decided**: should `acceptProject` (the "client accepted delivery" terminal transition) get the
+same cancellation cascade, or is "let existing in-flight work finish gracefully" the right behavior for
+that specific transition (unlike `frozen`, which the operator wants to mean immediate full stop)? Asked
+the operator rather than assuming either way.
+
+**Answered**: "да такая же немедленная отмена" (yes, same immediate cancellation). `acceptProject` now
+calls `cancelAllActiveWorkForProject` right after setting `ProjectStatus.accepted`/`acceptedAt` - same
+treatment as `frozen`, no separate "let it finish gracefully" path. Built, tested, redeployed, clean
+startup. This closes every open item from this session's second backlog pass.
+
+## 2026-07-24T04:53:00+04:00 - Early-unblock generalized from API_CONTRACT-only to every "spec" stage
+
+Operator asked to generalize the 2026-07-23 API_CONTRACT-only early-unblock (a dependent starts as soon as
+its dependency's PR is open, not fully merged, because a contract is "a small isolated spec") to other
+dependency edges - explicitly requested it be "elegant" and break nothing already working. Full plan-mode
+pass (2 Explore + 1 Plan agent, verified against actual source, plan approved before any code written).
+
+**Design**: generalize on artifact kind, not stage name. DECISION (BARCAN-TAG-09), ARCHITECTURE
+(BARCAN-TAG-01), API_CONTRACT (BARCAN-TAG-12), and COMPLIANCE (BARCAN-TAG-10) all produce a single
+reference document/decision record (`docs/*.md`, confirmed via `TechnicalLeadCompiler`'s own file-scope
+hints) - a dependent only needs to READ the finished artifact. DATA_MODEL, IMPLEMENTATION, EXPERIENCE,
+OPERATIONS, VERIFICATION, INTEGRATION all produce something a dependent needs in FINAL, verified form (real
+schema/code/config/test-results) - these stay excluded, deliberately preserving the exact prior incident
+(three roles guessing incompatible answers when DATA_MODEL/API_CONTRACT/IMPLEMENTATION ran in parallel)
+that the original API_CONTRACT-only scoping existed to prevent.
+
+**Implementation**: `EmsFlowStage` (the codebase's own established single source of truth for role→stage
+mapping) gained a `specOnly` boolean per constant + a new `isSpecStage(String roleTag)` static helper,
+mirroring its existing `forRoleTag`/`graphOrderForRoleTag`/`labelForRoleTag` pattern - purely additive, no
+existing method signature changed. `ClientDeliverableReadinessService.isApiContractPrOpenButUnmerged` →
+renamed `isSpecDependencyPrOpenButUnmerged`, now checks `isSpecStage` instead of `== API_CONTRACT`.
+Renamed the payload marker keys for honesty (`earlyUnblockedContractTask` → `earlyUnblockedSpecTask`,
+`earlyUnblockContractNotified` → `earlyUnblockedSpecNotified` - confirmed via repo-wide grep these appear
+in exactly 3 backend files, no frontend consumer, safe bounded rename). `AutoMergeService`'s
+post-merge notify trigger now fires for any spec-stage merge, not just contract; while in there, fixed a
+latent double-send gap (the "notified" marker was stamped but never actually checked before sending).
+`JulesDispatchService.notifyContractFinalized` → `notifySpecTaskFinalized`, message text now says
+"decision"/"architecture"/"api contract"/"compliance" via `EmsFlowStage.labelForRoleTag` instead of a
+hardcoded "API contract".
+
+**Tests**: `EmsFlowStageTest` - new test asserting `isSpecStage` true for exactly the 4 spec roles, false
+for the other 9 + unknown. `ClientDeliverableReadinessServiceTest` - renamed the 4 existing tests' method
+calls (assertions/behavior unchanged, confirmed BARCAN-TAG-02/IMPLEMENTATION still correctly excluded), added
+2 new tests (DECISION/ARCHITECTURE/COMPLIANCE now early-unblockable; OPERATIONS/VERIFICATION explicitly
+re-confirmed excluded, previously untested at all for this method). `AutonomousPipelineIntegrationTest` -
+renamed the payload-key literal in the 2 existing tests (`nonContractStageDependencyInReviewDoesNotEarlyUnblock`,
+proving DATA_MODEL stays excluded, keeps passing unchanged), added a new end-to-end test
+(`architectureDependentsStartEarlyWhenArchitecturePrIsOpenButNotMerged`) proving a second, previously-
+excluded spec stage now early-unblocks through the real dispatch-gate path. Built, tests ran, clean image
+export, redeployed, backend came up clean (no schema change, Flyway stayed at v51).
+
+**Known bounded consequence, not a bug**: any task with the OLD payload key already stamped `true` at
+deploy time won't be matched by the renamed key once its dependency merges - it silently loses its
+one-time "reconcile against final" FYI (the dependent still runs/merges normally regardless). Self-healing,
+one-time, worth knowing about rather than fixing with dual-key-read complexity.
+
+This closes the last open item from this session's backlog work.
+
+## 2026-07-24T05:01:00+04:00 - New clean-repeat test project created: test-thirty-seventh
+
+Operator: create a fresh test project with the EXACT SAME wishlist as test-thirty-sixth (word-for-word,
+for experiment cleanliness), resume the same monitoring cadence, add any new monitoring points I judge
+important given today's fixes.
+
+Retrieved the original client wishlist verbatim from `test-thirty-sixth`'s own DB (row
+`c8d5c0b4-6beb-494e-969d-6907fe6cdc71`, 6911 chars, "# Technical Specification: AI-Powered Telegram Lead
+Generation & Outreach Automation Platform (LeadGen Bot)") rather than reconstructing from memory, to
+guarantee byte-for-byte identity. Created **test-thirty-seventh**
+(`0997f0b5-eb92-450e-a057-d6ef50de162d`) via `POST /api/projects` (`greenfield` mode). Confirmed via direct
+comparison: stored wishlist content is byte-identical to the original (`new_content == original` → `True`).
+GitHub repo created cleanly (`ready_with_warnings` - only warning is the expected local-env webhook skip);
+Linear sync failed with a pre-existing known GraphQL validation error (harmless, doesn't block anything).
+Decomposition already picked it up (wishlist status `pending` → `compiling` within seconds). No `active`-
+status project existed before this creation, so the greenfield-freeze/cancel-all-work cascade had nothing
+to freeze - clean start, no collateral effect on other projects.
+
+**Monitoring resumed**: cron `794f0f3e`, same cadence (`7,37 * * * *`), same standard checklist (wait-time
+breakdown, bottlenecks, GitHub cross-check including migration file CONTENT diffing this time - not just
+git-level status, per the V1-collision monitoring gap owned earlier), same "session time is never waste,
+queued-without-dispatch/review time is" principle, same append-only OBSERVER_LOG.md logging discipline.
+
+**New points added for this run, specific to today's fixes** (this project uses the EXACT wishlist that
+previously produced the two real live bugs the biggest fixes today targeted, making it close to an ideal
+regression test):
+- **Epic dedup**: this wishlist previously produced 2+ real duplicate-эпик pairs on test-thirty-sixth -
+  watch for zero duplicates this time, or a live "Poka-yoke: эпик ... matched another эпик already created
+  earlier in this same decomposition batch" log line if the fix catches one in the act.
+- **Flyway reservation**: this wishlist previously caused the real V1 migration collision (Campaign schema
+  vs Dialogs schema merged 6 seconds apart) - watch BARCAN-TAG-08 task briefs for the new "MANDATORY Flyway
+  version: use exactly VN" instruction and confirm no collision repeats.
+- **Epic-shape granularity**: this wishlist has explicit FEAT-ID sub-features per module (FEAT-ACC-01..05,
+  FEAT-CMP-01..04, etc.) - a good natural test of the strengthened decomposition prompt. Observational only,
+  not pass/fail - note whether slicing gets more granular, don't over-interpret either way.
+- **Early-unblock generalization**: watch for the first-ever live "early-unblocked on spec task" log line
+  firing for a non-API_CONTRACT stage (DECISION/ARCHITECTURE/COMPLIANCE).
+- **Circuit breaker deep-read**: if any session stalls past 60/120 min, this is the first live opportunity
+  to observe the new PROGRESSING/REASONED_BLOCKER/STUCK/UNAVAILABLE classifier actually fire - capture
+  which verdict and why.
+- **Wishlist status honesty**: any duplicate/collapsed internal slice-wishlist should now read `dismissed`,
+  not `converted_to_task`.
+
+**Quick baseline check done immediately** (not waiting for first cron tick): global `/api/system-status`
+sixSigma/qualityGate/conflictDpmo yield/sigma pairs all internally consistent (0.88/2.69σ, 0.89, 0.82/2.4σ -
+no 0%-vs-6.00σ contradiction, real non-zero data now flowing through). test-thirty-seventh's decomposition
+already completed within the first ~20 minutes: 12 features, 30 planned tasks - first live data point for
+whether the epic-shape prompt tweak produced more granular slicing than the previous ~5-task/epic norm on
+this same wishlist (test-thirty-sixth's equivalent decomposition needs a direct count for comparison before
+drawing a conclusion - flagged for the next monitoring cycle, not concluded here).
+
+## 2026-07-24T05:21:00+04:00 - Frontend accepted; separate 30-min frontend monitoring cron started; Playwright MCP configured for next session
+
+Operator confirmed the frontend fix (duplicate header + border contrast) looks good. Asked for separate,
+recurring (every 30 min) frontend monitoring in its own session cadence, registering any bugs found. Stated
+principle: the frontend's actual user is not a programmer or system expert - every widget must be
+understandable without special knowledge, and the most important thing is that numbers are trustworthy and
+reflect real events/facts, not decorative.
+
+**Honest capability check before promising anything**: no browser/screenshot tool was available in this
+session (`ToolSearch` for browser/playwright/screenshot/computer-use came back empty; `WebFetch` only
+converts HTML to markdown via a small model and cannot reach localhost or render visually). Said so plainly
+rather than setting up a cron that would silently under-deliver on "watch it yourself" - I cannot actually
+see rendered pixels, so pure visual/layout bugs (overlap, cut-off text, broken responsive design) are not
+catchable this way.
+
+Operator: "у тебя есть все доступы вообще - подключи и настрой инструмент сам" (you have full access -
+connect and configure it yourself). Ran `claude mcp add playwright -s local -- npx -y @playwright/mcp@latest`
+- registered successfully, `claude mcp list` confirms "playwright: ... - Connected", scoped to this project
+(`C:\docker-build\EneikProductionSys`, local config in `.claude.json`). **Confirmed via `ToolSearch` that the
+new MCP server's tools are NOT available in this already-running session** - MCP servers connect at session
+start, not hot-reloaded mid-conversation; this is a platform constraint, not something bypassable from
+inside the session. Told the operator plainly: available starting the NEXT session, not this one (and since
+cron jobs created in this session live and fire within this same session's context per their own tool
+description, the recurring frontend-monitoring cron below stays in the no-browser mode for its entire
+lifetime unless recreated fresh in a future session).
+
+**What the cron (id `72c01ca1`, `13,43 * * * *`, offset from the pipeline-monitoring cron's `7,37` to avoid
+collision) actually does per cycle, given the above constraint**: a data-accuracy audit, not visual QA -
+checks `/api/system-status` Six Sigma yield/sigma internal consistency (direct regression check for today's
+fixed 0%-vs-6.00σ contradiction), `productReadiness`/`command-dashboard`/`wait-time` numeric sanity
+(no impossible ratios, no silently-empty tables that should have data), plus a periodic (only when
+`frontend/src` has changed since last check) grep for the same `?? 0`-masks-no-data and duplicate-widget-
+info anti-pattern classes found and fixed today. Findings get logged (append-only), never auto-fixed.
+
+## 2026-07-24T05:30:00+04:00 - First monitoring cycle on test-thirty-seventh: today's fixes confirmed working, but a real NEW bug found (DB lock-contention retry storm creating orphan features)
+
+**(a) Progressing normally**: wait-time breakdown healthy for a 40-min-old project - `blocked_by_dependency`
+16 tasks/oldest 15min, `waiting_for_capacity` 3/oldest 9min, `held_build_phase` 0. `/api/dashboard/bottlenecks`
+empty. 25 real tasks: 16 queued, 6 claimed, 2 pending_review, 1 done, zero failed.
+
+**Points B/D/F from the new checklist - all confirmed working, direct regression tests against last time's
+real incidents**:
+- **B (Flyway reservation)**: all 4 Data Schema (BARCAN-TAG-08) task briefs carry the "MANDATORY Flyway
+  version... use exactly VN" instruction. Extracted actual assigned versions: Account/proxy schema=V1,
+  Campaign/Lead schema=V2, Dialog/Message schema=V3, Warm-up Config schema=V4 - all 4 DISTINCT, zero
+  collision. Direct regression proof: last time, this exact wishlist gave Campaign schema and Dialogs
+  schema BOTH V1 (the real incident this fix targets) - this time they're V2 and V3.
+- **D (early-unblock generalization)**: fired 3 times live - "Poka-yoke Lean fix: task 1994b4cc... /
+  d4095128... / 1286a8f5... early-unblocked on spec task 55845787 (PR open, not yet merged)" - spec task
+  55845787 = "Shared API contract for Live Chat CRM" (BARCAN-TAG-12/API_CONTRACT). This is the OLD
+  pre-generalization behavior working correctly, not new proof yet - this decomposition simply produced no
+  standalone DECISION/ARCHITECTURE/COMPLIANCE task with dependents to exercise the new stages on. Not a
+  problem, just no opportunity yet - watch future cycles/projects for that.
+- **F (wishlist status honesty)**: 33 total wishlist rows, 26 converted_to_task + 7 dismissed (0
+  wrongly-labeled converted_to_task duplicates found) - see the bug writeup below for what those 7
+  actually are; the honesty fix is correctly catching real fallout from a separate bug rather than mislabeling it.
+
+**A (epic dedup) - clean by content, but productReadiness.totalFeatures is inflated (12 vs 5 real эпики) -
+led to a real, separate, previously-unknown bug.** Reconstructed the actual dependency-graph tree from all
+25 tasks (root-finding on dependsOn=None, per-task payload.slice_display_title): exactly 5 real эпики,
+one per wishlist module, zero thematic duplicates -
+1. Account/Session Mgmt (Module 1) - schema V1 -> contract -> 3 dependents (5 tasks)
+2. Campaign Mgmt (Module 2) - schema V2 -> contract -> 4 dependents (6 tasks)
+3. AI Dialogue (Module 3) - schema V3 -> contract -> 4 dependents (6 tasks, no separate contract stage - a
+   real content-driven shape difference, matching today's Phase 2 prompt-tweak intent)
+4. Live Chat CRM (Module 4) - contract only, no own schema (reuses Module 3's dialog data conceptually) ->
+   3 dependents (4 tasks)
+5. Anti-Ban/Warm-up (Module 5) - schema V4 -> 2 direct dependents, no contract stage (3 tasks)
+Plus 1 system bootstrap task (BARCAN-TAG-01, EMS runtime contract). Confirmed live log line: "1 wishlist(s)
+compiled by Jules session sessions/13229758708864186532 into 5 эпик(s), 24 task slice(s) total" - matches
+exactly. But productReadiness.totalFeatures = 12, not 5 - 7 extra FeatureEntity rows unaccounted for
+in any visible task.
+
+**(c) NEW BUG FOUND, not fixed, reported only - DB lock-contention retry storm on wishlist compilation
+completion, likely leaving orphan features behind.** Full evidence trail from docker logs
+eneikproductionsys-backend-1 --since 50m:
+- 01:08:52 - JulesDispatchService: Replaying stranded pr_opened workflow for task b1a1d37c.../session
+  sessions/13229758708864186532/PR .../pull/1 (this is reconcileStrandedPrOpenedWorkflows, a
+  project-status-blind scheduled loop, firing every ~60s)
+- 01:08:55 - FAILS: org.springframework.dao.PessimisticLockingFailureException: Timeout trying to lock
+  table "PROJECTS" (H2: "is locked by tx 1 and can not be updated by tx 2 within allocated time interval
+  2000 ms"), immediately followed by "Failed to replay stranded pr_opened workflow ...: Unable to rollback
+  against JDBC Connection" -> Caused by: java.sql.SQLException: Connection is closed. The rollback
+  itself failed, not just the original operation - a real data-integrity risk, not a clean abort.
+- This EXACT sequence (replay attempt -> lock timeout -> failed rollback) repeated at 01:09:52, 01:10:52,
+  01:11:52, 01:12:52, 01:13:52, 01:14:52 - 7 consecutive failures over ~7 minutes, across 3 different
+  scheduler threads (scheduling-6/7/8, confirming genuine concurrent contention, not a single stuck thread).
+- 01:15:38-39 - 8th attempt finally succeeds: branch deleted, "1 wishlist(s) compiled ... into 5 эпик(s),
+  24 task slice(s) total".
+- Full stack trace of each failure confirms the call path: reconcileStrandedPrOpenedWorkflows ->
+  handlePrOpenedWorkflow -> completeWishlistCompilation -> buildTaskGraphFromSlices ->
+  buildTaskGraphForOneEpic -> TechnicalLeadCompiler.createTaskFromWishlist -> createAndSaveTask ->
+  BottleneckAwarePriorityService.computePriority -> BottleneckDetectionService.detect ->
+  existsJulesAccountWithCapacity (the query that actually hits the PROJECTS-table lock timeout).
+  Critically, resolveEpicFeatureId/featureService.createFeature(...) runs EARLIER in
+  buildTaskGraphForOneEpic than this failure point - meaning each of the 7 failed attempts could have
+  already created and flushed a FeatureEntity row before hitting the lock exception downstream.
+
+**Hypothesis (strong circumstantial evidence, not directly verified at the DB row level - no REST endpoint
+exists for features, and the debug SQL endpoint stays deliberately disabled per standing security policy,
+did not enable it)**: totalFeatures=12 = 5 real эпики + exactly 7 orphan FeatureEntity rows, one from
+each of the 7 failed retry attempts, left behind because the failed transaction's OWN rollback also failed
+("Connection is closed"). The 7 dismissed wishlist rows are a SEPARATE but related symptom: when the
+successful 8th attempt got to task-creation for slices whose semantic key already existed (from an earlier
+failed-but-partially-committed attempt), TechnicalLeadCompiler.createTaskFromWishlist's duplicate-task
+branch correctly reused the existing task and marked ITS OWN slice-wishlist dismissed (today's own fix,
+working exactly as intended) rather than falsely converted_to_task. Today's honesty fix is correctly
+containing task-level fallout from this bug - but the underlying orphan-FEATURE leak (if the hypothesis is
+right) still corrupts totalFeatures/Product merge readiness's denominator, the same class of metric-
+distortion problem fixed once already today for a different cause.
+
+**Why today's same-batch epic-dedup fix (Phase 1) does NOT catch this**: that fix is scoped to
+epicsResolvedThisWishlist, a list local to ONE buildTaskGraphFromSlices call. These are 8 SEPARATE
+calls (8 separate retries of the whole compilation), each starting with a fresh, empty list - structurally
+invisible to that fix by design (confirmed in the fix's own plan doc: "cross-cycle merge risk deliberately
+avoided"). This is a different bug needing a different fix (most likely: reconcileStrandedPrOpenedWorkflows
+needs either a shorter/backed-off retry cadence, or resolveEpicFeatureId/createFeature needs to NOT
+survive a rollback of its enclosing transaction - possibly a REQUIRES_NEW/separate-transaction issue worth
+checking directly in code, not just inferring from logs).
+
+**Root contention source, not fully identified**: no explicit @Lock/pessimistic-lock annotation found in
+ProjectRepository - the H2-level "table locked by tx N" is most likely plain write-write contention on
+the same projects row from multiple concurrent @Scheduled methods (several fire every ~60s and many
+touch/save the project entity) combined with H2's short default lock timeout (2000ms), not one specific
+method deliberately holding a long lock. Worth a closer look if this gets fixed.
+
+**NOT FIXED - reporting only per standing directive.** Recommend flagging for the operator's decision: (1)
+whether to investigate/fix the lock contention and rollback-failure risk, (2) whether to add a floor/backoff
+to reconcileStrandedPrOpenedWorkflows's retry cadence, (3) whether createFeature's transaction boundary
+needs hardening so a downstream failure can't leave an orphan feature behind.
+
+**SELF-ATTRIBUTION, found after operator's alarmed question "did you break something?"**: repo-wide grep for
+`projectRepository.save(` found exactly 8 call sites total in the whole codebase - one of them is
+`TechnicalLeadCompiler.java:83`, inside today's own `reserveNextFlywayVersion` (added this session). That
+method reads-then-writes the SAME ProjectEntity row EVERY TIME a Data Schema (BARCAN-TAG-08) task is
+created - 4 times in rapid succession for this one decomposition (one per эпик's schema task), inside the
+same larger transaction as the rest of that эпик's task-creation work. Before today, nothing in the
+task-creation path ever touched the `projects` table at all. This is a plausible, honest, non-trivial
+contributing factor to the lock contention above - not proven as the sole cause (other scheduled jobs also
+touch the project row and could contend regardless), but a real new write-pressure source I introduced.
+Proposed fix directions (not yet implemented, awaiting operator go-ahead): (A) give the Flyway-counter
+read+write its own short REQUIRES_NEW transaction so it commits/releases fast instead of staying open for
+the whole task-creation transaction, or (B) cache the counter in memory for one compile pass and persist
+once instead of once per Data-Schema-task (cuts writes 4x for this decomposition shape).
+
+## 2026-07-24T05:47:00+04:00 - Fixed the Flyway-write lock-contention contributor (operator: "chini srazu"); second monitoring cycle clean
+
+Operator picked Option B (cache in memory, persist once) and authorized fixing immediately, conditional on
+not harming the running experiment. Implemented:
+
+`TechnicalLeadCompiler.java`: new public nested `FlywayVersionReservation` holder (nextVersion/loadFailed/
+dirty). `reserveNextFlywayVersion` now takes a nullable cache param - when provided, reserves purely in
+memory (no DB write) and only marks itself dirty; when null (every non-batch call site), behaves exactly as
+before (immediate read+write, unchanged - zero risk to those paths). New `flushFlywayVersionReservation`
+(`@Transactional`) persists the final counter in exactly one find+save, only if the cache was actually used.
+New 7-arg overload of `createTaskFromWishlist` accepts the cache and threads it to `createAndSaveTask` ->
+`buildTaskDescription` -> `reserveNextFlywayVersion`; the existing 6-arg overload (used by the other 3
+call sites - single-task creation paths with no batch to amortize) delegates with `flywayCache=null`,
+completely unaffected.
+
+`ProjectFlowService.java`: `buildTaskGraphFromSlices` now creates one `FlywayVersionReservation` per
+wishlist iteration (same scope/lifetime as `epicsResolvedThisWishlist`, added earlier today for the
+same-batch epic-dedup fix), threads it through `buildTaskGraphForOneEpic` to every `createTaskFromWishlist`
+call for that wishlist's эпики, and calls `flushFlywayVersionReservation` exactly once after the эпик loop
+finishes. Net effect: a decomposition with N Data-Schema tasks now writes to `projects` once instead of N
+times (was 4 writes for test-thirty-seventh's last decomposition, now would be 1).
+
+Built (clean, no `[ERROR]`, image exported), redeployed, backend came up clean (Flyway still v51, no schema
+change needed - this is a behavior-only fix). **Verified test-thirty-seventh's data survived the restart
+intact**: 25 tasks, statuses continued evolving naturally (5 done, 3 review at check time) - the experiment
+was not disrupted.
+
+**Second monitoring cycle on test-thirty-seventh, same session** (a): real progress continues -
+`blocked_by_dependency` dropped 16->11 tasks (oldest 36min, reasonable for a ~1h-old project),
+`waiting_for_capacity` dropped 3->0, zero `held_build_phase`, zero bottlenecks, zero failed tasks.
+`productReadiness.mergedRatio` now 6.7% (2/30) - real forward motion. Checked the last 15 minutes of
+backend logs for the lock-contention signature: **zero `PessimisticLockingFailureException` occurrences**
+(previous cycle had 7 in 7 minutes) - consistent with, though not full proof of, the fix helping; no fresh
+decomposition burst happened in this exact window to fully re-exercise the original failure condition, so
+this isn't a complete regression test yet - watch the next fresh project/decomposition for a cleaner proof.
+No repeating-log-line stuck signals (the routine ~60s "Processing project test-thirty-seventh" tick is
+normal, not a stall). Point D (early-unblock) fired again for 4 more dependents, still on the same
+API_CONTRACT-stage spec task (1ea90b63, "Shared API contract for AI Configuration") - still no
+DECISION/ARCHITECTURE/COMPLIANCE opportunity to observe on this particular decomposition.
+
+`totalFeatures` still reads 12 (unchanged, as expected - this fix prevents FUTURE orphan features, it does
+not retroactively clean up the 7 already created before the fix existed).
+
+## 2026-07-24T05:55:00+04:00 - Frontend data-audit cycle (first run): system-status/dashboard/wait-time all clean, but a real NEW bug found via the periodic code grep - same class as today's Six Sigma fix, in a different metric
+
+Per-cycle data checks (points 1-5, all clean, no anomalies):
+- `/api/system-status` (global and `?projectId=`test-thirty-seventh): sixSigma/qualityGate/conflictDpmo
+  yield/sigma pairs all internally consistent (global 0.88/2.67σ, 0.88, 0.80/2.35σ; project-scoped
+  0.94/3.04σ, 0.96, 0.70/2.02σ) - no contradictions, no NaN/null/Infinity.
+- `productReadiness`: completeFeatures(0) <= totalFeatures(12), mergedPlannedTasks(4) <=
+  totalPlannedTasks(30), mergedRatio(0.1333) exactly matches 4/30 - math checks out.
+- `command-dashboard.julesSessions`: 21 rows (non-empty, today's H2/project_id fix still holding),
+  `dataSourcesStatus` empty (no silent "not available" flags).
+- `wait-time` buckets sum to totalQueued exactly (10=10), no negative wait times.
+
+Periodic code check (point 6/7 - first run this cycle, baseline commit `2e3e515` for future diffing, note:
+today's App.svelte/app.css frontend edits are uncommitted working-tree changes, not reflected in that hash):
+grepped for the `?? 0`-near-percent anti-pattern across `frontend/src`. Traced every call site found:
+- `CommandDashboardV2.svelte`'s `percent`/`width` on `stage.weightedScore` (Progress flow-chart) - checked
+  the backend (`EmsMetricsService.flowChart`, line ~121): stages with zero tasks are skipped entirely
+  (`if (stageTasks.isEmpty()) continue;`) before ever reaching the array the frontend iterates - a genuine
+  0% here always means real tasks exist with zero progress. Not a bug.
+- `CommandDashboardV2.svelte`'s `scoreWidth` on `role.kpiScore` (Team Progress) - checked the backend
+  (`EmsMetricsService`, `total==0` branch returns `kpiScore=0.0` explicitly, but ALSO sets
+  `statusLabel="idle"`, which the template renders directly next to the bar (`<span class="kpi-status
+  {role.statusLabel}">{role.statusLabel}</span>`) plus `{done}/{total} done` (e.g. "0/0 done"). Adequately
+  caveated - not the same silent-contradiction shape as the Six Sigma bug. Not flagging as a bug, borderline
+  UX nuance ("idle" could arguably be clearer to a non-technical viewer, not chasing further this cycle).
+
+**CONFIRMED NEW BUG, same class as today's Six Sigma fix, not fixed - reporting only.**
+`SystemStatusService.java:208` (`linearCompleteness` section) and the identical duplicate at
+`LinearSyncController.java:86`: `section.put("completeness_rate", tasksWithLinear.isEmpty() ? 0 :
+(double) fullyComplete / tasksWithLinear.size());` - when zero tasks have ANY Linear linkage
+(`tasksWithLinear.isEmpty()`), returns literal `0`, not null/N/A. `MetricsView.svelte:223,225` renders this
+directly with NO qualifying label at all (unlike the kpiScore/"idle" case above): a 0%-width progress bar
+plus the text "{rate}% complete against DoD standards" - reads as "0% of tracked work meets DoD," when the
+real meaning is "there is no Linear-linked work to measure at all."
+
+**Confirmed live and actively misleading right now**: test-thirty-seventh's own Linear sync failed at
+project creation (`GET /api/system-status?projectId=0997f0b5-...` -> `linearCompleteness.data`:
+`{"totalIssues": 0, "fullyComplete": 0, "completeness_rate": 0.0, "issues": []}`) - this project's Linear
+integration is known-broken (GraphQL "Argument Validation Error" logged at creation time, already recorded
+elsewhere), yet the dashboard would currently show "0% complete against DoD standards" for it, which a
+non-technical viewer would read as "nothing meets our quality bar" rather than the true cause ("Linear sync
+never worked for this project"). Exactly the operator's stated principle being violated: the number does
+not reflect the real event/fact.
+
+Minor unresolved note, not yet confirmed either way: `MetricsView.svelte`'s `score()`/`scoreWidth()`
+(lines 42/59, separate from the already-fixed `percent()` at line 47) use the same unqualified `?? 0`
+pattern - did not trace their data source this cycle, flagging for a future cycle to check rather than
+over-scoping this one.
+
+Not fixed, per standing directive. Recorded in `project_eneik_deferred_backlog` memory too.
+
+## 2026-07-24T06:10:00+04:00 - New visual-QA cron actually exercised live (Playwright confirmed working); cross-checked the "12 vs 5" question the operator raised directly, plus 2 new bugs found via Resources & Tokens / System tabs
+
+Operator asked directly whether the 12-vs-5 feature-count discrepancy was real and whether I could actually see every tab, pushing back on an earlier reply that hadn't verified enough. Investigated independently before finding this session's own 05:30/05:47 entries above already had the real, rigorously-diagnosed root cause (DB lock-contention retry storm during wishlist compilation orphaning 7 `FeatureEntity` rows; partially fixed same day). Independent cross-check corroborates it: client wishlist text literally enumerates 5 modules (`FEAT-ACC`/`FEAT-CMP`/`FEAT-AI`/`FEAT-CRM`/`FEAT-BAN`), GitHub PR set (`gh pr list --repo test-thirty-seventh --state all`) shows exactly 5 module-level epic groupings, `productReadiness.totalFeatures` still reads 12 live right now - all consistent with "5 real + 7 orphaned" and not a new/different bug. Not re-logging this - see the entries above for the full mechanism.
+
+Confirmed Playwright MCP is genuinely live this session (`browser_navigate`/`browser_take_screenshot`/`browser_snapshot` all hit real localhost:3000, screenshots read back with visible pixels) - the earlier "no browser tool available" limitation from last session's setup is over. Also confirmed: Playwright's own sandbox can only write files under `C:\docker-build\EneikProductionSys` (its own repo root or `.playwright-mcp/`), NOT the scratchpad path - the just-created recurring visual-QA cron (`f3adc263`, `21,51 * * * *`) had a wrong instruction telling it to save into scratchpad, which would have failed every cycle; deleted and recreated with the correct in-repo-then-delete pattern before its first tick fired. Untracked screenshot litter from this investigation (`.playwright-mcp/`, `baseline-*.png`, `qa-*.png`, `metrics-snapshot.md`) cleaned from the repo root before finishing.
+
+Visited both previously-unchecked tabs (Resources & Tokens, System) for the first time this cron's lifetime. Two new, code-confirmed (not just visual) bugs found:
+
+**(1) `GoogleAiResourceService.resourceMatrix()` (`src/main/java/.../services/googleai/GoogleAiResourceService.java:61-87`) - status text for Gemini Text/Gemini Pro/Structured Planning ignores the `gemini_enabled` toggle.** The card's top-right badge correctly reads `enabled = geminiEnabled && googleKey` (currently OFF - operator has `gemini_enabled` unchecked in Resource Settings), but the small status line underneath is hardcoded to `googleKey ? "ready" : "missing Gemini API key"` for exactly these 3 resources - it never checks `geminiEnabled` at all. Result: card literally reads "OFF" badge directly above "ready" text, for all 3 affected resources simultaneously. The other 5 resources (Search Grounding, URL Context, both Nano Banana, Veo) compute their status string correctly (`xEnabled ? googleKey?...:... : "disabled"`) and show no contradiction - this is a narrow, 3-card-scoped bug, not the whole panel. **Confirmed live and not cosmetic**: System tab's "AI Call Health" table shows `reviewPr` 0 success/13 failures and `checkRefusalCriteria` 0 success/6 failures, both with `Last failure: "gemini disabled by setting"` - 19 real failed AI calls happening right now because Gemini text genuinely is off, while the Resources tab simultaneously tells a viewer it's "ready." A non-expert operator has no way to discover from this tab alone that two real subsystems are currently non-functional.
+
+**(2) `AdminDashboard.svelte:464-466` (Account Pool status summary) - idle/busy/offline badge counts silently exclude the real `api_blocked` status, so the sum doesn't match the pool total.** `status: 'idle' | 'busy' | 'offline' | 'decommissioned'` (line 22) has no `api_blocked` case; the 3 summary badges each `.filter(a => a.status === 'idle'|'busy'|'offline')`, so any account with a 4th real backend status (`api_blocked`, confirmed present in the per-row table) is counted in none of them. Live right now: "7 active pool" header, per-row table shows 4 busy + 2 api_blocked + 1 idle = 7, but the summary badges read "1 idle, 4 busy, 0 offline" (sums to 5, not 7) - the 2 `api_blocked` accounts (`fivedmitr-sys`, `eneikcoworking-ctrl`) are invisible in the roll-up a non-expert would actually look at. Same class of "number doesn't reflect real state" issue as the Six Sigma/Linear-completeness fixes made earlier today, different widget.
+
+Not fixed, per standing directive (visual-QA monitoring role only). Both added to `project_eneik_deferred_backlog` memory.
+
+## 2026-07-24T06:18:00+04:00 - Second visual-QA cycle: Project/Metrics healthy and API-consistent, but "task wait-time breakdown widget" turns out to be backend-only - never actually rendered anywhere
+
+Project tab: real progress since last check (9 open PRs / 4 merged, was 4/0; Product Merge Readiness 17%, 5/30 tasks). Team Progress, Client Wishlist, Acceptance Readiness, Project Tasks, AI Team all render cleanly, no overlap/cut-off text, no duplicate info between widgets. `browser_console_messages`: 0 errors/warnings (one harmless "password field not in a form" DOM notice from the Resources tab's API-key input, unrelated to this cycle's pages).
+
+Metrics tab: Six Sigma now `CRITICAL` (2.95σ, 93% yield, 73.8k DPMO) driven by 5 real active merge conflicts (Merge Conflict CTQ 1.87σ, 64% yield) - cross-checked against raw `GET /api/system-status?projectId=...`: aggregate `defects:2/opportunities:27/dpmo:74074.07/yieldRate:0.93/sigmaLevel:2.95` and merge-conflict sub-metric `defects:5/opportunities:14/dpmo:357142.86/yieldRate:0.64/sigmaLevel:1.87` match the screenshot exactly. This is the system correctly surfacing real bad news (escaped merge conflicts), not a display bug - no 0%-vs-6.00σ contradiction anywhere, that regression stays fixed. Linear Synchronization still shows "0% complete against DoD standards" for this project - already-known, already-logged (2026-07-24T05:55) misleading-zero bug, not re-logging, just confirming still present/unfixed as expected.
+
+**NEW FINDING - the "task wait-time breakdown widget" from commit `2e3e515` ("feat: task wait-time breakdown widget, friendlier AI-role naming") was never actually built on the frontend; only the backend half shipped.** Per this cycle's checklist, went looking for the wait-time breakdown widget on the Project tab - not present anywhere in the rendered page or in `browser_network_requests` (Project+Metrics tabs together call `/dashboard`, `/command-dashboard`, `/pull-requests`, `/system-status` repeatedly - never `/api/dashboard/wait-time`). Checked the source directly: `git show 2e3e515 -- frontend/` touches only `CommandDashboardV2.svelte` (removing `ActivityTicker`/`CynefinBadge`/Kano badges, adding `roleDisplay.ts` naming) and `MetricsView.svelte` - grepping that full diff for "wait" finds zero widget code, and `grep -r "wait-time\|waitTime\|WaitTime" frontend/src` today returns zero matches project-wide. The backend half is real and correct (`DashboardController.getWaitTime` → `TaskWaitTimeService.computeForProject`, confirmed working via direct curl in this session's earlier data-audit cycles - buckets summed to `totalQueued` exactly), but no Svelte component anywhere calls `/api/dashboard/wait-time`. The commit message and this project's own memory record it as shipped/done; a non-technical operator looking at the actual dashboard has never been able to see it, because it doesn't render anywhere. Not fixed, per standing directive - added to `project_eneik_deferred_backlog` memory.
+
+Cleaned up this cycle's screenshots (`qa-project-0208.png`, `qa-metrics-0208.png`) from the repo root before finishing.
+
+## 2026-07-24T06:20:00+04:00 - Pipeline monitoring cycle (test-thirty-seventh): (a) real progress continues, points A/B/F all holding, but a NEW live migration-collision risk found between two OPEN parallel PRs (point 3 of checklist, the exact gap that missed the V1 incident)
+
+**(a) Real progress**: wait-time buckets `blocked_by_dependency=7` (avg 65.6min, oldest 70min, all legitimately waiting on upstream Data Schema/API Contract tasks still in `review` - not stalled), `held_build_phase=0`, `waiting_for_capacity=0`, zero bottlenecks. Task status mix: 10 done, 5 review, 4 pending_review, 3 claimed, 7 queued (all queued tasks resolve to real, currently-in-review dependencies - no orphaned/undispatched queue entries). No Jules session over ~57min elapsed (`running`, task 1286a8f5) - below the 60/120min circuit-breaker threshold, nothing to classify this cycle (point E, no trigger).
+
+**Point A (epic dedup) - holding.** 7 distinct `feature_id`s across 30 tasks: 1 bootstrap ("Runtime Contract"), null-grouped compiler/fallback bookkeeping tasks, and exactly 5 real product epics (matching the client wishlist's 5 modules FEAT-ACC/CMP/AI/CRM/BAN 1:1) - no duplicate-themed pair like `test-thirty-sixth`'s "Campaign Configuration" x2. `gh pr list` (19 PRs total) shows no thematically-duplicated epic-level PR pair either.
+
+**Point B (Flyway reservation) - holding, no collision among Data Schema tasks.** All 4 `BARCAN-TAG-08` task briefs carry the "MANDATORY Flyway version" text with distinct reserved versions V1/V2/V3/V4 (fe8ac2b8/04b38165/685a6656/ab95f2ca) - zero collision within the reservation mechanism's own scope, direct regression proof against the original V1/V1 incident holds.
+
+**Point F (wishlist status honesty) - holding.** 33 wishlist rows: 26 `converted_to_task`, 7 `dismissed`, 0 `pending`/`compiling` left dangling.
+
+**(c) NEW - suspicious, hard evidence, not yet a live incident but a real risk if both PRs merge as-is.** PR #6 (`jules-2394283863233943428-5d5a914c`, task `7e38b14c` "Data Schema (ab95f2ca)", BARCAN-TAG-08, reserved V4 per its brief) adds `src/main/resources/db/migration/V4__warm_up_schema.sql` (new file). PR #8 (`feat/inbox-api-slice-cb5559a8-...`, task `1994b4cc` "API Slice (cb5559a8)", BARCAN-TAG-02 - NOT a Data Schema role, never received a Flyway-version instruction at all) independently adds `src/main/resources/db/migration/V4__inbox_and_conversations_schema.sql` (also new file) - confirmed via `gh pr diff 6`/`gh pr diff 8` raw diff headers, both literally `new file mode 100644`. Both PRs currently `state=OPEN`, `mergeStateStatus=UNKNOWN`, each with a green `quality` CI check individually (checked in isolation against `main`, which has neither file yet - exactly the same blind spot that missed the original V1 collision: per-branch CI cannot see a sibling branch's new migration file). If both merge as-is, Flyway will find two `V4__*.sql` files at next startup and fail. Root cause: the Flyway-version reservation mechanism built earlier today only instruments `BARCAN-TAG-08` (Data Schema) task briefs; it has no visibility into non-Data-Schema tasks (like this API Slice task) that independently decide to add their own migration file. Not fixed - reporting only per standing directive, added to `project_eneik_deferred_backlog` memory. Awaiting operator decision on whether/how to close this gap (e.g., broaden the reservation instrumentation to any task role whose file-scope may touch `db/migration/`, or add a pre-merge CI check that diffs migration filenames across all currently-open PRs).
+
+**Point C (epic granularity) - observational only, per checklist**: still ~5-7 tasks per epic bucket (Data Schema, API Contract, 2-3x API/UI Slice, occasional AI Context), not more granular per individual FEAT-ID sub-item than before - unchanged pattern, not flagging as bug per checklist instruction.
+
+**Point D (early-unblock generalization)** - fired again this cycle (3 dependents notified on task `4a97dd4c` finalizing), but that dependency is still role BARCAN-TAG-12 (API_CONTRACT) per the AutoMergeService log line ("last role BARCAN-TAG-12") - still no live opportunity to observe a DECISION/ARCHITECTURE/COMPLIANCE-stage early-unblock on this decomposition shape.
+
+No repeating stuck-log-line signal found in the last 20min of `docker logs` (routine ~10-15min "Processing project test-thirty-seventh" ticks are normal). Frontend-monitoring cron (`72c01ca1`) was recreated as `c10be23e` this cycle (same 13,43 schedule) with an operator-approved new checklist item added: verify any commit claiming a shipped widget/indicator is actually imported+rendered and actually calls its API, not just present as backend code - direct response to the wait-time-widget-never-rendered finding logged by that session at 06:18.
+
+## 2026-07-24T08:05:00+04:00 - REAL ROOT CAUSE of "6 tasks stuck in review for hours" found (operator alarm), plus operator-authorized universal Flyway-reservation fix implemented
+
+Operator was alarmed that 6 tasks had sat in `review`/`pending_review` for hours with nothing merging. Diagnosed with hard evidence, not speculation:
+
+**All 6 tasks' PRs hit real GitHub merge conflicts** (`625a66aa`/PR5, `7e38b14c`/PR6, `1994b4cc`/PR8, `97ce9710`/PR13, `d7b01d9f`/PR12, `2c1f3593`/PR19) - confirmed via `gh pr view --json mergeable,mergeStateStatus` (5 of 6 show live `CONFLICTING`/`DIRTY`) and via the backend's own merge attempts returning GitHub HTTP 405 `"Pull Request has merge conflicts"` repeatedly in `docker logs`. `AutoMergeService` correctly detected this and requested in-place conflict resolution from the SAME Jules session, 3 times per task (log lines "attempt 1/3" through "attempt 3/3" for each), exactly as designed.
+
+**Root cause of the "stuck forever" part**: after the 3rd failed attempt, `AutoMergeService.java:763-767` sets `ciStatus="escalated"` and logs `"Poka-yoke: merge conflict for task {} escalated after {} attempts; no recovery wishlist was created. The original task remains the only work identity."` - and `isReviewPollCandidate` (line 166-173) explicitly excludes `"escalated"` from the set of statuses it will ever poll again. Confirmed via 2+ hours of subsequent logs: zero further activity on any of the 6 escalated reviews after their escalation timestamp. This is a **deliberate terminal dead-end by design** (comment dates the design decision to 2026-07-23, intended to stop an earlier infinite-retry deadlock), but it has no actual recovery path once triggered - not a regression from today's work, but the first time it has manifested live at this scale (5-6 simultaneous conflicts from high branch parallelism). Root conflict cause is mundane: many parallel Jules branches touching shared files (`.gitignore`, shared services); PRs that merge first push the rest out of sync.
+
+Reassured operator: this does NOT put the project/data at risk - branches simply sit unmerged, nothing is corrupted. Reported with full evidence, proposed either a bounded re-attempt cycle later or a real recovery-wishlist path; **awaiting operator go/no-go on fixing this specific mechanism** (separate from the item below, which WAS authorized).
+
+**Operator-authorized fix implemented and shipped**: the Flyway-version-collision risk logged at 06:20 (PR#6 vs PR#8, both independently adding a `V4__*.sql` file) turned out to be a direct consequence of today's earlier Flyway-reservation fix being scoped to `roleTag.equals("BARCAN-TAG-08")` only, on the incorrect assumption that only the Data Schema role ever touches `db/migration/`. Operator explicitly authorized fixing this immediately ("да чинить сейчас"). `TechnicalLeadCompiler.buildTaskDescription` (`TechnicalLeadCompiler.java:1005-1017`) changed: the Flyway-version reservation and mandate text is no longer gated by role - every task in a compile batch now reserves one version number (cheap, in-memory via the existing `FlywayVersionReservation` cache, flushed once - Flyway does not require contiguous version numbers so unused reservations are harmless) and gets a reworded, conditional instruction: "IF this task ends up needing to add a new Flyway migration file for any reason, use exactly VN... If this task does not touch the database schema at all, ignore this instruction." Verified the non-batch (`flywayCache=null`) single-task call sites (`ProjectFlowService.java:501,1207,1230`) each fire once per wishlist/event, not in a tight per-task loop, so this does not reintroduce the write-pressure/lock-contention pattern fixed earlier today (that fix only applies to the already-cached batch loop at `ProjectFlowService.java:1671`, unaffected by this change). Docker build in progress; will redeploy and verify test-thirty-seventh's data survives intact before closing this out.
+
+## 2026-07-24T08:20:00+04:00 - Universal Flyway fix built/deployed/verified clean; CORRECTION to the 08:05 entry's conflict-file claim; precise per-PR root-cause breakdown; new "blind cycle" anomaly found on the PR#19 session
+
+**Universal Flyway-reservation fix (authorized 08:05) - built, deployed, verified.** `docker compose build backend` ran real tests (verified via full log inspection, not exit code - `mvn -q package` with no `-DskipTests`, dozens of real integration tests executed with genuine Spring context boots, zero `[ERROR]`/`BUILD FAILURE`, jar successfully produced and image exported). Redeployed: clean startup, Flyway still validates 51 migrations (behavior-only change, no new migration), test-thirty-seventh's 30 tasks confirmed intact post-restart.
+
+**CORRECTION (operator caught this: "ты мне соврал!")**: the 08:05 entry / my live report conflated PR#19 and PR#16 as both conflicting on `.eneik/review-verdict.json`. Re-verified every currently-conflicting PR individually via local `git merge-tree` (not GitHub's cached `mergeable` field) - accurate breakdown:
+- PR#11, PR#13, PR#19: conflict is the root `.gitignore` ONLY (each branch independently appends its own ignore rules - `node_modules/`, `data/`, `*.log`, etc. - in different order/formatting, real line-level collision, un-auto-mergeable).
+- PR#16: conflict is `.eneik/review-verdict.json` ONLY.
+- PR#12: BOTH files conflict.
+
+So root `.gitignore` is the dominant conflict driver (4 of 5), not secondary as I first implied. Root cause of the `.eneik/review-verdict.json` conflict (real, still stands for PR#12/#16): the file is already git-tracked on main (11+ prior commits touch this exact path, going back well before today), so the `.eneik/` rule already present in `.gitignore` no longer excludes it (gitignore never un-tracks an already-tracked file) - every PR-review-fallback session regenerates this file locally with its own findings, and it rides along into that session's commit despite the task brief's explicit "never commit anything under `.eneik/`" boundary. Not fixed - reporting only, awaiting operator direction (candidate fix: `git rm --cached` on main + make the review-fallback tool write outside the repo working tree).
+
+**NEW - `blind cycle` anomaly, PR#19's session (`sessions/1107464329042351968`, task `2c1f3593`).** `JulesActivityResponse` payload for this session exceeds the 10MB backend safety limit; `JulesDispatchService` has been skipping its question-scan every ~60s tick for at least 50 consecutive cycles (confirmed incrementing 46→50 live during this check) - meaning any blocker question this session asks would go unnoticed by the normal follow-up mechanism. Flagging as a related-but-distinct anomaly on the same already-known-stuck task, not yet investigated for cause (why is one session's activity payload >10MB?) or consequence (does this also block the circuit-breaker's `classifyBeforeClosing` deep-read, since that likely reads the same activity history?) - worth a future cycle's attention, not chased further this cycle.
+
+**(a) Otherwise real progress, nothing new**: task/wishlist status mix essentially unchanged since 06:20 (still 6 review/3 pending_review/7 queued - the same escalated-conflict set, unresolved as expected since no fix was authorized yet for that mechanism). `blocked_by_dependency` oldest wait grew 70min -> 185min (expected consequence of the still-open escalation dead-end, not a new problem). Zero new `PessimisticLockingFailureException` since the universal Flyway fix deployed - no regression of this morning's lock-contention fix. No new epic-dedup/early-unblock/circuit-breaker events this cycle (no fresh decomposition or 60min+ stall happened in this window).
+
+## 2026-07-24T08:35:00+04:00 - Frontend audit cycle: limited to data/git checks only, no browser tool available this cycle
+
+Playwright MCP is NOT available in this session (confirmed via tool search - only `WebFetch` resolves, no `browser_*` tools) - unlike the earlier session that had it live (06:10-06:18 entries above). Visual checks (points 1, 3, 5 of the checklist) skipped this cycle for that reason, not because anything was found wrong.
+
+**Point 4 (baseline diffing) - confirmed but inconclusive.** Working tree still has 3 uncommitted frontend files from earlier today's fixes (`App.svelte`, `app.css`, `MetricsView.svelte` - the duplicate-header/contrast/N/A-percent fixes). Frontend container was created 2026-07-24T03:50Z and is currently reachable (`curl localhost:3000` -> 200). Could NOT confirm whether the currently-served build actually includes these uncommitted edits (no browser tool to inspect rendered output/compare against source) - flagging as unconfirmed rather than assuming either way. Next cycle with Playwright available should verify directly (e.g. check the contrast fix's actual border color or the N/A-vs-0% rendering) rather than infer from container timestamps alone.
+
+No other findings this cycle - kept short since this was a reduced-capability pass, not a full audit. Backend team (same session) is mid-fix on the merge-conflict/escalation mechanism reported at 08:05/08:20 - unrelated to frontend, noted here only for context continuity.
+
+## 2026-07-24T08:48:00+04:00 - (c) CRITICAL: mergeable-state fix did NOT resolve the bounce loop - it's a genuine, confirmed infinite escalate/resurrect cycle, root cause still unknown
+
+Two more build/deploy/verify rounds since 08:20 (universal Flyway fix -> resurrectTriviallyEscalatedConflicts -> subset-filter correction -> mergeable-state pre-check), each verified clean via real log inspection before deploy. Net result on test-thirty-seventh:
+
+**4 tasks genuinely fixed and merged**: `1994b4cc`/PR8, `625a66aa`/PR5, `7e38b14c`/PR6 (test-thirty-seventh), plus `17e3f9ae`/PR28 (test-thirty-fifth, an older pre-existing escalated conflict the widened fast-path also caught and initially cleared) - confirmed via `GitHub API: Successfully merged real PR` log lines.
+
+**3 tasks (`d7b01d9f`/PR12, `97ce9710`/PR13, `2c1f3593`/PR19) plus PR28 again are in a CONFIRMED INFINITE LOOP**: resurrect (sync files, no Jules) -> 3 failed merge attempts (405) -> escalate -> next tick's resurrection pass finds it eligible again (files are still "entirely orchestrator-owned" per the file-list check) -> resurrect again -> repeat. Observed 3+ full cycles in the last 15 minutes with zero net progress, continuous GitHub API calls each cycle - exactly the resource-waste pattern the operator is trying to avoid, not just a stalled task.
+
+**Root cause is NOT the async mergeable-computation race I fixed for build the fourth time this cycle** (added a `mergeableState()` pre-check that skips counting an attempt while GitHub reports `mergeable=null`) - that fix deployed clean but the loop continued regardless. Investigated directly and found something stranger: for PR13, THREE independent local checks all agree it is cleanly mergeable -
+1. `git merge-tree $(git merge-base main pr13) main pr13` - zero conflict hunks, clean auto-merge.
+2. An actual `git merge --no-edit pr13` on a local copy of main - succeeds with git's 'ort' strategy, exit 0, zero conflicts.
+3. Byte-for-byte `diff` of `.gitignore` between main and the PR13 branch - IDENTICAL.
+
+Yet GitHub's own API insists otherwise: both the merge PUT (405 "Pull Request has merge conflicts") AND the explicit `PUT .../pulls/13/update-branch` (GitHub's own "sync this branch with base" feature) return a definitive, non-stale verdict: `422 merge conflict between base and head`. This is git and GitHub's own merge engine disagreeing on the same two commits - not a timing artifact. Cause not yet identified (possibilities considered but not confirmed: Contents-API single-file commits not triggering the same recompute path a native `git push` would; some repo-level setting; a GitHub-side inconsistency). Not investigated further this cycle per operator's explicit resource-economy directive.
+
+**Action taken this cycle**: none further - reported honestly to operator rather than attempting a 5th blind fix, per [[feedback-honest-fail-closed]] and the operator's explicit "экономно расходовать ресурс" instruction. Presented 2 options: (1) manually retry "Update branch" via the GitHub web UI (sometimes succeeds where the API doesn't), (2) close these PRs and let the existing cancel+redispatch fallback rebuild the work on a fresh branch. Awaiting operator decision - **the bounce loop is still live and will keep firing every ~60-90s until either fixed or the affected reviews are manually taken out of the poll-candidate set.**
+
+Memory backlog updated: merge-conflict escalation dead-end + `.gitignore`/`.eneik` collision auto-heal marked PARTIALLY FIXED (4/7 confirmed resolved, 3/7 now in a worse state - an infinite loop - not a plain stuck escalation).
+
+## 2026-07-24T09:03:00+04:00 - Root cause of the git-vs-GitHub discrepancy identified: operator's manual "resolve + commit merge" via GitHub web UI succeeds where the bot's single-file Contents-API sync does not. 5/7 now merged, cascading effect confirmed for the last 2.
+
+Operator manually resolved the `.gitignore` conflict for PR12/13/19 through GitHub's own web UI ("Resolve conflicts" -> commit) rather than waiting on the bot. Result: all 3 immediately flipped to `mergeable: MERGEABLE` on GitHub's side (confirmed via `gh pr view`), where the bot's own Contents-API single-file sync had left them at `mergeable: CONFLICTING` for 20+ minutes despite git itself (merge-tree + a real local `git merge`) agreeing they were clean the whole time. **This pins down the actual mechanism**: a real git-native merge/push (what the GitHub UI performs) makes GitHub's merge engine trust the resolution; a Contents-API commit to a single file - even one whose resulting content is byte-identical to what a real merge would produce - does not reliably invalidate GitHub's cached conflict verdict. This is the answer to why the `mergeableState()` pre-check (shipped this cycle) didn't stop the bounce loop: GitHub wasn't merely slow to compute, it was giving a stable-but-wrong answer that only a real merge commit corrects.
+
+**Outcome**: PR13 merged automatically on the very next tick after the operator's fix (`GitHub API: Successfully merged real PR ... pull/13`, task `97ce9710` marked done). PR12 and PR19 then independently re-diverged and re-escalated minutes later - not a fix failure, but the expected **cascade effect**: PR13's merge moved main's tip forward again, and PR12/PR19 (only synced against the PRE-PR13 main) fell behind on the same shared files a second time, re-triggering the same conflict from scratch. Confirmed via fresh `gh pr view`: PR12 back to `UNKNOWN` (recomputing), PR19 back to `CONFLICTING`.
+
+**Running total: 5 of 7 originally-stuck tasks now genuinely merged** (`1994b4cc`/PR8, `625a66aa`/PR5, `7e38b14c`/PR6, `97ce9710`/PR13 on test-thirty-seventh). Remaining open: `d7b01d9f`/PR12, `2c1f3593`/PR19 (test-thirty-seventh), `17e3f9ae`/PR28 (test-thirty-fifth) - all three still cycling through the same escalate/resurrect pattern, now understood but not eliminated.
+
+**Not fixed further this cycle, per explicit operator resource-economy directive** - reported the mechanism honestly, offered two paths: (1) operator repeats the same manual web-UI fix for the remaining 3 (proven, ~1 min each, zero engineering cost - recommended), or (2) implement the real permanent fix later: replace the Contents-API single-file sync with an actual two-parent merge commit via the Git Data API (mirrors what the web UI does natively) so the bounce loop cannot recur on future projects even under cascading multi-PR conflicts. Operator explicitly asked whether this is "100% solved for future projects" - answered honestly: no. The root-cause prevention (task briefs now forbid touching root `.gitignore`) reduces how often this class of conflict occurs at all, and the existing fast-path still auto-heals the ISOLATED case (proven on PR5/6/8), but the cascading/multi-PR case still requires either a future Git-Data-API rewrite or manual intervention.
+
+## 2026-07-24T09:15:00+04:00 - MAJOR FINDING (supersedes the .gitignore/mergeable saga above): the "feature thread" branch-continuation mechanism has no path back to main - roughly 44% of "merged" PRs on test-thirty-seventh never actually reach the product branch
+
+This is the real explanation for why PR12's conflict never resolved via any main-based check: PR12's base branch is NOT `main`, it's `feat/dialog-message-schema-10662428145789746370` - a "feature thread" branch. Every `git merge-tree`/`git merge` check I ran against `main` this whole session was answering the wrong question; GitHub's API was correct the entire time (it merges/compares against the PR's actual configured base).
+
+**Root mechanism** (by design, confirmed in code): `AutoMergeService.classifyAndHandleBranch` (~line 661-730) - when a PR with real code merges, the branch is deliberately kept alive (not deleted) as a `FeatureThreadEntity`, keyed by featureId. `JulesDispatchService.dispatchInternal` (~line 539-550) - every subsequent task for that same feature starts its Jules session from `featureThread.getBranchName()` instead of `main`, and that task's own PR is opened with the *thread branch* as its base, not main. This lets multiple roles (Data Schema -> API Contract -> API/UI Slice -> ...) build incrementally on one continuous branch rather than each starting fresh from main - a real, deliberate, otherwise-reasonable design.
+
+**The gap**: grepped every use of `featureThreadRepository`/`FeatureThreadEntity` in the codebase (2 call sites total, both listed above) - there is NO code path anywhere that ever opens a PR from a feature-thread branch back to `main`. The thread branch just keeps accumulating merges from every subsequent role forever, drifting further from main each time (main gets its own unrelated commits too), with nothing ever reconciling the two.
+
+**Quantified impact on test-thirty-seventh right now**: `gh pr list --state merged` grouped by base branch: 14 PRs merged straight to `main` (fine), but **11 PRs merged into 4 different feature-thread branches instead**:
+- `feat/dialog-message-schema-10662428145789746370`: 3 PRs merged in, `git compare main...branch` = `ahead_by 156, behind_by 47, diverged`
+- `jules-10277038075121427427-d75cb1f6`: 4 PRs merged in, `ahead_by 10, behind_by 42, diverged`
+- `feat/schema-tg-accounts-proxies-8201850002044267278`: 2 PRs merged in, `ahead_by 5, behind_by 47, diverged`
+- `jules-2394283863233943428-5d5a914c`: 2 PRs merged in, `ahead_by 4, behind_by 42, diverged`
+
+11 of 25 merged PRs (44%) are sitting in these islands, not in main. This directly contradicts the dashboard's own "26/33 tasks done, 24/30 PRs merged" figures reported earlier today (06:20-08:20 entries) - those numbers are technically accurate for "PR merged" but silently misleading about "work actually shipped to the product," since `TaskStatus.done` and `PrReviewEntity.merged=true` don't distinguish which base branch a PR merged into. This is very likely the SAME underlying reason PR12/13/19/28 kept conflicting in the first place - Data Schema/API Contract work that only ever reached a thread branch, never main, has stale `.gitignore`/`.eneik` content relative to main by construction.
+
+**Not fixed - reported to operator, awaiting direction.** No code changed this cycle. This is a design gap (missing "close the feature thread into main" step), not a regression from today's other work - the `FeatureThreadEntity` mechanism itself predates this session. Recommend as the real next priority once operator decides: likely a new step, probably triggered when a feature's task graph reaches its terminal stage (INTEGRATION/VERIFICATION per `EmsFlowStage`), that opens (and lets `AutoMergeService` merge) a PR from `thread.branchName` to `main`.
+
+## 2026-07-24T09:17:00+04:00 - Cheap cycle: (a) core pipeline calm (wait-time/bottlenecks empty), (b) PR12/PR28 still cycling as expected (known feature-thread-branch issue, see 09:15 entry - not new, not re-investigating)
+
+## 2026-07-24T10:06:00+04:00 - Cheap cycle: (a) pipeline calm (wait-time/bottlenecks/errors all clean). Backend team mid-build on the feature-thread closeout architecture approved by operator (see 09:15 finding) - not yet deployed, still on the pre-fix image this cycle.
+
+## 2026-07-24T10:12:00+04:00 - Feature-thread closeout architecture SHIPPED and confirmed working live (all 5 parts of the approved plan)
+
+Full architectural fix from the 09:15 finding built, tested (62 test classes, zero failures, verified via real log grep not exit code), and deployed. 2 new migrations (V52 feature_threads closeout columns, V53 pr_reviews.base_ref) applied cleanly, test-thirty-seventh's 35 tasks confirmed intact post-restart.
+
+**Shipped**: (1) `FeatureThreadEntity.mergedToMainAt`/`closeoutPrUrl`/`closeoutConflictEscalatedAt`, reset on reopen, `dispatchInternal` no longer continues from a closed thread; (2) `AutoMergeService.closeOutReadyFeatureThreads` - self-contained job (no PrReviewEntity/JulesSessionEntity involvement) that opens a real PR from a fully-terminal feature's thread branch into main and merges it through the normal CI-gated path; (3) continuous drift-sync (`GitHubPullRequestService.mergeBranch`, GitHub's real `/merges` endpoint) keeping every open thread from wandering far from main; (4) unique per-session `.eneik/records/*.json` paths for design-review/coverage-audit/falsification/review-fallback (the one that caused today's actual live collisions) - wishlist-compiler's `task-plan.json` deliberately left alone (has a separate hardcoded direct-from-main raw.githubusercontent check, higher risk to touch, not the one that caused today's incident); (5) `ClientDeliverableReadinessService.reachedMain`/`hasRequiredMergeEvidence` now require a task's PR to have actually reached main (directly or via a closed thread) before counting it as shipped - `isTaskMerged`/`isDependencySatisfied` deliberately left untouched (dispatch-timing gate, different question, changing it would have added cross-feature dispatch latency nobody asked for).
+
+**Confirmed live, first tick after deploy**: closeout job immediately found 2 fully-done features and opened real PRs (#35 branch `feat/dialog-message-schema-...` -> main, #36 branch `jules-10092231000015312528-...` -> main) - proving the "detect ready feature" logic works on real data, not just in tests. Both then correctly diverged in outcome, exactly matching the design intent:
+- **PR#35: real conflict** (`gh pr view` confirms `CONFLICTING`/`DIRTY` against main - genuine code divergence after 47+ commits, not an orchestrator-file false positive) - the system correctly did NOT try to auto-resolve a real code conflict; it dispatched exactly one fresh Jules session to rebase the branch (`dispatchCloseoutConflictResolution`), bounded per the design (won't retry automatically again for this thread - will just sit open, visible on GitHub, until that session fixes it or a human intervenes).
+- **PR#36: mergeable, but CI genuinely failing** (`gh pr checks 36` - real `quality` job failures, not a mergeable-race). The closeout job correctly refused to merge past a real red CI check, same authority every other merge in this system already respects - it will keep waiting, not force it through.
+
+Both outcomes are the system correctly surfacing pre-existing, previously-invisible problems (a stale thread branch with real conflicts; another with real failing tests) that were silently counted as "shipped" in every dashboard number before today - not new bugs introduced by this fix. This is the entire point of the fix working as intended.
+
+**Dashboard numbers post-fix**: `productReadiness` now reads `completeFeatures 2/12`, `mergedPlannedTasks 18/30 (60%)` - lower than the pre-fix "24/30" because thread-only merges no longer silently count as shipped. Will rise honestly as remaining threads close out for real.
+
+Full design/implementation documented in the approved plan at the session's plan file; all 5 backlog memory items for this session's investigation updated to reflect the shipped state.
+
+## 2026-07-24T10:20:00+04:00 - Cheap cycle: (a) pipeline calm, no new events since last check (PR35/36 closeout status unchanged - already reported in full above, not re-investigating)
+
+## 2026-07-24T10:37:00+04:00 - Cycle report, specific not generic per operator's explicit instruction ("normal work" is not an acceptable phrase)
+
+**(a) wait-time/bottlenecks empty, orchestration tick alive (every ~60s, confirmed via `Continuous Orchestration: Processing project test-thirty-seventh` log lines).**
+
+**(b) Task `02e9a5ff` (PR#32, "Campaign Builder and Lead Import UI") flagged "stuck (no real progress for 60 minutes)" by `ClaimService.detectStuckSessions` at 06:36:50 - confirmed via direct GitHub commit-history check this is a FALSE POSITIVE: real commits landed at 06:14, 06:24, 06:33 (3-9 minutes before the stuck-flag fired), all titled iterations of "resolve DB migration collisions" - Jules is actively, repeatedly trying to fix a real CI failure on this PR, not silent. Root cause: `JulesSessionEntity.lastProgressAt` (05:36:04) is not being updated by real GitHub push activity - a genuine tracking-accuracy bug, separate from whether the task itself is stalled. Task `45cfd709` (PR#21, "Account Management Dashboard") is the one session among the 3 flagged "stuck" this session's investigation could NOT explain away - last real GitHub commit was 04:35, ~2 hours before this check, already has one prior `forced_unblock_attempts`. Deep circuit-breaker classification for both won't fire until the 120-minute mark (`DAVIDSON_CLOSE_WINDOW_MINUTES`) by current design.
+
+**(c) PR#35 (closeout, feature `a79021eb...`) - root cause pinned down exactly, live git-level check**: conflicts against `main` in `.gitignore` ONLY (`git merge-tree` against current main, verified directly), not a stale-cache artifact this time - genuinely re-diverged because `mergeBranch`'s drift-sync has no way to auto-resolve a real textual conflict, only prevent one starting from a clean state; the same class of conflict re-appears every time another PR merging into main happens to touch `.gitignore` first. A fix session I dispatched for this earlier (`sessions/10183107301555338870`) opened PR#37 (a NEW child branch + PR against the thread branch, not a direct push, despite the prompt explicitly asking it not to) - operator found this via the GitHub UI, since nothing in the closeout design was watching for it; merged PR#37 manually (`gh pr merge 37`) at 06:42 to unblock. PR#35 was STILL `CONFLICTING` on `.gitignore` immediately after, because main moved again in the interim.
+
+**Two code fixes written this cycle (not yet deployed, build in progress)**: (1) `AutoMergeService.mergeConflictFixPrIfReady` - closes the exact gap that produced PR#37's orphaned state, watches for and auto-merges any conflict-fix PR a dispatched closeout-conflict session opens against `thread.branchName`. (2) Extended the drift-sync step: on a `CONFLICT` result from `mergeBranch`, sync root `.gitignore` to main's content via `resolveFileConflictWithMain` and retry once immediately - targets exactly the `.gitignore`-only cascade pattern confirmed above. Both awaiting build+deploy+live verification, not yet confirmed working.
+
+## 2026-07-24T11:23:00+04:00 - Cheap cycle: (a) calm - wait-time totalQueued=0 (all 3 buckets empty), bottlenecks=[], zero ERROR/escalated/PessimisticLocking/stuck matches in last 15min backend logs
+
+## 2026-07-24T11:24:33+04:00 - Deployed operator's 6-point directive (bounded escalation, session-match fix, task-plan.json unique-path fix, dashboard widget cleanup)
+
+All code written earlier this session per operator's explicit 6-point directive is now built, tested, and live:
+
+**(1) Bounded 3-attempt closeout-conflict escalation → abandon + wishlist record** (`AutoMergeService.escalateCloseoutConflict`/`abandonFeatureThread`/`recordCloseoutAbandonmentWishlist`, migration V54 `closeout_conflict_attempts`/`abandoned_at`): a feature thread that fails closeout-conflict resolution 3 times (15-min cooldown between attempts) now gets its branch deleted, closeout PR closed, `abandonedAt` set, and a detailed `closeout_abandoned` wishlist item recorded with attempt count, last summary, and a two-branch recommendation (design-clash-needs-human vs re-implement-fresh-from-main). No real 3rd-exhaustion case has occurred yet to prove the abandonment path end-to-end live - logic is deployed and unit-tested, not live-verified.
+
+**(2)/(5)/(6)**: no code change requested - operator's points were framing corrections (Jules always opening a PR is its fixed mechanic, not a reliability gap; reality-first principle; don't hedge on probabilistic risk) already reflected in how (1)/(3)/(4) were scoped.
+
+**(3) `findMatchingSession` substring-matching bug fixed**: was matching a PR to an unrelated, already-terminal session purely because the PR's branch name happened to contain that session's token as a substring (confirmed live: task `625a66aa`'s real merged PR was #5, but PR#32's branch name silently overwrote its `prUrl` to `pull/32`) - a structural flaw with clear recurrence risk for any project using feature-thread continuation (branch names legitimately embed ancestor session tokens). Now prefers a delimited (non-substring) token match, then a non-terminal session, then most-recent `createdAt`.
+
+**(4) wishlist-compiler's `task-plan.json` fixed-path collision fixed** (the one item explicitly flagged as "deliberately left unfixed = deliberately harmful"): same root cause as the review-fallback/design-review/coverage-audit/falsification fixes already shipped earlier today - every compiler session (one-shot batch AND persistent worker) used to write the same shared `.eneik/task-plan.json`, guaranteeing a conflict whenever two were open concurrently. Now generates a unique `.eneik/records/task-plan-<uuid>.json` per one-shot dispatch or per persistent-worker carrier (reused correctly across that one worker's own follow-up cycles, since OVERWRITE semantics target the same file/branch/PR - the collision was always ACROSS workers, never within one), stashed in the task's own payload and resolved via `ProjectFlowService.compilerPlanPath(task)` everywhere `JulesDispatchService` used to reference the old constant (prompt text, follow-up OVERWRITE instruction, correction messages, `parseCompilerPlan`, `archiveRecordFile`). `tryCompileWishlistCheaply`'s hardcoded direct-to-main raw.githubusercontent check deliberately left pointed at the old fixed path - it's a non-correctness-critical race-condition optimization that degrades gracefully (finds fewer hits over time) rather than breaking, not the collision-causing path.
+
+Also shipped: dashboard `Product merge readiness` widget's `<small>` line no longer shows `X/Y tasks ·` (redundant/confusing per operator's earlier explicit choice via AskUserQuestion), just `X/Y features`.
+
+**Build/deploy**: both changes built via `docker compose build backend`/`frontend`, verified by real log grep (image successfully exported = tests passed, not exit-code trust), deployed via `docker compose up -d`. Backend started clean at schema v54 (no new migration needed for this cycle's changes - pure code, no schema change). No errors in startup logs.
+
+**Not yet live-verified**: the abandonment path (no 3rd-attempt-exhaustion case has occurred); the task-plan.json unique-path fix (no new compiler dispatch has happened since deploy - will confirm on the next real wishlist-compiler run).
+
+## 2026-07-24T13:06:00+04:00 - Dashboard readiness widget fix confirmed correct on live data; cheap cycle calm; operator manually resolved what conflicts they could
+
+**Feature-count fix (`ClientDeliverableReadinessService`'s orphan-FeatureEntity filter) confirmed working as intended**: added a WARN-level diagnostic log (fires only when the filter actually excludes an orphan) to settle whether the live `totalFeatures=12` was honestly correct or a filter bug - deployed, triggered a fresh `/dashboard` computation, zero orphan-exclusion log lines fired. Conclusion: right now, genuinely all 12 `FeatureEntity` rows on test-thirty-seventh have at least one real wishlist referencing them - the earlier "12 vs 5 real эпики" diagnosis was a snapshot of an EARLIER point in this same project (before several more legitimate features were created later in the session; task count grew 25→37 since that diagnosis). The fix is correct and now also a permanent monitoring signal for recurrence of this exact bug class, not just a one-time patch. Frontend widget relocation (percent + feature count now inside the "Progress" card header, percent computed from `flowChart.completionRate` - real task-completion ratio - instead of the old wishlist-merge ratio) also deployed and live.
+
+**Cheap cycle: calm.** wait-time totalQueued=0 (all 3 buckets empty), bottlenecks=[], zero ERROR/escalated/PessimisticLocking/stuck matches in last 15min backend logs. No new self-heal (`resurrected escalated`) or new 3-attempt escalations in the last hour of logs.
+
+**Operator manually resolved what conflicts they could reach** ("вручную разрулил конфликты которые смог и смержил") - PR#16 and PR#21 (both previously `CONFLICTING` against their feature-thread base, review-fallback already exhausted with no automatic retry) are now `MERGEABLE`/CI-passing as a direct result. `productReadiness` reflects the real progress: `completeFeatures` 2→3, `mergedPlannedTasks` 18→20 (66.7%).
+
+**(c) Genuinely stuck, operator flagged "дальше дело стоит" (further, it's stuck)** - confirmed via fresh `gh pr checks`/`gh run view --log-failed`, not stale:
+- **PR#35, PR#36 (closeout PRs)**: real CI test failures, not flakes - `gh run view --log-failed` on PR#35's run shows `Tests run: 11, Failures: 0, Errors: 11` - every failure is `IllegalState: ApplicationContext failure threshold (1) exceeded` / `Failed to load ApplicationContext`, meaning ONE root Spring context load failure cascaded into 11 reported test errors (classic single-root-cause pattern, not 11 independent bugs). Root context-load failure itself not yet isolated (need the FIRST failure's actual exception, not the cascade). Needs investigation before any fix.
+- **PR#15, PR#30**: real merge conflicts (`DIRTY`/`CONFLICTING`) against their bases (main and a feature-thread respectively), CI passes cleanly on both. Same class of dead-end as the PR12/13/19 saga from earlier today, but this time on the general implementer-PR-vs-base conflict path, NOT the closeout-PR-vs-main path - the bounded-3-attempt-escalation-then-abandon fix shipped today only covers the latter. No automatic path currently resolves these.
+- **PR#11**: spike task, `CONFLICTING`, by design never merges (spike deliverable is a decision record) - harmless, not a real blocker, just an open PR that could be closed for cleanliness.
+
+Reported to operator with root-cause evidence for each; awaiting decision on whether to (a) generalize the bounded-escalation-then-abandon pattern to the general conflict path, (b) investigate/fix the PR#35/36 context-load failure, or (c) operator continues resolving manually. No fix started without confirmation per standing rule.
+
+## 2026-07-24T13:12:00+04:00 - PR#35 root-caused and fixed (real code fix, operator-authorized), both closeout PRs now merged
+
+Per operator's choice ("2" - investigate/fix the PR#35/#36 CI failure), pulled the full CI log (`gh run view --log-failed` wasn't enough - the cascade of 11 `ApplicationContext failure threshold exceeded` errors all traced to ONE root exception). Root cause: `Migration V6__warm_up_schema.sql failed... Table "ACCOUNTS" already exists`. Fetched both files' content directly from the branch (`feat/dialog-message-schema-10662428145789746370-...`) - `V6__warm_up_schema.sql` was a byte-for-byte duplicate of `V4__warm_up_schema.sql` (same internal comment header still reading "-- V4__warm_up_schema.sql", same two `CREATE TABLE` statements for `accounts`/`warm_up_cycles`). Not a version-number collision (the Flyway-reservation fix from earlier today prevents that class) - a genuine CONTENT duplicate, most likely a later task on this long-lived feature thread re-implementing the same "warm-up tracking" requirement Jules had already built earlier in the thread's life, without checking the existing schema first.
+
+**Fix**: deleted `V6__warm_up_schema.sql` from the branch via GitHub Contents API (V4 already fully covers what V6 would have done - confirmed byte-identical, zero unique content lost). Checked the branch's remaining 4 migrations (V1/V2/V3/V5) for any other `CREATE TABLE` name overlaps - none found, this was an isolated duplicate.
+
+**Result**: CI went green within ~30s of the fix commit (`quality: pass` x2). `AutoMergeService.progressCloseout` picked up the now-`CLEAN`/`MERGEABLE` PR#35 on its own very next tick and merged it automatically (`mergedAt: 09:10:32Z`, ~1 minute after the fix commit) - no further manual action needed, exactly the intended closeout-pipeline behavior. **PR#36 also merged** (was already CI-green from an earlier fix, likely by Jules or drift-sync, since my last check a few cycles ago). Both closeout PRs operator originally flagged as stuck are now fully resolved.
+
+**Live numbers after both merges**: `flowChart.totalTasks` 37→41, `completionRate` 0.84→0.95. `productReadiness.completeFeatures` still shows 3 as of the immediate post-merge check - may lag one more `/dashboard` computation cycle for the 2 newly-closed-out features' tasks to register `reachedMain=true` via their `FeatureThreadEntity.mergedToMainAt`; not chased further this cycle, worth a quick recheck next cycle.
+
+Remaining from the earlier (c) list: PR#15, PR#30 (general implementer-PR-vs-base conflicts, no automated resolution path yet - operator has not yet chosen whether to generalize the bounded-escalation pattern to this class) and PR#11 (harmless spike, never merges by design, cleanup-only).
+
+## 2026-07-24T13:20:00+04:00 - Cheap cycle: (a) calm - wait-time totalQueued=0 (all 3 buckets empty), bottlenecks=[], zero ERROR/escalated/PessimisticLocking/stuck matches in last 15min backend logs
+
+## 2026-07-24T14:47:30+04:00 - PR15/PR32 root-caused (Flyway version-race + transient GitHub connectivity blip), timestamp-based versioning shipped, new /epics verification endpoint + feature-based falsification formula shipped
+
+**PR#32 root cause (real fix, not just a rename)**: same `V4` collision class as PR#35, but a genuine cross-branch VERSION-NUMBER race this time - `TechnicalLeadCompiler.reserveNextFlywayVersion`'s old DB-counter (`ProjectEntity.nextFlywayVersion`, unprotected read-increment-write, seeded only from `main`'s highest version) is blind to what OTHER open feature-thread branches have already reserved. Confirmed live: PR32's branch independently created `V4__inbox_and_conversations_schema.sql` (byte-identical to main's later `V5__inbox_and_conversations_schema.sql` from PR#30) AND, once GitHub's PR-check merge-ref combined PR32's head with its actual BASE thread branch, collided with that base's own separate `V4__add_limits_to_tg_accounts.sql`. Two manual Contents-API fixes were needed (remove the head's duplicate, restore main's V5 that never drift-synced onto this branch, then rename the remaining colliding file to a timestamp version) before CI went green.
+
+**Real architectural fix shipped** (operator: "я уверен это давно решено математически... поленился"): `reserveNextFlywayVersion` no longer uses any DB counter/GitHub lookup - replaced with a wall-clock timestamp version (`yyyyMMddHHmmssSSS`, monotonic via a static `AtomicLong` guarding same-millisecond calls). Zero shared state, zero cross-branch blindness, mathematically negligible collision probability. `FlywayVersionReservation`/`flushFlywayVersionReservation` reduced to no-ops kept only for call-site signature compatibility. Does NOT by itself prevent CONTENT duplication (same table defined twice under different version numbers) - prompt text now also asks Jules to check for an existing table before creating one, best-effort only.
+
+**Operator challenged the `totalFeatures`/`completeFeatures` numbers directly** ("перечислить все 12 эпиков и докажи что ты не лжёшь") - built a new read-only `GET /api/projects/{id}/epics` endpoint (`ClientDeliverableReadinessService.listEpicDiagnostics`) that lists the real `FeatureEntity` rows behind those dashboard numbers, mirroring `computeForSources`'s exact filtering so the two can never silently diverge. No SQL-execution surface, just a typed projection - doesn't reopen the deliberately-disabled debug SQL endpoint.
+
+**Operator also directed falsification-readiness to gate on EPIC completion, not task-merge ratio** - explicit choice via AskUserQuestion among 3 concrete alternatives (task ratio 66.7%, feature ratio 25%, thread-closeout ratio 75%), operator picked feature ratio (the strictest of the three). `ProjectFlowService.dashboard()`'s `falsificationEligible` now computes `completeFeatures/totalFeatures >= 0.9` instead of `mergedDeliverables/totalDeliverables >= 0.9`. `productReadiness.ratio`/`mergedRatio` in the DTO unchanged (still the task-level number, informational only).
+
+**Deployed clean**, schema stayed at v54 (pure code change, no migration). PR#15/#32 still open as of this entry - both `CLEAN`/`MERGEABLE`, one review-fallback diff-fetch attempt failed on a transient `error connecting to api.github.com` (confirmed transient - retested moments later, GitHub API responded normally) - expected to resolve on the pipeline's own next retry, not a new dead end. Not yet re-confirmed merged.
+
+## 2026-07-24T15:12:00+04:00 - Cheap cycle: (a) calm - wait-time totalQueued=0, bottlenecks=[], zero errors in last 15min. All previously-stuck PRs merged: 5/5 epics resolved down to a single real gap (Live Chat CRM 3/4), root-caused and being fixed now (see below)
+
+**All 5 real эпики (deduplicated) now accounted for**: 3 had already closed out via thread mechanism (Account and Session Management, AI Dialogue Engine, Anti-Ban and Account Warm-up System); 4th (Cold Outreach and Campaign Management, PR#49 closeout) - operator manually merged its conflict resolution (real git-merge, not Contents-API patch - see below), confirmed complete after a follow-on fix; 5th (Live Chat CRM and Human Control Panel, never used a thread - all 4 tasks dispatched straight to main) still shows 3/4 merge-evidence internally despite all 4 real PRs (#2/#8/#15/#30) being merged on GitHub.
+
+**Root cause found for BOTH remaining gaps, same underlying bug class**: GitHub's PUT `.../merge` returns 405 for BOTH "already merged" and "real conflict" - AutoMergeService's merge-execution code (both `progressCloseout` for closeout PRs AND `executeMerge` for normal PRs) only recorded success inside the "I successfully called merge myself" branch - if a PR got merged some other way (operator's manual GitHub-UI merge, GitHub's own state, a retry race), every subsequent tick's own merge attempt got a 405, and the code never set the internal "merged" flag. Fixed in both places: check real merged state via `fetchPullRequestByNumber` BEFORE attempting to merge; if already merged, record success directly instead of re-attempting. Also implemented epic deduplication (7 duplicate "Account and Session Management" rows from the earlier-documented retry storm, grouped by rootWishlistId+title, keep the one with the most real wishlist items attached) - `totalFeatures` will drop from 12 to the real 5, `completeFeatures` should reach 5/5 once this build deploys and the next tick re-evaluates Live Chat CRM.
+
+**Operator also manually resolved a real semantic conflict on PR#49** (openapi.yaml, both branches added different API endpoints at the same insertion point) via a real local git clone + merge (not Contents-API patch, per this session's established lesson that GitHub's merge engine only trusts real two-parent merge commits) - both endpoints kept, no conflict lost. Confirms the general implementer-PR-conflict class (no bounded-escalation automation exists for it, only closeout-PR-vs-main conflicts have that) still needs manual/Claude intervention for genuinely non-trivial semantic conflicts - flagged as the biggest remaining automation gap for future projects.
+
+Build in progress (`b71em07b9`) - will verify+deploy, then confirm Live Chat CRM reaches 4/4 live.
+
+## 2026-07-24T15:30:00+04:00 - test-thirty-seventh reached 5/5 epics (100%), falsificationEligible=true, ready_for_falsification
+
+All 3 fixes from this cycle deployed and confirmed live: epic deduplication (12→5 real эпики), `executeMerge`/`progressCloseout` already-merged idempotency, and the general `resurrectAlreadyMergedReviews` sweep (confirmed working cross-project - it also resurrected a genuinely stuck review on the unrelated test-thirty-third project, ciStatus=owner_mismatch, proving this isn't a one-off patch for Live Chat CRM specifically but closes the whole "PR merged externally, internal flag never set" class).
+
+**Final state**: `totalFeatures=5, completeFeatures=5, mergedPlannedTasks=23/23 (100%), falsificationEligible=true, status=ready_for_falsification`. Watching now for the falsification cycle and coverage-audit to actually dispatch (operator explicit: "главное коверпроверку не пропустить") - not yet observed firing as of this entry.
+
+## 2026-07-24T15:52:00+04:00 - Cheap check flagged "stuck" sessions, expensive check showed they belong to OTHER projects (false alarm for test-thirty-seventh) - but a REAL (c) found separately: coverage-audit self-referential loop
+
+**(a)/(b) for test-thirty-seventh**: no stuck sessions on the active project itself - the 2 "stuck (no real progress for 60 minutes)" WARN lines the cheap grep caught belong to test-thirty-fifth (PR#28) and test-thirty-sixth (PR#16, explicitly out of scope, marked completed) - global log grep isn't project-scoped, confirmed false alarm for THIS project via `/api/jules-sessions` lookup.
+
+**(c) Real finding, operator caught it live ("ковер важнее сейчас. он сломан?")**: coverage-audit was confirmed chasing its own tail - `ProjectFlowService.highestMergedPrNumber` counted EVERY merged PR project-wide as the "new work" watermark, including the audit's own record-only report PR. Audit 1's report (PR#52) triggered audit 2; audit 2's own report (PR#53) immediately triggered audit 3, with zero stopping condition - confirmed via `docker compose logs` showing 3 consecutive "is stale... dispatching a fresh audit" cycles within ~20 minutes, each merging a new record PR that re-triggered the next. Side-effect confirmed live: an H2 `MVStoreException`/`JdbcSQLTimeoutException` lock-timeout on the `WISHLIST` table (`reconcileStrandedPrOpenedWorkflows` vs a concurrent writer, 2000ms timeout) - not data corruption, just lock contention from multiple overlapping audit-completion transactions racing on the same wishlist rows, a direct symptom of the loop, not a separate bug.
+
+**Fix**: excluded PRs whose owning task carries the `taskType` system-task payload marker (coverage_audit, wishlist_compiler, pr_review_fallback, design_review, falsification_audit) from the watermark calculation - only real product-code merges should re-trigger a fresh audit. Reused the delimited-token-match-preferred pattern from the earlier `findMatchingSession` fix to avoid the same substring-collision risk. Build in progress, not yet deployed/verified.
+
+Separately: operator found a live Jules session (external `sessions/6326270168059879421`, on the SAME branch as the already-merged+closed-out PR#49) still actively running on Jules's own side hours after our internal tracking already marked it `closed_terminal_task` - confirmed `JulesApiClient` has no real cancel/stop API call at all (only create/status/message), so "cancel" in this system only ever meant "we stop tracking it," never "the real agent stops." Operator will stop it manually via Jules's own UI. A second closeout PR (#50, feature a79021eb "AI Dialogue Engine" reopening) surfaced as a direct, correct consequence of the `resurrectAlreadyMergedReviews` fix finding PR#11's long-lost merge evidence - partially conflict-resolved (DialogService.java merged both features cleanly; frontend/package.json+lock resolved by taking main's actively-used scaffold, the branch's own was long-abandoned) - operator is closing PR#50 manually to reduce noise while the coverage-loop fix takes priority.
+
+## 2026-07-24T16:03:00+04:00 - Coverage-audit self-loop fix confirmed working live; new stuck-account finding
+
+Deployed the `highestMergedPrNumber` watermark fix (excludes system-task PRs from the coverage-audit re-trigger check). Confirmed working: audit completing PR#55 (11:59:17Z, 0 new gaps - all 5 already known) did NOT trigger a 4th audit round, unlike the previous 3 rounds which each re-triggered within seconds of their own record-merge. 20+ minutes quiet since, monitor still watching for regressions.
+
+Epic dedup also confirmed still healthy in production logs ("excluded 7 duplicate FeatureEntity row(s)..." recurring as expected, not an error).
+
+**New minor finding, not yet investigated**: task `d0c03eb4-a554-4bcd-9f5d-e3410dd17c97` failed Jules session creation on 2 different accounts in a row (`sixdmitrsix-ops`, `fivedmitr-sys`) with `status=400 FAILED_PRECONDITION` ("not a daily limit" per our own classification). Worth checking if this spreads to more accounts - could indicate a repo-level permission/collaborator issue rather than a per-account block.
+
+**Also outstanding**: PR#50 (feature a79021eb reopened via the resurrect-fix finding PR#11's old merge) still auto-retrying a 405 merge failure every cycle - operator said they'd close it manually, not yet done as of this entry. Two real conflicts remain unresolved in it (frontend/package.json+lock partially fixed locally but not pushed, DialogService.java fixed locally but not pushed) since operator asked to deprioritize it for the coverage-loop fix.
+
+## 2026-07-24T16:18:00+04:00 - Live duplicate PRs found and closed (PR#56/#57), root-caused a compiler race condition, real fix in progress
+
+**Operator caught PR#56/#57 duplicate before I did** ("как ты это пропустил?") - both titled "Implement Daily Outbound Messaging Rate Limiter", both real, both CLEAN/MERGEABLE/CI-green, both tracing back to the SAME coverage_gap wishlist `0ab69bb9-c986-40c2-a559-c8b2a9236369` compiled into two independent child work items (`42c1771c`, `46c9888e`). Timing correlates exactly with the pre-fix coverage-audit self-loop window (11:38-11:42Z) - the same wishlist row I'd already flagged in an H2 lock-timeout earlier.
+
+**Immediate cleanup (operator: "просто закрой всю мертвую цепочку сразу")**: closed PR#57, deleted its branch, cancelled its Jules session, task `f90e1308` now `failed` (terminal). PR#56/task `32bbc826` kept as the surviving real implementation.
+
+**Real root cause found and fixed** (operator: "когда ты уже починишь окончательно дубли"): `ProjectFlowService.dispatchBatchedWishlistCompiler` had a read-then-write race - load wishlists still `pending`, decide which to admit, THEN separately flip each to `compiling` via plain `save()`. Two overlapping calls (confirmed: the now-fixed audit self-loop fired admission checks fast enough to overlap normal ~60s orchestration ticks) could both load the same wishlist while still `pending` and both dispatch their own compiler session against identical content. Fixed with a real atomic compare-and-swap: new `WishlistRepository.compareAndSetStatus(id, expectedStatus, newStatus)` (`UPDATE ... WHERE id=? AND status=?`, returns affected-row-count) - only the first caller to win the pending→compiling transition for a given wishlist proceeds to dispatch it; every later concurrent caller gets 0 rows affected and correctly skips it, no matter how far its own in-memory admission decision had already gone. Verified low regression risk: the one existing integration test for this method (`dispatchBatchedWishlistCompilerRespectsFeatureWipLimit`) uses a real DB via `saveAndFlush`, not mocks, so the CAS executes identically to the old `save()` in the non-concurrent case it tests. Build in progress.
+
+## 2026-07-24T16:38:00+04:00 - Compiler race-condition fix confirmed deployed clean; also shipped closed-PR retry-loop fix; PR#58/59 resolved without my input
+
+Compare-and-swap fix for the wishlist-compiler dispatch race deployed clean (schema unchanged, pure code). Separately caught and fixed a second live bug while investigating: `AutoMergeService` had no way to distinguish "PR closed without merging" from "still open" - after manually closing PR#57, the merge-retry loop kept retrying it every ~60s forever (405 "not mergeable", logged as ERROR each time). Added `GitHubPullRequestService.GitHubPullRequest.closed` (new 8th record component, parsed from GitHub's real `state` field) + a check in `executeMerge` that marks the review terminal (`ciStatus=closed_unmerged`, permanently excluded from `isReviewPollCandidate`) the moment it detects this, regardless of who/what closed the PR. Confirmed live: zero PR#57 retry attempts in the 3+ minutes since deploy (previously firing every ~60s).
+
+PR#58/#59 (the second duplicate pair, "Automatic Session Rotation and Failover") resolved itself without my input - PR#59 actually got MERGED (not closed) at 12:30:44Z, opposite of my recommendation to keep PR#58 - operator's own call, not investigated further per scope (they didn't ask). PR#58 still open as of this entry.
+
+New PR#61 "Wire Svelte Admin Views to REST Backend APIs" opened - likely the frontend-integration coverage-gap item progressing normally. No errors, no audit-loop recurrence, cheap check clean.
+
+## 2026-07-24T16:44:00+04:00 - Cheap cycle: (a) calm - same 2 known out-of-scope "stuck" sessions (test-thirty-fifth PR#28, test-thirty-sixth PR#16) re-confirmed unrelated to test-thirty-seventh, wait-time/bottlenecks empty
+
+## 2026-07-24T16:50:00+04:00 - (c) New session/task-matching bug found in JulesDispatchService (same class as the already-fixed AutoMergeService.findMatchingSession bug, different code path)
+
+Progress real: `totalFeatures=6, completeFeatures=5 (83%), mergedPlannedTasks=26/30 (86.7%)`.
+
+**Found live**: `IncorrectResultSizeDataAccessException: Query did not return a unique result: 2 results were returned` at `ClaimService.hasActiveClaim` ← `JulesDispatchService.handlePrOpenedWorkflow` (JulesDispatchService.java:1729). Root cause traced precisely: PR#66 ("Conflict Resolve: Align dispatch service naming and rate limiter migration", head `jules-15725180673641378207-d03bb6ab-9174978582867156707`, base `jules-15725180673641378207-d03bb6ab`) is a legitimate conflict-resolution child session working on PR#56's real, surviving lineage (task `32bbc826`, the "Daily Outbound Messaging Rate Limiter" implementation I kept during today's earlier duplicate cleanup). But the log shows it got matched to task `f90e1308` instead - the CANCELLED duplicate task from the PR#57 cleanup, whose branch (`jules-5505846803352487746-...`) has nothing to do with this one. This created 2 unreleased claims on the same already-terminal task, tripping the uniqueness constraint `findByTaskIdAndReleasedAtIsNull` assumes.
+
+**Same bug class as the `AutoMergeService.findMatchingSession` substring-collision bug fixed earlier this session, but in a DIFFERENT code path** (`JulesDispatchService.handlePrOpenedWorkflow`'s own session-to-task matching, not yet audited/fixed) - confirms this matching flaw isn't isolated to the one place already patched; there may be more instances elsewhere in the codebase using the same unsafe substring-match pattern. Not fixed - reported only per standing rule, awaiting operator decision.
+
+## 2026-07-24T17:05:00+04:00 - Operator ended the session ("остановить эксперимент и написать отчет"). Monitoring stopped, monitor task killed.
+
+Final state at stop: totalFeatures=6 (dedup-corrected), completeFeatures=5 (Anti-Ban and Account Warm-up System grew from 3 to 8 code-producing items as coverage-gap follow-ups attached to it, now 4/8 - not a regression, expected growth), mergedPlannedTasks=26/30 (86.7%). decompositionComplete=false, falsificationEligible=false (correctly gated per operator's own chosen feature-ratio formula). 2 PRs still open: #66 (conflict-resolve, CLEAN/MERGEABLE, likely blocked by the still-unfixed JulesDispatchService session-matching bug found this cycle) and #58 (Automatic Session Rotation and Failover, mergeable UNKNOWN, not investigated further this session).
+
+This closes out the extended live monitoring+fix session on test-thirty-seventh. Full list of what shipped this session is in the final report given directly to the operator.
+
+## 2026-07-24T17:16:00+04:00 - Monitoring cron fired again post-stop; (c) SYSTEM STALLED still climbing (92min, was 62min at last report), same unfixed JulesDispatchService bug, no new information
+
+## 2026-07-24T17:47:00+04:00 - (c) unchanged, SYSTEM STALLED now 122min, same PR#66/JulesDispatchService bug, no new info this cycle
+
+## 2026-07-24T20:24:00+04:00 - Operator re-authorized fixing ("да чини"). Fixed the PR#66 session-mismatch bug, caught a live duplicate-task resurrection while doing it, root-caused and fixed the general class architecturally per operator's explicit demand ("реши это архитектурно... дубли невозможны ни на каком этапе... математическое решение")
+
+Формат находок ниже - по требованию оператора: (1) превентивно почищено на НОВОМ проекте или нет; (2) что именно осталось сделать.
+
+**Находка 1 - session/task mismatch на PR#66 (JulesDispatchService).**
+Session `2d5ec3ac` держала `taskId=f90e1308` (терминальная дубль-задача) вместо `taskId=32bbc826` (реальная задача, чью ветку продолжает PR#66). Исправлено вручную через `PATCH /api/jules-sessions/{id}` (`taskId` теперь поддерживается этим эндпоинтом). Сама сессия тут же корректно закрылась как `closed_terminal_task`, т.к. задача 32bbc826 уже `done` - это ожидаемо: PR#66 упирается не в задачу, а в незакрытую feature-thread ветку (см. отдельный, уже спланированный, но не начатый пункт бэклога - closeout-джоб).
+(1) Превентивно НЕ починено - точная историческая причина, почему сессия создалась с неверным taskId, не установлена (логи того окна ротировались рестартом бэкенда). PATCH-эндпоинт - это инструмент ручной коррекции, не защита от повторного появления такой сессии.
+(2) Что делать: если этот паттерн (сессия конфликт-резолва получает taskId не той задачи, чью ветку она продолжает) повторится на новом проекте - тот же PATCH-путь для ручной правки. Structural fix потребовал бы аудита самого места в JulesDispatchService, которое присваивает taskId при создании сессии конфликт-резолва (не найдено в рамках этого захода).
+
+**Находка 2 (главная) - дубль-задача f90e1308 была заново продиспатчена на "Conflict Resolve" ПРЯМО во время починки находки 1** (self-heal, сработавший как побочный эффект закрытия сессии 2d5ec3ac, освободил "зависший" claim у f90e1308 и очередь тут же продиспатчила третью сессию на уже мёртвую дублирующую работу). Немедленно отменено (`cancelSession`), задача принудительно переведена в `failed`, claim подтверждённо снят (`404` на `/active-claim`).
+Корень: `PlannedWorkRecoveryService.resumeNextFrontier` и два места в `ClaimService` (self-healing requeue, `reapExpiredLeases`) читали `task.getStatus()` в Java, потом ПОЗЖЕ отдельной инструкцией писали новый статус (`task.setStatus(...); save()`) - классический read-then-write race без атомарности. Конкурентная транзакция (например, коллбэк завершения сессии) могла перевести задачу в терминальный статус МЕЖДУ чтением и записью, и ни один из трёх мест этого не перепроверял.
+**Архитектурное решение (по требованию оператора - жёстко, навсегда, математически):** тот же примитив, что уже использован для wishlist-компилятора этой сессией - атомарный compare-and-swap на уровне БД. Добавлен `TaskRepository.compareAndSetStatus(id, expectedStatus, newStatus)` (`UPDATE tasks SET status=? WHERE id=? AND status=?`, возвращает число затронутых строк). Применено во ВСЕХ трёх местах, где задача могла быть "воскрешена" из терминального статуса: `ClaimService` self-healing (claimed→queued), `ClaimService.reapExpiredLeases` (claimed→queued), `PlannedWorkRecoveryService.resumeNextFrontier` (failed→queued). Теперь запись физически не может применяться, если строка в БД уже не в ожидаемом статусе - независимо от того, что думал Java-объект в памяти. Собрано и задеплоено чисто (237 тестов, 2 упавших юнит-теста в `PlannedWorkRecoveryServiceTest` поправлены - домокан ожидаемый CAS-результат; интеграционный `TaskClaimServiceTest` с реальным H2 прошёл без изменений). Бэкенд перезапущен, стартует чисто, `/api/dashboard/bottlenecks` отвечает 200.
+(1) **Превентивно ПОЧИНЕНО на новом проекте** - это структурный, а не разовый фикс: любой будущий код-путь, пытающийся вернуть терминальную (`done`/`failed`/`spike_completed`) задачу в работу через `save()`, при гонке просто не применится (0 affected rows), вместо того чтобы тихо задублировать работу.
+(2) Что осталось: сам по себе класс "дублирующихся WISHLIST-строк" (две разные wishlist-записи, описывающие одно и то же требование - как в исходном инциденте PR#56/#57) этим фиксом НЕ закрыт - это смысловая, не гоночная, дупликация, требует отдельного решения (semantic-similarity проверка при компиляции вишлиста), не начато.
+
+## 2026-07-24T20:34:00+04:00 - (a) Дёшево: wait-time все нули, bottlenecks пуст, логи чисты (5/5 features complete, 26/30 tasks merged)
+
+## 2026-07-24T20:48:00+04:00 - (a) Дёшевая проверка нашла 2 "stuck" в grep - обе НЕ по активному проекту (test-thirty-fifth PR#28, test-thirty-sixth PR#16, ранее известные), test-thirty-seventh чист. Единственный шум по активному проекту - ожидаемые повторяющиеся WARN дедупликации FeatureEntity (тот же известный паттерн)
+
+## 2026-07-24T18:16:00+04:00 - Third consecutive identical cycle - (c) unchanged (152min), flagged to operator that this recurring cron keeps firing despite experiment being marked stopped
+
+## 2026-07-24T21:40:00+04:00 - Permanent architectural update shipped: atomicity/determinism invariants, both in the orchestrator itself AND baked into every future generated task/review (operator: "реши это архитектурно... на все времена... заставь всех проектировщиков всегда использовать это")
+
+Investigation found this is really **three distinct defect classes**, each needing a different mathematical
+primitive - documented explicitly so a future session doesn't misapply the wrong fix to the wrong class:
+1. Non-atomic write to an absorbing/terminal state (fixed earlier today for 3 call sites via CAS) - 3 more
+   live instances found untouched in `ClaimService`.
+2. Non-atomic admission of a singleton resource ("at most one active X per project") - a check-then-**INSERT**
+   race, which a per-row CAS cannot fix (no row exists yet at check time). Needs a real critical section.
+3. Non-determinism + category error at a JSON serialization boundary (today's PR#67 flaky-test root cause) -
+   confirmed via `grep` that EneikProductionSys's own code has zero instances (no `new Random()`/`Math.random()`
+   in `src/main`) - this one is purely a downstream-generation policy question, not an internal fix.
+
+**Shipped, defect class 1 (EneikProductionSys itself):** new `TaskRepository.writeStatusUnlessTerminal(id, newStatus)`
+(`UPDATE tasks SET status=? WHERE id=? AND status NOT IN (done,failed,spike_completed)`) - one primitive
+serving both directions (reviving a task back to queued, and writing TO failed/blocked without downgrading a
+row that already reached a DIFFERENT terminal status). Applied to `ClaimService.fail`, `releaseClaimToQueue`,
+`reopenWithAmendedBrief`, `closeTaskAsFailed`, `closeTaskAsBlocked` - all 5 places that previously did
+`task.setStatus(x); taskRepository.save(task)` on a task whose terminal-ness was checked in an EARLIER,
+separate read. New tests: `TaskClaimServiceTest.writeStatusUnlessTerminalRefusesOnceARowReachesTerminal`
+(real H2, proves the SQL guard itself) + new `ClaimServiceRaceGuardTest` (pure Mockito, 5 cases) proving
+ClaimService correctly treats a 0-rows-affected result as "another transaction won the race, do nothing" -
+something the real-H2 test can't exercise sequentially, since a second real write before the method call
+would already be visible to the method's own entry-point check.
+
+**Shipped, defect class 2 (EneikProductionSys itself):** new `ProjectRepository.lockProjectForUpdate(id)`
+(`SELECT * FROM projects WHERE id=? FOR UPDATE`, no SKIP LOCKED - these are rare admission decisions, the
+second caller should wait for the correct answer, not skip past it). Applied as a lock held for the full
+check-then-create span in `ProjectFlowService.dispatchFalsificationAudit` and `checkAndDispatchCoverageAudits` -
+both now `@Transactional` with the lock acquired first, closing the exact race class that produced the
+PR#56/#57 duplicate-implementation incident earlier today. Deliberately NOT applied to every "already active"
+guard in the codebase (design-review/review-fallback dispatch not audited this pass - scope discipline, noted
+as remaining work below).
+
+**Shipped, defect classes 1+2+3 as a PERMANENT downstream-generation policy** (this is the part that makes it
+"for all time", per the operator's explicit ask - not just fixing today's incident but making every future
+Jules-generated task/review carry the same discipline):
+- `TechnicalLeadCompiler.buildTaskDescription` (the `Boundaries:` section every single generated task gets,
+  right next to the existing `.eneik/`/root-`.gitignore` permanent clauses) - two new clauses: (a) any
+  status/lifecycle field write must be an atomically-guarded update, never read-then-save, named as the
+  specific incident class it prevents; (b) any nondeterministic source feeding a tested code path must be
+  seedable, and any JSON float compared in a test must use an explicit type-safe comparison.
+- `docs/AI_REVIEW_GUIDELINES.md` - strengthened the existing (too-abstract - it already said "must be atomic"
+  and that didn't prevent today's incident) `Idempotency & Database Safety` section with the concrete named
+  anti-pattern + a reject/approve code-shape example pair, plus a new `Determinism & Canonical Representation`
+  section for defect class 3. This doc is read by REVIEWER MODE sessions.
+- `JulesDispatchService.reviewerFallbackPromptBatch` - added ONE new, narrowly-scoped blocker bullet (the
+  existing block-list is deliberately lenient - "work must never stall") for read-then-save terminal-status
+  writes specifically when the diff shows the entity reachable from more than one code path, to avoid false-
+  positive stalls on ordinary single-writer setters. Defect class 3 stays a non-blocking "concern" by design
+  (test flakiness, not data corruption) unless it affects a production decision with irreversible effects.
+
+Build clean (no `[ERROR]`, image tagged), deployed, backend starts clean (54 migrations validated, none new -
+this was pure code + prompt/doc text, no schema change), `/api/dashboard/bottlenecks` responds 200.
+
+(1) **Превентивно почищено на новом проекте для defect classes 1 и 2 внутри самого EneikProductionSys** - структурный фикс, не завязан на конкретный инцидент. **Для downstream-продуктов (все 3 класса) - это теперь постоянная политика генерации/ревью**, а не разовая правка одного проекта: каждая новая задача с этого момента получает эти два пункта в Boundaries, каждый REVIEWER MODE и fallback-ревьюер проверяет против них.
+(2) Что осталось: (a) не проведён исчерпывающий обход ВСЕХ "already active" admission-guard'ов в ProjectFlowService (только falsification-audit и coverage-audit) - design-review/review-fallback dispatch не проверены в этом заходе; (b) семантическая (не гоночная) дупликация wishlist-строк по-прежнему не решена; (c) новая политика не была протестирована на живом свежем диспатче задачи (намеренно - не стал тратить реальную Jules-сессию только ради проверки текста промпта; корректность подтверждена чтением кода + чистым прогоном полного тестового набора, который уже упражняет `buildTaskDescription` через существующие интеграционные тесты компилятора).
+
+## 2026-07-24T21:52:00+04:00 - (a) Дёшево: wait-time все нули, bottlenecks пуст, логи чисты post-deploy
+
+## 2026-07-24T22:15:00+04:00 - Закрыты оба ранее отложенных пункта (review-fallback admission race + семантическая дупликация wishlist), плюс отдельно задиспатчен фикс флейки-теста на PR#67 (test-thirty-seventh)
+
+Формат находок - по требованию оператора: (1) превентивно почищено на новом проекте или нет; (2) что именно сделано/осталось.
+
+**Находка 1 - review-fallback batch dispatch admission race.** Подтверждено реально (не гипотетика): `spring.task.scheduling.pool.size=10` (не дефолтный 1), `JulesDispatchService.dispatchReviewerFallbackBatch` (private) достижим из ДВУХ разных `@Transactional` публичных точек входа (`handlePrOpenedWorkflow` - немедленный путь для `cynefin=chaotic`, и `processPendingReviewBatch` - обычный batched sweep), которые реально могут пересечься на пуле из 10 потоков. Единственная защита (`reviewFallbackTargetsEverAttempted`) заново вычисляет историю из БД в начале каждого вызова - классическая check-then-INSERT гонка, тот же класс, что уже чинил сегодня для falsification-audit/coverage-audit.
+Фикс: тот же примитив, `ProjectRepository.lockProjectForUpdate(projectId)`, добавлен первой строкой в `dispatchReviewerFallbackBatch`. Оба реальных вызывающих метода уже `@Transactional`, поэтому lock корректно держится на всю длительность приватного метода (self-invocation внутри уже открытой транзакции).
+(1) **Превентивно почищено на новом проекте** - структурный фикс, тот же проверенный примитив, что и для falisification-audit/coverage-audit сегодня раньше.
+(2) Осталось: design-review dispatch НЕ тронут - проверил отдельно: `dispatchDesignReview` сейчас мёртвый код (единственный вызывающий закомментирован), чинить гонку в невызываемом коде было бы чистой тратой времени.
+
+**Находка 2 - семантическая (не гоночная) дупликация wishlist-контента.** Подтверждено чтением кода, не гипотеза: `JulesDispatchService.completeCoverageAudit` сравнивал новый gap только буквальной подстрокой заголовка против wishlist'ов, ещё остающихся в `pending` - как только gap успешно превращался в задачу (`converted_to_task`, ровно успешный случай), более поздний аудит, заново определивший "тот же" гэп другими словами, проходил без всякой проверки. `SelfFalsificationEpicMatcher` (уже проверенный в продакшене Jaccard-мэтчер) работает на уровень выше - title+jtbd эпика/FeatureEntity, никогда не смотрит на `WishlistEntity.content`.
+Фикс: новый класс `WishlistContentSimilarityMatcher` (осознанно НЕ рефакторинг `SelfFalsificationEpicMatcher`, а отдельный класс-сиблинг с тем же tokenize/jaccard ядром - чтобы не трогать уже проверенный в бою код) + `WishlistRepository.findByProjectIdAndSourceAndStatusIn` (расширяет сравниваемый набор с pending-only до pending+compiling+converted_to_task). Порог сходства (0.55) намеренно выше, чем у epic-мэтчера (0.42) - осознанный перекос в сторону безопасного отказа (false negative просто откладывает поимку дубля на следующий аудит-цикл; false positive молча теряет реально другую работу без пути повтора). Fail-open: любое исключение в скоринге = "не дубль", никогда не блокирует настоящую работу. Подключено в оба места создания wishlist (`completeCoverageAudit` - основной случай, `FalsificationCycleService.applyAuditViolations` - для симметрии, там риск ниже, уже гейтится `hasOpenFalsificationWishlist`). Новый юнит-тест `WishlistContentSimilarityMatcherTest` (4 кейса: похожий текст матчится, разный текст не матчится, null/blank не падает, null content существующей записи не падает).
+Честно проверил историю: сам инцидент PR#56/#57 (два PR на один и тот же rate limiter) по существующему комментарию в `WishlistRepository` был вызван РАСОВЫМ багом компилятора (уже пофикшен сегодня раньше через CAS на статус wishlist), не семантической дупликацией двух РАЗНЫХ строк. Новый фикс закрывает другой, более общий и всё ещё реальный случай (последовательные, не гоночные повторные находки одного и того же гэпа по разным аудит-циклам) - код с pending-only substring-check это подтверждает независимо от точного механизма исходного инцидента.
+(1) **Превентивно почищено на новом проекте** - постоянная защита на обоих путях создания wishlist, не разовая правка.
+(2) Осталось: интеграционного теста на сам `completeCoverageAudit` (сложный метод, много внешних зависимостей - GitHub, парсинг отчёта, ни одного существующего теста на него в проекте) писать не стал - непропорционально риску относительно объёма изменения; полагаюсь на юнит-тесты матчера + полный прогон существующего набора (238 тестов, чисто).
+
+**Отдельно (не архитектурное, по прямой просьбе оператора "параллельно, прямо сейчас") - фикс флейки-теста на PR#67.** Добавлен новый переиспользуемый примитив `JulesDispatchService.dispatchAdHocSessionToBranch` (выделен из `dispatchCloseoutConflictResolution` - тот же механизм, произвольный промпт вместо захардкоженного текста про конфликты) + эндпоинт `POST /api/jules-sessions/dispatch-to-branch`. Задиспатчена сессия `sessions/15278163987850905307` на ветку `jules-15725180673641378207-d03bb6ab` (PR#67) с точным описанием корневой причины (unseeded Random + Double/BigDecimal category error) и требованием использовать уже существующий seeded-конструктор `DelayCalculationService`. Не ждал завершения (реальная Jules-работа, не мгновенная).
+
+Собрано и задеплоено чисто (грепнул `[ERROR]`/`BUILD FAILURE` - пусто, образ протегирован), бэкенд стартует чисто, миграций не было (чистый код), `/api/dashboard/bottlenecks` отвечает 200.
+
+## 2026-07-24T22:26:00+04:00 - (a) Дёшево: wait-time/bottlenecks чисты; единственная ERROR-строка в grep - мой собственный неудачный вызов dispatch-to-branch (18:09:05, дубль ключа title в JSON), не системная проблема, уже исправлен и повторён успешно
+
+## 2026-07-24T22:52:00+04:00 - Оператор смержил все 4 открытых PR вручную (#58, #66, #67, #68) и попросил разобраться, дойдут ли фичи до 100% автоматически. Найден и исправлен реальный баг: dismissed-дубли считались в знаменателе готовности, что молча блокировало ВЕСЬ компилятор-конвейер проекта
+
+По просьбе оператора ("вижу каких-то 4 PR - оставь важные, смержи если нужны") смержены вручную через `gh pr merge` в правильном порядке зависимости: #66 и #68 (в ветку фичи-треда) → #67 (closeout, ветка фичи → main) → #58 (независимый, в main). Все 4 - реальная нужная работа, не мусор. CI на итоговом main зелёный.
+
+**Важное открытие при проверке "дойдёт ли эпик до 100%"**: эпик "Anti-Ban and Account Warm-up System" показывал стабильные 4/8, хотя весь код уже был в main. Причина - НЕ проблема с этим конкретным мерджем, а системный баг: `ClientDeliverableReadinessService`'s `plannedItems` фильтр (в `computeForSources` И в `listEpicDiagnostics`) считал wishlist-элементы в знаменателе готовности только по `compiledByRole != null`, вообще не проверяя статус. 3 wishlist-строки, уже правильно помеченные `dismissed` (дубли-слайсы от старого coverage-audit self-loop инцидента) + 1 строка за подтверждённо дублирующей `failed`-задачей (`f90e1308`, дубль rate-limiter'а) - все 4 никогда не могли произвести задачу, но вечно считались в знаменателе. Ratio никогда не мог достичь 100%.
+
+**Каскадный эффект оказался намного больше одной цифры на дашборде**: `ProjectFlowService.dispatchBatchedWishlistCompiler` (строка ~1285-1291) содержит намеренный gate оператора от 2026-07-21 - "не компилировать НИЧЕГО нового, пока весь текущий бэклог не смержен на 100%". Из-за бага выше этот gate был перманентно закрыт - **весь wishlist-компилятор проекта молча стоял**, сколько именно времени - не установлено (логи ротировались), но минимум с последнего рестарта.
+
+**Фикс**: добавлен `.filter(w -> w.getStatus() != WishlistStatus.dismissed)` в оба места (`computeForSources`, `listEpicDiagnostics`). Плюс вручную дисмиснуты 2 конкретные wishlist-строки через уже существующий `PATCH /api/wishlist/{id}/dismiss` (`d6b2ecc6` - ещё один pending-дубль "Session Rotation and Failover", найденный попутно; `46c9888e` - wishlist за подтверждённо-дублирующей `failed`-задачей f90e1308). Собрано/протестировано/задеплоено чисто (без ошибок, без новых миграций).
+
+**Результат, подтверждён живьём**: `totalFeatures=6, completeFeatures=6` (было 5), `mergedPlannedTasks=26/26` (100%, было меньше). В течение минут после деплоя конвейер САМ пошёл: новая coverage-audit задача, новая compiler-задача, "Compiled 3 wishlist item(s) into 1 task(s)". `decompositionComplete`/`falsificationEligible` остаются `false` - это честно: есть 1 pending гэп (Frontend Integration), ожидающий следующего WIP-цикла - реальная, невыполненная работа, не баг.
+
+**Watch-item, не решено**: один из 3 гэпов, ушедших в `compiling` в рамках разблокировки (`64fb4b13`, снова "Daily Outbound Messaging Rate Limiter") - возможный повторный дубль уже готовой работы (32bbc826/PR#56). Поймать на стадии wishlist не успел (уже в `compiling` до того как я это заметил, прерывать на середине не стал - риск сломать). Требует проверки, когда появится его PR - если дубль, закрыть без мержа.
+
+(1) **Превентивно почищено на новом проекте** - фикс знаменателя структурный, применяется ко всем проектам одинаково.
+(2) Что осталось: watch-item выше (возможный дубль rate-limiter'а в процессе компиляции); точная продолжительность простоя компилятора не установлена (логи ротировались).
+
+## 2026-07-24T22:58:00+04:00 - Постоянная "Engineering Invariants Charter" добавлена во все 13 ролей BARCAN (оператор: "выбери классические проверенные математические паттерны программирования и научи им все баркан роли")
+
+Синтез восьми повторяющихся классов дефектов, найденных за сегодняшнюю сессию, каждый привязан к классическому, математически обоснованному паттерну информатики (не разовая правка, а постоянное обучающее содержимое роли):
+1. Compare-And-Swap вместо read-then-write (Lamport/Herlihy) - инцидент: воскрешение задачи f90e1308.
+2. Критическая секция для check-then-create (Dijkstra, mutual exclusion) - инцидент: дубли singleton-задач (аудит, review-fallback).
+3. Поглощающие состояния конечного автомата (FSM/Markov theory) - формальная база для пунктов 1-2.
+4. Идемпотентность операций (at-least-once + dedup) - инцидент: retry уже смерженного PR как конфликт.
+5. Референциальная прозрачность и детерминизм тестов (FP purity) - инцидент: unseeded Random, флейки-тест PR#67.
+6. Каноническое представление на границах сериализации (Ryle, category error) - инцидент: Double/BigDecimal JSON.
+7. Монотонные водяные знаки против бесконечных циклов (stream-processing watermarking) - инцидент: coverage-audit self-loop.
+8. Точная область подсчёта в знаменателе метрики (invariant maintenance) - инцидент СЕГОДНЯШНЕГО дня: dismissed-дубли в знаменателе readiness-ratio молча блокировали весь wishlist-компилятор проекта.
+
+**Механизм доставки**: найден и переиспользован уже проверенный в продакшене паттерн - `docs/ROLE_EXCELLENCE_CHARTER.md`, на который все 13 файлов ролей уже ссылаются одной строкой сразу после заголовка (не инлайн-копия, Jules сам читает файл из репозитория - тот же механизм, что уже работает для Excellence Charter). Создан `docs/ENGINEERING_INVARIANTS_CHARTER.md` (8 пунктов, тот же лаконичный проверяемый стиль), и добавлена одна ссылочная строка во все 13 `BARCAN-TAG-*.md` файлов сразу после существующей ссылки на Excellence Charter (для BARCAN-TAG-07/08/09 - с точечным пояснением, почему конкретной роли особенно важны конкретные пункты: Security↔TOCTOU, Data Engineer↔пункты 1-4, Technical Lead/PM↔пункт 8 про метрики). Код не менялся - `RoleCapabilityLoader.loadRawCharter` уже шлёт весь файл роли целиком без урезания, добавление ссылки ничего не ломает и ничего не требует пересобирать/передеплоивать.
+
+(1) **Превентивно почищено на новом проекте** - это постоянное содержимое чартера каждой роли, действует с этого момента для абсолютно любой новой задачи любой роли на любом будущем проекте, не привязано к test-thirty-seventh.
+(2) Что осталось: не проверено вживую, реально ли Jules-сессия читает и применяет содержимое нового файла на практике (тот же самый непроверенный риск уже присущ оригинальному ROLE_EXCELLENCE_CHARTER.md - это не новый риск, а существующий, разделяемый обоими файлами).
+
+## 2026-07-24T23:05:00+04:00 - (a) Дёшево: wait-time/bottlenecks чисты, логи чисты
+
+## 2026-07-24T23:38:00+04:00 - (c) обнаружен и устранён по прямому запросу оператора: зависшая compiler-сессия держала decompositionComplete=false, что грозило пропуском falsification в 20:00 UTC
+
+Первое реальное применение нового двухступенчатого промпта - сразу поймал (c) на дешёвой проверке: `SYSTEM STALLED: no forward progress for 45→46→47 minutes` (реальный ERROR) + новый сигнал п.3 (повтор "An active compiler task already exists... holding 5 wishlist compile candidate(s)"). Расследование: сессия компилятора `sessions/15950752044244470694` (задача `b9abead0`, "Compile 3 wishlist(s) into task graph") создана 18:46:31, `lastProgressAt` подтверждённо заморожен на моменте создания даже после живого опроса Jules (не баг трекинга - реальный сигнал от Jules), единственная активность была в первые 10 минут (смердж собственного task-plan-рекорда), дальше полная тишина.
+
+Оператор объяснил контекст и дал прямое указание: результаты последнего coverage-аудита некорректны, falsification сейчас важнее, откатить всё - аудит перезапустить после falsification. Выполнено:
+1. Отменена зависшая сессия (`POST /api/jules-sessions/{id}/cancel`) - задача `b9abead0` корректно ушла в `failed`, claim снят (подтверждено `404` на `/active-claim`).
+2. Списаны (`dismissed`) все 4 wishlist-элемента последнего аудита (`e69bbd3c`, `d36a1f95`, `64fb4b13`, `838e4cf2`) - три "Admin Dashboard Auth", "Message Queue Retry", ещё один Rate Limiter (watch-item из более раннего цикла), один "Frontend Integration".
+3. Проверено на осиротевшие дочерние wishlist-записи от частично успевшей отработать компиляции - ноль, зависшая сессия ничего не успела создать.
+
+**Результат, подтверждён живьём**: `decompositionComplete: true`, `falsificationEligible: true` (было `false`/`false`). `totalFeatures=6, completeFeatures=6, mergedPlannedTasks=26/26`. Очередь пуста (`totalQueued: 0`, `bottlenecks: []`) - `SYSTEM STALLED` продолжит расти до следующего цикла проверки (таймер сбрасывается только реальным dispatch/merge, не самой чисткой), но должен затихнуть сам, так как условие "idle capacity or pending work exists" больше не выполняется.
+
+(1) Превентивно не почищено - точная причина, почему именно эта Jules-сессия зависла после первых 10 минут без единой ошибки, не установлена (не расследовалось, т.к. приоритет был явно расставлен оператором в пользу скорости, не диагностики).
+(2) Что осталось: после falsification - заново запустить coverage-audit по вычищенной фиче/проекту, как и попросил оператор.
+
+## 2026-07-24T23:47:00+04:00 - (b) SYSTEM STALLED продолжает расти (60 мин) и после чистки - объяснимо, не критично
+
+Ошибочное моё предположение из прошлой записи: "должен затихнуть сам" - не затих. Причина: условие тревоги "idle capacity **OR** pending work exists" удовлетворяется просто наличием 6 простаивающих аккаунтов, независимо от того, есть ли реальная работа в очереди (`totalQueued: 0`, `bottlenecks: []` - подтверждено). Проект честно достиг целевого состояния (100% смержено, decomposition complete) и ждёт крон falsification (20:00 UTC, ~13 мин на момент записи) - тревога не различает "реально застряло" и "честно нечего делать". Не чиню, не критично, falsification вот-вот запустится сама.
+
+## 2026-07-24T00:08:00+04:00 (2026-07-25 по UTC-дате) - Falsification запущена штатно в 20:00 UTC; SYSTEM STALLED действительно затих сам, как только появилась реальная новая работа
+
+Оператор дал постоянную инструкцию на время наблюдения за falsification: фиксировать всё тщательно; при зависании автоматизации или найденном баге - сначала запись с диагнозом и архитектурно верным решением, только потом чинить (если нужно, чтобы продолжало ехать), никогда не наоборот.
+
+**Подтверждение по SYSTEM STALLED**: последняя запись тревоги - 19:47:24 (60 мин). После этого - тишина до 19:59:59, когда `FalsificationCycleService` реально стартовала. Это подтверждает гипотезу из прошлой записи: тревога не была залипшим багом, она честно перестала расти, как только появилось реальное новое действие (dispatch), а не просто потому что "нечего делать" перестало быть true.
+
+**Falsification, статус на 20:04 UTC**:
+- 19:59:59 - `FalsificationCycleService: Starting daily falsification cycle check`
+- 20:00:04 - получены реальные диффы по 5 недавно смерженным PR (since PR #none audited yet - это первый когда-либо falsification-прогон для этого проекта)
+- 20:00:10 - задача `fe0cf532-0808-4560-882f-b8ab2af134e7` ("Falsification audit: refusal criteria & methodological review"), охватывает 13 активных ролей, аккаунт `eneikdru`
+- Задача `claimed`, живая Jules-сессия `sessions/17916990411519656795`, вердикта пока нет - это первый прогон, ожидаемо небыстрый (13 ролей разом).
+
+Продолжаю плотно следить, ничего не чиню без необходимости.
+
+## 2026-07-24T00:25:00+04:00 (2026-07-25 UTC-дата) - Falsification завершилась: 7 находок за 13 ролей. Одна требовала срочного архитектурного фикса (устаревший чартер BARCAN-TAG-08) - зафиксировано, исправлено, задеплоено до того, как компилятор успел взять её в работу
+
+**20:12:39** - `FalsificationCycleService: Completed audit... Checked roles: 13, Violations: 7, Follow-up wishlist items created: 1` (консолидировано в один `self_falsification` wishlist `91a7afe4`). PR#71 (record-PR аудита) смержен и удалён автоматически, задача `fe0cf532` корректно reconciled.
+
+**Разбор всех 7 находок** (порядок по формату оператора: диагноз → архитектурное решение → действие):
+
+1-2. **[BARCAN-TAG-08] Flyway: "timestamp-версии PR#66/#67 нарушают строгую последовательную нумерацию + нет down-миграции" - ЛОЖНОЕ СРАБАТЫВАНИЕ из-за устаревшего чартера, СРОЧНЫЙ РИСК РЕГРЕССА, ИСПРАВЛЕНО.**
+   Диагноз: чартер `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md` (строки 49-52, 70-72, 79, 96-115) всё ещё требовал строгую последовательную нумерацию с gap-filling - ровно то правило, которое СЕГОДНЯ РАНЬШЕ было заменено на timestamp-based версии именно для устранения того же класса коллизий (V9 трижды), на который сам чартер и ссылается как на обоснование. Falsification (играя роль BARCAN-TAG-08) механически применила старое правило к новому, корректному коду - и получила бы Jules-сессию, которая попыталась бы ОТКАТИТЬ сегодняшний архитектурный фикс обратно на последовательную нумерацию, если бы её успел подхватить компилятор.
+   Архитектурное решение: чартер обновлён - Obligatory-правило теперь описывает реальный механизм (оркестратор резервирует номер по временной метке, роль использует ровно его; fallback на "максимальный существующий + 1" только если задание пришло без резервирования). Отдельно: правило про down-migration переформулировано честно - используется Flyway Community Edition (подтверждено: `flyway-core`, не `flyway-teams`), которая НЕ поддерживает автоматический `undo` (платная функция Teams/Pro) - вместо "проверенного автоматического отката" теперь требуется документированный ручной `U<version>__*.sql`-файл ТОЛЬКО для деструктивных миграций, честно помеченный как неавтоматический. Формальные предикаты ($Seq(m)$→$U(m)$, $R(m)$) и пример Honest Rejection обновлены в соответствии. Ни одного U-файла нигде в истории проекта не найдено - это не новый пробел, он существовал с самого начала, просто не был замечен раньше.
+   Действие: собрано, задеплоено ДО того, как компилятор успел скомпилировать wishlist `91a7afe4` (проверено - оставался `pending` весь цикл сборки, гонка выиграна).
+   (1) Превентивно почищено - постоянная правка чартера, действует для всех будущих Data Schema задач на всех проектах.
+   (2) Осталось: сам wishlist `91a7afe4` всё ещё содержит СТАРЫЙ текст находок 1-2 (описывающий уже неактуальное требование) - при компиляции роль прочитает НОВЫЙ (верный) чартер и должна честно закрыть эти два пункта как "уже соответствует политике", но текст самой находки не переписан заново. Не критично, роль справится по определению нового чартера.
+
+**Самокоррекция**: изначально показалось, что находки 2/4/6 пришли с побитой кодировкой кириллицы (mojibake) - отдельный подозреваемый баг. Перепроверил напрямую через `curl` (сырой UTF-8, в обход PowerShell) - кириллица полностью корректна ("Пер Мартин-Лёф", "Карл Поппер" читаются нормально). Мнимый баг был артефактом отображения PowerShell-консоли на моей стороне, не реальной проблемой системы. Отзываю находку, ложная тревога.
+
+3. **[BARCAN-TAG-09] sixSigmaMetric с абсолютной целью вместо измеримой дельты (PR#69)** - выглядит легитимно, не связано с сегодняшними изменениями. Не трогал.
+5. **[BARCAN-TAG-06] Только 1 сценарий в acceptanceCriteria вместо обязательных 4 (1 позитивный + 2 негативных + 1 граничный, PR#69)** - выглядит легитимно, не связано с сегодняшними изменениями. Не трогал.
+7. **[CLIENT-SPEC] Rate limiter (PR#67) бросает IllegalStateException и останавливает диспатч вместо динамического failover по FEAT-CMP-04** - выглядит как реальный, отдельный баг продукта. Не трогал - не архитектурный вопрос оркестратора, обычная задача для исполнения.
+
+(1)/(2) для находок 3/5/7: превентивно ничего не чищено (они не про оркестратор), осталось - дождаться, когда `91a7afe4` скомпилируется в реальные задачи, и смотреть на результат по каждой отдельно.
+
+## 2026-07-24T01:50:00+04:00 (2026-07-25 UTC-дата) - (c) НАЙДЕН И ИСПРАВЛЕН реальный системный баг: отсутствие таймаутов на 10 из 12 HTTP-клиентов вызвало истощение пула потоков планировщика и каскад SYSTEM STALLED
+
+**Дешёвая проверка нашла реальную аномалию**, отличную от прошлых ложных срабатываний: `SYSTEM STALLED` растёт без остановки (60→73+ мин), ЧАСТОТА срабатывания выросла с ~1/мин до ~1/25сек, и почти все записи идут ТОЛЬКО от одного потока планировщика (`scheduling-9`: 29 записей за 5 минут против 1 у каждого из остальных 3 замеченных - 6 потоков вообще не отметились).
+
+**Диагноз**: `java.net.ConnectException: null` при вызовах `JulesApiClient.getSessionStatus` и `GitHubPullRequestService`, началось ~20:41:59, задело НЕСКОЛЬКО НЕСВЯЗАННЫХ проектов одновременно (включая test-thirty-sixth, который "завершён, не мониторится") - похоже на кратковременный сетевой сбой окружения, не баг оркестратора как такового. НО живая проверка коннективности из контейнера ПРЯМО СЕЙЧАС (`curl` на jules.google.com/api.github.com) отработала нормально - сбой был временным. Реальная находка глубже: `JulesApiClient`/`GitHubPullRequestService` создают `HttpClient` БЕЗ единого таймаута (`HttpClient.newHttpClient()`/`newBuilder().build()`, ни `connectTimeout`, ни `.timeout()` на запросах). Проверил весь кодабейс - grep `HttpClient.new` даёт **10 файлов** с этим пробелом (`JulesApiClient`, `GitHubPullRequestService`, `GithubAccessService`, `RepositoryStackAnalyzer`, `GitHubProjectFactoryClient`, `LinearProjectFactoryClient`, `AutoMergeService` x3 инлайн-клиента, `ProjectFlowService` x1 инлайн). Это значит: любой кратковременный сетевой сбой может держать поток планировщика неопределённо долго - при 10 потоках на всё приложение (`spring.task.scheduling.pool.size=10`) кластер одновременных зависаний (как сегодня) истощает пул почти до нуля, что и объясняет каскад SYSTEM STALLED.
+
+**Архитектурное решение**: проверенный паттерн уже ЕСТЬ в этом же проекте - `StitchClient`/`GoogleAiResourceService` уже настроены правильно (`HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build()`). Это не гипотеза, а копирование уже работающей практики на оставшиеся 10 мест. Классический паттерн: ограниченная по времени внешняя операция на разделяемом ограниченном пуле ресурсов - без верхней границы одна зависшая операция может монополизировать общий ресурс.
+
+**Действие**: применил `connectTimeout(Duration.ofSeconds(20))` ко всем 10 непокрытых `HttpClient` (см. код). Пересобрано, задеплоено - рестарт JVM также немедленно снял уже зависшие на момент фикса потоки, не только предотвратил будущие.
+(1) **Превентивно почищено на новом проекте** - структурный фикс на уровне HTTP-клиентов оркестратора, действует для всех проектов.
+(2) Осталось: per-request `.timeout(...)` на отдельных `HttpRequest`-объектах НЕ добавлен (только connect-фаза защищена; зависание уже после успешного connect, во время ожидания ответа, всё ещё возможно) - более крупная правка по многим местам, не делал сейчас из-за срочности восстановления конвейера. Отдельный follow-up.
+
+**Подтверждено живьём после деплоя**: пул потоков вернулся к здоровому распределению (несколько разных `scheduling-N` за минуту вместо 29 записей с одного), `SYSTEM STALLED` не срабатывает 2+ минуты подряд - инцидент закрыт.

@@ -2,6 +2,7 @@
 ## Онтологический Конструктор
 
 Данная роль наследует обязательства из [docs/ROLE_EXCELLENCE_CHARTER.md](docs/ROLE_EXCELLENCE_CHARTER.md).
+Данный файл также наследует инженерные инварианты из [Engineering Invariants Charter](docs/ENGINEERING_INVARIANTS_CHARTER.md).
 
 **Роль:** System / Solution Architect
 **Группа:** A — Проектирование, смысл и рамки

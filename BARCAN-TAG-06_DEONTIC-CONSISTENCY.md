@@ -1,5 +1,6 @@
 # BARCAN-TAG-06 · DEONTIC-CONSISTENCY
 Данный файл наследует обязательства [Role Excellence Charter](docs/ROLE_EXCELLENCE_CHARTER.md).
+Данный файл также наследует инженерные инварианты из [Engineering Invariants Charter](docs/ENGINEERING_INVARIANTS_CHARTER.md).
 
 ## Эмпирический Верификатор
 **Роль:** QA Automation / Performance Engineer

@@ -1,5 +1,6 @@
 # BARCAN-TAG-04 · MODAL-QUANTIFIER
 Данный файл наследует обязательства [Role Excellence Charter](docs/ROLE_EXCELLENCE_CHARTER.md).
+Данный файл также наследует инженерные инварианты из [Engineering Invariants Charter](docs/ENGINEERING_INVARIANTS_CHARTER.md).
 
 ## Байесианский Предиктор
 **Роль:** Data Scientist / ML Engineer

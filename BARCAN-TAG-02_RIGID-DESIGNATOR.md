@@ -1,5 +1,6 @@
 # BARCAN-TAG-02 · RIGID-DESIGNATOR
 Данный файл наследует обязательства [Role Excellence Charter](docs/ROLE_EXCELLENCE_CHARTER.md).
+Данный файл также наследует инженерные инварианты из [Engineering Invariants Charter](docs/ENGINEERING_INVARIANTS_CHARTER.md).
 
 ## Семантический Транслятор
 **Роль:** Backend / Integration Engineer
