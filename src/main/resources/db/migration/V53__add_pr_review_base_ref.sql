@@ -1,0 +1,1 @@
+ALTER TABLE pr_reviews ADD COLUMN base_ref VARCHAR(256) NULL;
