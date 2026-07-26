@@ -4572,3 +4572,169 @@ this was pure code + prompt/doc text, no schema change), `/api/dashboard/bottlen
 Собрано (реальные тесты), задеплоено, миграция V61 применена чисто, живьём подтверждено - первая же реальная строка лога (`ContinuousOrchestrationService: Processing project test-thirty-eighth`) успешно дошла до записи в БД и прочиталась через новый эндпоинт.
 
 (1) **Превентивно восстановлено на новом проекте** - лог общесистемный, будет работать для любого будущего проекта с первой секунды. (2) Осталось: причина PR#45-бага не найдена - ждём следующего живого срабатывания, на этот раз с логом, который переживёт любой мой будущий передеплой.
+
+## 2026-07-26T15:38:20+04:00 - Lightweight emergency monitor: target stable but stalled; two exact queued duplicates blocked in leadgen
+
+**Границы проверки.** Это один фактически выполненный текущий срез после длинного интервала heartbeat-сообщений, а не утверждение, что каждый пропущенный интервал был проверен. Использованы только локальные endpoints, `docker compose` logs/status и локальные файлы. Gemini, OpenAI, GitHub и Jules не вызывались.
+
+### 1. Состояние сервисов
+
+- `GET /health`: `status=ok`, backend timestamp `2026-07-26T11:38:20.790165769Z`.
+- Backend container: `running`, создан `2026-07-26 15:15:00 +04`, на момент снимка работал около 23 минут.
+- Frontend container: `running`, uptime около 21 часа.
+- ML container: `running (healthy)`, uptime около 13 часов.
+- Монитор не инициировал сборку, restart или redeploy.
+
+### 2. Целевой проект `test-thirty-third` (`54fc1d2e-1e43-4ab4-a8ac-6a111dec41ab`)
+
+`GET /api/projects/{projectId}/dashboard`:
+
+- queue: `totalQueued=0`, `byTag=[]`;
+- pipeline: `queued=0`, `claimed=0`, `in_progress=0`, `review=0`, `done=4`, `failed=33`;
+- `openWishlistCount=0`;
+- активного роста очереди нет.
+
+Полный локальный task-срез через `GET /internal/tasks`, отфильтрованный по project id:
+
+- всего задач: `63`;
+- `blocked=3`;
+- `spike_completed=1`;
+- `done=22`;
+- `failed=37`;
+- `queued=0`, `claimed=0`, `in_progress=0`, `pending_review=0`, `review=0`.
+
+Срез задач, в чьей цепочке `source_role_tag` присутствует `BARCAN-TAG-09`:
+
+- всего `41`;
+- `blocked=3`, `spike_completed=1`, `done=4`, `failed=33`;
+- `queued=0`, `claimed=0`;
+- неожиданный рост `BARCAN-TAG-09` отсутствует.
+
+Оставшиеся четыре нетерминальные задачи:
+
+- `233231df-c85c-4c60-b6f3-129a1593e2ee` - `Delivery Plan`, `blocked`, source role `BARCAN-TAG-09`;
+- `94453aca-0935-4d34-b4ae-d1f8f15b37de` - `Delivery Plan`, `spike_completed`, source role `BARCAN-TAG-09`;
+- `27f97079-fad9-41c8-94c5-f56caede2e33` - `UI Slice`, `blocked`, source roles `BARCAN-TAG-11, BARCAN-TAG-09`;
+- `852247f8-5e21-413a-9e40-f169cae0ed05` - `Data Schema`, `blocked`, source roles `BARCAN-TAG-08, BARCAN-TAG-09`.
+
+Эти элементы не queued и не claimed, поэтому monitor их не мутировал. Система их также сейчас не исполняет: у целевого проекта нет ни одной активной pipeline-задачи.
+
+### 3. Wishlist target-проекта
+
+Всего `103`, распределение не выросло:
+
+- `converted_to_task + client=19`;
+- `converted_to_task + role=57`;
+- `converted_to_task + role_mismatch_followup=19`;
+- `dismissed + coverage_gap=5`;
+- `dismissed + role=3`.
+
+Контрольные условия:
+
+- открытых `role_mismatch_followup`: `0`;
+- wishlist с `source=self_falsification`: `0`;
+- новых автоматических follow-up wishlist не обнаружено;
+- мутации wishlist не выполнялись.
+
+### 4. Готовность к фальсификации
+
+Dashboard `productReadiness`:
+
+- `totalFeatures=4`;
+- `completeFeatures=0`;
+- `totalPlannedTasks=15`;
+- `mergedPlannedTasks=3`;
+- `mergedRatio=0.20`;
+- `decompositionComplete=true`;
+- threshold `0.90`;
+- `falsificationEligible=false`;
+- status `building`.
+
+При текущем знаменателе необходимо минимум `14/15` merged planned tasks; сейчас `3/15`, то есть до порога не хватает ещё `11` подтверждённых merge. По сравнению с прежним зафиксированным снимком знаменатель изменился с `18` до `15`, а отношение с `3/18` до `3/15`; этот monitor не менял формулу readiness и только фиксирует наблюдаемое изменение после нового backend deploy.
+
+Dashboard отдельно сообщает пять блокирующих элементов:
+
+- `dab7d3d8-0988-4547-b02d-ed45fa877d87`, `Runtime Contract`, `done`, reason `done_not_reached_main`;
+- `27f97079-fad9-41c8-94c5-f56caede2e33`, `UI Slice`, `blocked`, reason `stale_in_progress`;
+- `852247f8-5e21-413a-9e40-f169cae0ed05`, `Data Schema`, `blocked`, reason `stale_in_progress`;
+- `94453aca-0935-4d34-b4ae-d1f8f15b37de`, `Delivery Plan`, `spike_completed`, reason `stale_in_progress`;
+- `233231df-c85c-4c60-b6f3-129a1593e2ee`, `Delivery Plan`, `blocked`, reason `stale_in_progress`.
+
+Вывод: фальсификация корректно не запустилась по gate, но сам продуктовый поток сейчас стоит, потому что queue/claimed/in_progress/review равны нулю при пяти блокирующих элементах и readiness всего 20%.
+
+### 5. Проверка backend logs
+
+В свежем docker-буфере после deploy:
+
+- `FalsificationCycleService`: `0` строк;
+- `auto-recovery follow-up disabled`: `0`;
+- `Follow-up wishlist created`: `0`;
+- `RESOURCE_EXHAUSTED`: `0`;
+- `DataIntegrityViolationException`: `0`;
+- событий dispatch/apply фальсификации: `0`.
+
+Найдены две строки `ERROR` в `11:25:13Z` и `11:25:15Z`. Полный стек обеих показывает `org.apache.catalina.connector.ClientAbortException: java.io.IOException: Broken pipe` во время Jackson JSON serialization. Это разрыв HTTP-соединения клиентом при передаче большого ответа, а не падение scheduler, БД, Jules или falsification flow. После ошибок `/health` остаётся `ok`.
+
+Также видны повторные INFO-строки `Poka-yoke: PR review fallback was already attempted ... automatic retry is disabled` для задач другого проекта `test-thirty-eighth`; новых fallback-задач эти строки не создают.
+
+### 6. Межпроектный контроль ранее обнаруженного раздувания `leadgen-telegram-bot`
+
+Project id: `0d282193-8356-407b-8e13-303af28d5ea8`.
+
+Текущее состояние до вмешательства:
+
+- задач всего `47`: `queued=31`, `failed=14`, `done=2`;
+- wishlist всего `42`, все уже `converted_to_task`;
+- исторический рост произошёл 22 июля после повторов compiler для исходного wishlist `051b5b53-c245-4013-a2ab-93d530cbdb99`;
+- первоначальные повторные compiler tasks теперь terminal (`failed` или один `done`) и сами больше не размножаются;
+- среди 31 оставшихся queued-задач найдено ровно две пары с побайтно одинаковым `description`; все четыре - `BARCAN-TAG-09`, title `Coverage audit: plan vs brief (051b5b53)`, без source wishlist.
+
+Подтверждённые exact-duplicate пары:
+
+1. Каноническая ранняя задача `d6c1c330-8920-4615-992e-16cfaeb7aae0` и более поздний дубликат `a860c2c9-e6a1-4ea1-8bb1-5e7343b440c3`.
+2. Каноническая ранняя задача `b249a5f7-40e5-4904-a6ff-9b1439308c88` и более поздний дубликат `daf5c2c5-e0df-4691-b53f-7da234e042f9`.
+
+### 7. Выполненные мутации
+
+В соответствии с правилом "block only clearly runaway queued tasks" заблокированы только более поздние точные копии:
+
+- `PATCH /internal/tasks/a860c2c9-e6a1-4ea1-8bb1-5e7343b440c3`, body `{"status":"blocked"}`: success, подтверждён переход `queued -> blocked`;
+- `PATCH /internal/tasks/daf5c2c5-e0df-4691-b53f-7da234e042f9`, body `{"status":"blocked"}`: success, подтверждён переход `queued -> blocked`.
+
+После вмешательства:
+
+- leadgen task status: `queued=29`, `blocked=2`, `failed=14`, `done=2`;
+- число exact-duplicate description groups среди queued: `0`;
+- ранние канонические экземпляры сохранены queued;
+- остальные 29 queued-задач имеют различающийся content/JTBD либо требуют отдельной продуктовой оценки, поэтому не блокировались;
+- целевой проект `test-thirty-third` не мутировался.
+
+### 8. Итог
+
+- В целевом проекте нового дублирования и раздувания нет.
+- Целевой поток не работает активно: он не раздувается, но стоит на четырёх нетерминальных задачах и пяти readiness blockers.
+- Фальсификация не срабатывала и при readiness `3/15` не должна срабатывать.
+- В другом проекте устранены две доказанные queued-копии; неоднозначные задачи сохранены.
+- Внешние лимиты не расходовались.
+
+## 2026-07-26T11:30:00+00:00 - Одиннадцатый почасовой чекпоинт test-thirty-eighth - ВТОРОЕ подряд подтверждение, что фикс "видеть свои прошлые действия" работает; замечен параллельный внешний агент в этом же логе
+
+**Примечание**: выше в этом файле - большой блок, написанный НЕ мной (судя по содержанию - работа над `test-thirty-third`, блокировка дублей через `/internal/tasks`). Не трогал, только дописываю свой чекпоинт в конец. Подтверждает слова оператора: "это не будет джемени это будут внешние агенты" - лог уже используется параллельно.
+
+**Задачи**: `done`=39 (было 37), `pending_review`=5, `queued`=10 (было 8), `review`=5, `spike_completed`=2.
+
+**Вишлисты**: `source=gemini_observer` = 20 (было 15, +5) - продолжает расти на 4-5 в час (родитель+internal-work-items на каждую новую находку про застой).
+
+**Jules-сессии**: `closed_no_code`=22 (было 19, +3), `closed_terminal_task`=18, `failed`=16, `pr_opened`=10. `running`=0 - ни одной активной сессии на момент чекпоинта.
+
+**GitHub PR** (`--limit 100`): 48 всего, 36 смержено (было 33), 12 открыто.
+
+**Журнал Джемини (2 новые записи) - ГЛАВНОЕ, второе подряд подтверждение фикса**:
+- 11:00:26 - `done` 36→37, ratio по-прежнему 5/19. Дословно: *"Given that previous falsification runs were unsuccessful at shifting this gate... I will refrain from triggering further automated falsification runs in this cycle to avoid redundant operations."* - **сама остановила себя**, посмотрев на свои прошлые действия.
+- 11:30:41 - `done` 37→38, ratio та же. *"I will continue to observe for any shifts in the task graph processing that might eventually unblock the readiness gate."* - **второй цикл подряд БЕЗ повторного действия**. Действий в `gemini_observer_actions` с 10:30:19 не было - подтверждает, что фикс не разовая случайность.
+
+**Ошибок** за этот час - ноль.
+
+**Важный контекст для следующего чекпоинта**: по прямому указанию оператора сегодня же реализованы (собраны, тесты прошли) два фикса самой формулы readiness - (1) `ratio()` теперь считается по фичам (`completeFeatures/totalFeatures`), а не по отдельным пунктам работы, (2) закрытие feature-thread больше не ждёт ВСЕХ sibling-задач, только реального смерженного кода хотя бы в одной. **Ещё НЕ задеплоено** (сборка только что завершилась, деплой - следующим шагом после этого чекпоинта). Как только выкатится - ожидаю, что readiness перестанет читаться как "застрявший 5/19" и её собственные находки про "readiness calculation bug" либо подтвердятся, либо естественно перестанут подниматься.
+
+Реиндекс базы паттернов не запускался.
