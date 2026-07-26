@@ -1,5 +1,7 @@
 package com.eneik.production.dto.dashboard;
 
+import java.util.List;
+
 public record ProductReadinessDto(
         int totalFeatures,
         int completeFeatures,
@@ -9,6 +11,7 @@ public record ProductReadinessDto(
         boolean decompositionComplete,
         double falsificationThreshold,
         boolean falsificationEligible,
-        String status
+        String status,
+        List<BlockedItemDto> blockedItems
 ) {
 }

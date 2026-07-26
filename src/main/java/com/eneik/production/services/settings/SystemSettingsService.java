@@ -159,6 +159,35 @@ public class SystemSettingsService {
         definitions.put("stitch_enabled", flag("stitch_enabled", "STITCH_ENABLED", "stitch.enabled"));
         definitions.put("stitch_api_key", secret("stitch_api_key", "STITCH_API_KEY", "stitch.api-key"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
+        // Independent of falsification_cycle_enabled above - the philosophical track (product-critique per
+        // real philosopher, Kano-classified) is a separate generative track from the formal/corrective one
+        // and must be toggleable on its own (operator directive, 2026-07-25).
+        definitions.put("philosophical_falsification_enabled", flag("philosophical_falsification_enabled", "PHILOSOPHICAL_FALSIFICATION_ENABLED", "philosophical-falsification.enabled"));
+        // Off by default (2026-07-25, testimony-vs-evidence Phase 2): periodic sweep that can WRITE task
+        // status (marks a task failed when its PR was closed without merge on GitHub with no active claim
+        // left to complete it normally) - a real write action, unlike Phase 1's read-only evidence checks,
+        // so it gets its own explicit opt-in even though the underlying logic is low-risk (CAS-guarded,
+        // only ever touches already-orphaned tasks).
+        definitions.put("github_truth_reconciliation_enabled", flag("github_truth_reconciliation_enabled", "GITHUB_TRUTH_RECONCILIATION_ENABLED", "github-truth-reconciliation.enabled"));
+        // Off by default (2026-07-25, operator directive: "мало системных решений... встроить такого же
+        // аудитора как ты прямо внутрь бекенда"). An embedded Gemini-powered ops auditor that reasons over
+        // real evidence (not guesses) and autonomously calls a curated, pre-vetted tool set to fix bounded-
+        // risk operational issues (orphaned wishlists behind a terminally-failed task, etc.) - the same
+        // pattern the operator watched the human orchestrator (this session) perform by hand all night.
+        definitions.put("ops_auditor_enabled", flag("ops_auditor_enabled", "OPS_AUDITOR_ENABLED", "ops-auditor.enabled"));
+        // Off by default (2026-07-25, operator directive: "нужно чтобы Джемини постоянно училась контексту
+        // моей системы и в каждом вызове была максимально компетентна"). Gates GeminiContextService's
+        // scheduled re-indexing (embeds OBSERVER_LOG/engineering-charter/role-charter text via the ML
+        // service - a real, metered Gemini API cost) AND whether callers augment their prompts with
+        // retrieved context at all - off means byte-for-byte the pre-existing prompt behavior, no surprise
+        // cost the operator didn't opt into.
+        definitions.put("gemini_context_learning_enabled", flag("gemini_context_learning_enabled", "GEMINI_CONTEXT_LEARNING_ENABLED", "gemini-context.learning-enabled"));
+        // Gates GeminiProjectObserverService's scheduled analysis cycle (2026-07-25, operator directive:
+        // "нужен был именно наблюдатель, джемини, который подключается раз в 30 минут"). Redesigned same
+        // day after "она вообще должна была создать свой отдельный лог, а не работать с твоим" - the
+        // observer now reasons over a structured evidence snapshot of real project state plus Gemini's own
+        // journal (GeminiObserverJournalEntity), never the backend's internal Logback log.
+        definitions.put("gemini_project_observer_enabled", flag("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         definitions.put("system_stall_status", plain("system_stall_status", "SYSTEM_STALL_STATUS", "system-stall.status"));
         definitions.put("task_compiler_account_name", plain("task_compiler_account_name", "TASK_COMPILER_ACCOUNT_NAME", "task-compiler.account-name"));

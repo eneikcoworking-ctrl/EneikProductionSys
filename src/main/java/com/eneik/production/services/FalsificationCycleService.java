@@ -20,6 +20,21 @@ public class FalsificationCycleService {
     private static final int MAX_MERGED_PRS_PER_AUDIT = 5;
     private static final int MAX_DIFF_CHARS_PER_PR = 6000;
 
+    // Philosophical falsification track (2026-07-25, operator directive): the formal track above answers
+    // "does the shipped code contradict its own charters?" - this answers "is the shipped PRODUCT genuinely
+    // what users need?", per philosopher (up to 13 roles x 6 philosophers = 78 voices), evaluated in Kano
+    // terms. Deliberately generative, not corrective - see WishlistSource.philosophical_falsification and
+    // applyPhilosophicalCritiques below for why it cannot share self_falsification's gating/dedup/Cynefin
+    // semantics.
+    //
+    // These two numbers are deliberately NOT the noise-control mechanism - clustering (see
+    // applyPhilosophicalCritiques/WishlistContentSimilarityMatcher.clusterBySimilarity) is: converging
+    // voices merge into one wishlist per theme instead of any voice being individually judged and discarded.
+    // They exist purely as a last-resort safety net for a genuinely degenerate run (e.g. clustering produces
+    // far more orthogonal themes than normal), generous enough to almost never bind in practice.
+    private static final int MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN = 8;
+    private static final int MAX_PENDING_PHILOSOPHICAL_WISHLISTS = 10;
+
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
     private final RoleCapabilityLoader roleCapabilityLoader;
@@ -30,9 +45,23 @@ public class FalsificationCycleService {
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
     private final ClientDeliverableReadinessService readinessService;
     private final WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher;
+    private final GeminiContextService geminiContextService;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
+
+    // 2026-07-26 operator directive ("2 70% достаточно. не 90%. первый раз провести на 90%. потом раз в 2
+    // дня, но с 70%"): the philosophical track's own two-tier bar - separate from readinessThreshold above,
+    // which stays 90% for the formal/corrective cycle only. A project's FIRST philosophical run still
+    // requires 90% (there should be something substantial worth critiquing before the very first pass), but
+    // every run after that only needs 70% - waiting for near-total completion every 2 days meant the cycle
+    // almost never actually fired in practice (coverage-audit re-triggers kept resetting readiness before it
+    // could stay above 90% long enough).
+    @org.springframework.beans.factory.annotation.Value("${philosophical-falsification.first-run-readiness-threshold:0.9}")
+    private double philosophicalFirstRunReadinessThreshold;
+
+    @org.springframework.beans.factory.annotation.Value("${philosophical-falsification.subsequent-run-readiness-threshold:0.7}")
+    private double philosophicalSubsequentRunReadinessThreshold;
 
     public FalsificationCycleService(ProjectRepository projectRepository,
                                      RoleRepository roleRepository,
@@ -43,7 +72,8 @@ public class FalsificationCycleService {
                                      com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                                      @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
                                      ClientDeliverableReadinessService readinessService,
-                                     WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher) {
+                                     WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher,
+                                     GeminiContextService geminiContextService) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -54,6 +84,7 @@ public class FalsificationCycleService {
         this.projectFlowService = projectFlowService;
         this.readinessService = readinessService;
         this.wishlistContentSimilarityMatcher = wishlistContentSimilarityMatcher;
+        this.geminiContextService = geminiContextService;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -75,6 +106,412 @@ public class FalsificationCycleService {
                 log.error("FalsificationCycleService: Failed for project {}: {}", project.getId(), e.getMessage(), e);
             }
         }
+    }
+
+    // Separate, less frequent cron from the formal cycle above (operator directive, 2026-07-25, cadence
+    // revised 2026-07-26 - "потом раз в 2 дня": weekly-only meant the cycle essentially never actually ran,
+    // since readiness kept getting reset by coverage-audit re-triggers between Sundays). 03:00 still
+    // deliberately never collides with the formal cron's hour, since both dispatch through the same reserved
+    // eneikdru compiler-account capacity (dispatchCompilerTask).
+    @Scheduled(cron = "${philosophical-falsification.cron:0 0 3 */2 * ?}")
+    public void runWeeklyPhilosophicalFalsificationCycle() {
+        // Feature-flag check lives inside executePhilosophicalCycleForProject (not here), so the manual
+        // admin-trigger endpoint (ProjectController) enforces the same kill switch as the cron instead of
+        // silently bypassing it - a single source of truth for "should this run at all" regardless of caller.
+        log.info("FalsificationCycleService: Starting philosophical falsification cycle check...");
+        List<ProjectEntity> projects = projectRepository.findAll().stream()
+                .filter(p -> p.getStatus() == ProjectStatus.active)
+                .toList();
+
+        for (ProjectEntity project : projects) {
+            try {
+                executePhilosophicalCycleForProject(project);
+            } catch (Exception e) {
+                log.error("FalsificationCycleService: Philosophical cycle failed for project {}: {}", project.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
+    private long pendingPhilosophicalWishlistCount(UUID projectId) {
+        return wishlistRepository.countByProjectIdAndSourceAndStatus(
+                projectId, WishlistSource.philosophical_falsification, WishlistStatus.pending);
+    }
+
+    /**
+     * Public so the manual-trigger endpoint (ProjectController) can run this out-of-cycle without waiting
+     * for the weekly cron - same "force" idiom already used elsewhere in this codebase for the onboarding
+     * report re-run.
+     */
+    public void executePhilosophicalCycleForProject(ProjectEntity project) {
+        if (!settingsService.effectiveBoolean("philosophical_falsification_enabled")) {
+            log.info("FalsificationCycleService: Philosophical falsification track is disabled via feature flag; skipping project {}",
+                    project.getName());
+            return;
+        }
+
+        boolean hasRunBefore = wishlistRepository.existsByProjectIdAndSource(
+                project.getId(), WishlistSource.philosophical_falsification);
+        double applicableThreshold = hasRunBefore
+                ? philosophicalSubsequentRunReadinessThreshold
+                : philosophicalFirstRunReadinessThreshold;
+
+        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+        if (!readiness.decompositionComplete() || readiness.ratio() < applicableThreshold) {
+            log.info("FalsificationCycleService: Project {} not ready for philosophical falsification yet "
+                            + "({}% < {}% threshold, {} run); skipping",
+                    project.getName(), Math.round(readiness.ratio() * 100), Math.round(applicableThreshold * 100),
+                    hasRunBefore ? "subsequent" : "first");
+            return;
+        }
+
+        long pendingCount = pendingPhilosophicalWishlistCount(project.getId());
+        if (pendingCount >= MAX_PENDING_PHILOSOPHICAL_WISHLISTS) {
+            log.info("FalsificationCycleService: Project {} already has {} pending philosophical wishlist item(s) "
+                            + "(cap {}); skipping this cycle instead of piling on more unconsumed proposals",
+                    project.getName(), pendingCount, MAX_PENDING_PHILOSOPHICAL_WISHLISTS);
+            return;
+        }
+
+        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
+                .filter(RoleEntity::isActive)
+                .toList();
+        if (activeRoles.isEmpty()) {
+            return;
+        }
+
+        String runId = UUID.randomUUID().toString();
+        String reportPath = ".eneik/records/philosophical-falsification-" + runId + ".json";
+        String screenshotDir = ".eneik/records/philosophical-falsification-" + runId + "-screenshots/";
+        String prompt = buildPhilosophicalAuditPrompt(project, activeRoles, reportPath, screenshotDir);
+
+        UUID taskId = projectFlowService.dispatchPhilosophicalAudit(project, prompt, reportPath);
+        if (taskId == null) {
+            log.warn("FalsificationCycleService: Could not dispatch philosophical falsification audit for project {}", project.getName());
+            return;
+        }
+        log.info("FalsificationCycleService: Dispatched philosophical falsification audit task {} for project {} covering {} active role(s) ({} philosopher voices)",
+                taskId, project.getName(), activeRoles.size(), activeRoles.size() * 6);
+    }
+
+    private String buildPhilosophicalAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String reportPath, String screenshotDir) {
+        StringBuilder charters = new StringBuilder();
+        for (RoleEntity role : activeRoles) {
+            String rawRules = readRawRules(role);
+            if (rawRules == null || rawRules.isBlank()) {
+                continue;
+            }
+            charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
+        }
+
+        // RAG augmentation (2026-07-25, operator directive): surface relevant standing knowledge (prior
+        // incidents, known architecture gaps, engineering invariants) the auditing session should know
+        // about before critiquing - retrieval degrades to "" whenever unavailable (flag off, empty corpus,
+        // embedding call failed), so this is always safe to splice in unconditionally.
+        String knownContext = geminiContextService.buildContextBlock(
+                "philosophical falsification of " + project.getName()
+                        + " - known architecture gaps, standing engineering principles, prior incidents");
+
+        return """
+                You are running a PHILOSOPHICAL PRODUCT FALSIFICATION for this project. This is NOT a charter-
+                compliance audit - a separate audit already does that. Do not write, fix, or refactor any
+                product code, and do not report charter-rule violations here.
+
+                STEP 1 - see the real product AS A WHOLE SYSTEM, not just its visual surface. The product is
+                everything the user's experience depends on: the UI, the backend behavior, the data model, and
+                the business logic - a missing validation rule, a data model that can't represent what the
+                client actually needs, or an API that silently does the wrong thing are just as real a product
+                gap as a confusing screen, and most of the 13 roles' philosophers (data, backend, security,
+                delivery) have essentially nothing to reason about from a screenshot alone.
+                  (a) UI: if this repository has a runnable frontend, install and start it using whatever its
+                      own README/package.json declares. Using Playwright (or an equivalent browser-automation
+                      tool already available in this environment), capture screenshots at 1440px and 375px
+                      width of every distinct primary screen (cap at 8 screens), and note console errors or
+                      interaction dead-ends. Save screenshots as PNG files under `%s` (create this directory) -
+                      do NOT commit them anywhere else, and do NOT commit `playwright-report/`, `test-results/`,
+                      `.webm`, `.trace`, or `node_modules`.
+                  (b) Backend/data/logic: read the real backend source - API endpoints/controllers, the data
+                      model and migrations, the business logic and services. If the backend is runnable,
+                      start it and exercise its real API with a few genuine requests to see actual behavior,
+                      not just what the code claims to do.
+                  If any part (frontend, backend) has nothing runnable, or fails to start after a genuine
+                  attempt: say so honestly in the report, reason only from what you could actually examine
+                  (code you read, or the parts that did run), and never invent or assume behavior you did not
+                  observe. If NOTHING at all is examinable, return "critiques": [].
+
+                STEP 2 - the 78-voice pass. Each role charter below names 6 real philosophers in its
+                "ФИЛОСОФСКИЙ ФУНДАМЕНТ" table. For EACH of these philosophers individually, reason as that
+                actual historical thinker, using their real published worldview - explicitly NOT the narrow
+                pre-baked "application" column in the table (e.g. if a table's "application" column only
+                mentions a 100ms latency threshold, the real philosopher's worldview is much broader than
+                that one column - use the whole of what they actually thought, not just this system's narrow
+                paraphrase of it). Looking at the WHOLE product you just examined in STEP 1 - its UI where you
+                could see it, AND its backend behavior, data model, and business logic - ask genuinely: what
+                would THIS philosopher find missing, wrong, or worth adding about the product as a whole,
+                judged by their own real standards? A philosopher whose lens is about data integrity, security,
+                or business value should be reasoning about the backend/data-model evidence, not straining to
+                say something about a screenshot. Most of the 78 will have nothing to say about this particular
+                product - that is the expected, correct, honest outcome. Do not manufacture an opinion to have
+                something to report.
+
+                STEP 3 - forced Kano classification. Every critique you report MUST carry an explicit
+                "kanoClass" chosen from exactly: "Must-Be", "Performance", "Attractive", "Indifferent". There
+                is no default - a critique without an explicit, deliberately-chosen class is invalid; drop it
+                yourself rather than omit the field or guess.
+
+                Deliverable: create a new branch and open a PR containing ONLY the report file `%s` (this
+                EXACT path) plus, if you produced any, the screenshot PNGs under `%s` - no other files
+                changed. Report shape:
+                {"critiques": [
+                  {"roleTag": "BARCAN-TAG-11", "philosopher": "Patricia Churchland",
+                   "worldview": "one sentence on who this thinker actually is",
+                   "critique": "what she would genuinely find looking at this product",
+                   "proposal": "what she would suggest adding or changing",
+                   "dislike": "what she would object to, if anything",
+                   "kanoClass": "Attractive", "confidence": "high",
+                   "evidence": "what you examined this is about - a screen, an endpoint, a migration file, a
+                                service class, etc. - whatever grounds this specific critique",
+                   "screenshotFile": "screen-2.png, or empty if this critique is not UI-grounded"}
+                ]}
+                Use "critiques": [] if nothing survives honest scrutiny.
+
+                Role charters (each contains its own philosophy table - reason from the real thinkers, not
+                just the table's narrow application column):
+                %s
+
+                %s
+                """.formatted(screenshotDir, reportPath, screenshotDir, charters, knownContext);
+    }
+
+    public record PhilosophicalCritique(
+            String roleTag,
+            String philosopher,
+            String worldview,
+            String critique,
+            String proposal,
+            String dislike,
+            String kanoClass,
+            String confidence,
+            String evidence,
+            String screenshotFile
+    ) {
+    }
+
+    // Kano's own original survey methodology never treats one respondent's answer as authoritative on its
+    // own - it tabulates many respondents' answers and takes the modal (most frequent) classification.
+    // clusterKano below reproduces exactly that: majority vote across a cluster's members, tie-broken toward
+    // the more assertive class (operator directive, 2026-07-25).
+    private static final List<String> KANO_ASSERTIVENESS_ORDER = List.of("Attractive", "Performance", "Must-Be", "Indifferent");
+
+    private String normalizeKano(String raw) {
+        for (String known : KANO_ASSERTIVENESS_ORDER) {
+            if (known.equalsIgnoreCase(raw)) {
+                return known;
+            }
+        }
+        return "Must-Be";
+    }
+
+    /**
+     * winningClass is the mode (maximum-membership defuzzification, ties broken toward the more assertive
+     * class); voteBreakdown is the full distribution BEFORE that collapse - kept and surfaced in the
+     * wishlist content (not discarded) so a reviewer can see e.g. "Attractive: 3, Must-Be: 2" instead of
+     * just the winning label, per the operator's fuzzy-logic framing (2026-07-25): defuzzify to one decidable
+     * class for the compiler to act on, but never hide the underlying spread that produced it.
+     */
+    private record ClusterKano(String winningClass, String voteBreakdown) {
+    }
+
+    private ClusterKano clusterKano(List<PhilosophicalCritique> members) {
+        java.util.Map<String, Long> counts = members.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        c -> normalizeKano(c.kanoClass()), java.util.stream.Collectors.counting()));
+        long maxCount = counts.values().stream().mapToLong(Long::longValue).max().orElse(0);
+        String winner = KANO_ASSERTIVENESS_ORDER.stream()
+                .filter(k -> counts.getOrDefault(k, 0L) == maxCount)
+                .findFirst()
+                .orElse("Must-Be");
+        String breakdown = KANO_ASSERTIVENESS_ORDER.stream()
+                .filter(counts::containsKey)
+                .map(k -> k + ": " + counts.get(k))
+                .collect(java.util.stream.Collectors.joining(", "));
+        return new ClusterKano(winner, breakdown);
+    }
+
+    /**
+     * Deliberately distinct from applyAuditViolations above: philosophical critiques are DISTINCT product
+     * feature proposals, not defects in one shipped iteration, so blindly consolidating ALL of a run's
+     * critiques into one wishlist would force the compiler to invent one epic covering many unrelated ideas.
+     *
+     * No per-critique Kano/confidence filtering (operator directive, 2026-07-25, reversing an earlier design
+     * that discarded Must-Be/low-confidence critiques as "noise control" - the operator's objection: "зачем
+     * мы так стараемся внедрить мысли великих умов чтобы выкинуть их?" - why go to all this trouble to bring
+     * in great minds' thoughts just to throw them away?). Every reported critique is clustered via
+     * WishlistContentSimilarityMatcher.clusterBySimilarity (single-linkage / union-find over the same
+     * Jaccard metric used for dedup elsewhere) instead of being individually judged - noise is absorbed by
+     * grouping converging voices into one wishlist per theme, not by discarding any one voice. A cluster's
+     * Kano class is the majority vote among its members (clusterKano above); a cluster whose majority is
+     * Indifferent creates no wishlist, not because it was filtered out, but because that IS what the
+     * aggregated voice concluded - there is nothing to propose.
+     *
+     * Never touches falsificationRunRepository - that watermark belongs solely to the formal cycle's PR-dedup
+     * logic; a philosophical run has nothing to do with which PRs have been audited for charter compliance,
+     * and writing it here would silently cause the formal audit to skip real merged PRs on its next run.
+     */
+    @Transactional
+    public void applyPhilosophicalCritiques(ProjectEntity project, List<PhilosophicalCritique> critiques, String screenshotDir) {
+        if (critiques.isEmpty()) {
+            log.info("FalsificationCycleService: Philosophical falsification audit for project {} - no critiques reported this run.",
+                    project.getName());
+            return;
+        }
+
+        List<String> candidateTexts = critiques.stream()
+                .map(c -> c.philosopher() + ": " + nullToEmpty(c.proposal()) + " " + nullToEmpty(c.critique()))
+                .toList();
+        // Largest-cluster-first (spirit of Pareto/portfolio ranking, operator's proposed framework,
+        // 2026-07-25): only matters when the per-run safety cap actually binds - a theme 5 philosophers
+        // independently converged on is stronger evidence than one 2 philosophers converged on, so if
+        // anything has to wait for a future run, it should be the weaker-support clusters, not whichever
+        // happened to come first out of union-find's arbitrary root ordering.
+        List<List<Integer>> clusters = new java.util.ArrayList<>(wishlistContentSimilarityMatcher.clusterBySimilarity(candidateTexts));
+        clusters.sort(java.util.Comparator.<List<Integer>>comparingInt(List::size).reversed());
+
+        List<WishlistEntity> livePhilosophicalWishlists = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(), WishlistSource.philosophical_falsification,
+                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.converted_to_task));
+
+        long pendingCount = pendingPhilosophicalWishlistCount(project.getId());
+        int created = 0;
+        int skippedIndifferent = 0;
+        for (List<Integer> clusterIndices : clusters) {
+            if (created >= MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN) {
+                log.info("FalsificationCycleService: Philosophical audit for project {} - reached the per-run safety cap ({} clusters); "
+                                + "remaining clusters will resurface on a future audit if still genuinely warranted",
+                        project.getName(), MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN);
+                break;
+            }
+            if (pendingCount >= MAX_PENDING_PHILOSOPHICAL_WISHLISTS) {
+                log.info("FalsificationCycleService: Philosophical audit for project {} - reached the project-wide pending safety cap ({})",
+                        project.getName(), MAX_PENDING_PHILOSOPHICAL_WISHLISTS);
+                break;
+            }
+
+            List<PhilosophicalCritique> members = clusterIndices.stream().map(critiques::get).toList();
+            ClusterKano kano = clusterKano(members);
+            if ("Indifferent".equals(kano.winningClass())) {
+                skippedIndifferent++;
+                log.info("FalsificationCycleService: Philosophical audit for project {} - cluster of {} philosopher(s) ({}) "
+                                + "converged on Indifferent ({}); no wishlist created, that is the aggregated conclusion, not a filter",
+                        project.getName(), members.size(),
+                        members.stream().map(PhilosophicalCritique::philosopher).collect(java.util.stream.Collectors.joining(", ")),
+                        kano.voteBreakdown());
+                continue;
+            }
+
+            String candidateContent = philosophicalClusterWishlistContent(project, members, kano, screenshotDir);
+            java.util.Optional<UUID> semanticDuplicate =
+                    wishlistContentSimilarityMatcher.findLikelyDuplicate(livePhilosophicalWishlists, candidateContent);
+            if (semanticDuplicate.isPresent()) {
+                log.info("FalsificationCycleService: Philosophical audit for project {} - skipping a cluster of {} philosopher(s), "
+                                + "matches existing wishlist {} from a prior run",
+                        project.getName(), members.size(), semanticDuplicate.get());
+                continue;
+            }
+
+            String distinctRoles = members.stream().map(PhilosophicalCritique::roleTag).distinct()
+                    .collect(java.util.stream.Collectors.joining(", "));
+            String distinctPhilosophers = members.stream().map(PhilosophicalCritique::philosopher).distinct()
+                    .collect(java.util.stream.Collectors.joining(", "));
+
+            WishlistEntity wishlist = new WishlistEntity();
+            wishlist.setProjectId(project.getId());
+            wishlist.setSource(WishlistSource.philosophical_falsification);
+            wishlist.setSourceRoleTag(distinctRoles);
+            wishlist.setStatus(WishlistStatus.pending);
+            wishlist.setLeanValue(LeanValue.valuable);
+            wishlist.setTocConstraintRef("Product-philosophy cluster of " + members.size() + " philosopher(s): " + distinctPhilosophers);
+            wishlist.setSixSigmaMetric("philosophical_falsification_proposal_rate");
+            wishlist.setContent(candidateContent);
+            wishlist.setJtbd("When " + distinctPhilosophers + "'s converging worldviews are applied honestly to the live product, "
+                    + "I want the genuine gap they identify addressed, so the product is closer to what users actually need");
+            wishlist.setAcceptanceCriteria("Given this cluster's critique, When this brief is compiled, "
+                    + "Then the resulting epic keeps the stated Kano class (" + kano.winningClass() + ") verbatim rather than re-classifying it");
+            wishlist.setDod("Philosophical product-critique cluster (" + distinctPhilosophers + ") resolved or genuinely superseded");
+            wishlist = wishlistRepository.save(wishlist);
+            pendingCount++;
+            created++;
+            log.info("FalsificationCycleService: Created philosophical_falsification wishlist {} from a cluster of {} philosopher(s) ({}), Kano={} ({})",
+                    wishlist.getId(), members.size(), distinctPhilosophers, kano.winningClass(), kano.voteBreakdown());
+        }
+
+        log.info("FalsificationCycleService: Completed philosophical falsification audit for project {}. "
+                        + "Critiques reported: {}, clusters formed: {}, Indifferent clusters (no action needed): {}, wishlist(s) created: {}",
+                project.getName(), critiques.size(), clusters.size(), skippedIndifferent, created);
+    }
+
+    /**
+     * Layer 1 of the forced-Kano mechanism (see ProjectFlowService.wishlistCompilerPromptBatch's
+     * philosophical-falsification branch for Layer 2, the mandatory bracketed directive): literal "Kano: X"
+     * / "Cynefin: complex" text, the same precedent ProjectFlowService.createSessionPostmortemWishlist
+     * already uses for role_mismatch_followup wishlists. TechnicalLeadCompiler.kanoClass/cynefinDomain
+     * substring-match these literally on the cheap-compile path. Lists every cluster member (not just one) -
+     * a converging cluster of 5 philosophers is stronger evidence than any single voice, and the compiler/
+     * reviewer should see the full convergence, not a summary that hides how many independently agreed.
+     */
+    private String philosophicalClusterWishlistContent(ProjectEntity project, List<PhilosophicalCritique> members, ClusterKano kano, String screenshotDir) {
+        StringBuilder content = new StringBuilder();
+        content.append("Philosophical product falsification - a cluster of ").append(members.size())
+                .append(" philosopher(s) independently converged on the same theme, evaluated against the live product. ")
+                .append("Kano: ").append(kano.winningClass()).append(" (vote distribution before the majority collapse: ")
+                .append(kano.voteBreakdown()).append("). Cynefin: complex.\n\n");
+        java.util.Set<String> seenScreenshots = new java.util.LinkedHashSet<>();
+        int index = 1;
+        for (PhilosophicalCritique critique : members) {
+            content.append("Voice ").append(index++).append(" - ").append(critique.philosopher())
+                    .append(" (role ").append(critique.roleTag()).append(", their own Kano: ").append(critique.kanoClass()).append("):\n");
+            content.append("  Worldview: ").append(nullToEmpty(critique.worldview())).append("\n");
+            content.append("  Critique: ").append(nullToEmpty(critique.critique())).append("\n");
+            content.append("  Proposal: ").append(nullToEmpty(critique.proposal())).append("\n");
+            if (critique.dislike() != null && !critique.dislike().isBlank()) {
+                content.append("  Objection: ").append(critique.dislike()).append("\n");
+            }
+            if (critique.evidence() != null && !critique.evidence().isBlank()) {
+                content.append("  Evidence: ").append(critique.evidence()).append("\n");
+            }
+            String screenshotUrl = rawScreenshotUrl(project, screenshotDir, critique.screenshotFile());
+            if (screenshotUrl != null) {
+                seenScreenshots.add(screenshotUrl);
+            }
+        }
+        for (String screenshotUrl : seenScreenshots) {
+            content.append("Screenshot: ").append(screenshotUrl).append("\n");
+        }
+        return content.toString();
+    }
+
+    /**
+     * Dashboard visibility (operator directive, 2026-07-25): "раз мы всё равно показываем скриншоты для
+     * оценки - хорошо бы их как-то видеть на нашем фронтенде." No new binary storage - the report PR already
+     * merges the screenshot into the project's own `main` branch (record-only merge, same as the JSON report
+     * itself), so a plain raw.githubusercontent.com URL is enough; the frontend just needs an &lt;img&gt; tag.
+     * Same owner/repo parsing GitHubPullRequestService.repoRef uses, duplicated here rather than exposing
+     * that private helper - this is the only caller outside that service.
+     */
+    private String rawScreenshotUrl(ProjectEntity project, String screenshotDir, String screenshotFile) {
+        if (screenshotFile == null || screenshotFile.isBlank()) {
+            return null;
+        }
+        String repositoryUrl = project.getRepositoryUrl();
+        if (repositoryUrl == null || !repositoryUrl.startsWith("https://github.com/")) {
+            return null;
+        }
+        String ownerRepo = repositoryUrl.replace("https://github.com/", "").replaceAll("/+$", "");
+        String path = (screenshotDir.endsWith("/") ? screenshotDir : screenshotDir + "/") + screenshotFile.trim();
+        return "https://raw.githubusercontent.com/" + ownerRepo + "/main/" + path;
+    }
+
+    private String nullToEmpty(String value) {
+        return value == null ? "" : value;
     }
 
     private boolean hasOpenFalsificationWishlist(UUID projectId) {

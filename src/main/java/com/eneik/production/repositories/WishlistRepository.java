@@ -34,6 +34,7 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
     List<WishlistEntity> findByProjectId(UUID projectId);
     List<WishlistEntity> findByProjectIdAndStatus(UUID projectId, WishlistStatus status);
     long countByProjectIdAndStatus(UUID projectId, WishlistStatus status);
+    boolean existsByProjectIdAndSource(UUID projectId, WishlistSource source);
     boolean existsByProjectIdAndSourceRoleTagAndSourceAndCreatedAtAfter(
             UUID projectId, String sourceRoleTag, WishlistSource source, Instant after);
     long countByProjectIdAndSourceAndSourceRoleTagAndStatus(

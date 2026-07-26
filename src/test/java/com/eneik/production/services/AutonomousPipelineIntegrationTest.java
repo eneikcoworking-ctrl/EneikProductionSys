@@ -1098,4 +1098,36 @@ class AutonomousPipelineIntegrationTest {
         int correctionIndex = prompt.indexOf("CORRECTION TO ALREADY-APPROVED DESIGN");
         assertThat(correctionIndex).isLessThan(briefOneIndex);
     }
+
+    @Test
+    void wishlistCompilerPromptBatchCarvesPhilosophicalCritiquesOutOfTheFollowUpSuppressionDirective() {
+        // Operator directive, 2026-07-25: a philosophical product critique is a genuinely NEW capability, not
+        // a narrow corrective follow-up - suppressing new layers for it (as the generic non-client rule does)
+        // would defeat the whole feature. It must get its own bounded directive and a mandatory Kano-copy
+        // instruction instead, never the generic "do NOT create a new data schema/API/UI" text.
+        WishlistEntity philosophicalCritique = new WishlistEntity();
+        philosophicalCritique.setSource(WishlistSource.philosophical_falsification);
+        philosophicalCritique.setSourceRoleTag("BARCAN-TAG-11");
+        philosophicalCritique.setContent("Philosophical product falsification - genuine critique from a named "
+                + "real philosopher, evaluated against the live product. Kano: Attractive. Cynefin: complex.\n\n"
+                + "Philosopher: Patricia Churchland (role BARCAN-TAG-11)\nProposal: add a trust-building onboarding tour");
+
+        WishlistEntity ordinaryFollowUp = new WishlistEntity();
+        ordinaryFollowUp.setSource(WishlistSource.coverage_gap);
+        ordinaryFollowUp.setContent("Coverage audit gap: fix a typo in the existing settings page.");
+
+        String prompt = projectFlowService.wishlistCompilerPromptBatch(
+                List.of(philosophicalCritique, ordinaryFollowUp), ".eneik/records/task-plan-test.json");
+
+        int briefZeroIndex = prompt.indexOf("Brief #0:");
+        int briefOneIndex = prompt.indexOf("Brief #1:");
+        String briefZeroSection = prompt.substring(briefZeroIndex, briefOneIndex);
+        assertThat(briefZeroSection).contains("PHILOSOPHICAL PRODUCT CRITIQUE");
+        assertThat(briefZeroSection).contains("copy it");
+        assertThat(briefZeroSection).doesNotContain("FOLLOW-UP ON ALREADY-EXISTING FUNCTIONALITY");
+
+        String briefOneSection = prompt.substring(briefOneIndex);
+        assertThat(briefOneSection).contains("FOLLOW-UP ON ALREADY-EXISTING FUNCTIONALITY");
+        assertThat(briefOneSection).doesNotContain("PHILOSOPHICAL PRODUCT CRITIQUE");
+    }
 }

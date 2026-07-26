@@ -14,6 +14,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -79,6 +80,8 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.PersistentWorkerSessionService.class),
             mock(com.eneik.production.repositories.ProjectRepository.class),
             mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
+            mock(com.eneik.production.services.settings.SystemSettingsService.class),
+            mock(com.eneik.production.services.GeminiContextService.class),
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
@@ -415,7 +418,12 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void repeatedPrReviewArtifactBlockerCreatesDebtInsteadOfStoppingFlow() {
+    void executeCodeReviewAlwaysRoutesToJulesFallbackNeverCallsGemini() {
+        // Direct regression test for the 2026-07-25 emergency cost incident ("она за несколько часов
+        // потратила месячный бюджет, при этом по проекту ничего не сдвинулось") - Gemini PR review is
+        // permanently disabled; every PR, approved-looking or not, queues into the Jules-reviewer fallback
+        // path (already proven for Gemini-outage recovery, now the only path) instead of paying for a
+        // pro-tier diff review on every single resubmission.
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -441,40 +449,16 @@ class JulesDispatchServiceTest {
         session.setPrUrl("https://github.com/org/repo/pull/12");
         session.setStatus("pr_opened");
 
-        com.eneik.production.models.persistence.JulesActivityResponseEntity previous =
-                new com.eneik.production.models.persistence.JulesActivityResponseEntity();
-        previous.setJulesSessionId(sessionId);
-        previous.setActivityName("system-pr-review-rejection");
-        previous.setActivityHash("hash");
-        previous.setQuestion("PR review rejection: Generated/local artifact detected in PR diff: playwright-report/.");
-        previous.setResponse("Clean artifacts");
-        previous.setSent(true);
+        List<JulesDispatchService.PendingFallbackReview> fallbackCollector = new java.util.ArrayList<>();
+        julesDispatchService.executeCodeReview(task, session, "https://github.com/org/repo/pull/12", List.of(), fallbackCollector);
 
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
-        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/12", List.of()))
-                .thenReturn(Map.of(
-                        "approved", false,
-                        "remarks", "Generated/local artifact detected in PR diff: playwright-report/.",
-                        "newTasks", List.of()
-                ));
-        when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of(previous));
-        when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
-        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
-        when(mlPredictionServiceClient.chat(anyString(), anyString()))
-                .thenReturn("Root cause: repeated artifact blocker\nKano classification: Must-Be\nCynefin domain: clear");
-
-        // Review decisions now run from the batched tick (processPendingReviewBatch), not inline on
-        // pr_opened - exercise the extracted decision logic directly, same as the batch method would call it.
-        julesDispatchService.executeCodeReview(task, session, "https://github.com/org/repo/pull/12", List.of(), new java.util.ArrayList<>());
-
-        assertEquals("pr_opened", session.getStatus());
-        assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());
-        verify(julesApiClient, never()).sendMessage(anyString(), anyString());
-        verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
-        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), contains("repository_hygiene_review_repeated"));
-        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
+        assertEquals(1, fallbackCollector.size());
+        assertEquals(taskId, fallbackCollector.get(0).task().getId());
+        assertEquals("https://github.com/org/repo/pull/12", fallbackCollector.get(0).prUrl());
+        verifyNoInteractions(mlPredictionServiceClient);
+        // Nothing was written yet - the actual approve/block decision only lands once the Jules reviewer
+        // session responds, via applyReviewVerdictToTask (covered by its own dedicated tests).
+        assertEquals(com.eneik.production.models.persistence.TaskStatus.claimed, task.getStatus());
     }
 
     @Test
@@ -604,6 +588,314 @@ class JulesDispatchServiceTest {
         verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
         verify(julesApiClient, never()).sendMessage(anyString(), anyString());
         verify(julesApiClient, never()).sendMessage(anyString(), anyString(), anyString());
+    }
+
+    // --- Testimony-vs-evidence Phase 1: branch-fallback evidence (2026-07-25) -----------------------------
+
+    @Test
+    void forceUnblockOpensRecoveryPrWhenBranchHasRealEvidenceButNoOpenPrYet() {
+        // Direct regression test for the PR#72/PR#77 incident shape: a session finishes real work and
+        // pushes it to its own branch, but never opens a PR for it. No open PR exists, so the PR-based
+        // evidence check alone would see nothing and the session would be wrongly treated as stalled.
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        Instant sessionCreatedAt = Instant.now().minus(90, ChronoUnit.MINUTES);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/recoverable-1234");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setCreatedAt(sessionCreatedAt);
+        session.setLastProgressAt(Instant.now().minus(65, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/recoverable-1234"))
+                .thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findBranchBySession(project, "sessions/recoverable-1234"))
+                .thenReturn(Optional.of("jules-recoverable-1234-abcd"));
+        when(gitHubPullRequestService.latestCommitTime(project, "jules-recoverable-1234-abcd"))
+                .thenReturn(Optional.of(sessionCreatedAt.plus(10, ChronoUnit.MINUTES)));
+        when(gitHubPullRequestService.createPullRequest(eq(project), eq("jules-recoverable-1234-abcd"), eq("main"), anyString(), anyString()))
+                .thenReturn(Optional.of(new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                        "https://github.com/org/repo/pull/99", 99, "Auto-recovered", "jules-recoverable-1234-abcd", "eneikdru", false, "main", false)));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        verify(gitHubPullRequestService).createPullRequest(eq(project), eq("jules-recoverable-1234-abcd"), eq("main"), anyString(), anyString());
+        assertEquals("running", session.getStatus());
+        assertEquals(0, session.getForcedUnblockAttempts());
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+    }
+
+    @Test
+    void forceUnblockDoesNotOpenPrForAStaleBranchThatPredatesTheSession() {
+        // A branch matching the session token exists, but its latest commit is BEFORE the session was
+        // created - an untouched fork-point branch, not real work from THIS session. Must not be treated
+        // as evidence, and must never trigger a PR open for noise.
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        Instant sessionCreatedAt = Instant.now().minus(90, ChronoUnit.MINUTES);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/stale-branch-5678");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setCreatedAt(sessionCreatedAt);
+        session.setLastProgressAt(Instant.now().minus(65, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(any())).thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/stale-branch-5678"))
+                .thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findBranchBySession(project, "sessions/stale-branch-5678"))
+                .thenReturn(Optional.of("jules-stale-branch-5678-old"));
+        when(gitHubPullRequestService.latestCommitTime(project, "jules-stale-branch-5678-old"))
+                .thenReturn(Optional.of(sessionCreatedAt.minus(30, ChronoUnit.MINUTES)));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    // --- Testimony-vs-evidence Phase 2: periodic GitHub-truth reconciliation (2026-07-25) ------------------
+
+    private com.eneik.production.services.settings.SystemSettingsService settingsServiceMock() {
+        return (com.eneik.production.services.settings.SystemSettingsService)
+                org.springframework.test.util.ReflectionTestUtils.getField(julesDispatchService, "settingsService");
+    }
+
+    @Test
+    void reconciliationSweepDoesNothingWhenFeatureFlagIsOff() {
+        // Mockito default for an unstubbed boolean-returning method is false - this is the "flag off" case
+        // without any explicit stubbing, proving the sweep is genuinely opt-in.
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verifyNoInteractions(taskRepository);
+    }
+
+    @Test
+    void reconciliationMarksTaskFailedWhenItsPrWasClosedWithoutMergeAndNoActiveClaimRemains() {
+        // Direct regression test for the ca41509f incident: PR#78 was closed without merge (operator
+        // decision made directly on GitHub), and the task had no active claim/session left to observe it.
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.review);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/orphaned-flyway-fix");
+        session.setCreatedAt(Instant.now().minus(3, ChronoUnit.HOURS));
+
+        var closedUnmergedPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/78", 78, "Fix Flyway migration versioning",
+                "jules-orphaned-flyway-fix-9999", "eneikdru", false, "main", true);
+        var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", List.of(), List.of(closedUnmergedPr), "");
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(false);
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(session));
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(snapshot);
+        when(taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.failed)).thenReturn(1);
+        TaskEntity freshCopy = new TaskEntity();
+        freshCopy.setId(taskId);
+        freshCopy.setProject(project);
+        freshCopy.setStatus(TaskStatus.failed);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(freshCopy));
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
+        ArgumentCaptor<TaskEntity> savedCaptor = ArgumentCaptor.forClass(TaskEntity.class);
+        verify(taskRepository).save(savedCaptor.capture());
+        assertTrue(savedCaptor.getValue().getJulesDispatchStatus().contains("PR#78"));
+        assertTrue(savedCaptor.getValue().getJulesDispatchStatus().contains("closed without merge"));
+    }
+
+    @Test
+    void reconciliationNeverTouchesATaskWithAnActiveClaim() {
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verifyNoInteractions(gitHubPullRequestService);
+        verify(taskRepository, never()).writeStatusUnlessTerminal(any(), any());
+    }
+
+    @Test
+    void reconciliationLeavesATaskWithAnOpenPrAlone() {
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.review);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/still-open-1111");
+        session.setCreatedAt(Instant.now().minus(1, ChronoUnit.HOURS));
+
+        var openPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/55", 55, "Real work in progress",
+                "jules-still-open-1111-aaaa", "eneikdru", false, "main", false);
+        var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", List.of(openPr), List.of(), "");
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(false);
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(session));
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(snapshot);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verify(taskRepository, never()).writeStatusUnlessTerminal(any(), any());
+        verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    // --- Extension to `done` tasks (2026-07-25, live incident: the new dashboard widget first surfaced
+    // done-but-unmerged tasks that turned out to be auxiliary/pending-closeout, not real bugs) -----------
+
+    @Test
+    void doneReconciliationSkipsAuxiliaryTasksEvenWhenNotReachedMain() {
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.done);
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of());
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(List.of(task));
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(true);
+        when(readinessService.reachedMain(task)).thenReturn(false);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verifyNoInteractions(gitHubPullRequestService);
+        verify(julesSessionRepository, never()).findByTaskId(taskId);
+    }
+
+    @Test
+    void doneReconciliationSkipsTasksThatAlreadyReachedMain() {
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.done);
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of());
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(List.of(task));
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        when(readinessService.reachedMain(task)).thenReturn(true);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verifyNoInteractions(gitHubPullRequestService);
+    }
+
+    @Test
+    void doneReconciliationNeverWritesAnyStatusEvenWithAConfirmedClosedUnmergedPr() {
+        // The core invariant this sweep must never violate: `done` is CAS-protected
+        // (TaskRepository.writeStatusUnlessTerminal refuses to overwrite it) - a done task with a closed-
+        // unmerged PR is loud evidence worth logging, but this sweep must not attempt any write at all.
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.done);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/done-but-closed-unmerged");
+        session.setCreatedAt(Instant.now().minus(2, ChronoUnit.HOURS));
+
+        var closedUnmergedPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/99", 99, "Some work",
+                "jules-done-but-closed-unmerged-1234", "eneikdru", false, "main", true);
+        var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", List.of(), List.of(closedUnmergedPr), "");
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of());
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(List.of(task));
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        when(readinessService.reachedMain(task)).thenReturn(false);
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(session));
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(snapshot);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verify(taskRepository, never()).writeStatusUnlessTerminal(any(), any());
+        verify(taskRepository, never()).save(any(TaskEntity.class));
+        verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
     }
 
     @Test
@@ -809,7 +1101,10 @@ class JulesDispatchServiceTest {
     }
 
     @Test
-    void chaoticDomainPrOpenedReviewsImmediatelyBypassingBatch() {
+    void chaoticDomainPrOpenedRoutesToJulesFallbackNeverCallsGemini() {
+        // 2026-07-25 emergency cost incident: even the chaotic-domain immediate-review path (previously
+        // Gemini's fastest lane) must never call Gemini review anymore - it queues into the same
+        // Jules-reviewer fallback dispatch as every other PR.
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
         UUID projectId = UUID.randomUUID();
@@ -838,17 +1133,22 @@ class JulesDispatchServiceTest {
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(claimService.hasActiveClaim(taskId)).thenReturn(true);
         when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(mlPredictionServiceClient.reviewPr(projectId, taskId, "https://github.com/org/repo/pull/41", List.of()))
-                .thenReturn(Map.of("approved", true, "remarks", "looks fine", "newTasks", List.of()));
+        when(gitHubPullRequestService.fetchDiffText(project, 41)).thenReturn(java.util.Optional.of("diff --git a/x b/x"));
 
         julesDispatchService.handlePrOpenedWorkflow(session);
 
-        assertEquals(com.eneik.production.models.persistence.TaskStatus.review, task.getStatus());
-        verify(mlPredictionServiceClient).reviewPr(projectId, taskId, "https://github.com/org/repo/pull/41", List.of());
+        // The Jules-fallback dispatch reached the point of fetching the real diff for PR #41 - proof the
+        // task was queued into the fallback path, not silently dropped.
+        verify(gitHubPullRequestService).fetchDiffText(project, 41);
+        verifyNoInteractions(mlPredictionServiceClient);
     }
 
     @Test
-    void batchedReviewGroupsSiblingsBySameFeatureAndThreadsTheirPrUrls() {
+    void batchedReviewGroupsSiblingsIntoTheSameJulesFallbackBatchNeverCallsGemini() {
+        // Was "...ThreadsTheirPrUrls" - the sibling-PR-context feature was specific to the Gemini review
+        // call, now removed (2026-07-25 emergency cost incident). Same-project tasks (siblings included)
+        // still end up together in ONE Jules-fallback dispatch call, they just no longer thread through
+        // Gemini at all.
         UUID projectId = UUID.randomUUID();
         UUID featureId = UUID.randomUUID();
         UUID taskAId = UUID.randomUUID();
@@ -921,16 +1221,72 @@ class JulesDispatchServiceTest {
         when(julesSessionRepository.findByTaskId(taskCId)).thenReturn(List.of(sessionC));
         when(claimService.hasActiveClaim(any())).thenReturn(false);
         when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
-        when(mlPredictionServiceClient.reviewPr(eq(projectId), any(), anyString(), anyList()))
-                .thenReturn(Map.of("approved", true, "remarks", "ok", "newTasks", List.of()));
+        when(gitHubPullRequestService.fetchDiffText(eq(project), anyInt())).thenReturn(java.util.Optional.of("diff --git a/x b/x"));
 
         julesDispatchService.processPendingReviewBatch();
 
-        verify(mlPredictionServiceClient).reviewPr(projectId, taskAId, "https://github.com/org/repo/pull/50",
-                List.of("https://github.com/org/repo/pull/51"));
-        verify(mlPredictionServiceClient).reviewPr(projectId, taskBId, "https://github.com/org/repo/pull/51",
-                List.of("https://github.com/org/repo/pull/50"));
-        verify(mlPredictionServiceClient).reviewPr(projectId, taskCId, "https://github.com/org/repo/pull/52", List.of());
+        // All three tasks reached the Jules-fallback dispatch (real diff fetched for each PR) - proof they
+        // were queued, not silently dropped - and Gemini was never called for any of them.
+        verify(gitHubPullRequestService).fetchDiffText(project, 50);
+        verify(gitHubPullRequestService).fetchDiffText(project, 51);
+        verify(gitHubPullRequestService).fetchDiffText(project, 52);
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void batchedReviewFallsBackToPrReviewEvidenceWhenSessionSelfReportsFailedAfterOpeningARealPr() {
+        // Direct regression test for a live incident on test-thirty-seventh (2026-07-25): a session opened
+        // a real PR (CI green, genuinely still open on GitHub) but later self-reported status "failed" for
+        // an unrelated reason - the old latestOpenPrSession trusted ONLY that self-reported status and
+        // silently skipped this task forever. The fix falls back to real PrReviewEntity evidence.
+        com.eneik.production.repositories.PrReviewRepository prReviewRepository =
+                (com.eneik.production.repositories.PrReviewRepository) ReflectionTestUtils.getField(julesDispatchService, "prReviewRepository");
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        UUID taskId = UUID.randomUUID();
+        UUID sessionId = UUID.randomUUID();
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-07");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setFeatureId(null);
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/self-reported-failed-but-real-pr");
+        session.setPrUrl("https://github.com/org/repo/pull/95");
+        session.setStatus("failed"); // self-reported - must NOT be trusted on its own
+        session.setUpdatedAt(Instant.now());
+
+        com.eneik.production.models.persistence.PrReviewEntity realEvidence = new com.eneik.production.models.persistence.PrReviewEntity();
+        realEvidence.setJulesSessionId(sessionId);
+        realEvidence.setPrUrl("https://github.com/org/repo/pull/95");
+        realEvidence.setCiStatus("success");
+        realEvidence.setMerged(false);
+
+        when(taskRepository.findByStatus(com.eneik.production.models.persistence.TaskStatus.pending_review))
+                .thenReturn(List.of(task));
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(session));
+        when(prReviewRepository.findByJulesSessionId(sessionId)).thenReturn(List.of(realEvidence));
+        when(claimService.hasActiveClaim(any())).thenReturn(false);
+        when(taskRepository.save(any(TaskEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(gitHubPullRequestService.fetchDiffText(project, 95)).thenReturn(java.util.Optional.of("diff --git a/x b/x"));
+
+        julesDispatchService.processPendingReviewBatch();
+
+        // The task reached the Jules-fallback dispatch (real diff fetched for PR #95) despite the
+        // session's own self-reported "failed" status - proof latestOpenPrSession's evidence fallback
+        // still found it via the real PrReviewEntity row, not the untrustworthy self-report.
+        verify(gitHubPullRequestService).fetchDiffText(project, 95);
+        verifyNoInteractions(mlPredictionServiceClient);
     }
 
     @Test
@@ -1165,5 +1521,54 @@ class JulesDispatchServiceTest {
                 List.of("R1: create campaigns"), true, List.of(slice));
 
         assertFalse(JulesDispatchService.isValidCompilerPlan(List.of(epic), 2));
+    }
+
+    // --- Agent-dialog answering never calls Gemini (2026-07-26, operator directive: "не согласен. может
+    // быть детерменированный ответ. 'Следуй своим предпостениям и рекомендациям'" - we trust Jules; ANY
+    // question not caught by a specific pattern gets the universal "use your own judgment, document your
+    // assumption" answer instead of an LLM adjudicating for Jules) ------------------------------------------
+
+    @Test
+    void genericProceedQuestionGetsDeterministicAnswerNeverCallsGemini() {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setDescription("Implement the feature.");
+
+        String answer = julesDispatchService.buildJulesQuestionAnswer(task, "Should I proceed?", 0);
+
+        assertTrue(answer != null && answer.contains("Proceed using the existing task description"));
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void questionWithARealForkStillGetsDeterministicAnswerNeverCallsGemini() {
+        // The operator's correction: even a substantive question with a real fork between named
+        // alternatives does NOT need Gemini to adjudicate - trust Jules to pick the most reasonable option
+        // from the task facts and document the assumption, same as any other unmatched question.
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setDescription("Implement the feature.");
+
+        String answer = julesDispatchService.buildJulesQuestionAnswer(task,
+                "Should I proceed with a REST endpoint or a GraphQL resolver for this feature?", 0);
+
+        assertTrue(answer != null && answer.contains("Proceed using the existing task description"));
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void artifactHygieneQuestionStillUsesItsOwnSpecificDeterministicAnswer() {
+        // The more specific patterns (artifact hygiene, repeated-question circuit breaker) still take
+        // priority over the universal fallback - they carry concrete remediation commands the generic
+        // "use your judgment" message doesn't.
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setDescription("Implement the feature.");
+
+        String answer = julesDispatchService.buildJulesQuestionAnswer(task,
+                "Generated/local artifact detected in PR diff: playwright-report/.", 0);
+
+        assertTrue(answer.contains("Git hygiene issue only"));
+        verifyNoInteractions(mlPredictionServiceClient);
     }
 }

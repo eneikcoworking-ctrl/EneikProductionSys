@@ -1,0 +1,212 @@
+package com.eneik.production.services;
+
+import com.eneik.production.models.persistence.GeminiObserverActionEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TaskConflictEntity;
+import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.GeminiObserverActionRepository;
+import com.eneik.production.repositories.TaskConflictRepository;
+import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.jules.JulesDispatchService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Service;
+
+import java.time.Instant;
+import java.util.UUID;
+
+/**
+ * The observer's real, non-code powers (2026-07-26, operator directive: "даем ей все полномочия - кроме
+ * кода"). Every method here is a thin, guarded wrapper over an operation that already exists elsewhere in
+ * the codebase for a human/scheduled caller - nothing here is a new capability, only a new, safe entry
+ * point for {@link GeminiProjectObserverService} to reach it. Deliberately excludes anything that writes
+ * source code, touches git, or dispatches a fresh coding session against unreviewed judgment - those stay
+ * Jules-on-client-projects-only or human/Claude-only, per operator directive ("им занимаемся только мы с
+ * тобой", 2026-07-26 - system-repo code stays off-limits to any autonomous agent).
+ *
+ * Every call is scoped to the SAME project the observer is currently evaluating (never trusts a
+ * cross-project id), and every outcome - success, skipped, or failed - is persisted to
+ * {@link GeminiObserverActionEntity} regardless of what she later claims in her journal prose. That table,
+ * not her journal, is the audit trail (testimony vs evidence).
+ */
+@Service
+public class GeminiObserverActionService {
+    private static final Logger log = LoggerFactory.getLogger(GeminiObserverActionService.class);
+
+    private final WishlistRepository wishlistRepository;
+    private final TaskRepository taskRepository;
+    private final TaskConflictRepository taskConflictRepository;
+    private final JulesDispatchService julesDispatchService;
+    private final FalsificationCycleService falsificationCycleService;
+    private final GeminiObserverActionRepository actionRepository;
+
+    public GeminiObserverActionService(WishlistRepository wishlistRepository,
+                                        TaskRepository taskRepository,
+                                        TaskConflictRepository taskConflictRepository,
+                                        JulesDispatchService julesDispatchService,
+                                        FalsificationCycleService falsificationCycleService,
+                                        GeminiObserverActionRepository actionRepository) {
+        this.wishlistRepository = wishlistRepository;
+        this.taskRepository = taskRepository;
+        this.taskConflictRepository = taskConflictRepository;
+        this.julesDispatchService = julesDispatchService;
+        this.falsificationCycleService = falsificationCycleService;
+        this.actionRepository = actionRepository;
+    }
+
+    /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
+    public String dismissWishlist(ProjectEntity project, String targetId, String reason) {
+        return execute("dismissWishlist", project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            WishlistEntity wishlist = wishlistRepository.findById(id).orElse(null);
+            if (wishlist == null || !project.getId().equals(wishlist.getProjectId())) {
+                return "not found in this project";
+            }
+            if (wishlist.getStatus() != WishlistStatus.pending && wishlist.getStatus() != WishlistStatus.compiling) {
+                return "already resolved (status=" + wishlist.getStatus() + "), nothing to dismiss";
+            }
+            wishlist.setStatus(WishlistStatus.dismissed);
+            wishlistRepository.save(wishlist);
+            return null;
+        });
+    }
+
+    /** Push through a stagnant session right now instead of waiting for the normal poll timer. */
+    public String nudgeStuckSession(ProjectEntity project, String targetId, String reason) {
+        return execute("nudgeStuckSession", project, targetId, reason, () -> {
+            requireTaskWithLiveSession(project, targetId);
+            return null;
+        });
+    }
+
+    /** Give up on a conflict that has been resurrected/retried past the point of being worth it. */
+    public String abandonConflict(ProjectEntity project, String targetId, String reason) {
+        return execute("abandonConflict", project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            TaskConflictEntity conflict = taskConflictRepository.findById(id).orElse(null);
+            if (conflict == null) return "not found";
+            // conflict.getTask() is a LAZY proxy - .getId() is always safe (no session needed), but a
+            // full load must go through the repository, not the proxy (see AutoMergeService's
+            // resurrectEscalatedConflictsWithRealCode fix from earlier tonight for the exact failure mode).
+            UUID conflictTaskId = conflict.getTask() == null ? null : conflict.getTask().getId();
+            TaskEntity task = conflictTaskId == null ? null : taskRepository.findById(conflictTaskId).orElse(null);
+            if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+                return "not found in this project";
+            }
+            if (conflict.getResolvedAt() != null) {
+                return "already resolved, nothing to abandon";
+            }
+            conflict.setResolutionStatus("abandoned_by_gemini_observer");
+            conflict.setResolvedAt(Instant.now());
+            taskConflictRepository.save(conflict);
+            return null;
+        });
+    }
+
+    /** Boost a genuinely stuck queued task above the normal bottleneck-detection priority floor. */
+    public String boostPriority(ProjectEntity project, String targetId, String reason) {
+        return execute("boostPriority", project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            TaskEntity task = taskRepository.findById(id).orElse(null);
+            if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+                return "not found in this project";
+            }
+            if (task.getStatus() != TaskStatus.queued) {
+                return "not queued (status=" + task.getStatus() + "), boosting priority would have no effect";
+            }
+            int boosted = Math.max(task.getPriority(), 100);
+            if (boosted == task.getPriority()) {
+                return "already at or above boost level, no change";
+            }
+            task.setPriority(boosted);
+            taskRepository.save(task);
+            return null;
+        });
+    }
+
+    /** Pull the philosophical falsification cycle forward instead of waiting for its own cron. */
+    public String triggerFalsificationRun(ProjectEntity project, String targetId, String reason) {
+        return execute("triggerFalsificationRun", project, targetId, reason, () -> {
+            // Runs through the exact same gates as the cron (readiness, pending cap, feature flag) - this
+            // is a nudge to check now, not a bypass. Safe to call even if it turns out not ready; it just
+            // logs and returns.
+            falsificationCycleService.executePhilosophicalCycleForProject(project);
+            return null;
+        });
+    }
+
+    private void requireTaskWithLiveSession(ProjectEntity project, String targetId) {
+        UUID id = parseUuid(targetId);
+        if (id == null) {
+            throw new ActionFailure("invalid id");
+        }
+        TaskEntity task = taskRepository.findById(id).orElse(null);
+        if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+            throw new ActionFailure("not found in this project");
+        }
+        boolean nudged = julesDispatchService.nudgeStuckSession(task);
+        if (!nudged) {
+            throw new ActionFailure("no live session found for this task");
+        }
+    }
+
+    private static final class ActionFailure extends RuntimeException {
+        ActionFailure(String message) { super(message); }
+    }
+
+    private interface Attempt {
+        /** @return null on success, or a short human-readable reason it was skipped/failed. */
+        String run();
+    }
+
+    private String execute(String tool, ProjectEntity project, String targetId, String reason, Attempt attempt) {
+        String outcome;
+        String detail = null;
+        try {
+            String failure = attempt.run();
+            if (failure == null) {
+                outcome = "success";
+            } else {
+                outcome = "skipped";
+                detail = failure;
+            }
+        } catch (ActionFailure e) {
+            outcome = "skipped";
+            detail = e.getMessage();
+        } catch (Exception e) {
+            outcome = "failed";
+            detail = e.getMessage();
+            log.warn("GeminiObserverActionService: {} failed for project {} target {}: {}",
+                    tool, project.getId(), targetId, e.getMessage(), e);
+        }
+
+        GeminiObserverActionEntity record = new GeminiObserverActionEntity();
+        record.setProjectId(project.getId());
+        record.setCreatedAt(Instant.now());
+        record.setTool(tool);
+        record.setTargetId(targetId);
+        record.setReason(reason);
+        record.setOutcome(outcome);
+        record.setDetail(detail);
+        actionRepository.save(record);
+
+        log.info("GeminiObserverActionService: {} for project {} target {} -> {}{}",
+                tool, project.getId(), targetId, outcome, detail != null ? " (" + detail + ")" : "");
+        return outcome + (detail != null ? ": " + detail : "");
+    }
+
+    private static UUID parseUuid(String raw) {
+        try {
+            return raw == null ? null : UUID.fromString(raw.trim());
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+}

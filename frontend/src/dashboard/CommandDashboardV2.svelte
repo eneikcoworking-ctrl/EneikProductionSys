@@ -157,6 +157,16 @@
     }
   }
 
+  // Philosophical falsification track (2026-07-25): the audit session commits its own screenshots into
+  // the target repo's main branch as part of the record PR, and embeds a plain "Screenshot: <raw-github-url>"
+  // line in the wishlist content it produces (FalsificationCycleService.philosophicalWishlistContent) - no
+  // new backend endpoint or binary storage needed, the frontend just needs to find and render that URL.
+  function extractScreenshotUrl(content: string | undefined | null): string | null {
+    if (!content) return null;
+    const match = content.match(/^Screenshot: (https:\/\/raw\.githubusercontent\.com\/\S+)$/m);
+    return match ? match[1] : null;
+  }
+
   async function orchestrate() {
     if (orchestrateBlocked) return;
     orchestrating = true;
@@ -432,6 +442,26 @@
               {/each}
             </div>
           </div>
+
+          {#if dashboard.productReadiness?.blockedItems?.length}
+            <div class="ems-box blocked-items-box">
+              <div class="card-header compact">
+                <h2>Blocked / Not Yet Merged</h2>
+                <span class="indicator">{dashboard.productReadiness.blockedItems.length} item(s)</span>
+              </div>
+              <ul class="blocked-items-list">
+                {#each dashboard.productReadiness.blockedItems as item (item.id)}
+                  <li class="blocked-item-row" title={item.reason === 'done_not_reached_main' ? "Marked done but hasn't actually reached main yet" : "No active session, hasn't moved in over the stale threshold"}>
+                    <span class="blocked-item-title">{item.title || item.id}</span>
+                    <span class="blocked-item-meta">
+                      <span class="blocked-item-status">{item.status}</span>
+                      <span class="blocked-item-hours">{item.hoursSinceUpdate}h</span>
+                    </span>
+                  </li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
         </div>
       </section>
     {/if}
@@ -527,6 +557,14 @@
                     <span class="badge-status {item.status}">{item.status}</span>
                   </div>
                   <p title={item.text || item.content}>{item.text || item.content}</p>
+                  {#if item.source === 'philosophical_falsification' && extractScreenshotUrl(item.text || item.content)}
+                    <img
+                      class="philosophical-critique-screenshot"
+                      src={extractScreenshotUrl(item.text || item.content)}
+                      alt="Screen the philosopher's critique was based on"
+                      loading="lazy"
+                    />
+                  {/if}
                 </article>
               {/each}
             {/if}
@@ -936,6 +974,43 @@
     gap: var(--space-2);
     min-height: 30px;
   }
+  .blocked-items-box {
+    grid-column: 1 / -1;
+  }
+  .blocked-items-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    max-height: 180px;
+    overflow-y: auto;
+    padding-right: 2px;
+    list-style: none;
+    margin: 0;
+    padding-left: 0;
+  }
+  .blocked-item-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: 28px;
+    padding: 2px 0;
+    border-bottom: 1px solid var(--neutral-100);
+  }
+  .blocked-item-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  .blocked-item-meta {
+    display: flex;
+    gap: var(--space-2);
+    flex-shrink: 0;
+    color: var(--neutral-500);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
   .flow-label {
     display: flex;
     flex-direction: column;
@@ -1133,6 +1208,15 @@
     -webkit-line-clamp: 7;
     line-clamp: 7;
     overflow: hidden;
+  }
+  .philosophical-critique-screenshot {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid var(--neutral-100);
+    margin-top: var(--space-2);
   }
   .item-header {
     display: flex;

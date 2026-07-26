@@ -109,97 +109,73 @@ public class MLPredictionServiceClient {
         return Map.of("is_bottleneck_predicted", bottleneckPredicted);
     }
 
-    public Map<String, Object> reviewPr(java.util.UUID projectId, java.util.UUID taskId, String prUrl) {
-        return reviewPr(projectId, taskId, prUrl, java.util.Collections.emptyList());
-    }
 
     /**
-     * siblingPrUrls are other in-flight PRs sharing this task's featureId, reviewed in the same batched
-     * tick (see JulesDispatchService.processPendingReviewBatch) - passed to the reviewer as extra context
-     * so e.g. a backend/frontend pair built against the same API contract gets cross-checked instead of
-     * reviewed in total isolation. Empty for a solo review (e.g. the chaotic-domain immediate path).
+     * Embeds free text via the ML service's Gemini embedding passthrough - the retrieval half of
+     * GeminiContextService's RAG pipeline (2026-07-25). Returns null (never a zero-length/garbage vector)
+     * on any failure - Gemini disabled, no API key, network error, malformed response - so callers can
+     * treat "no vector" as an unambiguous, safe no-op signal rather than guessing from an empty array.
      */
-    public Map<String, Object> reviewPr(java.util.UUID projectId, java.util.UUID taskId, String prUrl, java.util.List<String> siblingPrUrls) {
+    public float[] embed(String text) {
         if (!geminiEnabled()) {
-            aiHealthTracker.recordFailure("reviewPr", "gemini disabled by setting");
-            return Map.of(
-                "approved", false,
-                "remarks", "VERIFICATION_SERVICE_UNAVAILABLE: Gemini disabled by incident-control setting.",
-                "newTasks", java.util.Collections.emptyList()
-            );
+            aiHealthTracker.recordFailure("embed", "gemini disabled by setting");
+            return null;
         }
-        String endpoint = mlServiceUrl + "/api/v1/review/pr";
+        String endpoint = mlServiceUrl + "/api/v1/embed";
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
 
             Map<String, Object> request = new HashMap<>();
-            request.put("projectId", projectId.toString());
-            request.put("taskId", taskId.toString());
-            request.put("prUrl", prUrl);
+            request.put("text", text);
             request.put("apiKey", getGeminiApiKey());
-            request.put("githubToken", settingsService.effectiveValue("github_token"));
-            request.put("modelTier", "pro");
-            request.put("modelOverride", modelOverrideForTier("pro"));
-            if (siblingPrUrls != null && !siblingPrUrls.isEmpty()) {
-                request.put("siblingPrUrls", siblingPrUrls);
+
+            Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+            Object rawEmbedding = response == null ? null : response.get("embedding");
+            if (!(rawEmbedding instanceof List<?> values) || values.isEmpty()) {
+                aiHealthTracker.recordFailure("embed", "invalid or empty embedding response");
+                return null;
             }
-
-            Map<String, Object> result = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
-            aiHealthTracker.recordSuccess("reviewPr");
-            return result;
+            float[] vector = new float[values.size()];
+            for (int i = 0; i < values.size(); i++) {
+                vector[i] = ((Number) values.get(i)).floatValue();
+            }
+            aiHealthTracker.recordSuccess("embed");
+            return vector;
         } catch (Exception e) {
-            LOGGER.severe("ML service PR review call failed (Fail-Safe Triggered): " + e.getMessage());
-            aiHealthTracker.recordFailure("reviewPr", e.getMessage());
-            return Map.of(
-                "approved", false,
-                "remarks", "VERIFICATION_SERVICE_UNAVAILABLE: ML review pipeline connection failed. PR blocked until manual/AI recovery.",
-                "newTasks", java.util.Collections.emptyList()
-            );
-        }
-    }
-
-    public Map<String, Object> checkRefusalCriteria(String prDiff, String refusalCriteria) {
-        if (!geminiEnabled()) {
-            aiHealthTracker.recordFailure("checkRefusalCriteria", "gemini disabled by setting");
-            return Map.of(
-                "compliant", false,
-                "reason", "VERIFICATION_SERVICE_UNAVAILABLE: Gemini disabled by incident-control setting."
-            );
-        }
-        String endpoint = mlServiceUrl + "/api/v1/review/refusal-criteria";
-        try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-
-            Map<String, Object> request = new HashMap<>();
-            request.put("prDiff", prDiff);
-            request.put("refusalCriteria", refusalCriteria);
-            request.put("apiKey", getGeminiApiKey());
-            request.put("modelOverride", modelOverrideForTier(""));
-
-            Map<String, Object> result = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
-            aiHealthTracker.recordSuccess("checkRefusalCriteria");
-            return result;
-        } catch (Exception e) {
-            LOGGER.severe("ML service checkRefusalCriteria call failed (Fail-Safe Triggered): " + e.getMessage());
-            aiHealthTracker.recordFailure("checkRefusalCriteria", e.getMessage());
-            return Map.of(
-                "compliant", false,
-                "reason", "VERIFICATION_SERVICE_UNAVAILABLE: ML verification pipeline offline. Blocked compliance audit."
-            );
+            LOGGER.warning("ML service embed call failed: " + e.getMessage());
+            aiHealthTracker.recordFailure("embed", e.getMessage());
+            return null;
         }
     }
 
     public String chat(String prompt, String systemInstruction) {
-        return chatWithTier(prompt, systemInstruction, "");
+        return chatWithTier(prompt, systemInstruction, "", "");
     }
 
+    /**
+     * Explicit Gemini context caching (2026-07-25) - for a caller whose systemInstruction is static/
+     * repeated across many calls under the same cacheKey (e.g. GeminiProjectObserverService's instruction
+     * text, identical every 30-minute cycle for every project). Only the systemInstruction is cached -
+     * anything call-specific (RAG-retrieved context, evidence snapshots) must stay in prompt, never here,
+     * or it would be cached stale. Same fail-open contract as everywhere else this pattern is used: any
+     * caching problem falls back to the plain uncached call, never becomes a new failure mode.
+     */
+    public String chat(String prompt, String systemInstruction, String cacheKey) {
+        return chatWithTier(prompt, systemInstruction, "", cacheKey);
+    }
+
+    /**
+     * "pro" tier requested here is silently downgraded to the regular model list server-side (2026-07-25,
+     * operator directive - emergency cost incident: "никогда не вызывать про версию"). Enforced at the
+     * single choke point (PredictionService.py's gemini_candidate_models), not here, so it holds even for
+     * any other caller of the ML service's chat endpoint, present or future.
+     */
     public String chatCritical(String prompt, String systemInstruction) {
-        return chatWithTier(prompt, systemInstruction, "pro");
+        return chatWithTier(prompt, systemInstruction, "pro", "");
     }
 
-    private String chatWithTier(String prompt, String systemInstruction, String modelTier) {
+    private String chatWithTier(String prompt, String systemInstruction, String modelTier, String cacheKey) {
         if (!geminiEnabled()) {
             aiHealthTracker.recordFailure("chat", "gemini disabled by setting");
             return "The assistant is temporarily unavailable. Gemini disabled by incident-control setting.";
@@ -217,6 +193,9 @@ public class MLPredictionServiceClient {
                 request.put("modelTier", modelTier);
             }
             request.put("modelOverride", modelOverrideForTier(modelTier));
+            if (cacheKey != null && !cacheKey.isBlank()) {
+                request.put("cacheKey", cacheKey);
+            }
 
             Map<String, Object> response = restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
             if (response != null && response.containsKey("text")) {

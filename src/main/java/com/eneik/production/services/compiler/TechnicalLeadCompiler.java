@@ -278,7 +278,24 @@ public class TechnicalLeadCompiler {
         String shortTitle = TaskTitleBuilder.build(roleTag, taskTitleSource(wishlist, atomicGoal))
                 + " (" + shortId(wishlist.getId()) + ")";
         task.setTitle(shortTitle);
-        task.setDescription(buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin, flywayCache));
+        String taskDescription = buildTaskDescription(wishlist, roleTag, atomicGoal, dod, kano, cynefin, flywayCache);
+        task.setDescription(taskDescription);
+
+        // Creation-time duplicate guard (2026-07-26) - defense in depth beyond the semantic-key check
+        // above (findExistingSemanticTask), which this method's caller already applies per-wishlist. Fails
+        // loud rather than silently skipping: a description match this exact (byte-for-byte, including the
+        // full task-facts block) at 3+ non-terminal tasks is not a coincidence, it is the same shape as the
+        // 2026-07-26 incident (a bug generating near-identical tasks unattended) - better to stop the
+        // compile run and surface it than let a 4th, 5th, 6th... copy through unattended.
+        long existingNonTerminalDuplicates = taskRepository.countByProjectIdAndDescriptionAndStatusNotIn(
+                project.getId(), taskDescription,
+                java.util.List.of(TaskStatus.done, TaskStatus.failed, TaskStatus.spike_completed));
+        if (existingNonTerminalDuplicates >= 3) {
+            throw new IllegalStateException("Refusing to create task for wishlist " + wishlist.getId()
+                    + ": " + existingNonTerminalDuplicates + " non-terminal task(s) with this exact description "
+                    + "already exist in project " + project.getId() + " - this matches the shape of the "
+                    + "2026-07-26 duplicate-task-generation incident, not a legitimate coincidence.");
+        }
 
         RoleEntity role = roleRepository.findById(roleTag)
                 .orElseThrow(() -> new IllegalStateException("Role not found: " + roleTag));

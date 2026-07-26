@@ -5,6 +5,7 @@ import com.eneik.production.dto.dashboard.AgentDashboardDto;
 import com.eneik.production.dto.dashboard.FeaturePullRequestSnapshotDto;
 import com.eneik.production.dto.dashboard.PipelineDashboardDto;
 import com.eneik.production.dto.dashboard.ProductReadinessDto;
+import com.eneik.production.dto.dashboard.BlockedItemDto;
 import com.eneik.production.dto.dashboard.QueueDashboardDto;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
@@ -45,6 +46,10 @@ public class ProjectFlowService {
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
     private static final String ENVIRONMENT_BOOTSTRAP_TOC = "BOOTSTRAP-ENVIRONMENT-BOUNDARY";
     private static final long ORCHESTRATION_COOLDOWN_SECONDS = 300L;
+    // Dashboard "blocked for N hours" visibility (2026-07-25, operator directive) - generous enough that a
+    // task legitimately mid-review/mid-dispatch never falsely shows up, same reasoning as this codebase's
+    // other safety-net thresholds (e.g. MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN).
+    private static final double BLOCKED_ITEM_STALE_THRESHOLD_HOURS = 2.0;
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -1040,7 +1045,7 @@ public class ProjectFlowService {
             // these already has its own retry/re-dispatch path when it naturally reaches pr_opened again
             // (e.g. a fresh mockup+design-review cycle, a fresh falsification pass) - so the correct recovery
             // here is simply to stop the noise, not to fabricate bespoke recovery logic for each.
-            if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
+            if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPhilosophicalAuditTask(task)) {
                 task.setStatus(TaskStatus.failed);
                 task.setJulesDispatchStatus("System task blocked; retired instead of generic clarify-wishlist recovery (not role feature work)");
                 taskRepository.save(task);
@@ -1274,23 +1279,17 @@ public class ProjectFlowService {
             return 0;
         }
 
-        // Operator directive (2026-07-21, test-thirty-second post-mortem): never compile a NEW wishlist
-        // item - client-sourced or otherwise (coverage-audit gap, design-review concern, etc.) - while a
-        // PREVIOUS client deliverable's derived tasks aren't fully merged yet. Planning more work on top
-        // of an unstable, not-yet-landed foundation is exactly what burned Jules session budget tonight
-        // for zero durable result: 3 of 4 original tasks are still unmerged, yet the compiler kept taking
-        // on fresh wishlist items regardless. Reuses the same "genuinely merged, not just done" definition
-        // FalsificationCycleService already gates on, applied one step earlier in the pipeline (at
-        // compilation admission, not just at the falsification-cycle trigger).
-        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        if (readiness.totalDeliverables() > 0 && readiness.mergedDeliverables() < readiness.totalDeliverables()) {
-            log.info("ProjectFlowService: {} of {} client deliverable(s) for project {} not yet merged; "
-                            + "holding {} new wishlist compile candidate(s) until the existing backlog lands on main",
-                    readiness.totalDeliverables() - readiness.mergedDeliverables(), readiness.totalDeliverables(),
-                    project.getId(), candidates.size());
-            return 0;
-        }
-
+        // Operator directive (2026-07-25): the "hold new compile candidates until the existing backlog
+        // lands on main" gate below (built 2026-07-21 after a real post-mortem: the compiler kept taking
+        // on fresh wishlist items while 3 of 4 original tasks were still unmerged, burning Jules budget on
+        // an unstable foundation) is REMOVED - confirmed live the same night it was tested end-to-end: one
+        // stuck task (a false-positive PR-review bug, since fixed) held the ENTIRE project's wishlist
+        // queue hostage for hours, because the gate is scoped to "any deliverable anywhere in the
+        // project", not to the specific feature a candidate actually depends on. Operator's explicit
+        // choice, accepting the original 2026-07-21 risk in exchange for never letting one stuck item
+        // block everything else - the WIP limit right below (wipLimitProjectCompiling) is a SEPARATE,
+        // still-active safety net that independently caps how much can be compiling at once, so this
+        // removal does not mean literally unbounded concurrent compilation.
         long compilingNow = wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling);
         int projectBudget = (int) Math.max(0, wipLimitProjectCompiling - compilingNow);
         if (projectBudget <= 0) {
@@ -2277,7 +2276,24 @@ public class ProjectFlowService {
             // nothing more than "fix this typo" and "add pagination". Any non-client-sourced wishlist is
             // by definition a follow-up on functionality that already exists, so tell the compiler
             // explicitly not to apply the implicit-layer rule for it.
-            if (w.getSource() != WishlistSource.client) {
+            // philosophical_falsification is deliberately carved OUT of the suppression rule above (2026-07-25):
+            // that rule exists to stop narrow corrective follow-ups (a typo fix, a coverage gap on one
+            // existing endpoint) from inventing a whole new schema+contract+UI stack for what should be a
+            // one-line patch. A philosophical critique is the opposite case - a genuinely NEW product
+            // capability a real philosopher's worldview identified as missing - and the whole point of the
+            // philosophical falsification track is that it CAN warrant new layers. Suppressing that here
+            // would silently defeat the feature. It gets its own bounded directive instead, and its own
+            // mandatory Kano-copy instruction (Layer 1 already embeds "Kano: X"/"Cynefin: complex" as plain
+            // text in the brief - FalsificationCycleService.philosophicalWishlistContent - this directive is
+            // what makes the compiler actually honor it instead of re-classifying from scratch).
+            if (w.getSource() == WishlistSource.philosophical_falsification) {
+                briefsSection.append(" [PHILOSOPHICAL PRODUCT CRITIQUE - this is a genuinely NEW product")
+                        .append(" capability a named real philosopher's worldview identified as missing, not a")
+                        .append(" defect. You MAY create the schema/contract/UI layers it genuinely needs, but")
+                        .append(" keep it small - at most one epic. The Kano class for this epic is ALREADY")
+                        .append(" DETERMINED and stated in the brief text below (\"Kano: ...\") - copy it")
+                        .append(" verbatim into \"kanoClass\"; do not re-classify it or default it to Must-Be.]");
+            } else if (w.getSource() != WishlistSource.client) {
                 briefsSection.append(" [FOLLOW-UP ON ALREADY-EXISTING FUNCTIONALITY - do NOT create a new")
                         .append(" data schema, API contract, or UI slice for this; the data model, API, and")
                         .append(" UI for this feature already exist elsewhere in the project. Produce exactly")
@@ -2493,6 +2509,69 @@ public class ProjectFlowService {
         return raw == null || raw.isBlank() ? FALSIFICATION_AUDIT_REPORT_PATH : raw;
     }
 
+    // Philosophical falsification track (2026-07-25) - independent task type, independent admission mutex
+    // from FALSIFICATION_AUDIT_TASK_TYPE above, same reasoning as dispatchFalsificationAudit's own
+    // check-then-INSERT lock comment. Deliberately its own constant rather than reusing the formal audit's,
+    // so an open philosophical audit never blocks (or is blocked by) an open formal audit.
+    public static final String PHILOSOPHICAL_AUDIT_TASK_TYPE = "philosophical_audit";
+    public static final String PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY = "philosophicalAuditReportPath";
+
+    @Transactional
+    public UUID dispatchPhilosophicalAudit(ProjectEntity project, String prompt, String reportPath) {
+        projectRepository.lockProjectForUpdate(project.getId());
+        boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(this::isPhilosophicalAuditTask)
+                .anyMatch(task -> task.getStatus() == TaskStatus.queued
+                        || task.getStatus() == TaskStatus.claimed
+                        || task.getStatus() == TaskStatus.in_progress
+                        || task.getStatus() == TaskStatus.pending_review
+                        || task.getStatus() == TaskStatus.review
+                        || task.getStatus() == TaskStatus.blocked);
+        if (auditAlreadyActive) {
+            log.info("Poka-yoke: project {} already has an active philosophical falsification audit; duplicate dispatch skipped",
+                    project.getId());
+            return null;
+        }
+
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot dispatch philosophical falsification audit for project {}: role {} not found",
+                    project.getId(), ORCHESTRATOR_ROLE);
+            return null;
+        }
+
+        TaskEntity auditTask = new TaskEntity();
+        auditTask.setProject(project);
+        auditTask.setRole(compilerRole);
+        auditTask.setTitle("Philosophical falsification: product critique (" + shortId(UUID.randomUUID()) + ")");
+        auditTask.setDescription(prompt);
+        auditTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PHILOSOPHICAL_AUDIT_TASK_TYPE);
+        if (reportPath != null && !reportPath.isBlank()) {
+            payload.put(PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY, reportPath);
+        }
+        auditTask.setPayload(payload);
+
+        auditTask = taskRepository.save(auditTask);
+        dispatchCompilerTask(auditTask);
+        return auditTask.getId();
+    }
+
+    public boolean isPhilosophicalAuditTask(TaskEntity task) {
+        return task.getPayload() != null
+                && PHILOSOPHICAL_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public String philosophicalAuditReportPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? null : raw;
+    }
+
     /**
      * True for implementation work compiled from a non-client iteration source. Public (not just used
      * internally by dispatchQueuedTasks's build-phase hold) so TaskWaitTimeService can classify a queued
@@ -2602,9 +2681,16 @@ public class ProjectFlowService {
                 .toList();
 
         ProjectEntity project = requireProject(projectId);
-        Integer currentHighestMergedPr = highestMergedPrNumber(project);
 
         for (WishlistEntity wishlist : clientWishlists) {
+            // 2026-07-26 operator directive ("привязать к целому вишлисту"): scoped to THIS wishlist's own
+            // features, not highestMergedPrNumber(project) (any product-code merge anywhere in the project).
+            // The project-wide version already survived one self-triggering-loop fix (2026-07-24, see the
+            // javadoc below) but still re-fired this wishlist's audit every time an UNRELATED wishlist's own
+            // work merged - itself a slower version of the same tail-chasing bug, confirmed live tonight
+            // (test-thirty-seventh: continuous merges elsewhere kept resetting decompositionComplete/
+            // featureRatio, so philosophical falsification's readiness bar was never stably crossed).
+            Integer currentHighestMergedPr = highestMergedPrNumberForWishlist(project, wishlist);
             List<TaskEntity> auditsForThisWishlist = existingAuditTasks.stream()
                     .filter(t -> wishlist.getId().equals(coverageAuditTargetWishlistId(t)))
                     .toList();
@@ -2675,6 +2761,35 @@ public class ProjectFlowService {
         return snapshot.closed().stream()
                 .filter(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::merged)
                 .filter(pr -> !isSystemRecordPr(pr, projectSessions))
+                .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::number)
+                .max(Integer::compareTo)
+                .orElse(null);
+    }
+
+    /**
+     * 2026-07-26 operator directive ("привязать к целому вишлисту"): same watermark as
+     * {@link #highestMergedPrNumber(ProjectEntity)}, but scoped to sessions whose task belongs to THIS
+     * wishlist's own features (via {@link ClientDeliverableReadinessService#listTasksForRootWishlist}),
+     * not any task anywhere in the project. The project-wide version still let one client wishlist's audit
+     * be perpetually re-triggered by merges belonging to a completely different wishlist's own work, which
+     * kept that wishlist's readiness/decompositionComplete from ever stabilizing long enough for the
+     * philosophical falsification readiness gate to be crossed.
+     */
+    private Integer highestMergedPrNumberForWishlist(ProjectEntity project, WishlistEntity wishlist) {
+        var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+        if (!snapshot.available()) {
+            return null;
+        }
+        Set<UUID> wishlistTaskIds = readinessService.listTasksForRootWishlist(project.getId(), wishlist.getId())
+                .stream()
+                .map(TaskEntity::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        List<JulesSessionEntity> wishlistSessions = julesSessionRepository.findAll().stream()
+                .filter(s -> s.getTaskId() != null && wishlistTaskIds.contains(s.getTaskId()))
+                .toList();
+        return snapshot.closed().stream()
+                .filter(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::merged)
+                .filter(pr -> !isSystemRecordPr(pr, wishlistSessions))
                 .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::number)
                 .max(Integer::compareTo)
                 .orElse(null);
@@ -3244,10 +3359,11 @@ public class ProjectFlowService {
                 }
             }
 
-            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task)) {
-                // Compiler and falsification-audit tasks are deliberately pinned to the reserved compiler
-                // account: both are low-frequency by design (WIP-gated batching, a multi-hour cron) and
-                // share that account's capacity comfortably instead of contending with real product work.
+            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task)) {
+                // Compiler, falsification-audit, and philosophical-audit tasks are deliberately pinned to the
+                // reserved compiler account: all three are low-frequency by design (WIP-gated batching, a
+                // multi-hour or weekly cron) and share that account's capacity comfortably instead of
+                // contending with real product work.
                 dispatchCompilerTask(task);
                 continue;
             }
@@ -3348,7 +3464,8 @@ public class ProjectFlowService {
             // re-completed 3 times over ~50 minutes before landing on `failed`. Kept as a safety net for
             // any task that predates this fix or slips through some other path.
             if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task)
-                    || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPersistentWorkerCarrierTask(task)) {
+                    || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPersistentWorkerCarrierTask(task)
+                    || isPhilosophicalAuditTask(task)) {
                 continue;
             }
             // Bug fix (2026-07-23, confirmed live on test-thirty-fifth): this used its own incomplete
@@ -3476,7 +3593,8 @@ public class ProjectFlowService {
         List<TaskEntity> allTaskEntities = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
         List<TaskEntity> taskEntities = allTaskEntities.stream()
                 .filter(task -> !isWishlistCompilerTask(task) && !isFalsificationAuditTask(task)
-                        && !isReviewFallbackTask(task) && !isDesignReviewTask(task) && !isCoverageAuditTask(task))
+                        && !isReviewFallbackTask(task) && !isDesignReviewTask(task) && !isCoverageAuditTask(task)
+                        && !isPhilosophicalAuditTask(task))
                 .toList();
 
         QueueDashboardDto queue = new QueueDashboardDto(
@@ -3538,7 +3656,8 @@ public class ProjectFlowService {
                 falsificationReadinessThreshold,
                 falsificationEligible,
                 falsificationEligible ? "ready_for_falsification"
-                        : (productReadiness.decompositionComplete() ? "building" : "decomposing")
+                        : (productReadiness.decompositionComplete() ? "building" : "decomposing"),
+                computeBlockedItems(allTaskEntities)
         );
 
         return new ProjectDashboardDto(
@@ -3553,6 +3672,55 @@ public class ProjectFlowService {
                 wishlist,
                 tasks
         );
+    }
+
+    /**
+     * Dashboard "N of M not merged" + "blocked for N hours" visibility (2026-07-25, operator directive) -
+     * two distinct reasons a task shows up: still non-terminal, no active claim, hasn't moved in over
+     * {@link #BLOCKED_ITEM_STALE_THRESHOLD_HOURS}; or its own status says done but
+     * {@link ClientDeliverableReadinessService#reachedMain} says the work never actually landed in main
+     * (the exact shape of the 44%-orphaned-PR incident, and of today's manually-found feature-thread
+     * closeout deadlock - both were only found by hand, this is meant to make the next one visible without
+     * a SQL session).
+     */
+    private List<BlockedItemDto> computeBlockedItems(List<TaskEntity> allTaskEntities) {
+        java.time.Instant now = java.time.Instant.now();
+        List<BlockedItemDto> blocked = new java.util.ArrayList<>();
+        for (TaskEntity task : allTaskEntities) {
+            if (task.getStatus() == TaskStatus.failed) {
+                continue; // terminal and already explains itself - not an actionable "blocked" signal
+            }
+            String reason;
+            if (task.getStatus() == TaskStatus.done) {
+                // Live finding (2026-07-25): a DECISION-stage/"complex"-cynefin task is never expected to
+                // reach main on its own (ClientDeliverableReadinessService excludes it from its own
+                // deliverable-ratio the same way) - without this check this widget flagged spec/decision
+                // work as "blocked" when it was actually just correctly-done, non-mergeable work.
+                if (readinessService.reachedMain(task) || readinessService.isAuxiliaryTask(task)) {
+                    continue;
+                }
+                reason = "done_not_reached_main";
+            } else {
+                boolean stale = task.getUpdatedAt() != null
+                        && java.time.Duration.between(task.getUpdatedAt(), now).toMinutes() / 60.0 >= BLOCKED_ITEM_STALE_THRESHOLD_HOURS;
+                if (!stale || claimService.hasActiveClaim(task.getId())) {
+                    continue;
+                }
+                reason = "stale_in_progress";
+            }
+            double hours = task.getUpdatedAt() == null ? 0.0
+                    : java.time.Duration.between(task.getUpdatedAt(), now).toMinutes() / 60.0;
+            blocked.add(new BlockedItemDto(
+                    task.getId(),
+                    com.eneik.production.services.task.TaskTitleBuilder.displayTitle(task),
+                    task.getStatus().name(),
+                    Math.round(hours * 10) / 10.0,
+                    task.getRole() != null ? task.getRole().getTag() : null,
+                    reason
+            ));
+        }
+        blocked.sort((a, b) -> Double.compare(b.hoursSinceUpdate(), a.hoursSinceUpdate()));
+        return blocked;
     }
 
     // Operator directive (2026-07-21): GitHubPullRequestService.pullRequestSnapshot() is shared by
@@ -3621,7 +3789,7 @@ public class ProjectFlowService {
             return null;
         }
         if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task)
-                || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
+                || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPhilosophicalAuditTask(task)) {
             return null;
         }
         FeatureEntity feature = task.getFeatureId() != null ? featuresById.get(task.getFeatureId()) : null;

@@ -20,17 +20,20 @@ public class ProjectController {
     private final com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository;
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
+    private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
                              com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
-                             com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
+                             com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                             com.eneik.production.services.FalsificationCycleService falsificationCycleService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
         this.onboardingAuditService = onboardingAuditService;
         this.readinessService = readinessService;
+        this.falsificationCycleService = falsificationCycleService;
     }
 
     @GetMapping
@@ -94,6 +97,22 @@ public class ProjectController {
             }
             com.eneik.production.services.onboarding.StackProfile profile = onboardingAuditService.runOnboardingAudit(project, true);
             return ResponseEntity.ok(profile);
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
+    // Manual trigger for the philosophical falsification track (2026-07-25) - lets the operator run it
+    // out-of-cycle without waiting for the weekly cron, same reasoning as onboarding-report/re-run above.
+    // Runs synchronously through the same gates the scheduled cycle uses (readiness, pending-wishlist cap,
+    // feature flag) - it does not bypass them, it just doesn't wait for Sunday to check them.
+    @PostMapping("/{projectId}/philosophical-falsification/run")
+    public ResponseEntity<?> runPhilosophicalFalsification(@PathVariable UUID projectId) {
+        try {
+            com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
+            falsificationCycleService.executePhilosophicalCycleForProject(project);
+            return ResponseEntity.accepted().body(Map.of(
+                    "message", "Philosophical falsification cycle triggered; check task history/logs for the dispatch outcome (it may honestly skip if not ready, already active, or the feature flag is off)"));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

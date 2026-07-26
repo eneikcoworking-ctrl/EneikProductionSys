@@ -22,13 +22,27 @@ public class SystemStatusController {
     private final SystemStatusService systemStatusService;
     private final SystemSettingsService systemSettingsService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final com.eneik.production.services.GeminiContextService geminiContextService;
 
     public SystemStatusController(SystemStatusService systemStatusService,
                                   SystemSettingsService systemSettingsService,
-                                  org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                                  org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                                  com.eneik.production.services.GeminiContextService geminiContextService) {
         this.systemStatusService = systemStatusService;
         this.systemSettingsService = systemSettingsService;
         this.jdbcTemplate = jdbcTemplate;
+        this.geminiContextService = geminiContextService;
+    }
+
+    // Manual trigger for GeminiContextService's standing-knowledge re-index (2026-07-25) - lets the
+    // operator refresh the RAG corpus (OBSERVER_LOG, charters, Claude's own operator notes) out-of-cycle
+    // instead of waiting for the daily cron. Honestly no-ops (still HTTP 202) if the feature flag is off or
+    // the repo root isn't mounted - it never silently pretends to have indexed anything.
+    @PostMapping("/gemini-context/reindex")
+    public Map<String, Object> reindexGeminiContext() {
+        geminiContextService.reindexStandingKnowledge();
+        return Map.of("message", "Re-index triggered; check logs for per-source chunk counts "
+                + "(it honestly no-ops if gemini_context_learning_enabled is off or the repo root isn't mounted)");
     }
 
     @GetMapping

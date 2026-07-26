@@ -58,7 +58,8 @@ class FalsificationCycleServiceTest {
                 gitHubPullRequestService,
                 projectFlowService,
                 readinessService,
-                mock(WishlistContentSimilarityMatcher.class)
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class)
         );
     }
 
@@ -202,7 +203,8 @@ class FalsificationCycleServiceTest {
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class),
                 mock(SystemSettingsService.class), gitHub, flow, readiness,
-                mock(WishlistContentSimilarityMatcher.class));
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("still-decomposing");
@@ -228,7 +230,8 @@ class FalsificationCycleServiceTest {
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
                 mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
-                mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class));
+                mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("bounded-cycle");
@@ -252,5 +255,216 @@ class FalsificationCycleServiceTest {
         assertEquals(null, created.getCompiledByRole(), "the new cycle must pass through feature/task decomposition");
         assertTrue(created.getContent().contains("Finding 1 [BARCAN-TAG-02/refusal_criteria]"));
         assertTrue(created.getContent().contains("Finding 2 [BARCAN-TAG-11/methodological]"));
+    }
+
+    // --- Philosophical falsification track (2026-07-25) ---------------------------------------------
+
+    private FalsificationCycleService newPhilosophicalService(RoleRepository roleRepository,
+                                                                ProjectFlowService projectFlowService,
+                                                                WishlistRepository wishlistRepository,
+                                                                SystemSettingsService settingsService,
+                                                                FalsificationRunRepository runRepository) {
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+        return new FalsificationCycleService(
+                mock(ProjectRepository.class), roleRepository, mock(RoleCapabilityLoader.class),
+                wishlistRepository, runRepository, settingsService,
+                mock(GitHubPullRequestService.class), projectFlowService, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+    }
+
+    @Test
+    void weeklyCycleSkippedWhenFeatureFlagDisabled() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(false);
+        FalsificationCycleService service = newPhilosophicalService(
+                roles, flow, mock(WishlistRepository.class), settings, mock(FalsificationRunRepository.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("flag-off-project");
+
+        service.executePhilosophicalCycleForProject(project);
+
+        verify(flow, never()).dispatchPhilosophicalAudit(any(), any(), any());
+    }
+
+    @Test
+    void philosophicalCycleSkippedWhenPendingWishlistCapReached() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        FalsificationCycleService service = newPhilosophicalService(
+                roles, flow, wishlistRepository, settings, mock(FalsificationRunRepository.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("capped-project");
+        when(wishlistRepository.countByProjectIdAndSourceAndStatus(
+                project.getId(), WishlistSource.philosophical_falsification, com.eneik.production.models.persistence.WishlistStatus.pending))
+                .thenReturn(5L);
+
+        service.executePhilosophicalCycleForProject(project);
+
+        verify(flow, never()).dispatchPhilosophicalAudit(any(), any(), any());
+    }
+
+    @Test
+    void philosophicalCyclePromptInstructsGenuineReasoningForcedKanoAndCleanCommits() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        FalsificationCycleService service = newPhilosophicalService(
+                roles, flow, wishlistRepository, settings, mock(FalsificationRunRepository.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("prompt-project");
+        RoleEntity roleWithCharter = role("BARCAN-TAG-11");
+        try {
+            java.nio.file.Path tempCharter = java.nio.file.Files.createTempFile("barcan-tag-11-charter", ".md");
+            java.nio.file.Files.writeString(tempCharter, "| 1 | **Patricia Churchland** | neurophilosophy |\n");
+            tempCharter.toFile().deleteOnExit();
+            roleWithCharter.setRulesPath(tempCharter.toString());
+        } catch (java.io.IOException e) {
+            throw new RuntimeException(e);
+        }
+        when(roles.findAll()).thenReturn(List.of(roleWithCharter));
+        when(flow.dispatchPhilosophicalAudit(any(), any(), any())).thenReturn(UUID.randomUUID());
+
+        service.executePhilosophicalCycleForProject(project);
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(flow).dispatchPhilosophicalAudit(eq(project), promptCaptor.capture(), any());
+        // Normalize whitespace: the prompt is a Java text block wrapped at ~100 chars for source
+        // readability, so a phrase asserted here may legitimately contain an embedded newline where the
+        // text block happened to wrap - collapse all whitespace runs to a single space before matching so
+        // the assertions test the actual words, not incidental source formatting.
+        String prompt = promptCaptor.getValue().replaceAll("\\s+", " ");
+
+        assertTrue(prompt.contains("reason as that actual historical thinker"),
+                "prompt must ask for genuine reasoning, not the charter's narrow application column");
+        assertTrue(prompt.contains("no default"), "prompt must forbid a default/omitted Kano class");
+        assertTrue(prompt.contains("do NOT commit") || prompt.contains("do not commit") || prompt.toLowerCase(java.util.Locale.ROOT).contains("do not commit"),
+                "prompt must warn against committing playwright-report/test-results clutter");
+        assertTrue(prompt.contains("ROLE BARCAN-TAG-11 CHARTER"), "prompt must inject the real charter verbatim");
+    }
+
+    @Test
+    void clusteringGroupsConvergingVoicesAndMajorityVoteDecidesKanoIncludingMustBe() {
+        // Operator directive (2026-07-25): no per-critique Kano/confidence filtering - every voice is
+        // clustered by similarity, and a cluster's Kano is the MAJORITY vote among its members (ties broken
+        // toward the more assertive class), not a hard gate that discards Must-Be/low-confidence outright.
+        // Uses the REAL matcher (not a mock) so actual Jaccard clustering runs - a mock would return an
+        // empty cluster list by default and silently make this test meaningless.
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        FalsificationRunRepository runRepository = mock(FalsificationRunRepository.class);
+        when(wishlistRepository.save(any(WishlistEntity.class))).thenAnswer(invocation -> {
+            WishlistEntity item = invocation.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(any(), eq(WishlistSource.philosophical_falsification), any()))
+                .thenReturn(List.of());
+        when(wishlistRepository.countByProjectIdAndSourceAndStatus(any(), eq(WishlistSource.philosophical_falsification), any()))
+                .thenReturn(0L);
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), mock(RoleRepository.class), mock(RoleCapabilityLoader.class),
+                wishlistRepository, runRepository, mock(SystemSettingsService.class),
+                mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
+                mock(ClientDeliverableReadinessService.class), new WishlistContentSimilarityMatcher(),
+                mock(com.eneik.production.services.GeminiContextService.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("clustering-project");
+
+        String onboardingProposal = "Add a trust building onboarding tour explaining account activation and permissions to new users clearly and calmly";
+        String onboardingCritique = "The current interface leaves new users uncertain about why account access is being requested";
+        String errorToneProposal = "Rewrite error messages to sound calmer and less alarming for users encountering failures during checkout";
+        String errorToneCritique = "The current error tone feels punitive and increases user anxiety during failures";
+        String paginationProposal = "Leave pagination controls exactly as they are since users have not expressed any confusion";
+        String paginationCritique = "Pagination behavior is already clear and consistent across the product";
+        String darkModeProposal = "Add a dark mode theme toggle to reduce eye strain for users working at night";
+        String darkModeCritique = "Some users have mentioned bright screens are uncomfortable in low light settings";
+
+        List<FalsificationCycleService.PhilosophicalCritique> critiques = List.of(
+                // Cluster A: onboarding/trust theme, 3 voices, 2 Attractive + 1 Must-Be -> majority Attractive
+                critiqueWithText("BARCAN-TAG-11", "Patricia Churchland", "Attractive", onboardingProposal, onboardingCritique),
+                critiqueWithText("BARCAN-TAG-11", "Martha Nussbaum", "Attractive", onboardingProposal, onboardingCritique),
+                critiqueWithText("BARCAN-TAG-09", "Robert Brandom", "Must-Be", onboardingProposal, onboardingCritique),
+                // Cluster B: error-message tone theme, 2 voices, BOTH Must-Be -> majority Must-Be (this is
+                // the direct test of the reversed decision: Must-Be must now be able to become a wishlist)
+                critiqueWithText("BARCAN-TAG-06", "Karl Popper", "Must-Be", errorToneProposal, errorToneCritique),
+                critiqueWithText("BARCAN-TAG-07", "Timothy Williamson", "Must-Be", errorToneProposal, errorToneCritique),
+                // Cluster C: pagination theme, 2 voices, BOTH Indifferent -> no wishlist (aggregated "nothing to do")
+                critiqueWithText("BARCAN-TAG-11", "Ned Block", "Indifferent", paginationProposal, paginationCritique),
+                critiqueWithText("BARCAN-TAG-03", "Andy Clark", "Indifferent", paginationProposal, paginationCritique),
+                // Singleton D: dark mode, unrelated topic, 1 voice only -> still becomes its own wishlist,
+                // proving a lone voice is never discarded just for lacking corroboration
+                critiqueWithText("BARCAN-TAG-11", "Jaegwon Kim", "Attractive", darkModeProposal, darkModeCritique)
+        );
+
+        service.applyPhilosophicalCritiques(project, critiques, null);
+
+        ArgumentCaptor<WishlistEntity> wishlistCaptor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository, times(3)).save(wishlistCaptor.capture());
+        List<WishlistEntity> saved = wishlistCaptor.getAllValues();
+        for (WishlistEntity w : saved) {
+            assertEquals(WishlistSource.philosophical_falsification, w.getSource());
+        }
+        assertTrue(saved.stream().anyMatch(w -> w.getContent().contains("Kano: Attractive") && w.getContent().contains("Voice 3")),
+                "the onboarding cluster (3 voices, majority Attractive) must produce one wishlist listing all 3 voices");
+        assertTrue(saved.stream().anyMatch(w -> w.getContent().contains("Kano: Must-Be") && w.getContent().contains("Karl Popper")),
+                "a cluster whose members are ALL Must-Be must still produce a wishlist now - Must-Be is no longer discarded");
+        assertTrue(saved.stream().anyMatch(w -> w.getContent().contains("Jaegwon Kim")),
+                "a single unclustered voice must still become its own wishlist, not be dropped for lacking corroboration");
+        assertTrue(saved.stream().noneMatch(w -> w.getContent().contains("Ned Block")),
+                "a cluster whose majority is Indifferent must NOT produce a wishlist - that is the aggregated conclusion");
+    }
+
+    private FalsificationCycleService.PhilosophicalCritique critiqueWithText(
+            String roleTag, String philosopher, String kanoClass, String proposal, String critiqueText) {
+        return new FalsificationCycleService.PhilosophicalCritique(
+                roleTag, philosopher, "a real worldview summary", critiqueText,
+                proposal, "", kanoClass, "high", "main dashboard screen", "");
+    }
+
+    @Test
+    void applyPhilosophicalCritiquesNeverTouchesTheFormalTracksWatermark() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        FalsificationRunRepository runRepository = mock(FalsificationRunRepository.class);
+        when(wishlistRepository.save(any(WishlistEntity.class))).thenAnswer(invocation -> {
+            WishlistEntity item = invocation.getArgument(0);
+            item.setId(UUID.randomUUID());
+            return item;
+        });
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(any(), eq(WishlistSource.philosophical_falsification), any()))
+                .thenReturn(List.of());
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), mock(RoleRepository.class), mock(RoleCapabilityLoader.class),
+                wishlistRepository, runRepository, mock(SystemSettingsService.class),
+                mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
+                mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("watermark-independence-project");
+
+        service.applyPhilosophicalCritiques(project,
+                List.of(critique("BARCAN-TAG-11", "Philosopher X", "Attractive", "high")), null);
+
+        verify(runRepository, never()).save(any());
+        verify(runRepository, never()).findTopByProjectIdOrderByRunAtDesc(any());
+    }
+
+    private FalsificationCycleService.PhilosophicalCritique critique(String roleTag, String philosopher, String kanoClass, String confidence) {
+        return new FalsificationCycleService.PhilosophicalCritique(
+                roleTag, philosopher, "a real worldview summary", "a genuine critique",
+                "a concrete proposal for " + philosopher, "", kanoClass, confidence, "main dashboard screen", "");
     }
 }

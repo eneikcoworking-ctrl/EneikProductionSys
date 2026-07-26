@@ -96,6 +96,8 @@ class IdempotencyTest {
             mock(com.eneik.production.services.PersistentWorkerSessionService.class),
             mock(com.eneik.production.repositories.ProjectRepository.class),
             mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
+            mock(com.eneik.production.services.settings.SystemSettingsService.class),
+            mock(com.eneik.production.services.GeminiContextService.class),
             "prefix/"
         );
 

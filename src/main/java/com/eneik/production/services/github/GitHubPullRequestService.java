@@ -118,6 +118,122 @@ public class GitHubPullRequestService {
         return Optional.empty();
     }
 
+    /**
+     * Live incident, 2026-07-25 (feature-thread closeout): a feature's last task's own PR can merge
+     * directly into main and get its branch deleted (standard --delete-branch convention), leaving the
+     * feature thread's own accumulation branch equally gone. `AutoMergeService.progressCloseout` kept
+     * retrying `createPullRequest(thread.branchName, "main", ...)` forever, HTTP 422 "head invalid" every
+     * cycle, because it had no way to tell "genuinely transient failure" from "this branch will never come
+     * back, there is nothing left to close out". This lets the caller ask directly instead of inferring it
+     * from a failed PR-create call.
+     */
+    public boolean branchExists(ProjectEntity project, String branch) {
+        if (project == null || branch == null || branch.isBlank() || !settingsService.effectiveBoolean("github_enabled")) {
+            return true; // unknown - default to "assume it exists" so callers don't treat a config/flag gap as evidence of deletion
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return true;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return true;
+        }
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/branches/" + encode(branch);
+            HttpRequest request = baseRequest(path, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200) {
+                return true;
+            }
+            if (response.statusCode() == 404) {
+                return false;
+            }
+            // Any other status (rate limit, transient 5xx, etc.) is inconclusive - do not treat it as proof
+            // of deletion, that would risk closing out a feature whose branch is actually still there.
+            log.warn("GitHub branch-existence check inconclusive for {}/{} branch={}: status={} body={}",
+                    repoRef.owner(), repoRef.repo(), branch, response.statusCode(), preview(response.body()));
+            return true;
+        } catch (Exception e) {
+            log.warn("Could not check branch existence for {} in project {}: {}", branch, project.getId(), e.getMessage());
+            return true;
+        }
+    }
+
+    /**
+     * Branch-level counterpart of findOpenPullRequestBySession (testimony-vs-evidence Phase 1, 2026-07-25):
+     * a session can push real, complete work to its own branch and never open a PR for it (confirmed live
+     * twice now - PR#72 and PR#77 incidents, see feedback_jules_status_not_source_of_truth memory) - neither
+     * findOpenPullRequestBySession nor the PR-based evidence checks that call it can see that work, since
+     * they only ever look at PRs. Same sessionToken/substring-match convention as findOpenPullRequestBySession,
+     * applied to raw branch names instead of PR headRefs.
+     */
+    public Optional<String> findBranchBySession(ProjectEntity project, String externalSessionId) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String sessionToken = sessionToken(externalSessionId);
+        if (sessionToken == null || sessionToken.isBlank()) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/branches?per_page=100";
+            HttpRequest request = baseRequest(path, token).GET().build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.warn("GitHub branch lookup failed for {}/{}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), response.statusCode(), preview(response.body()));
+                return Optional.empty();
+            }
+            JsonNode branches = objectMapper.readTree(response.body());
+            if (!branches.isArray()) {
+                return Optional.empty();
+            }
+            for (JsonNode branch : branches) {
+                String name = branch.path("name").asText("");
+                if (!name.isBlank() && name.contains(sessionToken)) {
+                    return Optional.of(name);
+                }
+            }
+            return Optional.empty();
+        } catch (Exception e) {
+            log.warn("Could not fetch branches for project {} while looking for session {}: {}",
+                    project.getId(), externalSessionId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Closed-and-NOT-merged counterpart of findOpenPullRequestBySession (testimony-vs-evidence Phase 2,
+     * 2026-07-25): a task can be left orphaned in a non-terminal status when its PR gets closed without
+     * merging through a path the orchestrator never observes (e.g. an operator closing it directly on
+     * GitHub - confirmed live, task ca41509f/PR#78). No new HTTP call needed - pullRequestSnapshot already
+     * fetches the closed-PR list; this just searches it with the same matching convention.
+     */
+    public Optional<GitHubPullRequest> findClosedUnmergedPullRequestBySession(ProjectEntity project, String externalSessionId) {
+        if (project == null) {
+            return Optional.empty();
+        }
+        PullRequestSnapshot snapshot = pullRequestSnapshot(project);
+        if (!snapshot.available()) {
+            return Optional.empty();
+        }
+        for (GitHubPullRequest pr : snapshot.closed()) {
+            if (!pr.merged() && matchesSessionToken(pr, externalSessionId)) {
+                return Optional.of(pr);
+            }
+        }
+        return Optional.empty();
+    }
+
     public PullRequestSnapshot pullRequestSnapshot(ProjectEntity project) {
         if (project == null) {
             return PullRequestSnapshot.unavailable("", "", "Project is not selected");

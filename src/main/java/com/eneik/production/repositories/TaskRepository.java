@@ -16,6 +16,8 @@ import java.util.UUID;
 public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByStatus(TaskStatus status);
     List<TaskEntity> findByStatusAndRoleTag(TaskStatus status, String tag);
+    // Testimony-vs-evidence Phase 2 (2026-07-25): periodic GitHub-truth reconciliation sweep scope.
+    List<TaskEntity> findByStatusIn(List<TaskStatus> statuses);
 
     long countByStatus(TaskStatus status);
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
@@ -220,4 +222,13 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
 
     List<TaskEntity> findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(UUID projectId, TaskStatus status);
     List<TaskEntity> findBySourceWishlistIdIn(List<UUID> sourceWishlistIds);
+
+    // Creation-time duplicate guard (2026-07-26, operator directive after a live incident: a hardcoded bug
+    // generated 9 tasks with the exact same description over 2 hours before anyone noticed). Defense in
+    // depth for TechnicalLeadCompiler.createAndSaveTask, which already has its own semantic-key dedup check -
+    // this is a second, cruder line of defense against ANY future task-creation path that forgets to guard
+    // itself, mirroring the same threshold/shape GeminiProjectObserverService's own after-the-fact detector
+    // uses. Terminal statuses are excluded - a done/failed row duplicating an older one is history, not an
+    // active problem worth blocking on.
+    long countByProjectIdAndDescriptionAndStatusNotIn(UUID projectId, String description, List<TaskStatus> excludedStatuses);
 }

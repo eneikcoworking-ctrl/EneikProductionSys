@@ -8,6 +8,7 @@ import uvicorn
 import os
 import glob
 import json
+import re
 import urllib.request
 import urllib.error
 import urllib.parse
@@ -16,19 +17,25 @@ import socket
 app = FastAPI(title="Eneik AI Prediction Service")
 
 DEFAULT_GEMINI_MODEL = "gemini-3.5-flash"
-DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-3.1-flash-lite,gemini-2.5-flash"
+DEFAULT_GEMINI_FALLBACK_MODELS = "gemini-3.1-flash-lite"
 DEFAULT_GEMINI_PRO_MODEL = "gemini-3.1-pro-preview"
-DEFAULT_GEMINI_PRO_FALLBACK_MODELS = "gemini-3.5-flash,gemini-2.5-flash"
+# gemini-2.5-flash removed (2026-07-25, live incident): confirmed dead via direct API probe - HTTP 404
+# "no longer available to new users", a permanent deprecation, not a transient outage. It sat LAST in
+# both fallback chains, so any transient hiccup on the earlier candidates made the whole chain fail with
+# no real fallback left. Verified gemini-3.1-flash-lite and gemini-3.5-flash both still respond 200 OK.
+DEFAULT_GEMINI_PRO_FALLBACK_MODELS = "gemini-3.5-flash,gemini-3.1-flash-lite"
+DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-001"
 
 
 def gemini_candidate_models(model_tier: str = "", model_override: str = "") -> list[str]:
+    # Pro tier permanently disabled (2026-07-25, operator directive - emergency cost incident: "она за
+    # несколько часов потратила месячный бюджет, при этом по проекту ничего не сдвинулось" /
+    # "никогда не вызывать про версию"). Enforced HERE, the single choke point every text-generation call
+    # (ask_gemini/ask_gemini_cached) funnels through via gemini_candidate_models - robust even if a future
+    # caller passes modelTier="pro" by mistake, since a caller-supplied modelOverride is the only way to
+    # still reach a pro-named model, and normal callers never set that.
     if model_override:
         candidates = [model.strip() for model in model_override.split(",") if model.strip()]
-    elif (model_tier or "").lower() == "pro":
-        primary = os.getenv("GEMINI_PRO_MODEL", DEFAULT_GEMINI_PRO_MODEL).strip() or DEFAULT_GEMINI_PRO_MODEL
-        fallbacks = os.getenv("GEMINI_PRO_FALLBACK_MODELS", DEFAULT_GEMINI_PRO_FALLBACK_MODELS)
-        candidates = [primary]
-        candidates.extend(model.strip() for model in fallbacks.split(",") if model.strip())
     else:
         primary = os.getenv("GEMINI_MODEL", DEFAULT_GEMINI_MODEL).strip() or DEFAULT_GEMINI_MODEL
         fallbacks = os.getenv("GEMINI_FALLBACK_MODELS", DEFAULT_GEMINI_FALLBACK_MODELS)
@@ -55,6 +62,112 @@ def gemini_request_timeout() -> int:
         return max(1, int(raw))
     except ValueError:
         return 10
+
+
+def gemini_embed_url(model: str, api_key: str) -> str:
+    api_version = os.getenv("GEMINI_API_VERSION", "v1beta").strip() or "v1beta"
+    model_path = model if model.startswith("models/") else f"models/{model}"
+    query = urllib.parse.urlencode({"key": api_key})
+    return f"https://generativelanguage.googleapis.com/{api_version}/{model_path}:embedContent?{query}"
+
+
+def ask_gemini_embedding(text: str, api_key: str = "") -> list[float]:
+    # Same key-resolution convention as ask_gemini above; a missing key is a legitimate "not configured"
+    # state, not an error, so this simply returns an empty vector and lets the caller decide what to do.
+    if not api_key:
+        api_key = os.getenv("GEMINI_API_KEY", "")
+    if api_key:
+        api_key = api_key.strip()
+    if not api_key or not text:
+        return []
+
+    model = os.getenv("GEMINI_EMBEDDING_MODEL", DEFAULT_GEMINI_EMBEDDING_MODEL).strip() or DEFAULT_GEMINI_EMBEDDING_MODEL
+    payload = {"content": {"parts": [{"text": text}]}}
+    headers = {"Content-Type": "application/json"}
+    req = urllib.request.Request(
+        gemini_embed_url(model, api_key),
+        data=json.dumps(payload).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=gemini_request_timeout()) as response:
+        res_data = json.loads(response.read().decode("utf-8"))
+        return res_data["embedding"]["values"]
+
+
+# Explicit Gemini context caching (2026-07-25, operator directive: "недорого по токенам решения" -
+# caches a STATIC, repeatedly-reused system instruction - currently just the PR-reviewer's role charter,
+# the one genuinely large piece of content sent identically on every review for the same role - so it's
+# billed at Gemini's reduced cached-token rate on every call after the first, instead of resent in full
+# each time. In-memory registry only (resets on service restart) - self-healing, no persistence needed.
+# Verified live against the real API before building this: cachedContents accepts far below the widely-
+# assumed 32k-token minimum (a ~1.6k-token charter cached successfully), and a cache is tied to one exact
+# model and cannot be combined with a separate systemInstruction in the same generateContent call.
+_gemini_cache_registry: dict = {}
+_GEMINI_CACHE_TTL_SECONDS = 3600
+
+
+def gemini_cache_create_url(api_key: str) -> str:
+    api_version = os.getenv("GEMINI_API_VERSION", "v1beta").strip() or "v1beta"
+    query = urllib.parse.urlencode({"key": api_key})
+    return f"https://generativelanguage.googleapis.com/{api_version}/cachedContents?{query}"
+
+
+def ensure_gemini_cache(model: str, cache_key: str, static_instruction: str, api_key: str) -> str | None:
+    """Returns a cachedContents resource name for this exact (model, cache_key, content), creating or
+    refreshing it if needed. Returns None on ANY failure - caller must fail-open to the uncached path,
+    never let a caching problem become a new PR-review failure mode."""
+    import hashlib
+    import time
+
+    registry_key = f"{model}:{cache_key}:{hashlib.sha256(static_instruction.encode('utf-8')).hexdigest()}"
+    entry = _gemini_cache_registry.get(registry_key)
+    now = time.time()
+    if entry and entry["expires_at"] > now + 60:
+        return entry["name"]
+
+    model_path = model if model.startswith("models/") else f"models/{model}"
+    payload = {
+        "model": model_path,
+        "systemInstruction": {"parts": [{"text": static_instruction}]},
+        "ttl": f"{_GEMINI_CACHE_TTL_SECONDS}s",
+    }
+    try:
+        req = urllib.request.Request(
+            gemini_cache_create_url(api_key),
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=gemini_request_timeout()) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        _gemini_cache_registry[registry_key] = {
+            "name": body["name"],
+            "expires_at": now + _GEMINI_CACHE_TTL_SECONDS,
+        }
+        return body["name"]
+    except Exception as e:
+        print(f"Gemini context-cache creation failed (falling back to uncached call): {e}")
+        return None
+
+
+def ask_gemini_cached(prompt: str, cached_content_name: str, model: str, api_key: str, force_json: bool) -> str:
+    """Raises on any failure - caller is expected to catch and fall back to the uncached ask_gemini path."""
+    payload = {
+        "contents": [{"parts": [{"text": prompt}]}],
+        "cachedContent": cached_content_name,
+    }
+    if force_json:
+        payload["generationConfig"] = {"responseMimeType": "application/json"}
+    req = urllib.request.Request(
+        gemini_generate_url(model, api_key),
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=gemini_request_timeout()) as response:
+        res_data = json.loads(response.read().decode("utf-8"))
+        return res_data["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def ask_gemini(
@@ -143,76 +256,29 @@ class BottleneckResponse(BaseModel):
     is_bottleneck_predicted: bool
 
 
-class ReviewRequest(BaseModel):
-    projectId: str
-    taskId: str
-    prUrl: str
-    apiKey: str = ""
-    githubToken: str = ""
-    modelTier: str = ""
-    modelOverride: str = ""
-    # Other in-flight PRs sharing this task's featureId, reviewed in the same batched tick (see
-    # JulesDispatchService.processPendingReviewBatch) - optional, empty for a solo review.
-    siblingPrUrls: list[str] = []
-
-
-class ReviewResponse(BaseModel):
-    approved: bool
-    remarks: str
-    newTasks: list = []
-
-
-class RefusalCriteriaRequest(BaseModel):
-    prDiff: str
-    refusalCriteria: str
-    apiKey: str = ""
-    modelTier: str = ""
-    modelOverride: str = ""
-
-
-class RefusalCriteriaResponse(BaseModel):
-    compliant: bool
-    reason: str
-
-
 class ChatRequest(BaseModel):
     prompt: str
     systemInstruction: str = ""
     apiKey: str = ""
     modelTier: str = ""
     modelOverride: str = ""
+    # Explicit Gemini context caching (2026-07-25) - opt-in per caller via a stable key, for callers whose
+    # systemInstruction is static/repeated across calls (e.g. GeminiProjectObserverService's instruction
+    # text, identical every cycle for every project). Empty means "don't cache", the existing uncached behavior.
+    cacheKey: str = ""
 
 
 class ChatResponse(BaseModel):
     text: str
 
 
-class MethodologicalFalsificationRequest(BaseModel):
-    prDiff: str
-    charterRules: str
+class EmbedRequest(BaseModel):
+    text: str
     apiKey: str = ""
-    modelTier: str = ""
-    modelOverride: str = ""
 
 
-class PhilosopherFalsification(BaseModel):
-    philosopher: str
-    thesis: str
-    irreducibility: str  # "ДА" or "НЕТ"
-    irreducibility_reason: str
-    criticality: str  # "ДА" or "НЕТ"
-    criticality_reason: str
-    relevance: str  # "ДА" or "НЕТ"
-    relevance_reason: str
-    score: int
-    status: str  # "ПОДТВЕРЖДЕНО" or "ИСКЛЮЧЕНО"
-    must_be: str = ""
-    performance: str = ""
-    attractive: str = ""
-
-
-class MethodologicalFalsificationResponse(BaseModel):
-    results: list[PhilosopherFalsification]
+class EmbedResponse(BaseModel):
+    embedding: list[float]
 
 
 class PredictionService:
@@ -290,371 +356,15 @@ async def bottleneck_endpoint(request: BottleneckRequest):
 
 
 
-def fetch_pr_diff(pr_url: str, github_token: str = "") -> str:
-    # Memory Directive: Python Gemini API integrations in the Prediction Service must enforce a 2MB size limit on downloaded .diff files
-    if not pr_url:
-        return ""
-    try:
-        parsed = parse_github_pr_url(pr_url)
-        if parsed and github_token:
-            owner, repo, pull_number = parsed
-            diff_url = f"https://api.github.com/repos/{owner}/{repo}/pulls/{pull_number}"
-            req = urllib.request.Request(
-                diff_url,
-                headers={
-                    "Authorization": f"Bearer {github_token}",
-                    "Accept": "application/vnd.github.v3.diff",
-                    "X-GitHub-Api-Version": "2022-11-28",
-                },
-            )
-        else:
-            diff_url = pr_url + ".diff" if not pr_url.endswith(".diff") else pr_url
-            req = urllib.request.Request(diff_url)
-        with urllib.request.urlopen(req, timeout=10) as response:
-            # Enforce 2MB limit
-            diff_content = response.read(2 * 1024 * 1024).decode('utf-8', errors='ignore')
-            return diff_content
-    except Exception as e:
-        print(f"Failed to fetch PR diff: {e}")
-        return ""
-
-
-def parse_github_pr_url(pr_url: str):
-    try:
-        parsed = urllib.parse.urlparse(pr_url)
-        if parsed.netloc.lower() != "github.com":
-            return None
-        parts = [p for p in parsed.path.split("/") if p]
-        if len(parts) >= 4 and parts[2] == "pull":
-            return parts[0], parts[1], parts[3]
-    except Exception:
-        return None
-    return None
-
-
-def static_pr_review(role_tag: str, task_desc: str, diff_content: str):
-    import re
-
-    if not diff_content or len(diff_content.strip()) < 40:
-        return False, "PR diff is unavailable or empty, so the reviewer cannot verify the implementation. Ensure the PR contains committed code changes and that the GitHub token can read the private repository diff."
-
-    lower = diff_content.lower()
-    blocked_paths = [
-        "playwright-report/",
-        "test-results/",
-        "coverage/",
-        ".next/",
-        ".last-run.json",
-        "node_modules/",
-        ".env",
-        ".zip",
-        ".png",
-        ".webm",
-        ".trace",
-    ]
-    for marker in blocked_paths:
-        if marker in lower:
-            return False, generated_artifact_remediation(marker)
-
-    secret_patterns = [
-        r"(?i)aws_secret_access_key\s*=\s*['\"][a-zA-Z0-9+/]{20,}['\"]",
-        r"(?i)aws_access_key_id\s*=\s*['\"][A-Z0-9]{16,}['\"]",
-        r"(?i)private_key\s*=\s*['\"]-----BEGIN",
-        r"(?i)(password|api_key|secret|token)\s*=\s*['\"][a-zA-Z0-9_\-]{16,}['\"]",
-    ]
-    for pattern in secret_patterns:
-        if re.search(pattern, diff_content):
-            return False, "Static fallback review detected a possible hardcoded secret or credential in the PR diff."
-
-    if "barcan-tag-06" in role_tag.lower() or "qa" in (task_desc or "").lower():
-        has_test_file = any(marker in lower for marker in [".test.", ".spec.", "/tests/", "__tests__"])
-        if not has_test_file:
-            return False, "QA task PR does not appear to include test files. Add unit/integration/E2E tests that verify the Acceptance Criteria."
-
-    return True, "Preflight static checks passed (non-empty diff, no generated artifact markers, no obvious hardcoded secrets, role-specific minimum checks satisfied); proceeding to Gemini review."
-
-
-def generated_artifact_remediation(marker: str) -> str:
-    return (
-        f"Generated/local artifact detected in PR diff: {marker}. "
-        "This is a repository-hygiene blocker only. "
-        "Clean the same branch, keep only source/config/test/doc changes, update .gitignore if needed, and verify: "
-        "git diff --name-only origin/main...HEAD | grep -E '(^|/)(playwright-report|test-results|coverage|node_modules|\\.next)/|\\.(trace|webm)$' && exit 1 || true. "
-        "The command must print no artifact paths. Do not add product scope."
-    )
-
-@app.post("/api/v1/review/pr", response_model=ReviewResponse)
-async def review_pr_endpoint(request: ReviewRequest):
-    role_tag = "BARCAN-TAG-02"
-    task_desc = ""
-
-    # Try fetching task details from backend API
-    try:
-        url = f"http://backend:8080/api/projects/{request.projectId}/dashboard"
-        req = urllib.request.Request(url)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            for t in data.get("tasks", []):
-                if t.get("id") == request.taskId:
-                    role_tag = t.get("tag")
-                    task_desc = t.get("description")
-                    break
-    except Exception as e:
-        print(f"Error fetching task details: {e}")
-
-    # Fetch corresponding charter rules
-    charter = predictor.get_charter_rules(role_tag)
-
-    # Fetch PR Diff
-    diff_content = fetch_pr_diff(request.prUrl, request.githubToken)
-
-    preflight_approved, preflight_remarks = static_pr_review(role_tag, task_desc, diff_content)
-    if not preflight_approved:
-        return ReviewResponse(approved=False, remarks=preflight_remarks, newTasks=[])
-
-    # Fetch sibling PR diffs (same feature, reviewed in the same batch tick) so the reviewer can check
-    # this PR for consistency against them (e.g. a backend/frontend pair built against the same API
-    # contract) instead of judging this diff in total isolation. Best-effort: a sibling diff that fails
-    # to fetch is just omitted, it never blocks review of the PR actually under review.
-    sibling_sections = []
-    for sibling_url in (request.siblingPrUrls or []):
-        sibling_diff = fetch_pr_diff(sibling_url, request.githubToken)
-        if sibling_diff:
-            sibling_sections.append(f"--- Sibling PR: {sibling_url} ---\n{sibling_diff}")
-
-    # Prompt Gemini for real review
-    approved = False
-    remarks = ""
-    new_tasks = []
-    try:
-        system_instruction = f"""You are a Principal AI Engineer reviewing a pull request for role {role_tag}.
-Analyze the provided code diff against the role charter and general architectural best practices.
-Return ONLY JSON: {{"approved": bool, "remarks": "string", "newTasks": [{{"roleTag": "string", "description": "string"}}]}}.
-If there are any flaws, return approved=false and explain the exact blocker plus concrete remediation steps for the implementing agent.
-Do not ask the implementing agent open-ended follow-up questions.
-Do not use generic critique prompts such as "what could be wrong with this solution"; make a binary review decision from the diff.
-Charter Rules:
-{charter}
-"""
-        prompt = f"Task Description: {task_desc}\n\nPR Diff:\n{diff_content}"
-        if sibling_sections:
-            prompt += (
-                "\n\nThe following sibling PRs are being reviewed in the same batch and share this "
-                "feature. Check that the PR under review is consistent with them (e.g. matches an "
-                "agreed API contract, no divergent assumptions) - your approved/remarks verdict is "
-                "about the PR under review only, not the siblings:\n\n" + "\n\n".join(sibling_sections)
-            )
-
-        response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
-
-        # Clean markdown formatting if present
-        if response_json.strip().startswith("```json"):
-            response_json = response_json.strip()[7:]
-            if response_json.endswith("```"):
-                response_json = response_json[:-3]
-        elif response_json.strip().startswith("```"):
-            response_json = response_json.strip()[3:]
-            if response_json.endswith("```"):
-                response_json = response_json[:-3]
-
-        parsed = json.loads(response_json)
-
-        approved = parsed.get("approved", False)
-        remarks = parsed.get("remarks", "")
-        new_tasks = parsed.get("newTasks", [])
-
-        if approved and not remarks:
-            remarks = "CORE ARCHITECTURE VERIFIED. APPROVED."
-
-    except Exception as e:
-        print(f"ML Review Exception (Fail-Safe Triggered): {e}")
-        return ReviewResponse(
-            approved=False,
-            remarks=f"VERIFICATION_SERVICE_UNAVAILABLE: Gemini PR review call failed: {e}. PR blocked until retry, not treated as a rejection.",
-            newTasks=[],
-        )
-    is_chess = "шахмат" in task_desc.lower() or "chess" in task_desc.lower()
-
-    if is_chess:
-        if role_tag == "BARCAN-TAG-11":
-            new_tasks.append(
-                {
-                    "roleTag": "BARCAN-TAG-11",
-                    "description": "Kano Refactoring: Optimize WebGL rendering context in Svelte for smoother chess piece animations",
-                }
-            )
-        elif role_tag == "BARCAN-TAG-02":
-            new_tasks.append(
-                {
-                    "roleTag": "BARCAN-TAG-02",
-                    "description": "Kano Refactoring: Implement alpha-beta pruning in the chess engine to improve search speed",
-                }
-            )
-    else:
-        if role_tag == "BARCAN-TAG-02":
-            new_tasks.append(
-                {
-                    "roleTag": "BARCAN-TAG-02",
-                    "description": f"Kano Refactoring: Implement Redis caching for API queries to optimize performance",
-                }
-            )
-        elif role_tag == "BARCAN-TAG-11":
-            new_tasks.append(
-                {
-                    "roleTag": "BARCAN-TAG-11",
-                    "description": f"Kano Refactoring: Add CSS skeleton loaders and accessibility tags",
-                }
-            )
-
-    return ReviewResponse(approved=approved, remarks=remarks, newTasks=new_tasks)
-
-
-@app.post("/api/v1/review/refusal-criteria", response_model=RefusalCriteriaResponse)
-async def refusal_criteria_endpoint(request: RefusalCriteriaRequest):
-    # Local static analysis / heuristic checks to ensure no fake green lights:
-    pr_diff = request.prDiff or ""
-
-    # 1. Check for hardcoded secrets/credentials (e.g., AWS keys, private keys, password strings)
-    import re
-    secret_patterns = [
-        r"(?i)aws_secret_access_key\s*=\s*['\"][a-zA-Z0-9+/]{40}['\"]",
-        r"(?i)aws_access_key_id\s*=\s*['\"][A-Z0-9]{20}['\"]",
-        r"(?i)private_key\s*=\s*['\"]-----BEGIN",
-        r"(?i)password\s*=\s*['\"][a-zA-Z0-9_]{6,}['\"]",
-        r"(?i)api_key\s*=\s*['\"][a-zA-Z0-9_\-]{16,}['\"]"
-    ]
-    for pattern in secret_patterns:
-        if re.search(pattern, pr_diff):
-            return RefusalCriteriaResponse(
-                compliant=False,
-                reason="Static analysis violation: Hardcoded secret/credential detected in PR diff."
-            )
-
-    # 2. Check for SQL injection / direct database queries in controllers
-    if "controllers" in pr_diff.lower() or "Controller" in pr_diff:
-        sql_keywords = [r"(?i)SELECT\s+.*\s+FROM", r"(?i)INSERT\s+INTO", r"(?i)jdbcTemplate", r"(?i)Repository"]
-        for keyword in sql_keywords:
-            if re.search(keyword, pr_diff):
-                return RefusalCriteriaResponse(
-                    compliant=False,
-                    reason="Static analysis violation: Direct DB query or Repository usage detected inside controller file diff."
-                )
-
-    # 3. Gemini review - authoritative for this check. This governs AutoMergeService's merge gate, so
-    # it must fail closed (compliant=False) on any problem instead of assuming compliance when Gemini
-    # is unreachable, out of quota, or returns something unparseable.
-    try:
-        system_instruction = (
-            "You are a strict code quality auditor. "
-            "Evaluate if the following code changes (git diff) violate the provided refusal criteria. "
-            "If they violate the criteria, compliant must be false. Otherwise, compliant must be true. "
-            'Return ONLY JSON: {"compliant": bool, "reason": "string"}.'
-        )
-        prompt = f"PR Diff:\n{request.prDiff}\n\nRefusal Criteria:\n{request.refusalCriteria}"
-        response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
-
-        if not response_json or response_json.strip() in ("", "{}"):
-            raise ValueError("Gemini returned an empty response")
-
-        parsed = json.loads(response_json)
-        return RefusalCriteriaResponse(
-            compliant=parsed.get("compliant", False),
-            reason=parsed.get("reason", "Code is compliant with role refusal criteria.")
-        )
-    except Exception as e:
-        print(f"Refusal Criteria Check Fail-Safe Triggered: {e}")
-        return RefusalCriteriaResponse(
-            compliant=False,
-            reason=f"VERIFICATION_SERVICE_UNAVAILABLE: Gemini refusal-criteria check failed: {e}. Not treated as a violation by callers that check for this marker."
-        )
-
-
-@app.post("/api/v1/review/methodological-falsification", response_model=MethodologicalFalsificationResponse)
-async def methodological_falsification_endpoint(request: MethodologicalFalsificationRequest):
-    # System instruction for the expert analyst
-    system_instruction = (
-        "You are an expert analyst in epistemology and systems design, modeling critical review of project architecture from the standpoint of analytic philosophy.\n"
-        "Your task is to conduct a methodological falsification of the project based on the conceptual apparatus of the philosophers defined in the provided charter rules/principles against the code changes (git diff).\n"
-        "Avoid sycophancy bias and perform deterministic self-debiasing for each philosopher's objection using the 4 stages:\n"
-        "STAGE 1: Formulation of the thesis (Falsification). Use the exact formula: 'Я фальсифицирую этот проект потому, что он противоречит моим убеждениям, а именно: [strict critique pointing to a fundamental categorical, logical, or epistemological error in architecture/concept based on the philosopher\\'s theory].'\n"
-        "STAGE 2: Deterministic stress test (Binary validity criteria). Answer 3 questions strictly in YES/NO format (ДА / НЕТ). Each YES (ДА) must be justified by exactly one sentence of logical proof:\n"
-        "  - [Критерий неснижаемости]: Is it unsolvable by simple renaming/terminology change? (ДА/НЕТ)\n"
-        "  - [Критерий прагматической критичности]: Does it violate logical architecture, consistency, or basic functionality? (ДА/НЕТ)\n"
-        "  - [Критерий предметной релевантности]: Is the critique free from categorical error (applied strictly within the philosopher\'s theory)? (ДА/НЕТ)\n"
-        "STAGE 3: Mathematical synthesis. Sum the scores (YES = 1, NO = 0). Total Score = C1 + C2 + C3.\n"
-        "  - If Score is 0, 1, or 2: Status is 'ИСКЛЮЧЕНО (Ложная детекция)'.\n"
-        "  - If Score is 3: Status is 'ПОДТВЕРЖДЕНО (Системное противоречие)'.\n"
-        "STAGE 4: Kano Wishlist (Only run if Status is ПОДТВЕРЖДЕНО). Formulate:\n"
-        "  - [Must-Be] (mandatory architectural change)\n"
-        "  - [Performance] (linear quality/precision improvement)\n"
-        "  - [Attractive] (conceptual purity modification)\n\n"
-        "Return ONLY JSON matching this schema:\n"
-        '{"results": [{"philosopher": "Name", "thesis": "...", "irreducibility": "ДА|НЕТ", "irreducibility_reason": "...", "criticality": "ДА|НЕТ", "criticality_reason": "...", "relevance": "ДА|НЕТ", "relevance_reason": "...", "score": 3, "status": "ПОДТВЕРЖДЕНО|ИСКЛЮЧЕНО", "must_be": "...", "performance": "...", "attractive": "..."}]}'
-    )
-    
-    prompt = f"PR Diff:\n{request.prDiff}\n\nCharter Rules & Philosophers:\n{request.charterRules}"
-    
-    try:
-        response_json = ask_gemini(prompt, system_instruction, request.apiKey, request.modelTier, request.modelOverride)
-        
-        # Clean markdown formatting if present
-        if response_json.strip().startswith("```json"):
-            response_json = response_json.strip()[7:]
-            if response_json.endswith("```"):
-                response_json = response_json[:-3]
-        elif response_json.strip().startswith("```"):
-            response_json = response_json.strip()[3:]
-            if response_json.endswith("```"):
-                response_json = response_json[:-3]
-
-        parsed = json.loads(response_json)
-        return MethodologicalFalsificationResponse(results=parsed.get("results", []))
-    except Exception as e:
-        print(f"Methodological Falsification Fallback triggered due to: {e}")
-        # Static fallback when Gemini is offline or fails
-        results = []
-        lower_rules = request.charterRules.lower()
-        lower_diff = request.prDiff.lower()
-        
-        # Fallback for Timothy Williamson (BARCAN-TAG-07)
-        if "williamson" in lower_rules or "knowledge first" in lower_rules:
-            if "fail-open" in lower_diff or "default_approve" in lower_diff or "mock_diff" in lower_diff or "unavailable" in lower_diff:
-                results.append(PhilosopherFalsification(
-                    philosopher="Timothy Williamson",
-                    thesis="Я фальсифицирую этот проект потому, что он противоречит моим убеждениям, а именно: архитектура отождествляет отсутствие информации о нарушении с наличием знания о соответствии правилам (Fail-Open паттерн).",
-                    irreducibility="ДА",
-                    irreducibility_reason="Изменение логики обработки исключений с Fail-Open на Fail-Safe требует изменения бизнес-логики сервисов, а не переименования.",
-                    criticality="ДА",
-                    criticality_reason="Данный дефект позволяет невалидному коду сливаться в main при падении внешнего ИИ-сервиса.",
-                    relevance="ДА",
-                    relevance_reason="Критика направлена на эпистемологический статус знания о соответствии, что соответствует концепции Williamson.",
-                    score=3,
-                    status="ПОДТВЕРЖДЕНО",
-                    must_be="Изменение поведения AutoMergeService на Fail-Safe с блокировкой слияния при сбое ИИ.",
-                    performance="Внедрение SLA на обработку очереди needs_human_review с автоматической эскалацией.",
-                    attractive="Создание статического линтера catch-блоков в CI."
-                ))
-        
-        # Fallback for Ruth Barcan Marcus (BARCAN-TAG-01)
-        if "barcan" in lower_rules or "actualism" in lower_rules:
-            if "mock_diff" in lower_diff or "audit_pr.py" in lower_diff:
-                results.append(PhilosopherFalsification(
-                    philosopher="Ruth Barcan Marcus",
-                    thesis="Я фальсифицирую этот проект потому, что он противоречит моим убеждениям, а именно: система оперирует неактуальными сущностями, подменяя реальное сравнение кода заглушками (mock_diff) и пустыми исполняемыми файлами.",
-                    irreducibility="ДА",
-                    irreducibility_reason="Проблема состоит в физическом отсутствии реального кода проверок, что требует написания интеграционной логики.",
-                    criticality="ДА",
-                    criticality_reason="Пустой или неполный скрипт audit_pr.py полностью нивелирует задекларированную концепцию Bounded Contexts.",
-                    relevance="ДА",
-                    relevance_reason="Критика применяется строго в рамках актуалистского требования о том, что правилами могут обладать только реально существующие и действующие объекты.",
-                    score=3,
-                    status="ПОДТВЕРЖДЕНО",
-                    must_be="Реализовать полноценную логику скрипта scripts/audit_pr.py для валидации путей измененных файлов.",
-                    performance="Интегрировать реальное вычисление diff изменений с использованием git.",
-                    attractive="Добавить автоматическую очистку и блокировку мертвых или пустых файлов в CI."
-                ))
-                
-        return MethodologicalFalsificationResponse(results=results)
+# /api/v1/review/pr and /api/v1/review/refusal-criteria removed entirely (2026-07-26, operator directive
+# after a live incident: "все чинить! баг это пиздец"). Root cause of that incident: this endpoint had a
+# hardcoded, project-agnostic "Kano Refactoring" follow-up-task generator (leftover chess-demo code) that
+# fired on every review of a BARCAN-TAG-02/11 role, unconditionally, regardless of what the project
+# actually was - the new task then went through review itself and generated ANOTHER one, a self-
+# perpetuating duplicate-task generator that ran for hours on test-thirty-seventh before being caught. Both
+# endpoints had zero remaining Java callers already (JulesDispatchService.executeCodeReview and
+# AutoMergeService's refusal-criteria check were both moved to Jules-only review earlier the same night for
+# cost reasons) - deleted rather than left as unreachable dead code that could silently come back.
 
 
 @app.post("/api/v1/assistant/chat", response_model=ChatResponse)
@@ -667,7 +377,23 @@ async def assistant_chat_endpoint(request: ChatRequest):
                 "Backend project facts may be available, but free-form model answering is disabled."
             ))
 
-        response_text = ask_gemini(request.prompt, request.systemInstruction, api_key, request.modelTier, request.modelOverride)
+        response_text = None
+        if request.cacheKey:
+            # The caller promises systemInstruction is static/repeated under this key, so it's billed at
+            # Gemini's reduced cached-token rate on every call after the first instead of resent in full.
+            primary_model = gemini_candidate_models(request.modelTier, request.modelOverride)[0]
+            cache_name = ensure_gemini_cache(primary_model, request.cacheKey, request.systemInstruction, api_key.strip())
+            if cache_name:
+                force_json = "return only json" in request.systemInstruction.lower() \
+                    or "return valid json" in request.systemInstruction.lower()
+                try:
+                    response_text = ask_gemini_cached(request.prompt, cache_name, primary_model, api_key.strip(), force_json)
+                except Exception as e:
+                    print(f"Cached chat call failed, falling back to uncached: {e}")
+                    response_text = None
+
+        if response_text is None:
+            response_text = ask_gemini(request.prompt, request.systemInstruction, api_key, request.modelTier, request.modelOverride)
         cleaned = response_text
         if cleaned.strip().startswith("```"):
             lines = cleaned.strip().split("\n")
@@ -682,6 +408,23 @@ async def assistant_chat_endpoint(request: ChatRequest):
     except Exception as e:
         print(f"Assistant Chat Exception: {e}")
         raise HTTPException(status_code=502, detail=f"Gemini call failed: {e}") from e
+
+
+@app.post("/api/v1/embed", response_model=EmbedResponse)
+async def embed_endpoint(request: EmbedRequest):
+    # Backs GeminiContextService's RAG retrieval (2026-07-25) - a real embedding vector via Gemini's
+    # embedContent API, no mock/fallback text response like assistant_chat_endpoint has, because a fake
+    # vector would silently corrupt cosine-similarity ranking rather than visibly failing.
+    try:
+        vector = ask_gemini_embedding(request.text, request.apiKey)
+        if not vector:
+            raise HTTPException(status_code=502, detail="Gemini embedding call returned no vector (no API key configured, or empty input text).")
+        return EmbedResponse(embedding=vector)
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Embed Exception: {e}")
+        raise HTTPException(status_code=502, detail=f"Gemini embedding call failed: {e}") from e
 
 
 if __name__ == "__main__":

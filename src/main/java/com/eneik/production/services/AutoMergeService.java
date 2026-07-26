@@ -60,6 +60,7 @@ public class AutoMergeService {
     private final ClaimService claimService;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
     private final ClientDeliverableReadinessService readinessService;
+    private final GeminiContextService geminiContextService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -80,7 +81,8 @@ public class AutoMergeService {
                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
                             ClaimService claimService,
                             com.eneik.production.repositories.ProjectRepository projectRepository,
-                            ClientDeliverableReadinessService readinessService) {
+                            ClientDeliverableReadinessService readinessService,
+                            GeminiContextService geminiContextService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -101,6 +103,7 @@ public class AutoMergeService {
         this.claimService = claimService;
         this.projectRepository = projectRepository;
         this.readinessService = readinessService;
+        this.geminiContextService = geminiContextService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -109,6 +112,7 @@ public class AutoMergeService {
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
         resurrectTriviallyEscalatedConflicts();
+        resurrectEscalatedConflictsWithRealCode();
         resurrectAlreadyMergedReviews();
         closeOutReadyFeatureThreads();
         List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
@@ -232,6 +236,13 @@ public class AutoMergeService {
                     continue;
                 }
                 var task = taskOpt.get();
+                // 2026-07-26: same guard as resurrectEscalatedConflictsWithRealCode below - a frozen/
+                // accepted/cancelled project gets no further automated work, not even a housekeeping-file
+                // sync commit.
+                if (task.getProject() == null
+                        || task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+                    continue;
+                }
                 String branch = gitHubPullRequestService.fetchPullRequestByNumber(
                                 task.getProject(), Integer.parseInt(target.pullNumber()))
                         .map(GitHubPullRequestService.GitHubPullRequest::headRef)
@@ -260,6 +271,110 @@ public class AutoMergeService {
             } catch (Exception e) {
                 log.warn("AutoMergeService: error while attempting to resurrect escalated review {}: {}",
                         review.getPrUrl(), e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Real-code escalation resurrection (2026-07-25, operator: "мы сделали проверку на истинность статусов,
+     * но автомерж работает плохо" - concrete live incident, PR#87/task e4b1bc9e). resurrectTriviallyEscalated
+     * Conflicts above only ever resurrects a conflict whose files are ENTIRELY orchestrator-owned (`.eneik/`,
+     * root `.gitignore`) - its own `if (files.isEmpty()) continue;` guard is unreachable whenever the
+     * conflict touches real product code, which is the common case. handleMergeConflict's own escalation
+     * comment claims it will "spawn one fresh atomic recovery task" once 3 in-place attempts fail - it never
+     * actually did; escalation just marks the review `ciStatus=escalated` and stops. Confirmed live: PR#87
+     * (frontend/src/App.svelte, a genuine 6-line textual conflict) exhausted 3 in-place attempts against the
+     * SAME session and was found stuck with zero further automated activity only by manual SQL inspection.
+     *
+     * Fix: give every escalated real-code conflict exactly ONE more try, on a BRAND NEW session (not the
+     * exhausted original - a fresh session, unburdened by whatever context confused the first 3 in-place
+     * attempts, is strictly more likely to succeed), via the same dispatchAdHocSessionToBranch mechanism
+     * already proven for PR#67's flaky-test fix. Bounded to one attempt ever per conflict
+     * (resolutionStatus transitions escalated -&gt; escalated_fresh_dispatch, a distinct terminal value so
+     * this method's own `"escalated".equalsIgnoreCase(...)` filter never re-selects it) - if this fresh
+     * attempt also fails to produce a mergeable PR, that is a genuine case for a human, not another retry
+     * loop.
+     */
+    private void resurrectEscalatedConflictsWithRealCode() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        List<TaskConflictEntity> escalated = taskConflictRepository.findAll().stream()
+                .filter(c -> "escalated".equalsIgnoreCase(c.getResolutionStatus()))
+                .toList();
+        for (TaskConflictEntity conflict : escalated) {
+            try {
+                // 2026-07-26 fix: conflict.getTask() is a Hibernate proxy from a repository call whose own
+                // transaction/session already closed by the time this loop body runs (processAutoMerge, the
+                // @Scheduled entry point, is deliberately NOT @Transactional - this tick makes several slow
+                // GitHub HTTP calls per iteration, and holding one DB transaction open across all of them
+                // for the whole tick would be worse). Accessing the proxy's id alone is safe (Hibernate
+                // proxies always know their own id without hitting the DB), but any real field access
+                // (.getProject(), .getTitle()) on it throws "could not initialize proxy - no Session" -
+                // confirmed live on every restart, logged as a caught warning for several conflicts. Fetch a
+                // fully-initialized TaskEntity explicitly instead of dereferencing the stale proxy.
+                UUID conflictTaskId = conflict.getTask() != null ? conflict.getTask().getId() : null;
+                com.eneik.production.models.persistence.TaskEntity task = conflictTaskId != null
+                        ? taskRepository.findById(conflictTaskId).orElse(null)
+                        : null;
+                if (task == null || task.getProject() == null) {
+                    continue;
+                }
+                // 2026-07-26 live incident (found by the operator minutes after the Hibernate fix above
+                // shipped): this sweep never checked project status at all - it had been silently throwing
+                // before reaching this point for months, which accidentally "protected" frozen/accepted
+                // projects from unwanted new work. The moment the Hibernate bug was fixed, this fired for
+                // real against a frozen project (test-thirty-second) and an already-ACCEPTED one
+                // (test-thirty-third) - dispatching a brand new Jules session to push a fix into a project
+                // the client already took delivery of. Never resurrect conflicts for a project that isn't
+                // active - a frozen/accepted/cancelled project gets no further automated work, period.
+                if (task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+                    log.info("Poka-yoke: skipping real-code resurrection for conflict {} (task {}) - project {} is {}, not active",
+                            conflict.getId(), task.getId(), task.getProject().getId(), task.getProject().getStatus());
+                    continue;
+                }
+                PullRequestTarget target = parseGithubPullRequestUrl(conflict.getPrUrl());
+                if (target == null) {
+                    continue;
+                }
+                String branch = gitHubPullRequestService.fetchPullRequestByNumber(
+                                task.getProject(), Integer.parseInt(target.pullNumber()))
+                        .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                        .orElse(null);
+                if (branch == null) {
+                    continue;
+                }
+
+                List<String> files;
+                try {
+                    files = objectMapper.readValue(conflict.getConflictingFiles(),
+                            new com.fasterxml.jackson.core.type.TypeReference<List<String>>() {});
+                } catch (Exception e) {
+                    files = List.of();
+                }
+                String fileList = files.isEmpty() ? "(file list unavailable - inspect the PR diff directly)" : String.join(", ", files);
+
+                String instruction = "Your previous session's PR (" + conflict.getPrUrl() + ", branch " + branch
+                        + ") has a real merge conflict with main in: " + fileList + ". Three in-place resolution "
+                        + "attempts by the original session did not produce a mergeable PR, so this is a fresh "
+                        + "session with no prior context. Check out this exact branch, merge (or rebase onto) "
+                        + "the latest main, resolve the conflict(s) directly in these files - keep this branch's "
+                        + "own feature work, reconcile with whatever main added since - verify the build/tests "
+                        + "still pass, and push the fix to this SAME branch. Do not open a new PR; do not revert "
+                        + "or remove the feature this branch implements.";
+
+                julesDispatchService.dispatchAdHocSessionToBranch(task.getProject(), branch, instruction,
+                        "Conflict resolution (fresh session): " + task.getTitle());
+
+                conflict.setResolutionStatus("escalated_fresh_dispatch");
+                taskConflictRepository.save(conflict);
+                log.info("Poka-yoke: escalated conflict for task {} (PR {}) involved real code ({}) - dispatched "
+                                + "ONE fresh session (unrelated to the exhausted original) to resolve it in place; "
+                                + "this conflict will not be retried again automatically.",
+                        task.getId(), conflict.getPrUrl(), fileList);
+            } catch (Exception e) {
+                log.warn("AutoMergeService: error while attempting real-code resurrection for conflict {} (task {}): {}",
+                        conflict.getId(), conflict.getTask() != null ? conflict.getTask().getId() : null, e.getMessage());
             }
         }
     }
@@ -325,7 +440,9 @@ public class AutoMergeService {
         }
     }
 
-    private void progressCloseout(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
+    // Package-private (not private) so AutoMergeServiceTest can drive it directly, same convention already
+    // used by handleMergeConflict below.
+    void progressCloseout(com.eneik.production.models.persistence.ProjectEntity project, FeatureThreadEntity thread) {
         if (thread.getCloseoutPrUrl() == null) {
             if (!readinessService.isFeatureReadyForCloseout(project.getId(), thread.getFeatureId())) {
                 return;
@@ -337,6 +454,21 @@ public class AutoMergeService {
                             + ") from its continuation branch into main. "
                             + (thread.getSummary() == null ? "" : thread.getSummary()));
             if (opened.isEmpty()) {
+                // Self-healing (2026-07-25 live incident): the accumulation branch may already be gone
+                // because the feature's last task's own PR merged directly into main and deleted it (the
+                // standard --delete-branch convention) - there is nothing left to close out in that case,
+                // and retrying createPullRequest against a permanently-dead branch forever is exactly the
+                // bug this guards against. Only treat this as "already integrated" when the branch is
+                // CONFIRMED gone (branchExists returns false); any inconclusive/transient case still just
+                // retries next cycle as before.
+                if (!gitHubPullRequestService.branchExists(project, thread.getBranchName())) {
+                    thread.setMergedToMainAt(java.time.Instant.now());
+                    featureThreadRepository.save(thread);
+                    log.info("AutoMergeService: closeout branch {} for feature {} no longer exists (already merged "
+                                    + "and cleaned up elsewhere) - treating the feature as closed out without a separate closeout PR",
+                            thread.getBranchName(), thread.getFeatureId());
+                    return;
+                }
                 log.warn("AutoMergeService: closeout PR open failed for thread {} (feature {}); will retry next cycle",
                         thread.getId(), thread.getFeatureId());
                 return;
@@ -677,59 +809,14 @@ public class AutoMergeService {
                         return;
                     }
 
-                    // Role Philosophical Filter
-                    String refusalCriteria = "";
-                    String roleTag = task.getRole().getTag();
-                    try {
-                        com.eneik.production.dto.RoleRules rules = roleCapabilityLoader.loadRules(roleTag);
-                        if (rules != null) {
-                            refusalCriteria = rules.refusalCriteria();
-                        }
-                    } catch (Exception e) {
-                        log.warn("Could not load refusal criteria for role {}: {}", roleTag, e.getMessage());
-                    }
-
-                    if (refusalCriteria != null && !refusalCriteria.trim().isEmpty()) {
-                        String prDiff = "mock_diff";
-                        boolean isConflictSimulated = review.getPrUrl() != null && (review.getPrUrl().contains("conflict") || review.getPrUrl().contains("dirty"));
-                        if (settingsService.effectiveBoolean("github_enabled") && !isConflictSimulated) {
-                            String token = settingsService.effectiveValue("github_token");
-                            if (token != null && !token.isBlank()) {
-                                pullRequestTarget = resolvePullRequestTarget(review);
-                                if (pullRequestTarget != null) {
-                                    prDiff = fetchPrDiff(token, pullRequestTarget.owner(), pullRequestTarget.repo(), pullRequestTarget.pullNumber());
-                                }
-                            }
-                        } else {
-                            if (review.getDiffSummary() != null && (review.getDiffSummary().contains("refusal_violation") || review.getDiffSummary().contains("violates_criteria"))) {
-                                prDiff = "violates_criteria";
-                            }
-                        }
-
-                        if ("mock_diff".equals(prDiff)) {
-                            String localDiff = getLocalWorkspaceDiff(task.getProject());
-                            if (localDiff != null && !localDiff.isBlank()) {
-                                prDiff = localDiff;
-                            }
-                        }
-
-                        Map<String, Object> rcResult = mlPredictionServiceClient.checkRefusalCriteria(prDiff, refusalCriteria);
-                        boolean isCompliant = Boolean.TRUE.equals(rcResult.get("compliant"));
-                        if (!isCompliant) {
-                            String reason = (String) rcResult.get("reason");
-                            // checkRefusalCriteria() fails toward compliant=false when the ML/Gemini pipeline
-                            // itself is unreachable - "we couldn't check" is not the same claim as "we found a
-                            // real violation" (same precedent as FalsificationCycleService's identical guard).
-                            if (reason != null && reason.startsWith("VERIFICATION_SERVICE_UNAVAILABLE")) {
-                                log.warn("Refusal-criteria check unavailable for task {} (role {}); not treating as a violation", task.getId(), roleTag);
-                            } else {
-                                log.warn("Philosophical Filter mismatch detected for task {} (role {}): {}", task.getId(), roleTag, reason);
-
-                                log.warn("Poka-yoke: role mismatch recorded for task {} without creating "
-                                        + "follow-up wishlist work; falsification owns next-iteration generation.", task.getId());
-                            }
-                        }
-                    }
+                    // Role Philosophical Filter (Gemini refusal-criteria check) removed (2026-07-25,
+                    // operator directive - emergency cost incident, "прекрати вызывать джемени на ревью").
+                    // Note found while removing it: this block never actually gated the merge (a non-
+                    // compliant verdict only logged a warning - mergeSuccess/return were never touched) -
+                    // it was already pure log-only overhead, so removing it loses zero real enforcement.
+                    // Review (including hygiene/safety checks) is Jules-only now; see
+                    // JulesDispatchService.executeCodeReview and reviewerFallbackPromptBatch's own
+                    // block-list (secrets, generated artifacts, unguarded terminal-status writes).
                 }
             }
         }

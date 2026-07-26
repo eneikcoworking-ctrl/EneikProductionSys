@@ -12,7 +12,10 @@ import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.logging.LogScope;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumSet;
 import java.util.HashMap;
@@ -49,19 +52,22 @@ public class ClientDeliverableReadinessService {
     private final JulesSessionRepository julesSessionRepository;
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private final com.eneik.production.repositories.ProjectRepository projectRepository;
 
     public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
                                              FeatureRepository featureRepository,
                                              TaskRepository taskRepository,
                                              JulesSessionRepository julesSessionRepository,
                                              PrReviewRepository prReviewRepository,
-                                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository) {
+                                             com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                                             com.eneik.production.repositories.ProjectRepository projectRepository) {
         this.wishlistRepository = wishlistRepository;
         this.featureRepository = featureRepository;
         this.taskRepository = taskRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.prReviewRepository = prReviewRepository;
         this.featureThreadRepository = featureThreadRepository;
+        this.projectRepository = projectRepository;
     }
 
     // Deliberately scoped to CLIENT-sourced work only, not computeForProject's full
@@ -117,6 +123,36 @@ public class ClientDeliverableReadinessService {
      */
     public Readiness computeForProject(UUID projectId, UUID rootWishlistId) {
         return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+    }
+
+    /**
+     * All tasks belonging to features rooted at the given wishlist - same feature-resolution rootWishlistId
+     * semantics computeForSources uses internally (a feature's own rootWishlistId, not its featureId),
+     * exposed directly for a caller that needs the underlying task list itself rather than aggregate counts.
+     * Built for ProjectFlowService.checkAndDispatchCoverageAudits (2026-07-26 operator directive: "привязать
+     * к целому вишлисту" - the coverage-audit re-trigger watermark must only look at merges belonging to
+     * THIS wishlist's own features, not any merge anywhere in the project, which previously made the audit
+     * re-fire every time ANY unrelated work merged and kept creating new coverage_gap wishlists in response -
+     * a self-perpetuating loop that could keep decompositionComplete from ever stabilizing).
+     */
+    public List<TaskEntity> listTasksForRootWishlist(UUID projectId, UUID rootWishlistId) {
+        List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
+        Set<UUID> featureIds = featureRepository.findByProjectId(projectId).stream()
+                .filter(feature -> rootWishlistId.equals(feature.getRootWishlistId()))
+                .map(FeatureEntity::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        if (featureIds.isEmpty()) {
+            return List.of();
+        }
+        List<UUID> plannedItemIds = allWishlist.stream()
+                .filter(w -> w.getCompiledByRole() != null)
+                .filter(w -> w.getFeatureId() != null && featureIds.contains(w.getFeatureId()))
+                .map(WishlistEntity::getId)
+                .toList();
+        if (plannedItemIds.isEmpty()) {
+            return List.of();
+        }
+        return taskRepository.findBySourceWishlistIdIn(plannedItemIds);
     }
 
     private static final Set<WishlistSource> CLIENT_BRIEF_SOURCE = EnumSet.of(WishlistSource.client);
@@ -380,6 +416,72 @@ public class ClientDeliverableReadinessService {
     }
 
     /**
+     * Deletes epics with zero real code value (2026-07-25, operator directive: "эпик - это реальная фича с
+     * jtbd для пользователей - там не может не быть реальной ценности. ценность - это код"). An epic ends
+     * up here two ways: its only wishlist item(s) were dismissed (abandoned scope, never attempted), or
+     * every task its wishlist item(s) produced was auxiliary (a DECISION-stage/complex-cynefin item that
+     * structurally never produces mergeable code - see isAuxiliaryPlannedItem). Both leave
+     * codeProducingItemCount permanently at 0, and per listEpicDiagnostics's own completion formula
+     * ({@code !featureItems.isEmpty()}), such an epic can never become "complete" - it would otherwise sit
+     * forever dragging down completeFeatures/totalFeatures with no way to resolve itself (confirmed live,
+     * 2026-07-25: two such epics, one from a dismissed wishlist and one whose only task was a resolved
+     * DECISION-stage record, both stuck at 0/9 forever until manually found and deleted).
+     * Deliberately conservative: only deletes an epic when NOTHING is still pending/compiling for it (a
+     * brand-new epic with items still moving through the compiler is left alone), and only once it has
+     * existed for a while (see EPIC_CLEANUP_MIN_AGE_MINUTES) - never race a wishlist-compile transaction
+     * that just created the epic and hasn't linked its items to it yet.
+     */
+    private static final long EPIC_CLEANUP_MIN_AGE_MINUTES = 10;
+
+    @Scheduled(cron = "${epic-cleanup.cron:0 20 * * * ?}")
+    @Transactional
+    public void deleteValuelessEpics() {
+        List<com.eneik.production.models.persistence.ProjectEntity> activeProjects = projectRepository
+                .findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+        for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+            LogScope.project(project.getId());
+            try {
+                deleteValuelessEpicsForProject(project.getId());
+            } catch (Exception e) {
+                log.error("ClientDeliverableReadinessService: valueless-epic cleanup failed for project {}: {}",
+                        project.getId(), e.getMessage(), e);
+            } finally {
+                LogScope.clear();
+            }
+        }
+    }
+
+    private void deleteValuelessEpicsForProject(UUID projectId) {
+        List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
+        Map<UUID, List<WishlistEntity>> wishlistByFeature = allWishlist.stream()
+                .filter(w -> w.getFeatureId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId));
+
+        java.time.Instant now = java.time.Instant.now();
+        for (EpicDiagnostic diagnostic : listEpicDiagnostics(projectId)) {
+            if (diagnostic.codeProducingItemCount() > 0) {
+                continue; // has real value - never touch
+            }
+            if (diagnostic.createdAt() != null
+                    && java.time.Duration.between(diagnostic.createdAt(), now).toMinutes() < EPIC_CLEANUP_MIN_AGE_MINUTES) {
+                continue; // too new to judge - give the compiler a chance to still link real work to it
+            }
+            List<WishlistEntity> ownItems = wishlistByFeature.getOrDefault(diagnostic.id(), List.of());
+            boolean stillActive = ownItems.stream()
+                    .anyMatch(w -> w.getStatus() == WishlistStatus.pending || w.getStatus() == WishlistStatus.compiling);
+            if (stillActive) {
+                continue; // might still produce real code - not resolved yet
+            }
+            featureThreadRepository.findByProjectIdAndFeatureId(projectId, diagnostic.id())
+                    .ifPresent(featureThreadRepository::delete);
+            featureRepository.deleteById(diagnostic.id());
+            log.info("ClientDeliverableReadinessService: deleted valueless epic '{}' ({}) for project {} - "
+                            + "zero code-producing items, nothing left pending for it",
+                    diagnostic.title(), diagnostic.id(), projectId);
+        }
+    }
+
+    /**
      * A planned item is "auxiliary" (excluded from the code-merge readiness ratio entirely, not just
      * exempted from the check) when every task it has produced so far structurally can never produce
      * mergeable code. NOTE: this deliberately reads the TASK's own role
@@ -401,7 +503,11 @@ public class ClientDeliverableReadinessService {
         return !itemTasks.isEmpty() && itemTasks.stream().allMatch(this::isAuxiliaryTask);
     }
 
-    private boolean isAuxiliaryTask(TaskEntity task) {
+    // Public (2026-07-25): the dashboard's blocked-items widget needs this exact exclusion too - a
+    // DECISION-stage or "complex"-cynefin task is never expected to reach main on its own (that's the
+    // whole reason it's excluded from this class's own deliverable-ratio counting), so flagging one as
+    // "done but not merged" would be a false positive, not a real blocker.
+    public boolean isAuxiliaryTask(TaskEntity task) {
         String roleTag = task.getRole() != null ? task.getRole().getTag() : null;
         if (EmsFlowStage.forRoleTag(roleTag) == EmsFlowStage.DECISION) {
             return true;

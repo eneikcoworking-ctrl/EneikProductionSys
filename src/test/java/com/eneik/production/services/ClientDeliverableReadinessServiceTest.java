@@ -26,10 +26,12 @@ class ClientDeliverableReadinessServiceTest {
     private final PrReviewRepository prReviewRepository = mock(PrReviewRepository.class);
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository =
             mock(com.eneik.production.repositories.FeatureThreadRepository.class);
+    private final com.eneik.production.repositories.ProjectRepository projectRepository =
+            mock(com.eneik.production.repositories.ProjectRepository.class);
 
     private final ClientDeliverableReadinessService service = new ClientDeliverableReadinessService(
             wishlistRepository, featureRepository, taskRepository, julesSessionRepository, prReviewRepository,
-            featureThreadRepository);
+            featureThreadRepository, projectRepository);
 
     @Test
     void oneMergedTaskDoesNotCompleteFourItemFeature() {
@@ -377,5 +379,129 @@ class ClientDeliverableReadinessServiceTest {
         ObjectNode payload = new ObjectMapper().createObjectNode();
         payload.put("ems_semantic_key", semanticKey);
         return payload;
+    }
+
+    // --- Valueless-epic cleanup (2026-07-25, live incident: two epics permanently stuck at 0 code items -
+    // one from a dismissed wishlist, one whose only task was a resolved DECISION-stage record - dragged
+    // down completeFeatures/totalFeatures forever with no way to resolve themselves) -------------------
+
+    private static final java.time.Instant OLD_ENOUGH = java.time.Instant.now().minus(java.time.Duration.ofHours(1));
+
+    @Test
+    void deleteValuelessEpicsRemovesAnEpicWhoseOnlySourceWishlistWasDismissed() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        WishlistEntity dismissedItem = plannedItems(projectId, feature.getId(), 1).get(0);
+        dismissedItem.setStatus(WishlistStatus.dismissed);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
+        when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId())).thenReturn(java.util.Optional.empty());
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository).deleteById(feature.getId());
+    }
+
+    @Test
+    void deleteValuelessEpicsRemovesAnEpicWhoseOnlyTaskIsAuxiliaryAndAlsoDeletesItsFeatureThread() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        // BARCAN-TAG-09 = DECISION stage - structurally never produces mergeable code (isAuxiliaryTask).
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-09");
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, items, tasks);
+        FeatureThreadEntity thread = new FeatureThreadEntity();
+        thread.setFeatureId(feature.getId());
+        when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId())).thenReturn(java.util.Optional.of(thread));
+
+        service.deleteValuelessEpics();
+
+        verify(featureThreadRepository).delete(thread);
+        verify(featureRepository).deleteById(feature.getId());
+    }
+
+    @Test
+    void deleteValuelessEpicsNeverTouchesAnEpicWithRealCodeValue() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02"); // real code role
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, items, tasks);
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void deleteValuelessEpicsLeavesATooNewEpicAloneEvenWithZeroItems() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(java.time.Instant.now()); // freshly created - give the compiler a chance
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(), List.of());
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository, never()).deleteById(any());
+    }
+
+    @Test
+    void deleteValuelessEpicsLeavesAnEpicAloneWhileAWishlistItemIsStillPendingCompilation() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        WishlistEntity pendingItem = plannedItems(projectId, feature.getId(), 1).get(0);
+        pendingItem.setStatus(WishlistStatus.pending); // still might produce real code later
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(pendingItem), List.of());
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository, never()).deleteById(any());
     }
 }
