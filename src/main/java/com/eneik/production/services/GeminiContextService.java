@@ -114,6 +114,8 @@ public class GeminiContextService {
         // and QA/README/generator files are deliberately excluded - not prose content for RAG.
         indexFileIfPresent(root.resolve("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md"),
                 "philosopher_pattern_common", -1);
+        indexFileIfPresent(root.resolve("docs/philosopher-patterns/01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md"),
+                "parallel_development_conflict_prevention", -1);
         Path philosophersDir = root.resolve("docs/philosopher-patterns/philosophers");
         if (Files.isDirectory(philosophersDir)) {
             try (DirectoryStream<Path> philosopherFiles = Files.newDirectoryStream(philosophersDir, "*.md")) {

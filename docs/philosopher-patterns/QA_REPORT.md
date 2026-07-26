@@ -8,7 +8,8 @@
 | Personal pattern entries | 780 |
 | Unique personal pattern names | 780 |
 | Duplicate personal pattern names | 0 |
-| Common analytic patterns | 26 |
+| Common analytic patterns | 38 |
+| Conflict prevention rules | 12 |
 
 ## Verdict
 

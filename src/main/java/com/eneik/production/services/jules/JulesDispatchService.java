@@ -555,6 +555,7 @@ public class JulesDispatchService {
         }
 
         appendCompactRoleGuide(roleContextBuilder, task.getRole().getTag());
+        appendRetrievedSystemKnowledge(roleContextBuilder, task, mode, buildPhase);
 
         try {
             // The role must actually reach Jules - Jules takes on the role, not just a technical
@@ -698,6 +699,47 @@ public class JulesDispatchService {
         roleContextBuilder.append("- Apply Kano as a scope guard: Must-Be first, Performance only when explicit, Delighters only as follow-up wishlist.\n");
         roleContextBuilder.append("- Apply Cynefin as a delivery guard: clear/complicated work needs a direct implementation path, complex work needs one safe probe.\n");
         roleContextBuilder.append("- Role focus: ").append(compactRoleFocus(roleTag)).append("\n");
+    }
+
+    private void appendRetrievedSystemKnowledge(StringBuilder roleContextBuilder, TaskEntity task, String mode, boolean buildPhase) {
+        try {
+            String context = geminiContextService.buildContextBlock(julesRetrievalQuery(task, mode, buildPhase));
+            if (context == null || context.isBlank()) {
+                return;
+            }
+            roleContextBuilder.append("\n## Retrieved System Knowledge\n");
+            roleContextBuilder.append("Use this as pattern memory from the indexed Eneik system corpus. ")
+                    .append("It augments the task; it never overrides the task description, JTBD, Acceptance Criteria, DoD, ")
+                    .append("current repository contents, or current verification output. Do not copy ids, branch names, ")
+                    .append("file paths, or project-specific facts from retrieved examples unless they also appear in this task.\n");
+            roleContextBuilder.append(context).append("\n");
+        } catch (Exception e) {
+            log.warn("Could not retrieve RAG context for Jules task {}: {}", task.getId(), e.getMessage());
+        }
+    }
+
+    private String julesRetrievalQuery(TaskEntity task, String mode, boolean buildPhase) {
+        String roleTag = task.getRole() == null ? "unknown" : task.getRole().getTag();
+        String roleDescription = task.getRole() == null ? "" : task.getRole().getDescription();
+        String taskType = task.getPayload() == null ? "" : task.getPayload().path("taskType").asText("");
+        String safeMode = mode == null || mode.isBlank() ? "IMPLEMENTER" : mode;
+        return "Jules execution context. mode=" + safeMode
+                + "; roleTag=" + roleTag
+                + "; roleDescription=" + compactForRetrieval(roleDescription, 240)
+                + "; buildPhase=" + buildPhase
+                + (taskType.isBlank() ? "" : "; taskType=" + taskType)
+                + "; title=" + compactForRetrieval(TaskTitleBuilder.displayTitle(task), 180)
+                + "; taskDescriptionExcerpt=" + compactForRetrieval(task.getDescription(), 1800)
+                + ". Retrieve relevant role patterns, anti-conflict rules, prior incidents, programming patterns, "
+                + "and review/falsification guidance for this exact kind of Jules task.";
+    }
+
+    private String compactForRetrieval(String value, int maxChars) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        String compact = value.replaceAll("\\s+", " ").trim();
+        return compact.length() <= maxChars ? compact : compact.substring(0, maxChars) + "...";
     }
 
     private String compactRoleFocus(String roleTag) {
@@ -2469,9 +2511,24 @@ public class JulesDispatchService {
                     List<String> urls = projectFlowService.reviewFallbackTargetPrUrls(task);
                     List<String> hashes = projectFlowService.reviewFallbackTargetDiffHashes(task);
                     for (int i = 0; i < ids.size(); i++) {
+                        UUID targetId = ids.get(i);
+                        // A batch that completed without a verdict entry for this specific target never
+                        // actually reviewed it (applyReviewVerdictToTask's null-verdict branch) - excluding
+                        // it here, while its per-target retry counter is still under the cap, is what makes
+                        // it eligible for a genuine re-review next processPendingReviewBatch tick instead of
+                        // being pre-blocked by this same poka-yoke forever. See
+                        // PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY.
+                        TaskEntity target = taskRepository.findById(targetId).orElse(null);
+                        if (target != null
+                                && target.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review
+                                && projectFlowService.reviewFallbackNullVerdictRetryCount(target) > 0
+                                && projectFlowService.reviewFallbackNullVerdictRetryCount(target)
+                                        < com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES) {
+                            continue;
+                        }
                         String url = i < urls.size() ? urls.get(i) : "";
                         String hash = i < hashes.size() ? hashes.get(i) : "";
-                        keys.add(ids.get(i) + "::" + url + "::" + hash);
+                        keys.add(targetId + "::" + url + "::" + hash);
                     }
                 });
         return keys;
@@ -2782,7 +2839,27 @@ public class JulesDispatchService {
         }
 
         if (verdict == null) {
-            log.warn("PR review fallback task {}: no valid verdict entry found for task {}; left for retry next cycle", reviewTask.getId(), originalTaskId);
+            int retries = projectFlowService.recordReviewFallbackNullVerdict(originalTask);
+            if (retries >= com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES) {
+                // Genuinely exhausted, not just "no verdict this one time": stop retrying automatically and
+                // surface it the same way every other stuck task surfaces - createRecoveryWishlistForOrphaned
+                // BlockedTasks already retires an orphaned blocked task (no active Jules session) to failed
+                // with a clear reason, which lets the normal falsification/coverage-audit gap-detection
+                // recreate the work instead of leaving it silently frozen in pending_review forever.
+                originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.blocked);
+                originalTask.setJulesDispatchStatus("PR review fallback returned no verdict for this task " + retries
+                        + " time(s) in a row; giving up automatic retry.");
+                taskRepository.save(originalTask);
+                log.error("PR review fallback task {}: no valid verdict entry found for task {} on attempt {}/{}; "
+                                + "giving up automatic retry, marked blocked for recovery.",
+                        reviewTask.getId(), originalTaskId, retries,
+                        com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES);
+            } else {
+                taskRepository.save(originalTask);
+                log.warn("PR review fallback task {}: no valid verdict entry found for task {} (attempt {}/{}); eligible for a fresh review dispatch next cycle.",
+                        reviewTask.getId(), originalTaskId, retries,
+                        com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES);
+            }
             return;
         }
 
@@ -2797,6 +2874,7 @@ public class JulesDispatchService {
         if (blocked) {
             log.warn("PR review fallback: task {} (PR {}) blocked by Jules reviewer - {}", originalTaskId, prUrl, verdict.criticalReason());
             originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            projectFlowService.clearReviewFallbackNullVerdictRetries(originalTask);
             taskRepository.save(originalTask);
             implementerSession.setStatus("revising");
             julesSessionRepository.save(implementerSession);
@@ -2828,6 +2906,7 @@ public class JulesDispatchService {
         prReviewPipelineService.onPrOpened(prUrl, implementerSession.getId(), prData);
 
         originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
+        projectFlowService.clearReviewFallbackNullVerdictRetries(originalTask);
         taskRepository.save(originalTask);
         systemProgressTracker.recordProgress();
         log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());

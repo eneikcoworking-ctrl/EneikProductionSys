@@ -1,11 +1,11 @@
 {
-  "generated_on": "2026-07-26",
+  "generated_on": "2026-07-27",
   "source": "BARCAN-TAG-*.md",
   "counts": {
     "barcan_files": 13,
     "philosophers": 78,
     "personal_patterns": 780,
-    "common_patterns": 26
+    "common_patterns": 38
   },
   "common_patterns": [
     {
@@ -137,6 +137,128 @@
       "id": "ACP-026",
       "name": "Accessibility by Default",
       "why_defect_preventing": "Доступность проектируется как базовый инвариант, а не поздняя косметика."
+    },
+    {
+      "id": "ACP-027",
+      "name": "Single Writer Ownership",
+      "why_defect_preventing": "У каждого изменяемого участка есть владелец, поэтому два агента не принимают несовместимые решения в одном месте."
+    },
+    {
+      "id": "ACP-028",
+      "name": "Contract-First Parallelism",
+      "why_defect_preventing": "Сначала фиксируется контракт, затем команды работают параллельно за стабильной границей."
+    },
+    {
+      "id": "ACP-029",
+      "name": "Merge Queue Gate",
+      "why_defect_preventing": "Изменения попадают в main только через очередь, которая пересобирает результат на актуальной базе."
+    },
+    {
+      "id": "ACP-030",
+      "name": "Generated Artifact Authority",
+      "why_defect_preventing": "Сгенерированные файлы меняются только генератором, поэтому ручные правки не конфликтуют с регенерацией."
+    },
+    {
+      "id": "ACP-031",
+      "name": "Append-Only Extension Point",
+      "why_defect_preventing": "Новые возможности добавляются через новые файлы или расширения, а общий реестр собирается автоматически."
+    },
+    {
+      "id": "ACP-032",
+      "name": "Refactor Freeze Lane",
+      "why_defect_preventing": "Массовый рефакторинг идёт в отдельном окне или ветке, не смешиваясь с продуктовой разработкой."
+    },
+    {
+      "id": "ACP-033",
+      "name": "Conflict Forecast in PR",
+      "why_defect_preventing": "PR заранее объявляет зоны пересечения, владельцев и потенциальные конфликтные поверхности."
+    },
+    {
+      "id": "ACP-034",
+      "name": "Semantic Conflict Test",
+      "why_defect_preventing": "Проверяется не только текстовый merge, но и смысловая совместимость контрактов, схем и поведения."
+    },
+    {
+      "id": "ACP-035",
+      "name": "Migration Serialization",
+      "why_defect_preventing": "Миграции БД проходят через единый порядок, исключая две конкурирующие правки одной схемы."
+    },
+    {
+      "id": "ACP-036",
+      "name": "Feature Flag Isolation",
+      "why_defect_preventing": "Незавершённая параллельная работа изолируется флагом и не меняет общий runtime без включения."
+    },
+    {
+      "id": "ACP-037",
+      "name": "No Shared Constants Drift",
+      "why_defect_preventing": "Общие константы, enum и типы меняются только через владельца и impact-check."
+    },
+    {
+      "id": "ACP-038",
+      "name": "Conflict Resolution Evidence",
+      "why_defect_preventing": "Любое ручное разрешение конфликта подтверждается тестом или проверкой затронутого контракта."
+    }
+  ],
+  "conflict_prevention_rules": [
+    {
+      "id": "CPF-001",
+      "name": "Один владелец на изменяемую поверхность",
+      "requirement": "Каждый shared-файл, модуль, схема, API-контракт и генератор имеет владельца. Параллельные агенты не редактируют одну поверхность без явного handoff."
+    },
+    {
+      "id": "CPF-002",
+      "name": "Контракт раньше реализации",
+      "requirement": "Для API, БД, событий, RAG-схем и UI-состояний сначала меняется контракт и проходит review, затем команды реализуют свои стороны."
+    },
+    {
+      "id": "CPF-003",
+      "name": "Generated files are read-only",
+      "requirement": "Файлы, созданные генератором, не редактируются вручную. Изменение делается в генераторе или исходном BARCAN-файле и затем пересобирается."
+    },
+    {
+      "id": "CPF-004",
+      "name": "Append-only по умолчанию",
+      "requirement": "Если можно добавить новый файл, новый объект, новую миграцию или новый registry entry вместо редактирования общего центра, выбирается добавление."
+    },
+    {
+      "id": "CPF-005",
+      "name": "Малые PR и вертикальные срезы",
+      "requirement": "Один PR закрывает один bounded context или один контрактный срез. Смешивание фичи, рефакторинга и форматирования запрещается."
+    },
+    {
+      "id": "CPF-006",
+      "name": "Merge queue вместо прямого merge",
+      "requirement": "Перед попаданием в main изменения пересобираются на актуальном состоянии ветки и проходят тесты после интеграции."
+    },
+    {
+      "id": "CPF-007",
+      "name": "Сериализация миграций",
+      "requirement": "Миграции БД, изменения shared enum и глобальные схемы проходят через единый порядковый канал."
+    },
+    {
+      "id": "CPF-008",
+      "name": "Refactor freeze lane",
+      "requirement": "Массовые переименования, форматирование, переносы файлов и архитектурные реорганизации выполняются в выделенном окне."
+    },
+    {
+      "id": "CPF-009",
+      "name": "Conflict forecast",
+      "requirement": "Каждая задача до кодинга фиксирует touched paths, owners, contracts и expected integration points."
+    },
+    {
+      "id": "CPF-010",
+      "name": "Semantic conflict checks",
+      "requirement": "После текстового merge запускаются contract tests, schema diff, affected tests и smoke path для затронутого поведения."
+    },
+    {
+      "id": "CPF-011",
+      "name": "Feature flag isolation",
+      "requirement": "Параллельная незавершённая работа не меняет общий пользовательский путь без feature flag или capability switch."
+    },
+    {
+      "id": "CPF-012",
+      "name": "Evidence after conflict resolution",
+      "requirement": "Если конфликт всё же решён руками, merge запрещён без новой проверки, доказывающей сохранение поведения."
     }
   ],
   "philosophers": [

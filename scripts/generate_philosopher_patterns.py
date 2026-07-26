@@ -39,6 +39,34 @@ COMMON_PATTERNS = [
     ("ACP-024", "Transactional Outbox", "Состояние и событие публикуются согласованно, без расщепления факта между БД и брокером."),
     ("ACP-025", "Migration Rollback Plan", "Любое изменение схемы или инфраструктуры имеет путь назад до применения в production."),
     ("ACP-026", "Accessibility by Default", "Доступность проектируется как базовый инвариант, а не поздняя косметика."),
+    ("ACP-027", "Single Writer Ownership", "У каждого изменяемого участка есть владелец, поэтому два агента не принимают несовместимые решения в одном месте."),
+    ("ACP-028", "Contract-First Parallelism", "Сначала фиксируется контракт, затем команды работают параллельно за стабильной границей."),
+    ("ACP-029", "Merge Queue Gate", "Изменения попадают в main только через очередь, которая пересобирает результат на актуальной базе."),
+    ("ACP-030", "Generated Artifact Authority", "Сгенерированные файлы меняются только генератором, поэтому ручные правки не конфликтуют с регенерацией."),
+    ("ACP-031", "Append-Only Extension Point", "Новые возможности добавляются через новые файлы или расширения, а общий реестр собирается автоматически."),
+    ("ACP-032", "Refactor Freeze Lane", "Массовый рефакторинг идёт в отдельном окне или ветке, не смешиваясь с продуктовой разработкой."),
+    ("ACP-033", "Conflict Forecast in PR", "PR заранее объявляет зоны пересечения, владельцев и потенциальные конфликтные поверхности."),
+    ("ACP-034", "Semantic Conflict Test", "Проверяется не только текстовый merge, но и смысловая совместимость контрактов, схем и поведения."),
+    ("ACP-035", "Migration Serialization", "Миграции БД проходят через единый порядок, исключая две конкурирующие правки одной схемы."),
+    ("ACP-036", "Feature Flag Isolation", "Незавершённая параллельная работа изолируется флагом и не меняет общий runtime без включения."),
+    ("ACP-037", "No Shared Constants Drift", "Общие константы, enum и типы меняются только через владельца и impact-check."),
+    ("ACP-038", "Conflict Resolution Evidence", "Любое ручное разрешение конфликта подтверждается тестом или проверкой затронутого контракта."),
+]
+
+
+CONFLICT_PREVENTION_RULES = [
+    ("CPF-001", "Один владелец на изменяемую поверхность", "Каждый shared-файл, модуль, схема, API-контракт и генератор имеет владельца. Параллельные агенты не редактируют одну поверхность без явного handoff."),
+    ("CPF-002", "Контракт раньше реализации", "Для API, БД, событий, RAG-схем и UI-состояний сначала меняется контракт и проходит review, затем команды реализуют свои стороны."),
+    ("CPF-003", "Generated files are read-only", "Файлы, созданные генератором, не редактируются вручную. Изменение делается в генераторе или исходном BARCAN-файле и затем пересобирается."),
+    ("CPF-004", "Append-only по умолчанию", "Если можно добавить новый файл, новый объект, новую миграцию или новый registry entry вместо редактирования общего центра, выбирается добавление."),
+    ("CPF-005", "Малые PR и вертикальные срезы", "Один PR закрывает один bounded context или один контрактный срез. Смешивание фичи, рефакторинга и форматирования запрещается."),
+    ("CPF-006", "Merge queue вместо прямого merge", "Перед попаданием в main изменения пересобираются на актуальном состоянии ветки и проходят тесты после интеграции."),
+    ("CPF-007", "Сериализация миграций", "Миграции БД, изменения shared enum и глобальные схемы проходят через единый порядковый канал."),
+    ("CPF-008", "Refactor freeze lane", "Массовые переименования, форматирование, переносы файлов и архитектурные реорганизации выполняются в выделенном окне."),
+    ("CPF-009", "Conflict forecast", "Каждая задача до кодинга фиксирует touched paths, owners, contracts и expected integration points."),
+    ("CPF-010", "Semantic conflict checks", "После текстового merge запускаются contract tests, schema diff, affected tests и smoke path для затронутого поведения."),
+    ("CPF-011", "Feature flag isolation", "Параллельная незавершённая работа не меняет общий пользовательский путь без feature flag или capability switch."),
+    ("CPF-012", "Evidence after conflict resolution", "Если конфликт всё же решён руками, merge запрещён без новой проверки, доказывающей сохранение поведения."),
 ]
 
 
@@ -281,6 +309,52 @@ def write_common_patterns() -> None:
     (OUT / "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def write_conflict_prevention_charter() -> None:
+    lines = [
+        "# Parallel Development Conflict Prevention Charter",
+        "",
+        "Цель этого файла — сделать конфликты параллельной разработки архитектурно редкими, заранее видимыми и проверяемыми. Абсолютное отсутствие конфликтов нельзя обещать математически, но можно запретить неуправляемые конфликты: две роли не должны молча менять одну и ту же поверхность без владельца, контракта и проверки.",
+        "",
+        "## Нормативные правила",
+        "",
+        "| ID | Правило | Требование |",
+        "|---|---|---|",
+    ]
+    for rule_id, name, requirement in CONFLICT_PREVENTION_RULES:
+        lines.append(f"| `{rule_id}` | {name} | {requirement} |")
+    lines.extend(
+        [
+            "",
+            "## Режимы работы",
+            "",
+            "### Перед началом задачи",
+            "",
+            "- Указать `touched_paths`: файлы, модули, схемы и контракты, которые задача планирует изменить.",
+            "- Указать `owners`: роли или люди, владеющие этими поверхностями.",
+            "- Указать `integration_points`: API, события, таблицы, shared-типы, UI-состояния и RAG-схемы.",
+            "- Если два активных изменения пересекаются по `touched_paths`, один из них должен перейти в handoff, split или refactor lane.",
+            "",
+            "### Во время разработки",
+            "",
+            "- Не смешивать продуктовую фичу, массовый рефакторинг и форматирование в одном PR.",
+            "- Не редактировать generated-файлы вручную.",
+            "- Для shared-контрактов сначала менять схему/контракт, потом реализацию.",
+            "- Для глобальных enum, констант, миграций и API использовать сериализованный порядок изменений.",
+            "",
+            "### Перед merge",
+            "",
+            "- PR обязан пройти merge queue или эквивалентную пересборку на актуальном `main`.",
+            "- После ручного разрешения конфликта обязательны affected tests и contract/schema checks.",
+            "- Если конфликт был не текстовым, а смысловым, фиксируется короткий `conflict_resolution_note`.",
+            "",
+            "## RAG-инструкция",
+            "",
+            "Когда агент получает задачу параллельной разработки, он должен сначала применить этот charter, затем персональный файл философа. Персональные паттерны дают стиль мышления, но конфликтные поверхности регулируются этим общим документом.",
+        ]
+    )
+    (OUT / "01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
     tag = str(row["tag"])
     name = str(row["name_ru"])
@@ -356,6 +430,14 @@ def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
             "",
             "- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)",
             "",
+            "## Антиконфликтный режим параллельной разработки",
+            "",
+            "Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:",
+            "",
+            "- [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)",
+            "",
+            "Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.",
+            "",
             "## RAG-инструкция агенту",
             "",
             f"Когда задача относится к `{tag}`, используй этот файл для индивидуального акцента {name}: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.",
@@ -387,6 +469,7 @@ def write_readme() -> None:
         "## Файлы",
         "",
         "- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) — общие паттерны, применимые более чем к пяти философам.",
+        "- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) — charter для предотвращения конфликтов параллельной разработки.",
         "- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) — навигационная таблица по всем 78 философам.",
         "- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) — машинно-читаемый индекс для RAG.",
         "- [`QA_REPORT.md`](QA_REPORT.md) — результат проверки полноты и уникальности.",
@@ -427,6 +510,10 @@ def write_json(entries: list[dict[str, object]], pattern_names: list[str]) -> No
             {"id": pattern_id, "name": name, "why_defect_preventing": why}
             for pattern_id, name, why in COMMON_PATTERNS
         ],
+        "conflict_prevention_rules": [
+            {"id": rule_id, "name": name, "requirement": requirement}
+            for rule_id, name, requirement in CONFLICT_PREVENTION_RULES
+        ],
         "philosophers": entries,
     }
     (OUT / "philosopher_patterns_index.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -448,6 +535,7 @@ def write_qa(rows: list[dict[str, object]], pattern_names: list[str]) -> None:
         f"| Unique personal pattern names | {len(pattern_counts)} |",
         f"| Duplicate personal pattern names | {len(duplicates)} |",
         f"| Common analytic patterns | {len(COMMON_PATTERNS)} |",
+        f"| Conflict prevention rules | {len(CONFLICT_PREVENTION_RULES)} |",
         "",
         "## Verdict",
         "",
@@ -474,6 +562,7 @@ def main() -> None:
         raise SystemExit(f"Missing TAG_STEMS entries: {missing}")
 
     write_common_patterns()
+    write_conflict_prevention_charter()
     entries = [write_philosopher_file(row) for row in rows]
     pattern_names = [name for entry in entries for name in entry["patterns"]]
     write_readme()
@@ -491,6 +580,7 @@ def main() -> None:
                 "personal_patterns": len(pattern_names),
                 "unique_personal_pattern_names": len(set(pattern_names)),
                 "common_patterns": len(COMMON_PATTERNS),
+                "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
             },
             ensure_ascii=False,
             indent=2,

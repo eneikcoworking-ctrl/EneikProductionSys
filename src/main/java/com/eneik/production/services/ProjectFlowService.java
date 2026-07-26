@@ -2971,6 +2971,46 @@ public class ProjectFlowService {
     // "already covered" from "needs re-review" in that case, since the URL alone doesn't change.
     public static final String PR_REVIEW_FALLBACK_DIFF_HASH_KEY = "reviewsDiffHash";
 
+    // Fixes the "исчерпаный ретри на ревью" incident (2026-07-26, test-thirty-eighth, tasks 41dc3324/
+    // c43575c5/4db2f25e/64d2fc08/e4caba98): "this target was included in a dispatched fallback-review batch"
+    // (recorded forever on the CARRIER via PR_REVIEW_FALLBACK_TASK_IDS_KEY) and "this target's verdict
+    // actually came back and got applied" were wrongly treated as the same thing. A batch that completed
+    // with no verdict entry for one specific target left that target in pending_review with the poka-yoke
+    // key already burned, so it could never be automatically re-reviewed - permanently frozen with zero
+    // recovery path. Stored on the TARGET task's own payload (not the carrier's) so it survives across
+    // however many different carrier tasks end up attempting it. reviewFallbackTargetsEverAttempted excludes
+    // a target's keys from the blocking set while this counter is below the cap, so processPendingReviewBatch
+    // legitimately re-dispatches it; once the cap is hit, applyReviewVerdictToTask stops retrying and marks
+    // the task blocked instead - which createRecoveryWishlistForOrphanedBlockedTasks already retires to
+    // failed with a clear reason, letting the normal falsification/coverage-audit gap-detection recreate the
+    // work rather than inventing a bespoke recovery path for this one case.
+    public static final String PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY = "reviewFallbackNullVerdictRetries";
+    public static final int PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES = 3;
+
+    public int reviewFallbackNullVerdictRetryCount(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return 0;
+        }
+        return task.getPayload().path(PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY).asInt(0);
+    }
+
+    /** Increments and persists the counter on the target task's own payload; returns the new count. */
+    public int recordReviewFallbackNullVerdict(TaskEntity task) {
+        ObjectNode payload = task.getPayload() instanceof ObjectNode existing ? existing : objectMapper.createObjectNode();
+        int next = payload.path(PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY).asInt(0) + 1;
+        payload.put(PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY, next);
+        task.setPayload(payload);
+        return next;
+    }
+
+    /** Called once a real verdict is found and applied, so a later unrelated pending_review episode for the same task starts fresh. */
+    public void clearReviewFallbackNullVerdictRetries(TaskEntity task) {
+        if (task.getPayload() instanceof ObjectNode payload && payload.has(PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY)) {
+            payload.remove(PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY);
+            task.setPayload(payload);
+        }
+    }
+
     public UUID dispatchReviewFallbackBatch(List<TaskEntity> originalTasks, List<String> prUrls, List<String> diffHashes, String prompt, String verdictPath) {
         if (originalTasks.isEmpty()) {
             return null;

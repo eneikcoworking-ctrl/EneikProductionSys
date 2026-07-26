@@ -4,7 +4,10 @@ import com.eneik.production.models.persistence.ContextChunkEntity;
 import com.eneik.production.repositories.ContextChunkRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -228,6 +231,31 @@ class GeminiContextServiceTest {
         service.reindexStandingKnowledge();
 
         verify(repository, never()).deleteBySourceRef(anyString());
+    }
+
+    @Test
+    void reindexStandingKnowledgeIncludesParallelDevelopmentConflictPreventionCharter(@TempDir Path root) throws Exception {
+        Path patternsDir = root.resolve("docs/philosopher-patterns");
+        Files.createDirectories(patternsDir.resolve("philosophers"));
+        Files.writeString(patternsDir.resolve("01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md"),
+                "Single Writer Ownership\n\nContract-First Parallelism");
+        setUp(root.toString());
+        when(settingsService.effectiveBoolean("gemini_context_learning_enabled")).thenReturn(true);
+        when(mlPredictionServiceClient.embed(anyString())).thenReturn(new float[]{1f, 0f});
+
+        service.reindexStandingKnowledge();
+
+        verify(repository).deleteBySourceRef("01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md");
+        verify(repository).saveAll(argThat(iterable -> {
+            for (Object item : iterable) {
+                ContextChunkEntity chunk = (ContextChunkEntity) item;
+                if (chunk.getSourceType().equals("parallel_development_conflict_prevention")
+                        && chunk.getContent().contains("Single Writer Ownership")) {
+                    return true;
+                }
+            }
+            return false;
+        }));
     }
 
     private static ContextChunkEntity chunk(String content, String sourceRef, float[] embedding) {

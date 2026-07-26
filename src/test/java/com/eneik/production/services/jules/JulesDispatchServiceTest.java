@@ -47,6 +47,7 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private com.eneik.production.services.ProjectFlowService projectFlowService;
     private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private com.eneik.production.services.GeminiContextService geminiContextService;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -69,6 +70,7 @@ class JulesDispatchServiceTest {
         featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
         readinessService = mock(com.eneik.production.services.ClientDeliverableReadinessService.class);
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
+        geminiContextService = mock(com.eneik.production.services.GeminiContextService.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
@@ -81,7 +83,7 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.repositories.ProjectRepository.class),
             mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
             mock(com.eneik.production.services.settings.SystemSettingsService.class),
-            mock(com.eneik.production.services.GeminiContextService.class),
+            geminiContextService,
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
@@ -308,6 +310,53 @@ class JulesDispatchServiceTest {
                         && context.contains("Патриция Черчланд")
                         && context.contains("REFUSAL CRITERIA")
         ), isNull(), eq("UI Slice"), eq("main"));
+    }
+
+    @Test
+    void dispatchInjectsRetrievedSystemKnowledgeIntoJulesRoleContext() {
+        UUID taskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+        role.setDescription("Backend Engineer");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setTitle("API Slice");
+        task.setDescription("Implement contract-first account ingestion without merge conflicts.");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(julesApiClient.createSessionDetailed(eq("prefix/repo"), anyString(), anyString(), isNull(), eq("API Slice"), eq("main")))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(roleCapabilityLoader.loadRules("BARCAN-TAG-02")).thenReturn(null);
+        when(geminiContextService.buildContextBlock(anyString())).thenReturn("""
+                RELEVANT SYSTEM KNOWLEDGE (retrieved from the indexed knowledge base):
+                - [01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md] Single Writer Ownership and Contract-First Parallelism.
+                """);
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+
+        ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
+        verify(geminiContextService).buildContextBlock(queryCaptor.capture());
+        assertTrue(queryCaptor.getValue().contains("roleTag=BARCAN-TAG-02"));
+        assertTrue(queryCaptor.getValue().contains("contract-first account ingestion"));
+
+        verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), anyString(), argThat(context ->
+                context.contains("## Retrieved System Knowledge")
+                        && context.contains("pattern memory from the indexed Eneik system corpus")
+                        && context.contains("never overrides the task description")
+                        && context.contains("Single Writer Ownership")
+                        && context.contains("Contract-First Parallelism")
+        ), isNull(), eq("API Slice"), eq("main"));
     }
 
     @Test
@@ -1413,6 +1462,103 @@ class JulesDispatchServiceTest {
         when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("abc123"));
 
         assertTrue(julesDispatchService.reviewFallbackTargetsInFlight(projectId).isEmpty());
+        assertEquals(Set.of(targetTaskId + "::https://github.com/org/repo/pull/1::abc123"),
+                julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
+    }
+
+    @Test
+    void targetWithUnresolvedNullVerdictBelowCapIsExcludedFromBlockingSet() {
+        // The actual bug (2026-07-26, test-thirty-eighth): a completed batch with no verdict entry for one
+        // target left it in pending_review with its poka-yoke key already burned, so it could never be
+        // re-reviewed. This asserts the fix: while the per-target retry counter is under the cap and the
+        // task is still pending_review, its key must NOT be in the blocking set, so the next
+        // processPendingReviewBatch tick can legitimately re-dispatch it.
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity completedFallback = new TaskEntity();
+        completedFallback.setId(UUID.randomUUID());
+        completedFallback.setProject(project);
+        completedFallback.setStatus(TaskStatus.done);
+
+        TaskEntity target = new TaskEntity();
+        target.setId(targetTaskId);
+        target.setStatus(TaskStatus.pending_review);
+
+        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("abc123"));
+        when(projectFlowService.reviewFallbackNullVerdictRetryCount(target)).thenReturn(1);
+
+        assertTrue(julesDispatchService.reviewFallbackTargetsEverAttempted(projectId).isEmpty());
+    }
+
+    @Test
+    void targetWithNullVerdictRetriesAtCapStaysBlocked() {
+        // Once the cap is reached, applyReviewVerdictToTask stops retrying and marks the task blocked
+        // instead (so it's no longer pending_review) - but reviewFallbackTargetsEverAttempted's own cap
+        // check is asserted directly here too, as a belt-and-suspenders guard against the poka-yoke ever
+        // re-admitting a target that has already exhausted its retries while still pending_review.
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity completedFallback = new TaskEntity();
+        completedFallback.setId(UUID.randomUUID());
+        completedFallback.setProject(project);
+        completedFallback.setStatus(TaskStatus.done);
+
+        TaskEntity target = new TaskEntity();
+        target.setId(targetTaskId);
+        target.setStatus(TaskStatus.pending_review);
+
+        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("abc123"));
+        when(projectFlowService.reviewFallbackNullVerdictRetryCount(target)).thenReturn(3);
+
+        assertEquals(Set.of(targetTaskId + "::https://github.com/org/repo/pull/1::abc123"),
+                julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
+    }
+
+    @Test
+    void resolvedTargetWithStaleRetryCounterStaysBlocked() {
+        // A target that has already left pending_review (approved/blocked/done elsewhere) must never be
+        // excluded just because an old retry counter is still sitting in its payload - the exclusion is
+        // scoped to "currently unresolved", not "has ever had a null verdict".
+        UUID projectId = UUID.randomUUID();
+        UUID targetTaskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity completedFallback = new TaskEntity();
+        completedFallback.setId(UUID.randomUUID());
+        completedFallback.setProject(project);
+        completedFallback.setStatus(TaskStatus.done);
+
+        TaskEntity target = new TaskEntity();
+        target.setId(targetTaskId);
+        target.setStatus(TaskStatus.review);
+
+        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
+        when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
+        when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
+        when(projectFlowService.reviewFallbackTargetDiffHashes(completedFallback)).thenReturn(List.of("abc123"));
+
         assertEquals(Set.of(targetTaskId + "::https://github.com/org/repo/pull/1::abc123"),
                 julesDispatchService.reviewFallbackTargetsEverAttempted(projectId));
     }
