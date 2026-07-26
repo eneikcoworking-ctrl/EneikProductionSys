@@ -62,11 +62,19 @@ public class GeminiContextService {
         this.repoRoot = repoRoot;
     }
 
+    // 2026-07-26 operator directive ("общая цифра быстро кончается" - reduce spend): OBSERVER_LOG.md is
+    // append-only and grows forever (4700+ lines and counting) - indexing the WHOLE file every reindex
+    // would make embedding cost scale with total project history, not current relevance. Bounded to the
+    // tail (most recent activity is what matters for pattern-matching against a live anomaly anyway).
+    private static final int OBSERVER_LOG_TAIL_CHARS = 60_000;
+
     /**
-     * Re-indexes the standing knowledge base: OBSERVER_LOG.md, the engineering-invariants charter, the AI
-     * review guidelines, and every BARCAN-TAG role charter found under the mounted repo root. Idempotent
-     * per source (delete-then-insert), safe to call daily or on demand. A no-op when the repo root isn't
-     * mounted (e.g. a local unit-test context) or the feature flag is off.
+     * Re-indexes the standing knowledge base: OBSERVER_LOG.md (tail only), the engineering-invariants
+     * charter, the AI review guidelines, every BARCAN-TAG role charter, and the philosopher-patterns
+     * corpus (docs/philosopher-patterns/) found under the mounted repo root. Idempotent per source
+     * (delete-then-insert IF content changed - see indexDocument's content-hash skip), safe to call daily
+     * or on demand. A no-op when the repo root isn't mounted (e.g. a local unit-test context) or the
+     * feature flag is off.
      */
     @Scheduled(cron = "${gemini-context.reindex-cron:0 0 3 * * ?}")
     public void reindexStandingKnowledge() {
@@ -78,46 +86,79 @@ public class GeminiContextService {
             return;
         }
         Path root = Path.of(repoRoot);
-        indexFileIfPresent(root.resolve("OBSERVER_LOG.md"), "observer_log");
-        indexFileIfPresent(root.resolve("docs/ENGINEERING_INVARIANTS_CHARTER.md"), "engineering_charter");
-        indexFileIfPresent(root.resolve("docs/AI_REVIEW_GUIDELINES.md"), "ai_review_guidelines");
+        indexFileIfPresent(root.resolve("OBSERVER_LOG.md"), "observer_log", OBSERVER_LOG_TAIL_CHARS);
+        indexFileIfPresent(root.resolve("docs/ENGINEERING_INVARIANTS_CHARTER.md"), "engineering_charter", -1);
+        indexFileIfPresent(root.resolve("docs/AI_REVIEW_GUIDELINES.md"), "ai_review_guidelines", -1);
         // The orchestrator's own accumulated experience/knowledge about this project (architecture
         // decisions, confirmed bugs, standing principles) - a manually-refreshed snapshot maintained by
         // Claude, not a live feed (operator directive 2026-07-25: "свой опыт и знания о проекте поместить").
-        indexFileIfPresent(root.resolve("docs/CLAUDE_OPERATOR_KNOWLEDGE.md"), "claude_operator_notes");
+        indexFileIfPresent(root.resolve("docs/CLAUDE_OPERATOR_KNOWLEDGE.md"), "claude_operator_notes", -1);
         // 2026-07-26 operator directive ("знала большинство математически идеальных паттернов
         // программирования"): a catalog of structural/operational failure signatures the observer can match
         // against evidence-snapshot symptoms - she never sees code, so these are written as
         // symptom -> pattern, not code smells.
-        indexFileIfPresent(root.resolve("docs/OPERATIONAL_FAILURE_PATTERNS.md"), "operational_failure_patterns");
+        indexFileIfPresent(root.resolve("docs/OPERATIONAL_FAILURE_PATTERNS.md"), "operational_failure_patterns", -1);
 
         try (DirectoryStream<Path> charters = Files.newDirectoryStream(root, "BARCAN-TAG-*.md")) {
             for (Path charterFile : charters) {
-                indexFileIfPresent(charterFile, "role_charter");
+                indexFileIfPresent(charterFile, "role_charter", -1);
             }
         } catch (IOException e) {
             log.warn("GeminiContextService: failed to list BARCAN-TAG charter files under {}: {}", root, e.getMessage());
         }
+
+        // 2026-07-26: philosopher-patterns corpus (operator-built, docs/philosopher-patterns/) - 78
+        // per-philosopher pattern files plus one common-patterns digest. Safe to bulk-index despite its
+        // size (~660KB) because it is stable content - the content-hash skip in indexDocument means every
+        // reindex after the first one costs nothing for this corpus unless a file actually changes. Index
+        // and QA/README/generator files are deliberately excluded - not prose content for RAG.
+        indexFileIfPresent(root.resolve("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md"),
+                "philosopher_pattern_common", -1);
+        Path philosophersDir = root.resolve("docs/philosopher-patterns/philosophers");
+        if (Files.isDirectory(philosophersDir)) {
+            try (DirectoryStream<Path> philosopherFiles = Files.newDirectoryStream(philosophersDir, "*.md")) {
+                for (Path philosopherFile : philosopherFiles) {
+                    indexFileIfPresent(philosopherFile, "philosopher_pattern", -1);
+                }
+            } catch (IOException e) {
+                log.warn("GeminiContextService: failed to list philosopher-pattern files under {}: {}", philosophersDir, e.getMessage());
+            }
+        }
     }
 
-    private void indexFileIfPresent(Path file, String sourceType) {
+    /** @param tailChars if positive, only the last this-many characters of the file are indexed. */
+    private void indexFileIfPresent(Path file, String sourceType, int tailChars) {
         if (!Files.isRegularFile(file)) {
             return;
         }
         try {
             String content = Files.readString(file);
+            if (tailChars > 0 && content.length() > tailChars) {
+                content = content.substring(content.length() - tailChars);
+            }
             indexDocument(sourceType, file.getFileName().toString(), content);
         } catch (IOException e) {
             log.warn("GeminiContextService: failed to read {}: {}", file, e.getMessage());
         }
     }
 
-    /** Delete-then-insert re-index of one source document, chunked and embedded. */
+    /**
+     * Delete-then-insert re-index of one source document, chunked and embedded - but skipped entirely when
+     * the source's content hasn't changed since last time (2026-07-26 cost fix: reindexing used to
+     * re-embed EVERY source on EVERY cron tick regardless of whether anything changed - real, recurring
+     * cost for stable content like role charters and the philosopher-patterns corpus).
+     */
     public void indexDocument(String sourceType, String sourceRef, String content) {
-        repository.deleteBySourceRef(sourceRef);
         if (content == null || content.isBlank()) {
+            repository.deleteBySourceRef(sourceRef);
             return;
         }
+        String contentHash = sha256Hex(content);
+        if (repository.existsBySourceRefAndContentHash(sourceRef, contentHash)) {
+            log.debug("GeminiContextService: {} unchanged since last index, skipping re-embed", sourceRef);
+            return;
+        }
+        repository.deleteBySourceRef(sourceRef);
         List<String> chunks = chunkText(content);
         List<ContextChunkEntity> toSave = new ArrayList<>();
         for (int i = 0; i < chunks.size(); i++) {
@@ -134,10 +175,26 @@ public class GeminiContextService {
             entity.setContent(chunks.get(i));
             entity.setEmbedding(serializeEmbedding(vector));
             entity.setEmbeddingDims(vector.length);
+            entity.setContentHash(contentHash);
             toSave.add(entity);
         }
         repository.saveAll(toSave);
         log.info("GeminiContextService: indexed {} ({}) - {} of {} chunk(s) embedded", sourceRef, sourceType, toSave.size(), chunks.size());
+    }
+
+    private static String sha256Hex(String content) {
+        try {
+            byte[] digest = java.security.MessageDigest.getInstance("SHA-256")
+                    .digest(content.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            // SHA-256 is a mandatory JDK algorithm - never actually throws in practice.
+            throw new IllegalStateException(e);
+        }
     }
 
     /** Greedy paragraph-aware chunking: never splits a paragraph unless it alone exceeds the chunk size. */

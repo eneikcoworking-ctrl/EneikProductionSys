@@ -63,9 +63,19 @@ public class GeminiProjectObserverService {
     // Only "done"/"failed" tasks are worth surfacing as a recency signal - everything else (queued,
     // in_progress, review, blocked) is normal, expected, and already visible in the status histogram below.
     private static final List<TaskStatus> NOTABLE_RECENT_STATUSES = List.of(TaskStatus.done, TaskStatus.failed);
-    private static final List<TaskStatus> STUCK_CANDIDATE_STATUSES = List.of(TaskStatus.blocked, TaskStatus.queued);
-    private static final Duration TASK_STUCK_THRESHOLD = Duration.ofHours(24);
-    private static final Duration WISHLIST_STALE_THRESHOLD = Duration.ofHours(24);
+    // 2026-07-26 operator directive ("проект стоит... применяла свои инструменты"): review/pending_review
+    // added - confirmed live (test-thirty-eighth) these were the OLDEST-stuck tasks in the whole project
+    // (11+ hours untouched, since minutes after project creation) but were invisible to her because only
+    // blocked/queued counted as "stuck candidates". A task waiting on review with no forward motion for
+    // hours is exactly the kind of thing she should be able to notice and act on.
+    private static final List<TaskStatus> STUCK_CANDIDATE_STATUSES =
+            List.of(TaskStatus.blocked, TaskStatus.queued, TaskStatus.review, TaskStatus.pending_review);
+    // Lowered from 24h (2026-07-26, same directive): 24h meant NOTHING could ever qualify during a young
+    // project's entire first day, no matter how long a task had genuinely been sitting untouched relative
+    // to the project's own pace - confirmed live, a project ~11.5h old had tasks stuck ~11h+ with zero
+    // candidates surfaced. 4h is still well above normal task turnover, not a false-alarm threshold.
+    private static final Duration TASK_STUCK_THRESHOLD = Duration.ofHours(4);
+    private static final Duration WISHLIST_STALE_THRESHOLD = Duration.ofHours(4);
     // How many of her own last journal entries must show a near-identical readiness ratio, while the
     // project is still incomplete, before it counts as genuine stagnation rather than normal short-term
     // noise - fewer than this and a temporarily flat ratio (e.g. between two merges) looks the same as a
@@ -73,6 +83,11 @@ public class GeminiProjectObserverService {
     private static final int STAGNATION_MIN_MATCHING_CYCLES = 3;
     private static final double STAGNATION_EPSILON = 0.001;
     private static final int MAX_STALE_CANDIDATES_LISTED = 5;
+    // 2026-07-26 cost control (operator: "общая цифра быстро кончается"): a hard, code-enforced cap on her
+    // own journalEntry length - the instruction below already asks for "one short paragraph", but nothing
+    // previously stopped a verbose response from compounding every cycle (she re-reads her own last 5
+    // entries every time).
+    private static final int MAX_JOURNAL_ENTRY_CHARS = 500;
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -114,7 +129,13 @@ public class GeminiProjectObserverService {
         this.settingsService = settingsService;
     }
 
-    @Scheduled(cron = "${gemini-project-observer.cron:0 */30 * * * ?}")
+    // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
+    // spend). The "nothing changed, skip" path already covers idle projects cheaply; this halves the call
+    // count for an ACTIVE project too, which is where most of tonight's spend actually came from (skip
+    // rarely triggers when there's real ongoing work). Offset to :20 rather than :00 purely to avoid
+    // landing on the same minute as other schedules in this app (GeminiContextService's 3am reindex,
+    // falsification's 4h ticks) - no real contention risk in a single-tenant app, just tidiness.
+    @Scheduled(cron = "${gemini-project-observer.cron:0 20 * * * ?}")
     public void runObserverCycle() {
         if (!settingsService.effectiveBoolean("gemini_project_observer_enabled")) {
             return;
@@ -177,7 +198,7 @@ public class GeminiProjectObserverService {
         // own cache entry).
         String systemInstruction = """
                 You are an external, autonomous observer of ONE software project's real, current state. You
-                run every 30 minutes. You do NOT see the backend's internal implementation logs or any source
+                run every hour. You do NOT see the backend's internal implementation logs or any source
                 code - you are given a structured snapshot of the project's actual current state (task/
                 wishlist counts, deliverable readiness, what changed since your last visit, stagnation
                 signals) and your OWN journal entries from previous cycles. Keep your own continuity: read
@@ -198,6 +219,13 @@ public class GeminiProjectObserverService {
                 in a prior cycle and nothing about it has changed - check "Your recent actions" and your own
                 journal below first; repeating the same finding every cycle just spawns redundant tasks for
                 the same underlying issue.
+                Money is being spent on every cycle you run whether or not the project moves forward - going
+                quiet ("I will just keep observing") is only acceptable when the snapshot genuinely gives you
+                NO candidate to act on. If triggerFalsificationRun is gated shut (per the Falsification
+                readiness line or your own recent actions) but the snapshot lists ANY stuck/blocked task or
+                stale wishlist candidate, try a DIFFERENT tool against that candidate instead of only
+                retrying the same blocked one or falling silent - a stalled project with idle candidates
+                sitting unused in the snapshot is the exact failure this authority was built to prevent.
 
                 Below "Your recent actions" lists your own last real actions and their ACTUAL outcome (from
                 the audit trail, not your memory) - check it before proposing an action: if you already tried
@@ -216,11 +244,13 @@ public class GeminiProjectObserverService {
                 - dismissWishlist: cancel a wishlist item that is genuinely dead weight (listed as a stale
                   candidate, or a duplicate/superseded finding) - targetId = the wishlist id.
                 - nudgeStuckSession: push a stuck task's live Jules session to respond now instead of waiting
-                  - targetId = the task id, only for a task listed as a stuck/blocked candidate.
+                  - targetId = the task id, for any task listed as a STUCK/BLOCKED TASK CANDIDATE (blocked,
+                  queued, review, or pending_review - all four appear there). Safe to try even if it turns
+                  out there is no live session left (it just reports that back, nothing breaks).
                 - abandonConflict: give up on a conflict that is clearly beyond resolving - targetId = the
                   conflict id (only if one is explicitly listed in the snapshot).
                 - boostPriority: raise a genuinely bottlenecked queued task above normal priority - targetId
-                  = the task id, only for a task listed as a stuck/queued candidate.
+                  = the task id, for a task listed as a STUCK/BLOCKED TASK CANDIDATE with status queued.
                 - triggerFalsificationRun: pull the philosophical falsification pass forward instead of
                   waiting for its own schedule - targetId = the project id (given below). Check the
                   "Falsification readiness" line in the snapshot first - if the current ratio is already
@@ -248,7 +278,7 @@ public class GeminiProjectObserverService {
         // structured-evidence-only noticing task - exactly the shape a cheaper model tier is suited for, and
         // the system instruction already asks for restraint regardless of model tier. Explicit caching (same
         // key every cycle) means the instruction above is billed at Gemini's reduced cached-token rate after
-        // the first call instead of resent in full every 30 minutes for every active project.
+        // the first call instead of resent in full every cycle for every active project.
         String response = mlPredictionServiceClient.chat(prompt, systemInstruction, "gemini_project_observer_system_instruction");
         ObserverResponse parsed = parseResponse(response);
         if (parsed == null) {
@@ -570,6 +600,9 @@ public class GeminiProjectObserverService {
             String journalEntry = root.path("journalEntry").asText("");
             if (journalEntry.isBlank()) {
                 return null;
+            }
+            if (journalEntry.length() > MAX_JOURNAL_ENTRY_CHARS) {
+                journalEntry = journalEntry.substring(0, MAX_JOURNAL_ENTRY_CHARS) + "... [truncated]";
             }
             JsonNode rawFindings = root.path("findings");
             List<Finding> findings = new ArrayList<>();

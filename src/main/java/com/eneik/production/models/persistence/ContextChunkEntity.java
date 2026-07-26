@@ -35,6 +35,11 @@ public class ContextChunkEntity {
     @Column(name = "embedding_dims", nullable = false)
     private int embeddingDims;
 
+    // 2026-07-26 addition: sha256 of the FULL source document (same value on every chunk from that source),
+    // so a reindex can skip re-embedding a source whose content hasn't changed since last time.
+    @Column(name = "content_hash", length = 64)
+    private String contentHash;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -52,6 +57,8 @@ public class ContextChunkEntity {
     public void setEmbedding(String embedding) { this.embedding = embedding; }
     public int getEmbeddingDims() { return embeddingDims; }
     public void setEmbeddingDims(int embeddingDims) { this.embeddingDims = embeddingDims; }
+    public String getContentHash() { return contentHash; }
+    public void setContentHash(String contentHash) { this.contentHash = contentHash; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
 }

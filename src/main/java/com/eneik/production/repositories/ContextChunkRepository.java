@@ -16,6 +16,8 @@ public interface ContextChunkRepository extends JpaRepository<ContextChunkEntity
 
     List<ContextChunkEntity> findBySourceType(String sourceType);
 
+    boolean existsBySourceRefAndContentHash(String sourceRef, String contentHash);
+
     // Re-indexing a source is delete-then-insert (see GeminiContextService.indexDocument) so editing a
     // doc never leaves stale chunks from a previous, longer version of the same source behind.
     @Modifying
