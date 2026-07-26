@@ -8,6 +8,7 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.GeminiObserverActionRepository;
 import com.eneik.production.repositories.GeminiObserverJournalRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -39,10 +40,12 @@ class GeminiProjectObserverServiceTest {
     private TaskRepository taskRepository;
     private ClientDeliverableReadinessService readinessService;
     private GeminiObserverJournalRepository journalRepository;
+    private GeminiObserverActionRepository actionRepository;
     private GeminiContextService geminiContextService;
     private MLPredictionServiceClient mlPredictionServiceClient;
     private WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher;
     private GeminiObserverActionService actionService;
+    private FalsificationCycleService falsificationCycleService;
     private SystemSettingsService settingsService;
     private GeminiProjectObserverService service;
 
@@ -52,14 +55,19 @@ class GeminiProjectObserverServiceTest {
         taskRepository = mock(TaskRepository.class);
         readinessService = mock(ClientDeliverableReadinessService.class);
         journalRepository = mock(GeminiObserverJournalRepository.class);
+        actionRepository = mock(GeminiObserverActionRepository.class);
         geminiContextService = mock(GeminiContextService.class);
         mlPredictionServiceClient = mock(MLPredictionServiceClient.class);
         wishlistContentSimilarityMatcher = mock(WishlistContentSimilarityMatcher.class);
         actionService = mock(GeminiObserverActionService.class);
+        falsificationCycleService = mock(FalsificationCycleService.class);
         settingsService = mock(SystemSettingsService.class);
+        when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
+        when(falsificationCycleService.philosophicalReadinessInfo(any()))
+                .thenReturn(new FalsificationCycleService.PhilosophicalReadinessInfo(0.9, false));
         service = new GeminiProjectObserverService(projectRepository, wishlistRepository, taskRepository,
-                readinessService, journalRepository, geminiContextService, mlPredictionServiceClient,
-                wishlistContentSimilarityMatcher, actionService, settingsService);
+                readinessService, journalRepository, actionRepository, geminiContextService, mlPredictionServiceClient,
+                wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService);
     }
 
     private ProjectEntity project() {

@@ -1,5 +1,6 @@
 package com.eneik.production.services;
 
+import com.eneik.production.models.persistence.GeminiObserverActionEntity;
 import com.eneik.production.models.persistence.GeminiObserverJournalEntity;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.ProjectEntity;
@@ -9,6 +10,7 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.GeminiObserverActionRepository;
 import com.eneik.production.repositories.GeminiObserverJournalRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -77,10 +79,12 @@ public class GeminiProjectObserverService {
     private final TaskRepository taskRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final GeminiObserverJournalRepository journalRepository;
+    private final GeminiObserverActionRepository actionRepository;
     private final GeminiContextService geminiContextService;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher;
     private final GeminiObserverActionService actionService;
+    private final FalsificationCycleService falsificationCycleService;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -89,20 +93,24 @@ public class GeminiProjectObserverService {
                                          TaskRepository taskRepository,
                                          ClientDeliverableReadinessService readinessService,
                                          GeminiObserverJournalRepository journalRepository,
+                                         GeminiObserverActionRepository actionRepository,
                                          GeminiContextService geminiContextService,
                                          MLPredictionServiceClient mlPredictionServiceClient,
                                          WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher,
                                          GeminiObserverActionService actionService,
+                                         FalsificationCycleService falsificationCycleService,
                                          SystemSettingsService settingsService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.readinessService = readinessService;
         this.journalRepository = journalRepository;
+        this.actionRepository = actionRepository;
         this.geminiContextService = geminiContextService;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.wishlistContentSimilarityMatcher = wishlistContentSimilarityMatcher;
         this.actionService = actionService;
+        this.falsificationCycleService = falsificationCycleService;
         this.settingsService = settingsService;
     }
 
@@ -145,6 +153,14 @@ public class GeminiProjectObserverService {
         }
 
         String journalBlock = formatJournalForPrompt(recentJournal);
+        // 2026-07-26 addition: her own last few ACTIONS with their real outcome, not just her journal prose.
+        // Confirmed live gap (test-thirty-eighth, 08:00 and 09:00): she proposed triggerFalsificationRun
+        // twice in a row with near-identical reasoning, because the only continuity she had was her own
+        // journal text, which never mentioned the attempt - the actions themselves live in a separate,
+        // code-only audit table she was never shown. This closes that loop cheaply (a few extra lines in an
+        // already-sent prompt, not a new call).
+        String actionsBlock = formatRecentActionsForPrompt(
+                actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId()));
         // 2026-07-26: the retrieval query is now anomaly-aware instead of a fixed generic template - if the
         // snapshot found something concrete (duplicates, stagnation), that text is folded into the query so
         // retrieval actually surfaces the most relevant known pattern/prior incident for THIS situation,
@@ -178,12 +194,25 @@ public class GeminiProjectObserverService {
                 across several consecutive visits of yours - this is exactly the kind of thing a report-only
                 observer would silently let sit. Prefer actually doing something about it (see ACTIONS below)
                 over merely reporting it, when the snapshot gives you a concrete, listed candidate to act on.
+                Do NOT raise a new finding for a stagnation (or duplicate-task) situation you already raised
+                in a prior cycle and nothing about it has changed - check "Your recent actions" and your own
+                journal below first; repeating the same finding every cycle just spawns redundant tasks for
+                the same underlying issue.
+
+                Below "Your recent actions" lists your own last real actions and their ACTUAL outcome (from
+                the audit trail, not your memory) - check it before proposing an action: if you already tried
+                something and it was skipped/failed for a reason that hasn't changed (e.g. a readiness gate
+                that is still not met), proposing the identical action again will just fail identically -
+                only retry if something concrete changed since.
 
                 ACTIONS - you may take a small number of real, reversible operations directly, in addition to
                 (or instead of) raising a finding. Never invent a target id - only ever use an id that
-                literally appears in the snapshot below. Every action is logged and independently audited,
-                so only propose one when the evidence in the snapshot genuinely supports it - these mutate
-                real state, unlike findings, which are only ever a suggestion.
+                literally appears in the CURRENT EVIDENCE SNAPSHOT below (never an id from "RELEVANT SYSTEM
+                KNOWLEDGE" or your own past journal text - those describe other times and sometimes other
+                projects entirely; an id from there is never a valid target here even if it looks right).
+                Every action is logged and independently audited, so only propose one when the evidence in
+                the snapshot genuinely supports it - these mutate real state, unlike findings, which are only
+                ever a suggestion.
                 - dismissWishlist: cancel a wishlist item that is genuinely dead weight (listed as a stale
                   candidate, or a duplicate/superseded finding) - targetId = the wishlist id.
                 - nudgeStuckSession: push a stuck task's live Jules session to respond now instead of waiting
@@ -193,7 +222,11 @@ public class GeminiProjectObserverService {
                 - boostPriority: raise a genuinely bottlenecked queued task above normal priority - targetId
                   = the task id, only for a task listed as a stuck/queued candidate.
                 - triggerFalsificationRun: pull the philosophical falsification pass forward instead of
-                  waiting for its own schedule - targetId = the project id (given below).
+                  waiting for its own schedule - targetId = the project id (given below). Check the
+                  "Falsification readiness" line in the snapshot first - if the current ratio is already
+                  below the required threshold, triggering this will just be gated and do nothing; only
+                  propose it when the ratio has actually reached the threshold, or you have a genuine reason
+                  to believe the gate itself is being evaluated incorrectly.
 
                 Return ONLY JSON: {"journalEntry": "one short paragraph, your own notes for your future self -
                 what you checked and concluded this cycle, even if nothing notable happened",
@@ -206,6 +239,7 @@ public class GeminiProjectObserverService {
 
         String prompt = (retrievedContext.isBlank() ? "" : retrievedContext + "\n\n")
                 + "Your own journal from previous cycles:\n" + journalBlock
+                + "\n\nYour recent actions (real audit trail, not your memory):\n" + actionsBlock
                 + "\n\nProject id: " + project.getId()
                 + "\nCurrent evidence snapshot for project \"" + project.getName() + "\":\n\n" + snapshot.text();
 
@@ -351,6 +385,15 @@ public class GeminiProjectObserverService {
                 .append(readiness.totalDeliverables()).append(" merged, decompositionComplete=")
                 .append(readiness.decompositionComplete());
         sb.append("\nEpics: ").append(epics.size()).append(" total, ").append(incompleteEpics).append(" incomplete");
+        // 2026-07-26 addition: the actual triggerFalsificationRun gate, spelled out, so she can reason about
+        // it instead of discovering it by trial and error (confirmed live: she retried the same gated action
+        // twice in a row, test-thirty-eighth 08:00 and 09:00).
+        FalsificationCycleService.PhilosophicalReadinessInfo falsificationInfo =
+                falsificationCycleService.philosophicalReadinessInfo(project);
+        sb.append("\nFalsification readiness: current ratio ").append(Math.round(readiness.ratio() * 100))
+                .append("%, required ").append(Math.round(falsificationInfo.applicableThreshold() * 100))
+                .append("% (").append(falsificationInfo.hasRunBefore() ? "subsequent" : "first").append(" run) - ")
+                .append(readiness.ratio() >= falsificationInfo.applicableThreshold() ? "GATE MET" : "gate not met yet");
         sb.append("\nResolved since your last visit (").append(since).append("): ");
         if (recentlyResolved.isEmpty()) {
             sb.append("none");
@@ -465,6 +508,29 @@ public class GeminiProjectObserverService {
         chronological.sort(Comparator.comparing(GeminiObserverJournalEntity::getCreatedAt));
         for (GeminiObserverJournalEntity entry : chronological) {
             sb.append("- [").append(entry.getCreatedAt()).append("] ").append(entry.getEntry()).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * The real audit trail of her own actions, chronological, with the ACTUAL outcome (not what she may
+     * have hoped) - see {@link GeminiObserverActionEntity}. Distinct from the journal, which is only her own
+     * self-reported prose; this is code-written, so it stays true even if she never mentioned the attempt.
+     */
+    private String formatRecentActionsForPrompt(List<GeminiObserverActionEntity> recentActions) {
+        if (recentActions.isEmpty()) {
+            return "(none yet)";
+        }
+        StringBuilder sb = new StringBuilder();
+        List<GeminiObserverActionEntity> chronological = new ArrayList<>(recentActions);
+        chronological.sort(Comparator.comparing(GeminiObserverActionEntity::getCreatedAt));
+        for (GeminiObserverActionEntity action : chronological) {
+            sb.append("- [").append(action.getCreatedAt()).append("] ").append(action.getTool())
+                    .append("(targetId=").append(action.getTargetId()).append(") -> ").append(action.getOutcome());
+            if (action.getDetail() != null && !action.getDetail().isBlank()) {
+                sb.append(" (").append(action.getDetail()).append(')');
+            }
+            sb.append('\n');
         }
         return sb.toString();
     }

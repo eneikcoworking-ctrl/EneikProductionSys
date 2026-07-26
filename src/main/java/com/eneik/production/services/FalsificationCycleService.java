@@ -137,6 +137,26 @@ public class FalsificationCycleService {
                 projectId, WishlistSource.philosophical_falsification, WishlistStatus.pending);
     }
 
+    public record PhilosophicalReadinessInfo(double applicableThreshold, boolean hasRunBefore) {
+    }
+
+    /**
+     * Exposed (2026-07-26, operator directive: cheap observer improvements after live test-thirty-eighth
+     * findings) so {@link GeminiProjectObserverService} can tell the observer the actual gate threshold
+     * up front, instead of her repeatedly proposing {@code triggerFalsificationRun} and discovering the
+     * same "26% < 90%" skip every cycle (confirmed live: she retried it twice in a row, 08:00 and 09:00,
+     * with identical reasoning each time). Single source of truth shared with the real gate check below -
+     * never duplicate the threshold-selection logic.
+     */
+    public PhilosophicalReadinessInfo philosophicalReadinessInfo(ProjectEntity project) {
+        boolean hasRunBefore = wishlistRepository.existsByProjectIdAndSource(
+                project.getId(), WishlistSource.philosophical_falsification);
+        double applicableThreshold = hasRunBefore
+                ? philosophicalSubsequentRunReadinessThreshold
+                : philosophicalFirstRunReadinessThreshold;
+        return new PhilosophicalReadinessInfo(applicableThreshold, hasRunBefore);
+    }
+
     /**
      * Public so the manual-trigger endpoint (ProjectController) can run this out-of-cycle without waiting
      * for the weekly cron - same "force" idiom already used elsewhere in this codebase for the onboarding
@@ -149,11 +169,9 @@ public class FalsificationCycleService {
             return;
         }
 
-        boolean hasRunBefore = wishlistRepository.existsByProjectIdAndSource(
-                project.getId(), WishlistSource.philosophical_falsification);
-        double applicableThreshold = hasRunBefore
-                ? philosophicalSubsequentRunReadinessThreshold
-                : philosophicalFirstRunReadinessThreshold;
+        PhilosophicalReadinessInfo readinessInfo = philosophicalReadinessInfo(project);
+        boolean hasRunBefore = readinessInfo.hasRunBefore();
+        double applicableThreshold = readinessInfo.applicableThreshold();
 
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
         if (!readiness.decompositionComplete() || readiness.ratio() < applicableThreshold) {
