@@ -51,7 +51,10 @@ class ClientDeliverableReadinessServiceTest {
         assertEquals(0, readiness.completeFeatures());
         assertEquals(4, readiness.totalDeliverables());
         assertEquals(1, readiness.mergedDeliverables());
-        assertEquals(0.25, readiness.ratio(), 0.0001);
+        // 2026-07-26 operator directive ("считать по фичам, а не по таскам!"): ratio() is now
+        // completeFeatures/totalFeatures, not mergedDeliverables/totalDeliverables - the feature isn't
+        // complete (only 1 of its 4 items merged), so ratio is 0, even though mergedDeliverables=1.
+        assertEquals(0.0, readiness.ratio(), 0.0001);
     }
 
     @Test
@@ -118,6 +121,38 @@ class ClientDeliverableReadinessServiceTest {
 
         assertEquals(1, service.computeForProject(projectId).mergedDeliverables());
         assertTrue(service.reachedMain(tasks.get(0)));
+    }
+
+    @Test
+    void featureIsReadyForCloseoutAsSoonAsAnyTerminalTaskHasRealMergedWorkEvenWithSiblingsStillInReview() {
+        // 2026-07-26 operator directive ("убрать блокировку закрытия"): closeout used to wait for EVERY
+        // sibling task to reach a terminal status before folding ANY already-merged work into main -
+        // confirmed live (test-thirty-eighth) holding completeFeatures at 0 indefinitely behind ordinary
+        // review-stage siblings. A sibling still in review has no commits on the thread branch yet, so
+        // there is nothing of theirs to wait for.
+        UUID projectId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+        TaskEntity mergedDone = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
+        stubMerged(mergedDone, true);
+        TaskEntity siblingStillInReview = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
+        siblingStillInReview.setStatus(TaskStatus.review);
+        when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(mergedDone, siblingStillInReview));
+        when(wishlistRepository.findByFeatureId(featureId)).thenReturn(List.of());
+
+        assertTrue(service.isFeatureReadyForCloseout(projectId, featureId));
+    }
+
+    @Test
+    void featureIsNotReadyForCloseoutWhenNoTerminalTaskHasRealMergedWork() {
+        UUID projectId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+        TaskEntity doneWithoutCode = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
+        stubMerged(doneWithoutCode, false);
+        TaskEntity stillInReview = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
+        stillInReview.setStatus(TaskStatus.review);
+        when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(doneWithoutCode, stillInReview));
+
+        assertFalse(service.isFeatureReadyForCloseout(projectId, featureId));
     }
 
     @Test

@@ -207,7 +207,7 @@ class GeminiProjectObserverServiceTest {
         assertTrue(prompt.contains("Previously: everything looked healthy."));
         assertTrue(prompt.contains("Flaky migration task"));
         assertTrue(prompt.contains("PR closed without merge"));
-        assertTrue(prompt.contains("1/2 merged"));
+        assertTrue(prompt.contains("1/2 individual work items merged"));
     }
 
     @Test

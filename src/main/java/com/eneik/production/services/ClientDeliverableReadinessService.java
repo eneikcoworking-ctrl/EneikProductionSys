@@ -277,14 +277,22 @@ public class ClientDeliverableReadinessService {
                 .anyMatch(w -> feature.getId().equals(w.getFeatureId())));
         boolean decompositionComplete = everyRootCompiled && everyFeaturePlanned;
         int total = codeProducingItems.size();
+        int totalFeatures = productFeatures.size();
+        // 2026-07-26 operator directive ("считать по фичам, а не по таскам!", repeated - this metric had
+        // drifted to deliverable-granularity): ratio() now reflects completeFeatures/totalFeatures, not
+        // mergedDeliverables/totalDeliverables. totalDeliverables/mergedDeliverables stay in the record as
+        // informational detail (still shown), they just no longer DRIVE ratio() or anything gated on it
+        // (falsification/coverage-audit thresholds, her journal, the dashboard). A project with 5 real
+        // features and 1 fully complete now genuinely reads 20%, not "5 of 19 individual work items merged"
+        // - a client brief is delivered feature by feature, not item by item.
+        double ratio = totalFeatures == 0 ? 1.0 : (double) completeFeatures / totalFeatures;
         if (total == 0) {
             // Every planned item for this scope is auxiliary (decision/spike/review work only) - there is
             // nothing this metric can measure, not "0% done". Report via decompositionComplete alone rather
             // than a misleading 0/0 ratio.
-            return new Readiness(productFeatures.size(), completeFeatures, 0, 0, 1.0, decompositionComplete);
+            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete);
         }
-        return new Readiness(productFeatures.size(), completeFeatures, total, mergedCount,
-                (double) mergedCount / total, decompositionComplete);
+        return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete);
     }
 
     /**
@@ -641,28 +649,36 @@ public class ClientDeliverableReadinessService {
     }
 
     /**
-     * Feature-thread closeout gate (2026-07-24) - see AutoMergeService.closeOutReadyFeatureThreads. A
-     * feature is ready to fold its accumulation branch back into main once every task under it has reached
-     * a terminal status and no wishlist item for it is still being turned into a task. `blocked` counts as
-     * terminal here deliberately - a permanently blocked task must not hold its already-finished sibling
-     * work hostage from ever reaching main.
+     * Feature-thread closeout gate (2026-07-24, relaxed 2026-07-26) - see
+     * AutoMergeService.closeOutReadyFeatureThreads. Originally required EVERY task under a feature to reach
+     * a terminal status before folding ANY of the thread's already-merged work into main - confirmed live
+     * (test-thirty-eighth) this could hold a feature's genuinely-done work hostage indefinitely behind
+     * ordinary siblings still in review, keeping completeFeatures at 0 for hours despite real progress.
+     * Operator directive: "убрать блокировку закрытия" - a review/pending_review sibling has not yet added
+     * its own commits to the thread branch at all (see classifyAndHandleBranch), so there is nothing of
+     * theirs to wait for; closing out now just means "fold what's actually on the branch", not "declare the
+     * whole feature finished". `blocked`/`failed` still count as terminal (must never hold up real work),
+     * and a feature with real merged work is now ready as soon as that work exists, regardless of siblings.
      *
      * This can never be a provably final fact (the compiler can re-attach a brand-new root wishlist to an
      * existing feature at any later time - see FeatureService.findExistingEpic) - that's fine, a reopened
      * feature resets its thread's closeout state on its next has-code merge (see
      * AutoMergeService.classifyAndHandleBranch), so an early closeout is self-correcting, not a permanent
-     * mistake.
+     * mistake - confirmed unconditional in that method (mergedToMainAt/closeoutPrUrl reset on every single
+     * has-code merge, whether or not the thread had already closed out once before).
      */
     public boolean isFeatureReadyForCloseout(UUID projectId, UUID featureId) {
         List<TaskEntity> featureTasks = taskRepository.findByFeatureId(featureId);
         if (featureTasks.isEmpty()) {
             return false;
         }
-        boolean allTerminal = featureTasks.stream().allMatch(t -> switch (t.getStatus()) {
-            case done, failed, spike_completed, blocked -> true;
-            default -> false;
-        });
-        if (!allTerminal) {
+        boolean anyTerminalTaskHasRealMergedWork = featureTasks.stream()
+                .filter(t -> switch (t.getStatus()) {
+                    case done, failed, spike_completed, blocked -> true;
+                    default -> false;
+                })
+                .anyMatch(t -> mergedReviews(t.getId()).stream().anyMatch(r -> Boolean.TRUE.equals(r.getHasCode())));
+        if (!anyTerminalTaskHasRealMergedWork) {
             return false;
         }
         return wishlistRepository.findByFeatureId(featureId).stream()

@@ -381,8 +381,13 @@ public class GeminiProjectObserverService {
         taskHistogram.forEach((status, count) -> sb.append(status).append('=').append(count).append(' '));
         sb.append("\nWishlist status counts: ");
         wishlistHistogram.forEach((status, count) -> sb.append(status).append('=').append(count).append(' '));
-        sb.append("\nDeliverable readiness: ").append(readiness.mergedDeliverables()).append('/')
-                .append(readiness.totalDeliverables()).append(" merged, decompositionComplete=")
+        // 2026-07-26 operator directive ("считать по фичам, а не по таскам!"): readiness.ratio() now
+        // reflects completeFeatures/totalFeatures, not mergedDeliverables/totalDeliverables - show both
+        // numbers explicitly so she (and anyone reading her journal later) never confuses the two.
+        sb.append("\nFeature readiness: ").append(readiness.completeFeatures()).append('/')
+                .append(readiness.totalFeatures()).append(" features complete (this drives the ratio below)");
+        sb.append("\nDeliverable detail: ").append(readiness.mergedDeliverables()).append('/')
+                .append(readiness.totalDeliverables()).append(" individual work items merged, decompositionComplete=")
                 .append(readiness.decompositionComplete());
         sb.append("\nEpics: ").append(epics.size()).append(" total, ").append(incompleteEpics).append(" incomplete");
         // 2026-07-26 addition: the actual triggerFalsificationRun gate, spelled out, so she can reason about
@@ -462,8 +467,9 @@ public class GeminiProjectObserverService {
      */
     private boolean isReadinessStagnant(ClientDeliverableReadinessService.Readiness readiness,
                                           List<GeminiObserverJournalEntity> recentJournal) {
-        if (readiness.decompositionComplete() && readiness.totalDeliverables() > 0
-                && readiness.mergedDeliverables() >= readiness.totalDeliverables()) {
+        // 2026-07-26: checks ratio() directly (feature-complete) rather than raw deliverable counts, so
+        // this stays correct regardless of what granularity ratio() is computed from.
+        if (readiness.decompositionComplete() && readiness.totalFeatures() > 0 && readiness.ratio() >= 1.0) {
             return false;
         }
         List<Double> priorRatios = recentJournal.stream()
