@@ -23,15 +23,39 @@ public class SystemStatusController {
     private final SystemSettingsService systemSettingsService;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
     private final com.eneik.production.services.GeminiContextService geminiContextService;
+    private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
 
     public SystemStatusController(SystemStatusService systemStatusService,
                                   SystemSettingsService systemSettingsService,
                                   org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
-                                  com.eneik.production.services.GeminiContextService geminiContextService) {
+                                  com.eneik.production.services.GeminiContextService geminiContextService,
+                                  com.eneik.production.services.ProjectEventLogService projectEventLogService) {
         this.systemStatusService = systemStatusService;
         this.systemSettingsService = systemSettingsService;
         this.jdbcTemplate = jdbcTemplate;
         this.geminiContextService = geminiContextService;
+        this.projectEventLogService = projectEventLogService;
+    }
+
+    // Durable, deploy-independent project history (2026-07-26 restoration) - for external agents/operator
+    // forensic access, e.g. "what actually happened to this session's PR url before it got overwritten".
+    // Always available (no debug-flag gate, unlike /sql) since this is now baseline read access, not a
+    // raw-JDBC backdoor. ?since=<ISO instant> returns everything chronologically from that point instead
+    // of the default most-recent-first bounded window.
+    @GetMapping("/project-log/{projectId}")
+    public List<Map<String, Object>> projectLog(@org.springframework.web.bind.annotation.PathVariable UUID projectId,
+                                                 @RequestParam(required = false) String since,
+                                                 @RequestParam(required = false, defaultValue = "500") int limit) {
+        List<com.eneik.production.models.persistence.ProjectEventLogEntity> entries = since != null && !since.isBlank()
+                ? projectEventLogService.since(projectId, java.time.Instant.parse(since))
+                : projectEventLogService.recent(projectId, limit);
+        return entries.stream()
+                .map(e -> Map.<String, Object>of(
+                        "createdAt", e.getCreatedAt().toString(),
+                        "level", e.getLevel(),
+                        "logger", e.getLogger(),
+                        "message", e.getMessage()))
+                .toList();
     }
 
     // Manual trigger for GeminiContextService's standing-knowledge re-index (2026-07-25) - lets the

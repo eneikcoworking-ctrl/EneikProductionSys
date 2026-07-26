@@ -188,6 +188,11 @@ public class SystemSettingsService {
         // observer now reasons over a structured evidence snapshot of real project state plus Gemini's own
         // journal (GeminiObserverJournalEntity), never the backend's internal Logback log.
         definitions.put("gemini_project_observer_enabled", flag("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
+        // On by default (2026-07-26 restoration, operator directive: "лог проекта должен независеть от
+        // деплоев!! это огромное упущение") - baseline infrastructure, not an opt-in experiment. Seeded
+        // 'true' in V61. Gates only the DB write (ProjectEventLogService.flush); the appender always
+        // enqueues so the kill switch can never leak into unbounded in-memory growth either way.
+        definitions.put("project_event_log_enabled", flag("project_event_log_enabled", "PROJECT_EVENT_LOG_ENABLED", "project-event-log.enabled"));
         definitions.put("simulated_actuator_health", plain("simulated_actuator_health", "SIMULATED_ACTUATOR_HEALTH", "simulated.actuator.health"));
         definitions.put("system_stall_status", plain("system_stall_status", "SYSTEM_STALL_STATUS", "system-stall.status"));
         definitions.put("task_compiler_account_name", plain("task_compiler_account_name", "TASK_COMPILER_ACCOUNT_NAME", "task-compiler.account-name"));

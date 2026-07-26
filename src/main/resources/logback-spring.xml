@@ -7,8 +7,15 @@
          context to its role compliance checks without re-parsing container logs. -->
     <appender name="SCOPED_BUFFER" class="com.eneik.production.services.logging.ScopedBufferAppender"/>
 
+    <!-- Durable counterpart (2026-07-26 restoration): same PROJECT:{id}-scoped events, but persisted to
+         the project_event_log table (see ProjectEventLogService) so history survives a redeploy - unlike
+         SCOPED_BUFFER above, which is in-memory only. External-agent/operator forensic access, never fed
+         to Gemini. -->
+    <appender name="DURABLE_PROJECT_LOG" class="com.eneik.production.services.logging.DurableProjectLogAppender"/>
+
     <root level="INFO">
         <appender-ref ref="CONSOLE"/>
         <appender-ref ref="SCOPED_BUFFER"/>
+        <appender-ref ref="DURABLE_PROJECT_LOG"/>
     </root>
 </configuration>
