@@ -4717,6 +4717,52 @@ Project id: `0d282193-8356-407b-8e13-303af28d5ea8`.
 - В другом проекте устранены две доказанные queued-копии; неоднозначные задачи сохранены.
 - Внешние лимиты не расходовались.
 
+## 2026-07-26T15:46:05+04:00 - Post-mutation stability check
+
+**Границы:** только локальные backend endpoints, docker logs и локальные данные. Внешние API, GitHub, Jules, Gemini и OpenAI не вызывались.
+
+### Target `test-thirty-third`
+
+- `/health`: `ok` (`2026-07-26T11:46:05.244134868Z`).
+- Project dashboard queue: `totalQueued=0`, `byTag=[]`.
+- Pipeline: `queued=0`, `claimed=0`, `in_progress=0`, `review=0`, `done=4`, `failed=33`.
+- `openWishlistCount=0`.
+- Полный task-срез: `blocked=3`, `spike_completed=1`, `done=22`, `failed=37`; активных статусов нет.
+- BARCAN-TAG-09 chain: `blocked=3`, `spike_completed=1`, `done=4`, `failed=33`; `queued=0`, `claimed=0`.
+- Wishlist: `client converted_to_task=19`, `role converted_to_task=57`, `role_mismatch_followup converted_to_task=19`, `coverage_gap dismissed=5`, `role dismissed=3`.
+- Открытых `role_mismatch_followup=0`; `self_falsification=0`.
+- Нового раздувания target-проекта между снимками не произошло.
+
+### Falsification readiness
+
+- `4` features, `0` complete.
+- `15` planned tasks, `3` merged, ratio `0.20`.
+- `decompositionComplete=true`, threshold `0.90`, `falsificationEligible=false`, status `building`.
+- Список пяти blockers не изменился: `dab7d3d8` (`done_not_reached_main`), `27f97079`, `852247f8`, `94453aca`, `233231df` (последние четыре `stale_in_progress`).
+- Событий `FalsificationCycleService` dispatch/apply нет; gate остаётся закрыт корректно.
+
+### Verification of leadgen duplicate blocking
+
+- Project `leadgen-telegram-bot`: `queued=29`, `blocked=2`, `failed=14`, `done=2`.
+- `a860c2c9-e6a1-4ea1-8bb1-5e7343b440c3` остаётся `blocked`.
+- `daf5c2c5-e0df-4691-b53f-7da234e042f9` остаётся `blocked`.
+- Exact duplicate groups среди оставшихся queued descriptions: `0`.
+- Новых задач после предыдущего снимка не появилось; повторная мутация не нужна.
+
+### Backend log delta
+
+За контрольное окно:
+
+- `FalsificationCycleService=0`;
+- `auto-recovery follow-up disabled=0`;
+- `Follow-up wishlist created=0`;
+- `RESOURCE_EXHAUSTED=0`;
+- `DataIntegrityViolationException=0`;
+- `ERROR=0`;
+- пять INFO `Poka-yoke: PR review fallback was already attempted ... automatic retry is disabled` относятся к `test-thirty-eighth` и не создают новую работу.
+
+**Итог:** защита от двух подтверждённых дубликатов удерживается, нового раздувания нет. Целевой проект остаётся не аварийным, но фактически остановленным: активная очередь пуста, readiness `3/15`, фальсификация не запускалась.
+
 ## 2026-07-26T11:30:00+00:00 - Одиннадцатый почасовой чекпоинт test-thirty-eighth - ВТОРОЕ подряд подтверждение, что фикс "видеть свои прошлые действия" работает; замечен параллельный внешний агент в этом же логе
 
 **Примечание**: выше в этом файле - большой блок, написанный НЕ мной (судя по содержанию - работа над `test-thirty-third`, блокировка дублей через `/internal/tasks`). Не трогал, только дописываю свой чекпоинт в конец. Подтверждает слова оператора: "это не будет джемени это будут внешние агенты" - лог уже используется параллельно.
