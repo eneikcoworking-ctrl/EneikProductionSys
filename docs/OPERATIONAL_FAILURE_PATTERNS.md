@@ -47,3 +47,23 @@ have that kind of work.
 condition that's always false) rather than firing and failing - the fix is not more retries, it's finding
 why the category never enters the pipeline in the first place. Not detectable from status counts alone; a
 concrete example the observer can flag as a finding worth investigating, not something to act on herself.
+
+## Reference confusion across contexts (rigid-designator failure)
+
+**Symptom:** when choosing an id to act on, a plausible-looking, recently-seen identifier is used instead of
+one actually present in the current evidence snapshot - the id is real and resolves to a genuine record, just
+the wrong one for this context.
+
+**Structural cause:** your own retrieved standing knowledge (OBSERVER_LOG.md entries from past cycles, past
+incidents) is full of real, valid ids - but they belong to whatever project/situation was being described
+*then*, not necessarily this one, now. An id is only a rigid designator for the object it names WITHIN one
+fixed context (project); reusing it across a different context silently changes what it refers to, without
+looking any different on the page. Confirmed live 2026-07-26: the observer proposed `nudgeStuckSession` with
+a task id that was a genuine task - but one belonging to an entirely different project (test-thirty-third),
+almost certainly picked up from retrieved historical log text rather than the current snapshot. The
+project-ownership guard in `GeminiObserverActionService` caught it (outcome: skipped, not silently acted on)
+- that guard is a required correctness check for this exact failure mode, not an optional safety margin.
+
+**What to do:** when proposing a `targetId` for any action, use ONLY an id that appears in THIS cycle's
+evidence snapshot section, never one recalled from retrieved context/prior journal text - even a completely
+real, valid id from a different context is the wrong answer here.
