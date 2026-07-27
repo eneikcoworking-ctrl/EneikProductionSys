@@ -121,7 +121,7 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<CollaboratorProvisioningResult> inviteJulesCollaboratorsError(String detail) {
-        Set<String> seen = new LinkedHashSet<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
                 .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
                 .map(account -> account.getGithubUsername().trim())
@@ -150,7 +150,7 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<CollaboratorProvisioningResult> inviteJulesCollaborators(String repositoryName, String token) {
-        Set<String> seen = new LinkedHashSet<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
         return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
                 .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
                 .map(account -> account.getGithubUsername().trim())
