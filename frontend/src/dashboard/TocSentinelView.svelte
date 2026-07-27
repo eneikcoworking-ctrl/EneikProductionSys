@@ -1,8 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { TocDbrStatus, TocGraphData, TocAnomalyReport } from '../lib/types';
-
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+  import { API_BASE } from '../lib/api';
 
   let dbrStatus: TocDbrStatus | null = null;
   let graphData: TocGraphData | null = null;

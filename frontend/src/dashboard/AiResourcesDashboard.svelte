@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+  import { API_BASE } from '../lib/api';
 
   type Setting = {
     key: string;

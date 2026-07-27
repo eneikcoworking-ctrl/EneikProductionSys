@@ -8,8 +8,7 @@
   import TocSentinelView from './dashboard/TocSentinelView.svelte';
   import SixSigmaKaizenPanel from './dashboard/SixSigmaKaizenPanel.svelte';
   import ToastContainer from './components/ToastContainer.svelte';
-
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+  import { API_BASE } from './lib/api';
 
   let projects: ProjectSummary[] = [];
   let dashboard: ProjectDashboard | null = null;

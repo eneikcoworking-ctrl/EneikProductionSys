@@ -1,7 +1,6 @@
 import { writable, get } from 'svelte/store';
 import type { ProjectDashboard, ProjectSummary } from './types';
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+import { API_BASE } from './api';
 
 export const projectsStore = writable<ProjectSummary[]>([]);
 export const currentDashboardStore = writable<ProjectDashboard | null>(null);

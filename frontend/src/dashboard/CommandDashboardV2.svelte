@@ -2,10 +2,9 @@
   import { onMount } from 'svelte';
   import Skeleton from './Skeleton.svelte';
   import { roleDisplayName } from '../lib/roleDisplay';
+  import { API_BASE } from '../lib/api';
 
   export let projectId: string;
-
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
   let dashboard: any = null;
   let commandDashboard: any = null;

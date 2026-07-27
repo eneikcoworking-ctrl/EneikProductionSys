@@ -2,8 +2,7 @@
   import { onMount, onDestroy } from 'svelte';
   import type { SixSigmaAuditReport, KaizenProposalDto, ProjectSummary } from '../lib/types';
   import { projectsStore, currentDashboardStore } from '../lib/dashboardStore';
-
-  const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
+  import { API_BASE } from '../lib/api';
 
   let sixSigmaReport: SixSigmaAuditReport | null = null;
   let proposals: KaizenProposalDto[] = [];
