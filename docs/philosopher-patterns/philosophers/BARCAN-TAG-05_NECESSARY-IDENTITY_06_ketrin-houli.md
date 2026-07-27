@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-05_NECESSARY-IDENTITY:06:ketrin-houli"
 name_ru: "Кэтрин Хоули"
 barcan_tag: "BARCAN-TAG-05_NECESSARY-IDENTITY"
-barcan_role: "SRE / DevOps / Infrastructure Engineer"
+barcan_role: "NECESSARY-IDENTITY"
 source_file: "BARCAN-TAG-05_NECESSARY-IDENTITY.md"
 source_line: 43
 source_principle: "Принцип персистенции через изменение свойств"
+publication_anchor: "How Things Persist - persistence through change"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Кэтрин Хоули
 
-**BARCAN-роль:** `BARCAN-TAG-05_NECESSARY-IDENTITY` — Каузальный Профайлер
-**Инженерная роль:** SRE / DevOps / Infrastructure Engineer
-**Исходный принцип:** Принцип персистенции через изменение свойств
-**Источник в проекте:** [`BARCAN-TAG-05_NECESSARY-IDENTITY.md:43`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md#L43)
+**BARCAN tag:** `BARCAN-TAG-05_NECESSARY-IDENTITY` - NECESSARY-IDENTITY
+**Role focus:** Runtime identity, reproducibility and incidents
+**Project role:** SRE / DevOps / Infrastructure Engineer
+**Source principle:** Принцип персистенции через изменение свойств
+**Publication anchor:** How Things Persist - persistence through change
+**Project source:** [`BARCAN-TAG-05_NECESSARY-IDENTITY.md:43`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md#L43)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Runbook и IaC-процедура остаются «той же самой» процедурой даже при смене конкретных значений (IP, версия ОС, размер инстанса), пока неизменна их структура — процедуру нельзя объявлять «устаревшей» только из-за смены параметров среды
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `KETRIN_HOULI_01` — персистенции через изменение свойств · IaC Continuity Proof | доказательство непрерывности IaC | redeploy меняет сущность сервиса незаметно | сверять config/state/provisioning перед и после apply |
-| 2 | `KETRIN_HOULI_02` — персистенции через изменение свойств · INUS Incident Set | набор INUS-условий инцидента | RCA называет одну причину вместо достаточного множества | фиксировать все совместно достаточные условия |
-| 3 | `KETRIN_HOULI_03` — персистенции через изменение свойств · Temporal Service Ledger | временная книга сервиса | SLO считается по снимку, а не истории | вести историю версий, деплоев, миграций и деградаций |
-| 4 | `KETRIN_HOULI_04` — персистенции через изменение свойств · Trace Mark Continuity | непрерывность trace-метки | причинная цепь рвётся между сервисами | сохранять trace ID через все hops |
-| 5 | `KETRIN_HOULI_05` — персистенции через изменение свойств · SLO Composition Contract | контракт состава SLO | система объявлена здоровой при деградации существенной части | явно перечислять компоненты, входящие в SLO |
-| 6 | `KETRIN_HOULI_06` — персистенции через изменение свойств · Runbook Structure Persistence | персистенция структуры runbook | процедура считается другой из-за смены параметров | разделять структуру восстановления и переменные среды |
-| 7 | `KETRIN_HOULI_07` — персистенции через изменение свойств · Deploy Provenance Seal | печать происхождения деплоя | непонятно, какой код реально работает | связывать image, commit, config и миграцию |
-| 8 | `KETRIN_HOULI_08` — персистенции через изменение свойств · Blast Radius Cell | ячейка радиуса поражения | один сбой захватывает весь ландшафт | делить инфраструктуру на изолированные blast cells |
-| 9 | `KETRIN_HOULI_09` — персистенции через изменение свойств · Recovery Drill Checkpoint | контрольная точка учения восстановления | runbook существует, но не исполнялся | регулярно прогонять восстановление как проверку |
-| 10 | `KETRIN_HOULI_10` — персистенции через изменение свойств · Config Drift Arrest | арест дрейфа конфигурации | ручное изменение ломает тождество окружения | детектировать и откатывать drift от declarative state |
+| 1 | `KETRIN_HOULI_01_NAME_GATE` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Semantic Naming Gate | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `KETRIN_HOULI_02_STATE_INVARIANT` - Кэтрин Хоули: Принцип персистенции через изменение свойств - State Invariant Kernel | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `KETRIN_HOULI_03_BOUNDARY_MAP` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Boundary Map | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `KETRIN_HOULI_04_COUNTEREXAMPLE_TEST` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Counterexample Test | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `KETRIN_HOULI_05_DATA_SHAPE` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Data Shape Discipline | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `KETRIN_HOULI_06_TRANSITION_GUARD` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Atomic Transition Guard | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `KETRIN_HOULI_07_REVIEW_BINARY` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Binary Review Criterion | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `KETRIN_HOULI_08_EVIDENCE_TRACE` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Evidence Trace | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `KETRIN_HOULI_09_PARALLEL_WORK` - Кэтрин Хоули: Принцип персистенции через изменение свойств - Parallel Conflict Shield | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `KETRIN_HOULI_10_RAG_CAPSULE` - Кэтрин Хоули: Принцип персистенции через изменение свойств - RAG Doctrine Capsule | How Things Persist - persistence through change | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип персистенции через изменение свойств' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Кэтрин Хоули-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-05_NECESSARY-IDENTITY`, используй этот файл для индивидуального акцента Кэтрин Хоули: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-05_NECESSARY-IDENTITY.md`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md)
-- Строка философского принципа: `BARCAN-TAG-05_NECESSARY-IDENTITY.md:43`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-05_NECESSARY-IDENTITY` and needs the individual voice of Кэтрин Хоули, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

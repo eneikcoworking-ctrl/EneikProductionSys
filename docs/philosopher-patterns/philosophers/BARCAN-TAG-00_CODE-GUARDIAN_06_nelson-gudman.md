@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-00_CODE-GUARDIAN:06:nelson-gudman"
 name_ru: "Нельсон Гудман"
 barcan_tag: "BARCAN-TAG-00_CODE-GUARDIAN"
-barcan_role: "Tech Lead / Code Review Engineer"
+barcan_role: "CODE-GUARDIAN"
 source_file: "BARCAN-TAG-00_CODE-GUARDIAN.md"
 source_line: 38
 source_principle: "Принцип проектных миров"
+publication_anchor: "Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Нельсон Гудман
 
-**BARCAN-роль:** `BARCAN-TAG-00_CODE-GUARDIAN` — Хранитель Кода
-**Инженерная роль:** Tech Lead / Code Review Engineer
-**Исходный принцип:** Принцип проектных миров
-**Источник в проекте:** [`BARCAN-TAG-00_CODE-GUARDIAN.md:38`](../../BARCAN-TAG-00_CODE-GUARDIAN.md#L38)
+**BARCAN tag:** `BARCAN-TAG-00_CODE-GUARDIAN` - CODE-GUARDIAN
+**Role focus:** Code review, meaning and integration integrity
+**Project role:** Tech Lead / Code Review Engineer
+**Source principle:** Принцип проектных миров
+**Publication anchor:** Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility
+**Project source:** [`BARCAN-TAG-00_CODE-GUARDIAN.md:38`](../../BARCAN-TAG-00_CODE-GUARDIAN.md#L38)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Каждый модуль создаёт свой «мир» с локальными правилами. Агент проверяет, что локальные соглашения модуля соответствуют глобальным стандартам системы или явно задокументированы при отклонении
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `NELSON_GUDMAN_01` — проектных миров · Intent Lexeme Review | семантическое ревью имён | неверное имя скрывает фактический эффект метода | требовать переименование, если имя не передаёт намерение и эффект |
-| 2 | `NELSON_GUDMAN_02` — проектных миров · Comment-Behavior Parity Check | проверка совпадения комментария и поведения | комментарий легализует устаревшую или ложную модель кода | блокировать PR, где комментарий обещает не то, что исполняет код |
-| 3 | `NELSON_GUDMAN_03` — проектных миров · Public Method Isolation Probe | изолируемая проверка публичного метода | невозможность теста показывает скрытую связность | каждый новый публичный метод должен иметь независимый способ проверки |
-| 4 | `NELSON_GUDMAN_04` — проектных миров · Side-Effect Truthfulness Audit | аудит скрытых побочных эффектов | метод чтения внезапно пишет, отправляет или мутирует состояние | выносить эффект в явно названную команду |
-| 5 | `NELSON_GUDMAN_05` — проектных миров · Information-Density Budget | контроль плотности информации | слишком мало или слишком много кода одинаково разрушает понимание | удалять очевидные комментарии и распутывать сжатые выражения |
-| 6 | `NELSON_GUDMAN_06` — проектных миров · Local World Convention Register | реестр локальных соглашений модуля | локальная договорённость становится ловушкой для новых агентов | требовать README для отклонения от глобального стандарта |
-| 7 | `NELSON_GUDMAN_07` — проектных миров · Literal Eviction Sweep | вынос магических литералов | значение без имени нельзя проверить смыслово | заменять магические числа и строки именованными константами |
-| 8 | `NELSON_GUDMAN_08` — проектных миров · Cognitive Nesting Cap | ограничение вложенности рассуждения | глубокие ветвления прячут альтернативные случаи | рефакторить при вложенности выше установленного порога |
-| 9 | `NELSON_GUDMAN_09` — проектных миров · TODO Obligation Trace | трассировка отложенного обязательства | TODO без владельца превращается в долг без срока | каждый TODO связывать с задачей или удалять |
-| 10 | `NELSON_GUDMAN_10` — проектных миров · Dependency Intent Hearing | обоснование новой зависимости | библиотека добавляет скрытый контракт и поверхность атаки | требовать явное объяснение пользы и риска зависимости |
+| 1 | `NELSON_GUDMAN_01_NAME_GATE` - Нельсон Гудман: Принцип проектных миров - Semantic Naming Gate | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `NELSON_GUDMAN_02_STATE_INVARIANT` - Нельсон Гудман: Принцип проектных миров - State Invariant Kernel | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `NELSON_GUDMAN_03_BOUNDARY_MAP` - Нельсон Гудман: Принцип проектных миров - Boundary Map | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `NELSON_GUDMAN_04_COUNTEREXAMPLE_TEST` - Нельсон Гудман: Принцип проектных миров - Counterexample Test | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `NELSON_GUDMAN_05_DATA_SHAPE` - Нельсон Гудман: Принцип проектных миров - Data Shape Discipline | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `NELSON_GUDMAN_06_TRANSITION_GUARD` - Нельсон Гудман: Принцип проектных миров - Atomic Transition Guard | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `NELSON_GUDMAN_07_REVIEW_BINARY` - Нельсон Гудман: Принцип проектных миров - Binary Review Criterion | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `NELSON_GUDMAN_08_EVIDENCE_TRACE` - Нельсон Гудман: Принцип проектных миров - Evidence Trace | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `NELSON_GUDMAN_09_PARALLEL_WORK` - Нельсон Гудман: Принцип проектных миров - Parallel Conflict Shield | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `NELSON_GUDMAN_10_RAG_CAPSULE` - Нельсон Гудман: Принцип проектных миров - RAG Doctrine Capsule | Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility | semantic drift in code review; personal failure mode: losing 'Принцип проектных миров' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Нельсон Гудман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-00_CODE-GUARDIAN`, используй этот файл для индивидуального акцента Нельсон Гудман: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-00_CODE-GUARDIAN.md`](../../BARCAN-TAG-00_CODE-GUARDIAN.md)
-- Строка философского принципа: `BARCAN-TAG-00_CODE-GUARDIAN.md:38`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-00_CODE-GUARDIAN` and needs the individual voice of Нельсон Гудман, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

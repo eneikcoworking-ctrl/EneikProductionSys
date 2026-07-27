@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-06_DEONTIC-CONSISTENCY:02:alfred-tarskiy"
 name_ru: "Альфред Тарский"
 barcan_tag: "BARCAN-TAG-06_DEONTIC-CONSISTENCY"
-barcan_role: "QA Automation / Performance Engineer"
+barcan_role: "DEONTIC-CONSISTENCY"
 source_file: "BARCAN-TAG-06_DEONTIC-CONSISTENCY.md"
 source_line: 39
 source_principle: "Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)"
+publication_anchor: "The Concept of Truth in Formalized Languages - semantic conception of truth"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Альфред Тарский
 
-**BARCAN-роль:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` — Эмпирический Верификатор
-**Инженерная роль:** QA Automation / Performance Engineer
-**Исходный принцип:** Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)
-**Источник в проекте:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:39`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L39)
+**BARCAN tag:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` - DEONTIC-CONSISTENCY
+**Role focus:** Testing, truth status and quality gates
+**Project role:** QA Automation / Performance Engineer
+**Source principle:** Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)
+**Publication anchor:** The Concept of Truth in Formalized Languages - semantic conception of truth
+**Project source:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:39`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L39)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Статус теста ПРОЙДЕН истинен тогда и только тогда, когда условие Acceptance Criteria действительно выполнено в реальном прогоне — не когда отчёт CI просто заявляет об этом. Защита от silent pass и замоканных сборок, выдающих себя за реальную проверку
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `ALFRED_TARSKIY_01` — семантической теории истины · Counterexample First Suite | сьют от контрпримеров | тесты подтверждают счастливый путь и не ищут ошибку | проектировать тесты сначала как попытку опровержения |
-| 2 | `ALFRED_TARSKIY_02` — семантической теории истины · CI Reality Attestation | аттестация реальности CI | mocked или skipped прогон выдаёт себя за проверку | прикладывать ссылку на реальный execution evidence |
-| 3 | `ALFRED_TARSKIY_03` — семантической теории истины · Flaky Quarantine State | карантин flaky-состояния | нестабильный тест округляется до pass | выделять FLAKY как отдельный блокирующий статус |
-| 4 | `ALFRED_TARSKIY_04` — семантической теории истины · Contradiction Intolerance | нетерпимость к противоречию результата | один commit имеет несовместимые итоги | останавливать pipeline до воспроизводимого объяснения |
-| 5 | `ALFRED_TARSKIY_05` — семантической теории истины · Verified Run Receipt | квитанция verified-прогона | статус VERIFIED живёт отдельно от факта запуска | сохранять log, environment, commit и artifact |
-| 6 | `ALFRED_TARSKIY_06` — семантической теории истины · Acceptance Signature Lock | замок подписанного AC | команда меняет критерии после реализации | замораживать AC перед разработкой и менять только через review |
-| 7 | `ALFRED_TARSKIY_07` — семантической теории истины · Mutation Challenge | мутационный вызов тестам | тест проходит даже при испорченной логике | использовать mutation testing для критичных правил |
-| 8 | `ALFRED_TARSKIY_08` — семантической теории истины · Boundary Assault Set | набор атак на границы | краевые случаи не представлены в проверке | генерировать null/empty/max/min/race cases |
-| 9 | `ALFRED_TARSKIY_09` — семантической теории истины · Oracle Independence Check | независимость тестового оракула | тест повторяет реализацию и не ловит ошибку | строить expected result из спецификации, не из production code |
-| 10 | `ALFRED_TARSKIY_10` — семантической теории истины · Nondeterminism Reproduction Protocol | протокол воспроизведения недетерминизма | случайный сбой исчезает без причины | фиксировать seed, time, env и concurrency profile |
+| 1 | `ALFRED_TARSKIY_01_NAME_GATE` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Semantic Naming Gate | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `ALFRED_TARSKIY_02_STATE_INVARIANT` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - State Invariant Kernel | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `ALFRED_TARSKIY_03_BOUNDARY_MAP` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Boundary Map | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `ALFRED_TARSKIY_04_COUNTEREXAMPLE_TEST` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Counterexample Test | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `ALFRED_TARSKIY_05_DATA_SHAPE` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Data Shape Discipline | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `ALFRED_TARSKIY_06_TRANSITION_GUARD` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Atomic Transition Guard | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `ALFRED_TARSKIY_07_REVIEW_BINARY` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Binary Review Criterion | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `ALFRED_TARSKIY_08_EVIDENCE_TRACE` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Evidence Trace | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `ALFRED_TARSKIY_09_PARALLEL_WORK` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - Parallel Conflict Shield | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `ALFRED_TARSKIY_10_RAG_CAPSULE` - Альфред Тарский: Принцип семантической теории истины (T-схема: «P» истинно ⟺ P) - RAG Doctrine Capsule | The Concept of Truth in Formalized Languages - semantic conception of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип семантической теории истины (T-схема: «P» истинно ⟺ P)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Альфред Тарский-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-06_DEONTIC-CONSISTENCY`, используй этот файл для индивидуального акцента Альфред Тарский: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md)
-- Строка философского принципа: `BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:39`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-06_DEONTIC-CONSISTENCY` and needs the individual voice of Альфред Тарский, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-11_CLIENT-PERCEPTION:02:marta-nussbaum"
 name_ru: "Марта Нуссбаум"
 barcan_tag: "BARCAN-TAG-11_CLIENT-PERCEPTION"
-barcan_role: "Frontend Engineer"
+barcan_role: "CLIENT-PERCEPTION"
 source_file: "BARCAN-TAG-11_CLIENT-PERCEPTION.md"
 source_line: 40
 source_principle: "Принцип инклюзивного интерфейса"
+publication_anchor: "Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Марта Нуссбаум
 
-**BARCAN-роль:** `BARCAN-TAG-11_CLIENT-PERCEPTION` — Феноменальный Верстальщик
-**Инженерная роль:** Frontend Engineer
-**Исходный принцип:** Принцип инклюзивного интерфейса
-**Источник в проекте:** [`BARCAN-TAG-11_CLIENT-PERCEPTION.md:40`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md#L40)
+**BARCAN tag:** `BARCAN-TAG-11_CLIENT-PERCEPTION` - CLIENT-PERCEPTION
+**Role focus:** Perception, accessibility and visible evidence
+**Project role:** Frontend Engineer
+**Source principle:** Принцип инклюзивного интерфейса
+**Publication anchor:** Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing
+**Project source:** [`BARCAN-TAG-11_CLIENT-PERCEPTION.md:40`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md#L40)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Семантическая вёрстка и ARIA-атрибуты обеспечивают доступность согласно **WCAG 2.1**. Когнитивная доступность — право каждого пользователя на понимание интерфейса
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `MARTA_NUSSBAUM_01` — инклюзивного интерфейса · Hundred Millisecond Budget | бюджет 100 мс | интерфейс кажется сломанным из-за задержки | оптимизировать первичный отклик до порога мгновенности |
-| 2 | `MARTA_NUSSBAUM_02` — инклюзивного интерфейса · Semantic Component Accessibility | семантическая доступность компонента | визуально красивый control невидим assistive tech | использовать native semantics/ARIA только по необходимости |
-| 3 | `MARTA_NUSSBAUM_03` — инклюзивного интерфейса · Render-Data Separation | разделение рендера и данных | визуальный шум блокирует логику состояния | изолировать view state от domain state |
-| 4 | `MARTA_NUSSBAUM_04` — инклюзивного интерфейса · Spatial Layer Map | карта пространственных слоёв | z-index становится случайной борьбой элементов | вести карту overlay/modal/popover layers |
-| 5 | `MARTA_NUSSBAUM_05` — инклюзивного интерфейса · Signal Code Consistency | согласованность кода сигнала | цвет или иконка сообщает неверный статус | закреплять semantic color/icon/timing map |
-| 6 | `MARTA_NUSSBAUM_06` — инклюзивного интерфейса · CLS Confidence Budget | бюджет уверенности CLS | скачки layout вызывают ошибочные клики | держать layout stable через reserved space |
-| 7 | `MARTA_NUSSBAUM_07` — инклюзивного интерфейса · Skeleton Continuity Contract | контракт непрерывности skeleton | loading state обманывает о структуре результата | skeleton должен совпадать с будущей композицией |
-| 8 | `MARTA_NUSSBAUM_08` — инклюзивного интерфейса · Optimistic Reconciliation Path | путь сверки optimistic update | UI показывает успех без механизма отката | каждый optimistic state иметь rollback/retry state |
-| 9 | `MARTA_NUSSBAUM_09` — инклюзивного интерфейса · Focus Order Integrity | целостность порядка фокуса | keyboard user теряет маршрут | проверять tab order после каждого layout change |
-| 10 | `MARTA_NUSSBAUM_10` — инклюзивного интерфейса · Motion Continuity Guard | страж непрерывности движения | анимация разрушает ментальную карту | использовать motion для объяснения перехода, а не декора |
+| 1 | `MARTA_NUSSBAUM_01_NAME_GATE` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Semantic Naming Gate | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `MARTA_NUSSBAUM_02_STATE_INVARIANT` - Марта Нуссбаум: Принцип инклюзивного интерфейса - State Invariant Kernel | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `MARTA_NUSSBAUM_03_BOUNDARY_MAP` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Boundary Map | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `MARTA_NUSSBAUM_04_COUNTEREXAMPLE_TEST` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Counterexample Test | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `MARTA_NUSSBAUM_05_DATA_SHAPE` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Data Shape Discipline | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `MARTA_NUSSBAUM_06_TRANSITION_GUARD` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Atomic Transition Guard | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `MARTA_NUSSBAUM_07_REVIEW_BINARY` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Binary Review Criterion | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `MARTA_NUSSBAUM_08_EVIDENCE_TRACE` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Evidence Trace | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `MARTA_NUSSBAUM_09_PARALLEL_WORK` - Марта Нуссбаум: Принцип инклюзивного интерфейса - Parallel Conflict Shield | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `MARTA_NUSSBAUM_10_RAG_CAPSULE` - Марта Нуссбаум: Принцип инклюзивного интерфейса - RAG Doctrine Capsule | Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип инклюзивного интерфейса' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Марта Нуссбаум-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-11_CLIENT-PERCEPTION`, используй этот файл для индивидуального акцента Марта Нуссбаум: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-11_CLIENT-PERCEPTION.md`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md)
-- Строка философского принципа: `BARCAN-TAG-11_CLIENT-PERCEPTION.md:40`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-11_CLIENT-PERCEPTION` and needs the individual voice of Марта Нуссбаум, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

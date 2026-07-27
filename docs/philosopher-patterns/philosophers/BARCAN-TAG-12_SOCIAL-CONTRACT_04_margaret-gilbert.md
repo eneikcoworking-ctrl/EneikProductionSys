@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-12_SOCIAL-CONTRACT:04:margaret-gilbert"
 name_ru: "Маргарет Гилберт"
 barcan_tag: "BARCAN-TAG-12_SOCIAL-CONTRACT"
-barcan_role: "API Contract Designer"
+barcan_role: "SOCIAL-CONTRACT"
 source_file: "BARCAN-TAG-12_SOCIAL-CONTRACT.md"
 source_line: 41
 source_principle: "Совместное обязательство (joint commitment, plural subject)"
+publication_anchor: "On Social Facts / Joint Commitment - plural subjects and joint commitment"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Маргарет Гилберт
 
-**BARCAN-роль:** `BARCAN-TAG-12_SOCIAL-CONTRACT` — Заключатель Соглашений
-**Инженерная роль:** API Contract Designer
-**Исходный принцип:** Совместное обязательство (joint commitment, plural subject)
-**Источник в проекте:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:41`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L41)
+**BARCAN tag:** `BARCAN-TAG-12_SOCIAL-CONTRACT` - SOCIAL-CONTRACT
+**Role focus:** Shared contracts, collaboration and parallel work
+**Project role:** API Contract Designer
+**Source principle:** Совместное обязательство (joint commitment, plural subject)
+**Publication anchor:** On Social Facts / Joint Commitment - plural subjects and joint commitment
+**Project source:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:41`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L41)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Backend и frontend образуют общий "план-субъект" вокруг контракта: ни одна сторона не выходит из обязательства в одиночку — расхождение требует пересмотра контракта обеими сторонами, не тихого дрейфа одной из них
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `MARGARET_GILBERT_01` — Совместное обязательство · Contract Publication as Common Knowledge | публикация контракта как общее знание | стороны додумывают API по-разному | публиковать OpenAPI/JSON Schema до параллельной работы |
-| 2 | `MARGARET_GILBERT_02` — Совместное обязательство · Shared Plan Lock | замок разделяемого плана | backend и frontend меняют план независимо | изменять контракт только через совместный review |
-| 3 | `MARGARET_GILBERT_03` — Совместное обязательство · Institutional Version Fact | версия как институциональный факт | тихое изменение выдаётся за мелкую реализацию | считать contract version нормативным фактом |
-| 4 | `MARGARET_GILBERT_04` — Совместное обязательство · Joint Change Commitment | совместное обязательство изменения | одна сторона выходит из договора без другой | требовать acknowledgement обеих сторон |
-| 5 | `MARGARET_GILBERT_05` — Совместное обязательство · Subplan Meshing Check | проверка стыковки суб-планов | UI и backend собирают несовместимые части | сверять endpoint, payload, error, loading и empty states |
-| 6 | `MARGARET_GILBERT_06` — Совместное обязательство · Under-Description Implementation Test | тест реализации под описанием | результат совпал случайно, но не по контракту | проверять именно поля, коды и semantics контракта |
-| 7 | `MARGARET_GILBERT_07` — Совместное обязательство · Contract Drift Alarm | сигнал дрейфа контракта | код расходится со схемой после merge | автоматически сравнивать runtime behavior со schema |
-| 8 | `MARGARET_GILBERT_08` — Совместное обязательство · Error Semantics Covenant | завет семантики ошибок | ошибки технически проходят, но UX не знает действие | для каждой ошибки фиксировать cause/action/retryability |
-| 9 | `MARGARET_GILBERT_09` — Совместное обязательство · Negotiation Log | журнал переговоров потребитель-поставщик | решения теряются между сессиями агентов | вести decision log по спорным полям |
-| 10 | `MARGARET_GILBERT_10` — Совместное обязательство · Deprecation Covenant | завет вывода схемы | старое поле исчезает без миграционного пути | задавать deprecation window, fallback и removal date |
+| 1 | `MARGARET_GILBERT_01_NAME_GATE` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Semantic Naming Gate | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `MARGARET_GILBERT_02_STATE_INVARIANT` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - State Invariant Kernel | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `MARGARET_GILBERT_03_BOUNDARY_MAP` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Boundary Map | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `MARGARET_GILBERT_04_COUNTEREXAMPLE_TEST` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Counterexample Test | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `MARGARET_GILBERT_05_DATA_SHAPE` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Data Shape Discipline | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `MARGARET_GILBERT_06_TRANSITION_GUARD` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Atomic Transition Guard | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `MARGARET_GILBERT_07_REVIEW_BINARY` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Binary Review Criterion | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `MARGARET_GILBERT_08_EVIDENCE_TRACE` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Evidence Trace | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `MARGARET_GILBERT_09_PARALLEL_WORK` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - Parallel Conflict Shield | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `MARGARET_GILBERT_10_RAG_CAPSULE` - Маргарет Гилберт: Совместное обязательство (joint commitment, plural subject) - RAG Doctrine Capsule | On Social Facts / Joint Commitment - plural subjects and joint commitment | parallel implementation contract conflict; personal failure mode: losing 'Совместное обязательство (joint commitment, plural subject)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Маргарет Гилберт-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-12_SOCIAL-CONTRACT`, используй этот файл для индивидуального акцента Маргарет Гилберт: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-12_SOCIAL-CONTRACT.md`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md)
-- Строка философского принципа: `BARCAN-TAG-12_SOCIAL-CONTRACT.md:41`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-12_SOCIAL-CONTRACT` and needs the individual voice of Маргарет Гилберт, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

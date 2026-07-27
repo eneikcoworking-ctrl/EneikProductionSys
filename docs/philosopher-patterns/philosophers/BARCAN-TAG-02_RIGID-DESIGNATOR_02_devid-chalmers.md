@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-02_RIGID-DESIGNATOR:02:devid-chalmers"
 name_ru: "Дэвид Чалмерс"
 barcan_tag: "BARCAN-TAG-02_RIGID-DESIGNATOR"
-barcan_role: "Backend / Integration Engineer"
+barcan_role: "RIGID-DESIGNATOR"
 source_file: "BARCAN-TAG-02_RIGID-DESIGNATOR.md"
 source_line: 39
 source_principle: "Принцип двумерной семантики"
+publication_anchor: "Two-Dimensional Semantics - primary and secondary intensions"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Дэвид Чалмерс
 
-**BARCAN-роль:** `BARCAN-TAG-02_RIGID-DESIGNATOR` — Семантический Транслятор
-**Инженерная роль:** Backend / Integration Engineer
-**Исходный принцип:** Принцип двумерной семантики
-**Источник в проекте:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:39`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L39)
+**BARCAN tag:** `BARCAN-TAG-02_RIGID-DESIGNATOR` - RIGID-DESIGNATOR
+**Role focus:** API contracts, naming and semantic stability
+**Project role:** Backend / Integration Engineer
+**Source principle:** Принцип двумерной семантики
+**Publication anchor:** Two-Dimensional Semantics - primary and secondary intensions
+**Project source:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:39`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L39)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Жёсткое разделение внутреннего смысла данных в коде и их внешнего проявления при передаче наружу. Изменения внутри сервиса не ломают внешний интерфейс
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `DEVID_CHALMERS_01` — двумерной семантики · Identifier Meaning Freeze | заморозка смысла идентификатора | одно имя начинает означать разные вещи | фиксировать значение публичных имён во всех окружениях |
-| 2 | `DEVID_CHALMERS_02` — двумерной семантики · External-Internal Sense Mapper | мапер внутреннего и внешнего смысла | изменение реализации ломает внешний договор | держать внешний контракт стабильным через граничный mapper |
-| 3 | `DEVID_CHALMERS_03` — двумерной семантики · Context Propagation Receipt | квитанция передачи контекста | контекст пользователя теряется в распределённом вызове | передавать session/locale/auth как явный пакет |
-| 4 | `DEVID_CHALMERS_04` — двумерной семантики · Rename Causal Ledger | каузальный журнал переименования | новое имя обрывает интеграционную историю | сопровождать переименование alias/deprecation/migration notes |
-| 5 | `DEVID_CHALMERS_05` — двумерной семантики · Indexical Context Capsule | капсула индексикальных значений | timezone или locale смешиваются между пользователями | изолировать контекстно-зависимые значения на запрос |
-| 6 | `DEVID_CHALMERS_06` — двумерной семантики · Boundary Pressure Shield | экран внешнего прагматического давления | внешняя система проталкивает свои хаотичные значения внутрь | нормализовать данные только на границе |
-| 7 | `DEVID_CHALMERS_07` — двумерной семантики · Compatibility Diff Trial | суд над diff публичного контракта | малый diff становится breaking change | проверять OpenAPI/JSON Schema diff до merge |
-| 8 | `DEVID_CHALMERS_08` — двумерной семантики · Consumer Expectation Replay | повтор ожиданий потребителей | backend считает контракт совместимым без проверки клиентов | прогонять consumer tests для значимых контрактов |
-| 9 | `DEVID_CHALMERS_09` — двумерной семантики · Error Meaning Registry | реестр значений ошибок | один код ошибки используется для разных ситуаций | фиксировать код, смысл, recoverability и UX-сообщение |
-| 10 | `DEVID_CHALMERS_10` — двумерной семантики · Authorization Context Seal | печать контекста авторизации | роль или tenant подменяется между слоями | подписывать и проверять auth context на границах |
+| 1 | `DEVID_CHALMERS_01_NAME_GATE` - Дэвид Чалмерс: Принцип двумерной семантики - Semantic Naming Gate | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `DEVID_CHALMERS_02_STATE_INVARIANT` - Дэвид Чалмерс: Принцип двумерной семантики - State Invariant Kernel | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `DEVID_CHALMERS_03_BOUNDARY_MAP` - Дэвид Чалмерс: Принцип двумерной семантики - Boundary Map | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `DEVID_CHALMERS_04_COUNTEREXAMPLE_TEST` - Дэвид Чалмерс: Принцип двумерной семантики - Counterexample Test | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `DEVID_CHALMERS_05_DATA_SHAPE` - Дэвид Чалмерс: Принцип двумерной семантики - Data Shape Discipline | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `DEVID_CHALMERS_06_TRANSITION_GUARD` - Дэвид Чалмерс: Принцип двумерной семантики - Atomic Transition Guard | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `DEVID_CHALMERS_07_REVIEW_BINARY` - Дэвид Чалмерс: Принцип двумерной семантики - Binary Review Criterion | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `DEVID_CHALMERS_08_EVIDENCE_TRACE` - Дэвид Чалмерс: Принцип двумерной семантики - Evidence Trace | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `DEVID_CHALMERS_09_PARALLEL_WORK` - Дэвид Чалмерс: Принцип двумерной семантики - Parallel Conflict Shield | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `DEVID_CHALMERS_10_RAG_CAPSULE` - Дэвид Чалмерс: Принцип двумерной семантики - RAG Doctrine Capsule | Two-Dimensional Semantics - primary and secondary intensions | breaking API and naming drift; personal failure mode: losing 'Принцип двумерной семантики' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Дэвид Чалмерс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-02_RIGID-DESIGNATOR`, используй этот файл для индивидуального акцента Дэвид Чалмерс: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-02_RIGID-DESIGNATOR.md`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md)
-- Строка философского принципа: `BARCAN-TAG-02_RIGID-DESIGNATOR.md:39`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-02_RIGID-DESIGNATOR` and needs the individual voice of Дэвид Чалмерс, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

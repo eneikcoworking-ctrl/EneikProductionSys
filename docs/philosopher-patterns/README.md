@@ -1,16 +1,16 @@
 # Philosopher Patterns RAG Corpus
 
-Корпус создан из `BARCAN-TAG-*.md`: 13 ролей, 78 философов, 10 уникальных персональных паттернов на каждого философа.
+Generated from `BARCAN-TAG-*.md`: 13 role files, 78 philosophers, 10 unique personal programming patterns per philosopher.
 
-## Файлы
+## Files
 
-- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) — общие паттерны, применимые более чем к пяти философам.
-- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) — charter для предотвращения конфликтов параллельной разработки.
-- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) — навигационная таблица по всем 78 философам.
-- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) — машинно-читаемый индекс для RAG.
-- [`QA_REPORT.md`](QA_REPORT.md) — результат проверки полноты и уникальности.
-- [`philosophers/`](philosophers/) — персональные файлы философов.
+- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) - shared world-class practices that fit more than five philosophers.
+- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) - anti-conflict rules extracted from the session's PR repair work.
+- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) - navigation table for all philosophers.
+- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) - machine-readable RAG index.
+- [`QA_REPORT.md`](QA_REPORT.md) - exact count and uniqueness checks.
+- [`philosophers/`](philosophers/) - one file per philosopher.
 
-## Важное ограничение
+## Hard Invariant
 
-Первый проход заземлён в ролевых файлах проекта. Для академического использования нужен второй проход: библиографическая верификация публикаций каждого философа и замена `publication_verification: pending` на подтверждённый статус.
+Each philosopher file has exactly 10 personal patterns. If a pattern becomes useful for more than five philosophers, move it to the common file and replace it with a philosopher-specific micro-pattern.

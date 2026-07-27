@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-06_DEONTIC-CONSISTENCY:05:pol-horvich"
 name_ru: "Пол Хорвич"
 barcan_tag: "BARCAN-TAG-06_DEONTIC-CONSISTENCY"
-barcan_role: "QA Automation / Performance Engineer"
+barcan_role: "DEONTIC-CONSISTENCY"
 source_file: "BARCAN-TAG-06_DEONTIC-CONSISTENCY.md"
 source_line: 42
 source_principle: "Принцип дефляционизма об истине (минимализм)"
+publication_anchor: "Truth - minimalist theory of truth"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Пол Хорвич
 
-**BARCAN-роль:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` — Эмпирический Верификатор
-**Инженерная роль:** QA Automation / Performance Engineer
-**Исходный принцип:** Принцип дефляционизма об истине (минимализм)
-**Источник в проекте:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:42`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L42)
+**BARCAN tag:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` - DEONTIC-CONSISTENCY
+**Role focus:** Testing, truth status and quality gates
+**Project role:** QA Automation / Performance Engineer
+**Source principle:** Принцип дефляционизма об истине (минимализм)
+**Publication anchor:** Truth - minimalist theory of truth
+**Project source:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:42`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Пометка теста как VERIFIED не добавляет содержания сверх факта, что тест реально исполнен и результат зафиксирован в CI-логе. VERIFIED не существует отдельно от самого прогона — «верифицировано по опыту» не считается
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `POL_HORVICH_01` — дефляционизма об истине · Counterexample First Suite | сьют от контрпримеров | тесты подтверждают счастливый путь и не ищут ошибку | проектировать тесты сначала как попытку опровержения |
-| 2 | `POL_HORVICH_02` — дефляционизма об истине · CI Reality Attestation | аттестация реальности CI | mocked или skipped прогон выдаёт себя за проверку | прикладывать ссылку на реальный execution evidence |
-| 3 | `POL_HORVICH_03` — дефляционизма об истине · Flaky Quarantine State | карантин flaky-состояния | нестабильный тест округляется до pass | выделять FLAKY как отдельный блокирующий статус |
-| 4 | `POL_HORVICH_04` — дефляционизма об истине · Contradiction Intolerance | нетерпимость к противоречию результата | один commit имеет несовместимые итоги | останавливать pipeline до воспроизводимого объяснения |
-| 5 | `POL_HORVICH_05` — дефляционизма об истине · Verified Run Receipt | квитанция verified-прогона | статус VERIFIED живёт отдельно от факта запуска | сохранять log, environment, commit и artifact |
-| 6 | `POL_HORVICH_06` — дефляционизма об истине · Acceptance Signature Lock | замок подписанного AC | команда меняет критерии после реализации | замораживать AC перед разработкой и менять только через review |
-| 7 | `POL_HORVICH_07` — дефляционизма об истине · Mutation Challenge | мутационный вызов тестам | тест проходит даже при испорченной логике | использовать mutation testing для критичных правил |
-| 8 | `POL_HORVICH_08` — дефляционизма об истине · Boundary Assault Set | набор атак на границы | краевые случаи не представлены в проверке | генерировать null/empty/max/min/race cases |
-| 9 | `POL_HORVICH_09` — дефляционизма об истине · Oracle Independence Check | независимость тестового оракула | тест повторяет реализацию и не ловит ошибку | строить expected result из спецификации, не из production code |
-| 10 | `POL_HORVICH_10` — дефляционизма об истине · Nondeterminism Reproduction Protocol | протокол воспроизведения недетерминизма | случайный сбой исчезает без причины | фиксировать seed, time, env и concurrency profile |
+| 1 | `POL_HORVICH_01_NAME_GATE` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Semantic Naming Gate | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `POL_HORVICH_02_STATE_INVARIANT` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - State Invariant Kernel | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `POL_HORVICH_03_BOUNDARY_MAP` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Boundary Map | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `POL_HORVICH_04_COUNTEREXAMPLE_TEST` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Counterexample Test | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `POL_HORVICH_05_DATA_SHAPE` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Data Shape Discipline | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `POL_HORVICH_06_TRANSITION_GUARD` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Atomic Transition Guard | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `POL_HORVICH_07_REVIEW_BINARY` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Binary Review Criterion | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `POL_HORVICH_08_EVIDENCE_TRACE` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Evidence Trace | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `POL_HORVICH_09_PARALLEL_WORK` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - Parallel Conflict Shield | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `POL_HORVICH_10_RAG_CAPSULE` - Пол Хорвич: Принцип дефляционизма об истине (минимализм) - RAG Doctrine Capsule | Truth - minimalist theory of truth | flaky or untruthful quality gates; personal failure mode: losing 'Принцип дефляционизма об истине (минимализм)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Пол Хорвич-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-06_DEONTIC-CONSISTENCY`, используй этот файл для индивидуального акцента Пол Хорвич: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md)
-- Строка философского принципа: `BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-06_DEONTIC-CONSISTENCY` and needs the individual voice of Пол Хорвич, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

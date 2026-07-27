@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-12_SOCIAL-CONTRACT:06:elizabet-enskom"
 name_ru: "Элизабет Энском"
 barcan_tag: "BARCAN-TAG-12_SOCIAL-CONTRACT"
-barcan_role: "API Contract Designer"
+barcan_role: "SOCIAL-CONTRACT"
 source_file: "BARCAN-TAG-12_SOCIAL-CONTRACT.md"
 source_line: 43
 source_principle: "Интенциональное действие «под описанием» (intention under a description)"
+publication_anchor: "Intention - intentional action under a description"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Элизабет Энском
 
-**BARCAN-роль:** `BARCAN-TAG-12_SOCIAL-CONTRACT` — Заключатель Соглашений
-**Инженерная роль:** API Contract Designer
-**Исходный принцип:** Интенциональное действие «под описанием» (intention under a description)
-**Источник в проекте:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:43`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L43)
+**BARCAN tag:** `BARCAN-TAG-12_SOCIAL-CONTRACT` - SOCIAL-CONTRACT
+**Role focus:** Shared contracts, collaboration and parallel work
+**Project role:** API Contract Designer
+**Source principle:** Интенциональное действие «под описанием» (intention under a description)
+**Publication anchor:** Intention - intentional action under a description
+**Project source:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:43`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L43)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Реализация backend/frontend засчитывается как исполнение контракта только если она интенциональна ИМЕННО под описанием контракта (тем же полем, тем же кодом ошибки) — случайное совпадение результата другим путём не равно исполнению обязательства
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `ELIZABET_ENSKOM_01` — Интенциональное действие «под описанием» · Contract Publication as Common Knowledge | публикация контракта как общее знание | стороны додумывают API по-разному | публиковать OpenAPI/JSON Schema до параллельной работы |
-| 2 | `ELIZABET_ENSKOM_02` — Интенциональное действие «под описанием» · Shared Plan Lock | замок разделяемого плана | backend и frontend меняют план независимо | изменять контракт только через совместный review |
-| 3 | `ELIZABET_ENSKOM_03` — Интенциональное действие «под описанием» · Institutional Version Fact | версия как институциональный факт | тихое изменение выдаётся за мелкую реализацию | считать contract version нормативным фактом |
-| 4 | `ELIZABET_ENSKOM_04` — Интенциональное действие «под описанием» · Joint Change Commitment | совместное обязательство изменения | одна сторона выходит из договора без другой | требовать acknowledgement обеих сторон |
-| 5 | `ELIZABET_ENSKOM_05` — Интенциональное действие «под описанием» · Subplan Meshing Check | проверка стыковки суб-планов | UI и backend собирают несовместимые части | сверять endpoint, payload, error, loading и empty states |
-| 6 | `ELIZABET_ENSKOM_06` — Интенциональное действие «под описанием» · Under-Description Implementation Test | тест реализации под описанием | результат совпал случайно, но не по контракту | проверять именно поля, коды и semantics контракта |
-| 7 | `ELIZABET_ENSKOM_07` — Интенциональное действие «под описанием» · Contract Drift Alarm | сигнал дрейфа контракта | код расходится со схемой после merge | автоматически сравнивать runtime behavior со schema |
-| 8 | `ELIZABET_ENSKOM_08` — Интенциональное действие «под описанием» · Error Semantics Covenant | завет семантики ошибок | ошибки технически проходят, но UX не знает действие | для каждой ошибки фиксировать cause/action/retryability |
-| 9 | `ELIZABET_ENSKOM_09` — Интенциональное действие «под описанием» · Negotiation Log | журнал переговоров потребитель-поставщик | решения теряются между сессиями агентов | вести decision log по спорным полям |
-| 10 | `ELIZABET_ENSKOM_10` — Интенциональное действие «под описанием» · Deprecation Covenant | завет вывода схемы | старое поле исчезает без миграционного пути | задавать deprecation window, fallback и removal date |
+| 1 | `ELIZABET_ENSKOM_01_NAME_GATE` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Semantic Naming Gate | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `ELIZABET_ENSKOM_02_STATE_INVARIANT` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - State Invariant Kernel | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `ELIZABET_ENSKOM_03_BOUNDARY_MAP` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Boundary Map | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `ELIZABET_ENSKOM_04_COUNTEREXAMPLE_TEST` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Counterexample Test | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `ELIZABET_ENSKOM_05_DATA_SHAPE` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Data Shape Discipline | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `ELIZABET_ENSKOM_06_TRANSITION_GUARD` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Atomic Transition Guard | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `ELIZABET_ENSKOM_07_REVIEW_BINARY` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Binary Review Criterion | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `ELIZABET_ENSKOM_08_EVIDENCE_TRACE` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Evidence Trace | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `ELIZABET_ENSKOM_09_PARALLEL_WORK` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - Parallel Conflict Shield | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `ELIZABET_ENSKOM_10_RAG_CAPSULE` - Элизабет Энском: Интенциональное действие «под описанием» (intention under a description) - RAG Doctrine Capsule | Intention - intentional action under a description | parallel implementation contract conflict; personal failure mode: losing 'Интенциональное действие «под описанием» (intention under a description)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Элизабет Энском-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-12_SOCIAL-CONTRACT`, используй этот файл для индивидуального акцента Элизабет Энском: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-12_SOCIAL-CONTRACT.md`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md)
-- Строка философского принципа: `BARCAN-TAG-12_SOCIAL-CONTRACT.md:43`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-12_SOCIAL-CONTRACT` and needs the individual voice of Элизабет Энском, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

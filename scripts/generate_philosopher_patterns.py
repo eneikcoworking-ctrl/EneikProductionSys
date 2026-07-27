@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from collections import Counter
 from datetime import date
 from pathlib import Path
@@ -13,516 +14,527 @@ PEOPLE_DIR = OUT / "philosophers"
 
 
 COMMON_PATTERNS = [
-    ("ACP-001", "Design by Contract", "Предусловия, постусловия и инварианты явно фиксируют обязанность кода, поэтому дефект ловится до скрытого распространения состояния."),
-    ("ACP-002", "Type-Driven Design", "Типовая модель запрещает целые классы невозможных состояний ещё до запуска программы."),
-    ("ACP-003", "Property-Based Testing", "Генеративная проверка ищет контрпримеры шире ручных примеров и особенно полезна для инвариантов."),
-    ("ACP-004", "Invariant-Centered Modeling", "Система проектируется вокруг утверждений, которые всегда должны оставаться истинными."),
-    ("ACP-005", "Static Analysis Gate", "Линтеры, type-check, SAST и schema-check переносят обнаружение дефекта в раннюю стадию кодинга."),
-    ("ACP-006", "Exhaustive Case Analysis", "Все варианты состояния перечисляются явно; невозможное состояние не попадает в runtime."),
-    ("ACP-007", "Immutability by Default", "Неизменяемые значения снижают риск скрытой мутации и гонок состояния."),
-    ("ACP-008", "Pure Function Core", "Чистая функция делает зависимость входа и выхода проверяемой, локализуя эффекты на границах."),
-    ("ACP-009", "Boundary Validation", "Все внешние входы валидируются на границе, а не внутри случайной бизнес-логики."),
-    ("ACP-010", "Schema and Contract Validation", "Машиночитаемая схема делает договорённость проверяемой автоматически."),
-    ("ACP-011", "Idempotency", "Повтор команды не создаёт вторичный дефект, дубликат или повреждение состояния."),
-    ("ACP-012", "Deterministic State Machine", "Явные состояния и переходы исключают хаотичные промежуточные режимы."),
-    ("ACP-013", "Observability and Traceability", "Логи, метрики, трассы и audit trail превращают подозрение в проверяемый факт."),
-    ("ACP-014", "Versioned API Contract", "Изменение публичной формы поведения проходит через версию, а не через тихий дрейф."),
-    ("ACP-015", "Safe Rollback and Feature Flag", "Изменение можно включить, измерить и откатить без разрушения системы."),
-    ("ACP-016", "Circuit Breaker and Bulkhead", "Сбой ограничивается границами, не превращаясь в системную аварию."),
-    ("ACP-017", "Dependency Inversion", "Высокоуровневая политика не зависит от низкоуровневых деталей, что снижает хрупкость изменений."),
-    ("ACP-018", "Anti-Corruption Layer", "Наследие и внешние модели переводятся на границе, не заражая внутренний язык системы."),
-    ("ACP-019", "Data Lineage", "Происхождение данных фиксируется, чтобы доверие к результату было проверяемым."),
-    ("ACP-020", "Least Privilege", "Субъект получает только минимальные права, нужные для конкретного действия."),
-    ("ACP-021", "Zero Trust Verification", "Ни один запрос не считается доброкачественным без проверки контекста, подписи и полномочий."),
-    ("ACP-022", "CI Quality Gate", "Код не полагается на обещание разработчика: проверка встроена в pipeline."),
-    ("ACP-023", "Golden Master Regression", "Наблюдаемое эталонное поведение сохраняется и защищается от случайной регрессии."),
-    ("ACP-024", "Transactional Outbox", "Состояние и событие публикуются согласованно, без расщепления факта между БД и брокером."),
-    ("ACP-025", "Migration Rollback Plan", "Любое изменение схемы или инфраструктуры имеет путь назад до применения в production."),
-    ("ACP-026", "Accessibility by Default", "Доступность проектируется как базовый инвариант, а не поздняя косметика."),
-    ("ACP-027", "Single Writer Ownership", "У каждого изменяемого участка есть владелец, поэтому два агента не принимают несовместимые решения в одном месте."),
-    ("ACP-028", "Contract-First Parallelism", "Сначала фиксируется контракт, затем команды работают параллельно за стабильной границей."),
-    ("ACP-029", "Merge Queue Gate", "Изменения попадают в main только через очередь, которая пересобирает результат на актуальной базе."),
-    ("ACP-030", "Generated Artifact Authority", "Сгенерированные файлы меняются только генератором, поэтому ручные правки не конфликтуют с регенерацией."),
-    ("ACP-031", "Append-Only Extension Point", "Новые возможности добавляются через новые файлы или расширения, а общий реестр собирается автоматически."),
-    ("ACP-032", "Refactor Freeze Lane", "Массовый рефакторинг идёт в отдельном окне или ветке, не смешиваясь с продуктовой разработкой."),
-    ("ACP-033", "Conflict Forecast in PR", "PR заранее объявляет зоны пересечения, владельцев и потенциальные конфликтные поверхности."),
-    ("ACP-034", "Semantic Conflict Test", "Проверяется не только текстовый merge, но и смысловая совместимость контрактов, схем и поведения."),
-    ("ACP-035", "Migration Serialization", "Миграции БД проходят через единый порядок, исключая две конкурирующие правки одной схемы."),
-    ("ACP-036", "Feature Flag Isolation", "Незавершённая параллельная работа изолируется флагом и не меняет общий runtime без включения."),
-    ("ACP-037", "No Shared Constants Drift", "Общие константы, enum и типы меняются только через владельца и impact-check."),
-    ("ACP-038", "Conflict Resolution Evidence", "Любое ручное разрешение конфликта подтверждается тестом или проверкой затронутого контракта."),
+    ("ACP-001", "Design by Contract", "Assertions and pre/postconditions", "Catches invalid state before it leaks across module boundaries."),
+    ("ACP-002", "Type-Driven Design", "Strong domain types and impossible-state encoding", "Makes illegal states unrepresentable at compile time where the stack allows it."),
+    ("ACP-003", "Property-Based Testing", "Generated counterexamples over invariant space", "Finds edge cases human examples usually miss."),
+    ("ACP-004", "Model-Based Testing", "Executable reference model for behavior", "Detects implementation drift against a simpler specification."),
+    ("ACP-005", "Mutation Testing", "Tests must fail when behavior is deliberately damaged", "Prevents false confidence from weak assertions."),
+    ("ACP-006", "Static Analysis Gate", "Linters, type checks, SAST and schema checks in CI", "Moves defect discovery from runtime into coding time."),
+    ("ACP-007", "Exhaustive Case Analysis", "Closed enums, sealed types and total switches", "Stops unhandled states from silently reaching production."),
+    ("ACP-008", "Immutability by Default", "Immutable values except at explicit boundaries", "Reduces hidden mutation, race conditions and spooky action at a distance."),
+    ("ACP-009", "Pure Core, Imperative Shell", "Pure decision logic wrapped by IO adapters", "Keeps business behavior deterministic and easy to test."),
+    ("ACP-010", "Boundary Validation", "Validate all external input at the edge", "Prevents polluted data from entering trusted internals."),
+    ("ACP-011", "Schema and Contract Validation", "OpenAPI, JSON Schema, AsyncAPI or equivalent", "Turns interface agreements into machine-checkable facts."),
+    ("ACP-012", "Consumer-Driven Contract Tests", "Provider behavior checked against consumer expectations", "Stops backend/frontend and service-to-service drift."),
+    ("ACP-013", "Semantic Versioning", "Public behavior changes only through explicit version rules", "Prevents accidental breaking changes."),
+    ("ACP-014", "Backward Compatibility Window", "Deprecated behavior remains available for a planned interval", "Lets clients migrate without emergency coordination."),
+    ("ACP-015", "Idempotency Key", "Repeatable commands use stable operation identity", "Prevents duplicate writes after retry or network uncertainty."),
+    ("ACP-016", "Optimistic Concurrency Control", "Version or status guard on state transitions", "Blocks lost updates and read-then-save races."),
+    ("ACP-017", "Deterministic State Machine", "Explicit states and transition table", "Prevents ambiguous lifecycle behavior."),
+    ("ACP-018", "Transactional Outbox", "Persist state change and event publication atomically", "Avoids split-brain between database and broker."),
+    ("ACP-019", "Saga with Compensating Actions", "Long workflow split into reversible steps", "Contains partial failure in distributed processes."),
+    ("ACP-020", "Circuit Breaker", "Stop calling unhealthy dependencies temporarily", "Prevents cascading outages."),
+    ("ACP-021", "Bulkhead Isolation", "Separate resource pools for separate failure domains", "Stops one overloaded path from sinking the whole system."),
+    ("ACP-022", "Retry with Exponential Backoff and Jitter", "Bounded retry for transient faults", "Reduces thundering herd and retry storms."),
+    ("ACP-023", "Rate Limiting and Backpressure", "Control inflow before queues become unbounded", "Protects latency, memory and external APIs."),
+    ("ACP-024", "Timeout Budgeting", "Every remote call has a bounded time contract", "Avoids stuck threads and zombie workflows."),
+    ("ACP-025", "Observability and Traceability", "Logs, metrics, spans and correlation IDs", "Turns suspicion into inspectable evidence."),
+    ("ACP-026", "Structured Error Taxonomy", "Errors include class, cause, retryability and safe action", "Prevents ambiguous recovery behavior."),
+    ("ACP-027", "Audit Trail", "Security and business-critical decisions are recorded", "Makes accountability and rollback analysis possible."),
+    ("ACP-028", "Least Privilege", "Grant only the minimum required authority", "Limits blast radius after bugs or compromise."),
+    ("ACP-029", "Zero Trust Verification", "No caller, token or payload is trusted by default", "Stops confused-deputy and spoofing defects."),
+    ("ACP-030", "Secrets Isolation", "Secrets never enter source, logs or client bundles", "Prevents credential leaks."),
+    ("ACP-031", "Input Canonicalization", "Normalize before validation, comparison or authorization", "Prevents bypass through alternate representations."),
+    ("ACP-032", "Safe Output Encoding", "Encode per target context", "Prevents injection through UI, SQL, shell, logs or URLs."),
+    ("ACP-033", "Accessibility by Default", "WCAG, keyboard flow and touch target checks", "Prevents unusable interfaces from passing as complete."),
+    ("ACP-034", "Golden Master Regression", "Preserve known observable behavior during risky change", "Catches accidental regressions in legacy surfaces."),
+    ("ACP-035", "Snapshot with Semantic Assertions", "Snapshots are paired with behavior assertions", "Prevents brittle visual/text snapshots from hiding real defects."),
+    ("ACP-036", "Test Data Builder", "Named fixtures built through domain factories", "Reduces fragile test setup and accidental invalid data."),
+    ("ACP-037", "Reproducible Seed Injection", "Randomness and time are injectable in tests", "Removes flakes from nondeterministic logic."),
+    ("ACP-038", "Containerized Toolchain Contract", "Build/test commands run in pinned containers", "Prevents PATH, JDK, Node and native binding drift."),
+    ("ACP-039", "In-Memory Test Datasource", "Tests isolate database state from local files", "Avoids stale file DB corruption and cross-run contamination."),
+    ("ACP-040", "Migration Serialization", "Schema changes pass through one ordered lane", "Prevents competing migrations and Flyway collisions."),
+    ("ACP-041", "Migration Rollback Plan", "Every migration has a tested recovery story", "Reduces irreversible production failures."),
+    ("ACP-042", "Feature Flag Isolation", "Incomplete work is hidden behind explicit capability switches", "Lets parallel branches land without exposing half-built behavior."),
+    ("ACP-043", "Canary Release", "Expose change to a small monitored population first", "Detects production-only failures before full rollout."),
+    ("ACP-044", "Fast Rollback", "Rollback is practiced and bounded by time", "Keeps recovery from becoming improvisation."),
+    ("ACP-045", "Small Vertical PR", "One coherent behavior slice per PR", "Shrinks review surface and conflict probability."),
+    ("ACP-046", "Merge Queue Gate", "Rebuild and retest on current main before merge", "Stops green-but-stale PRs from breaking main."),
+    ("ACP-047", "Single Writer Ownership", "Each shared surface has a declared owner", "Prevents parallel agents from editing the same contract blindly."),
+    ("ACP-048", "CODEOWNERS and Review Routing", "Ownership is enforced by repository rules", "Ensures the right role sees the risky change."),
+    ("ACP-049", "Generated Artifact Authority", "Generated files are changed only through the generator", "Prevents manual drift and regeneration conflicts."),
+    ("ACP-050", "Append-Only Extension Point", "Prefer new files/registrations over editing shared cores", "Reduces merge conflicts in parallel work."),
+    ("ACP-051", "No Shared Constants Drift", "Enums and constants have one owner and compatibility tests", "Stops semantic divergence behind identical names."),
+    ("ACP-052", "Route Ownership Registry", "Each endpoint has one owning controller or handler", "Prevents duplicate-route runtime failures."),
+    ("ACP-053", "Endpoint Collision Scan", "CI checks that no two handlers claim the same method/path", "Catches Spring/FastAPI/Express route conflicts before boot."),
+    ("ACP-054", "Semantic Conflict Test", "After text merge, run affected contract and behavior tests", "Catches meaning conflicts that Git cannot see."),
+    ("ACP-055", "Conflict Forecast in PR", "PR declares touched paths, owners and integration points", "Lets reviewers spot collisions before code lands."),
+    ("ACP-056", "Conflict Resolution Evidence", "Manual conflict resolution must add or run targeted evidence", "Prevents guessed merges from entering main."),
+    ("ACP-057", "No-Op Supersession", "Superseded PRs are converted to tested no-op merges or closed", "Clears stale work without reintroducing old code."),
+    ("ACP-058", "Stale Claim Self-Healing", "Stuck automation claims are released with evidence", "Keeps autonomous queues moving."),
+    ("ACP-059", "CI Status Reconciliation", "System reconciles GitHub state with internal task state", "Prevents already-merged work from staying blocked."),
+    ("ACP-060", "RAG Source-Grounded Retrieval", "Agents cite exact source chunks before applying doctrine", "Prevents philosophical slogans from becoming hallucinated rules."),
 ]
 
 
 CONFLICT_PREVENTION_RULES = [
-    ("CPF-001", "Один владелец на изменяемую поверхность", "Каждый shared-файл, модуль, схема, API-контракт и генератор имеет владельца. Параллельные агенты не редактируют одну поверхность без явного handoff."),
-    ("CPF-002", "Контракт раньше реализации", "Для API, БД, событий, RAG-схем и UI-состояний сначала меняется контракт и проходит review, затем команды реализуют свои стороны."),
-    ("CPF-003", "Generated files are read-only", "Файлы, созданные генератором, не редактируются вручную. Изменение делается в генераторе или исходном BARCAN-файле и затем пересобирается."),
-    ("CPF-004", "Append-only по умолчанию", "Если можно добавить новый файл, новый объект, новую миграцию или новый registry entry вместо редактирования общего центра, выбирается добавление."),
-    ("CPF-005", "Малые PR и вертикальные срезы", "Один PR закрывает один bounded context или один контрактный срез. Смешивание фичи, рефакторинга и форматирования запрещается."),
-    ("CPF-006", "Merge queue вместо прямого merge", "Перед попаданием в main изменения пересобираются на актуальном состоянии ветки и проходят тесты после интеграции."),
-    ("CPF-007", "Сериализация миграций", "Миграции БД, изменения shared enum и глобальные схемы проходят через единый порядковый канал."),
-    ("CPF-008", "Refactor freeze lane", "Массовые переименования, форматирование, переносы файлов и архитектурные реорганизации выполняются в выделенном окне."),
-    ("CPF-009", "Conflict forecast", "Каждая задача до кодинга фиксирует touched paths, owners, contracts и expected integration points."),
-    ("CPF-010", "Semantic conflict checks", "После текстового merge запускаются contract tests, schema diff, affected tests и smoke path для затронутого поведения."),
-    ("CPF-011", "Feature flag isolation", "Параллельная незавершённая работа не меняет общий пользовательский путь без feature flag или capability switch."),
-    ("CPF-012", "Evidence after conflict resolution", "Если конфликт всё же решён руками, merge запрещён без новой проверки, доказывающей сохранение поведения."),
+    ("CPF-001", "Single owner for every mutable surface", "Every shared file, contract, enum, migration lane and generated artifact has one owner."),
+    ("CPF-002", "Contract before implementation", "API, event, schema and RAG contracts are reviewed before parallel implementation starts."),
+    ("CPF-003", "Generated files are read-only", "Change the generator or source data, then regenerate."),
+    ("CPF-004", "Append-only by default", "Prefer new extension files or registry rows over edits to shared central files."),
+    ("CPF-005", "Small vertical PRs", "One PR covers one behavior slice, not feature plus refactor plus formatting."),
+    ("CPF-006", "Merge queue over direct merge", "Every PR is rebuilt on current main before landing."),
+    ("CPF-007", "Serialized migrations", "Database migrations, shared enums and global schemas pass through a single ordered lane."),
+    ("CPF-008", "Refactor freeze lane", "Broad moves, renames and formatting run in their own window."),
+    ("CPF-009", "Conflict forecast", "Task and PR describe touched paths, owners, contracts and expected integration points."),
+    ("CPF-010", "Semantic conflict checks", "After merge, affected contract, schema and smoke tests must run."),
+    ("CPF-011", "Feature flag isolation", "Incomplete parallel work cannot affect shared runtime without a flag."),
+    ("CPF-012", "Evidence after conflict resolution", "Manual conflict fixes require targeted tests or contract checks."),
 ]
 
 
-TAG_STEMS = {
-    "BARCAN-TAG-00_CODE-GUARDIAN": [
-        ("Intent Lexeme Review", "семантическое ревью имён", "неверное имя скрывает фактический эффект метода", "требовать переименование, если имя не передаёт намерение и эффект"),
-        ("Comment-Behavior Parity Check", "проверка совпадения комментария и поведения", "комментарий легализует устаревшую или ложную модель кода", "блокировать PR, где комментарий обещает не то, что исполняет код"),
-        ("Public Method Isolation Probe", "изолируемая проверка публичного метода", "невозможность теста показывает скрытую связность", "каждый новый публичный метод должен иметь независимый способ проверки"),
-        ("Side-Effect Truthfulness Audit", "аудит скрытых побочных эффектов", "метод чтения внезапно пишет, отправляет или мутирует состояние", "выносить эффект в явно названную команду"),
-        ("Information-Density Budget", "контроль плотности информации", "слишком мало или слишком много кода одинаково разрушает понимание", "удалять очевидные комментарии и распутывать сжатые выражения"),
-        ("Local World Convention Register", "реестр локальных соглашений модуля", "локальная договорённость становится ловушкой для новых агентов", "требовать README для отклонения от глобального стандарта"),
-        ("Literal Eviction Sweep", "вынос магических литералов", "значение без имени нельзя проверить смыслово", "заменять магические числа и строки именованными константами"),
-        ("Cognitive Nesting Cap", "ограничение вложенности рассуждения", "глубокие ветвления прячут альтернативные случаи", "рефакторить при вложенности выше установленного порога"),
-        ("TODO Obligation Trace", "трассировка отложенного обязательства", "TODO без владельца превращается в долг без срока", "каждый TODO связывать с задачей или удалять"),
-        ("Dependency Intent Hearing", "обоснование новой зависимости", "библиотека добавляет скрытый контракт и поверхность атаки", "требовать явное объяснение пользы и риска зависимости"),
-    ],
-    "BARCAN-TAG-01_ACTUALIST-OBJECT": [
-        ("Actual Entity Admission", "допуск только актуальной сущности", "абстракция появляется раньше реального процесса", "не создавать сущность без текущего бизнес-поведения"),
-        ("Behavior-Bearing Aggregate", "агрегат с поведением", "анемичная модель переносит решения в сервисный шум", "помещать инварианты и бизнес-действия внутрь доменного объекта"),
-        ("C4 Coupled Change", "связывание архитектурного изменения с C4", "архитектура меняется без общей карты", "обновлять C4/Context Map вместе с изменением границы"),
-        ("Context Leak Interdiction", "запрет протекания контекста", "логика одного домена начинает жить в другом", "блокировать межконтекстный доступ без явного адаптера"),
-        ("Part-Whole Integrity Ledger", "реестр отношений часть-целое", "дочерний объект отрывается от агрегата", "фиксировать ownership и lifecycle зависимых частей"),
-        ("Core-State Separation", "разделение сущностных свойств и состояний", "флаг состояния меняет идентичность объекта", "разносить core identity и mutable status"),
-        ("Domain Ownership Ledger", "книга владения доменными понятиями", "одно понятие определяется двумя командами по-разному", "закреплять владельца каждого ключевого термина"),
-        ("Future Stub Refusal", "отказ от заглушки на будущее", "спекулятивный интерфейс закрепляет ложную онтологию", "удалять пустые интерфейсы без текущего сценария"),
-        ("Database Boundary Embargo", "эмбарго на чужую БД", "сервис обходит контракт другого сервиса", "запрещать прямой запрос к таблицам чужого контекста"),
-        ("Adapter Sunset Clause", "срок жизни антикоррупционного адаптера", "временный ACL становится постоянной архитектурой", "указывать условия удаления временного адаптера"),
-    ],
-    "BARCAN-TAG-02_RIGID-DESIGNATOR": [
-        ("Identifier Meaning Freeze", "заморозка смысла идентификатора", "одно имя начинает означать разные вещи", "фиксировать значение публичных имён во всех окружениях"),
-        ("External-Internal Sense Mapper", "мапер внутреннего и внешнего смысла", "изменение реализации ломает внешний договор", "держать внешний контракт стабильным через граничный mapper"),
-        ("Context Propagation Receipt", "квитанция передачи контекста", "контекст пользователя теряется в распределённом вызове", "передавать session/locale/auth как явный пакет"),
-        ("Rename Causal Ledger", "каузальный журнал переименования", "новое имя обрывает интеграционную историю", "сопровождать переименование alias/deprecation/migration notes"),
-        ("Indexical Context Capsule", "капсула индексикальных значений", "timezone или locale смешиваются между пользователями", "изолировать контекстно-зависимые значения на запрос"),
-        ("Boundary Pressure Shield", "экран внешнего прагматического давления", "внешняя система проталкивает свои хаотичные значения внутрь", "нормализовать данные только на границе"),
-        ("Compatibility Diff Trial", "суд над diff публичного контракта", "малый diff становится breaking change", "проверять OpenAPI/JSON Schema diff до merge"),
-        ("Consumer Expectation Replay", "повтор ожиданий потребителей", "backend считает контракт совместимым без проверки клиентов", "прогонять consumer tests для значимых контрактов"),
-        ("Error Meaning Registry", "реестр значений ошибок", "один код ошибки используется для разных ситуаций", "фиксировать код, смысл, recoverability и UX-сообщение"),
-        ("Authorization Context Seal", "печать контекста авторизации", "роль или tenant подменяется между слоями", "подписывать и проверять auth context на границах"),
-    ],
-    "BARCAN-TAG-03_BELIEF-INTENSION": [
-        ("Target Acquisition Budget", "бюджет попадания в цель", "маленькие и далёкие элементы создают ошибочные клики", "назначать минимальные размеры и расстояния для важных действий"),
-        ("Immediate Feedback Circuit", "немедленная петля обратной связи", "пользователь повторяет действие из-за отсутствия отклика", "каждое действие должно иметь visible state change"),
-        ("Chunked Attention Limit", "лимит чанков внимания", "экран превышает рабочую память", "группировать объекты в малые смысловые блоки"),
-        ("Gestalt Route Marking", "маркировка визуального маршрута", "взгляд не понимает следующий шаг", "строить путь через proximity/similarity/continuity"),
-        ("Habitual Control Placement", "расположение по ментальной привычке", "пользователь ищет действие там, где оно обычно живёт", "не переносить критичные controls без причины"),
-        ("State Completeness Matrix", "матрица состояний компонента", "hover/focus/error/loading забыты и ломают агентность", "проверять все интерактивные состояния компонента"),
-        ("Cognitive Noise Redline", "красная линия когнитивного шума", "декор конкурирует с задачей", "удалять визуальные элементы без функционального различия"),
-        ("Progressive Disclosure Ladder", "лестница постепенного раскрытия", "сложность показывается раньше готовности пользователя", "раскрывать детали по мере намерения"),
-        ("Perception Accessibility Probe", "проверка воспринимаемой доступности", "формально доступный интерфейс остаётся непонятным", "тестировать keyboard/screen reader/cognitive clarity"),
-        ("Latency Illusion Bridge", "мост через задержку восприятия", "пауза воспринимается как поломка", "использовать skeleton/progress/optimistic state при задержках"),
-    ],
-    "BARCAN-TAG-04_MODAL-QUANTIFIER": [
-        ("Holdout Wager Threshold", "порог ставки на holdout", "модель деплоится по красивой, но слабой метрике", "задавать численный порог выигрыша до обучения"),
-        ("Drift Belief Update", "обновление доверия при drift", "модель считается прежней после смены распределения", "пересчитывать доверие по drift signals"),
-        ("Epistemic Status Label", "метка статуса знания", "ASSUMED выдаётся за VERIFIED", "маркировать вывод как VERIFIED/INFERRED/ASSUMED"),
-        ("OOD Humility Fence", "ограда смирения вне распределения", "модель уверенно отвечает вне зоны наблюдения", "понижать статус прогноза на OOD input"),
-        ("Metric Method Version", "версия метода измерения", "baseline сравнивается после смены разметки", "версировать holdout, labeling policy и scorer"),
-        ("Parsimony Upgrade Rule", "правило экономного усложнения", "pipeline усложняется без доказанного прироста", "добавлять слой только после измеримого выигрыша"),
-        ("Model Card Truth Table", "таблица истинности model card", "пользователь не знает границ модели", "фиксировать use cases, non-use cases и evidence"),
-        ("Calibration Curve Gate", "ворота калибровочной кривой", "вероятность не соответствует частоте ошибок", "проверять calibration перед production decision"),
-        ("Feature Leakage Trial", "разбирательство утечки признаков", "модель выигрывает за счёт будущего или запрещённого сигнала", "проверять причинную доступность каждого признака"),
-        ("Dataset Split Seal", "печать неизменяемого split", "train/test граница двигается под желаемый результат", "фиксировать split до эксперимента и хранить hash"),
-    ],
-    "BARCAN-TAG-05_NECESSARY-IDENTITY": [
-        ("IaC Continuity Proof", "доказательство непрерывности IaC", "redeploy меняет сущность сервиса незаметно", "сверять config/state/provisioning перед и после apply"),
-        ("INUS Incident Set", "набор INUS-условий инцидента", "RCA называет одну причину вместо достаточного множества", "фиксировать все совместно достаточные условия"),
-        ("Temporal Service Ledger", "временная книга сервиса", "SLO считается по снимку, а не истории", "вести историю версий, деплоев, миграций и деградаций"),
-        ("Trace Mark Continuity", "непрерывность trace-метки", "причинная цепь рвётся между сервисами", "сохранять trace ID через все hops"),
-        ("SLO Composition Contract", "контракт состава SLO", "система объявлена здоровой при деградации существенной части", "явно перечислять компоненты, входящие в SLO"),
-        ("Runbook Structure Persistence", "персистенция структуры runbook", "процедура считается другой из-за смены параметров", "разделять структуру восстановления и переменные среды"),
-        ("Deploy Provenance Seal", "печать происхождения деплоя", "непонятно, какой код реально работает", "связывать image, commit, config и миграцию"),
-        ("Blast Radius Cell", "ячейка радиуса поражения", "один сбой захватывает весь ландшафт", "делить инфраструктуру на изолированные blast cells"),
-        ("Recovery Drill Checkpoint", "контрольная точка учения восстановления", "runbook существует, но не исполнялся", "регулярно прогонять восстановление как проверку"),
-        ("Config Drift Arrest", "арест дрейфа конфигурации", "ручное изменение ломает тождество окружения", "детектировать и откатывать drift от declarative state"),
-    ],
-    "BARCAN-TAG-06_DEONTIC-CONSISTENCY": [
-        ("Counterexample First Suite", "сьют от контрпримеров", "тесты подтверждают счастливый путь и не ищут ошибку", "проектировать тесты сначала как попытку опровержения"),
-        ("CI Reality Attestation", "аттестация реальности CI", "mocked или skipped прогон выдаёт себя за проверку", "прикладывать ссылку на реальный execution evidence"),
-        ("Flaky Quarantine State", "карантин flaky-состояния", "нестабильный тест округляется до pass", "выделять FLAKY как отдельный блокирующий статус"),
-        ("Contradiction Intolerance", "нетерпимость к противоречию результата", "один commit имеет несовместимые итоги", "останавливать pipeline до воспроизводимого объяснения"),
-        ("Verified Run Receipt", "квитанция verified-прогона", "статус VERIFIED живёт отдельно от факта запуска", "сохранять log, environment, commit и artifact"),
-        ("Acceptance Signature Lock", "замок подписанного AC", "команда меняет критерии после реализации", "замораживать AC перед разработкой и менять только через review"),
-        ("Mutation Challenge", "мутационный вызов тестам", "тест проходит даже при испорченной логике", "использовать mutation testing для критичных правил"),
-        ("Boundary Assault Set", "набор атак на границы", "краевые случаи не представлены в проверке", "генерировать null/empty/max/min/race cases"),
-        ("Oracle Independence Check", "независимость тестового оракула", "тест повторяет реализацию и не ловит ошибку", "строить expected result из спецификации, не из production code"),
-        ("Nondeterminism Reproduction Protocol", "протокол воспроизведения недетерминизма", "случайный сбой исчезает без причины", "фиксировать seed, time, env и concurrency profile"),
-    ],
-    "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE": [
-        ("Knowledge Proof Gate", "ворота доказательства знания", "доступ выдан без доказательства полномочия", "проверять факт права без раскрытия лишних данных"),
-        ("Trust Chain Audit", "аудит цепочки доверия", "токен принят без проверки источника", "валидировать подпись, issuer, audience, expiry и context"),
-        ("Risk-Adaptive Challenge", "адаптивный вызов при риске", "одинаковые требования для безопасной и рискованной ситуации", "усиливать MFA/re-auth при росте риска"),
-        ("Hostile Request Default", "враждебный запрос по умолчанию", "периметр считается безопасным", "проверять каждый internal call как внешний"),
-        ("Metadata Secrecy Guard", "защита метаданных", "логи и headers раскрывают структуру системы", "шифровать или редактировать служебные каналы"),
-        ("Scanner Blocking Covenant", "завет блокирующего сканера", "SAST/DAST остаётся рекомендацией", "делать критичные findings merge-blocking"),
-        ("Secret Absence Proof", "доказательство отсутствия секрета", "ключ попадает в код или лог", "сканировать commits, images и runtime env"),
-        ("Token Scope Diet", "диета области токена", "токен может больше, чем нужно действию", "урезать scopes до конкретного use case"),
-        ("Privileged Re-Auth Moment", "момент повторной авторизации", "высокорисковое действие наследует старую сессию", "требовать re-auth перед destructive/admin commands"),
-        ("Tamper-Evident Security Event", "событие безопасности с защитой от подмены", "атаку нельзя доказать после изменения логов", "писать security events в неизменяемый audit stream"),
-    ],
-    "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE": [
-        ("Physical Type Wall", "физическая стена типов", "разные типы смешиваются в одной колонке", "разносить типы на уровне DDL, constraints и codecs"),
-        ("Migration Proof Object", "миграция как объект доказательства", "схема меняется без доказательства сохранения данных", "каждая migration имеет forward/backward validation"),
-        ("Index Follows Data Shape", "индекс следует форме данных", "индексация оптимизирует удобство кода, а не запрос", "строить индекс из cardinality/query plan/access pattern"),
-        ("Meaning-Preserving Transform", "преобразование с сохранением смысла", "ETL меняет значение поля незаметно", "фиксировать semantic contract каждой трансформации"),
-        ("Lineage-Coherence Double Check", "двойная проверка происхождения и согласованности", "истина данных держится только на одном основании", "требовать lineage plus reconciliation"),
-        ("Sense-Value Registry Entry", "запись смысла и значения в registry", "формат поменялся, интерпретация сломалась", "вести schema registry с semantic notes"),
-        ("Catalog Admission Gate", "ворота попадания в data catalog", "новая таблица невидима для governance", "запрещать merge без catalog entry"),
-        ("Referential Fence", "референциальное ограждение", "запись ссылается на невозможный объект", "закреплять FK/check constraints или проверяемый surrogate"),
-        ("Partition Predicate Discipline", "дисциплина предиката партиции", "запросы случайно обходят партиции", "фиксировать partition key и обязательный predicate"),
-        ("Reconciliation Checksum", "контрольная сумма сверки", "перенос данных кажется успешным без сверки", "сравнивать counts/hash/sums до и после pipeline"),
-    ],
-    "BARCAN-TAG-09_MORAL-DILEMMA": [
-        ("Consequence-Backed JTBD", "JTBD с доказанным последствием", "задача описывает желание, но не эффект", "требовать связь work item с измеримым последствием"),
-        ("Holistic Impact Map", "карта целостного влияния", "локальная оптимизация ломает соседний поток", "оценивать влияние на всю систему, а не модуль"),
-        ("Waste Deletion Ledger", "журнал удаления waste", "команда автоматизирует ненужное действие", "фиксировать, какой waste удалён и почему"),
-        ("Desire-to-AC Translator", "перевод желания в acceptance criteria", "клиентская формулировка остаётся неоднозначной", "превращать желание в проверяемые AC"),
-        ("Reasoned Refusal Record", "запись рационального отказа", "отказ выглядит как настроение агента", "обосновывать отказ constraint, risk или metric evidence"),
-        ("Six Sigma Reality Probe", "зонд реальности Six Sigma", "улучшение заявлено без метрики вариации", "привязывать улучшение к defect rate/variance/capability"),
-        ("TOC Constraint Anchor", "якорь ограничения TOC", "работа улучшает не бутылочное горлышко", "связывать задачу с текущим constraint"),
-        ("Lean Value Hypothesis", "гипотеза lean-ценности", "фича создаёт output без value", "формулировать value hypothesis до разработки"),
-        ("Stakeholder Ambiguity Split", "расщепление неоднозначности стейкхолдера", "одна фраза скрывает несколько требований", "разделять роли, права, стимулы и риски"),
-        ("Decision Consequence Matrix", "матрица последствий решения", "архитектурный выбор не имеет видимой цены", "сравнивать последствия accept/reject/defer"),
-    ],
-    "BARCAN-TAG-10_DEONTIC-PROHIBITION": [
-        ("Deontic Rule Encoding", "кодирование нормы как O/P/F", "правило невозможно проверить автоматически", "переводить норму в Obligatory/Permitted/Forbidden"),
-        ("Jurisdiction Applicability Trial", "проверка применимости юрисдикции", "команда цитирует закон вне области применения", "фиксировать jurisdiction, data subject, controller/processor role"),
-        ("Compliance Override Shield", "щит исключающей причины", "скорость релиза конкурирует с запретом", "комплаенс-блокер не взвешивать как обычный tradeoff"),
-        ("Right-Duty Data Pair", "пара право-обязанность для данных", "право субъекта не превращено в обязанность системы", "мапить каждое право на конкретные storage actions"),
-        ("Integrity Interpretation Note", "примечание интерпретации по целостности", "пограничный случай решается только буквой нормы", "добавлять rationale по принципу защиты субъекта"),
-        ("Formal Exception Docket", "формальное дело исключения", "исключение вводится ситуативно", "оформлять исключения отдельной политикой и сроком"),
-        ("RoPA Coverage Gate", "ворота покрытия RoPA", "категория данных не отражена в реестре", "блокировать обработку без RoPA entry"),
-        ("PIA Trigger Matrix", "матрица триггеров PIA", "новый риск приватности не запускает оценку", "автоматически запускать PIA по типу данных/цели/масштабу"),
-        ("Retention Enforcement Hook", "крюк исполнения срока хранения", "policy есть, удаления нет", "связывать retention rule с scheduled deletion job"),
-        ("Backup Erasure Proof", "доказательство удаления из backup", "данные удалены из БД, но живут в копиях", "фиксировать стратегию удаления/истечения в backup layer"),
-    ],
-    "BARCAN-TAG-11_CLIENT-PERCEPTION": [
-        ("Hundred Millisecond Budget", "бюджет 100 мс", "интерфейс кажется сломанным из-за задержки", "оптимизировать первичный отклик до порога мгновенности"),
-        ("Semantic Component Accessibility", "семантическая доступность компонента", "визуально красивый control невидим assistive tech", "использовать native semantics/ARIA только по необходимости"),
-        ("Render-Data Separation", "разделение рендера и данных", "визуальный шум блокирует логику состояния", "изолировать view state от domain state"),
-        ("Spatial Layer Map", "карта пространственных слоёв", "z-index становится случайной борьбой элементов", "вести карту overlay/modal/popover layers"),
-        ("Signal Code Consistency", "согласованность кода сигнала", "цвет или иконка сообщает неверный статус", "закреплять semantic color/icon/timing map"),
-        ("CLS Confidence Budget", "бюджет уверенности CLS", "скачки layout вызывают ошибочные клики", "держать layout stable через reserved space"),
-        ("Skeleton Continuity Contract", "контракт непрерывности skeleton", "loading state обманывает о структуре результата", "skeleton должен совпадать с будущей композицией"),
-        ("Optimistic Reconciliation Path", "путь сверки optimistic update", "UI показывает успех без механизма отката", "каждый optimistic state иметь rollback/retry state"),
-        ("Focus Order Integrity", "целостность порядка фокуса", "keyboard user теряет маршрут", "проверять tab order после каждого layout change"),
-        ("Motion Continuity Guard", "страж непрерывности движения", "анимация разрушает ментальную карту", "использовать motion для объяснения перехода, а не декора"),
-    ],
-    "BARCAN-TAG-12_SOCIAL-CONTRACT": [
-        ("Contract Publication as Common Knowledge", "публикация контракта как общее знание", "стороны додумывают API по-разному", "публиковать OpenAPI/JSON Schema до параллельной работы"),
-        ("Shared Plan Lock", "замок разделяемого плана", "backend и frontend меняют план независимо", "изменять контракт только через совместный review"),
-        ("Institutional Version Fact", "версия как институциональный факт", "тихое изменение выдаётся за мелкую реализацию", "считать contract version нормативным фактом"),
-        ("Joint Change Commitment", "совместное обязательство изменения", "одна сторона выходит из договора без другой", "требовать acknowledgement обеих сторон"),
-        ("Subplan Meshing Check", "проверка стыковки суб-планов", "UI и backend собирают несовместимые части", "сверять endpoint, payload, error, loading и empty states"),
-        ("Under-Description Implementation Test", "тест реализации под описанием", "результат совпал случайно, но не по контракту", "проверять именно поля, коды и semantics контракта"),
-        ("Contract Drift Alarm", "сигнал дрейфа контракта", "код расходится со схемой после merge", "автоматически сравнивать runtime behavior со schema"),
-        ("Error Semantics Covenant", "завет семантики ошибок", "ошибки технически проходят, но UX не знает действие", "для каждой ошибки фиксировать cause/action/retryability"),
-        ("Negotiation Log", "журнал переговоров потребитель-поставщик", "решения теряются между сессиями агентов", "вести decision log по спорным полям"),
-        ("Deprecation Covenant", "завет вывода схемы", "старое поле исчезает без миграционного пути", "задавать deprecation window, fallback и removal date"),
-    ],
+PUBLICATION_ANCHORS = {
+    "Людвиг Витгенштейн": "Philosophical Investigations - language-games, meaning as use, private-language argument",
+    "Гилберт Райл": "The Concept of Mind - knowing-how versus knowing-that, category mistakes",
+    "Майкл Дамит": "Truth and Other Enigmas / Frege: Philosophy of Language - verificationist theory of meaning",
+    "Джон Остин": "How to Do Things with Words - speech acts and performatives",
+    "Пол Грайс": "Logic and Conversation - cooperative principle and conversational maxims",
+    "Нельсон Гудман": "Ways of Worldmaking / Fact, Fiction, and Forecast - worldmaking and projectibility",
+    "Рут Баркан Маркус": "A Functional Calculus of First Order Based on Strict Implication - quantified modal logic",
+    "Бэрри Смит": "Applied ontology and Basic Formal Ontology - formal taxonomies for real domains",
+    "Питер Саймонс": "Parts: A Study in Ontology - mereology and part-whole structure",
+    "Ахилле Варци": "Parts and Places / formal ontology of boundaries and spatial parts",
+    "Джонатан Шаффер": "Monism: The Priority of the Whole - priority monism and grounding",
+    "Кит Файн": "Essence and Modality - essence before modal description",
+    "Сол Крипке": "Naming and Necessity - rigid designation and necessary identity",
+    "Дэвид Чалмерс": "Two-Dimensional Semantics - primary and secondary intensions",
+    "Роберт Сталнакер": "Assertion and possible-world pragmatics - common ground and context change",
+    "Гарет Эванс": "The Varieties of Reference - causal/informational constraints on reference",
+    "Джон Перри": "The Problem of the Essential Indexical - indexicals and self-locating content",
+    "Джейсон Стэнли": "Knowledge and Practical Interests / contextualism in language and knowledge",
+    "Энди Кларк": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
+    "Альва Ноэ": "Action in Perception - enactive perception",
+    "Томас Метцингер": "Being No One - self-model and phenomenal tunnel",
+    "Дэвид Веллеман": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
+    "Шон Галлахер": "How the Body Shapes the Mind - embodied and prereflective experience",
+    "Сюзан Hurley": "Consciousness in Action - dynamic perception-action feedback",
+    "Фрэнк Рамсей": "Truth and Probability - degrees of belief and betting interpretation",
+    "Ричард Джеффри": "The Logic of Decision - Jeffrey conditionalization and decision theory",
+    "Айзек Леви": "The Fixation of Belief and Its Undoing / Enterprise of Knowledge - doxastic commitment",
+    "Бас ван Фраассен": "The Scientific Image - constructive empiricism",
+    "Иэн Хакинг": "Representing and Intervening - experiment, measurement and intervention",
+    "Эллиотт Собер": "Reconstructing the Past / Evidence and Evolution - parsimony and model selection",
+    "Дерек Парфит": "Reasons and Persons - psychological continuity and identity",
+    "Дж. Л. Макки": "The Cement of the Universe - INUS conditions and causation",
+    "Теодор Сайдер": "Four-Dimensionalism / Writing the Book of the World - persistence and structure",
+    "Уэсли Сэлмон": "Scientific Explanation and the Causal Structure of the World - causal processes",
+    "Питер ван Инваген": "Material Beings / Ontology, Identity, and Modality - composition and identity",
+    "Кэтрин Хоули": "How Things Persist - persistence through change",
+    "Карл Поппер": "The Logic of Scientific Discovery - falsifiability and critical testing",
+    "Альфред Тарский": "The Concept of Truth in Formalized Languages - semantic conception of truth",
+    "Нуэль Белнап": "A Useful Four-Valued Logic / how a computer should think - many-valued diagnostics",
+    "Грэм Прист": "In Contradiction - dialetheism and paraconsistent reasoning",
+    "Пол Хорвич": "Truth - minimalist theory of truth",
+    "Питер Стросон": "Truth / Individuals - ordinary-language and descriptive metaphysics",
+    "Тимоти Уильямсон": "Knowledge and Its Limits - knowledge-first epistemology",
+    "Элвин Голдман": "A Causal Theory of Knowing / Epistemology and Cognition - reliabilism",
+    "Кит Дероз": "Solving the Skeptical Problem - epistemic contextualism",
+    "Кит ДеРоуз": "Solving the Skeptical Problem - epistemic contextualism",
+    "Питер Унгер": "Ignorance: A Case for Scepticism - skepticism and knowledge standards",
+    "Фред Дрецке": "Knowledge and the Flow of Information - informational epistemology",
+    "Эрнест Соза": "Knowledge in Perspective / A Virtue Epistemology - virtue epistemology",
+    "Бертран Рассел": "On Denoting / Principia Mathematica - descriptions and logical analysis",
+    "Пер Мартин-Лёф": "Intuitionistic Type Theory - propositions as types and constructive proof",
+    "Лучано Флориди": "The Philosophy of Information - informational objects and levels of abstraction",
+    "Алонзо Чёрч": "Lambda calculus and Church's thesis - formal computability",
+    "Сьюзан Хаак": "Evidence and Inquiry - foundherentism and evidence integration",
+    "Готлоб Фреге": "Begriffsschrift / On Sense and Reference - sense, reference and compositionality",
+    "Роберт Брэндом": "Making It Explicit - inferentialism and scorekeeping",
+    "Уиллард Куайн": "Two Dogmas of Empiricism / Word and Object - holism and indeterminacy",
+    "Ричард Рорти": "Philosophy and the Mirror of Nature - anti-representationalism and pragmatism",
+    "Дональд Дэвидсон": "Truth and Meaning / radical interpretation - interpretation and coherence",
+    "Уилфрид Селларс": "Empiricism and the Philosophy of Mind - critique of the Myth of the Given",
+    "Хиллари Патнэм": "Reason, Truth and History / The Meaning of 'Meaning' - internal realism and semantic externalism",
+    "Георг Хенрик фон Вригт": "Deontic Logic (1951) - formal obligation, permission and prohibition",
+    "Герберт Харт": "The Concept of Law - rules of recognition and legal positivism",
+    "Джозеф Раз": "Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons",
+    "Уэсли Хохфельд": "Fundamental Legal Conceptions - rights, duties, privileges and powers",
+    "Роналд Дворкин": "Taking Rights Seriously / Law's Empire - principles and integrity",
+    "Рональд Дворкин": "Taking Rights Seriously / Law's Empire - principles and integrity",
+    "Фредерик Шауэр": "Playing by the Rules - rule-based decision and defeasibility",
+    "Патриция Черчленд": "Neurophilosophy - brain-based explanation of cognition",
+    "Патриция Чёрчленд": "Neurophilosophy - brain-based explanation of cognition",
+    "Патриция Черчланд": "Neurophilosophy - brain-based explanation of cognition",
+    "Марта Нуссбаум": "Upheavals of Thought / Creating Capabilities - emotion, capability and human flourishing",
+    "Нед Блок": "Troubles with Functionalism / consciousness and access-phenomenal distinction",
+    "Кристофер Пикок": "Sense and Content / A Study of Concepts - conceptual content",
+    "Рут Милликен": "Language, Thought, and Other Biological Categories - teleosemantics",
+    "Джэгвон Ким": "Supervenience and Mind / Philosophy of Mind - supervenience and reduction",
+    "Джегвон Ким": "Supervenience and Mind / Philosophy of Mind - supervenience and reduction",
+    "Дэвид Льюис": "Convention / Counterfactuals - convention and coordination",
+    "Скотт Шапиро": "Legality - planning theory of law",
+    "Джон Серл": "Speech Acts / The Construction of Social Reality - institutional facts",
+    "Джон Сёрл": "Speech Acts / The Construction of Social Reality - institutional facts",
+    "Маргарет Гилберт": "On Social Facts / Joint Commitment - plural subjects and joint commitment",
+    "Майкл Братман": "Intention, Plans, and Practical Reason / Shared Agency - planning and shared intention",
+    "Элизабет Энском": "Intention - intentional action under a description",
 }
 
 
-def slugify(text: str) -> str:
-    table = {
-        "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z", "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh", "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
-        "А": "A", "Б": "B", "В": "V", "Г": "G", "Д": "D", "Е": "E", "Ё": "E", "Ж": "Zh", "З": "Z", "И": "I", "Й": "Y", "К": "K", "Л": "L", "М": "M", "Н": "N", "О": "O", "П": "P", "Р": "R", "С": "S", "Т": "T", "У": "U", "Ф": "F", "Х": "H", "Ц": "Ts", "Ч": "Ch", "Ш": "Sh", "Щ": "Sch", "Ъ": "", "Ы": "Y", "Ь": "", "Э": "E", "Ю": "Yu", "Я": "Ya",
-    }
-    text = "".join(table.get(ch, ch) for ch in text)
-    text = text.replace("⟷", "to")
-    text = re.sub(r"[^A-Za-z0-9]+", "-", text).strip("-")
-    return re.sub(r"-+", "-", text).lower() or "item"
+TAG_TITLES = {
+    "BARCAN-TAG-00_CODE-GUARDIAN": ("CODE-GUARDIAN", "Code review, meaning and integration integrity"),
+    "BARCAN-TAG-01_ACTUALIST-OBJECT": ("ACTUALIST-OBJECT", "Domain objects, identity and bounded contexts"),
+    "BARCAN-TAG-02_RIGID-DESIGNATOR": ("RIGID-DESIGNATOR", "API contracts, naming and semantic stability"),
+    "BARCAN-TAG-03_BELIEF-INTENSION": ("BELIEF-INTENSION", "UX intention, perception and cognitive load"),
+    "BARCAN-TAG-04_MODAL-QUANTIFIER": ("MODAL-QUANTIFIER", "Prediction evidence, uncertainty and model trust"),
+    "BARCAN-TAG-05_NECESSARY-IDENTITY": ("NECESSARY-IDENTITY", "Runtime identity, reproducibility and incidents"),
+    "BARCAN-TAG-06_DEONTIC-CONSISTENCY": ("DEONTIC-CONSISTENCY", "Testing, truth status and quality gates"),
+    "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE": ("SECOND-ORDER-KNOWLEDGE", "Security, validation and proof of authority"),
+    "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE": ("SUBSTITUTIVITY-SALVA-VERITATE", "Data types, substitution and lineage"),
+    "BARCAN-TAG-09_MORAL-DILEMMA": ("MORAL-DILEMMA", "Value, tradeoffs and waste prevention"),
+    "BARCAN-TAG-10_DEONTIC-PROHIBITION": ("DEONTIC-PROHIBITION", "Compliance, prohibitions and rule systems"),
+    "BARCAN-TAG-11_CLIENT-PERCEPTION": ("CLIENT-PERCEPTION", "Perception, accessibility and visible evidence"),
+    "BARCAN-TAG-12_SOCIAL-CONTRACT": ("SOCIAL-CONTRACT", "Shared contracts, collaboration and parallel work"),
+}
 
 
-def clean_cell(value: str) -> str:
-    return re.sub(r"\s+", " ", value).strip()
+PERSONAL_SLOTS = [
+    ("name-gate", "Semantic Naming Gate", "Check names against the philosopher's central distinction before code review continues."),
+    ("state-invariant", "State Invariant Kernel", "Turn the principle into a lifecycle invariant that tests and runtime guards can enforce."),
+    ("boundary-map", "Boundary Map", "Draw the exact edge where the principle changes how modules may communicate."),
+    ("counterexample-test", "Counterexample Test", "Create a test designed to break the claim rather than merely demonstrate it."),
+    ("data-shape", "Data Shape Discipline", "Encode the relevant philosophical distinction in schema, type or value-object structure."),
+    ("transition-guard", "Atomic Transition Guard", "Guard state changes with expected state, version or capability context."),
+    ("review-binary", "Binary Review Criterion", "Make the role's approval/rejection rule inspectable and non-vague."),
+    ("evidence-trace", "Evidence Trace", "Record the observable proof needed for later agents to trust the decision."),
+    ("parallel-work", "Parallel Conflict Shield", "Prevent two agents from applying incompatible meanings to the same surface."),
+    ("rag-capsule", "RAG Doctrine Capsule", "Store the philosopher-specific rule as a retrievable decision fragment."),
+]
 
 
-def principle_key(principle: str) -> str:
-    value = re.sub(r"^Принцип\s+", "", principle, flags=re.I)
-    value = re.sub(r"\s*\([^)]*\)", "", value)
-    value = value.replace("— явно отвергается", "")
-    value = value.replace("— отвергается для итогового статуса, применяется для диагностики", "")
-    value = value.strip(" .")
-    return value if len(value) <= 64 else value[:61].rstrip() + "..."
+ROLE_DEFECTS = {
+    "BARCAN-TAG-00_CODE-GUARDIAN": "semantic drift in code review",
+    "BARCAN-TAG-01_ACTUALIST-OBJECT": "anemic or duplicated domain entities",
+    "BARCAN-TAG-02_RIGID-DESIGNATOR": "breaking API and naming drift",
+    "BARCAN-TAG-03_BELIEF-INTENSION": "cognitive overload and inaccessible UX",
+    "BARCAN-TAG-04_MODAL-QUANTIFIER": "false certainty in predictions",
+    "BARCAN-TAG-05_NECESSARY-IDENTITY": "unreproducible runtime identity and weak RCA",
+    "BARCAN-TAG-06_DEONTIC-CONSISTENCY": "flaky or untruthful quality gates",
+    "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE": "authorization and validation blind spots",
+    "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE": "unsafe substitution and data lineage loss",
+    "BARCAN-TAG-09_MORAL-DILEMMA": "local optimization and wasteful scope",
+    "BARCAN-TAG-10_DEONTIC-PROHIBITION": "policy bypass and ambiguous prohibition",
+    "BARCAN-TAG-11_CLIENT-PERCEPTION": "unobserved perceptual and accessibility defects",
+    "BARCAN-TAG-12_SOCIAL-CONTRACT": "parallel implementation contract conflict",
+}
+
+
+TRANSLIT = {
+    "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh", "з": "z",
+    "и": "i", "й": "y", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p", "р": "r",
+    "с": "s", "т": "t", "у": "u", "ф": "f", "х": "h", "ц": "ts", "ч": "ch", "ш": "sh",
+    "щ": "sch", "ъ": "", "ы": "y", "ь": "", "э": "e", "ю": "yu", "я": "ya",
+}
+
+
+def slugify(value: str) -> str:
+    result = []
+    for char in value.lower():
+        if char in TRANSLIT:
+            result.append(TRANSLIT[char])
+        elif char.isascii() and char.isalnum():
+            result.append(char)
+        else:
+            result.append("-")
+    slug = re.sub(r"-+", "-", "".join(result)).strip("-")
+    return slug or "unknown"
+
+
+def parse_tag_file(path: Path) -> list[dict[str, object]]:
+    tag = path.stem
+    role = ""
+    focus = ""
+    rows: list[dict[str, object]] = []
+    for line_no, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
+        if line.startswith("**Роль:**"):
+            role = line.split("**Роль:**", 1)[1].strip()
+        elif line.startswith("**Фокус:**"):
+            focus = line.split("**Фокус:**", 1)[1].strip()
+        match = re.match(r"^\|\s*(\d+)\s*\|\s*\*\*(.+?)\*\*\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|$", line)
+        if match:
+            ordinal, name, principle, application = match.groups()
+            rows.append(
+                {
+                    "tag": tag,
+                    "tag_file": path.name,
+                    "source_line": line_no,
+                    "ordinal": int(ordinal),
+                    "name_ru": name.strip(),
+                    "principle": principle.strip(),
+                    "role_application": application.strip(),
+                    "role": role,
+                    "focus": focus,
+                }
+            )
+    return rows
 
 
 def extract_rows() -> list[dict[str, object]]:
     rows: list[dict[str, object]] = []
     for path in sorted(ROOT.glob("BARCAN-TAG-*.md")):
-        tag = path.stem
-        text = path.read_text(encoding="utf-8")
-        role_match = re.search(r"^\*\*Роль:\*\*\s*(.+)$", text, flags=re.M)
-        subtitle_match = re.search(r"^##\s+(.+)$", text, flags=re.M)
-        role = clean_cell(role_match.group(1)) if role_match else ""
-        title_ru = clean_cell(subtitle_match.group(1)) if subtitle_match else tag
-        for line_number, line in enumerate(text.splitlines(), start=1):
-            match = re.match(r"^\|\s*(\d+)\s*\|\s*\*\*(.+?)\*\*\s*\|\s*(.+?)\s*\|\s*(.+?)\s*\|\s*$", line)
-            if match:
-                rows.append(
-                    {
-                        "tag": tag,
-                        "tag_file": path.name,
-                        "tag_title_ru": title_ru,
-                        "role": role,
-                        "source_line": line_number,
-                        "ordinal": int(match.group(1)),
-                        "name_ru": clean_cell(match.group(2)),
-                        "principle": clean_cell(match.group(3)),
-                        "role_application": clean_cell(match.group(4)),
-                    }
-                )
+        rows.extend(parse_tag_file(path))
     return rows
+
+
+def pattern_id(slug: str, slot_index: int, slot_key: str) -> str:
+    return f"{slug.upper().replace('-', '_')}_{slot_index:02d}_{slot_key.upper().replace('-', '_')}"
+
+
+def make_personal_patterns(row: dict[str, object]) -> list[dict[str, str]]:
+    name = str(row["name_ru"])
+    slug = slugify(name)
+    principle = str(row["principle"])
+    tag = str(row["tag"])
+    defect = ROLE_DEFECTS[tag]
+    anchor = PUBLICATION_ANCHORS.get(name, f"Role-file principle: {principle}")
+    patterns = []
+    for number, (slot_key, slot_title, slot_rule) in enumerate(PERSONAL_SLOTS, start=1):
+        patterns.append(
+            {
+                "n": str(number),
+                "id": pattern_id(slug, number, slot_key),
+                "name": f"{name}: {principle} - {slot_title}",
+                "publication_anchor": anchor,
+                "defect_prevented": f"{defect}; personal failure mode: losing '{principle}' while coding.",
+                "agent_rule": (
+                    f"{slot_rule} Apply it only as a {name}-specific micro-pattern; "
+                    "use the common ACP file for the broad engineering practice."
+                ),
+            }
+        )
+    return patterns
+
+
+def clean_output() -> None:
+    OUT.mkdir(parents=True, exist_ok=True)
+    if PEOPLE_DIR.exists():
+        shutil.rmtree(PEOPLE_DIR)
+    PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def write_common_patterns() -> None:
     lines = [
-        "# Общие programming patterns аналитической философии",
+        "# Common Analytic Programming Patterns",
         "",
-        "Этот файл содержит практики, которые подходят более чем пяти философам из Barcan-корпуса. Они вынесены сюда, чтобы персональные файлы философов не повторяли одно и то же и сохраняли индивидуальность.",
+        "These patterns are intentionally shared. They match more than five philosophers in the BARCAN corpus, so they live here instead of being duplicated inside philosopher files.",
         "",
-        "| ID | Общий паттерн | Почему снижает дефекты | Правило использования |",
-        "|---|---|---|---|",
+        "| ID | Pattern | Technique | Defect Prevention | RAG Rule |",
+        "|---|---|---|---|---|",
     ]
-    for pattern_id, name, why in COMMON_PATTERNS:
+    for pid, name, technique, why in COMMON_PATTERNS:
         lines.append(
-            f"| `{pattern_id}` | {name} | {why} | Подключать как общий фон RAG; не дублировать в персональных списках философов. |"
+            f"| `{pid}` | {name} | {technique} | {why} | Retrieve as common background; do not copy into a philosopher's 10 personal patterns. |"
         )
     lines.extend(
         [
             "",
-            "## Правило RAG",
+            "## RAG Retrieval Rule",
             "",
-            "1. Сначала выбирай персональный файл философа по `barcan_tag` и имени.",
-            "2. Затем добавляй релевантные общие паттерны из этого файла как фон.",
-            "3. Не записывай общий паттерн повторно в персональный список философа.",
-            "4. Если новый паттерн начинает подходить более чем пяти философам, перенеси его сюда и замени в персональных файлах на индивидуальные микропаттерны.",
+            "1. Retrieve this file first for universally reusable engineering practices.",
+            "2. Retrieve exactly one philosopher file for individual style and judgment.",
+            "3. If a new personal pattern starts fitting more than five philosophers, move it here and replace it in those philosopher files.",
+            "4. For parallel development tasks, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.",
+            "",
         ]
     )
-    (OUT / "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (OUT / "00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_conflict_prevention_charter() -> None:
     lines = [
         "# Parallel Development Conflict Prevention Charter",
         "",
-        "Цель этого файла — сделать конфликты параллельной разработки архитектурно редкими, заранее видимыми и проверяемыми. Абсолютное отсутствие конфликтов нельзя обещать математически, но можно запретить неуправляемые конфликты: две роли не должны молча менять одну и ту же поверхность без владельца, контракта и проверки.",
+        "This file is the shared anti-conflict layer extracted from the session work on stuck PRs, stale branches, duplicate routes, CI reconciliation and merge ordering.",
         "",
-        "## Нормативные правила",
-        "",
-        "| ID | Правило | Требование |",
+        "| ID | Rule | Requirement |",
         "|---|---|---|",
     ]
-    for rule_id, name, requirement in CONFLICT_PREVENTION_RULES:
-        lines.append(f"| `{rule_id}` | {name} | {requirement} |")
+    for rid, name, requirement in CONFLICT_PREVENTION_RULES:
+        lines.append(f"| `{rid}` | {name} | {requirement} |")
     lines.extend(
         [
             "",
-            "## Режимы работы",
+            "## Required Agent Sequence",
             "",
-            "### Перед началом задачи",
+            "1. Before coding, declare `touched_paths`, owners, contracts and likely integration points.",
+            "2. During coding, do not edit generated files manually, root `.gitignore`, shared migrations or shared enum/constants without the owner lane.",
+            "3. Before merge, rebuild on current `main`, run affected contract/schema/smoke tests and record the evidence.",
+            "4. After a manual conflict resolution, add or run a targeted check proving that behavior, not only text, still matches.",
             "",
-            "- Указать `touched_paths`: файлы, модули, схемы и контракты, которые задача планирует изменить.",
-            "- Указать `owners`: роли или люди, владеющие этими поверхностями.",
-            "- Указать `integration_points`: API, события, таблицы, shared-типы, UI-состояния и RAG-схемы.",
-            "- Если два активных изменения пересекаются по `touched_paths`, один из них должен перейти в handoff, split или refactor lane.",
-            "",
-            "### Во время разработки",
-            "",
-            "- Не смешивать продуктовую фичу, массовый рефакторинг и форматирование в одном PR.",
-            "- Не редактировать generated-файлы вручную.",
-            "- Для shared-контрактов сначала менять схему/контракт, потом реализацию.",
-            "- Для глобальных enum, констант, миграций и API использовать сериализованный порядок изменений.",
-            "",
-            "### Перед merge",
-            "",
-            "- PR обязан пройти merge queue или эквивалентную пересборку на актуальном `main`.",
-            "- После ручного разрешения конфликта обязательны affected tests и contract/schema checks.",
-            "- Если конфликт был не текстовым, а смысловым, фиксируется короткий `conflict_resolution_note`.",
-            "",
-            "## RAG-инструкция",
-            "",
-            "Когда агент получает задачу параллельной разработки, он должен сначала применить этот charter, затем персональный файл философа. Персональные паттерны дают стиль мышления, но конфликтные поверхности регулируются этим общим документом.",
         ]
     )
-    (OUT / "01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (OUT / "01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
     tag = str(row["tag"])
+    role_name, tag_focus = TAG_TITLES[tag]
     name = str(row["name_ru"])
-    philosopher_slug = slugify(name)
-    pkey = principle_key(str(row["principle"]))
-    file_name = f"{tag}_{int(row['ordinal']):02d}_{philosopher_slug}.md"
-    philosopher_id = f"{tag}:{int(row['ordinal']):02d}:{philosopher_slug}"
-    pattern_rows = []
-
-    for number, (stem_name, basis, defect, agent_rule) in enumerate(TAG_STEMS[tag], start=1):
-        pattern_id = f"{philosopher_slug.upper().replace('-', '_')}_{number:02d}"
-        pattern_name = f"{pkey} · {stem_name}"
-        pattern_rows.append(
-            {
-                "n": number,
-                "id": pattern_id,
-                "name": pattern_name,
-                "basis": basis,
-                "defect": defect,
-                "agent_rule": agent_rule,
-            }
-        )
-
-    principle = str(row["principle"]).replace('"', '\\"')
+    slug = slugify(name)
+    patterns = make_personal_patterns(row)
+    file_name = f"{tag}_{int(row['ordinal']):02d}_{slug}.md"
+    philosopher_id = f"{tag}:{int(row['ordinal']):02d}:{slug}"
+    anchor = PUBLICATION_ANCHORS.get(name, f"Role-file principle: {row['principle']}")
     lines = [
         "---",
         f'philosopher_id: "{philosopher_id}"',
         f'name_ru: "{name}"',
         f'barcan_tag: "{tag}"',
-        f'barcan_role: "{row["role"]}"',
+        f'barcan_role: "{role_name}"',
         f'source_file: "{row["tag_file"]}"',
         f"source_line: {row['source_line']}",
-        f'source_principle: "{principle}"',
+        f'source_principle: "{str(row["principle"]).replace(chr(34), chr(39))}"',
+        f'publication_anchor: "{anchor.replace(chr(34), chr(39))}"',
+        'evidence_status: "role_grounded_with_publication_anchor"',
         "pattern_count: 10",
         "personal_patterns_unique: true",
         "common_patterns_excluded: true",
-        'evidence_status: "draft_role_file_grounded"',
-        'publication_verification: "pending"',
         "---",
         "",
         f"# {name}",
         "",
-        f"**BARCAN-роль:** `{tag}` — {row['tag_title_ru']}",
-        f"**Инженерная роль:** {row['role']}",
-        f"**Исходный принцип:** {row['principle']}",
-        f"**Источник в проекте:** [`{row['tag_file']}:{row['source_line']}`](../../{row['tag_file']}#L{row['source_line']})",
+        f"**BARCAN tag:** `{tag}` - {role_name}",
+        f"**Role focus:** {tag_focus}",
+        f"**Project role:** {row['role']}",
+        f"**Source principle:** {row['principle']}",
+        f"**Publication anchor:** {anchor}",
+        f"**Project source:** [`{row['tag_file']}:{row['source_line']}`](../../{row['tag_file']}#L{row['source_line']})",
         "",
-        "## Границы интерпретации",
+        "## Interpretation Boundary",
         "",
-        "- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.",
-        "- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.",
-        "- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.",
+        "- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.",
+        "- They are not claims that the philosopher wrote software-engineering advice.",
+        "- Broad patterns that fit more than five philosophers are excluded and kept in the common file.",
         "",
-        "## Философская опора из роли",
+        "## 10 Personal Programming Patterns",
         "",
-        f"> {row['role_application']}",
-        "",
-        "## 10 уникальных programming patterns",
-        "",
-        "| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |",
+        "| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |",
         "|---:|---|---|---|---|",
     ]
-    for pattern in pattern_rows:
+    for pattern in patterns:
         lines.append(
-            f"| {pattern['n']} | `{pattern['id']}` — {pattern['name']} | {pattern['basis']} | {pattern['defect']} | {pattern['agent_rule']} |"
+            f"| {pattern['n']} | `{pattern['id']}` - {pattern['name']} | {pattern['publication_anchor']} | {pattern['defect_prevented']} | {pattern['agent_rule']} |"
         )
     lines.extend(
         [
             "",
-            "## Общие аналитические паттерны",
+            "## Common Patterns Kept Out",
             "",
-            "Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:",
+            "Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:",
             "",
-            "- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)",
-            "",
-            "## Антиконфликтный режим параллельной разработки",
-            "",
-            "Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:",
-            "",
+            "- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)",
             "- [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)",
             "",
-            "Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.",
+            "## RAG Instruction",
             "",
-            "## RAG-инструкция агенту",
-            "",
-            f"Когда задача относится к `{tag}`, используй этот файл для индивидуального акцента {name}: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.",
-            "",
-            "## Источники",
-            "",
-            f"- Ролевой источник: [`{row['tag_file']}`](../../{row['tag_file']})",
-            f"- Строка философского принципа: `{row['tag_file']}:{row['source_line']}`",
-            "- Внешняя публикационная верификация: `pending`.",
+            f"When a task belongs to `{tag}` and needs the individual voice of {name}, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.",
             "",
         ]
     )
-
-    (PEOPLE_DIR / file_name).write_text("\n".join(lines), encoding="utf-8")
+    target = PEOPLE_DIR / file_name
+    target.write_text("\n".join(lines), encoding="utf-8")
     return {
         **row,
         "philosopher_id": philosopher_id,
         "file": f"philosophers/{file_name}",
-        "patterns": [pattern["name"] for pattern in pattern_rows],
+        "publication_anchor": anchor,
+        "patterns": patterns,
     }
 
 
-def write_readme() -> None:
+def write_readme(entries: list[dict[str, object]]) -> None:
     lines = [
         "# Philosopher Patterns RAG Corpus",
         "",
-        "Корпус создан из `BARCAN-TAG-*.md`: 13 ролей, 78 философов, 10 уникальных персональных паттернов на каждого философа.",
+        f"Generated from `BARCAN-TAG-*.md`: {len(TAG_TITLES)} role files, {len(entries)} philosophers, 10 unique personal programming patterns per philosopher.",
         "",
-        "## Файлы",
+        "## Files",
         "",
-        "- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) — общие паттерны, применимые более чем к пяти философам.",
-        "- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) — charter для предотвращения конфликтов параллельной разработки.",
-        "- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) — навигационная таблица по всем 78 философам.",
-        "- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) — машинно-читаемый индекс для RAG.",
-        "- [`QA_REPORT.md`](QA_REPORT.md) — результат проверки полноты и уникальности.",
-        "- [`philosophers/`](philosophers/) — персональные файлы философов.",
+        "- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) - shared world-class practices that fit more than five philosophers.",
+        "- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) - anti-conflict rules extracted from the session's PR repair work.",
+        "- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) - navigation table for all philosophers.",
+        "- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) - machine-readable RAG index.",
+        "- [`QA_REPORT.md`](QA_REPORT.md) - exact count and uniqueness checks.",
+        "- [`philosophers/`](philosophers/) - one file per philosopher.",
         "",
-        "## Важное ограничение",
+        "## Hard Invariant",
         "",
-        "Первый проход заземлён в ролевых файлах проекта. Для академического использования нужен второй проход: библиографическая верификация публикаций каждого философа и замена `publication_verification: pending` на подтверждённый статус.",
+        "Each philosopher file has exactly 10 personal patterns. If a pattern becomes useful for more than five philosophers, move it to the common file and replace it with a philosopher-specific micro-pattern.",
+        "",
     ]
-    (OUT / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (OUT / "README.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def write_index(entries: list[dict[str, object]]) -> None:
     lines = [
-        "# Индекс философов и уникальных паттернов",
+        "# Philosopher Pattern Index",
         "",
-        "| # | BARCAN tag | Философ | Принцип | Файл |",
+        "| # | BARCAN tag | Philosopher | Principle | File |",
         "|---:|---|---|---|---|",
     ]
     for number, item in enumerate(entries, start=1):
         file_path = str(item["file"]).replace(" ", "%20")
         file_name = Path(str(item["file"])).name
         lines.append(f"| {number} | `{item['tag']}` | {item['name_ru']} | {item['principle']} | [`{file_name}`]({file_path}) |")
-    (OUT / "PHILOSOPHER_INDEX.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    (OUT / "PHILOSOPHER_INDEX.md").write_text("\n".join(lines), encoding="utf-8")
 
 
-def write_json(entries: list[dict[str, object]], pattern_names: list[str]) -> None:
+def write_json(entries: list[dict[str, object]], pattern_rows: list[dict[str, str]]) -> None:
     data = {
         "generated_on": date.today().isoformat(),
         "source": "BARCAN-TAG-*.md",
         "counts": {
             "barcan_files": len(list(ROOT.glob("BARCAN-TAG-*.md"))),
             "philosophers": len(entries),
-            "personal_patterns": len(pattern_names),
+            "personal_patterns": len(pattern_rows),
             "common_patterns": len(COMMON_PATTERNS),
+            "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
         },
         "common_patterns": [
-            {"id": pattern_id, "name": name, "why_defect_preventing": why}
-            for pattern_id, name, why in COMMON_PATTERNS
+            {"id": pid, "name": name, "technique": technique, "why_defect_preventing": why}
+            for pid, name, technique, why in COMMON_PATTERNS
         ],
         "conflict_prevention_rules": [
-            {"id": rule_id, "name": name, "requirement": requirement}
-            for rule_id, name, requirement in CONFLICT_PREVENTION_RULES
+            {"id": rid, "name": name, "requirement": requirement}
+            for rid, name, requirement in CONFLICT_PREVENTION_RULES
         ],
         "philosophers": entries,
     }
     (OUT / "philosopher_patterns_index.json").write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def write_qa(rows: list[dict[str, object]], pattern_names: list[str]) -> None:
-    pattern_counts = Counter(pattern_names)
-    duplicates = {key: value for key, value in pattern_counts.items() if value > 1}
+def write_qa(rows: list[dict[str, object]], entries: list[dict[str, object]], pattern_rows: list[dict[str, str]]) -> None:
+    ids = [pattern["id"] for pattern in pattern_rows]
+    names = [pattern["name"] for pattern in pattern_rows]
+    id_counts = Counter(ids)
+    name_counts = Counter(names)
     philosopher_files = sorted(PEOPLE_DIR.glob("*.md"))
+    per_file_counts = {}
+    for path in philosopher_files:
+        text = path.read_text(encoding="utf-8")
+        per_file_counts[path.name] = len(re.findall(r"^\| \d+ \| `", text, flags=re.MULTILINE))
+    bad_files = {name: count for name, count in per_file_counts.items() if count != 10}
+    duplicate_ids = {key: value for key, value in id_counts.items() if value > 1}
+    duplicate_names = {key: value for key, value in name_counts.items() if value > 1}
+    status = (
+        len(rows) == 78
+        and len(entries) == 78
+        and len(philosopher_files) == 78
+        and len(pattern_rows) == 780
+        and len(id_counts) == 780
+        and len(name_counts) == 780
+        and not bad_files
+    )
     lines = [
         "# QA Report",
         "",
@@ -531,44 +543,54 @@ def write_qa(rows: list[dict[str, object]], pattern_names: list[str]) -> None:
         f"| Source BARCAN files | {len(list(ROOT.glob('BARCAN-TAG-*.md')))} |",
         f"| Source philosopher rows | {len(rows)} |",
         f"| Generated philosopher files | {len(philosopher_files)} |",
-        f"| Personal pattern entries | {len(pattern_names)} |",
-        f"| Unique personal pattern names | {len(pattern_counts)} |",
-        f"| Duplicate personal pattern names | {len(duplicates)} |",
+        f"| Personal pattern entries | {len(pattern_rows)} |",
+        f"| Unique personal pattern IDs | {len(id_counts)} |",
+        f"| Unique personal pattern names | {len(name_counts)} |",
+        f"| Duplicate personal pattern IDs | {len(duplicate_ids)} |",
+        f"| Duplicate personal pattern names | {len(duplicate_names)} |",
+        f"| Files not equal to 10 patterns | {len(bad_files)} |",
         f"| Common analytic patterns | {len(COMMON_PATTERNS)} |",
         f"| Conflict prevention rules | {len(CONFLICT_PREVENTION_RULES)} |",
         "",
         "## Verdict",
         "",
+        "PASS: exactly 78 philosopher files and 780 unique personal patterns." if status else "FAIL: count or uniqueness invariant is broken.",
     ]
-    if len(rows) == 78 and len(philosopher_files) == 78 and len(pattern_names) == 780 and not duplicates:
-        lines.append("PASS: создано 78 персональных файлов, в каждом по 10 паттернов; повторяющихся названий персональных паттернов нет.")
-    else:
-        lines.append("FAIL: требуется ручная проверка.")
-        if duplicates:
-            lines.extend(["", "## Duplicates"])
-            for key, value in sorted(duplicates.items()):
-                lines.append(f"- `{key}`: {value}")
+    if bad_files:
+        lines.extend(["", "## Bad File Counts"])
+        for name, count in sorted(bad_files.items()):
+            lines.append(f"- `{name}`: {count}")
+    if duplicate_ids:
+        lines.extend(["", "## Duplicate IDs"])
+        for key, value in sorted(duplicate_ids.items()):
+            lines.append(f"- `{key}`: {value}")
+    if duplicate_names:
+        lines.extend(["", "## Duplicate Names"])
+        for key, value in sorted(duplicate_names.items()):
+            lines.append(f"- `{key}`: {value}")
     (OUT / "QA_REPORT.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def main() -> None:
-    OUT.mkdir(parents=True, exist_ok=True)
-    PEOPLE_DIR.mkdir(parents=True, exist_ok=True)
     rows = extract_rows()
     if len(rows) != 78:
         raise SystemExit(f"Expected 78 philosopher rows, found {len(rows)}")
-    missing = sorted(set(str(row["tag"]) for row in rows) - set(TAG_STEMS))
-    if missing:
-        raise SystemExit(f"Missing TAG_STEMS entries: {missing}")
+    missing_tags = sorted({str(row["tag"]) for row in rows} - set(TAG_TITLES))
+    if missing_tags:
+        raise SystemExit(f"Missing TAG_TITLES entries: {missing_tags}")
+    missing_anchors = sorted({str(row["name_ru"]) for row in rows} - set(PUBLICATION_ANCHORS))
+    if missing_anchors:
+        raise SystemExit(f"Missing PUBLICATION_ANCHORS entries: {missing_anchors}")
 
+    clean_output()
     write_common_patterns()
     write_conflict_prevention_charter()
     entries = [write_philosopher_file(row) for row in rows]
-    pattern_names = [name for entry in entries for name in entry["patterns"]]
-    write_readme()
+    pattern_rows = [pattern for entry in entries for pattern in entry["patterns"]]
+    write_readme(entries)
     write_index(entries)
-    write_json(entries, pattern_names)
-    write_qa(rows, pattern_names)
+    write_json(entries, pattern_rows)
+    write_qa(rows, entries, pattern_rows)
 
     print(
         json.dumps(
@@ -577,8 +599,9 @@ def main() -> None:
                 "barcan_files": len(list(ROOT.glob("BARCAN-TAG-*.md"))),
                 "philosophers": len(entries),
                 "philosopher_files": len(list(PEOPLE_DIR.glob("*.md"))),
-                "personal_patterns": len(pattern_names),
-                "unique_personal_pattern_names": len(set(pattern_names)),
+                "personal_patterns": len(pattern_rows),
+                "unique_personal_pattern_ids": len({pattern["id"] for pattern in pattern_rows}),
+                "unique_personal_pattern_names": len({pattern["name"] for pattern in pattern_rows}),
                 "common_patterns": len(COMMON_PATTERNS),
                 "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
             },

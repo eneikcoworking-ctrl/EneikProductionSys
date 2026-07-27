@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:05:fred-dretske"
 name_ru: "Фред Дрецке"
 barcan_tag: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE"
-barcan_role: "AppSec / DevSecOps Engineer"
+barcan_role: "SECOND-ORDER-KNOWLEDGE"
 source_file: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md"
 source_line: 34
 source_principle: "Принцип информационной пропускной способности каналов"
+publication_anchor: "Knowledge and the Flow of Information - informational epistemology"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Фред Дрецке
 
-**BARCAN-роль:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` — Эпистемический Страж
-**Инженерная роль:** AppSec / DevSecOps Engineer
-**Исходный принцип:** Принцип информационной пропускной способности каналов
-**Источник в проекте:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:34`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L34)
+**BARCAN tag:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` - SECOND-ORDER-KNOWLEDGE
+**Role focus:** Security, validation and proof of authority
+**Project role:** AppSec / DevSecOps Engineer
+**Source principle:** Принцип информационной пропускной способности каналов
+**Publication anchor:** Knowledge and the Flow of Information - informational epistemology
+**Project source:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:34`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L34)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Шифрование не только данных, но и логов, заголовков и служебных пакетов. Злоумышленник не восстановит структуру системы по косвенным признакам
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `FRED_DRETSKE_01` — информационной пропускной способности каналов · Knowledge Proof Gate | ворота доказательства знания | доступ выдан без доказательства полномочия | проверять факт права без раскрытия лишних данных |
-| 2 | `FRED_DRETSKE_02` — информационной пропускной способности каналов · Trust Chain Audit | аудит цепочки доверия | токен принят без проверки источника | валидировать подпись, issuer, audience, expiry и context |
-| 3 | `FRED_DRETSKE_03` — информационной пропускной способности каналов · Risk-Adaptive Challenge | адаптивный вызов при риске | одинаковые требования для безопасной и рискованной ситуации | усиливать MFA/re-auth при росте риска |
-| 4 | `FRED_DRETSKE_04` — информационной пропускной способности каналов · Hostile Request Default | враждебный запрос по умолчанию | периметр считается безопасным | проверять каждый internal call как внешний |
-| 5 | `FRED_DRETSKE_05` — информационной пропускной способности каналов · Metadata Secrecy Guard | защита метаданных | логи и headers раскрывают структуру системы | шифровать или редактировать служебные каналы |
-| 6 | `FRED_DRETSKE_06` — информационной пропускной способности каналов · Scanner Blocking Covenant | завет блокирующего сканера | SAST/DAST остаётся рекомендацией | делать критичные findings merge-blocking |
-| 7 | `FRED_DRETSKE_07` — информационной пропускной способности каналов · Secret Absence Proof | доказательство отсутствия секрета | ключ попадает в код или лог | сканировать commits, images и runtime env |
-| 8 | `FRED_DRETSKE_08` — информационной пропускной способности каналов · Token Scope Diet | диета области токена | токен может больше, чем нужно действию | урезать scopes до конкретного use case |
-| 9 | `FRED_DRETSKE_09` — информационной пропускной способности каналов · Privileged Re-Auth Moment | момент повторной авторизации | высокорисковое действие наследует старую сессию | требовать re-auth перед destructive/admin commands |
-| 10 | `FRED_DRETSKE_10` — информационной пропускной способности каналов · Tamper-Evident Security Event | событие безопасности с защитой от подмены | атаку нельзя доказать после изменения логов | писать security events в неизменяемый audit stream |
+| 1 | `FRED_DRETSKE_01_NAME_GATE` - Фред Дрецке: Принцип информационной пропускной способности каналов - Semantic Naming Gate | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `FRED_DRETSKE_02_STATE_INVARIANT` - Фред Дрецке: Принцип информационной пропускной способности каналов - State Invariant Kernel | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `FRED_DRETSKE_03_BOUNDARY_MAP` - Фред Дрецке: Принцип информационной пропускной способности каналов - Boundary Map | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `FRED_DRETSKE_04_COUNTEREXAMPLE_TEST` - Фред Дрецке: Принцип информационной пропускной способности каналов - Counterexample Test | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `FRED_DRETSKE_05_DATA_SHAPE` - Фред Дрецке: Принцип информационной пропускной способности каналов - Data Shape Discipline | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `FRED_DRETSKE_06_TRANSITION_GUARD` - Фред Дрецке: Принцип информационной пропускной способности каналов - Atomic Transition Guard | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `FRED_DRETSKE_07_REVIEW_BINARY` - Фред Дрецке: Принцип информационной пропускной способности каналов - Binary Review Criterion | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `FRED_DRETSKE_08_EVIDENCE_TRACE` - Фред Дрецке: Принцип информационной пропускной способности каналов - Evidence Trace | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `FRED_DRETSKE_09_PARALLEL_WORK` - Фред Дрецке: Принцип информационной пропускной способности каналов - Parallel Conflict Shield | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `FRED_DRETSKE_10_RAG_CAPSULE` - Фред Дрецке: Принцип информационной пропускной способности каналов - RAG Doctrine Capsule | Knowledge and the Flow of Information - informational epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип информационной пропускной способности каналов' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Фред Дрецке-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, используй этот файл для индивидуального акцента Фред Дрецке: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md)
-- Строка философского принципа: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:34`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` and needs the individual voice of Фред Дрецке, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

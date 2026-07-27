@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:01:timoti-uilyamson"
 name_ru: "Тимоти Уильямсон"
 barcan_tag: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE"
-barcan_role: "AppSec / DevSecOps Engineer"
+barcan_role: "SECOND-ORDER-KNOWLEDGE"
 source_file: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md"
 source_line: 30
 source_principle: "Принцип примата знания (Knowledge First)"
+publication_anchor: "Knowledge and Its Limits - knowledge-first epistemology"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Тимоти Уильямсон
 
-**BARCAN-роль:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` — Эпистемический Страж
-**Инженерная роль:** AppSec / DevSecOps Engineer
-**Исходный принцип:** Принцип примата знания (Knowledge First)
-**Источник в проекте:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:30`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L30)
+**BARCAN tag:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` - SECOND-ORDER-KNOWLEDGE
+**Role focus:** Security, validation and proof of authority
+**Project role:** AppSec / DevSecOps Engineer
+**Source principle:** Принцип примата знания (Knowledge First)
+**Publication anchor:** Knowledge and Its Limits - knowledge-first epistemology
+**Project source:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:30`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L30)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Доступы в системе — абсолютный факт владения знанием. Zero-Knowledge Proofs: система проверяет факт знания без раскрытия самих данных
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `TIMOTI_UILYAMSON_01` — примата знания · Knowledge Proof Gate | ворота доказательства знания | доступ выдан без доказательства полномочия | проверять факт права без раскрытия лишних данных |
-| 2 | `TIMOTI_UILYAMSON_02` — примата знания · Trust Chain Audit | аудит цепочки доверия | токен принят без проверки источника | валидировать подпись, issuer, audience, expiry и context |
-| 3 | `TIMOTI_UILYAMSON_03` — примата знания · Risk-Adaptive Challenge | адаптивный вызов при риске | одинаковые требования для безопасной и рискованной ситуации | усиливать MFA/re-auth при росте риска |
-| 4 | `TIMOTI_UILYAMSON_04` — примата знания · Hostile Request Default | враждебный запрос по умолчанию | периметр считается безопасным | проверять каждый internal call как внешний |
-| 5 | `TIMOTI_UILYAMSON_05` — примата знания · Metadata Secrecy Guard | защита метаданных | логи и headers раскрывают структуру системы | шифровать или редактировать служебные каналы |
-| 6 | `TIMOTI_UILYAMSON_06` — примата знания · Scanner Blocking Covenant | завет блокирующего сканера | SAST/DAST остаётся рекомендацией | делать критичные findings merge-blocking |
-| 7 | `TIMOTI_UILYAMSON_07` — примата знания · Secret Absence Proof | доказательство отсутствия секрета | ключ попадает в код или лог | сканировать commits, images и runtime env |
-| 8 | `TIMOTI_UILYAMSON_08` — примата знания · Token Scope Diet | диета области токена | токен может больше, чем нужно действию | урезать scopes до конкретного use case |
-| 9 | `TIMOTI_UILYAMSON_09` — примата знания · Privileged Re-Auth Moment | момент повторной авторизации | высокорисковое действие наследует старую сессию | требовать re-auth перед destructive/admin commands |
-| 10 | `TIMOTI_UILYAMSON_10` — примата знания · Tamper-Evident Security Event | событие безопасности с защитой от подмены | атаку нельзя доказать после изменения логов | писать security events в неизменяемый audit stream |
+| 1 | `TIMOTI_UILYAMSON_01_NAME_GATE` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Semantic Naming Gate | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `TIMOTI_UILYAMSON_02_STATE_INVARIANT` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - State Invariant Kernel | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `TIMOTI_UILYAMSON_03_BOUNDARY_MAP` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Boundary Map | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `TIMOTI_UILYAMSON_04_COUNTEREXAMPLE_TEST` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Counterexample Test | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `TIMOTI_UILYAMSON_05_DATA_SHAPE` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Data Shape Discipline | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `TIMOTI_UILYAMSON_06_TRANSITION_GUARD` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Atomic Transition Guard | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `TIMOTI_UILYAMSON_07_REVIEW_BINARY` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Binary Review Criterion | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `TIMOTI_UILYAMSON_08_EVIDENCE_TRACE` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Evidence Trace | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `TIMOTI_UILYAMSON_09_PARALLEL_WORK` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - Parallel Conflict Shield | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `TIMOTI_UILYAMSON_10_RAG_CAPSULE` - Тимоти Уильямсон: Принцип примата знания (Knowledge First) - RAG Doctrine Capsule | Knowledge and Its Limits - knowledge-first epistemology | authorization and validation blind spots; personal failure mode: losing 'Принцип примата знания (Knowledge First)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Тимоти Уильямсон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, используй этот файл для индивидуального акцента Тимоти Уильямсон: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md)
-- Строка философского принципа: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:30`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` and needs the individual voice of Тимоти Уильямсон, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

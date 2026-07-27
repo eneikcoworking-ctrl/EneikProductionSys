@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-01_ACTUALIST-OBJECT:05:dzhonatan-shaffer"
 name_ru: "Джонатан Шаффер"
 barcan_tag: "BARCAN-TAG-01_ACTUALIST-OBJECT"
-barcan_role: "System / Solution Architect"
+barcan_role: "ACTUALIST-OBJECT"
 source_file: "BARCAN-TAG-01_ACTUALIST-OBJECT.md"
 source_line: 27
 source_principle: "Принцип приоритетного монизма"
+publication_anchor: "Monism: The Priority of the Whole - priority monism and grounding"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Джонатан Шаффер
 
-**BARCAN-роль:** `BARCAN-TAG-01_ACTUALIST-OBJECT` — Онтологический Конструктор
-**Инженерная роль:** System / Solution Architect
-**Исходный принцип:** Принцип приоритетного монизма
-**Источник в проекте:** [`BARCAN-TAG-01_ACTUALIST-OBJECT.md:27`](../../BARCAN-TAG-01_ACTUALIST-OBJECT.md#L27)
+**BARCAN tag:** `BARCAN-TAG-01_ACTUALIST-OBJECT` - ACTUALIST-OBJECT
+**Role focus:** Domain objects, identity and bounded contexts
+**Project role:** System / Solution Architect
+**Source principle:** Принцип приоритетного монизма
+**Publication anchor:** Monism: The Priority of the Whole - priority monism and grounding
+**Project source:** [`BARCAN-TAG-01_ACTUALIST-OBJECT.md:27`](../../BARCAN-TAG-01_ACTUALIST-OBJECT.md#L27)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Защита фундаментальных архитектурных зависимостей. Определение первичной сущности до написания кода
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `DZHONATAN_SHAFFER_01` — приоритетного монизма · Actual Entity Admission | допуск только актуальной сущности | абстракция появляется раньше реального процесса | не создавать сущность без текущего бизнес-поведения |
-| 2 | `DZHONATAN_SHAFFER_02` — приоритетного монизма · Behavior-Bearing Aggregate | агрегат с поведением | анемичная модель переносит решения в сервисный шум | помещать инварианты и бизнес-действия внутрь доменного объекта |
-| 3 | `DZHONATAN_SHAFFER_03` — приоритетного монизма · C4 Coupled Change | связывание архитектурного изменения с C4 | архитектура меняется без общей карты | обновлять C4/Context Map вместе с изменением границы |
-| 4 | `DZHONATAN_SHAFFER_04` — приоритетного монизма · Context Leak Interdiction | запрет протекания контекста | логика одного домена начинает жить в другом | блокировать межконтекстный доступ без явного адаптера |
-| 5 | `DZHONATAN_SHAFFER_05` — приоритетного монизма · Part-Whole Integrity Ledger | реестр отношений часть-целое | дочерний объект отрывается от агрегата | фиксировать ownership и lifecycle зависимых частей |
-| 6 | `DZHONATAN_SHAFFER_06` — приоритетного монизма · Core-State Separation | разделение сущностных свойств и состояний | флаг состояния меняет идентичность объекта | разносить core identity и mutable status |
-| 7 | `DZHONATAN_SHAFFER_07` — приоритетного монизма · Domain Ownership Ledger | книга владения доменными понятиями | одно понятие определяется двумя командами по-разному | закреплять владельца каждого ключевого термина |
-| 8 | `DZHONATAN_SHAFFER_08` — приоритетного монизма · Future Stub Refusal | отказ от заглушки на будущее | спекулятивный интерфейс закрепляет ложную онтологию | удалять пустые интерфейсы без текущего сценария |
-| 9 | `DZHONATAN_SHAFFER_09` — приоритетного монизма · Database Boundary Embargo | эмбарго на чужую БД | сервис обходит контракт другого сервиса | запрещать прямой запрос к таблицам чужого контекста |
-| 10 | `DZHONATAN_SHAFFER_10` — приоритетного монизма · Adapter Sunset Clause | срок жизни антикоррупционного адаптера | временный ACL становится постоянной архитектурой | указывать условия удаления временного адаптера |
+| 1 | `DZHONATAN_SHAFFER_01_NAME_GATE` - Джонатан Шаффер: Принцип приоритетного монизма - Semantic Naming Gate | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `DZHONATAN_SHAFFER_02_STATE_INVARIANT` - Джонатан Шаффер: Принцип приоритетного монизма - State Invariant Kernel | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `DZHONATAN_SHAFFER_03_BOUNDARY_MAP` - Джонатан Шаффер: Принцип приоритетного монизма - Boundary Map | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `DZHONATAN_SHAFFER_04_COUNTEREXAMPLE_TEST` - Джонатан Шаффер: Принцип приоритетного монизма - Counterexample Test | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `DZHONATAN_SHAFFER_05_DATA_SHAPE` - Джонатан Шаффер: Принцип приоритетного монизма - Data Shape Discipline | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `DZHONATAN_SHAFFER_06_TRANSITION_GUARD` - Джонатан Шаффер: Принцип приоритетного монизма - Atomic Transition Guard | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `DZHONATAN_SHAFFER_07_REVIEW_BINARY` - Джонатан Шаффер: Принцип приоритетного монизма - Binary Review Criterion | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `DZHONATAN_SHAFFER_08_EVIDENCE_TRACE` - Джонатан Шаффер: Принцип приоритетного монизма - Evidence Trace | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `DZHONATAN_SHAFFER_09_PARALLEL_WORK` - Джонатан Шаффер: Принцип приоритетного монизма - Parallel Conflict Shield | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `DZHONATAN_SHAFFER_10_RAG_CAPSULE` - Джонатан Шаффер: Принцип приоритетного монизма - RAG Doctrine Capsule | Monism: The Priority of the Whole - priority monism and grounding | anemic or duplicated domain entities; personal failure mode: losing 'Принцип приоритетного монизма' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Джонатан Шаффер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-01_ACTUALIST-OBJECT`, используй этот файл для индивидуального акцента Джонатан Шаффер: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-01_ACTUALIST-OBJECT.md`](../../BARCAN-TAG-01_ACTUALIST-OBJECT.md)
-- Строка философского принципа: `BARCAN-TAG-01_ACTUALIST-OBJECT.md:27`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-01_ACTUALIST-OBJECT` and needs the individual voice of Джонатан Шаффер, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

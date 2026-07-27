@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-03_BELIEF-INTENSION:05:shon-gallaher"
 name_ru: "Шон Галлахер"
 barcan_tag: "BARCAN-TAG-03_BELIEF-INTENSION"
-barcan_role: "UI/UX Designer / Product Designer"
+barcan_role: "BELIEF-INTENSION"
 source_file: "BARCAN-TAG-03_BELIEF-INTENSION.md"
 source_line: 43
 source_principle: "Принцип дорефлексивного опыта"
+publication_anchor: "How the Body Shapes the Mind - embodied and prereflective experience"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Шон Галлахер
 
-**BARCAN-роль:** `BARCAN-TAG-03_BELIEF-INTENSION` — Интенсиональный Навигатор
-**Инженерная роль:** UI/UX Designer / Product Designer
-**Исходный принцип:** Принцип дорефлексивного опыта
-**Источник в проекте:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:43`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L43)
+**BARCAN tag:** `BARCAN-TAG-03_BELIEF-INTENSION` - BELIEF-INTENSION
+**Role focus:** UX intention, perception and cognitive load
+**Project role:** UI/UX Designer / Product Designer
+**Source principle:** Принцип дорефлексивного опыта
+**Publication anchor:** How the Body Shapes the Mind - embodied and prereflective experience
+**Project source:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:43`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L43)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Использование устоявшихся ментальных моделей и паттернов снижает нагрузку на префронтальную кору, переводя действия в режим мышечной памяти
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `SHON_GALLAHER_01` — дорефлексивного опыта · Target Acquisition Budget | бюджет попадания в цель | маленькие и далёкие элементы создают ошибочные клики | назначать минимальные размеры и расстояния для важных действий |
-| 2 | `SHON_GALLAHER_02` — дорефлексивного опыта · Immediate Feedback Circuit | немедленная петля обратной связи | пользователь повторяет действие из-за отсутствия отклика | каждое действие должно иметь visible state change |
-| 3 | `SHON_GALLAHER_03` — дорефлексивного опыта · Chunked Attention Limit | лимит чанков внимания | экран превышает рабочую память | группировать объекты в малые смысловые блоки |
-| 4 | `SHON_GALLAHER_04` — дорефлексивного опыта · Gestalt Route Marking | маркировка визуального маршрута | взгляд не понимает следующий шаг | строить путь через proximity/similarity/continuity |
-| 5 | `SHON_GALLAHER_05` — дорефлексивного опыта · Habitual Control Placement | расположение по ментальной привычке | пользователь ищет действие там, где оно обычно живёт | не переносить критичные controls без причины |
-| 6 | `SHON_GALLAHER_06` — дорефлексивного опыта · State Completeness Matrix | матрица состояний компонента | hover/focus/error/loading забыты и ломают агентность | проверять все интерактивные состояния компонента |
-| 7 | `SHON_GALLAHER_07` — дорефлексивного опыта · Cognitive Noise Redline | красная линия когнитивного шума | декор конкурирует с задачей | удалять визуальные элементы без функционального различия |
-| 8 | `SHON_GALLAHER_08` — дорефлексивного опыта · Progressive Disclosure Ladder | лестница постепенного раскрытия | сложность показывается раньше готовности пользователя | раскрывать детали по мере намерения |
-| 9 | `SHON_GALLAHER_09` — дорефлексивного опыта · Perception Accessibility Probe | проверка воспринимаемой доступности | формально доступный интерфейс остаётся непонятным | тестировать keyboard/screen reader/cognitive clarity |
-| 10 | `SHON_GALLAHER_10` — дорефлексивного опыта · Latency Illusion Bridge | мост через задержку восприятия | пауза воспринимается как поломка | использовать skeleton/progress/optimistic state при задержках |
+| 1 | `SHON_GALLAHER_01_NAME_GATE` - Шон Галлахер: Принцип дорефлексивного опыта - Semantic Naming Gate | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `SHON_GALLAHER_02_STATE_INVARIANT` - Шон Галлахер: Принцип дорефлексивного опыта - State Invariant Kernel | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `SHON_GALLAHER_03_BOUNDARY_MAP` - Шон Галлахер: Принцип дорефлексивного опыта - Boundary Map | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `SHON_GALLAHER_04_COUNTEREXAMPLE_TEST` - Шон Галлахер: Принцип дорефлексивного опыта - Counterexample Test | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `SHON_GALLAHER_05_DATA_SHAPE` - Шон Галлахер: Принцип дорефлексивного опыта - Data Shape Discipline | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `SHON_GALLAHER_06_TRANSITION_GUARD` - Шон Галлахер: Принцип дорефлексивного опыта - Atomic Transition Guard | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `SHON_GALLAHER_07_REVIEW_BINARY` - Шон Галлахер: Принцип дорефлексивного опыта - Binary Review Criterion | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `SHON_GALLAHER_08_EVIDENCE_TRACE` - Шон Галлахер: Принцип дорефлексивного опыта - Evidence Trace | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `SHON_GALLAHER_09_PARALLEL_WORK` - Шон Галлахер: Принцип дорефлексивного опыта - Parallel Conflict Shield | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `SHON_GALLAHER_10_RAG_CAPSULE` - Шон Галлахер: Принцип дорефлексивного опыта - RAG Doctrine Capsule | How the Body Shapes the Mind - embodied and prereflective experience | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Шон Галлахер-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-03_BELIEF-INTENSION`, используй этот файл для индивидуального акцента Шон Галлахер: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-03_BELIEF-INTENSION.md`](../../BARCAN-TAG-03_BELIEF-INTENSION.md)
-- Строка философского принципа: `BARCAN-TAG-03_BELIEF-INTENSION.md:43`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-03_BELIEF-INTENSION` and needs the individual voice of Шон Галлахер, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

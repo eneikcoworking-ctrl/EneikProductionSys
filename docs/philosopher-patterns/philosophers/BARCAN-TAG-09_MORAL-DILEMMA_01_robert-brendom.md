@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-09_MORAL-DILEMMA:01:robert-brendom"
 name_ru: "Роберт Брэндом"
 barcan_tag: "BARCAN-TAG-09_MORAL-DILEMMA"
-barcan_role: "Systems Analyst / Technical Product Manager / Technical Lead"
+barcan_role: "MORAL-DILEMMA"
 source_file: "BARCAN-TAG-09_MORAL-DILEMMA.md"
 source_line: 24
 source_principle: "Нормативный инференциализм"
+publication_anchor: "Making It Explicit - inferentialism and scorekeeping"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Роберт Брэндом
 
-**BARCAN-роль:** `BARCAN-TAG-09_MORAL-DILEMMA` — Прагматический Медиатор (Technical Lead)
-**Инженерная роль:** Systems Analyst / Technical Product Manager / Technical Lead
-**Исходный принцип:** Нормативный инференциализм
-**Источник в проекте:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:24`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L24)
+**BARCAN tag:** `BARCAN-TAG-09_MORAL-DILEMMA` - MORAL-DILEMMA
+**Role focus:** Value, tradeoffs and waste prevention
+**Project role:** Systems Analyst / Technical Product Manager / Technical Lead
+**Source principle:** Нормативный инференциализм
+**Publication anchor:** Making It Explicit - inferentialism and scorekeeping
+**Project source:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:24`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L24)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Код ценен последствиями в архитектуре. Обязательство поля `jtbd` — доказать это последствие.
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `ROBERT_BRENDOM_01` — Нормативный инференциализм · Consequence-Backed JTBD | JTBD с доказанным последствием | задача описывает желание, но не эффект | требовать связь work item с измеримым последствием |
-| 2 | `ROBERT_BRENDOM_02` — Нормативный инференциализм · Holistic Impact Map | карта целостного влияния | локальная оптимизация ломает соседний поток | оценивать влияние на всю систему, а не модуль |
-| 3 | `ROBERT_BRENDOM_03` — Нормативный инференциализм · Waste Deletion Ledger | журнал удаления waste | команда автоматизирует ненужное действие | фиксировать, какой waste удалён и почему |
-| 4 | `ROBERT_BRENDOM_04` — Нормативный инференциализм · Desire-to-AC Translator | перевод желания в acceptance criteria | клиентская формулировка остаётся неоднозначной | превращать желание в проверяемые AC |
-| 5 | `ROBERT_BRENDOM_05` — Нормативный инференциализм · Reasoned Refusal Record | запись рационального отказа | отказ выглядит как настроение агента | обосновывать отказ constraint, risk или metric evidence |
-| 6 | `ROBERT_BRENDOM_06` — Нормативный инференциализм · Six Sigma Reality Probe | зонд реальности Six Sigma | улучшение заявлено без метрики вариации | привязывать улучшение к defect rate/variance/capability |
-| 7 | `ROBERT_BRENDOM_07` — Нормативный инференциализм · TOC Constraint Anchor | якорь ограничения TOC | работа улучшает не бутылочное горлышко | связывать задачу с текущим constraint |
-| 8 | `ROBERT_BRENDOM_08` — Нормативный инференциализм · Lean Value Hypothesis | гипотеза lean-ценности | фича создаёт output без value | формулировать value hypothesis до разработки |
-| 9 | `ROBERT_BRENDOM_09` — Нормативный инференциализм · Stakeholder Ambiguity Split | расщепление неоднозначности стейкхолдера | одна фраза скрывает несколько требований | разделять роли, права, стимулы и риски |
-| 10 | `ROBERT_BRENDOM_10` — Нормативный инференциализм · Decision Consequence Matrix | матрица последствий решения | архитектурный выбор не имеет видимой цены | сравнивать последствия accept/reject/defer |
+| 1 | `ROBERT_BRENDOM_01_NAME_GATE` - Роберт Брэндом: Нормативный инференциализм - Semantic Naming Gate | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `ROBERT_BRENDOM_02_STATE_INVARIANT` - Роберт Брэндом: Нормативный инференциализм - State Invariant Kernel | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `ROBERT_BRENDOM_03_BOUNDARY_MAP` - Роберт Брэндом: Нормативный инференциализм - Boundary Map | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `ROBERT_BRENDOM_04_COUNTEREXAMPLE_TEST` - Роберт Брэндом: Нормативный инференциализм - Counterexample Test | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `ROBERT_BRENDOM_05_DATA_SHAPE` - Роберт Брэндом: Нормативный инференциализм - Data Shape Discipline | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `ROBERT_BRENDOM_06_TRANSITION_GUARD` - Роберт Брэндом: Нормативный инференциализм - Atomic Transition Guard | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `ROBERT_BRENDOM_07_REVIEW_BINARY` - Роберт Брэндом: Нормативный инференциализм - Binary Review Criterion | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `ROBERT_BRENDOM_08_EVIDENCE_TRACE` - Роберт Брэндом: Нормативный инференциализм - Evidence Trace | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `ROBERT_BRENDOM_09_PARALLEL_WORK` - Роберт Брэндом: Нормативный инференциализм - Parallel Conflict Shield | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `ROBERT_BRENDOM_10_RAG_CAPSULE` - Роберт Брэндом: Нормативный инференциализм - RAG Doctrine Capsule | Making It Explicit - inferentialism and scorekeeping | local optimization and wasteful scope; personal failure mode: losing 'Нормативный инференциализм' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Роберт Брэндом-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-09_MORAL-DILEMMA`, используй этот файл для индивидуального акцента Роберт Брэндом: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-09_MORAL-DILEMMA.md`](../../BARCAN-TAG-09_MORAL-DILEMMA.md)
-- Строка философского принципа: `BARCAN-TAG-09_MORAL-DILEMMA.md:24`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-09_MORAL-DILEMMA` and needs the individual voice of Роберт Брэндом, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

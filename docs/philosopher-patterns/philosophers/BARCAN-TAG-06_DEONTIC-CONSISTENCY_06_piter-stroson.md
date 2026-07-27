@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-06_DEONTIC-CONSISTENCY:06:piter-stroson"
 name_ru: "Питер Стросон"
 barcan_tag: "BARCAN-TAG-06_DEONTIC-CONSISTENCY"
-barcan_role: "QA Automation / Performance Engineer"
+barcan_role: "DEONTIC-CONSISTENCY"
 source_file: "BARCAN-TAG-06_DEONTIC-CONSISTENCY.md"
 source_line: 43
 source_principle: "Принцип истины как перформативного одобрения"
+publication_anchor: "Truth / Individuals - ordinary-language and descriptive metaphysics"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Питер Стросон
 
-**BARCAN-роль:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` — Эмпирический Верификатор
-**Инженерная роль:** QA Automation / Performance Engineer
-**Исходный принцип:** Принцип истины как перформативного одобрения
-**Источник в проекте:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:43`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L43)
+**BARCAN tag:** `BARCAN-TAG-06_DEONTIC-CONSISTENCY` - DEONTIC-CONSISTENCY
+**Role focus:** Testing, truth status and quality gates
+**Project role:** QA Automation / Performance Engineer
+**Source principle:** Принцип истины как перформативного одобрения
+**Publication anchor:** Truth / Individuals - ordinary-language and descriptive metaphysics
+**Project source:** [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:43`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md#L43)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Подписание Acceptance Criteria на этапе Refinement — перформативный акт обязательства команды, а не просто фиксация факта. После подписания AC откат к «мы это не обсуждали» запрещён
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `PITER_STROSON_01` — истины как перформативного одобрения · Counterexample First Suite | сьют от контрпримеров | тесты подтверждают счастливый путь и не ищут ошибку | проектировать тесты сначала как попытку опровержения |
-| 2 | `PITER_STROSON_02` — истины как перформативного одобрения · CI Reality Attestation | аттестация реальности CI | mocked или skipped прогон выдаёт себя за проверку | прикладывать ссылку на реальный execution evidence |
-| 3 | `PITER_STROSON_03` — истины как перформативного одобрения · Flaky Quarantine State | карантин flaky-состояния | нестабильный тест округляется до pass | выделять FLAKY как отдельный блокирующий статус |
-| 4 | `PITER_STROSON_04` — истины как перформативного одобрения · Contradiction Intolerance | нетерпимость к противоречию результата | один commit имеет несовместимые итоги | останавливать pipeline до воспроизводимого объяснения |
-| 5 | `PITER_STROSON_05` — истины как перформативного одобрения · Verified Run Receipt | квитанция verified-прогона | статус VERIFIED живёт отдельно от факта запуска | сохранять log, environment, commit и artifact |
-| 6 | `PITER_STROSON_06` — истины как перформативного одобрения · Acceptance Signature Lock | замок подписанного AC | команда меняет критерии после реализации | замораживать AC перед разработкой и менять только через review |
-| 7 | `PITER_STROSON_07` — истины как перформативного одобрения · Mutation Challenge | мутационный вызов тестам | тест проходит даже при испорченной логике | использовать mutation testing для критичных правил |
-| 8 | `PITER_STROSON_08` — истины как перформативного одобрения · Boundary Assault Set | набор атак на границы | краевые случаи не представлены в проверке | генерировать null/empty/max/min/race cases |
-| 9 | `PITER_STROSON_09` — истины как перформативного одобрения · Oracle Independence Check | независимость тестового оракула | тест повторяет реализацию и не ловит ошибку | строить expected result из спецификации, не из production code |
-| 10 | `PITER_STROSON_10` — истины как перформативного одобрения · Nondeterminism Reproduction Protocol | протокол воспроизведения недетерминизма | случайный сбой исчезает без причины | фиксировать seed, time, env и concurrency profile |
+| 1 | `PITER_STROSON_01_NAME_GATE` - Питер Стросон: Принцип истины как перформативного одобрения - Semantic Naming Gate | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `PITER_STROSON_02_STATE_INVARIANT` - Питер Стросон: Принцип истины как перформативного одобрения - State Invariant Kernel | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `PITER_STROSON_03_BOUNDARY_MAP` - Питер Стросон: Принцип истины как перформативного одобрения - Boundary Map | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `PITER_STROSON_04_COUNTEREXAMPLE_TEST` - Питер Стросон: Принцип истины как перформативного одобрения - Counterexample Test | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `PITER_STROSON_05_DATA_SHAPE` - Питер Стросон: Принцип истины как перформативного одобрения - Data Shape Discipline | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `PITER_STROSON_06_TRANSITION_GUARD` - Питер Стросон: Принцип истины как перформативного одобрения - Atomic Transition Guard | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `PITER_STROSON_07_REVIEW_BINARY` - Питер Стросон: Принцип истины как перформативного одобрения - Binary Review Criterion | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `PITER_STROSON_08_EVIDENCE_TRACE` - Питер Стросон: Принцип истины как перформативного одобрения - Evidence Trace | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `PITER_STROSON_09_PARALLEL_WORK` - Питер Стросон: Принцип истины как перформативного одобрения - Parallel Conflict Shield | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `PITER_STROSON_10_RAG_CAPSULE` - Питер Стросон: Принцип истины как перформативного одобрения - RAG Doctrine Capsule | Truth / Individuals - ordinary-language and descriptive metaphysics | flaky or untruthful quality gates; personal failure mode: losing 'Принцип истины как перформативного одобрения' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Питер Стросон-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-06_DEONTIC-CONSISTENCY`, используй этот файл для индивидуального акцента Питер Стросон: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-06_DEONTIC-CONSISTENCY.md`](../../BARCAN-TAG-06_DEONTIC-CONSISTENCY.md)
-- Строка философского принципа: `BARCAN-TAG-06_DEONTIC-CONSISTENCY.md:43`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-06_DEONTIC-CONSISTENCY` and needs the individual voice of Питер Стросон, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

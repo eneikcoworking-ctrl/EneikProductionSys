@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-00_CODE-GUARDIAN:04:dzhon-ostin"
 name_ru: "Джон Остин"
 barcan_tag: "BARCAN-TAG-00_CODE-GUARDIAN"
-barcan_role: "Tech Lead / Code Review Engineer"
+barcan_role: "CODE-GUARDIAN"
 source_file: "BARCAN-TAG-00_CODE-GUARDIAN.md"
 source_line: 36
 source_principle: "Принцип перформативных высказываний"
+publication_anchor: "How to Do Things with Words - speech acts and performatives"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Джон Остин
 
-**BARCAN-роль:** `BARCAN-TAG-00_CODE-GUARDIAN` — Хранитель Кода
-**Инженерная роль:** Tech Lead / Code Review Engineer
-**Исходный принцип:** Принцип перформативных высказываний
-**Источник в проекте:** [`BARCAN-TAG-00_CODE-GUARDIAN.md:36`](../../BARCAN-TAG-00_CODE-GUARDIAN.md#L36)
+**BARCAN tag:** `BARCAN-TAG-00_CODE-GUARDIAN` - CODE-GUARDIAN
+**Role focus:** Code review, meaning and integration integrity
+**Project role:** Tech Lead / Code Review Engineer
+**Source principle:** Принцип перформативных высказываний
+**Publication anchor:** How to Do Things with Words - speech acts and performatives
+**Project source:** [`BARCAN-TAG-00_CODE-GUARDIAN.md:36`](../../BARCAN-TAG-00_CODE-GUARDIAN.md#L36)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Код — это не описание, а действие. `createUser()` не описывает создание пользователя — он его совершает. Агент проверяет, что имена методов точно соответствуют их реальному эффекту, исключая «лжецов» (метод `getUser`, который ещё и пишет в БД)
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `DZHON_OSTIN_01` — перформативных высказываний · Intent Lexeme Review | семантическое ревью имён | неверное имя скрывает фактический эффект метода | требовать переименование, если имя не передаёт намерение и эффект |
-| 2 | `DZHON_OSTIN_02` — перформативных высказываний · Comment-Behavior Parity Check | проверка совпадения комментария и поведения | комментарий легализует устаревшую или ложную модель кода | блокировать PR, где комментарий обещает не то, что исполняет код |
-| 3 | `DZHON_OSTIN_03` — перформативных высказываний · Public Method Isolation Probe | изолируемая проверка публичного метода | невозможность теста показывает скрытую связность | каждый новый публичный метод должен иметь независимый способ проверки |
-| 4 | `DZHON_OSTIN_04` — перформативных высказываний · Side-Effect Truthfulness Audit | аудит скрытых побочных эффектов | метод чтения внезапно пишет, отправляет или мутирует состояние | выносить эффект в явно названную команду |
-| 5 | `DZHON_OSTIN_05` — перформативных высказываний · Information-Density Budget | контроль плотности информации | слишком мало или слишком много кода одинаково разрушает понимание | удалять очевидные комментарии и распутывать сжатые выражения |
-| 6 | `DZHON_OSTIN_06` — перформативных высказываний · Local World Convention Register | реестр локальных соглашений модуля | локальная договорённость становится ловушкой для новых агентов | требовать README для отклонения от глобального стандарта |
-| 7 | `DZHON_OSTIN_07` — перформативных высказываний · Literal Eviction Sweep | вынос магических литералов | значение без имени нельзя проверить смыслово | заменять магические числа и строки именованными константами |
-| 8 | `DZHON_OSTIN_08` — перформативных высказываний · Cognitive Nesting Cap | ограничение вложенности рассуждения | глубокие ветвления прячут альтернативные случаи | рефакторить при вложенности выше установленного порога |
-| 9 | `DZHON_OSTIN_09` — перформативных высказываний · TODO Obligation Trace | трассировка отложенного обязательства | TODO без владельца превращается в долг без срока | каждый TODO связывать с задачей или удалять |
-| 10 | `DZHON_OSTIN_10` — перформативных высказываний · Dependency Intent Hearing | обоснование новой зависимости | библиотека добавляет скрытый контракт и поверхность атаки | требовать явное объяснение пользы и риска зависимости |
+| 1 | `DZHON_OSTIN_01_NAME_GATE` - Джон Остин: Принцип перформативных высказываний - Semantic Naming Gate | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `DZHON_OSTIN_02_STATE_INVARIANT` - Джон Остин: Принцип перформативных высказываний - State Invariant Kernel | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `DZHON_OSTIN_03_BOUNDARY_MAP` - Джон Остин: Принцип перформативных высказываний - Boundary Map | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `DZHON_OSTIN_04_COUNTEREXAMPLE_TEST` - Джон Остин: Принцип перформативных высказываний - Counterexample Test | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `DZHON_OSTIN_05_DATA_SHAPE` - Джон Остин: Принцип перформативных высказываний - Data Shape Discipline | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `DZHON_OSTIN_06_TRANSITION_GUARD` - Джон Остин: Принцип перформативных высказываний - Atomic Transition Guard | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `DZHON_OSTIN_07_REVIEW_BINARY` - Джон Остин: Принцип перформативных высказываний - Binary Review Criterion | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `DZHON_OSTIN_08_EVIDENCE_TRACE` - Джон Остин: Принцип перформативных высказываний - Evidence Trace | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `DZHON_OSTIN_09_PARALLEL_WORK` - Джон Остин: Принцип перформативных высказываний - Parallel Conflict Shield | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `DZHON_OSTIN_10_RAG_CAPSULE` - Джон Остин: Принцип перформативных высказываний - RAG Doctrine Capsule | How to Do Things with Words - speech acts and performatives | semantic drift in code review; personal failure mode: losing 'Принцип перформативных высказываний' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Джон Остин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-00_CODE-GUARDIAN`, используй этот файл для индивидуального акцента Джон Остин: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-00_CODE-GUARDIAN.md`](../../BARCAN-TAG-00_CODE-GUARDIAN.md)
-- Строка философского принципа: `BARCAN-TAG-00_CODE-GUARDIAN.md:36`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-00_CODE-GUARDIAN` and needs the individual voice of Джон Остин, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

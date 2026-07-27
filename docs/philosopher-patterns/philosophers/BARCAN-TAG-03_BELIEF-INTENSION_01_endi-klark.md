@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-03_BELIEF-INTENSION:01:endi-klark"
 name_ru: "Энди Кларк"
 barcan_tag: "BARCAN-TAG-03_BELIEF-INTENSION"
-barcan_role: "UI/UX Designer / Product Designer"
+barcan_role: "BELIEF-INTENSION"
 source_file: "BARCAN-TAG-03_BELIEF-INTENSION.md"
 source_line: 39
 source_principle: "Принцип расширенного разума"
+publication_anchor: "The Extended Mind / Supersizing the Mind - cognition extended into artifacts"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Энди Кларк
 
-**BARCAN-роль:** `BARCAN-TAG-03_BELIEF-INTENSION` — Интенсиональный Навигатор
-**Инженерная роль:** UI/UX Designer / Product Designer
-**Исходный принцип:** Принцип расширенного разума
-**Источник в проекте:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:39`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L39)
+**BARCAN tag:** `BARCAN-TAG-03_BELIEF-INTENSION` - BELIEF-INTENSION
+**Role focus:** UX intention, perception and cognitive load
+**Project role:** UI/UX Designer / Product Designer
+**Source principle:** Принцип расширенного разума
+**Publication anchor:** The Extended Mind / Supersizing the Mind - cognition extended into artifacts
+**Project source:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:39`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L39)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Интерфейс разгружает рабочую память. Элементы управления проектируются согласно **Закону Фиттса**: размер и дистанция цели определяют скорость и точность взаимодействия
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `ENDI_KLARK_01` — расширенного разума · Target Acquisition Budget | бюджет попадания в цель | маленькие и далёкие элементы создают ошибочные клики | назначать минимальные размеры и расстояния для важных действий |
-| 2 | `ENDI_KLARK_02` — расширенного разума · Immediate Feedback Circuit | немедленная петля обратной связи | пользователь повторяет действие из-за отсутствия отклика | каждое действие должно иметь visible state change |
-| 3 | `ENDI_KLARK_03` — расширенного разума · Chunked Attention Limit | лимит чанков внимания | экран превышает рабочую память | группировать объекты в малые смысловые блоки |
-| 4 | `ENDI_KLARK_04` — расширенного разума · Gestalt Route Marking | маркировка визуального маршрута | взгляд не понимает следующий шаг | строить путь через proximity/similarity/continuity |
-| 5 | `ENDI_KLARK_05` — расширенного разума · Habitual Control Placement | расположение по ментальной привычке | пользователь ищет действие там, где оно обычно живёт | не переносить критичные controls без причины |
-| 6 | `ENDI_KLARK_06` — расширенного разума · State Completeness Matrix | матрица состояний компонента | hover/focus/error/loading забыты и ломают агентность | проверять все интерактивные состояния компонента |
-| 7 | `ENDI_KLARK_07` — расширенного разума · Cognitive Noise Redline | красная линия когнитивного шума | декор конкурирует с задачей | удалять визуальные элементы без функционального различия |
-| 8 | `ENDI_KLARK_08` — расширенного разума · Progressive Disclosure Ladder | лестница постепенного раскрытия | сложность показывается раньше готовности пользователя | раскрывать детали по мере намерения |
-| 9 | `ENDI_KLARK_09` — расширенного разума · Perception Accessibility Probe | проверка воспринимаемой доступности | формально доступный интерфейс остаётся непонятным | тестировать keyboard/screen reader/cognitive clarity |
-| 10 | `ENDI_KLARK_10` — расширенного разума · Latency Illusion Bridge | мост через задержку восприятия | пауза воспринимается как поломка | использовать skeleton/progress/optimistic state при задержках |
+| 1 | `ENDI_KLARK_01_NAME_GATE` - Энди Кларк: Принцип расширенного разума - Semantic Naming Gate | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `ENDI_KLARK_02_STATE_INVARIANT` - Энди Кларк: Принцип расширенного разума - State Invariant Kernel | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `ENDI_KLARK_03_BOUNDARY_MAP` - Энди Кларк: Принцип расширенного разума - Boundary Map | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `ENDI_KLARK_04_COUNTEREXAMPLE_TEST` - Энди Кларк: Принцип расширенного разума - Counterexample Test | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `ENDI_KLARK_05_DATA_SHAPE` - Энди Кларк: Принцип расширенного разума - Data Shape Discipline | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `ENDI_KLARK_06_TRANSITION_GUARD` - Энди Кларк: Принцип расширенного разума - Atomic Transition Guard | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `ENDI_KLARK_07_REVIEW_BINARY` - Энди Кларк: Принцип расширенного разума - Binary Review Criterion | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `ENDI_KLARK_08_EVIDENCE_TRACE` - Энди Кларк: Принцип расширенного разума - Evidence Trace | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `ENDI_KLARK_09_PARALLEL_WORK` - Энди Кларк: Принцип расширенного разума - Parallel Conflict Shield | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `ENDI_KLARK_10_RAG_CAPSULE` - Энди Кларк: Принцип расширенного разума - RAG Doctrine Capsule | The Extended Mind / Supersizing the Mind - cognition extended into artifacts | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Энди Кларк-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-03_BELIEF-INTENSION`, используй этот файл для индивидуального акцента Энди Кларк: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-03_BELIEF-INTENSION.md`](../../BARCAN-TAG-03_BELIEF-INTENSION.md)
-- Строка философского принципа: `BARCAN-TAG-03_BELIEF-INTENSION.md:39`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-03_BELIEF-INTENSION` and needs the individual voice of Энди Кларк, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

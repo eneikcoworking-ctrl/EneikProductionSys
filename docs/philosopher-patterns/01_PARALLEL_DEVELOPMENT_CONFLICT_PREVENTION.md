@@ -1,46 +1,25 @@
 # Parallel Development Conflict Prevention Charter
 
-Цель этого файла — сделать конфликты параллельной разработки архитектурно редкими, заранее видимыми и проверяемыми. Абсолютное отсутствие конфликтов нельзя обещать математически, но можно запретить неуправляемые конфликты: две роли не должны молча менять одну и ту же поверхность без владельца, контракта и проверки.
+This file is the shared anti-conflict layer extracted from the session work on stuck PRs, stale branches, duplicate routes, CI reconciliation and merge ordering.
 
-## Нормативные правила
-
-| ID | Правило | Требование |
+| ID | Rule | Requirement |
 |---|---|---|
-| `CPF-001` | Один владелец на изменяемую поверхность | Каждый shared-файл, модуль, схема, API-контракт и генератор имеет владельца. Параллельные агенты не редактируют одну поверхность без явного handoff. |
-| `CPF-002` | Контракт раньше реализации | Для API, БД, событий, RAG-схем и UI-состояний сначала меняется контракт и проходит review, затем команды реализуют свои стороны. |
-| `CPF-003` | Generated files are read-only | Файлы, созданные генератором, не редактируются вручную. Изменение делается в генераторе или исходном BARCAN-файле и затем пересобирается. |
-| `CPF-004` | Append-only по умолчанию | Если можно добавить новый файл, новый объект, новую миграцию или новый registry entry вместо редактирования общего центра, выбирается добавление. |
-| `CPF-005` | Малые PR и вертикальные срезы | Один PR закрывает один bounded context или один контрактный срез. Смешивание фичи, рефакторинга и форматирования запрещается. |
-| `CPF-006` | Merge queue вместо прямого merge | Перед попаданием в main изменения пересобираются на актуальном состоянии ветки и проходят тесты после интеграции. |
-| `CPF-007` | Сериализация миграций | Миграции БД, изменения shared enum и глобальные схемы проходят через единый порядковый канал. |
-| `CPF-008` | Refactor freeze lane | Массовые переименования, форматирование, переносы файлов и архитектурные реорганизации выполняются в выделенном окне. |
-| `CPF-009` | Conflict forecast | Каждая задача до кодинга фиксирует touched paths, owners, contracts и expected integration points. |
-| `CPF-010` | Semantic conflict checks | После текстового merge запускаются contract tests, schema diff, affected tests и smoke path для затронутого поведения. |
-| `CPF-011` | Feature flag isolation | Параллельная незавершённая работа не меняет общий пользовательский путь без feature flag или capability switch. |
-| `CPF-012` | Evidence after conflict resolution | Если конфликт всё же решён руками, merge запрещён без новой проверки, доказывающей сохранение поведения. |
+| `CPF-001` | Single owner for every mutable surface | Every shared file, contract, enum, migration lane and generated artifact has one owner. |
+| `CPF-002` | Contract before implementation | API, event, schema and RAG contracts are reviewed before parallel implementation starts. |
+| `CPF-003` | Generated files are read-only | Change the generator or source data, then regenerate. |
+| `CPF-004` | Append-only by default | Prefer new extension files or registry rows over edits to shared central files. |
+| `CPF-005` | Small vertical PRs | One PR covers one behavior slice, not feature plus refactor plus formatting. |
+| `CPF-006` | Merge queue over direct merge | Every PR is rebuilt on current main before landing. |
+| `CPF-007` | Serialized migrations | Database migrations, shared enums and global schemas pass through a single ordered lane. |
+| `CPF-008` | Refactor freeze lane | Broad moves, renames and formatting run in their own window. |
+| `CPF-009` | Conflict forecast | Task and PR describe touched paths, owners, contracts and expected integration points. |
+| `CPF-010` | Semantic conflict checks | After merge, affected contract, schema and smoke tests must run. |
+| `CPF-011` | Feature flag isolation | Incomplete parallel work cannot affect shared runtime without a flag. |
+| `CPF-012` | Evidence after conflict resolution | Manual conflict fixes require targeted tests or contract checks. |
 
-## Режимы работы
+## Required Agent Sequence
 
-### Перед началом задачи
-
-- Указать `touched_paths`: файлы, модули, схемы и контракты, которые задача планирует изменить.
-- Указать `owners`: роли или люди, владеющие этими поверхностями.
-- Указать `integration_points`: API, события, таблицы, shared-типы, UI-состояния и RAG-схемы.
-- Если два активных изменения пересекаются по `touched_paths`, один из них должен перейти в handoff, split или refactor lane.
-
-### Во время разработки
-
-- Не смешивать продуктовую фичу, массовый рефакторинг и форматирование в одном PR.
-- Не редактировать generated-файлы вручную.
-- Для shared-контрактов сначала менять схему/контракт, потом реализацию.
-- Для глобальных enum, констант, миграций и API использовать сериализованный порядок изменений.
-
-### Перед merge
-
-- PR обязан пройти merge queue или эквивалентную пересборку на актуальном `main`.
-- После ручного разрешения конфликта обязательны affected tests и contract/schema checks.
-- Если конфликт был не текстовым, а смысловым, фиксируется короткий `conflict_resolution_note`.
-
-## RAG-инструкция
-
-Когда агент получает задачу параллельной разработки, он должен сначала применить этот charter, затем персональный файл философа. Персональные паттерны дают стиль мышления, но конфликтные поверхности регулируются этим общим документом.
+1. Before coding, declare `touched_paths`, owners, contracts and likely integration points.
+2. During coding, do not edit generated files manually, root `.gitignore`, shared migrations or shared enum/constants without the owner lane.
+3. Before merge, rebuild on current `main`, run affected contract/schema/smoke tests and record the evidence.
+4. After a manual conflict resolution, add or run a targeted check proving that behavior, not only text, still matches.

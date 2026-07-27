@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-02_RIGID-DESIGNATOR:05:dzhon-perri"
 name_ru: "Джон Перри"
 barcan_tag: "BARCAN-TAG-02_RIGID-DESIGNATOR"
-barcan_role: "Backend / Integration Engineer"
+barcan_role: "RIGID-DESIGNATOR"
 source_file: "BARCAN-TAG-02_RIGID-DESIGNATOR.md"
 source_line: 42
 source_principle: "Принцип индексикальной семантики"
+publication_anchor: "The Problem of the Essential Indexical - indexicals and self-locating content"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Джон Перри
 
-**BARCAN-роль:** `BARCAN-TAG-02_RIGID-DESIGNATOR` — Семантический Транслятор
-**Инженерная роль:** Backend / Integration Engineer
-**Исходный принцип:** Принцип индексикальной семантики
-**Источник в проекте:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:42`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L42)
+**BARCAN tag:** `BARCAN-TAG-02_RIGID-DESIGNATOR` - RIGID-DESIGNATOR
+**Role focus:** API contracts, naming and semantic stability
+**Project role:** Backend / Integration Engineer
+**Source principle:** Принцип индексикальной семантики
+**Publication anchor:** The Problem of the Essential Indexical - indexicals and self-locating content
+**Project source:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:42`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Детерминированное управление контекстно-зависимыми значениями: сессии, локали, таймзоны, контексты авторизации. Утечка или подмена контекста между пользователями — критический дефект
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `DZHON_PERRI_01` — индексикальной семантики · Identifier Meaning Freeze | заморозка смысла идентификатора | одно имя начинает означать разные вещи | фиксировать значение публичных имён во всех окружениях |
-| 2 | `DZHON_PERRI_02` — индексикальной семантики · External-Internal Sense Mapper | мапер внутреннего и внешнего смысла | изменение реализации ломает внешний договор | держать внешний контракт стабильным через граничный mapper |
-| 3 | `DZHON_PERRI_03` — индексикальной семантики · Context Propagation Receipt | квитанция передачи контекста | контекст пользователя теряется в распределённом вызове | передавать session/locale/auth как явный пакет |
-| 4 | `DZHON_PERRI_04` — индексикальной семантики · Rename Causal Ledger | каузальный журнал переименования | новое имя обрывает интеграционную историю | сопровождать переименование alias/deprecation/migration notes |
-| 5 | `DZHON_PERRI_05` — индексикальной семантики · Indexical Context Capsule | капсула индексикальных значений | timezone или locale смешиваются между пользователями | изолировать контекстно-зависимые значения на запрос |
-| 6 | `DZHON_PERRI_06` — индексикальной семантики · Boundary Pressure Shield | экран внешнего прагматического давления | внешняя система проталкивает свои хаотичные значения внутрь | нормализовать данные только на границе |
-| 7 | `DZHON_PERRI_07` — индексикальной семантики · Compatibility Diff Trial | суд над diff публичного контракта | малый diff становится breaking change | проверять OpenAPI/JSON Schema diff до merge |
-| 8 | `DZHON_PERRI_08` — индексикальной семантики · Consumer Expectation Replay | повтор ожиданий потребителей | backend считает контракт совместимым без проверки клиентов | прогонять consumer tests для значимых контрактов |
-| 9 | `DZHON_PERRI_09` — индексикальной семантики · Error Meaning Registry | реестр значений ошибок | один код ошибки используется для разных ситуаций | фиксировать код, смысл, recoverability и UX-сообщение |
-| 10 | `DZHON_PERRI_10` — индексикальной семантики · Authorization Context Seal | печать контекста авторизации | роль или tenant подменяется между слоями | подписывать и проверять auth context на границах |
+| 1 | `DZHON_PERRI_01_NAME_GATE` - Джон Перри: Принцип индексикальной семантики - Semantic Naming Gate | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `DZHON_PERRI_02_STATE_INVARIANT` - Джон Перри: Принцип индексикальной семантики - State Invariant Kernel | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `DZHON_PERRI_03_BOUNDARY_MAP` - Джон Перри: Принцип индексикальной семантики - Boundary Map | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `DZHON_PERRI_04_COUNTEREXAMPLE_TEST` - Джон Перри: Принцип индексикальной семантики - Counterexample Test | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `DZHON_PERRI_05_DATA_SHAPE` - Джон Перри: Принцип индексикальной семантики - Data Shape Discipline | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `DZHON_PERRI_06_TRANSITION_GUARD` - Джон Перри: Принцип индексикальной семантики - Atomic Transition Guard | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `DZHON_PERRI_07_REVIEW_BINARY` - Джон Перри: Принцип индексикальной семантики - Binary Review Criterion | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `DZHON_PERRI_08_EVIDENCE_TRACE` - Джон Перри: Принцип индексикальной семантики - Evidence Trace | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `DZHON_PERRI_09_PARALLEL_WORK` - Джон Перри: Принцип индексикальной семантики - Parallel Conflict Shield | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `DZHON_PERRI_10_RAG_CAPSULE` - Джон Перри: Принцип индексикальной семантики - RAG Doctrine Capsule | The Problem of the Essential Indexical - indexicals and self-locating content | breaking API and naming drift; personal failure mode: losing 'Принцип индексикальной семантики' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Джон Перри-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-02_RIGID-DESIGNATOR`, используй этот файл для индивидуального акцента Джон Перри: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-02_RIGID-DESIGNATOR.md`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md)
-- Строка философского принципа: `BARCAN-TAG-02_RIGID-DESIGNATOR.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-02_RIGID-DESIGNATOR` and needs the individual voice of Джон Перри, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

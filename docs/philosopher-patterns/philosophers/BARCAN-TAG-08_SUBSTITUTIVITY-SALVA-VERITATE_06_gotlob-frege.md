@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE:06:gotlob-frege"
 name_ru: "Готлоб Фреге"
 barcan_tag: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE"
-barcan_role: "Data Engineer / DBA"
+barcan_role: "SUBSTITUTIVITY-SALVA-VERITATE"
 source_file: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md"
 source_line: 34
 source_principle: "Принцип разграничения смысла и значения"
+publication_anchor: "Begriffsschrift / On Sense and Reference - sense, reference and compositionality"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Готлоб Фреге
 
-**BARCAN-роль:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` — Логистический Синтаксист
-**Инженерная роль:** Data Engineer / DBA
-**Исходный принцип:** Принцип разграничения смысла и значения
-**Источник в проекте:** [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:34`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md#L34)
+**BARCAN tag:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` - SUBSTITUTIVITY-SALVA-VERITATE
+**Role focus:** Data types, substitution and lineage
+**Project role:** Data Engineer / DBA
+**Source principle:** Принцип разграничения смысла и значения
+**Publication anchor:** Begriffsschrift / On Sense and Reference - sense, reference and compositionality
+**Project source:** [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:34`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md#L34)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> MDM и Schema Registry: изменение формата хранения (значения) не ломает логику интерпретации данных (смысл) другими сервисами
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `GOTLOB_FREGE_01` — разграничения смысла и значения · Physical Type Wall | физическая стена типов | разные типы смешиваются в одной колонке | разносить типы на уровне DDL, constraints и codecs |
-| 2 | `GOTLOB_FREGE_02` — разграничения смысла и значения · Migration Proof Object | миграция как объект доказательства | схема меняется без доказательства сохранения данных | каждая migration имеет forward/backward validation |
-| 3 | `GOTLOB_FREGE_03` — разграничения смысла и значения · Index Follows Data Shape | индекс следует форме данных | индексация оптимизирует удобство кода, а не запрос | строить индекс из cardinality/query plan/access pattern |
-| 4 | `GOTLOB_FREGE_04` — разграничения смысла и значения · Meaning-Preserving Transform | преобразование с сохранением смысла | ETL меняет значение поля незаметно | фиксировать semantic contract каждой трансформации |
-| 5 | `GOTLOB_FREGE_05` — разграничения смысла и значения · Lineage-Coherence Double Check | двойная проверка происхождения и согласованности | истина данных держится только на одном основании | требовать lineage plus reconciliation |
-| 6 | `GOTLOB_FREGE_06` — разграничения смысла и значения · Sense-Value Registry Entry | запись смысла и значения в registry | формат поменялся, интерпретация сломалась | вести schema registry с semantic notes |
-| 7 | `GOTLOB_FREGE_07` — разграничения смысла и значения · Catalog Admission Gate | ворота попадания в data catalog | новая таблица невидима для governance | запрещать merge без catalog entry |
-| 8 | `GOTLOB_FREGE_08` — разграничения смысла и значения · Referential Fence | референциальное ограждение | запись ссылается на невозможный объект | закреплять FK/check constraints или проверяемый surrogate |
-| 9 | `GOTLOB_FREGE_09` — разграничения смысла и значения · Partition Predicate Discipline | дисциплина предиката партиции | запросы случайно обходят партиции | фиксировать partition key и обязательный predicate |
-| 10 | `GOTLOB_FREGE_10` — разграничения смысла и значения · Reconciliation Checksum | контрольная сумма сверки | перенос данных кажется успешным без сверки | сравнивать counts/hash/sums до и после pipeline |
+| 1 | `GOTLOB_FREGE_01_NAME_GATE` - Готлоб Фреге: Принцип разграничения смысла и значения - Semantic Naming Gate | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `GOTLOB_FREGE_02_STATE_INVARIANT` - Готлоб Фреге: Принцип разграничения смысла и значения - State Invariant Kernel | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `GOTLOB_FREGE_03_BOUNDARY_MAP` - Готлоб Фреге: Принцип разграничения смысла и значения - Boundary Map | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `GOTLOB_FREGE_04_COUNTEREXAMPLE_TEST` - Готлоб Фреге: Принцип разграничения смысла и значения - Counterexample Test | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `GOTLOB_FREGE_05_DATA_SHAPE` - Готлоб Фреге: Принцип разграничения смысла и значения - Data Shape Discipline | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `GOTLOB_FREGE_06_TRANSITION_GUARD` - Готлоб Фреге: Принцип разграничения смысла и значения - Atomic Transition Guard | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `GOTLOB_FREGE_07_REVIEW_BINARY` - Готлоб Фреге: Принцип разграничения смысла и значения - Binary Review Criterion | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `GOTLOB_FREGE_08_EVIDENCE_TRACE` - Готлоб Фреге: Принцип разграничения смысла и значения - Evidence Trace | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `GOTLOB_FREGE_09_PARALLEL_WORK` - Готлоб Фреге: Принцип разграничения смысла и значения - Parallel Conflict Shield | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `GOTLOB_FREGE_10_RAG_CAPSULE` - Готлоб Фреге: Принцип разграничения смысла и значения - RAG Doctrine Capsule | Begriffsschrift / On Sense and Reference - sense, reference and compositionality | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип разграничения смысла и значения' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Готлоб Фреге-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, используй этот файл для индивидуального акцента Готлоб Фреге: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md)
-- Строка философского принципа: `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:34`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` and needs the individual voice of Готлоб Фреге, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

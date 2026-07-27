@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-05_NECESSARY-IDENTITY:05:piter-van-invagen"
 name_ru: "Питер ван Инваген"
 barcan_tag: "BARCAN-TAG-05_NECESSARY-IDENTITY"
-barcan_role: "SRE / DevOps / Infrastructure Engineer"
+barcan_role: "NECESSARY-IDENTITY"
 source_file: "BARCAN-TAG-05_NECESSARY-IDENTITY.md"
 source_line: 42
 source_principle: "Принцип специального вопроса композиции (когда части образуют целое)"
+publication_anchor: "Material Beings / Ontology, Identity, and Modality - composition and identity"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Питер ван Инваген
 
-**BARCAN-роль:** `BARCAN-TAG-05_NECESSARY-IDENTITY` — Каузальный Профайлер
-**Инженерная роль:** SRE / DevOps / Infrastructure Engineer
-**Исходный принцип:** Принцип специального вопроса композиции (когда части образуют целое)
-**Источник в проекте:** [`BARCAN-TAG-05_NECESSARY-IDENTITY.md:42`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md#L42)
+**BARCAN tag:** `BARCAN-TAG-05_NECESSARY-IDENTITY` - NECESSARY-IDENTITY
+**Role focus:** Runtime identity, reproducibility and incidents
+**Project role:** SRE / DevOps / Infrastructure Engineer
+**Source principle:** Принцип специального вопроса композиции (когда части образуют целое)
+**Publication anchor:** Material Beings / Ontology, Identity, and Modality - composition and identity
+**Project source:** [`BARCAN-TAG-05_NECESSARY-IDENTITY.md:42`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> «Система работает» — составное утверждение: агент явно фиксирует, какой набор компонентов в данный момент считается «системой» для целей SLO. Деградация одного компонента, входящего в эту композицию, не даёт молчаливо считать целое исправным
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `PITER_VAN_INVAGEN_01` — специального вопроса композиции · IaC Continuity Proof | доказательство непрерывности IaC | redeploy меняет сущность сервиса незаметно | сверять config/state/provisioning перед и после apply |
-| 2 | `PITER_VAN_INVAGEN_02` — специального вопроса композиции · INUS Incident Set | набор INUS-условий инцидента | RCA называет одну причину вместо достаточного множества | фиксировать все совместно достаточные условия |
-| 3 | `PITER_VAN_INVAGEN_03` — специального вопроса композиции · Temporal Service Ledger | временная книга сервиса | SLO считается по снимку, а не истории | вести историю версий, деплоев, миграций и деградаций |
-| 4 | `PITER_VAN_INVAGEN_04` — специального вопроса композиции · Trace Mark Continuity | непрерывность trace-метки | причинная цепь рвётся между сервисами | сохранять trace ID через все hops |
-| 5 | `PITER_VAN_INVAGEN_05` — специального вопроса композиции · SLO Composition Contract | контракт состава SLO | система объявлена здоровой при деградации существенной части | явно перечислять компоненты, входящие в SLO |
-| 6 | `PITER_VAN_INVAGEN_06` — специального вопроса композиции · Runbook Structure Persistence | персистенция структуры runbook | процедура считается другой из-за смены параметров | разделять структуру восстановления и переменные среды |
-| 7 | `PITER_VAN_INVAGEN_07` — специального вопроса композиции · Deploy Provenance Seal | печать происхождения деплоя | непонятно, какой код реально работает | связывать image, commit, config и миграцию |
-| 8 | `PITER_VAN_INVAGEN_08` — специального вопроса композиции · Blast Radius Cell | ячейка радиуса поражения | один сбой захватывает весь ландшафт | делить инфраструктуру на изолированные blast cells |
-| 9 | `PITER_VAN_INVAGEN_09` — специального вопроса композиции · Recovery Drill Checkpoint | контрольная точка учения восстановления | runbook существует, но не исполнялся | регулярно прогонять восстановление как проверку |
-| 10 | `PITER_VAN_INVAGEN_10` — специального вопроса композиции · Config Drift Arrest | арест дрейфа конфигурации | ручное изменение ломает тождество окружения | детектировать и откатывать drift от declarative state |
+| 1 | `PITER_VAN_INVAGEN_01_NAME_GATE` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Semantic Naming Gate | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `PITER_VAN_INVAGEN_02_STATE_INVARIANT` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - State Invariant Kernel | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `PITER_VAN_INVAGEN_03_BOUNDARY_MAP` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Boundary Map | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `PITER_VAN_INVAGEN_04_COUNTEREXAMPLE_TEST` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Counterexample Test | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `PITER_VAN_INVAGEN_05_DATA_SHAPE` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Data Shape Discipline | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `PITER_VAN_INVAGEN_06_TRANSITION_GUARD` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Atomic Transition Guard | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `PITER_VAN_INVAGEN_07_REVIEW_BINARY` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Binary Review Criterion | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `PITER_VAN_INVAGEN_08_EVIDENCE_TRACE` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Evidence Trace | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `PITER_VAN_INVAGEN_09_PARALLEL_WORK` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - Parallel Conflict Shield | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `PITER_VAN_INVAGEN_10_RAG_CAPSULE` - Питер ван Инваген: Принцип специального вопроса композиции (когда части образуют целое) - RAG Doctrine Capsule | Material Beings / Ontology, Identity, and Modality - composition and identity | unreproducible runtime identity and weak RCA; personal failure mode: losing 'Принцип специального вопроса композиции (когда части образуют целое)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Питер ван Инваген-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-05_NECESSARY-IDENTITY`, используй этот файл для индивидуального акцента Питер ван Инваген: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-05_NECESSARY-IDENTITY.md`](../../BARCAN-TAG-05_NECESSARY-IDENTITY.md)
-- Строка философского принципа: `BARCAN-TAG-05_NECESSARY-IDENTITY.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-05_NECESSARY-IDENTITY` and needs the individual voice of Питер ван Инваген, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-09_MORAL-DILEMMA:03:richard-rorti"
 name_ru: "Ричард Рорти"
 barcan_tag: "BARCAN-TAG-09_MORAL-DILEMMA"
-barcan_role: "Systems Analyst / Technical Product Manager / Technical Lead"
+barcan_role: "MORAL-DILEMMA"
 source_file: "BARCAN-TAG-09_MORAL-DILEMMA.md"
 source_line: 26
 source_principle: "Неопрагматизм"
+publication_anchor: "Philosophy and the Mirror of Nature - anti-representationalism and pragmatism"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Ричард Рорти
 
-**BARCAN-роль:** `BARCAN-TAG-09_MORAL-DILEMMA` — Прагматический Медиатор (Technical Lead)
-**Инженерная роль:** Systems Analyst / Technical Product Manager / Technical Lead
-**Исходный принцип:** Неопрагматизм
-**Источник в проекте:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:26`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L26)
+**BARCAN tag:** `BARCAN-TAG-09_MORAL-DILEMMA` - MORAL-DILEMMA
+**Role focus:** Value, tradeoffs and waste prevention
+**Project role:** Systems Analyst / Technical Product Manager / Technical Lead
+**Source principle:** Неопрагматизм
+**Publication anchor:** Philosophy and the Mirror of Nature - anti-representationalism and pragmatism
+**Project source:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:26`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L26)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Безжалостное удаление `waste`. Технологии — лишь инструменты для достижения `lean_value`.
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `RICHARD_RORTI_01` — Неопрагматизм · Consequence-Backed JTBD | JTBD с доказанным последствием | задача описывает желание, но не эффект | требовать связь work item с измеримым последствием |
-| 2 | `RICHARD_RORTI_02` — Неопрагматизм · Holistic Impact Map | карта целостного влияния | локальная оптимизация ломает соседний поток | оценивать влияние на всю систему, а не модуль |
-| 3 | `RICHARD_RORTI_03` — Неопрагматизм · Waste Deletion Ledger | журнал удаления waste | команда автоматизирует ненужное действие | фиксировать, какой waste удалён и почему |
-| 4 | `RICHARD_RORTI_04` — Неопрагматизм · Desire-to-AC Translator | перевод желания в acceptance criteria | клиентская формулировка остаётся неоднозначной | превращать желание в проверяемые AC |
-| 5 | `RICHARD_RORTI_05` — Неопрагматизм · Reasoned Refusal Record | запись рационального отказа | отказ выглядит как настроение агента | обосновывать отказ constraint, risk или metric evidence |
-| 6 | `RICHARD_RORTI_06` — Неопрагматизм · Six Sigma Reality Probe | зонд реальности Six Sigma | улучшение заявлено без метрики вариации | привязывать улучшение к defect rate/variance/capability |
-| 7 | `RICHARD_RORTI_07` — Неопрагматизм · TOC Constraint Anchor | якорь ограничения TOC | работа улучшает не бутылочное горлышко | связывать задачу с текущим constraint |
-| 8 | `RICHARD_RORTI_08` — Неопрагматизм · Lean Value Hypothesis | гипотеза lean-ценности | фича создаёт output без value | формулировать value hypothesis до разработки |
-| 9 | `RICHARD_RORTI_09` — Неопрагматизм · Stakeholder Ambiguity Split | расщепление неоднозначности стейкхолдера | одна фраза скрывает несколько требований | разделять роли, права, стимулы и риски |
-| 10 | `RICHARD_RORTI_10` — Неопрагматизм · Decision Consequence Matrix | матрица последствий решения | архитектурный выбор не имеет видимой цены | сравнивать последствия accept/reject/defer |
+| 1 | `RICHARD_RORTI_01_NAME_GATE` - Ричард Рорти: Неопрагматизм - Semantic Naming Gate | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `RICHARD_RORTI_02_STATE_INVARIANT` - Ричард Рорти: Неопрагматизм - State Invariant Kernel | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `RICHARD_RORTI_03_BOUNDARY_MAP` - Ричард Рорти: Неопрагматизм - Boundary Map | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `RICHARD_RORTI_04_COUNTEREXAMPLE_TEST` - Ричард Рорти: Неопрагматизм - Counterexample Test | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `RICHARD_RORTI_05_DATA_SHAPE` - Ричард Рорти: Неопрагматизм - Data Shape Discipline | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `RICHARD_RORTI_06_TRANSITION_GUARD` - Ричард Рорти: Неопрагматизм - Atomic Transition Guard | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `RICHARD_RORTI_07_REVIEW_BINARY` - Ричард Рорти: Неопрагматизм - Binary Review Criterion | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `RICHARD_RORTI_08_EVIDENCE_TRACE` - Ричард Рорти: Неопрагматизм - Evidence Trace | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `RICHARD_RORTI_09_PARALLEL_WORK` - Ричард Рорти: Неопрагматизм - Parallel Conflict Shield | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `RICHARD_RORTI_10_RAG_CAPSULE` - Ричард Рорти: Неопрагматизм - RAG Doctrine Capsule | Philosophy and the Mirror of Nature - anti-representationalism and pragmatism | local optimization and wasteful scope; personal failure mode: losing 'Неопрагматизм' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Ричард Рорти-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-09_MORAL-DILEMMA`, используй этот файл для индивидуального акцента Ричард Рорти: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-09_MORAL-DILEMMA.md`](../../BARCAN-TAG-09_MORAL-DILEMMA.md)
-- Строка философского принципа: `BARCAN-TAG-09_MORAL-DILEMMA.md:26`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-09_MORAL-DILEMMA` and needs the individual voice of Ричард Рорти, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

@@ -1,6 +1,6 @@
-# Индекс философов и уникальных паттернов
+# Philosopher Pattern Index
 
-| # | BARCAN tag | Философ | Принцип | Файл |
+| # | BARCAN tag | Philosopher | Principle | File |
 |---:|---|---|---|---|
 | 1 | `BARCAN-TAG-00_CODE-GUARDIAN` | Людвиг Витгенштейн | Принцип языковых игр | [`BARCAN-TAG-00_CODE-GUARDIAN_01_lyudvig-vitgenshteyn.md`](philosophers/BARCAN-TAG-00_CODE-GUARDIAN_01_lyudvig-vitgenshteyn.md) |
 | 2 | `BARCAN-TAG-00_CODE-GUARDIAN` | Гилберт Райл | Принцип различия «знать что» и «знать как» | [`BARCAN-TAG-00_CODE-GUARDIAN_02_gilbert-rayl.md`](philosophers/BARCAN-TAG-00_CODE-GUARDIAN_02_gilbert-rayl.md) |

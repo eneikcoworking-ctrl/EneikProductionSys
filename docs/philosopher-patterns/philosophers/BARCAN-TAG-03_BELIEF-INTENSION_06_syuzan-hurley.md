@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-03_BELIEF-INTENSION:06:syuzan-hurley"
 name_ru: "Сюзан Hurley"
 barcan_tag: "BARCAN-TAG-03_BELIEF-INTENSION"
-barcan_role: "UI/UX Designer / Product Designer"
+barcan_role: "BELIEF-INTENSION"
 source_file: "BARCAN-TAG-03_BELIEF-INTENSION.md"
 source_line: 44
 source_principle: "Принцип динамической обратной связи"
+publication_anchor: "Consciousness in Action - dynamic perception-action feedback"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Сюзан Hurley
 
-**BARCAN-роль:** `BARCAN-TAG-03_BELIEF-INTENSION` — Интенсиональный Навигатор
-**Инженерная роль:** UI/UX Designer / Product Designer
-**Исходный принцип:** Принцип динамической обратной связи
-**Источник в проекте:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:44`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L44)
+**BARCAN tag:** `BARCAN-TAG-03_BELIEF-INTENSION` - BELIEF-INTENSION
+**Role focus:** UX intention, perception and cognitive load
+**Project role:** UI/UX Designer / Product Designer
+**Source principle:** Принцип динамической обратной связи
+**Publication anchor:** Consciousness in Action - dynamic perception-action feedback
+**Project source:** [`BARCAN-TAG-03_BELIEF-INTENSION.md:44`](../../BARCAN-TAG-03_BELIEF-INTENSION.md#L44)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Цикл «действие-реакция» должен быть немедленным для поддержания чувства агентности пользователя и уверенности в совершённом акте
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `SYUZAN_HURLEY_01` — динамической обратной связи · Target Acquisition Budget | бюджет попадания в цель | маленькие и далёкие элементы создают ошибочные клики | назначать минимальные размеры и расстояния для важных действий |
-| 2 | `SYUZAN_HURLEY_02` — динамической обратной связи · Immediate Feedback Circuit | немедленная петля обратной связи | пользователь повторяет действие из-за отсутствия отклика | каждое действие должно иметь visible state change |
-| 3 | `SYUZAN_HURLEY_03` — динамической обратной связи · Chunked Attention Limit | лимит чанков внимания | экран превышает рабочую память | группировать объекты в малые смысловые блоки |
-| 4 | `SYUZAN_HURLEY_04` — динамической обратной связи · Gestalt Route Marking | маркировка визуального маршрута | взгляд не понимает следующий шаг | строить путь через proximity/similarity/continuity |
-| 5 | `SYUZAN_HURLEY_05` — динамической обратной связи · Habitual Control Placement | расположение по ментальной привычке | пользователь ищет действие там, где оно обычно живёт | не переносить критичные controls без причины |
-| 6 | `SYUZAN_HURLEY_06` — динамической обратной связи · State Completeness Matrix | матрица состояний компонента | hover/focus/error/loading забыты и ломают агентность | проверять все интерактивные состояния компонента |
-| 7 | `SYUZAN_HURLEY_07` — динамической обратной связи · Cognitive Noise Redline | красная линия когнитивного шума | декор конкурирует с задачей | удалять визуальные элементы без функционального различия |
-| 8 | `SYUZAN_HURLEY_08` — динамической обратной связи · Progressive Disclosure Ladder | лестница постепенного раскрытия | сложность показывается раньше готовности пользователя | раскрывать детали по мере намерения |
-| 9 | `SYUZAN_HURLEY_09` — динамической обратной связи · Perception Accessibility Probe | проверка воспринимаемой доступности | формально доступный интерфейс остаётся непонятным | тестировать keyboard/screen reader/cognitive clarity |
-| 10 | `SYUZAN_HURLEY_10` — динамической обратной связи · Latency Illusion Bridge | мост через задержку восприятия | пауза воспринимается как поломка | использовать skeleton/progress/optimistic state при задержках |
+| 1 | `SYUZAN_HURLEY_01_NAME_GATE` - Сюзан Hurley: Принцип динамической обратной связи - Semantic Naming Gate | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `SYUZAN_HURLEY_02_STATE_INVARIANT` - Сюзан Hurley: Принцип динамической обратной связи - State Invariant Kernel | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `SYUZAN_HURLEY_03_BOUNDARY_MAP` - Сюзан Hurley: Принцип динамической обратной связи - Boundary Map | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `SYUZAN_HURLEY_04_COUNTEREXAMPLE_TEST` - Сюзан Hurley: Принцип динамической обратной связи - Counterexample Test | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `SYUZAN_HURLEY_05_DATA_SHAPE` - Сюзан Hurley: Принцип динамической обратной связи - Data Shape Discipline | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `SYUZAN_HURLEY_06_TRANSITION_GUARD` - Сюзан Hurley: Принцип динамической обратной связи - Atomic Transition Guard | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `SYUZAN_HURLEY_07_REVIEW_BINARY` - Сюзан Hurley: Принцип динамической обратной связи - Binary Review Criterion | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `SYUZAN_HURLEY_08_EVIDENCE_TRACE` - Сюзан Hurley: Принцип динамической обратной связи - Evidence Trace | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `SYUZAN_HURLEY_09_PARALLEL_WORK` - Сюзан Hurley: Принцип динамической обратной связи - Parallel Conflict Shield | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `SYUZAN_HURLEY_10_RAG_CAPSULE` - Сюзан Hurley: Принцип динамической обратной связи - RAG Doctrine Capsule | Consciousness in Action - dynamic perception-action feedback | cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Сюзан Hurley-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-03_BELIEF-INTENSION`, используй этот файл для индивидуального акцента Сюзан Hurley: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-03_BELIEF-INTENSION.md`](../../BARCAN-TAG-03_BELIEF-INTENSION.md)
-- Строка философского принципа: `BARCAN-TAG-03_BELIEF-INTENSION.md:44`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-03_BELIEF-INTENSION` and needs the individual voice of Сюзан Hurley, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

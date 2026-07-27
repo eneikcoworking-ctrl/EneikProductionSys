@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-04_MODAL-QUANTIFIER:05:ien-haking"
 name_ru: "Иэн Хакинг"
 barcan_tag: "BARCAN-TAG-04_MODAL-QUANTIFIER"
-barcan_role: "Data Scientist / ML Engineer"
+barcan_role: "MODAL-QUANTIFIER"
 source_file: "BARCAN-TAG-04_MODAL-QUANTIFIER.md"
 source_line: 42
 source_principle: "Принцип исторической обусловленности статистического измерения"
+publication_anchor: "Representing and Intervening - experiment, measurement and intervention"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Иэн Хакинг
 
-**BARCAN-роль:** `BARCAN-TAG-04_MODAL-QUANTIFIER` — Байесианский Предиктор
-**Инженерная роль:** Data Scientist / ML Engineer
-**Исходный принцип:** Принцип исторической обусловленности статистического измерения
-**Источник в проекте:** [`BARCAN-TAG-04_MODAL-QUANTIFIER.md:42`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md#L42)
+**BARCAN tag:** `BARCAN-TAG-04_MODAL-QUANTIFIER` - MODAL-QUANTIFIER
+**Role focus:** Prediction evidence, uncertainty and model trust
+**Project role:** Data Scientist / ML Engineer
+**Source principle:** Принцип исторической обусловленности статистического измерения
+**Publication anchor:** Representing and Intervening - experiment, measurement and intervention
+**Project source:** [`BARCAN-TAG-04_MODAL-QUANTIFIER.md:42`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Метрика существует только в контексте конкретного способа её измерения (какой holdout, какая разметка). Смена методологии измерения без пересчёта baseline делает сравнение метрик невалидным, даже если числа выглядят сопоставимо
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `IEN_HAKING_01` — исторической обусловленности статистического измерения · Holdout Wager Threshold | порог ставки на holdout | модель деплоится по красивой, но слабой метрике | задавать численный порог выигрыша до обучения |
-| 2 | `IEN_HAKING_02` — исторической обусловленности статистического измерения · Drift Belief Update | обновление доверия при drift | модель считается прежней после смены распределения | пересчитывать доверие по drift signals |
-| 3 | `IEN_HAKING_03` — исторической обусловленности статистического измерения · Epistemic Status Label | метка статуса знания | ASSUMED выдаётся за VERIFIED | маркировать вывод как VERIFIED/INFERRED/ASSUMED |
-| 4 | `IEN_HAKING_04` — исторической обусловленности статистического измерения · OOD Humility Fence | ограда смирения вне распределения | модель уверенно отвечает вне зоны наблюдения | понижать статус прогноза на OOD input |
-| 5 | `IEN_HAKING_05` — исторической обусловленности статистического измерения · Metric Method Version | версия метода измерения | baseline сравнивается после смены разметки | версировать holdout, labeling policy и scorer |
-| 6 | `IEN_HAKING_06` — исторической обусловленности статистического измерения · Parsimony Upgrade Rule | правило экономного усложнения | pipeline усложняется без доказанного прироста | добавлять слой только после измеримого выигрыша |
-| 7 | `IEN_HAKING_07` — исторической обусловленности статистического измерения · Model Card Truth Table | таблица истинности model card | пользователь не знает границ модели | фиксировать use cases, non-use cases и evidence |
-| 8 | `IEN_HAKING_08` — исторической обусловленности статистического измерения · Calibration Curve Gate | ворота калибровочной кривой | вероятность не соответствует частоте ошибок | проверять calibration перед production decision |
-| 9 | `IEN_HAKING_09` — исторической обусловленности статистического измерения · Feature Leakage Trial | разбирательство утечки признаков | модель выигрывает за счёт будущего или запрещённого сигнала | проверять причинную доступность каждого признака |
-| 10 | `IEN_HAKING_10` — исторической обусловленности статистического измерения · Dataset Split Seal | печать неизменяемого split | train/test граница двигается под желаемый результат | фиксировать split до эксперимента и хранить hash |
+| 1 | `IEN_HAKING_01_NAME_GATE` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Semantic Naming Gate | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `IEN_HAKING_02_STATE_INVARIANT` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - State Invariant Kernel | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `IEN_HAKING_03_BOUNDARY_MAP` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Boundary Map | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `IEN_HAKING_04_COUNTEREXAMPLE_TEST` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Counterexample Test | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `IEN_HAKING_05_DATA_SHAPE` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Data Shape Discipline | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `IEN_HAKING_06_TRANSITION_GUARD` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Atomic Transition Guard | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `IEN_HAKING_07_REVIEW_BINARY` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Binary Review Criterion | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `IEN_HAKING_08_EVIDENCE_TRACE` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Evidence Trace | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `IEN_HAKING_09_PARALLEL_WORK` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - Parallel Conflict Shield | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `IEN_HAKING_10_RAG_CAPSULE` - Иэн Хакинг: Принцип исторической обусловленности статистического измерения - RAG Doctrine Capsule | Representing and Intervening - experiment, measurement and intervention | false certainty in predictions; personal failure mode: losing 'Принцип исторической обусловленности статистического измерения' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Иэн Хакинг-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-04_MODAL-QUANTIFIER`, используй этот файл для индивидуального акцента Иэн Хакинг: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-04_MODAL-QUANTIFIER.md`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md)
-- Строка философского принципа: `BARCAN-TAG-04_MODAL-QUANTIFIER.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-04_MODAL-QUANTIFIER` and needs the individual voice of Иэн Хакинг, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

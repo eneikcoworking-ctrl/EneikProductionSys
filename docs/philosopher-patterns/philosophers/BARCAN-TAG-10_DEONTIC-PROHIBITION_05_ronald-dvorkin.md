@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-10_DEONTIC-PROHIBITION:05:ronald-dvorkin"
 name_ru: "Рональд Дворкин"
 barcan_tag: "BARCAN-TAG-10_DEONTIC-PROHIBITION"
-barcan_role: "Data Governance / Compliance Engineer"
+barcan_role: "DEONTIC-PROHIBITION"
 source_file: "BARCAN-TAG-10_DEONTIC-PROHIBITION.md"
 source_line: 42
 source_principle: "Принцип права как целостности (law as integrity)"
+publication_anchor: "Taking Rights Seriously / Law's Empire - principles and integrity"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Рональд Дворкин
 
-**BARCAN-роль:** `BARCAN-TAG-10_DEONTIC-PROHIBITION` — Нормативный Контролер
-**Инженерная роль:** Data Governance / Compliance Engineer
-**Исходный принцип:** Принцип права как целостности (law as integrity)
-**Источник в проекте:** [`BARCAN-TAG-10_DEONTIC-PROHIBITION.md:42`](../../BARCAN-TAG-10_DEONTIC-PROHIBITION.md#L42)
+**BARCAN tag:** `BARCAN-TAG-10_DEONTIC-PROHIBITION` - DEONTIC-PROHIBITION
+**Role focus:** Compliance, prohibitions and rule systems
+**Project role:** Data Governance / Compliance Engineer
+**Source principle:** Принцип права как целостности (law as integrity)
+**Publication anchor:** Taking Rights Seriously / Law's Empire - principles and integrity
+**Project source:** [`BARCAN-TAG-10_DEONTIC-PROHIBITION.md:42`](../../BARCAN-TAG-10_DEONTIC-PROHIBITION.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> В пограничном случае (новый тип данных, буквально не описанный в законе) агент не останавливается на «буква закона не запрещает» — интерпретирует по принципам, лежащим в основе регулирования (защита субъекта), а не только по формальному тексту
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `RONALD_DVORKIN_01` — права как целостности · Deontic Rule Encoding | кодирование нормы как O/P/F | правило невозможно проверить автоматически | переводить норму в Obligatory/Permitted/Forbidden |
-| 2 | `RONALD_DVORKIN_02` — права как целостности · Jurisdiction Applicability Trial | проверка применимости юрисдикции | команда цитирует закон вне области применения | фиксировать jurisdiction, data subject, controller/processor role |
-| 3 | `RONALD_DVORKIN_03` — права как целостности · Compliance Override Shield | щит исключающей причины | скорость релиза конкурирует с запретом | комплаенс-блокер не взвешивать как обычный tradeoff |
-| 4 | `RONALD_DVORKIN_04` — права как целостности · Right-Duty Data Pair | пара право-обязанность для данных | право субъекта не превращено в обязанность системы | мапить каждое право на конкретные storage actions |
-| 5 | `RONALD_DVORKIN_05` — права как целостности · Integrity Interpretation Note | примечание интерпретации по целостности | пограничный случай решается только буквой нормы | добавлять rationale по принципу защиты субъекта |
-| 6 | `RONALD_DVORKIN_06` — права как целостности · Formal Exception Docket | формальное дело исключения | исключение вводится ситуативно | оформлять исключения отдельной политикой и сроком |
-| 7 | `RONALD_DVORKIN_07` — права как целостности · RoPA Coverage Gate | ворота покрытия RoPA | категория данных не отражена в реестре | блокировать обработку без RoPA entry |
-| 8 | `RONALD_DVORKIN_08` — права как целостности · PIA Trigger Matrix | матрица триггеров PIA | новый риск приватности не запускает оценку | автоматически запускать PIA по типу данных/цели/масштабу |
-| 9 | `RONALD_DVORKIN_09` — права как целостности · Retention Enforcement Hook | крюк исполнения срока хранения | policy есть, удаления нет | связывать retention rule с scheduled deletion job |
-| 10 | `RONALD_DVORKIN_10` — права как целостности · Backup Erasure Proof | доказательство удаления из backup | данные удалены из БД, но живут в копиях | фиксировать стратегию удаления/истечения в backup layer |
+| 1 | `RONALD_DVORKIN_01_NAME_GATE` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Semantic Naming Gate | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `RONALD_DVORKIN_02_STATE_INVARIANT` - Рональд Дворкин: Принцип права как целостности (law as integrity) - State Invariant Kernel | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `RONALD_DVORKIN_03_BOUNDARY_MAP` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Boundary Map | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `RONALD_DVORKIN_04_COUNTEREXAMPLE_TEST` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Counterexample Test | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `RONALD_DVORKIN_05_DATA_SHAPE` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Data Shape Discipline | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `RONALD_DVORKIN_06_TRANSITION_GUARD` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Atomic Transition Guard | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `RONALD_DVORKIN_07_REVIEW_BINARY` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Binary Review Criterion | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `RONALD_DVORKIN_08_EVIDENCE_TRACE` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Evidence Trace | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `RONALD_DVORKIN_09_PARALLEL_WORK` - Рональд Дворкин: Принцип права как целостности (law as integrity) - Parallel Conflict Shield | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `RONALD_DVORKIN_10_RAG_CAPSULE` - Рональд Дворкин: Принцип права как целостности (law as integrity) - RAG Doctrine Capsule | Taking Rights Seriously / Law's Empire - principles and integrity | policy bypass and ambiguous prohibition; personal failure mode: losing 'Принцип права как целостности (law as integrity)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Рональд Дворкин-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-10_DEONTIC-PROHIBITION`, используй этот файл для индивидуального акцента Рональд Дворкин: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-10_DEONTIC-PROHIBITION.md`](../../BARCAN-TAG-10_DEONTIC-PROHIBITION.md)
-- Строка философского принципа: `BARCAN-TAG-10_DEONTIC-PROHIBITION.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-10_DEONTIC-PROHIBITION` and needs the individual voice of Рональд Дворкин, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

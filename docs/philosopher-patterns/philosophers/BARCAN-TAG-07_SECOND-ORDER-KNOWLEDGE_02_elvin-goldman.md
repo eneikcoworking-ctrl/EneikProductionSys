@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE:02:elvin-goldman"
 name_ru: "Элвин Голдман"
 barcan_tag: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE"
-barcan_role: "AppSec / DevSecOps Engineer"
+barcan_role: "SECOND-ORDER-KNOWLEDGE"
 source_file: "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md"
 source_line: 31
 source_principle: "Принцип релайабилизма процессов"
+publication_anchor: "A Causal Theory of Knowing / Epistemology and Cognition - reliabilism"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Элвин Голдман
 
-**BARCAN-роль:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` — Эпистемический Страж
-**Инженерная роль:** AppSec / DevSecOps Engineer
-**Исходный принцип:** Принцип релайабилизма процессов
-**Источник в проекте:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:31`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L31)
+**BARCAN tag:** `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` - SECOND-ORDER-KNOWLEDGE
+**Role focus:** Security, validation and proof of authority
+**Project role:** AppSec / DevSecOps Engineer
+**Source principle:** Принцип релайабилизма процессов
+**Publication anchor:** A Causal Theory of Knowing / Epistemology and Cognition - reliabilism
+**Project source:** [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:31`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md#L31)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Верификация надёжности источников запросов. Перед доступом — проверка всей цепочки: подписи, токены, контекст вызова
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `ELVIN_GOLDMAN_01` — релайабилизма процессов · Knowledge Proof Gate | ворота доказательства знания | доступ выдан без доказательства полномочия | проверять факт права без раскрытия лишних данных |
-| 2 | `ELVIN_GOLDMAN_02` — релайабилизма процессов · Trust Chain Audit | аудит цепочки доверия | токен принят без проверки источника | валидировать подпись, issuer, audience, expiry и context |
-| 3 | `ELVIN_GOLDMAN_03` — релайабилизма процессов · Risk-Adaptive Challenge | адаптивный вызов при риске | одинаковые требования для безопасной и рискованной ситуации | усиливать MFA/re-auth при росте риска |
-| 4 | `ELVIN_GOLDMAN_04` — релайабилизма процессов · Hostile Request Default | враждебный запрос по умолчанию | периметр считается безопасным | проверять каждый internal call как внешний |
-| 5 | `ELVIN_GOLDMAN_05` — релайабилизма процессов · Metadata Secrecy Guard | защита метаданных | логи и headers раскрывают структуру системы | шифровать или редактировать служебные каналы |
-| 6 | `ELVIN_GOLDMAN_06` — релайабилизма процессов · Scanner Blocking Covenant | завет блокирующего сканера | SAST/DAST остаётся рекомендацией | делать критичные findings merge-blocking |
-| 7 | `ELVIN_GOLDMAN_07` — релайабилизма процессов · Secret Absence Proof | доказательство отсутствия секрета | ключ попадает в код или лог | сканировать commits, images и runtime env |
-| 8 | `ELVIN_GOLDMAN_08` — релайабилизма процессов · Token Scope Diet | диета области токена | токен может больше, чем нужно действию | урезать scopes до конкретного use case |
-| 9 | `ELVIN_GOLDMAN_09` — релайабилизма процессов · Privileged Re-Auth Moment | момент повторной авторизации | высокорисковое действие наследует старую сессию | требовать re-auth перед destructive/admin commands |
-| 10 | `ELVIN_GOLDMAN_10` — релайабилизма процессов · Tamper-Evident Security Event | событие безопасности с защитой от подмены | атаку нельзя доказать после изменения логов | писать security events в неизменяемый audit stream |
+| 1 | `ELVIN_GOLDMAN_01_NAME_GATE` - Элвин Голдман: Принцип релайабилизма процессов - Semantic Naming Gate | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `ELVIN_GOLDMAN_02_STATE_INVARIANT` - Элвин Голдман: Принцип релайабилизма процессов - State Invariant Kernel | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `ELVIN_GOLDMAN_03_BOUNDARY_MAP` - Элвин Голдман: Принцип релайабилизма процессов - Boundary Map | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `ELVIN_GOLDMAN_04_COUNTEREXAMPLE_TEST` - Элвин Голдман: Принцип релайабилизма процессов - Counterexample Test | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `ELVIN_GOLDMAN_05_DATA_SHAPE` - Элвин Голдман: Принцип релайабилизма процессов - Data Shape Discipline | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `ELVIN_GOLDMAN_06_TRANSITION_GUARD` - Элвин Голдман: Принцип релайабилизма процессов - Atomic Transition Guard | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `ELVIN_GOLDMAN_07_REVIEW_BINARY` - Элвин Голдман: Принцип релайабилизма процессов - Binary Review Criterion | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `ELVIN_GOLDMAN_08_EVIDENCE_TRACE` - Элвин Голдман: Принцип релайабилизма процессов - Evidence Trace | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `ELVIN_GOLDMAN_09_PARALLEL_WORK` - Элвин Голдман: Принцип релайабилизма процессов - Parallel Conflict Shield | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `ELVIN_GOLDMAN_10_RAG_CAPSULE` - Элвин Голдман: Принцип релайабилизма процессов - RAG Doctrine Capsule | A Causal Theory of Knowing / Epistemology and Cognition - reliabilism | authorization and validation blind spots; personal failure mode: losing 'Принцип релайабилизма процессов' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Элвин Голдман-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE`, используй этот файл для индивидуального акцента Элвин Голдман: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md`](../../BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md)
-- Строка философского принципа: `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE.md:31`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE` and needs the individual voice of Элвин Голдман, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

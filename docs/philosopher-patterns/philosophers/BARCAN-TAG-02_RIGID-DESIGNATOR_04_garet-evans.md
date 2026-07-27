@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-02_RIGID-DESIGNATOR:04:garet-evans"
 name_ru: "Гарет Эванс"
 barcan_tag: "BARCAN-TAG-02_RIGID-DESIGNATOR"
-barcan_role: "Backend / Integration Engineer"
+barcan_role: "RIGID-DESIGNATOR"
 source_file: "BARCAN-TAG-02_RIGID-DESIGNATOR.md"
 source_line: 41
 source_principle: "Принцип причинной референции"
+publication_anchor: "The Varieties of Reference - causal/informational constraints on reference"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Гарет Эванс
 
-**BARCAN-роль:** `BARCAN-TAG-02_RIGID-DESIGNATOR` — Семантический Транслятор
-**Инженерная роль:** Backend / Integration Engineer
-**Исходный принцип:** Принцип причинной референции
-**Источник в проекте:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:41`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L41)
+**BARCAN tag:** `BARCAN-TAG-02_RIGID-DESIGNATOR` - RIGID-DESIGNATOR
+**Role focus:** API contracts, naming and semantic stability
+**Project role:** Backend / Integration Engineer
+**Source principle:** Принцип причинной референции
+**Publication anchor:** The Varieties of Reference - causal/informational constraints on reference
+**Project source:** [`BARCAN-TAG-02_RIGID-DESIGNATOR.md:41`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md#L41)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Строгое соблюдение исторической преемственности именований. Хаотичное переименование полей, обрывающее связь с интеграциями — запрещено
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `GARET_EVANS_01` — причинной референции · Identifier Meaning Freeze | заморозка смысла идентификатора | одно имя начинает означать разные вещи | фиксировать значение публичных имён во всех окружениях |
-| 2 | `GARET_EVANS_02` — причинной референции · External-Internal Sense Mapper | мапер внутреннего и внешнего смысла | изменение реализации ломает внешний договор | держать внешний контракт стабильным через граничный mapper |
-| 3 | `GARET_EVANS_03` — причинной референции · Context Propagation Receipt | квитанция передачи контекста | контекст пользователя теряется в распределённом вызове | передавать session/locale/auth как явный пакет |
-| 4 | `GARET_EVANS_04` — причинной референции · Rename Causal Ledger | каузальный журнал переименования | новое имя обрывает интеграционную историю | сопровождать переименование alias/deprecation/migration notes |
-| 5 | `GARET_EVANS_05` — причинной референции · Indexical Context Capsule | капсула индексикальных значений | timezone или locale смешиваются между пользователями | изолировать контекстно-зависимые значения на запрос |
-| 6 | `GARET_EVANS_06` — причинной референции · Boundary Pressure Shield | экран внешнего прагматического давления | внешняя система проталкивает свои хаотичные значения внутрь | нормализовать данные только на границе |
-| 7 | `GARET_EVANS_07` — причинной референции · Compatibility Diff Trial | суд над diff публичного контракта | малый diff становится breaking change | проверять OpenAPI/JSON Schema diff до merge |
-| 8 | `GARET_EVANS_08` — причинной референции · Consumer Expectation Replay | повтор ожиданий потребителей | backend считает контракт совместимым без проверки клиентов | прогонять consumer tests для значимых контрактов |
-| 9 | `GARET_EVANS_09` — причинной референции · Error Meaning Registry | реестр значений ошибок | один код ошибки используется для разных ситуаций | фиксировать код, смысл, recoverability и UX-сообщение |
-| 10 | `GARET_EVANS_10` — причинной референции · Authorization Context Seal | печать контекста авторизации | роль или tenant подменяется между слоями | подписывать и проверять auth context на границах |
+| 1 | `GARET_EVANS_01_NAME_GATE` - Гарет Эванс: Принцип причинной референции - Semantic Naming Gate | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `GARET_EVANS_02_STATE_INVARIANT` - Гарет Эванс: Принцип причинной референции - State Invariant Kernel | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `GARET_EVANS_03_BOUNDARY_MAP` - Гарет Эванс: Принцип причинной референции - Boundary Map | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `GARET_EVANS_04_COUNTEREXAMPLE_TEST` - Гарет Эванс: Принцип причинной референции - Counterexample Test | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `GARET_EVANS_05_DATA_SHAPE` - Гарет Эванс: Принцип причинной референции - Data Shape Discipline | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `GARET_EVANS_06_TRANSITION_GUARD` - Гарет Эванс: Принцип причинной референции - Atomic Transition Guard | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `GARET_EVANS_07_REVIEW_BINARY` - Гарет Эванс: Принцип причинной референции - Binary Review Criterion | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `GARET_EVANS_08_EVIDENCE_TRACE` - Гарет Эванс: Принцип причинной референции - Evidence Trace | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `GARET_EVANS_09_PARALLEL_WORK` - Гарет Эванс: Принцип причинной референции - Parallel Conflict Shield | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `GARET_EVANS_10_RAG_CAPSULE` - Гарет Эванс: Принцип причинной референции - RAG Doctrine Capsule | The Varieties of Reference - causal/informational constraints on reference | breaking API and naming drift; personal failure mode: losing 'Принцип причинной референции' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Гарет Эванс-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-02_RIGID-DESIGNATOR`, используй этот файл для индивидуального акцента Гарет Эванс: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-02_RIGID-DESIGNATOR.md`](../../BARCAN-TAG-02_RIGID-DESIGNATOR.md)
-- Строка философского принципа: `BARCAN-TAG-02_RIGID-DESIGNATOR.md:41`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-02_RIGID-DESIGNATOR` and needs the individual voice of Гарет Эванс, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

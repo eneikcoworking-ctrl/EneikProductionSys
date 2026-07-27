@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-09_MORAL-DILEMMA:02:uillard-kuayn"
 name_ru: "Уиллард Куайн"
 barcan_tag: "BARCAN-TAG-09_MORAL-DILEMMA"
-barcan_role: "Systems Analyst / Technical Product Manager / Technical Lead"
+barcan_role: "MORAL-DILEMMA"
 source_file: "BARCAN-TAG-09_MORAL-DILEMMA.md"
 source_line: 25
 source_principle: "Архитектурный холизм"
+publication_anchor: "Two Dogmas of Empiricism / Word and Object - holism and indeterminacy"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Уиллард Куайн
 
-**BARCAN-роль:** `BARCAN-TAG-09_MORAL-DILEMMA` — Прагматический Медиатор (Technical Lead)
-**Инженерная роль:** Systems Analyst / Technical Product Manager / Technical Lead
-**Исходный принцип:** Архитектурный холизм
-**Источник в проекте:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:25`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L25)
+**BARCAN tag:** `BARCAN-TAG-09_MORAL-DILEMMA` - MORAL-DILEMMA
+**Role focus:** Value, tradeoffs and waste prevention
+**Project role:** Systems Analyst / Technical Product Manager / Technical Lead
+**Source principle:** Архитектурный холизм
+**Publication anchor:** Two Dogmas of Empiricism / Word and Object - holism and indeterminacy
+**Project source:** [`BARCAN-TAG-09_MORAL-DILEMMA.md:25`](../../BARCAN-TAG-09_MORAL-DILEMMA.md#L25)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Любая фича меняет всю систему. `toc_constraint_ref` защищает систему от локальных оптимизаций.
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `UILLARD_KUAYN_01` — Архитектурный холизм · Consequence-Backed JTBD | JTBD с доказанным последствием | задача описывает желание, но не эффект | требовать связь work item с измеримым последствием |
-| 2 | `UILLARD_KUAYN_02` — Архитектурный холизм · Holistic Impact Map | карта целостного влияния | локальная оптимизация ломает соседний поток | оценивать влияние на всю систему, а не модуль |
-| 3 | `UILLARD_KUAYN_03` — Архитектурный холизм · Waste Deletion Ledger | журнал удаления waste | команда автоматизирует ненужное действие | фиксировать, какой waste удалён и почему |
-| 4 | `UILLARD_KUAYN_04` — Архитектурный холизм · Desire-to-AC Translator | перевод желания в acceptance criteria | клиентская формулировка остаётся неоднозначной | превращать желание в проверяемые AC |
-| 5 | `UILLARD_KUAYN_05` — Архитектурный холизм · Reasoned Refusal Record | запись рационального отказа | отказ выглядит как настроение агента | обосновывать отказ constraint, risk или metric evidence |
-| 6 | `UILLARD_KUAYN_06` — Архитектурный холизм · Six Sigma Reality Probe | зонд реальности Six Sigma | улучшение заявлено без метрики вариации | привязывать улучшение к defect rate/variance/capability |
-| 7 | `UILLARD_KUAYN_07` — Архитектурный холизм · TOC Constraint Anchor | якорь ограничения TOC | работа улучшает не бутылочное горлышко | связывать задачу с текущим constraint |
-| 8 | `UILLARD_KUAYN_08` — Архитектурный холизм · Lean Value Hypothesis | гипотеза lean-ценности | фича создаёт output без value | формулировать value hypothesis до разработки |
-| 9 | `UILLARD_KUAYN_09` — Архитектурный холизм · Stakeholder Ambiguity Split | расщепление неоднозначности стейкхолдера | одна фраза скрывает несколько требований | разделять роли, права, стимулы и риски |
-| 10 | `UILLARD_KUAYN_10` — Архитектурный холизм · Decision Consequence Matrix | матрица последствий решения | архитектурный выбор не имеет видимой цены | сравнивать последствия accept/reject/defer |
+| 1 | `UILLARD_KUAYN_01_NAME_GATE` - Уиллард Куайн: Архитектурный холизм - Semantic Naming Gate | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `UILLARD_KUAYN_02_STATE_INVARIANT` - Уиллард Куайн: Архитектурный холизм - State Invariant Kernel | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `UILLARD_KUAYN_03_BOUNDARY_MAP` - Уиллард Куайн: Архитектурный холизм - Boundary Map | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `UILLARD_KUAYN_04_COUNTEREXAMPLE_TEST` - Уиллард Куайн: Архитектурный холизм - Counterexample Test | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `UILLARD_KUAYN_05_DATA_SHAPE` - Уиллард Куайн: Архитектурный холизм - Data Shape Discipline | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `UILLARD_KUAYN_06_TRANSITION_GUARD` - Уиллард Куайн: Архитектурный холизм - Atomic Transition Guard | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `UILLARD_KUAYN_07_REVIEW_BINARY` - Уиллард Куайн: Архитектурный холизм - Binary Review Criterion | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `UILLARD_KUAYN_08_EVIDENCE_TRACE` - Уиллард Куайн: Архитектурный холизм - Evidence Trace | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `UILLARD_KUAYN_09_PARALLEL_WORK` - Уиллард Куайн: Архитектурный холизм - Parallel Conflict Shield | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `UILLARD_KUAYN_10_RAG_CAPSULE` - Уиллард Куайн: Архитектурный холизм - RAG Doctrine Capsule | Two Dogmas of Empiricism / Word and Object - holism and indeterminacy | local optimization and wasteful scope; personal failure mode: losing 'Архитектурный холизм' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Уиллард Куайн-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-09_MORAL-DILEMMA`, используй этот файл для индивидуального акцента Уиллард Куайн: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-09_MORAL-DILEMMA.md`](../../BARCAN-TAG-09_MORAL-DILEMMA.md)
-- Строка философского принципа: `BARCAN-TAG-09_MORAL-DILEMMA.md:25`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-09_MORAL-DILEMMA` and needs the individual voice of Уиллард Куайн, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

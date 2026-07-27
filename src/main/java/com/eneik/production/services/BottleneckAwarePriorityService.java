@@ -24,18 +24,25 @@ public class BottleneckAwarePriorityService {
     private final BottleneckDetectionService bottleneckDetectionService;
     private final TaskRepository taskRepository;
     private final ClaimService claimService;
+    private final com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
     public BottleneckAwarePriorityService(BottleneckDetectionService bottleneckDetectionService,
                                           TaskRepository taskRepository,
-                                          ClaimService claimService) {
+                                          ClaimService claimService,
+                                          com.eneik.production.toc.service.TocSentinelService tocSentinelService) {
         this.bottleneckDetectionService = bottleneckDetectionService;
         this.taskRepository = taskRepository;
         this.claimService = claimService;
+        this.tocSentinelService = tocSentinelService;
     }
 
     public int computePriority(String tocConstraintRef) {
         if (tocConstraintRef == null || tocConstraintRef.isBlank()) {
             return DEFAULT_PRIORITY;
+        }
+
+        if (tocSentinelService != null && tocConstraintRef.equalsIgnoreCase(tocSentinelService.getCurrentConstraintName())) {
+            return HIGH_PRIORITY;
         }
 
         List<BottleneckDto> activeBottlenecks = bottleneckDetectionService.detect();
@@ -70,6 +77,13 @@ public class BottleneckAwarePriorityService {
                 return builder.build();
             })
             .collect(Collectors.toSet());
+
+        if (tocSentinelService != null) {
+            String activeConstraint = tocSentinelService.getCurrentConstraintName();
+            if (activeConstraint != null && !"NONE".equals(activeConstraint)) {
+                bottleneckRefs.add(activeConstraint);
+            }
+        }
 
         claimService.refreshQueuedTasksPriority(bottleneckRefs, HIGH_PRIORITY);
     }

@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-11_CLIENT-PERCEPTION:04:kristofer-pikok"
 name_ru: "Кристофер Пикок"
 barcan_tag: "BARCAN-TAG-11_CLIENT-PERCEPTION"
-barcan_role: "Frontend Engineer"
+barcan_role: "CLIENT-PERCEPTION"
 source_file: "BARCAN-TAG-11_CLIENT-PERCEPTION.md"
 source_line: 42
 source_principle: "Принцип пространственной интуиции"
+publication_anchor: "Sense and Content / A Study of Concepts - conceptual content"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Кристофер Пикок
 
-**BARCAN-роль:** `BARCAN-TAG-11_CLIENT-PERCEPTION` — Феноменальный Верстальщик
-**Инженерная роль:** Frontend Engineer
-**Исходный принцип:** Принцип пространственной интуиции
-**Источник в проекте:** [`BARCAN-TAG-11_CLIENT-PERCEPTION.md:42`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md#L42)
+**BARCAN tag:** `BARCAN-TAG-11_CLIENT-PERCEPTION` - CLIENT-PERCEPTION
+**Role focus:** Perception, accessibility and visible evidence
+**Project role:** Frontend Engineer
+**Source principle:** Принцип пространственной интуиции
+**Publication anchor:** Sense and Content / A Study of Concepts - conceptual content
+**Project source:** [`BARCAN-TAG-11_CLIENT-PERCEPTION.md:42`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md#L42)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Z-index и пространственные переходы (анимации) создают ментальную карту приложения до прочтения текста, опираясь на дорефлексивное восприятие пространства
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `KRISTOFER_PIKOK_01` — пространственной интуиции · Hundred Millisecond Budget | бюджет 100 мс | интерфейс кажется сломанным из-за задержки | оптимизировать первичный отклик до порога мгновенности |
-| 2 | `KRISTOFER_PIKOK_02` — пространственной интуиции · Semantic Component Accessibility | семантическая доступность компонента | визуально красивый control невидим assistive tech | использовать native semantics/ARIA только по необходимости |
-| 3 | `KRISTOFER_PIKOK_03` — пространственной интуиции · Render-Data Separation | разделение рендера и данных | визуальный шум блокирует логику состояния | изолировать view state от domain state |
-| 4 | `KRISTOFER_PIKOK_04` — пространственной интуиции · Spatial Layer Map | карта пространственных слоёв | z-index становится случайной борьбой элементов | вести карту overlay/modal/popover layers |
-| 5 | `KRISTOFER_PIKOK_05` — пространственной интуиции · Signal Code Consistency | согласованность кода сигнала | цвет или иконка сообщает неверный статус | закреплять semantic color/icon/timing map |
-| 6 | `KRISTOFER_PIKOK_06` — пространственной интуиции · CLS Confidence Budget | бюджет уверенности CLS | скачки layout вызывают ошибочные клики | держать layout stable через reserved space |
-| 7 | `KRISTOFER_PIKOK_07` — пространственной интуиции · Skeleton Continuity Contract | контракт непрерывности skeleton | loading state обманывает о структуре результата | skeleton должен совпадать с будущей композицией |
-| 8 | `KRISTOFER_PIKOK_08` — пространственной интуиции · Optimistic Reconciliation Path | путь сверки optimistic update | UI показывает успех без механизма отката | каждый optimistic state иметь rollback/retry state |
-| 9 | `KRISTOFER_PIKOK_09` — пространственной интуиции · Focus Order Integrity | целостность порядка фокуса | keyboard user теряет маршрут | проверять tab order после каждого layout change |
-| 10 | `KRISTOFER_PIKOK_10` — пространственной интуиции · Motion Continuity Guard | страж непрерывности движения | анимация разрушает ментальную карту | использовать motion для объяснения перехода, а не декора |
+| 1 | `KRISTOFER_PIKOK_01_NAME_GATE` - Кристофер Пикок: Принцип пространственной интуиции - Semantic Naming Gate | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `KRISTOFER_PIKOK_02_STATE_INVARIANT` - Кристофер Пикок: Принцип пространственной интуиции - State Invariant Kernel | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `KRISTOFER_PIKOK_03_BOUNDARY_MAP` - Кристофер Пикок: Принцип пространственной интуиции - Boundary Map | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `KRISTOFER_PIKOK_04_COUNTEREXAMPLE_TEST` - Кристофер Пикок: Принцип пространственной интуиции - Counterexample Test | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `KRISTOFER_PIKOK_05_DATA_SHAPE` - Кристофер Пикок: Принцип пространственной интуиции - Data Shape Discipline | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `KRISTOFER_PIKOK_06_TRANSITION_GUARD` - Кристофер Пикок: Принцип пространственной интуиции - Atomic Transition Guard | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `KRISTOFER_PIKOK_07_REVIEW_BINARY` - Кристофер Пикок: Принцип пространственной интуиции - Binary Review Criterion | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `KRISTOFER_PIKOK_08_EVIDENCE_TRACE` - Кристофер Пикок: Принцип пространственной интуиции - Evidence Trace | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `KRISTOFER_PIKOK_09_PARALLEL_WORK` - Кристофер Пикок: Принцип пространственной интуиции - Parallel Conflict Shield | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `KRISTOFER_PIKOK_10_RAG_CAPSULE` - Кристофер Пикок: Принцип пространственной интуиции - RAG Doctrine Capsule | Sense and Content / A Study of Concepts - conceptual content | unobserved perceptual and accessibility defects; personal failure mode: losing 'Принцип пространственной интуиции' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Кристофер Пикок-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-11_CLIENT-PERCEPTION`, используй этот файл для индивидуального акцента Кристофер Пикок: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-11_CLIENT-PERCEPTION.md`](../../BARCAN-TAG-11_CLIENT-PERCEPTION.md)
-- Строка философского принципа: `BARCAN-TAG-11_CLIENT-PERCEPTION.md:42`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-11_CLIENT-PERCEPTION` and needs the individual voice of Кристофер Пикок, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

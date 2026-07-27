@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-04_MODAL-QUANTIFIER:01:frenk-ramsey"
 name_ru: "Фрэнк Рамсей"
 barcan_tag: "BARCAN-TAG-04_MODAL-QUANTIFIER"
-barcan_role: "Data Scientist / ML Engineer"
+barcan_role: "MODAL-QUANTIFIER"
 source_file: "BARCAN-TAG-04_MODAL-QUANTIFIER.md"
 source_line: 38
 source_principle: "Принцип субъективной вероятности (degrees of belief)"
+publication_anchor: "Truth and Probability - degrees of belief and betting interpretation"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Фрэнк Рамсей
 
-**BARCAN-роль:** `BARCAN-TAG-04_MODAL-QUANTIFIER` — Байесианский Предиктор
-**Инженерная роль:** Data Scientist / ML Engineer
-**Исходный принцип:** Принцип субъективной вероятности (degrees of belief)
-**Источник в проекте:** [`BARCAN-TAG-04_MODAL-QUANTIFIER.md:38`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md#L38)
+**BARCAN tag:** `BARCAN-TAG-04_MODAL-QUANTIFIER` - MODAL-QUANTIFIER
+**Role focus:** Prediction evidence, uncertainty and model trust
+**Project role:** Data Scientist / ML Engineer
+**Source principle:** Принцип субъективной вероятности (degrees of belief)
+**Publication anchor:** Truth and Probability - degrees of belief and betting interpretation
+**Project source:** [`BARCAN-TAG-04_MODAL-QUANTIFIER.md:38`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md#L38)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Метрика модели — не бинарная истина, а степень обоснованной уверенности, калибруемая готовностью «поставить» на исход. Порог деплоя (holdout ≥ baseline+5%) — это порог ставки, ниже которого агент отказывается доверять модели прод-трафик
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `FRENK_RAMSEY_01` — субъективной вероятности · Holdout Wager Threshold | порог ставки на holdout | модель деплоится по красивой, но слабой метрике | задавать численный порог выигрыша до обучения |
-| 2 | `FRENK_RAMSEY_02` — субъективной вероятности · Drift Belief Update | обновление доверия при drift | модель считается прежней после смены распределения | пересчитывать доверие по drift signals |
-| 3 | `FRENK_RAMSEY_03` — субъективной вероятности · Epistemic Status Label | метка статуса знания | ASSUMED выдаётся за VERIFIED | маркировать вывод как VERIFIED/INFERRED/ASSUMED |
-| 4 | `FRENK_RAMSEY_04` — субъективной вероятности · OOD Humility Fence | ограда смирения вне распределения | модель уверенно отвечает вне зоны наблюдения | понижать статус прогноза на OOD input |
-| 5 | `FRENK_RAMSEY_05` — субъективной вероятности · Metric Method Version | версия метода измерения | baseline сравнивается после смены разметки | версировать holdout, labeling policy и scorer |
-| 6 | `FRENK_RAMSEY_06` — субъективной вероятности · Parsimony Upgrade Rule | правило экономного усложнения | pipeline усложняется без доказанного прироста | добавлять слой только после измеримого выигрыша |
-| 7 | `FRENK_RAMSEY_07` — субъективной вероятности · Model Card Truth Table | таблица истинности model card | пользователь не знает границ модели | фиксировать use cases, non-use cases и evidence |
-| 8 | `FRENK_RAMSEY_08` — субъективной вероятности · Calibration Curve Gate | ворота калибровочной кривой | вероятность не соответствует частоте ошибок | проверять calibration перед production decision |
-| 9 | `FRENK_RAMSEY_09` — субъективной вероятности · Feature Leakage Trial | разбирательство утечки признаков | модель выигрывает за счёт будущего или запрещённого сигнала | проверять причинную доступность каждого признака |
-| 10 | `FRENK_RAMSEY_10` — субъективной вероятности · Dataset Split Seal | печать неизменяемого split | train/test граница двигается под желаемый результат | фиксировать split до эксперимента и хранить hash |
+| 1 | `FRENK_RAMSEY_01_NAME_GATE` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Semantic Naming Gate | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `FRENK_RAMSEY_02_STATE_INVARIANT` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - State Invariant Kernel | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `FRENK_RAMSEY_03_BOUNDARY_MAP` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Boundary Map | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `FRENK_RAMSEY_04_COUNTEREXAMPLE_TEST` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Counterexample Test | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `FRENK_RAMSEY_05_DATA_SHAPE` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Data Shape Discipline | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `FRENK_RAMSEY_06_TRANSITION_GUARD` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Atomic Transition Guard | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `FRENK_RAMSEY_07_REVIEW_BINARY` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Binary Review Criterion | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `FRENK_RAMSEY_08_EVIDENCE_TRACE` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Evidence Trace | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `FRENK_RAMSEY_09_PARALLEL_WORK` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - Parallel Conflict Shield | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `FRENK_RAMSEY_10_RAG_CAPSULE` - Фрэнк Рамсей: Принцип субъективной вероятности (degrees of belief) - RAG Doctrine Capsule | Truth and Probability - degrees of belief and betting interpretation | false certainty in predictions; personal failure mode: losing 'Принцип субъективной вероятности (degrees of belief)' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Фрэнк Рамсей-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-04_MODAL-QUANTIFIER`, используй этот файл для индивидуального акцента Фрэнк Рамсей: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-04_MODAL-QUANTIFIER.md`](../../BARCAN-TAG-04_MODAL-QUANTIFIER.md)
-- Строка философского принципа: `BARCAN-TAG-04_MODAL-QUANTIFIER.md:38`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-04_MODAL-QUANTIFIER` and needs the individual voice of Фрэнк Рамсей, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

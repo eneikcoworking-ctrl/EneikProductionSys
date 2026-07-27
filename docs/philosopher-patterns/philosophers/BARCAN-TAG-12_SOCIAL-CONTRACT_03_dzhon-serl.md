@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-12_SOCIAL-CONTRACT:03:dzhon-serl"
 name_ru: "Джон Сёрл"
 barcan_tag: "BARCAN-TAG-12_SOCIAL-CONTRACT"
-barcan_role: "API Contract Designer"
+barcan_role: "SOCIAL-CONTRACT"
 source_file: "BARCAN-TAG-12_SOCIAL-CONTRACT.md"
 source_line: 40
-source_principle: "Статусные функции / институциональные факты (\"X считается Y в контексте C\")"
+source_principle: "Статусные функции / институциональные факты ('X считается Y в контексте C')"
+publication_anchor: "Speech Acts / The Construction of Social Reality - institutional facts"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Джон Сёрл
 
-**BARCAN-роль:** `BARCAN-TAG-12_SOCIAL-CONTRACT` — Заключатель Соглашений
-**Инженерная роль:** API Contract Designer
-**Исходный принцип:** Статусные функции / институциональные факты ("X считается Y в контексте C")
-**Источник в проекте:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:40`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L40)
+**BARCAN tag:** `BARCAN-TAG-12_SOCIAL-CONTRACT` - SOCIAL-CONTRACT
+**Role focus:** Shared contracts, collaboration and parallel work
+**Project role:** API Contract Designer
+**Source principle:** Статусные функции / институциональные факты ("X считается Y в контексте C")
+**Publication anchor:** Speech Acts / The Construction of Social Reality - institutional facts
+**Project source:** [`BARCAN-TAG-12_SOCIAL-CONTRACT.md:40`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md#L40)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Опубликованный контракт превращает произвольное техническое решение (форма эндпоинта) в институциональный факт, обязывающий обе стороны — пока не отменён формальной процедурой пересмотра версии, а не тихим односторонним отступлением
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `DZHON_SERL_01` — Статусные функции / институциональные факты · Contract Publication as Common Knowledge | публикация контракта как общее знание | стороны додумывают API по-разному | публиковать OpenAPI/JSON Schema до параллельной работы |
-| 2 | `DZHON_SERL_02` — Статусные функции / институциональные факты · Shared Plan Lock | замок разделяемого плана | backend и frontend меняют план независимо | изменять контракт только через совместный review |
-| 3 | `DZHON_SERL_03` — Статусные функции / институциональные факты · Institutional Version Fact | версия как институциональный факт | тихое изменение выдаётся за мелкую реализацию | считать contract version нормативным фактом |
-| 4 | `DZHON_SERL_04` — Статусные функции / институциональные факты · Joint Change Commitment | совместное обязательство изменения | одна сторона выходит из договора без другой | требовать acknowledgement обеих сторон |
-| 5 | `DZHON_SERL_05` — Статусные функции / институциональные факты · Subplan Meshing Check | проверка стыковки суб-планов | UI и backend собирают несовместимые части | сверять endpoint, payload, error, loading и empty states |
-| 6 | `DZHON_SERL_06` — Статусные функции / институциональные факты · Under-Description Implementation Test | тест реализации под описанием | результат совпал случайно, но не по контракту | проверять именно поля, коды и semantics контракта |
-| 7 | `DZHON_SERL_07` — Статусные функции / институциональные факты · Contract Drift Alarm | сигнал дрейфа контракта | код расходится со схемой после merge | автоматически сравнивать runtime behavior со schema |
-| 8 | `DZHON_SERL_08` — Статусные функции / институциональные факты · Error Semantics Covenant | завет семантики ошибок | ошибки технически проходят, но UX не знает действие | для каждой ошибки фиксировать cause/action/retryability |
-| 9 | `DZHON_SERL_09` — Статусные функции / институциональные факты · Negotiation Log | журнал переговоров потребитель-поставщик | решения теряются между сессиями агентов | вести decision log по спорным полям |
-| 10 | `DZHON_SERL_10` — Статусные функции / институциональные факты · Deprecation Covenant | завет вывода схемы | старое поле исчезает без миграционного пути | задавать deprecation window, fallback и removal date |
+| 1 | `DZHON_SERL_01_NAME_GATE` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Semantic Naming Gate | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `DZHON_SERL_02_STATE_INVARIANT` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - State Invariant Kernel | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `DZHON_SERL_03_BOUNDARY_MAP` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Boundary Map | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `DZHON_SERL_04_COUNTEREXAMPLE_TEST` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Counterexample Test | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `DZHON_SERL_05_DATA_SHAPE` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Data Shape Discipline | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `DZHON_SERL_06_TRANSITION_GUARD` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Atomic Transition Guard | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `DZHON_SERL_07_REVIEW_BINARY` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Binary Review Criterion | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `DZHON_SERL_08_EVIDENCE_TRACE` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Evidence Trace | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `DZHON_SERL_09_PARALLEL_WORK` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - Parallel Conflict Shield | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `DZHON_SERL_10_RAG_CAPSULE` - Джон Сёрл: Статусные функции / институциональные факты ("X считается Y в контексте C") - RAG Doctrine Capsule | Speech Acts / The Construction of Social Reality - institutional facts | parallel implementation contract conflict; personal failure mode: losing 'Статусные функции / институциональные факты ("X считается Y в контексте C")' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Джон Сёрл-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-12_SOCIAL-CONTRACT`, используй этот файл для индивидуального акцента Джон Сёрл: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-12_SOCIAL-CONTRACT.md`](../../BARCAN-TAG-12_SOCIAL-CONTRACT.md)
-- Строка философского принципа: `BARCAN-TAG-12_SOCIAL-CONTRACT.md:40`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-12_SOCIAL-CONTRACT` and needs the individual voice of Джон Сёрл, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.

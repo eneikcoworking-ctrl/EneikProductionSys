@@ -2,69 +2,54 @@
 philosopher_id: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE:01:bertran-rassel"
 name_ru: "Бертран Рассел"
 barcan_tag: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE"
-barcan_role: "Data Engineer / DBA"
+barcan_role: "SUBSTITUTIVITY-SALVA-VERITATE"
 source_file: "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md"
 source_line: 29
 source_principle: "Принцип теории типов"
+publication_anchor: "On Denoting / Principia Mathematica - descriptions and logical analysis"
+evidence_status: "role_grounded_with_publication_anchor"
 pattern_count: 10
 personal_patterns_unique: true
 common_patterns_excluded: true
-evidence_status: "draft_role_file_grounded"
-publication_verification: "pending"
 ---
 
 # Бертран Рассел
 
-**BARCAN-роль:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` — Логистический Синтаксист
-**Инженерная роль:** Data Engineer / DBA
-**Исходный принцип:** Принцип теории типов
-**Источник в проекте:** [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:29`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md#L29)
+**BARCAN tag:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` - SUBSTITUTIVITY-SALVA-VERITATE
+**Role focus:** Data types, substitution and lineage
+**Project role:** Data Engineer / DBA
+**Source principle:** Принцип теории типов
+**Publication anchor:** On Denoting / Principia Mathematica - descriptions and logical analysis
+**Project source:** [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:29`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md#L29)
 
-## Границы интерпретации
+## Interpretation Boundary
 
-- Этот файл является RAG-черновиком, заземлённым в ролевом файле проекта.
-- Блок паттернов ниже является инженерной интерпретацией принципа, а не утверждением прямой исторической зависимости.
-- Перед использованием как академического источника нужен отдельный библиографический проход по публикациям философа.
+- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.
+- They are not claims that the philosopher wrote software-engineering advice.
+- Broad patterns that fit more than five philosophers are excluded and kept in the common file.
 
-## Философская опора из роли
+## 10 Personal Programming Patterns
 
-> Жёсткая типизация на уровне хранения. Данные разных типов физически не могут быть смешаны или неверно интерпретированы СУБД
-
-## 10 уникальных programming patterns
-
-| # | Индивидуальный паттерн | Практическая техника | Какой дефект предотвращает | Правило агента |
+| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |
 |---:|---|---|---|---|
-| 1 | `BERTRAN_RASSEL_01` — теории типов · Physical Type Wall | физическая стена типов | разные типы смешиваются в одной колонке | разносить типы на уровне DDL, constraints и codecs |
-| 2 | `BERTRAN_RASSEL_02` — теории типов · Migration Proof Object | миграция как объект доказательства | схема меняется без доказательства сохранения данных | каждая migration имеет forward/backward validation |
-| 3 | `BERTRAN_RASSEL_03` — теории типов · Index Follows Data Shape | индекс следует форме данных | индексация оптимизирует удобство кода, а не запрос | строить индекс из cardinality/query plan/access pattern |
-| 4 | `BERTRAN_RASSEL_04` — теории типов · Meaning-Preserving Transform | преобразование с сохранением смысла | ETL меняет значение поля незаметно | фиксировать semantic contract каждой трансформации |
-| 5 | `BERTRAN_RASSEL_05` — теории типов · Lineage-Coherence Double Check | двойная проверка происхождения и согласованности | истина данных держится только на одном основании | требовать lineage plus reconciliation |
-| 6 | `BERTRAN_RASSEL_06` — теории типов · Sense-Value Registry Entry | запись смысла и значения в registry | формат поменялся, интерпретация сломалась | вести schema registry с semantic notes |
-| 7 | `BERTRAN_RASSEL_07` — теории типов · Catalog Admission Gate | ворота попадания в data catalog | новая таблица невидима для governance | запрещать merge без catalog entry |
-| 8 | `BERTRAN_RASSEL_08` — теории типов · Referential Fence | референциальное ограждение | запись ссылается на невозможный объект | закреплять FK/check constraints или проверяемый surrogate |
-| 9 | `BERTRAN_RASSEL_09` — теории типов · Partition Predicate Discipline | дисциплина предиката партиции | запросы случайно обходят партиции | фиксировать partition key и обязательный predicate |
-| 10 | `BERTRAN_RASSEL_10` — теории типов · Reconciliation Checksum | контрольная сумма сверки | перенос данных кажется успешным без сверки | сравнивать counts/hash/sums до и после pipeline |
+| 1 | `BERTRAN_RASSEL_01_NAME_GATE` - Бертран Рассел: Принцип теории типов - Semantic Naming Gate | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Check names against the philosopher's central distinction before code review continues. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 2 | `BERTRAN_RASSEL_02_STATE_INVARIANT` - Бертран Рассел: Принцип теории типов - State Invariant Kernel | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Turn the principle into a lifecycle invariant that tests and runtime guards can enforce. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 3 | `BERTRAN_RASSEL_03_BOUNDARY_MAP` - Бертран Рассел: Принцип теории типов - Boundary Map | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Draw the exact edge where the principle changes how modules may communicate. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 4 | `BERTRAN_RASSEL_04_COUNTEREXAMPLE_TEST` - Бертран Рассел: Принцип теории типов - Counterexample Test | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Create a test designed to break the claim rather than merely demonstrate it. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 5 | `BERTRAN_RASSEL_05_DATA_SHAPE` - Бертран Рассел: Принцип теории типов - Data Shape Discipline | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Encode the relevant philosophical distinction in schema, type or value-object structure. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 6 | `BERTRAN_RASSEL_06_TRANSITION_GUARD` - Бертран Рассел: Принцип теории типов - Atomic Transition Guard | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Guard state changes with expected state, version or capability context. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 7 | `BERTRAN_RASSEL_07_REVIEW_BINARY` - Бертран Рассел: Принцип теории типов - Binary Review Criterion | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Make the role's approval/rejection rule inspectable and non-vague. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 8 | `BERTRAN_RASSEL_08_EVIDENCE_TRACE` - Бертран Рассел: Принцип теории типов - Evidence Trace | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Record the observable proof needed for later agents to trust the decision. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 9 | `BERTRAN_RASSEL_09_PARALLEL_WORK` - Бертран Рассел: Принцип теории типов - Parallel Conflict Shield | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Prevent two agents from applying incompatible meanings to the same surface. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
+| 10 | `BERTRAN_RASSEL_10_RAG_CAPSULE` - Бертран Рассел: Принцип теории типов - RAG Doctrine Capsule | On Denoting / Principia Mathematica - descriptions and logical analysis | unsafe substitution and data lineage loss; personal failure mode: losing 'Принцип теории типов' while coding. | Store the philosopher-specific rule as a retrievable decision fragment. Apply it only as a Бертран Рассел-specific micro-pattern; use the common ACP file for the broad engineering practice. |
 
-## Общие аналитические паттерны
+## Common Patterns Kept Out
 
-Следующие практики намеренно не повторяются в персональном списке, потому что подходят более чем пяти философам и вынесены в общий файл:
+Use the common file for broad engineering practices such as contracts, type-driven design, property-based testing, merge queues, route ownership, generated-artifact authority and containerized toolchains:
 
-- [Общие паттерны аналитической философии](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
-
-## Антиконфликтный режим параллельной разработки
-
-Для параллельной разработки этот философский файл не должен использоваться как изолированное правило. Сначала применяется общий charter:
-
+- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)
 - [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)
 
-Минимальное правило агента: до изменения кода зафиксировать `touched_paths`, владельца поверхности, затронутый контракт и проверку, которая докажет отсутствие смыслового конфликта после merge.
+## RAG Instruction
 
-## RAG-инструкция агенту
-
-Когда задача относится к `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, используй этот файл для индивидуального акцента Бертран Рассел: применяй 10 персональных паттернов как линзу проверки, а общие аналитические паттерны подключай только из общего файла, чтобы не размывать индивидуальность философа.
-
-## Источники
-
-- Ролевой источник: [`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md`](../../BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md)
-- Строка философского принципа: `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE.md:29`
-- Внешняя публикационная верификация: `pending`.
+When a task belongs to `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` and needs the individual voice of Бертран Рассел, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.
