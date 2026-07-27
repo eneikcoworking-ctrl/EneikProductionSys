@@ -518,7 +518,96 @@
           </div>
         </div>
       </div>
-    {:else}
+      <!-- FEATURE THREADS & JULES AGENT EXECUTION MATRIX -->
+      <section class="monitoring-overview-section">
+        <!-- Feature Threads Panel -->
+        <div class="card monitoring-card">
+          <div class="card-header">
+            <h2>Feature Threads ({commandDashboard.featureThreads?.length || 0})</h2>
+            <span class="indicator">Target Branches & Architectural Features</span>
+          </div>
+          {#if !commandDashboard.featureThreads || commandDashboard.featureThreads.length === 0}
+            <p class="empty-state">No feature threads generated yet. Click Orchestrate to compile features.</p>
+          {:else}
+            <div class="feature-threads-grid">
+              {#each commandDashboard.featureThreads as thread (thread.id)}
+                <div class="feature-thread-card {thread.status ? thread.status.toLowerCase() : 'open'}">
+                  <div class="thread-header">
+                    <span class="thread-title">{thread.title}</span>
+                    <span class="badge-status {thread.status ? thread.status.toLowerCase() : 'open'}">{thread.status}</span>
+                  </div>
+                  <div class="thread-body">
+                    <code class="branch-tag">{thread.branchName}</code>
+                    <span class="task-count-badge">{thread.taskCount} tasks</span>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+
+        <!-- AI Agent Specialists Execution Matrix -->
+        <div class="card monitoring-card">
+          <div class="card-header">
+            <h2>AI Agent Specialists & Task Execution Matrix</h2>
+            <span class="indicator">
+              Allocated: {commandDashboard.agentExecutionSummary?.totalAllocatedAgents || 7} | 
+              Active: {commandDashboard.agentExecutionSummary?.activeAgentSessions || 0} | 
+              Queued: {commandDashboard.agentExecutionSummary?.queuedAgentSessions || 0} |
+              Idle: {commandDashboard.agentExecutionSummary?.idleAgentSessions || 0}
+            </span>
+          </div>
+          {#if !commandDashboard.collaboratorMap || commandDashboard.collaboratorMap.length === 0}
+            <p class="empty-state">No agent execution data available.</p>
+          {:else}
+            <div class="collaborator-matrix-table">
+              <div class="matrix-header-row">
+                <span>Specialist Role</span>
+                <span>GitHub Account</span>
+                <span>Assigned Task</span>
+                <span>Task Status</span>
+                <span>Session / PR</span>
+              </div>
+              {#each commandDashboard.collaboratorMap as col (col.account.id)}
+                <div class="matrix-data-row {col.assignedTask ? col.assignedTask.status : 'idle'}">
+                  <div class="role-cell">
+                    <span class="role-tag">{roleDisplayName(col.roleTag)}</span>
+                  </div>
+                  <div class="account-cell">
+                    <a href={`https://github.com/${col.account.githubUsername}`} target="_blank" rel="noreferrer">
+                      @{col.account.githubUsername}
+                    </a>
+                  </div>
+                  <div class="task-cell">
+                    {#if col.assignedTask}
+                      <span class="task-title-text" title={col.assignedTask.title}>{col.assignedTask.title}</span>
+                    {:else}
+                      <span class="idle-text">Idle (No task assigned)</span>
+                    {/if}
+                  </div>
+                  <div class="status-cell">
+                    {#if col.assignedTask}
+                      <span class="badge-status {col.assignedTask.status}">{col.assignedTask.status}</span>
+                    {:else}
+                      <span class="badge-status idle">idle</span>
+                    {/if}
+                  </div>
+                  <div class="session-cell">
+                    {#if col.session && col.session.prUrl}
+                      <a href={col.session.prUrl} target="_blank" rel="noreferrer" class="pr-link">View PR ↗</a>
+                    {:else if col.session}
+                      <span class="session-status">{col.session.status}</span>
+                    {:else}
+                      <span class="none-text">-</span>
+                    {/if}
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </section>
+
       <!-- Grid Columns -->
       <div class="dashboard-grid">
       
@@ -1817,6 +1906,134 @@
     height: 28px;
     padding: 0 12px;
     font-size: 11px;
+  }
+
+  /* Monitoring Overview & Feature Matrix Styles */
+  .monitoring-overview-section {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: var(--space-4);
+    margin-bottom: var(--space-4);
+  }
+  .monitoring-card {
+    background: var(--bg-surface-elevated, #1a1d24);
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    border-radius: 12px;
+    padding: var(--space-3);
+  }
+  .feature-threads-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .feature-thread-card {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 10px 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .feature-thread-card.open {
+    border-left: 3px solid #3b82f6;
+  }
+  .feature-thread-card.merged {
+    border-left: 3px solid #10b981;
+  }
+  .thread-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .thread-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-primary, #e2e8f0);
+  }
+  .thread-body {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 11px;
+  }
+  .branch-tag {
+    font-family: monospace;
+    color: #60a5fa;
+    background: rgba(59, 130, 246, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .task-count-badge {
+    color: #94a3b8;
+  }
+  .collaborator-matrix-table {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .matrix-header-row {
+    display: grid;
+    grid-template-columns: 120px 140px 1fr 100px 90px;
+    gap: 8px;
+    padding: 6px 10px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #94a3b8;
+    background: rgba(255, 255, 255, 0.02);
+    border-radius: 6px;
+  }
+  .matrix-data-row {
+    display: grid;
+    grid-template-columns: 120px 140px 1fr 100px 90px;
+    gap: 8px;
+    padding: 8px 10px;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    font-size: 12px;
+  }
+  .matrix-data-row.running {
+    border-left: 3px solid #3b82f6;
+    background: rgba(59, 130, 246, 0.04);
+  }
+  .matrix-data-row.done {
+    border-left: 3px solid #10b981;
+  }
+  .matrix-data-row.queued {
+    border-left: 3px solid #f59e0b;
+  }
+  .account-cell a {
+    color: #38bdf8;
+    text-decoration: none;
+    font-family: monospace;
+    font-size: 11px;
+  }
+  .account-cell a:hover {
+    text-decoration: underline;
+  }
+  .task-title-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: block;
+    color: #e2e8f0;
+  }
+  .idle-text {
+    color: #64748b;
+    font-style: italic;
+  }
+  .pr-link {
+    color: #10b981;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .pr-link:hover {
+    text-decoration: underline;
   }
 
   @media (max-width: 1100px) {
