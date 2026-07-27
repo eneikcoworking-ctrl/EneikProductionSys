@@ -3969,11 +3969,16 @@ public class ProjectFlowService {
         };
 
         List<CollaboratorDto> collaborators = new ArrayList<>();
+        Set<String> seenUsernames = new HashSet<>();
         if (project.getFactoryReport() != null) {
             try {
                 ObjectNode report = (ObjectNode) objectMapper.readTree(project.getFactoryReport());
                 if (report.has("collaborators")) {
                     for (JsonNode node : report.get("collaborators")) {
+                        String username = node.get("username").asText();
+                        if (!seenUsernames.add(username)) {
+                            continue;
+                        }
                         String status = node.get("status").asText();
                         String label = switch (status) {
                             case "invitation_sent" -> "Invitation sent";
@@ -3988,7 +3993,7 @@ public class ProjectFlowService {
                             default -> "busy";
                         };
                         collaborators.add(new CollaboratorDto(
-                                node.get("username").asText(),
+                                username,
                                 status,
                                 node.get("githubStatus").asText(),
                                 node.get("detail").asText(),
@@ -4001,6 +4006,12 @@ public class ProjectFlowService {
                 log.error("Failed to parse factory report for project {}", project.getId(), e);
             }
         }
+
+        long uniqueAccountCount = accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
+                .map(a -> a.getGithubUsername() != null ? a.getGithubUsername().trim() : "")
+                .filter(u -> !u.isBlank())
+                .distinct()
+                .count();
 
         return new ProjectDto(
                 project.getId(),
@@ -4021,7 +4032,7 @@ public class ProjectFlowService {
                 project.getOnboardingMode(),
                 project.getCreatedAt(),
                 project.getAcceptedAt(),
-                accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().size(),
+                uniqueAccountCount,
                 statusLabel,
                 uiColorToken,
                 collaborators

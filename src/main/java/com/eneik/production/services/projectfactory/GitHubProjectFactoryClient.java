@@ -121,9 +121,12 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<CollaboratorProvisioningResult> inviteJulesCollaboratorsError(String detail) {
+        Set<String> seen = new LinkedHashSet<>();
         return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
                 .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
-                .map(account -> new CollaboratorProvisioningResult(account.getGithubUsername().trim(), "failed", 0, detail))
+                .map(account -> account.getGithubUsername().trim())
+                .filter(seen::add)
+                .map(username -> new CollaboratorProvisioningResult(username, "failed", 0, detail))
                 .toList();
     }
 
@@ -134,19 +137,6 @@ public class GitHubProjectFactoryClient {
         upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
         upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
         upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
-        // Confirmed live (2026-07-21, test-thirty-second PR#12): an implementer session unrelated to the
-        // compiler committed a stray copy of `.eneik/task-plan.json` into its own branch (likely picked up
-        // from local workspace context, not an intentional edit - only the compiler/review-fallback/
-        // design-review/coverage-audit/falsification prompts ever instruct writing under `.eneik/`). That
-        // stray file later collided with a genuinely-updated `.eneik/task-plan.json` on main from an
-        // unrelated compiler cycle, blocking an otherwise-conflict-free PR for hours. Committing this
-        // .gitignore FIRST, before any Jules session ever touches the repo, means any implementer session's
-        // routine `git add .`/`git commit -am` naturally skips `.eneik/` - only sessions that explicitly
-        // `git add -f .eneik/<file>` (the compiler/review-fallback prompts do name the exact path) still
-        // commit it, which is the only case that should ever touch this directory. Defense in depth, not a
-        // replacement for AutoMergeService's backend-side conflict resolution - this prevents the accident
-        // at the source for every NEW project from here on, but does nothing for a session that force-adds
-        // anyway or for repos created before this fix.
         upsertContent(project.getRepositoryName(), ".gitignore", "# Eneik orchestrator internal record files - never part of product code\n.eneik/\n", token, errors);
         return errors;
     }
@@ -160,9 +150,12 @@ public class GitHubProjectFactoryClient {
     }
 
     private List<CollaboratorProvisioningResult> inviteJulesCollaborators(String repositoryName, String token) {
+        Set<String> seen = new LinkedHashSet<>();
         return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
                 .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
-                .map(account -> inviteCollaborator(repositoryName, account.getGithubUsername().trim(), token))
+                .map(account -> account.getGithubUsername().trim())
+                .filter(seen::add)
+                .map(username -> inviteCollaborator(repositoryName, username, token))
                 .toList();
     }
 
