@@ -222,3 +222,80 @@ export type ProjectDashboard = {
   wishlist: WishlistItem[];
   tasks: Task[];
 };
+
+export type TocDbrStatus = {
+  primaryConstraintNode: string;
+  constraintQueueLength: number;
+  constraintUtilization: number;
+  constraintMeanDurationMs: number;
+  bufferSize: number;
+  maxBufferCapacity: number;
+  ropeThrottlingActive: boolean;
+  lastEvaluatedAt: string;
+  recommendation: string;
+};
+
+export type TocNodeDto = {
+  name: string;
+  inFlightCount: number;
+  completedCount: number;
+  errorCount: number;
+  meanDurationMs: number;
+  stdDevMs: number;
+  throughput: number;
+  utilization: number;
+  stallBottleneck: boolean;
+  primaryConstraint: boolean;
+};
+
+export type TocEdgeDto = {
+  sourceNode: string;
+  targetNode: string;
+  transitionCount: number;
+};
+
+export type TocAnomalyReport = {
+  id: string;
+  type: 'CYCLE_DETECTED' | 'STALL_DETECTED' | 'DEADLOCK_DETECTED' | 'BUFFER_OVERFLOW';
+  tokenId?: string;
+  nodeName?: string;
+  resourceId?: string;
+  details: string;
+  actionTaken: string;
+  timestamp: string;
+};
+
+export type TocGraphData = {
+  nodeCount: number;
+  nodes: TocNodeDto[];
+  edges: TocEdgeDto[];
+  activeTokenCount: number;
+  arrivalRatePerSec: number;
+};
+
+export type SixSigmaAuditReport = {
+  totalOpportunities: number;
+  totalDefects: number;
+  dpmo: number;
+  yieldRatePercent: number;
+  sigmaLevel: number;
+  qualityTier: string;
+  defectBreakdown: Record<string, { opportunities: number; defects: number; dpmo: number }>;
+  tocOperationalMetrics: Record<string, unknown>;
+  auditedAt: string;
+};
+
+export type KaizenProposalDto = {
+  id: string;
+  title: string;
+  category: 'WASTE_REDUCTION' | 'SPEED_OPTIMIZATION' | 'DEFECT_ELIMINATION' | 'BUFFER_TUNING';
+  targetComponent: string;
+  actionDescription: string;
+  expectedGainPercent: number;
+  createdAt: string;
+  status: 'PROPOSED' | 'APPLIED' | 'STANDARDIZED' | 'REVERTED';
+  baselineMetric?: number;
+  postMetric?: number;
+  appliedAt?: string;
+};
+

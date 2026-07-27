@@ -5,6 +5,7 @@
   import MetricsView from './dashboard/MetricsView.svelte';
   import AdminDashboard from './dashboard/AdminDashboard.svelte';
   import AiResourcesDashboard from './dashboard/AiResourcesDashboard.svelte';
+  import TocSentinelView from './dashboard/TocSentinelView.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -14,12 +15,13 @@
   let status = 'Ready';
   let bootLoading = true;
   let loadError = '';
-  let activeView: 'dashboard' | 'metrics' | 'resources' | 'admin' = 'dashboard';
+  let activeView: 'dashboard' | 'toc' | 'metrics' | 'resources' | 'admin' = 'dashboard';
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
   let showWishlistPrompt = false;
   let pendingOnboardingMode = 'greenfield';
   let initialWishlist = '';
+
 
   async function loadProjects() {
     loadError = '';
@@ -134,6 +136,7 @@
     
     <div class="nav-links">
       <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Project</button>
+      <button onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
       <button onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
       <button onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
       <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
@@ -150,6 +153,8 @@
     <AdminDashboard />
   {:else if activeView === 'resources'}
     <AiResourcesDashboard />
+  {:else if activeView === 'toc'}
+    <TocSentinelView />
   {:else if dashboard}
     {#if activeView === 'dashboard'}
       <CommandDashboardV2 projectId={dashboard.project.id} />
