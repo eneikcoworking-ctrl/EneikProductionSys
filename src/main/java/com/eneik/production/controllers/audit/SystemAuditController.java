@@ -11,6 +11,10 @@ import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestParam;
+import java.util.UUID;
+
 /**
  * REST Controller for System Quality & Operational Audit.
  * Provides endpoints for 6 Sigma quality audits and combined TOC operational audits.
@@ -29,8 +33,17 @@ public class SystemAuditController {
     }
 
     @GetMapping("/six-sigma")
-    public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getSixSigmaAudit() {
-        return ResponseEntity.ok(sixSigmaAuditService.calculateFullSixSigmaAudit());
+    public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getSixSigmaAudit(
+            @RequestParam(name = "projectId", required = false) String projectId) {
+        UUID pId = (projectId != null && !projectId.isBlank()) ? UUID.fromString(projectId.trim()) : null;
+        return ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
+    }
+
+    @GetMapping("/six-sigma/project/{projectId}")
+    public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getProjectSixSigmaAudit(
+            @PathVariable String projectId) {
+        UUID pId = (projectId != null && !projectId.isBlank()) ? UUID.fromString(projectId.trim()) : null;
+        return ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
     }
 
     @GetMapping("/full")

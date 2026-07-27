@@ -274,6 +274,8 @@ export type TocGraphData = {
 };
 
 export type SixSigmaAuditReport = {
+  projectId?: string;
+  projectName?: string;
   totalOpportunities: number;
   totalDefects: number;
   dpmo: number;
@@ -282,6 +284,12 @@ export type SixSigmaAuditReport = {
   qualityTier: string;
   defectBreakdown: Record<string, { opportunities: number; defects: number; dpmo: number }>;
   tocOperationalMetrics: Record<string, unknown>;
+  factoryWideBenchmark?: {
+    factoryDpmo?: number;
+    factoryYieldPercent?: number;
+    factorySigmaLevel?: number;
+    factoryQualityTier?: string;
+  };
   auditedAt: string;
 };
 

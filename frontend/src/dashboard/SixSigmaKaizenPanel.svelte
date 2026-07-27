@@ -1,22 +1,37 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import type { SixSigmaAuditReport, KaizenProposalDto } from '../lib/types';
+  import type { SixSigmaAuditReport, KaizenProposalDto, ProjectSummary } from '../lib/types';
+  import { projectsStore, currentDashboardStore } from '../lib/dashboardStore';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
   let sixSigmaReport: SixSigmaAuditReport | null = null;
   let proposals: KaizenProposalDto[] = [];
+  let availableProjects: ProjectSummary[] = [];
+  let selectedProjectId: string = '';
   let loading = true;
   let scanning = false;
   let executingId: string | null = null;
   let errorMsg = '';
   let pollInterval: ReturnType<typeof setInterval> | null = null;
 
+  $: {
+    availableProjects = $projectsStore || [];
+    const activeDash = $currentDashboardStore;
+    if (activeDash && activeDash.project && !selectedProjectId) {
+      selectedProjectId = activeDash.project.id;
+    }
+  }
+
   async function loadData() {
     try {
       errorMsg = '';
+      const url = selectedProjectId
+        ? `${API_BASE}/api/audit/six-sigma?projectId=${selectedProjectId}`
+        : `${API_BASE}/api/audit/six-sigma`;
+
       const [sixSigmaRes, kaizenRes] = await Promise.all([
-        fetch(`${API_BASE}/api/audit/six-sigma`),
+        fetch(url),
         fetch(`${API_BASE}/api/kaizen/history`)
       ]);
 
@@ -31,6 +46,12 @@
     } finally {
       loading = false;
     }
+  }
+
+  function onProjectScopeChange(e: Event) {
+    const target = e.target as HTMLSelectElement;
+    selectedProjectId = target.value;
+    loadData();
   }
 
   async function triggerKaizenScan() {
@@ -79,6 +100,21 @@
       <p class="subtitle">Continuous Quality Control (DPMO, Yield %) &amp; Autonomous PDCA Micro-Optimization Cycle</p>
     </div>
     <div class="action-buttons">
+      <div class="scope-selector-group">
+        <label for="six-sigma-project-scope" class="scope-label">Scope Audit:</label>
+        <select
+          id="six-sigma-project-scope"
+          class="scope-select"
+          value={selectedProjectId}
+          onchange={onProjectScopeChange}
+        >
+          <option value="">🏭 Factory-Wide Engine Audit (All Projects)</option>
+          {#each availableProjects as proj}
+            <option value={proj.id}>📦 Project: {proj.name}</option>
+          {/each}
+        </select>
+      </div>
+
       <button class="btn-scan" onclick={triggerKaizenScan} disabled={scanning}>
         {scanning ? '🔍 Scanning...' : '🔍 Scan Kaizen Opportunities'}
       </button>
@@ -96,6 +132,19 @@
   {:else}
     {#if errorMsg}
       <div class="error-banner">⚠️ {errorMsg}</div>
+    {/if}
+
+    <!-- Scope Benchmark Banner -->
+    {#if sixSigmaReport?.projectId && sixSigmaReport?.factoryWideBenchmark}
+      <div class="benchmark-banner">
+        <span class="banner-icon">📊</span>
+        <div class="banner-text">
+          <strong>Active Scope: {sixSigmaReport.projectName}</strong>
+          <span>
+            Project DPMO: <strong>{sixSigmaReport.dpmo.toFixed(1)}</strong> vs Factory Benchmark DPMO: <strong>{sixSigmaReport.factoryWideBenchmark.factoryDpmo?.toFixed(1) || '0.0'}</strong> (Factory Sigma: <strong>{sixSigmaReport.factoryWideBenchmark.factorySigmaLevel?.toFixed(2) || '6.0'}&sigma;</strong>)
+          </span>
+        </div>
+      </div>
     {/if}
 
     <!-- Section 1: Six Sigma Metrics Overview -->
@@ -269,6 +318,82 @@
     margin: 0;
     color: #94a3b8;
     font-size: 0.875rem;
+  }
+
+  .scope-selector-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .scope-label {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #94a3b8;
+  }
+
+  .scope-select {
+    background: #0f172a;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .scope-select:focus {
+    outline: 2px solid #38bdf8;
+  }
+
+  .benchmark-banner {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    background: rgba(56, 189, 248, 0.1);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    margin-bottom: 1rem;
+    color: #e0f2fe;
+    font-size: 0.88rem;
+  }
+
+  .banner-icon {
+    font-size: 1.2rem;
+  }
+
+  .banner-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .proposal-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  .btn-execute {
+    background: #3b82f6;
+    color: #fff;
+    border: none;
+    padding: 0.4rem 0.8rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .btn-execute:hover:not(:disabled) {
+    background: #2563eb;
+  }
+
+  .btn-execute:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .action-buttons {
