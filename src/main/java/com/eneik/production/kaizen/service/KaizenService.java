@@ -50,6 +50,9 @@ public class KaizenService {
     }
 
     public List<KaizenProposal> scanForOpportunities(UUID projectId) {
+        if (projectId == null) {
+            projectId = sixSigmaAuditService.getActiveProjectId();
+        }
         List<KaizenProposal> newProposals = new ArrayList<>();
 
         String projectName = "Global";
@@ -238,9 +241,13 @@ public class KaizenService {
     }
 
     public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
-        if (projectId == null) return getAllProposals();
+        if (projectId == null) {
+            projectId = sixSigmaAuditService.getActiveProjectId();
+        }
+        final UUID targetPid = projectId;
+        if (targetPid == null) return getAllProposals();
         return proposals.values().stream()
-                .filter(p -> Objects.equals(p.getProjectId(), projectId))
+                .filter(p -> Objects.equals(p.getProjectId(), targetPid))
                 .toList();
     }
 

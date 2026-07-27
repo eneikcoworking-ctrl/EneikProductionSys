@@ -35,7 +35,9 @@ public class SystemAuditController {
     @GetMapping("/six-sigma")
     public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getSixSigmaAudit(
             @RequestParam(name = "projectId", required = false) String projectId) {
-        UUID pId = (projectId != null && !projectId.isBlank()) ? UUID.fromString(projectId.trim()) : null;
+        UUID pId = (projectId != null && !projectId.isBlank() && !"null".equalsIgnoreCase(projectId.trim())) 
+                ? UUID.fromString(projectId.trim()) 
+                : sixSigmaAuditService.getActiveProjectId();
         return ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
     }
 

@@ -66,27 +66,47 @@ public class SixSigmaAuditService {
             Instant auditedAt
     ) {}
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public SixSigmaAuditReport calculateFullSixSigmaAudit() {
-        return calculateProjectSixSigmaAudit(null);
+        return calculateProjectSixSigmaAudit(getActiveProjectId());
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public UUID getActiveProjectId() {
+        return projectRepository.findAll().stream()
+                .filter(p -> "active".equalsIgnoreCase(p.getStatus()) || "orchestrated".equalsIgnoreCase(p.getStatus()))
+                .map(com.eneik.production.models.persistence.ProjectEntity::getId)
+                .findFirst()
+                .orElseGet(() -> projectRepository.findAll().stream()
+                        .map(com.eneik.production.models.persistence.ProjectEntity::getId)
+                        .findFirst()
+                        .orElse(null));
+    }
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public SixSigmaAuditReport calculateProjectSixSigmaAudit(UUID projectId) {
+        if (projectId == null) {
+            projectId = getActiveProjectId();
+        }
+
+        final UUID targetProjectId = projectId;
+
         // 1. Category A: PR Merge & Conflict Opportunities
         List<PrReviewEntity> reviews = prReviewRepository.findAll();
         List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
 
-        if (projectId != null) {
+        if (targetProjectId != null) {
             reviews = reviews.stream()
                     .filter(r -> {
                         if (r.getJulesSessionId() == null) return false;
                         var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
                         if (sessionOpt.isEmpty()) return false;
                         var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                        return taskOpt.isPresent() && taskOpt.get().getProject() != null && projectId.equals(taskOpt.get().getProject().getId());
+                        return taskOpt.isPresent() && taskOpt.get().getProject() != null && targetProjectId.equals(taskOpt.get().getProject().getId());
                     })
                     .toList();
             conflicts = conflicts.stream()
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projectId.equals(c.getTask().getProject().getId()))
+                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && targetProjectId.equals(c.getTask().getProject().getId()))
                     .toList();
         }
 
@@ -96,9 +116,9 @@ public class SixSigmaAuditService {
 
         // 2. Category B: Quality Gate Checks
         List<TaskEntity> tasks = taskRepository.findAll();
-        if (projectId != null) {
+        if (targetProjectId != null) {
             tasks = tasks.stream()
-                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .filter(t -> t.getProject() != null && targetProjectId.equals(t.getProject().getId()))
                     .toList();
         }
 
@@ -120,22 +140,22 @@ public class SixSigmaAuditService {
 
         // 3. Category C: Onboarding Audit Findings
         List<OnboardingAuditFindingEntity> onboardingFindings = onboardingAuditFindingRepository.findAll();
-        if (projectId != null) {
+        if (targetProjectId != null) {
             onboardingFindings = onboardingFindings.stream()
-                    .filter(f -> f.getProject() != null && projectId.equals(f.getProject().getId()))
+                    .filter(f -> f.getProject() != null && targetProjectId.equals(f.getProject().getId()))
                     .toList();
         }
-        long onboardingOpportunities = Math.max(onboardingFindings.size() * 5L, projectId == null ? 20L : 5L);
+        long onboardingOpportunities = Math.max(onboardingFindings.size() * 5L, targetProjectId == null ? 20L : 5L);
         long onboardingDefects = onboardingFindings.size();
 
         // 4. Category D: TOC Sentinel Runtime Execution Anomalies
         var tocAnomalies = tocSentinelService.getRecentAnomalies();
-        long tocOpportunities = Math.max(tocSentinelService.getGraph().getCompletedCountAllNodes() * 2L, projectId == null ? 50L : 10L);
+        long tocOpportunities = Math.max(tocSentinelService.getGraph().getCompletedCountAllNodes() * 2L, targetProjectId == null ? 50L : 10L);
         long tocDefects = tocAnomalies.size();
 
         // Totals
-        long totalOpportunities = prOpportunities + qgOpportunities + onboardingOpportunities + (projectId == null ? tocOpportunities : 0L);
-        long totalDefects = conflictDefects + qgDefects + onboardingDefects + (projectId == null ? tocDefects : 0L);
+        long totalOpportunities = prOpportunities + qgOpportunities + onboardingOpportunities + (targetProjectId == null ? tocOpportunities : 0L);
+        long totalDefects = conflictDefects + qgDefects + onboardingDefects + (targetProjectId == null ? tocDefects : 0L);
 
         if (totalOpportunities == 0) {
             totalOpportunities = 100; // Baseline default if fresh DB or fresh project
@@ -150,7 +170,7 @@ public class SixSigmaAuditService {
         breakdown.put("prConflicts", Map.of("opportunities", prOpportunities, "defects", conflictDefects, "dpmo", calculateDpmo(conflictDefects, prOpportunities)));
         breakdown.put("qualityGateChecks", Map.of("opportunities", qgOpportunities, "defects", qgDefects, "dpmo", calculateDpmo(qgDefects, qgOpportunities)));
         breakdown.put("onboardingFindings", Map.of("opportunities", onboardingOpportunities, "defects", onboardingDefects, "dpmo", calculateDpmo(onboardingDefects, onboardingOpportunities)));
-        if (projectId == null) {
+        if (targetProjectId == null) {
             breakdown.put("runtimeAnomalies", Map.of("opportunities", tocOpportunities, "defects", tocDefects, "dpmo", calculateDpmo(tocDefects, tocOpportunities)));
         }
 
@@ -163,14 +183,14 @@ public class SixSigmaAuditService {
         tocMetrics.put("anomaliesCount", tocAnomalies.size());
 
         String projectName = "FACTORY_WIDE_ALL_PROJECTS";
-        if (projectId != null) {
-            projectName = projectRepository.findById(projectId)
+        if (targetProjectId != null) {
+            projectName = projectRepository.findById(targetProjectId)
                     .map(com.eneik.production.models.persistence.ProjectEntity::getName)
-                    .orElse("PROJECT_" + projectId.toString().substring(0, 8));
+                    .orElse("PROJECT_" + targetProjectId.toString().substring(0, 8));
         }
 
         SixSigmaAuditReport report = new SixSigmaAuditReport(
-                projectId,
+                targetProjectId,
                 projectName,
                 totalOpportunities,
                 totalDefects,

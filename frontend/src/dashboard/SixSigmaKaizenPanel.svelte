@@ -17,8 +17,9 @@
   $: {
     availableProjects = $projectsStore || [];
     const activeDash = $currentDashboardStore;
-    if (activeDash && activeDash.project && !selectedProjectId) {
+    if (activeDash && activeDash.project && selectedProjectId !== activeDash.project.id) {
       selectedProjectId = activeDash.project.id;
+      loadData();
     }
   }
 
