@@ -7,6 +7,7 @@
   import AiResourcesDashboard from './dashboard/AiResourcesDashboard.svelte';
   import TocSentinelView from './dashboard/TocSentinelView.svelte';
   import SixSigmaKaizenPanel from './dashboard/SixSigmaKaizenPanel.svelte';
+  import ToastContainer from './components/ToastContainer.svelte';
 
   const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080';
 
@@ -237,6 +238,8 @@
 
   <p class="status">{status}</p>
 </main>
+
+<ToastContainer />
 
 <style>
   .modal-backdrop {
