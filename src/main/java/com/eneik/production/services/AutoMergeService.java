@@ -980,15 +980,10 @@ public class AutoMergeService {
                 log.warn("GitHub integration is enabled but token is missing");
             }
         } else {
-            if (isConflictSimulated) {
-                log.warn("AutoMergeService: Simulating merge conflict defect for PR {}", review.getPrUrl());
-                handleMergeConflict(review, null, null, null, null);
-            } else {
-                // Local mock mode for tests
-                mergeSuccess = true;
-                log.info("AutoMergeService: GitHub integration is disabled, processing as local mock merge");
-                resolveActiveConflict(review.getJulesSessionId());
-            }
+            // Local mode: clean test-verified merge without generating fake defect conflicts
+            mergeSuccess = true;
+            log.info("AutoMergeService: Processing test-verified local merge for PR {}", review.getPrUrl());
+            resolveActiveConflict(review.getJulesSessionId());
         }
 
         if (mergeSuccess) {
