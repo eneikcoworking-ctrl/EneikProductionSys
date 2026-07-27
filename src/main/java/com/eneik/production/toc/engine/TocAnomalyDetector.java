@@ -284,7 +284,7 @@ public class TocAnomalyDetector {
             AnomalyReport last = anomalyLog.get(anomalyLog.size() - 1);
             if (last.type() == report.type() &&
                     Objects.equals(last.nodeName(), report.nodeName()) &&
-                    Objects.equals(last.resourceName(), report.resourceName()) &&
+                    Objects.equals(last.resourceId(), report.resourceId()) &&
                     last.timestamp().isAfter(Instant.now().minus(5, java.time.temporal.ChronoUnit.MINUTES))) {
                 return;
             }
