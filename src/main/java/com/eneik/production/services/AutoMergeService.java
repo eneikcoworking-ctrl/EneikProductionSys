@@ -62,6 +62,11 @@ public class AutoMergeService {
     private final ClientDeliverableReadinessService readinessService;
     private final GeminiContextService geminiContextService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.automerge.ConflictEntropyCalculator conflictEntropyCalculator;
+
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                             com.eneik.production.repositories.TaskRepository taskRepository,
@@ -108,6 +113,25 @@ public class AutoMergeService {
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
     public void processAutoMerge() {
+        if (tocSentinelService != null) {
+            com.eneik.production.toc.model.TocToken token = tocSentinelService.startExecution("AUTOMERGE_CYCLE", 40);
+            if (token.getStatus() == com.eneik.production.toc.model.TocToken.TokenStatus.THROTTLED) {
+                log.info("[AUTOMERGE] Cycle throttled by TOC Sentinel DBR Rope due to constraint buffer overflow.");
+                return;
+            }
+            try {
+                tocSentinelService.enterStep(token, "AUTOMERGE_PROCESSING");
+                executeAutoMergeCycle();
+            } finally {
+                tocSentinelService.exitStep(token, "AUTOMERGE_PROCESSING", true);
+                tocSentinelService.endExecution(token, true);
+            }
+        } else {
+            executeAutoMergeCycle();
+        }
+    }
+
+    public void executeAutoMergeCycle() {
         syncOpenPullRequestsFromGitHub();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
@@ -115,8 +139,7 @@ public class AutoMergeService {
         resurrectEscalatedConflictsWithRealCode();
         resurrectAlreadyMergedReviews();
         closeOutReadyFeatureThreads();
-        List<PrReviewEntity> pendingReviews = prReviewRepository.findAll().stream()
-                .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+        List<PrReviewEntity> pendingReviews = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(AutoMergeService::isReviewPollCandidate)
                 .filter(r -> !isAlreadyResolvedSpike(r))
                 .toList();
@@ -209,9 +232,8 @@ public class AutoMergeService {
         if (token == null || token.isBlank()) {
             return;
         }
-        List<PrReviewEntity> escalated = prReviewRepository.findAll().stream()
+        List<PrReviewEntity> escalated = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(r -> "escalated".equalsIgnoreCase(r.getCiStatus()))
-                .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
                 .toList();
         for (PrReviewEntity review : escalated) {
             try {
@@ -220,6 +242,13 @@ public class AutoMergeService {
                     continue;
                 }
                 List<String> allFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
+
+                if (conflictEntropyCalculator != null) {
+                    var entropyResult = conflictEntropyCalculator.calculateEntropy(allFiles);
+                    log.info("[AUTOMERGE-ENTROPY] Conflict entropy H(C) = {} for PR {} (Trivial: {})",
+                            entropyResult.shannonEntropy(), target.pullNumber(), entropyResult.isTrivialOrchestratorConflict());
+                }
+
                 List<String> files = allFiles.stream()
                         .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
                         .toList();

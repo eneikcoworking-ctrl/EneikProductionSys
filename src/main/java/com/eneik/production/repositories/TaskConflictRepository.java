@@ -11,4 +11,5 @@ import java.util.UUID;
 public interface TaskConflictRepository extends JpaRepository<TaskConflictEntity, UUID> {
     Optional<TaskConflictEntity> findFirstByTaskIdAndResolutionStatus(UUID taskId, String resolutionStatus);
     List<TaskConflictEntity> findByResolutionStatusNot(String resolutionStatus);
+    List<TaskConflictEntity> findByResolutionStatusIsNull();
 }

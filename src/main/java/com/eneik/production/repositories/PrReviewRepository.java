@@ -16,4 +16,5 @@ public interface PrReviewRepository extends JpaRepository<PrReviewEntity, UUID> 
     // can lag or contradict the real evidence that its PR is still open and unmerged - see
     // JulesDispatchService.latestOpenPrSession.
     java.util.List<PrReviewEntity> findByJulesSessionId(UUID julesSessionId);
+    java.util.List<PrReviewEntity> findByMergedFalseOrMergedIsNull();
 }
