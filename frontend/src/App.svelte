@@ -137,13 +137,13 @@
       <h1>Eneik Management System</h1>
     </div>
     
-    <div class="nav-links">
-      <button onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Project</button>
-      <button onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
-      <button onclick={() => activeView = 'kaizen'} class:active={activeView === 'kaizen'}>Six Sigma &amp; Kaizen</button>
-      <button onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
-      <button onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
-      <button onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
+    <div class="nav-links" role="tablist" aria-label="Main Navigation">
+      <button role="tab" aria-selected={activeView === 'dashboard'} onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Project</button>
+      <button role="tab" aria-selected={activeView === 'toc'} onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
+      <button role="tab" aria-selected={activeView === 'kaizen'} onclick={() => activeView = 'kaizen'} class:active={activeView === 'kaizen'}>Six Sigma &amp; Kaizen</button>
+      <button role="tab" aria-selected={activeView === 'metrics'} onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
+      <button role="tab" aria-selected={activeView === 'resources'} onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
+      <button role="tab" aria-selected={activeView === 'admin'} onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
     </div>
 
     <div class="create-project">

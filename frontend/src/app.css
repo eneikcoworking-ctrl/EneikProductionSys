@@ -85,15 +85,30 @@ button {
   transition: background-color 0.12s ease, color 0.12s ease;
 }
 
-button:hover:not(:disabled) {
-  background: var(--surface);
-  color: var(--primary);
-}
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  a:focus-visible,
+  [role="button"]:focus-visible,
+  [role="tab"]:focus-visible {
+    outline: 3px solid #0040E0 !important;
+    outline-offset: 2px !important;
+  }
 
-button:disabled {
-  background: var(--neutral-400);
-  cursor: not-allowed;
-}
+  /* High contrast dark mode focus ring override */
+  @media (prefers-color-scheme: dark) {
+    button:focus-visible,
+    input:focus-visible,
+    textarea:focus-visible,
+    [role="tab"]:focus-visible {
+      outline: 3px solid #38bdf8 !important;
+    }
+  }
+
+  button:disabled {
+    background: var(--neutral-400);
+    cursor: not-allowed;
+  }
 
 input,
 textarea {
