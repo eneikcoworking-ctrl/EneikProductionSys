@@ -1,7 +1,9 @@
 package com.eneik.production.services.audit;
 
+import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.OnboardingAuditFindingRepository;
 import com.eneik.production.repositories.PrReviewRepository;
+import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.toc.engine.TocAnomalyDetector;
@@ -44,11 +46,16 @@ public class SixSigmaAuditServiceTest {
         when(taskRepository.findAll()).thenReturn(Collections.emptyList());
         when(onboardingAuditFindingRepository.findAll()).thenReturn(Collections.emptyList());
 
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+
         auditService = new SixSigmaAuditService(
                 prReviewRepository,
                 taskConflictRepository,
                 taskRepository,
                 onboardingAuditFindingRepository,
+                projectRepository,
+                julesSessionRepository,
                 tocSentinelService
         );
     }

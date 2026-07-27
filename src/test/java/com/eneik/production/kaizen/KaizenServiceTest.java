@@ -39,8 +39,8 @@ public class KaizenServiceTest {
         when(taskRepository.findAll()).thenReturn(Collections.emptyList());
         when(sixSigmaAuditService.calculateFullSixSigmaAudit()).thenReturn(
                 new SixSigmaAuditService.SixSigmaAuditReport(
-                        100, 5, 50000.0, 95.0, 3.2, "AVERAGE_THREE_SIGMA",
-                        Collections.emptyMap(), Collections.emptyMap(), java.time.Instant.now()
+                        null, "FACTORY_WIDE_ALL_PROJECTS", 100, 5, 50000.0, 95.0, 3.2, "AVERAGE_THREE_SIGMA",
+                        Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap(), java.time.Instant.now()
                 )
         );
 
