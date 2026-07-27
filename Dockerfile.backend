@@ -14,5 +14,6 @@ RUN apt-get update \
 COPY --from=build /app/target/*.jar app.jar
 COPY docs ./docs
 COPY BARCAN-*.md ./
+ENV JAVA_OPTS="-Xms256m -Xmx768m -XX:+UseG1GC"
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
