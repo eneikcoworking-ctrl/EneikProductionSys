@@ -284,12 +284,6 @@ export type SixSigmaAuditReport = {
   qualityTier: string;
   defectBreakdown: Record<string, { opportunities: number; defects: number; dpmo: number }>;
   tocOperationalMetrics: Record<string, unknown>;
-  factoryWideBenchmark?: {
-    factoryDpmo?: number;
-    factoryYieldPercent?: number;
-    factorySigmaLevel?: number;
-    factoryQualityTier?: string;
-  };
   auditedAt: string;
 };
 
@@ -300,6 +294,8 @@ export type KaizenProposalDto = {
   targetComponent: string;
   actionDescription: string;
   expectedGainPercent: number;
+  projectId?: string;
+  projectName?: string;
   createdAt: string;
   status: 'PROPOSED' | 'APPLIED' | 'STANDARDIZED' | 'REVERTED';
   baselineMetric?: number;

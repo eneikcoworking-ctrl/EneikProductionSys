@@ -68,7 +68,7 @@ public class TocAnomalyDetector {
                     action,
                     Instant.now()
             );
-            anomalyLog.add(report);
+            recordAnomaly(report);
             return false;
         }
 
@@ -137,7 +137,7 @@ public class TocAnomalyDetector {
                         action,
                         Instant.now()
                 );
-                anomalyLog.add(report);
+                recordAnomaly(report);
                 detected.add(report);
             }
         }
@@ -221,7 +221,7 @@ public class TocAnomalyDetector {
                     action,
                     Instant.now()
             );
-            anomalyLog.add(report);
+            recordAnomaly(report);
             return true;
         }
 
@@ -277,6 +277,19 @@ public class TocAnomalyDetector {
             }
         }
         return victim;
+    }
+
+    private void recordAnomaly(AnomalyReport report) {
+        if (!anomalyLog.isEmpty()) {
+            AnomalyReport last = anomalyLog.get(anomalyLog.size() - 1);
+            if (last.type() == report.type() &&
+                    Objects.equals(last.nodeName(), report.nodeName()) &&
+                    Objects.equals(last.resourceName(), report.resourceName()) &&
+                    last.timestamp().isAfter(Instant.now().minus(5, java.time.temporal.ChronoUnit.MINUTES))) {
+                return;
+            }
+        }
+        anomalyLog.add(report);
     }
 
     public List<AnomalyReport> getRecentAnomalies() {

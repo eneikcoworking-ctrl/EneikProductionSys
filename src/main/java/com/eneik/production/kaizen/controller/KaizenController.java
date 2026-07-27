@@ -23,21 +23,21 @@ public class KaizenController {
     }
 
     @GetMapping("/opportunities")
-    public ResponseEntity<List<KaizenProposal>> getOpportunities() {
-        List<KaizenProposal> open = kaizenService.getAllProposals().stream()
+    public ResponseEntity<List<KaizenProposal>> getOpportunities(@RequestParam(name = "projectId", required = false) java.util.UUID projectId) {
+        List<KaizenProposal> open = kaizenService.getProposalsForProject(projectId).stream()
                 .filter(p -> p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED)
                 .toList();
         return ResponseEntity.ok(open);
     }
 
     @GetMapping("/history")
-    public ResponseEntity<Collection<KaizenProposal>> getHistory() {
-        return ResponseEntity.ok(kaizenService.getAllProposals());
+    public ResponseEntity<Collection<KaizenProposal>> getHistory(@RequestParam(name = "projectId", required = false) java.util.UUID projectId) {
+        return ResponseEntity.ok(kaizenService.getProposalsForProject(projectId));
     }
 
     @PostMapping("/scan")
-    public ResponseEntity<Map<String, Object>> scanOpportunities() {
-        List<KaizenProposal> scanned = kaizenService.scanForOpportunities();
+    public ResponseEntity<Map<String, Object>> scanOpportunities(@RequestParam(name = "projectId", required = false) java.util.UUID projectId) {
+        List<KaizenProposal> scanned = kaizenService.scanForOpportunities(projectId);
         return ResponseEntity.ok(Map.of(
                 "scannedCount", scanned.size(),
                 "proposals", scanned

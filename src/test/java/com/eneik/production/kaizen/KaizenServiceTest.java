@@ -40,7 +40,7 @@ public class KaizenServiceTest {
         when(sixSigmaAuditService.calculateFullSixSigmaAudit()).thenReturn(
                 new SixSigmaAuditService.SixSigmaAuditReport(
                         null, "FACTORY_WIDE_ALL_PROJECTS", 100, 5, 50000.0, 95.0, 3.2, "AVERAGE_THREE_SIGMA",
-                        Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap(), java.time.Instant.now()
+                        Collections.emptyMap(), Collections.emptyMap(), java.time.Instant.now()
                 )
         );
 

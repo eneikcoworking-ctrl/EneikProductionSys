@@ -42,16 +42,45 @@ public class KaizenService {
     /**
      * Plan Phase: Scans TOC Sentinel & Six Sigma telemetry for micro-improvement opportunities.
      */
+    /**
+     * Plan Phase: Scans TOC Sentinel & Six Sigma telemetry for micro-improvement opportunities.
+     */
     public List<KaizenProposal> scanForOpportunities() {
+        return scanForOpportunities(null);
+    }
+
+    public List<KaizenProposal> scanForOpportunities(UUID projectId) {
         List<KaizenProposal> newProposals = new ArrayList<>();
+
+        String projectName = "Global";
+        if (projectId != null) {
+            var projectOpt = taskRepository.findAll().stream()
+                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .map(t -> t.getProject().getName())
+                    .findFirst();
+            if (projectOpt.isPresent()) projectName = projectOpt.get();
+        }
+
+        // De-duplication helper check
+        final UUID targetProjectId = projectId;
+        final String finalProjectName = projectName;
+
+        java.util.function.BiFunction<KaizenProposal.KaizenCategory, String, Boolean> hasActiveProposal = (cat, comp) ->
+                proposals.values().stream().anyMatch(p ->
+                        Objects.equals(p.getProjectId(), targetProjectId) &&
+                        p.getCategory() == cat &&
+                        Objects.equals(p.getTargetComponent(), comp) &&
+                        (p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED || p.getStatus() == KaizenProposal.ProposalStatus.APPLIED)
+                );
 
         // 1. Waste Reduction: Check for queued tasks waiting over 1 hour (Muda waste)
         Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
         long staleQueuedCount = taskRepository.findAll().stream()
+                .filter(t -> (targetProjectId == null || (t.getProject() != null && targetProjectId.equals(t.getProject().getId()))))
                 .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().isBefore(oneHourAgo))
                 .count();
 
-        if (staleQueuedCount > 0) {
+        if (staleQueuedCount > 0 && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.WASTE_REDUCTION, "TaskQueue")) {
             String propId = "kz-muda-" + UUID.randomUUID().toString().substring(0, 8);
             KaizenProposal p = new KaizenProposal(
                     propId,
@@ -59,7 +88,9 @@ public class KaizenService {
                     KaizenProposal.KaizenCategory.WASTE_REDUCTION,
                     "TaskQueue",
                     String.format("Found %d tasks waiting > 1h. Refresh queue priorities to unblock execution.", staleQueuedCount),
-                    5.0
+                    5.0,
+                    targetProjectId,
+                    finalProjectName
             );
             p.setBaselineMetric((double) staleQueuedCount);
             proposals.put(propId, p);
@@ -68,7 +99,7 @@ public class KaizenService {
 
         // 2. Buffer & Throughput Tuning: Check DBR constraint buffer status
         var dbrStatus = tocSentinelService.getDbrStatus();
-        if (dbrStatus.ropeThrottlingActive()) {
+        if (dbrStatus.ropeThrottlingActive() && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.BUFFER_TUNING, dbrStatus.primaryConstraintNode())) {
             String propId = "kz-dbr-" + UUID.randomUUID().toString().substring(0, 8);
             KaizenProposal p = new KaizenProposal(
                     propId,
@@ -77,7 +108,9 @@ public class KaizenService {
                     dbrStatus.primaryConstraintNode(),
                     String.format("Constraint '%s' buffer full (%d/%d). Micro-expand buffer capacity by +2 to increase throughput.",
                             dbrStatus.primaryConstraintNode(), dbrStatus.bufferSize(), dbrStatus.maxBufferCapacity()),
-                    8.0
+                    8.0,
+                    targetProjectId,
+                    finalProjectName
             );
             p.setBaselineMetric((double) dbrStatus.bufferSize());
             proposals.put(propId, p);
@@ -85,8 +118,11 @@ public class KaizenService {
         }
 
         // 3. Defect Elimination: Check Six Sigma DPMO
-        var sixSigma = sixSigmaAuditService.calculateFullSixSigmaAudit();
-        if (sixSigma.dpmo() > 1000.0) {
+        var sixSigma = (targetProjectId != null)
+                ? sixSigmaAuditService.calculateProjectSixSigmaAudit(targetProjectId)
+                : sixSigmaAuditService.calculateFullSixSigmaAudit();
+
+        if (sixSigma.dpmo() > 1000.0 && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.DEFECT_ELIMINATION, "QualityGate")) {
             String propId = "kz-sixsigma-" + UUID.randomUUID().toString().substring(0, 8);
             KaizenProposal p = new KaizenProposal(
                     propId,
@@ -94,14 +130,16 @@ public class KaizenService {
                     KaizenProposal.KaizenCategory.DEFECT_ELIMINATION,
                     "QualityGate",
                     String.format("Current DPMO is %.2f. Tighten validation checks and autoremove transient failures.", sixSigma.dpmo()),
-                    12.0
+                    12.0,
+                    targetProjectId,
+                    finalProjectName
             );
             p.setBaselineMetric(sixSigma.dpmo());
             proposals.put(propId, p);
             newProposals.add(p);
         }
 
-        log.info("[KAIZEN-PDCA][PLAN] Scanned system telemetry. Found %d micro-improvement opportunities.", newProposals.size());
+        log.info("[KAIZEN-PDCA][PLAN] Scanned telemetry for scope {}. Found {} micro-improvement opportunities.", finalProjectName, newProposals.size());
         return newProposals;
     }
 
@@ -197,6 +235,13 @@ public class KaizenService {
 
     public Collection<KaizenProposal> getAllProposals() {
         return Collections.unmodifiableCollection(proposals.values());
+    }
+
+    public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
+        if (projectId == null) return getAllProposals();
+        return proposals.values().stream()
+                .filter(p -> Objects.equals(p.getProjectId(), projectId))
+                .toList();
     }
 
     public KaizenProposal getProposal(String id) {

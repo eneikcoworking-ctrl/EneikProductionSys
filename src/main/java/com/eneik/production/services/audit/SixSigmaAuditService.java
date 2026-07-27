@@ -63,7 +63,6 @@ public class SixSigmaAuditService {
             String qualityTier,
             Map<String, Object> defectBreakdown,
             Map<String, Object> tocOperationalMetrics,
-            Map<String, Object> factoryWideBenchmark,
             Instant auditedAt
     ) {}
 
@@ -163,15 +162,6 @@ public class SixSigmaAuditService {
         tocMetrics.put("ropeThrottlingActive", status.ropeThrottlingActive());
         tocMetrics.put("anomaliesCount", tocAnomalies.size());
 
-        Map<String, Object> factoryBenchmark = new LinkedHashMap<>();
-        if (projectId != null) {
-            SixSigmaAuditReport factoryReport = calculateFullSixSigmaAudit();
-            factoryBenchmark.put("factoryDpmo", factoryReport.dpmo());
-            factoryBenchmark.put("factoryYieldPercent", factoryReport.yieldRatePercent());
-            factoryBenchmark.put("factorySigmaLevel", factoryReport.sigmaLevel());
-            factoryBenchmark.put("factoryQualityTier", factoryReport.qualityTier());
-        }
-
         String projectName = "FACTORY_WIDE_ALL_PROJECTS";
         if (projectId != null) {
             projectName = projectRepository.findById(projectId)
@@ -190,7 +180,6 @@ public class SixSigmaAuditService {
                 qualityTier,
                 breakdown,
                 tocMetrics,
-                factoryBenchmark,
                 Instant.now()
         );
 

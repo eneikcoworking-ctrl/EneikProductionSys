@@ -27,6 +27,8 @@ public class KaizenProposal {
     private final String targetComponent;
     private final String actionDescription;
     private final double expectedGainPercent;
+    private final java.util.UUID projectId;
+    private final String projectName;
     private final Instant createdAt;
 
     private volatile ProposalStatus status;
@@ -35,15 +37,23 @@ public class KaizenProposal {
     private volatile Instant appliedAt;
 
     public KaizenProposal(String id, String title, KaizenCategory category, String targetComponent,
-                          String actionDescription, double expectedGainPercent) {
+                          String actionDescription, double expectedGainPercent,
+                          java.util.UUID projectId, String projectName) {
         this.id = id;
         this.title = title;
         this.category = category;
         this.targetComponent = targetComponent;
         this.actionDescription = actionDescription;
         this.expectedGainPercent = expectedGainPercent;
+        this.projectId = projectId;
+        this.projectName = projectName;
         this.createdAt = Instant.now();
         this.status = ProposalStatus.PROPOSED;
+    }
+
+    public KaizenProposal(String id, String title, KaizenCategory category, String targetComponent,
+                          String actionDescription, double expectedGainPercent) {
+        this(id, title, category, targetComponent, actionDescription, expectedGainPercent, null, "Global");
     }
 
     public String getId() { return id; }
@@ -52,6 +62,8 @@ public class KaizenProposal {
     public String getTargetComponent() { return targetComponent; }
     public String getActionDescription() { return actionDescription; }
     public double getExpectedGainPercent() { return expectedGainPercent; }
+    public java.util.UUID getProjectId() { return projectId; }
+    public String getProjectName() { return projectName; }
     public Instant getCreatedAt() { return createdAt; }
 
     public ProposalStatus getStatus() { return status; }

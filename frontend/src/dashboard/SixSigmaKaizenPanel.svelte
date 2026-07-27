@@ -25,13 +25,13 @@
   async function loadData() {
     try {
       errorMsg = '';
-      const url = selectedProjectId
-        ? `${API_BASE}/api/audit/six-sigma?projectId=${selectedProjectId}`
-        : `${API_BASE}/api/audit/six-sigma`;
+      const pidParam = selectedProjectId ? `?projectId=${selectedProjectId}` : '';
+      const sixSigmaUrl = `${API_BASE}/api/audit/six-sigma${pidParam}`;
+      const kaizenUrl = `${API_BASE}/api/kaizen/history${pidParam}`;
 
       const [sixSigmaRes, kaizenRes] = await Promise.all([
-        fetch(url),
-        fetch(`${API_BASE}/api/kaizen/history`)
+        fetch(sixSigmaUrl),
+        fetch(kaizenUrl)
       ]);
 
       if (sixSigmaRes.ok) {
@@ -56,7 +56,8 @@
   async function triggerKaizenScan() {
     scanning = true;
     try {
-      const res = await fetch(`${API_BASE}/api/kaizen/scan`, { method: 'POST' });
+      const pidParam = selectedProjectId ? `?projectId=${selectedProjectId}` : '';
+      const res = await fetch(`${API_BASE}/api/kaizen/scan${pidParam}`, { method: 'POST' });
       if (res.ok) {
         await loadData();
       }
@@ -107,7 +108,6 @@
           value={selectedProjectId}
           onchange={onProjectScopeChange}
         >
-          <option value="">🏭 Factory-Wide Engine Audit (All Projects)</option>
           {#each availableProjects as proj}
             <option value={proj.id}>📦 Project: {proj.name}</option>
           {/each}
@@ -131,19 +131,6 @@
   {:else}
     {#if errorMsg}
       <div class="error-banner">⚠️ {errorMsg}</div>
-    {/if}
-
-    <!-- Scope Benchmark Banner -->
-    {#if sixSigmaReport?.projectId && sixSigmaReport?.factoryWideBenchmark}
-      <div class="benchmark-banner">
-        <span class="banner-icon">📊</span>
-        <div class="banner-text">
-          <strong>Active Scope: {sixSigmaReport.projectName}</strong>
-          <span>
-            Project DPMO: <strong>{sixSigmaReport.dpmo.toFixed(1)}</strong> vs Factory Benchmark DPMO: <strong>{sixSigmaReport.factoryWideBenchmark.factoryDpmo?.toFixed(1) || '0.0'}</strong> (Factory Sigma: <strong>{sixSigmaReport.factoryWideBenchmark.factorySigmaLevel?.toFixed(2) || '6.0'}&sigma;</strong>)
-          </span>
-        </div>
-      </div>
     {/if}
 
     <!-- Section 1: Six Sigma Metrics Overview -->
