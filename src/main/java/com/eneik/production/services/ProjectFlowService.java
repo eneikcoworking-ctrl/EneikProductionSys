@@ -263,6 +263,12 @@ public class ProjectFlowService {
         firstWishlist.setContent(initialWishlist.trim());
         firstWishlist.setSource(WishlistSource.client);
         firstWishlist.setStatus(WishlistStatus.pending);
+        firstWishlist.setTocConstraintRef("TOC-CONSTRAINT-DECOMPOSITION");
+        firstWishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+        firstWishlist.setJtbd("When the project is created, the system must parse the initial brief into actionable slices.");
+        firstWishlist.setSixSigmaMetric("Escaped defects <= 5%");
+        firstWishlist.setDod("Repository initialized. Role: BARCAN-TAG-09.");
+        firstWishlist.setAcceptanceCriteria("Given the project is created, When orchestration runs, Then tasks are successfully extracted and dispatched without Definition of Ready errors.");
         wishlistRepository.save(firstWishlist);
 
         return toProjectDto(saved);
