@@ -135,6 +135,7 @@ public class AutoMergeService {
         syncOpenPullRequestsFromGitHub();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
+        reconcileCleanOpenGitHubPullRequests();
         reconcileLocalMockTasksWithoutReviews();
         resurrectTriviallyEscalatedConflicts();
         resurrectEscalatedConflictsWithRealCode();
@@ -1432,7 +1433,9 @@ public class AutoMergeService {
                 }
             }
 
-            UUID accountId = session.getAccountId();
+            UUID accountId = (session != null && session.getAccountId() != null)
+                    ? session.getAccountId()
+                    : projectFlowService.selectAvailableAccountForProject(task.getProject().getId());
             task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
             taskRepository.save(task);
             claimService.claimSpecificTask(task.getId(), accountId);
@@ -1579,6 +1582,35 @@ public class AutoMergeService {
             }
         } catch (Exception e) {
             log.warn("AutoMergeService: Failed to reconcile merged GitHub PRs: {}", e.getMessage());
+        }
+    }
+
+    private void reconcileCleanOpenGitHubPullRequests() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        try {
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+                var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+                if (snapshot == null || !snapshot.available() || snapshot.open() == null) {
+                    continue;
+                }
+                for (var openPr : snapshot.open()) {
+                    var mergeableState = gitHubPullRequestService.mergeableState(project, openPr.number());
+                    if (mergeableState.isPresent() && Boolean.TRUE.equals(mergeableState.get().mergeable())) {
+                        log.info("AutoMergeService [DIRECT-SWEEP]: Found clean open GitHub PR #{} ({}) for project {}. Executing direct merge...",
+                                openPr.number(), openPr.title(), project.getName());
+                        boolean merged = gitHubPullRequestService.mergePullRequest(project, openPr.number());
+                        if (merged) {
+                            log.info("AutoMergeService [DIRECT-SWEEP]: Successfully merged PR #{} directly on GitHub!", openPr.number());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: Failed to sweep clean open GitHub PRs: {}", e.getMessage());
         }
     }
 
