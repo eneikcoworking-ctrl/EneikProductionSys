@@ -44,7 +44,9 @@ public class KaizenServiceTest {
                 )
         );
 
-        kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository);
+        DefectJournalService defectJournalService = mock(DefectJournalService.class);
+
+        kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository, defectJournalService);
     }
 
     @Test
