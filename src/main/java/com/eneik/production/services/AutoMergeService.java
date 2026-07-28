@@ -135,6 +135,7 @@ public class AutoMergeService {
         syncOpenPullRequestsFromGitHub();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
+        reconcileLocalMockTasksWithoutReviews();
         resurrectTriviallyEscalatedConflicts();
         resurrectEscalatedConflictsWithRealCode();
         resurrectAlreadyMergedReviews();
@@ -1550,6 +1551,34 @@ public class AutoMergeService {
             }
         } catch (Exception e) {
             log.warn("AutoMergeService: Failed to reconcile merged GitHub PRs: {}", e.getMessage());
+        }
+    }
+
+    private void reconcileLocalMockTasksWithoutReviews() {
+        if (settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        try {
+            List<com.eneik.production.models.persistence.TaskEntity> stuckTasks = taskRepository.findAll().stream()
+                    .filter(t -> t.getProject() != null && t.getProject().getStatus() == com.eneik.production.models.persistence.ProjectStatus.active)
+                    .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.review 
+                              || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review 
+                              || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.spike_completed
+                              || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed)
+                    .toList();
+
+            for (com.eneik.production.models.persistence.TaskEntity task : stuckTasks) {
+                var sessions = julesSessionRepository.findByTaskId(task.getId());
+                boolean hasRunningSession = sessions.stream().anyMatch(s -> "running".equalsIgnoreCase(s.getStatus()) || "revising".equalsIgnoreCase(s.getStatus()));
+                if (!hasRunningSession) {
+                    log.info("AutoMergeService [LOCAL-MOCK]: Automatically completing orphaned task {} ({}) for active project {}",
+                            task.getId(), task.getTitle(), task.getProject().getName());
+                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                    taskRepository.save(task);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: Failed to reconcile local mock tasks: {}", e.getMessage());
         }
     }
 
