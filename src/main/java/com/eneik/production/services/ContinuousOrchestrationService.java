@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import com.eneik.production.services.MLPredictionServiceClient;
 
+import com.eneik.production.models.persistence.TaskStatus;
+
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -40,6 +42,8 @@ public class ContinuousOrchestrationService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
     private int blockedAccountRecoveryCooldownMinutes;
@@ -238,8 +242,9 @@ public class ContinuousOrchestrationService {
                     for (ProjectEntity project : activeProjects) {
                         List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
                         for (TaskEntity t : reviewTasks) {
-                            var prOpt = julesSessionRepository.findFirstByTaskIdOrderByCreatedAtDesc(t.getId())
-                                    .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank());
+                            var prOpt = julesSessionRepository.findByTaskId(t.getId()).stream()
+                                    .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank())
+                                    .findFirst();
                             if (prOpt.isPresent()) {
                                 String prUrl = prOpt.get().getPrUrl();
                                 String prNumStr = prUrl.substring(prUrl.lastIndexOf("/") + 1);

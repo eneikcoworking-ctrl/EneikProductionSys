@@ -86,9 +86,11 @@ public class BranchGarbageCollectorService {
         }
 
         // Step 3: Clear or mark TaskConflict records as resolved/superseded
-        List<TaskConflictEntity> conflicts = taskConflictRepository.findByTaskId(task.getId());
-        for (TaskConflictEntity c : conflicts) {
-            c.setResolutionAttempts(99); // Mark as superseded
+        Optional<TaskConflictEntity> conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
+        if (conflictOpt.isPresent()) {
+            TaskConflictEntity c = conflictOpt.get();
+            c.setResolutionAttempts(99);
+            c.setResolutionStatus("superseded");
             taskConflictRepository.save(c);
         }
 
