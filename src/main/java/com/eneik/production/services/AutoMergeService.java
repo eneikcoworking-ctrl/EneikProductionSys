@@ -1563,7 +1563,6 @@ public class AutoMergeService {
                     .filter(t -> t.getProject() != null && t.getProject().getStatus() == com.eneik.production.models.persistence.ProjectStatus.active)
                     .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.review 
                               || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review 
-                              || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.spike_completed
                               || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed)
                     .toList();
 
