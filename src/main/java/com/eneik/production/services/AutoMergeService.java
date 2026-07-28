@@ -1561,6 +1561,7 @@ public class AutoMergeService {
         try {
             List<com.eneik.production.models.persistence.TaskEntity> stuckTasks = taskRepository.findAll().stream()
                     .filter(t -> t.getProject() != null && t.getProject().getStatus() == com.eneik.production.models.persistence.ProjectStatus.active)
+                    .filter(t -> !"chaotic".equalsIgnoreCase(t.getCynefinDomain()) && !"complex".equalsIgnoreCase(t.getCynefinDomain()))
                     .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.review 
                               || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review 
                               || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.claimed)
