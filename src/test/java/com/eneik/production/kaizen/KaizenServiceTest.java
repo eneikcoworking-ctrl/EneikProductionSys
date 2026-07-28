@@ -1,6 +1,7 @@
 package com.eneik.production.kaizen;
 
 import com.eneik.production.kaizen.model.KaizenProposal;
+import com.eneik.production.kaizen.service.DefectJournalService;
 import com.eneik.production.kaizen.service.KaizenService;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
