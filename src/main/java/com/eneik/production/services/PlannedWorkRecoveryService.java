@@ -9,6 +9,7 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
@@ -144,5 +145,45 @@ public class PlannedWorkRecoveryService {
             return (ObjectNode) payload.deepCopy();
         }
         return objectMapper.createObjectNode();
+    }
+
+    /**
+     * Self-healing: Recovers wishlists stuck in 'compiling' when no active compiler task exists.
+     */
+    @Transactional
+    public int recoverStuckCompilingWishlists(ProjectEntity project) {
+        if (project == null) return 0;
+        List<WishlistEntity> compiling = wishlistRepository.findByProjectIdAndStatus(project.getId(), WishlistStatus.compiling);
+        if (compiling.isEmpty()) return 0;
+
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        boolean hasActiveCompilerTask = projectTasks.stream()
+                .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed || t.getStatus() == TaskStatus.in_progress)
+                .anyMatch(t -> t.getPayload() != null && t.getPayload().has("compilesWishlistIds"));
+
+        if (hasActiveCompilerTask) return 0;
+
+        int recovered = 0;
+        List<WishlistEntity> allProjectWishlists = wishlistRepository.findByProjectId(project.getId());
+
+        for (WishlistEntity w : compiling) {
+            boolean hasCompiledTasks = projectTasks.stream().anyMatch(t -> w.getId().equals(t.getSourceWishlistId()));
+            boolean hasSubWishlistsConverted = allProjectWishlists.stream()
+                    .filter(sub -> !sub.getId().equals(w.getId()))
+                    .anyMatch(sub -> sub.getStatus() == WishlistStatus.converted_to_task);
+
+            if (hasCompiledTasks || hasSubWishlistsConverted) {
+                w.setStatus(WishlistStatus.converted_to_task);
+                wishlistRepository.save(w);
+                log.info("[RECOVERY] Recovered stuck compiling wishlist {} -> converted_to_task for project {}", w.getId(), project.getName());
+                recovered++;
+            } else {
+                w.setStatus(WishlistStatus.pending);
+                wishlistRepository.save(w);
+                log.info("[RECOVERY] Recovered stuck compiling wishlist {} -> pending for project {}", w.getId(), project.getName());
+                recovered++;
+            }
+        }
+        return recovered;
     }
 }

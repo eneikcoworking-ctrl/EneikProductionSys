@@ -116,6 +116,8 @@ public class ContinuousOrchestrationService {
                             resumedPlanTasks, project.getName());
                 }
 
+                plannedWorkRecoveryService.recoverStuckCompilingWishlists(project);
+
                 // Compile any pending wishlist items into tasks. This is the step that used to only run when a
                 // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
                 // stalls the moment the queue drains down to a wishlist item that isn't a circuit-breaker
