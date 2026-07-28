@@ -46,6 +46,11 @@ public class KaizenServiceTest {
         );
 
         DefectJournalService defectJournalService = mock(DefectJournalService.class);
+        when(defectJournalService.getDefectsInWindow(any(), anyInt())).thenReturn(
+                List.of(new com.eneik.production.kaizen.model.DefectJournalEntity(
+                        null, "HIGH", "BUFFER_TUNING", "AUTOMERGE_PROCESSING", "DBR_BUFFER_FULL", "Buffer full", 5.0
+                ))
+        );
 
         kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository, defectJournalService);
     }
