@@ -135,14 +135,34 @@ public class ClientDeliverableReadinessService {
      * re-fire every time ANY unrelated work merged and kept creating new coverage_gap wishlists in response -
      * a self-perpetuating loop that could keep decompositionComplete from ever stabilizing).
      */
+    public Set<UUID> findWishlistTreeIds(UUID projectId, UUID rootWishlistId) {
+        if (rootWishlistId == null) return Set.of();
+        List<WishlistEntity> all = wishlistRepository.findByProjectId(projectId);
+        Set<UUID> tree = new java.util.HashSet<>();
+        tree.add(rootWishlistId);
+        boolean added = true;
+        while (added) {
+            added = false;
+            for (WishlistEntity w : all) {
+                if (w.getParentWishlistId() != null && tree.contains(w.getParentWishlistId()) && tree.add(w.getId())) {
+                    added = true;
+                }
+            }
+        }
+        return tree;
+    }
+
     public List<TaskEntity> listTasksForRootWishlist(UUID projectId, UUID rootWishlistId) {
+        if (rootWishlistId == null) return List.of();
+        Set<UUID> treeIds = findWishlistTreeIds(projectId, rootWishlistId);
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Set<UUID> featureIds = featureRepository.findByProjectId(projectId).stream()
-                .filter(feature -> rootWishlistId.equals(feature.getRootWishlistId()))
+                .filter(feature -> treeIds.contains(feature.getRootWishlistId()) ||
+                        allWishlist.stream().anyMatch(w -> treeIds.contains(w.getId()) && feature.getId().equals(w.getFeatureId())))
                 .map(FeatureEntity::getId)
                 .collect(java.util.stream.Collectors.toSet());
         if (featureIds.isEmpty()) {
-            return List.of();
+            return taskRepository.findBySourceWishlistIdIn(treeIds.stream().toList());
         }
         List<UUID> plannedItemIds = allWishlist.stream()
                 .filter(w -> w.getCompiledByRole() != null)
@@ -150,7 +170,7 @@ public class ClientDeliverableReadinessService {
                 .map(WishlistEntity::getId)
                 .toList();
         if (plannedItemIds.isEmpty()) {
-            return List.of();
+            return taskRepository.findBySourceWishlistIdIn(treeIds.stream().toList());
         }
         return taskRepository.findBySourceWishlistIdIn(plannedItemIds);
     }
@@ -169,14 +189,8 @@ public class ClientDeliverableReadinessService {
             wishlistById.put(item.getId(), item);
         }
 
-        // Orphan-feature fix (2026-07-24, live incident: PessimisticLockingFailureException retry storm
-        // during wishlist decomposition left stray FeatureEntity rows behind whose insert survived a failed
-        // transaction's rollback while nothing ever attached a wishlist to them - confirmed on test-thirty-
-        // seventh, 12 FeatureEntity rows vs 5 real эпики reconstructed from the actual task graph). An
-        // orphan is unreferenced by construction: no wishlist row's featureId ever points at it. Filtering
-        // on that signal (not a new column/flag - none exists) removes exactly the orphans without touching
-        // any real feature, since every real feature's OWN root wishlist gets its featureId set to itself at
-        // creation time (FeatureService.resolveOrCreateFeatureId).
+        Set<UUID> treeIds = rootWishlistId != null ? findWishlistTreeIds(projectId, rootWishlistId) : Set.of();
+
         Set<UUID> featureIdsWithWishlistWork = allWishlist.stream()
                 .map(WishlistEntity::getFeatureId)
                 .filter(id -> id != null)
@@ -187,7 +201,8 @@ public class ClientDeliverableReadinessService {
                     WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
                     return root != null && sources.contains(root.getSource());
                 })
-                .filter(feature -> rootWishlistId == null || rootWishlistId.equals(feature.getRootWishlistId()))
+                .filter(feature -> rootWishlistId == null || treeIds.contains(feature.getRootWishlistId()) ||
+                        allWishlist.stream().anyMatch(w -> treeIds.contains(w.getId()) && feature.getId().equals(w.getFeatureId())))
                 .toList();
         List<FeatureEntity> nonOrphanFeatures = sourceMatchedFeatures.stream()
                 .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))

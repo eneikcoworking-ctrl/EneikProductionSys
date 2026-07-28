@@ -2730,6 +2730,9 @@ public class ProjectFlowService {
                 log.info("Coverage audit for wishlist {} is stale (previously audited up to PR #{}, now #{} merged) - dispatching a fresh audit",
                         wishlist.getId(), lastAuditedPr, currentHighestMergedPr);
             }
+            if (currentHighestMergedPr == null) {
+                currentHighestMergedPr = 0;
+            }
             dispatchCoverageAuditForCompletedWishlist(project, wishlist, currentHighestMergedPr);
         }
     }
