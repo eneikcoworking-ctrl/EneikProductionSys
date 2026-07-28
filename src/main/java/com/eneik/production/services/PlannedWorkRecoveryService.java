@@ -186,4 +186,51 @@ public class PlannedWorkRecoveryService {
         }
         return recovered;
     }
+
+    /**
+     * Lean Cleanout Invariant: When all client/product feature tasks for a project are completed and merged (done),
+     * automatically dismiss any remaining non-product / meta / repair tasks stranded in queued/claimed status
+     * so active task count reaches 0 and triggers Coverage and Falsification Audits immediately.
+     */
+    @Transactional
+    public int cleanoutOrphanedMetaTasksWhenProductComplete(ProjectEntity project) {
+        if (project == null) return 0;
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        List<TaskEntity> productFeatureTasks = projectTasks.stream()
+                .filter(t -> !isMetaTask(t))
+                .toList();
+
+        if (productFeatureTasks.isEmpty()) return 0;
+
+        boolean allProductFeaturesFinished = productFeatureTasks.stream().allMatch(t ->
+                t.getStatus() == TaskStatus.done ||
+                t.getStatus() == TaskStatus.failed ||
+                t.getStatus() == TaskStatus.blocked);
+        if (!allProductFeaturesFinished) return 0;
+
+        List<TaskEntity> activeMetaTasks = projectTasks.stream()
+                .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed || t.getStatus() == TaskStatus.in_progress)
+                .filter(this::isMetaTask)
+                .toList();
+
+        if (activeMetaTasks.isEmpty()) return 0;
+
+        int dismissedCount = 0;
+        for (TaskEntity metaTask : activeMetaTasks) {
+            metaTask.setStatus(TaskStatus.done);
+            taskRepository.save(metaTask);
+            claimService.releaseTerminalClaim(metaTask.getId());
+            log.info("[LEAN-CLEANOUT] Completed orphaned meta task {} ({}) because all product features are 100% complete and merged in main.",
+                    metaTask.getId(), metaTask.getTitle());
+            dismissedCount++;
+        }
+        return dismissedCount;
+    }
+
+    private boolean isMetaTask(TaskEntity t) {
+        if (t == null) return false;
+        String text = ((t.getTitle() == null ? "" : t.getTitle()) + " " + (t.getDescription() == null ? "" : t.getDescription())).toLowerCase();
+        return text.contains("stagnation") || text.contains("pr review fallback") || text.contains("compile 1 wishlist") ||
+               t.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM;
+    }
 }

@@ -1019,6 +1019,7 @@ public class GitHubPullRequestService {
         RepoRef repoRef = repoRef(project);
         if (repoRef == null) return false;
 
+        String javaVersion = detectJavaVersionFromPom(repoRef, token);
         String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/.github/workflows/ci.yml";
         String ciYaml = """
                 name: CI
@@ -1038,15 +1039,15 @@ public class GitHubPullRequestService {
                       - name: Checkout code
                         uses: actions/checkout@v4
 
-                      - name: Set up JDK 17
+                      - name: Set up JDK %s
                         uses: actions/setup-java@v4
                         with:
                           distribution: 'temurin'
-                          java-version: '17'
+                          java-version: '%s'
 
                       - name: Run Maven tests
                         run: mvn clean test
-                """;
+                """.formatted(javaVersion, javaVersion);
 
         try {
             HttpRequest getReq = baseRequest(path, token).GET().build();
@@ -1056,9 +1057,8 @@ public class GitHubPullRequestService {
                 JsonNode json = objectMapper.readTree(getRes.body());
                 sha = json.path("sha").asText(null);
             }
-
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("message", "fix(ci): align GitHub Actions Java version to 17 Temurin matching pom.xml");
+            body.put("message", "fix(ci): align GitHub Actions Java version to " + javaVersion + " Temurin matching pom.xml");
             body.put("content", java.util.Base64.getEncoder().encodeToString(ciYaml.getBytes(StandardCharsets.UTF_8)));
             if (sha != null) {
                 body.put("sha", sha);
@@ -1069,7 +1069,7 @@ public class GitHubPullRequestService {
                     .build();
             HttpResponse<String> putRes = httpClient.send(putReq, HttpResponse.BodyHandlers.ofString());
             if (putRes.statusCode() >= 200 && putRes.statusCode() < 300) {
-                log.info("[CI-SYNC] Successfully synced .github/workflows/ci.yml to Java 17 Temurin for {}/{}", repoRef.owner(), repoRef.repo());
+                log.info("[CI-SYNC] Successfully synced .github/workflows/ci.yml to Java {} Temurin for {}/{}", javaVersion, repoRef.owner(), repoRef.repo());
                 return true;
             }
         } catch (Exception e) {
@@ -1096,6 +1096,28 @@ public class GitHubPullRequestService {
             }
         }
         return new RepoRef(githubConfig.getOrganization(), project.getRepositoryName());
+    }
+
+    private String detectJavaVersionFromPom(RepoRef repoRef, String token) {
+        try {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/pom.xml";
+            HttpRequest getReq = baseRequest(path, token).GET().build();
+            HttpResponse<String> getRes = httpClient.send(getReq, HttpResponse.BodyHandlers.ofString());
+            if (getRes.statusCode() == 200) {
+                JsonNode json = objectMapper.readTree(getRes.body());
+                String base64Content = json.path("content").asText("");
+                String pomXml = new String(java.util.Base64.getMimeDecoder().decode(base64Content), StandardCharsets.UTF_8);
+                java.util.regex.Matcher m = java.util.regex.Pattern.compile("<(?:java\\.version|maven\\.compiler\\.release|maven\\.compiler\\.target)>\\s*(\\d+)\\s*</").matcher(pomXml);
+                if (m.find()) {
+                    String ver = m.group(1);
+                    log.info("[CI-SYNC] Detected Java version {} from pom.xml for {}/{}", ver, repoRef.owner(), repoRef.repo());
+                    return ver;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[CI-SYNC] Failed to detect JDK version from pom.xml for {}/{}, defaulting to 17", repoRef.owner(), repoRef.repo(), e);
+        }
+        return "17";
     }
 
     private String sessionToken(String externalSessionId) {

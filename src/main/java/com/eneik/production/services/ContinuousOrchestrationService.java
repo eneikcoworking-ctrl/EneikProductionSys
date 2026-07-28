@@ -117,6 +117,7 @@ public class ContinuousOrchestrationService {
                 }
 
                 plannedWorkRecoveryService.recoverStuckCompilingWishlists(project);
+                plannedWorkRecoveryService.cleanoutOrphanedMetaTasksWhenProductComplete(project);
 
                 // Compile any pending wishlist items into tasks. This is the step that used to only run when a
                 // human clicked "Orchestrate" or chatted with the operator — without it, autonomous operation
