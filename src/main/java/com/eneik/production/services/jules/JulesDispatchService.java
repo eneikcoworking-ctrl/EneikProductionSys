@@ -721,6 +721,11 @@ public class JulesDispatchService {
         }
     }
 
+    private String systemOrchestratorRepositoryName() {
+        String configured = settingsService.effectiveValue("system_orchestrator_repository_name");
+        return (configured != null && !configured.isBlank()) ? configured : "EneikProductionSys";
+    }
+
     private String julesRetrievalQuery(TaskEntity task, String mode, boolean buildPhase) {
         String roleTag = task.getRole() == null ? "unknown" : task.getRole().getTag();
         String roleDescription = task.getRole() == null ? "" : task.getRole().getDescription();
