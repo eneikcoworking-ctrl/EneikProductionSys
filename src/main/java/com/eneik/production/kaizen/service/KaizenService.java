@@ -50,22 +50,19 @@ public class KaizenService {
     }
 
     public List<KaizenProposal> scanForOpportunities(UUID projectId) {
-        if (projectId == null) {
-            projectId = sixSigmaAuditService.getActiveProjectId();
-        }
+        final UUID targetProjectId = (projectId != null) ? projectId : sixSigmaAuditService.getActiveProjectId();
         List<KaizenProposal> newProposals = new ArrayList<>();
 
         String projectName = "Global";
-        if (projectId != null) {
+        if (targetProjectId != null) {
             var projectOpt = taskRepository.findAll().stream()
-                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .filter(t -> t.getProject() != null && targetProjectId.equals(t.getProject().getId()))
                     .map(t -> t.getProject().getName())
                     .findFirst();
             if (projectOpt.isPresent()) projectName = projectOpt.get();
         }
 
         // De-duplication helper check
-        final UUID targetProjectId = projectId;
         final String finalProjectName = projectName;
 
         java.util.function.BiFunction<KaizenProposal.KaizenCategory, String, Boolean> hasActiveProposal = (cat, comp) ->

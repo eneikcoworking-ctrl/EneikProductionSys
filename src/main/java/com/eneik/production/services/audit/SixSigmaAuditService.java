@@ -74,7 +74,7 @@ public class SixSigmaAuditService {
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public UUID getActiveProjectId() {
         return projectRepository.findAll().stream()
-                .filter(p -> "active".equalsIgnoreCase(p.getStatus()) || "orchestrated".equalsIgnoreCase(p.getStatus()))
+                .filter(p -> "active".equalsIgnoreCase(String.valueOf(p.getStatus())) || "orchestrated".equalsIgnoreCase(String.valueOf(p.getStatus())))
                 .map(com.eneik.production.models.persistence.ProjectEntity::getId)
                 .findFirst()
                 .orElseGet(() -> projectRepository.findAll().stream()
