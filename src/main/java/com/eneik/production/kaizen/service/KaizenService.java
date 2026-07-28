@@ -1,5 +1,6 @@
 package com.eneik.production.kaizen.service;
 
+import com.eneik.production.kaizen.model.DefectJournalEntity;
 import com.eneik.production.kaizen.model.KaizenProposal;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
@@ -15,9 +16,10 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Kaizen Service - Continuous Micro-Improvement Engine (PDCA Cycle: Plan-Do-Check-Act).
- * Scans system telemetry for small wastes (Muda), generates targeted micro-improvements,
- * executes them in small safe steps, and measures quality & performance gains.
+ * Kaizen Service - 2-Hour Window Aggregated Micro-Improvement Engine.
+ * High-frequency telemetry (anomalies, stalls, DPMO spikes) is recorded silently into the under-the-hood
+ * Defect Journal database table. Once every 2 hours, defects are mathematically aggregated, de-duplicated,
+ * and presented as human-understandable, action-oriented micro-improvements on the user interface without spam.
  */
 @Service
 public class KaizenService {
@@ -27,23 +29,81 @@ public class KaizenService {
     private final TocSentinelService tocSentinelService;
     private final SixSigmaAuditService sixSigmaAuditService;
     private final TaskRepository taskRepository;
+    private final DefectJournalService defectJournalService;
 
+    // In-memory deduplicated proposals store (max 1 active proposal per category & target component per 2-hour window)
     private final Map<String, KaizenProposal> proposals = new ConcurrentHashMap<>();
 
     public KaizenService(TocSentinelService tocSentinelService,
-                         SixSigmaAuditService sixSigmaAuditService,
-                         TaskRepository taskRepository) {
+                          SixSigmaAuditService sixSigmaAuditService,
+                          TaskRepository taskRepository,
+                          DefectJournalService defectJournalService) {
         this.tocSentinelService = tocSentinelService;
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.taskRepository = taskRepository;
-        log.info("[KAIZEN-INIT] Kaizen Micro-Improvement Service initialized.");
+        this.defectJournalService = defectJournalService;
+        log.info("[KAIZEN-INIT] 2-Hour Aggregated Kaizen Micro-Improvement Service initialized.");
     }
 
     /**
-     * Plan Phase: Scans TOC Sentinel & Six Sigma telemetry for micro-improvement opportunities.
+     * Silent Telemetry Ingestion: Records under-the-hood defect observations without spamming UI.
      */
+    public void recordUnderTheHoodDefects(UUID projectId) {
+        final UUID targetProjectId = (projectId != null) ? projectId : sixSigmaAuditService.getActiveProjectId();
+
+        // 1. Check for stale tasks waiting > 1 hour (Muda waste)
+        Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
+        long staleQueuedCount = taskRepository.findAll().stream()
+                .filter(t -> (targetProjectId == null || (t.getProject() != null && targetProjectId.equals(t.getProject().getId()))))
+                .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().isBefore(oneHourAgo))
+                .count();
+
+        if (staleQueuedCount > 0) {
+            defectJournalService.recordDefect(
+                    targetProjectId,
+                    "MEDIUM",
+                    "WASTE_REDUCTION",
+                    "TaskQueue",
+                    "STALE_QUEUE_WAITING",
+                    String.format("Found %d tasks queued > 1h", staleQueuedCount),
+                    (double) staleQueuedCount
+            );
+        }
+
+        // 2. Check DBR buffer status
+        var dbrStatus = tocSentinelService.getDbrStatus();
+        if (dbrStatus.ropeThrottlingActive()) {
+            defectJournalService.recordDefect(
+                    targetProjectId,
+                    "HIGH",
+                    "BUFFER_TUNING",
+                    dbrStatus.primaryConstraintNode(),
+                    "DBR_BUFFER_FULL",
+                    String.format("Constraint '%s' buffer full (%d/%d)", dbrStatus.primaryConstraintNode(), dbrStatus.bufferSize(), dbrStatus.maxBufferCapacity()),
+                    (double) dbrStatus.bufferSize()
+            );
+        }
+
+        // 3. Check Six Sigma DPMO
+        var sixSigma = (targetProjectId != null)
+                ? sixSigmaAuditService.calculateProjectSixSigmaAudit(targetProjectId)
+                : sixSigmaAuditService.calculateFullSixSigmaAudit();
+
+        if (sixSigma.dpmo() > 1000.0) {
+            defectJournalService.recordDefect(
+                    targetProjectId,
+                    "HIGH",
+                    "DEFECT_ELIMINATION",
+                    "QualityGate",
+                    "HIGH_DPMO_DEFECT",
+                    String.format("DPMO spike detected: %.2f", sixSigma.dpmo()),
+                    sixSigma.dpmo()
+            );
+        }
+    }
+
     /**
-     * Plan Phase: Scans TOC Sentinel & Six Sigma telemetry for micro-improvement opportunities.
+     * Mathematical Aggregation & De-duplication: Generates human-understandable 2-hour Kaizen proposals.
      */
     public List<KaizenProposal> scanForOpportunities() {
         return scanForOpportunities(null);
@@ -51,7 +111,12 @@ public class KaizenService {
 
     public List<KaizenProposal> scanForOpportunities(UUID projectId) {
         final UUID targetProjectId = (projectId != null) ? projectId : sixSigmaAuditService.getActiveProjectId();
-        List<KaizenProposal> newProposals = new ArrayList<>();
+
+        // 1. Record latest telemetry silently under the hood
+        recordUnderTheHoodDefects(targetProjectId);
+
+        // 2. Retrieve defects from the last 2 hours (2-hour window)
+        List<DefectJournalEntity> recentDefects = defectJournalService.getDefectsInWindow(targetProjectId, 2);
 
         String projectName = "Global";
         if (targetProjectId != null) {
@@ -62,9 +127,17 @@ public class KaizenService {
             if (projectOpt.isPresent()) projectName = projectOpt.get();
         }
 
-        // De-duplication helper check
         final String finalProjectName = projectName;
+        List<KaizenProposal> newProposals = new ArrayList<>();
 
+        // Group recent defects by category and component
+        Map<String, List<DefectJournalEntity>> groupedDefects = new HashMap<>();
+        for (DefectJournalEntity d : recentDefects) {
+            String key = d.getCategory() + ":" + d.getSourceComponent();
+            groupedDefects.computeIfAbsent(key, k -> new ArrayList<>()).add(d);
+        }
+
+        // Deduplication helper check for active proposal
         java.util.function.BiFunction<KaizenProposal.KaizenCategory, String, Boolean> hasActiveProposal = (cat, comp) ->
                 proposals.values().stream().anyMatch(p ->
                         Objects.equals(p.getProjectId(), targetProjectId) &&
@@ -73,73 +146,78 @@ public class KaizenService {
                         (p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED || p.getStatus() == KaizenProposal.ProposalStatus.APPLIED)
                 );
 
-        // 1. Waste Reduction: Check for queued tasks waiting over 1 hour (Muda waste)
-        Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
-        long staleQueuedCount = taskRepository.findAll().stream()
-                .filter(t -> (targetProjectId == null || (t.getProject() != null && targetProjectId.equals(t.getProject().getId()))))
-                .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().isBefore(oneHourAgo))
-                .count();
+        // Process Waste Reduction Group (TaskQueue)
+        List<DefectJournalEntity> wasteGroup = groupedDefects.get("WASTE_REDUCTION:TaskQueue");
+        if (wasteGroup != null && !wasteGroup.isEmpty() && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.WASTE_REDUCTION, "TaskQueue")) {
+            double avgStale = wasteGroup.stream().mapToDouble(d -> d.getMetricValue() != null ? d.getMetricValue() : 1.0).average().orElse(1.0);
+            String propId = "kz-2h-muda-" + targetProjectId;
 
-        if (staleQueuedCount > 0 && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.WASTE_REDUCTION, "TaskQueue")) {
-            String propId = "kz-muda-" + UUID.randomUUID().toString().substring(0, 8);
             KaizenProposal p = new KaizenProposal(
                     propId,
-                    "Eliminate Stale Queue Waiting Waste (Muda)",
+                    "Устранение потерь очереди (Muda)",
                     KaizenProposal.KaizenCategory.WASTE_REDUCTION,
                     "TaskQueue",
-                    String.format("Found %d tasks waiting > 1h. Refresh queue priorities to unblock execution.", staleQueuedCount),
-                    5.0,
+                    String.format("За последние 2 часа зафиксировано %d сигналов простоя очереди (в среднем %.1f задач в ожидании > 1ч). Предложение: автоматический пересчет и оптимизация приоритетов задач.",
+                            wasteGroup.size(), avgStale),
+                    6.5,
                     targetProjectId,
                     finalProjectName
             );
-            p.setBaselineMetric((double) staleQueuedCount);
+            p.setBaselineMetric(avgStale);
             proposals.put(propId, p);
             newProposals.add(p);
         }
 
-        // 2. Buffer & Throughput Tuning: Check DBR constraint buffer status
-        var dbrStatus = tocSentinelService.getDbrStatus();
-        if (dbrStatus.ropeThrottlingActive() && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.BUFFER_TUNING, dbrStatus.primaryConstraintNode())) {
-            String propId = "kz-dbr-" + UUID.randomUUID().toString().substring(0, 8);
-            KaizenProposal p = new KaizenProposal(
-                    propId,
-                    "Tune DBR Buffer Capacity for Bottleneck Node",
-                    KaizenProposal.KaizenCategory.BUFFER_TUNING,
-                    dbrStatus.primaryConstraintNode(),
-                    String.format("Constraint '%s' buffer full (%d/%d). Micro-expand buffer capacity by +2 to increase throughput.",
-                            dbrStatus.primaryConstraintNode(), dbrStatus.bufferSize(), dbrStatus.maxBufferCapacity()),
-                    8.0,
-                    targetProjectId,
-                    finalProjectName
-            );
-            p.setBaselineMetric((double) dbrStatus.bufferSize());
-            proposals.put(propId, p);
-            newProposals.add(p);
+        // Process Buffer Tuning Group (DBR Bottleneck)
+        for (Map.Entry<String, List<DefectJournalEntity>> entry : groupedDefects.entrySet()) {
+            if (entry.getKey().startsWith("BUFFER_TUNING:")) {
+                String component = entry.getKey().substring("BUFFER_TUNING:".length());
+                if (!hasActiveProposal.apply(KaizenProposal.KaizenCategory.BUFFER_TUNING, component)) {
+                    List<DefectJournalEntity> bufList = entry.getValue();
+                    double avgBuf = bufList.stream().mapToDouble(d -> d.getMetricValue() != null ? d.getMetricValue() : 0.0).average().orElse(0.0);
+                    String propId = "kz-2h-dbr-" + component.replaceAll("[^a-zA-Z0-9-]", "");
+
+                    KaizenProposal p = new KaizenProposal(
+                            propId,
+                            String.format("Точечная настройка буфера DBR: %s", component),
+                            KaizenProposal.KaizenCategory.BUFFER_TUNING,
+                            component,
+                            String.format("На узле-ограничении '%s' за 2 часа зафиксировано %d перегрузок буфера. Предложение: аккуратное точечное расширение емкости буфера на +2 единицы для выравнивания потока.",
+                                    component, bufList.size()),
+                            8.5,
+                            targetProjectId,
+                            finalProjectName
+                    );
+                    p.setBaselineMetric(avgBuf);
+                    proposals.put(propId, p);
+                    newProposals.add(p);
+                }
+            }
         }
 
-        // 3. Defect Elimination: Check Six Sigma DPMO
-        var sixSigma = (targetProjectId != null)
-                ? sixSigmaAuditService.calculateProjectSixSigmaAudit(targetProjectId)
-                : sixSigmaAuditService.calculateFullSixSigmaAudit();
+        // Process Defect Elimination Group (QualityGate)
+        List<DefectJournalEntity> defectGroup = groupedDefects.get("DEFECT_ELIMINATION:QualityGate");
+        if (defectGroup != null && !defectGroup.isEmpty() && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.DEFECT_ELIMINATION, "QualityGate")) {
+            double avgDpmo = defectGroup.stream().mapToDouble(d -> d.getMetricValue() != null ? d.getMetricValue() : 1000.0).average().orElse(1000.0);
+            String propId = "kz-2h-sixsigma-" + targetProjectId;
 
-        if (sixSigma.dpmo() > 1000.0 && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.DEFECT_ELIMINATION, "QualityGate")) {
-            String propId = "kz-sixsigma-" + UUID.randomUUID().toString().substring(0, 8);
             KaizenProposal p = new KaizenProposal(
                     propId,
-                    "Micro-Optimize Defect Escapes in Quality Gate Checks",
+                    "Снижение уровня дефектов Quality Gate (Six Sigma)",
                     KaizenProposal.KaizenCategory.DEFECT_ELIMINATION,
                     "QualityGate",
-                    String.format("Current DPMO is %.2f. Tighten validation checks and autoremove transient failures.", sixSigma.dpmo()),
+                    String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Предложение: усиление автоматической зачистки транзиторных ошибок проверки качества.",
+                            avgDpmo, defectGroup.size()),
                     12.0,
                     targetProjectId,
                     finalProjectName
             );
-            p.setBaselineMetric(sixSigma.dpmo());
+            p.setBaselineMetric(avgDpmo);
             proposals.put(propId, p);
             newProposals.add(p);
         }
 
-        log.info("[KAIZEN-PDCA][PLAN] Scanned telemetry for scope {}. Found {} micro-improvement opportunities.", finalProjectName, newProposals.size());
+        log.info("[KAIZEN-PDCA][PLAN-2H] 2-Hour window analysis completed for {}. Generated {} clean deduplicated proposal(s).", finalProjectName, newProposals.size());
         return newProposals;
     }
 
@@ -152,7 +230,7 @@ public class KaizenService {
             return false;
         }
 
-        log.info("[KAIZEN-PDCA][DO] Executing micro-step for proposal '{}': {}", proposal.getId(), proposal.getTitle());
+        log.info("[KAIZEN-PDCA][DO] Executing 2-hour micro-step for proposal '{}': {}", proposal.getId(), proposal.getTitle());
 
         switch (proposal.getCategory()) {
             case BUFFER_TUNING -> {
@@ -215,21 +293,20 @@ public class KaizenService {
     }
 
     /**
-     * Periodic scheduled Kaizen background cycle.
+     * Periodic Kaizen background cycle running ONCE EVERY 2 HOURS (7,200,000 ms).
      */
-    @Scheduled(fixedRate = 60000) // Every 1 minute
+    @Scheduled(fixedRate = 7200000, initialDelay = 60000) // Every 2 hours
     public void periodicKaizenCycle() {
         try {
             List<KaizenProposal> scanned = scanForOpportunities();
             for (KaizenProposal p : scanned) {
-                // Apply single micro step automatically if gain is high and low risk
                 if (p.getExpectedGainPercent() >= 5.0) {
                     applyMicroStep(p.getId());
                     evaluateAndStandardize(p.getId());
                 }
             }
         } catch (Exception e) {
-            log.error("[KAIZEN-ERROR] Kaizen periodic cycle encountered error: ", e);
+            log.error("[KAIZEN-ERROR] Kaizen 2-hour periodic cycle encountered error: ", e);
         }
     }
 
