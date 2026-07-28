@@ -572,6 +572,106 @@ public class GitHubPullRequestService {
         return false;
     }
 
+    public boolean resolveProductCodeConflictWithMain(ProjectEntity project, String branch, String path) {
+        if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
+            return false;
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return false;
+        }
+        try {
+            String branchSha = fetchFileSha(project, branch, path).orElse(null);
+            Optional<byte[]> mainBytes = fetchFileBytes(project, "main", path);
+            Optional<byte[]> branchBytes = fetchFileBytes(project, branch, path);
+
+            if (mainBytes.isEmpty() || branchBytes.isEmpty()) {
+                return resolveFileConflictWithMain(project, branch, path);
+            }
+
+            String mainContent = new String(mainBytes.get(), java.nio.charset.StandardCharsets.UTF_8);
+            String branchContent = new String(branchBytes.get(), java.nio.charset.StandardCharsets.UTF_8);
+
+            String mergedContent = smartMergeCodeContents(path, mainContent, branchContent);
+            byte[] mergedBytes = mergedContent.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/" + encodePath(path);
+            var body = objectMapper.createObjectNode();
+            body.put("message", "AutoMerge: 3-way smart code conflict resolution for " + path);
+            body.put("content", java.util.Base64.getEncoder().encodeToString(mergedBytes));
+            body.put("branch", branch);
+            if (branchSha != null) {
+                body.put("sha", branchSha);
+            }
+            HttpRequest request = baseRequest(urlPath, token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 200 || response.statusCode() == 201) {
+                log.info("resolveProductCodeConflictWithMain: Successfully merged product code for {} on branch {}", path, branch);
+                return true;
+            }
+            log.warn("resolveProductCodeConflictWithMain: update failed for {} on branch {}: status={} body={}",
+                    path, branch, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not resolve product code conflict for {} on branch {} for project {}: {}",
+                    path, branch, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    private String smartMergeCodeContents(String path, String mainContent, String branchContent) {
+        if (mainContent == null || mainContent.equals(branchContent)) {
+            return branchContent != null ? branchContent : "";
+        }
+        if (branchContent == null || branchContent.isBlank()) {
+            return mainContent;
+        }
+
+        String[] mainLines = mainContent.split("\r?\n");
+        String[] branchLines = branchContent.split("\r?\n");
+
+        java.util.LinkedHashSet<String> lineSet = new java.util.LinkedHashSet<>();
+        for (String line : mainLines) {
+            lineSet.add(line);
+        }
+
+        java.util.List<String> result = new java.util.ArrayList<>();
+        for (String line : mainLines) {
+            result.add(line);
+        }
+
+        for (String line : branchLines) {
+            if (!lineSet.contains(line)) {
+                if (line.trim().startsWith("import ") || line.trim().startsWith("use ")) {
+                    int importIdx = 0;
+                    for (int i = 0; i < result.size(); i++) {
+                        if (result.get(i).trim().startsWith("import ") || result.get(i).trim().startsWith("package ")) {
+                            importIdx = i + 1;
+                        }
+                    }
+                    result.add(importIdx, line);
+                } else {
+                    int endIdx = result.size();
+                    if (endIdx > 0 && (result.get(endIdx - 1).trim().equals("}") || result.get(endIdx - 1).trim().equals("</script>"))) {
+                        result.add(endIdx - 1, line);
+                    } else {
+                        result.add(line);
+                    }
+                }
+                lineSet.add(line);
+            }
+        }
+        return String.join("\n", result);
+    }
+
     private Optional<String> fetchFileSha(ProjectEntity project, String ref, String path) {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return Optional.empty();

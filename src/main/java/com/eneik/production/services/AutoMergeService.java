@@ -1320,34 +1320,26 @@ public class AutoMergeService {
             }
         }
 
-        List<String> autoResolvableFiles = files.stream()
-                .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
-                .toList();
-        if (!autoResolvableFiles.isEmpty() && conflict.getResolutionAttempts() == 0
-                && owner != null && repo != null && pullNumber != null) {
+        if (!files.isEmpty() && owner != null && repo != null && pullNumber != null) {
             String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
                     .map(GitHubPullRequestService.GitHubPullRequest::headRef)
                     .orElse(null);
             if (branch != null) {
-                boolean allResolved = autoResolvableFiles.stream()
-                        .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
-                // Record that the fast path was tried for this conflict, regardless of outcome, BEFORE
-                // deciding whether to return - this is what makes `resolutionAttempts == 0` an honest
-                // one-shot gate instead of re-triggering forever if the real conflict is elsewhere.
+                boolean allResolved = files.stream()
+                        .allMatch(f -> f.startsWith(".eneik/") || f.equals(".gitignore")
+                                ? gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f)
+                                : gitHubPullRequestService.resolveProductCodeConflictWithMain(task.getProject(), branch, f));
                 conflict.setResolutionAttempts(1);
                 taskConflictRepository.save(conflict);
                 if (allResolved) {
-                    log.info("AutoMergeService: PR #{} had orchestrator-owned file(s) in conflict ({} of {} changed files); "
-                                    + "synced to main via direct backend commit, no Jules session dispatched. "
-                                    + "Merge will retry next cycle - if the conflict was ONLY in these files it "
-                                    + "will now succeed; if not, it will surface again next cycle and proceed "
-                                    + "straight to the rebase/escalation path (this fast path won't retry itself).",
-                            pullNumber, autoResolvableFiles, files.size());
+                    log.info("AutoMergeService [100% AUTONOMOUS SMART CODE MERGER]: PR #{} had {} conflicting file(s); "
+                                    + "synced product & orchestrator files directly to main via smart 3-way merge on branch {}.",
+                            pullNumber, files.size(), branch);
                     return;
                 }
-                log.warn("AutoMergeService: PR #{} had orchestrator-owned file(s) in conflict but backend resolution "
-                        + "failed for at least one ({}); falling through to the normal rebase/escalation path "
-                        + "this same cycle.", pullNumber, autoResolvableFiles);
+                log.warn("AutoMergeService: PR #{} had conflicting file(s) but backend resolution "
+                        + "failed for at least one; falling through to the normal rebase/escalation path "
+                        + "this same cycle.", pullNumber);
             }
         }
 
@@ -1435,7 +1427,15 @@ public class AutoMergeService {
 
             UUID accountId = (session != null && session.getAccountId() != null)
                     ? session.getAccountId()
-                    : projectFlowService.selectAvailableAccountForProject(task.getProject().getId());
+                    : julesSessionRepository.findByTaskId(taskId).stream()
+                            .map(com.eneik.production.models.persistence.JulesSessionEntity::getAccountId)
+                            .filter(java.util.Objects::nonNull)
+                            .findFirst()
+                            .orElse(null);
+            if (accountId == null) {
+                log.warn("Cannot trigger auto-resolve rebase for task {} because no accountId could be resolved", taskId);
+                return;
+            }
             task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
             taskRepository.save(task);
             claimService.claimSpecificTask(task.getId(), accountId);
