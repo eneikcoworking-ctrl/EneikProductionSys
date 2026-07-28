@@ -1303,7 +1303,7 @@ public class AutoMergeService {
         // make the PR mergeable, retrying this same sync every cycle forever would silently mask that and
         // never fall through to the rebase/escalation path that actually handles a real code conflict.
         // Tier-1 100% Autonomous Branch Sync: Automatically merge main into feature branch via GitHub API
-        if (owner != null && repo != null && pullNumber != null && conflict.getResolutionAttempts() == 0) {
+        if (owner != null && repo != null && pullNumber != null && conflict.getResolutionAttempts() < 10) {
             String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
                     .map(GitHubPullRequestService.GitHubPullRequest::headRef)
                     .orElse(null);
