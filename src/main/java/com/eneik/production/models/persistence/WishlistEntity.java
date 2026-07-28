@@ -48,6 +48,10 @@ public class WishlistEntity {
     @Column(name = "compiled_by_role")
     private String compiledByRole;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_context")
+    private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -175,5 +179,13 @@ public class WishlistEntity {
 
     public void setFeatureId(UUID featureId) {
         this.featureId = featureId;
+    }
+
+    public TargetContext getTargetContext() {
+        return targetContext == null ? TargetContext.PRODUCT_CODEBASE : targetContext;
+    }
+
+    public void setTargetContext(TargetContext targetContext) {
+        this.targetContext = targetContext;
     }
 }

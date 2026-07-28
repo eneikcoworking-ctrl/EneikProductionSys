@@ -248,6 +248,7 @@ public class TechnicalLeadCompiler {
                                          FlywayVersionReservation flywayCache) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
+        task.setTargetContext(wishlist.getTargetContext());
 
         java.util.Set<String> extractedRoles = extractRoleTags(wishlist);
         if (extractedRoles.isEmpty() && roleTag != null) {

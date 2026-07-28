@@ -77,6 +77,10 @@ public class TaskEntity {
     @Column(name = "feature_id")
     private UUID featureId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "target_context")
+    private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
+
     @Column(nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -121,6 +125,8 @@ public class TaskEntity {
     public void setSourceWishlistId(UUID sourceWishlistId) { this.sourceWishlistId = sourceWishlistId; }
     public UUID getFeatureId() { return featureId; }
     public void setFeatureId(UUID featureId) { this.featureId = featureId; }
+    public TargetContext getTargetContext() { return targetContext == null ? TargetContext.PRODUCT_CODEBASE : targetContext; }
+    public void setTargetContext(TargetContext targetContext) { this.targetContext = targetContext; }
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

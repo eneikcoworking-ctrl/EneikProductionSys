@@ -509,7 +509,10 @@ public class JulesDispatchService {
             return julesSessionRepository.save(session);
         }
 
-        String repoUrl = sourcePrefix + project.getRepositoryName();
+        String repoName = (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM)
+                ? systemOrchestratorRepositoryName()
+                : project.getRepositoryName();
+        String repoUrl = sourcePrefix + repoName;
         String sessionTitle = TaskTitleBuilder.displayTitle(task);
         String description = withTaskPromptTitle(sessionTitle, task.getDescription());
         var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
