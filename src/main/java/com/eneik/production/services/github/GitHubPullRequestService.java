@@ -993,6 +993,75 @@ public class GitHubPullRequestService {
         );
     }
 
+    /**
+     * Automatically syncs .github/workflows/ci.yml to JDK 17 Temurin matching pom.xml and Docker.
+     */
+    public boolean syncCiWorkflow(ProjectEntity project) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) return false;
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) return false;
+        RepoRef repoRef = repoRef(project);
+        if (repoRef == null) return false;
+
+        String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/.github/workflows/ci.yml";
+        String ciYaml = """
+                name: CI
+
+                on:
+                  pull_request:
+                    types: [opened, synchronize, reopened]
+                  push:
+                    branches:
+                      - main
+
+                jobs:
+                  backend-verification:
+                    name: Backend Verification
+                    runs-on: ubuntu-latest
+                    steps:
+                      - name: Checkout code
+                        uses: actions/checkout@v4
+
+                      - name: Set up JDK 17
+                        uses: actions/setup-java@v4
+                        with:
+                          distribution: 'temurin'
+                          java-version: '17'
+
+                      - name: Run Maven tests
+                        run: mvn clean test
+                """;
+
+        try {
+            HttpRequest getReq = baseRequest(path, token).GET().build();
+            HttpResponse<String> getRes = httpClient.send(getReq, HttpResponse.BodyHandlers.ofString());
+            String sha = null;
+            if (getRes.statusCode() == 200) {
+                JsonNode json = objectMapper.readTree(getRes.body());
+                sha = json.path("sha").asText(null);
+            }
+
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("message", "fix(ci): align GitHub Actions Java version to 17 Temurin matching pom.xml");
+            body.put("content", java.util.Base64.getEncoder().encodeToString(ciYaml.getBytes(StandardCharsets.UTF_8)));
+            if (sha != null) {
+                body.put("sha", sha);
+            }
+
+            HttpRequest putReq = baseRequest(path, token)
+                    .method("PUT", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> putRes = httpClient.send(putReq, HttpResponse.BodyHandlers.ofString());
+            if (putRes.statusCode() >= 200 && putRes.statusCode() < 300) {
+                log.info("[CI-SYNC] Successfully synced .github/workflows/ci.yml to Java 17 Temurin for {}/{}", repoRef.owner(), repoRef.repo());
+                return true;
+            }
+        } catch (Exception e) {
+            log.warn("[CI-SYNC] Could not sync ci.yml for project {}: {}", project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
     private HttpRequest.Builder baseRequest(String path, String token) {
         return HttpRequest.newBuilder(URI.create(githubConfig.getApiBaseUrl().replaceAll("/+$", "") + path))
                 .header("Authorization", "Bearer " + token)

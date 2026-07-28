@@ -100,6 +100,9 @@ public class ContinuousOrchestrationService {
             LogScope.project(project.getId());
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
+                if (gitHubPullRequestService != null) {
+                    gitHubPullRequestService.syncCiWorkflow(project);
+                }
 
                 int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
                 if (resumedPlanTasks > 0) {
