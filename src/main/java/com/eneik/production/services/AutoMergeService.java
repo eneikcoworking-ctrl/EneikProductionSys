@@ -1593,6 +1593,14 @@ public class AutoMergeService {
                             task.getId(), task.getTitle(), task.getProject().getName());
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
                     taskRepository.save(task);
+
+                    prReviewRepository.findAll().stream()
+                            .filter(r -> r.getJulesSessionId() != null)
+                            .filter(r -> sessions.stream().anyMatch(s -> s.getId().equals(r.getJulesSessionId())))
+                            .forEach(r -> {
+                                r.setMerged(true);
+                                prReviewRepository.save(r);
+                            });
                 }
             }
         } catch (Exception e) {
