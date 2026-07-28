@@ -1459,6 +1459,16 @@ public class AutoMergeService {
                 || task.getStatus() == TaskStatus.blocked
                 || task.getStatus() == TaskStatus.spike_completed;
 
+        if (settingsService.effectiveBoolean("github_enabled") && !Boolean.TRUE.equals(review.getMerged()) && task.getProject() != null) {
+            PullRequestTarget target = parseGithubPullRequestUrl(review.getPrUrl());
+            if (target != null) {
+                var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(target.pullNumber())).orElse(null);
+                if (githubPr != null && !githubPr.closed()) {
+                    return false;
+                }
+            }
+        }
+
         if (!hasMergedSibling && !terminal) {
             return false;
         }
