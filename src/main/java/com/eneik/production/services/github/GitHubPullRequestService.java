@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -928,6 +929,21 @@ public class GitHubPullRequestService {
         } catch (Exception e) {
             log.warn("Could not close GitHub PR {} for project {}: {}", pullRequest.url(), project.getId(), e.getMessage());
             return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, e.getMessage());
+        }
+    }
+
+    public java.util.List<GitHubPullRequest> fetchOpenPullRequests(ProjectEntity project) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) return java.util.List.of();
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) return java.util.List.of();
+        RepoRef repoRef = repoRef(project);
+        if (repoRef == null) return java.util.List.of();
+
+        try {
+            return fetchPullRequests(repoRef, "open", token);
+        } catch (Exception e) {
+            log.warn("Could not fetch open PRs for project {}: {}", project.getId(), e.getMessage());
+            return java.util.List.of();
         }
     }
 

@@ -40,10 +40,8 @@ public class ContinuousOrchestrationService {
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes;
 
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
     private int blockedAccountRecoveryCooldownMinutes;
@@ -59,7 +57,9 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.repositories.TaskRepository taskRepository,
                                          com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                          com.eneik.production.services.settings.SystemSettingsService settingsService,
-                                         PlannedWorkRecoveryService plannedWorkRecoveryService) {
+                                         PlannedWorkRecoveryService plannedWorkRecoveryService,
+                                         com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
+                                         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -72,6 +72,8 @@ public class ContinuousOrchestrationService {
         this.systemProgressTracker = systemProgressTracker;
         this.settingsService = settingsService;
         this.plannedWorkRecoveryService = plannedWorkRecoveryService;
+        this.branchGarbageCollectorService = branchGarbageCollectorService;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -102,6 +104,9 @@ public class ContinuousOrchestrationService {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
                 if (gitHubPullRequestService != null) {
                     gitHubPullRequestService.syncCiWorkflow(project);
+                }
+                if (branchGarbageCollectorService != null) {
+                    branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
                 }
 
                 int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);

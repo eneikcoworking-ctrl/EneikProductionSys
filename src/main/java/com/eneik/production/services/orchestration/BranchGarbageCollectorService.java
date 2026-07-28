@@ -31,13 +31,16 @@ public class BranchGarbageCollectorService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final TaskRepository taskRepository;
     private final TaskConflictRepository taskConflictRepository;
+    private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
 
     public BranchGarbageCollectorService(GitHubPullRequestService gitHubPullRequestService,
                                          TaskRepository taskRepository,
-                                         TaskConflictRepository taskConflictRepository) {
+                                         TaskConflictRepository taskConflictRepository,
+                                         com.eneik.production.repositories.JulesSessionRepository julesSessionRepository) {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
+        this.julesSessionRepository = julesSessionRepository;
     }
 
     /**
@@ -102,5 +105,60 @@ public class BranchGarbageCollectorService {
         log.info("[BRANCH-GC][SUCCESS] Task '{}' (ID: {}) re-queued off fresh main with Priority 100. Old branch retired.",
                 task.getTitle(), task.getId());
         return true;
+    }
+
+    /**
+     * Scans GitHub open PRs for a project, closing orphaned/superseded PRs and retiring stagnated ones.
+     */
+    @Transactional
+    public int cleanOrphanedAndStagnatedPullRequests(ProjectEntity project) {
+        if (project == null) return 0;
+        var openPrs = gitHubPullRequestService.fetchOpenPullRequests(project);
+        log.info("[BRANCH-GC] Found {} open PR(s) on GitHub for project {}", openPrs.size(), project.getName());
+        if (openPrs.isEmpty()) return 0;
+
+        int cleaned = 0;
+        for (var pr : openPrs) {
+            String title = pr.title();
+            String headRef = pr.headRef();
+            int pullNumber = pr.number();
+            log.info("[BRANCH-GC] Inspecting open PR #{} ('{}') headRef='{}'", pullNumber, title, headRef);
+
+            // Case A: Closeout PR where the feature has already been merged via another PR
+            if (title != null && title.startsWith("Closeout")) {
+                gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Orphaned closeout PR superseded by main");
+                log.info("[BRANCH-GC] Closed orphaned closeout PR #{} ('{}') on project {}", pullNumber, title, project.getName());
+                cleaned++;
+                continue;
+            }
+
+            // Case B: Stagnated feature PR (branch starting with jules-) or any open PR
+            if (headRef != null && headRef.startsWith("jules-")) {
+                Optional<TaskEntity> taskOpt = julesSessionRepository.findAll().stream()
+                        .filter(s -> s.getPrUrl() != null && s.getPrUrl().contains(String.valueOf(pullNumber)))
+                        .map(s -> taskRepository.findById(s.getTaskId()))
+                        .filter(Optional::isPresent)
+                        .map(Optional::get)
+                        .findFirst();
+
+                if (taskOpt.isPresent()) {
+                    TaskEntity task = taskOpt.get();
+                    if (task.getStatus() != TaskStatus.done) {
+                        retireAbandonedBranchAndPR(project, task, headRef, pullNumber, "Branch GC: Cleaning stagnated PR #" + pullNumber);
+                        cleaned++;
+                    }
+                } else {
+                    gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Orphaned PR without active task");
+                    gitHubPullRequestService.deleteBranch(project, headRef);
+                    log.info("[BRANCH-GC] Retired orphaned PR #{} ('{}') with branch '{}' on project {}", pullNumber, title, headRef, project.getName());
+                    cleaned++;
+                }
+            } else if (title != null) {
+                // Any other stagnated open PR
+                gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Stagnated open PR auto-closed");
+                cleaned++;
+            }
+        }
+        return cleaned;
     }
 }
