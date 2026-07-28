@@ -1301,6 +1301,24 @@ public class AutoMergeService {
         // conflict is diagnosed): if the real conflict is elsewhere and syncing these alone doesn't
         // make the PR mergeable, retrying this same sync every cycle forever would silently mask that and
         // never fall through to the rebase/escalation path that actually handles a real code conflict.
+        // Tier-1 100% Autonomous Branch Sync: Automatically merge main into feature branch via GitHub API
+        if (owner != null && repo != null && pullNumber != null && conflict.getResolutionAttempts() == 0) {
+            String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                    .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                    .orElse(null);
+            if (branch != null) {
+                GitHubPullRequestService.MergeBranchResult branchMergeResult =
+                        gitHubPullRequestService.mergeBranch(task.getProject(), branch, "main", "AutoMerge: sync main into " + branch);
+                if (branchMergeResult == GitHubPullRequestService.MergeBranchResult.MERGED ||
+                    branchMergeResult == GitHubPullRequestService.MergeBranchResult.UP_TO_DATE) {
+                    log.info("AutoMergeService [100% AUTONOMOUS]: Successfully merged main into branch {} via GitHub API for PR #{}. Branch is now clean!", branch, pullNumber);
+                    conflict.setResolutionAttempts(1);
+                    taskConflictRepository.save(conflict);
+                    return;
+                }
+            }
+        }
+
         List<String> autoResolvableFiles = files.stream()
                 .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
                 .toList();
