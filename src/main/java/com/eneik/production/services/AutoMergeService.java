@@ -66,6 +66,8 @@ public class AutoMergeService {
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.automerge.ConflictEntropyCalculator conflictEntropyCalculator;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -1393,8 +1395,14 @@ public class AutoMergeService {
             review.setCiStatus("escalated");
             prReviewRepository.save(review);
 
-            log.warn("Poka-yoke: merge conflict for task {} escalated after {} attempts; no recovery "
-                    + "wishlist was created. The original task remains the only work identity.", taskId, attempts);
+            log.warn("Poka-yoke: merge conflict for task {} escalated after {} attempts; triggering Branch Garbage Collector to retire old branch and re-queue task.", taskId, attempts);
+            if (branchGarbageCollectorService != null && owner != null && repo != null && pullNumber != null) {
+                String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                        .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                        .orElse(null);
+                branchGarbageCollectorService.retireAbandonedBranchAndPR(
+                        task.getProject(), task, branch, Integer.parseInt(pullNumber), "Conflict escalated after 3 attempts");
+            }
         } else {
             taskConflictRepository.save(conflict);
 

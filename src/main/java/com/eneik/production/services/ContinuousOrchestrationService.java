@@ -38,6 +38,9 @@ public class ContinuousOrchestrationService {
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+
     @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
     private int blockedAccountRecoveryCooldownMinutes;
 
@@ -227,8 +230,32 @@ public class ContinuousOrchestrationService {
                             .anyMatch(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending);
 
             if (idleCapacityExists) {
-                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes while idle capacity or pending work exists", minutesSinceProgress);
+                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes while idle capacity or pending work exists. Triggering Branch Garbage Collector.", minutesSinceProgress);
                 setSystemStatus("stalled");
+
+                if (branchGarbageCollectorService != null) {
+                    List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+                    for (ProjectEntity project : activeProjects) {
+                        List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
+                        for (TaskEntity t : reviewTasks) {
+                            var prOpt = julesSessionRepository.findFirstByTaskIdOrderByCreatedAtDesc(t.getId())
+                                    .filter(s -> s.getPrUrl() != null && !s.getPrUrl().isBlank());
+                            if (prOpt.isPresent()) {
+                                String prUrl = prOpt.get().getPrUrl();
+                                String prNumStr = prUrl.substring(prUrl.lastIndexOf("/") + 1);
+                                try {
+                                    int prNum = Integer.parseInt(prNumStr);
+                                    String branch = gitHubPullRequestService.fetchPullRequestByNumber(project, prNum)
+                                            .map(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::headRef)
+                                            .orElse(null);
+                                    branchGarbageCollectorService.retireAbandonedBranchAndPR(project, t, branch, prNum, "System Stall auto-recovery (> " + minutesSinceProgress + "m idle)");
+                                } catch (Exception ex) {
+                                    log.warn("Continuous Orchestration: Failed to parse/retire PR #{} for task {}: {}", prNumStr, t.getId(), ex.getMessage());
+                                }
+                            }
+                        }
+                    }
+                }
             } else {
                 setSystemStatus("idle_no_work");
             }
