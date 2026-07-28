@@ -39,7 +39,16 @@
         sixSigmaReport = await sixSigmaRes.json();
       }
       if (kaizenRes.ok) {
-        proposals = await kaizenRes.json();
+        const rawProposals: KaizenProposalDto[] = await kaizenRes.json();
+        const map = new Map<string, KaizenProposalDto>();
+        for (const p of rawProposals) {
+          const key = `${p.category}:${p.targetComponent}`;
+          const existing = map.get(key);
+          if (!existing || new Date(p.createdAt).getTime() > new Date(existing.createdAt).getTime()) {
+            map.set(key, p);
+          }
+        }
+        proposals = Array.from(map.values());
       }
     } catch (e: any) {
       errorMsg = e?.message || 'Failed to fetch Six Sigma & Kaizen telemetry';

@@ -164,6 +164,7 @@ public class KaizenService {
                     finalProjectName
             );
             p.setBaselineMetric(avgStale);
+            proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
             proposals.put(propId, p);
             newProposals.add(p);
         }
@@ -189,6 +190,7 @@ public class KaizenService {
                             finalProjectName
                     );
                     p.setBaselineMetric(avgBuf);
+                    proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
                     proposals.put(propId, p);
                     newProposals.add(p);
                 }
@@ -213,6 +215,7 @@ public class KaizenService {
                     finalProjectName
             );
             p.setBaselineMetric(avgDpmo);
+            proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
             proposals.put(propId, p);
             newProposals.add(p);
         }
@@ -282,6 +285,9 @@ public class KaizenService {
 
         if (improved) {
             proposal.setStatus(KaizenProposal.ProposalStatus.STANDARDIZED);
+            proposals.values().removeIf(other -> other != proposal
+                    && other.getCategory() == proposal.getCategory()
+                    && Objects.equals(other.getTargetComponent(), proposal.getTargetComponent()));
             log.info("[KAIZEN-PDCA][ACT] Standardized micro-improvement '{}'! Post-metric: %.2f (Baseline: %.2f).",
                     proposal.getTitle(), postMetric, proposal.getBaselineMetric() != null ? proposal.getBaselineMetric() : 0.0);
         } else {
@@ -311,7 +317,7 @@ public class KaizenService {
     }
 
     public Collection<KaizenProposal> getAllProposals() {
-        return Collections.unmodifiableCollection(proposals.values());
+        return getDeduplicatedProposals(proposals.values());
     }
 
     public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
@@ -319,10 +325,28 @@ public class KaizenService {
             projectId = sixSigmaAuditService.getActiveProjectId();
         }
         final UUID targetPid = projectId;
-        if (targetPid == null) return getAllProposals();
-        return proposals.values().stream()
-                .filter(p -> Objects.equals(p.getProjectId(), targetPid))
-                .toList();
+        Collection<KaizenProposal> projectProposals = (targetPid == null)
+                ? proposals.values()
+                : proposals.values().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
+        return getDeduplicatedProposals(projectProposals);
+    }
+
+    private Collection<KaizenProposal> getDeduplicatedProposals(Collection<KaizenProposal> inputProposals) {
+        Instant twoHoursAgo = Instant.now().minus(2, ChronoUnit.HOURS);
+        Map<String, KaizenProposal> deduplicatedMap = new LinkedHashMap<>();
+        for (KaizenProposal p : inputProposals) {
+            // Exclude obsolete standardized/reverted proposals older than 2 hours
+            if ((p.getStatus() == KaizenProposal.ProposalStatus.STANDARDIZED || p.getStatus() == KaizenProposal.ProposalStatus.REVERTED)
+                    && p.getCreatedAt() != null && p.getCreatedAt().isBefore(twoHoursAgo)) {
+                continue;
+            }
+            String key = p.getCategory() + ":" + p.getTargetComponent();
+            KaizenProposal existing = deduplicatedMap.get(key);
+            if (existing == null || p.getCreatedAt().isAfter(existing.getCreatedAt())) {
+                deduplicatedMap.put(key, p);
+            }
+        }
+        return Collections.unmodifiableCollection(deduplicatedMap.values());
     }
 
     public KaizenProposal getProposal(String id) {
