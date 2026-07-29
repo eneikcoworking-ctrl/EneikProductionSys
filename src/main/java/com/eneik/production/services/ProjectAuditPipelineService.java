@@ -133,8 +133,8 @@ public class ProjectAuditPipelineService {
                     false
             );
 
-            log.info("Stitch single generation completed for project {}: status={}, assetPath={}",
-                    project.getId(), result.status(), result.assetPath());
+            log.info("Stitch single generation completed for project {}: status={}, imagePath={}",
+                    project.getId(), result.status(), result.imagePath());
             return result.available();
         } catch (Exception e) {
             log.warn("Failed single Stitch generation call for project {}: {}", project.getId(), e.getMessage());
