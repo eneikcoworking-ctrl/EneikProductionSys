@@ -574,6 +574,26 @@ public class JulesDispatchService {
                         .append(rawCharter).append("\n");
             }
 
+            try {
+                java.nio.file.Path commonFile = java.nio.file.Paths.get("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md");
+                if (java.nio.file.Files.exists(commonFile)) {
+                    roleContextBuilder.append("\n## COMMON ANALYTIC PROGRAMMING PATTERNS\n")
+                            .append(java.nio.file.Files.readString(commonFile)).append("\n");
+                }
+                java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
+                if (java.nio.file.Files.isDirectory(philosophersDir)) {
+                    String roleTag = task.getRole().getTag();
+                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, roleTag + "*.md")) {
+                        for (java.nio.file.Path philFile : stream) {
+                            roleContextBuilder.append("\n## PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append("\n")
+                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                log.warn("JulesDispatchService: failed to attach philosopher patterns for role {}: {}", task.getRole().getTag(), e.getMessage());
+            }
+
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
             if (rules != null && rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {
                 roleContextBuilder.append("\n## Mandatory Review By\n").append(rules.reviewRequiredBy()).append("\n");

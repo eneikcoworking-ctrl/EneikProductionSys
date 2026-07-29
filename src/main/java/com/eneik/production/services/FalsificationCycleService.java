@@ -227,6 +227,28 @@ public class FalsificationCycleService {
             charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
         }
 
+        // Direct Grounding: attach common patterns and per-role philosopher patterns
+        try {
+            java.nio.file.Path commonFile = java.nio.file.Paths.get("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md");
+            if (java.nio.file.Files.exists(commonFile)) {
+                charters.append("\n\n=== COMMON ANALYTIC PROGRAMMING PATTERNS ===\n")
+                        .append(java.nio.file.Files.readString(commonFile)).append("\n");
+            }
+            java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
+            if (java.nio.file.Files.isDirectory(philosophersDir)) {
+                for (RoleEntity role : activeRoles) {
+                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, role.getTag() + "*.md")) {
+                        for (java.nio.file.Path philFile : stream) {
+                            charters.append("\n\n=== PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append(" ===\n")
+                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("FalsificationCycleService: failed to attach philosopher pattern files: {}", e.getMessage());
+        }
+
         // RAG augmentation (2026-07-25, operator directive): surface relevant standing knowledge (prior
         // incidents, known architecture gaps, engineering invariants) the auditing session should know
         // about before critiquing - retrieval degrades to "" whenever unavailable (flag off, empty corpus,
