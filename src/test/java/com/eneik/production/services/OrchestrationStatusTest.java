@@ -91,6 +91,7 @@ public class OrchestrationStatusTest {
         account.setCapabilities("*");
         account.setStatus(AccountStatus.idle);
         account.setEnabled(true);
+        account.setApiKey("test-api-key");
         account = accountRepository.save(account);
 
         project.setFactoryStatus("ready_local");
