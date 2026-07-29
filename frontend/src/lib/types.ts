@@ -224,6 +224,87 @@ export type ProjectDashboard = {
   tasks: Task[];
 };
 
+export type OperationalTruth = {
+  generatedAt: string;
+  mode: string;
+  project: {
+    id: string;
+    name: string;
+    status: string;
+    repositoryName?: string;
+  };
+  delivery: {
+    totalFeatures: number;
+    completeFeatures: number;
+    totalPlannedTasks: number;
+    mergedPlannedTasks: number;
+    featureReadinessRatio: number;
+    mergedRatio: number;
+    decompositionComplete: boolean;
+    status: string;
+    headline: string;
+  };
+  trust: {
+    score: number;
+    level: 'trusted' | 'watch' | 'degraded' | 'blocked' | string;
+    positiveSignals: string[];
+    warnings: string[];
+  };
+  activeFlow: {
+    queued: number;
+    active: number;
+    review: number;
+    done: number;
+    failed: number;
+    pendingWishlist: number;
+    compilingWishlist: number;
+    openSessions: number;
+    narrative: string[];
+  };
+  blockedValue: {
+    count: number;
+    headline: string;
+    blockers: Array<{
+      type: string;
+      severity: 'high' | 'medium' | 'low' | string;
+      subjectId: string;
+      title: string;
+      reason: string;
+    }>;
+  };
+  evidence: {
+    mergedReviews: number;
+    openReviews: number;
+    pendingReviews: number;
+    failingReviews: number;
+    qualityGatePassed: number;
+    qualityGateFailed: number;
+    screenshots: number;
+    strongestSignals: Array<{
+      kind: string;
+      strength: number;
+      subject: string;
+      meaning: string;
+    }>;
+  };
+  defects: {
+    recentDefects: number;
+    items: Array<{
+      severity: string;
+      category: string;
+      component: string;
+      defectType: string;
+      description: string;
+    }>;
+  };
+  learning: {
+    candidateDefects: number;
+    invariantsObserved: number;
+    unresolvedLearning: string[];
+  };
+  recommendedNextAction: string;
+};
+
 export type TocDbrStatus = {
   primaryConstraintNode: string;
   constraintQueueLength: number;

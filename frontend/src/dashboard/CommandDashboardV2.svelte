@@ -3,11 +3,13 @@
   import Skeleton from './Skeleton.svelte';
   import { roleDisplayName } from '../lib/roleDisplay';
   import { API_BASE } from '../lib/api';
+  import type { OperationalTruth } from '../lib/types';
 
   export let projectId: string;
 
   let dashboard: any = null;
   let commandDashboard: any = null;
+  let operationalTruth: OperationalTruth | null = null;
   let loading = true;
   let error: string | null = null;
   let wishText = '';
@@ -116,6 +118,7 @@
         await fetchOnboardingData();
       }
 
+      fetchOperationalTruth();
       fetchProjectTruth();
     } catch (e: any) {
       error = e.message;
@@ -132,6 +135,15 @@
       prTruth = prRes.ok ? await prRes.json() : null;
     } catch {
       // Non-fatal — the truth panel just shows its own empty state.
+    }
+  }
+
+  async function fetchOperationalTruth() {
+    try {
+      const truthRes = await fetch(`${API_BASE}/api/projects/${projectId}/operational-truth`);
+      operationalTruth = truthRes.ok ? await truthRes.json() : null;
+    } catch {
+      operationalTruth = null;
     }
   }
 
@@ -282,6 +294,11 @@
     return `${Math.round(n)}`;
   }
 
+  function shortText(value: string | undefined | null, max = 160): string {
+    if (!value) return '';
+    return value.length <= max ? value : `${value.slice(0, max)}...`;
+  }
+
   onMount(() => {
     loadOrchestrateCooldown();
     const timer = setInterval(() => {
@@ -365,6 +382,57 @@
         </button>
       </div>
     </header>
+
+    {#if operationalTruth}
+      <section class="value-summary {operationalTruth.trust.level}">
+        <div class="value-main">
+          <div class="value-eyebrow">Operational Truth</div>
+          <h2>{operationalTruth.delivery.headline}</h2>
+          <p>{operationalTruth.recommendedNextAction}</p>
+        </div>
+        <div class="value-metrics">
+          <div class="value-metric">
+            <span>Delivered</span>
+            <strong>{percent(operationalTruth.delivery.featureReadinessRatio)}</strong>
+            <small>{operationalTruth.delivery.completeFeatures}/{operationalTruth.delivery.totalFeatures} features</small>
+          </div>
+          <div class="value-metric">
+            <span>Evidence</span>
+            <strong>{operationalTruth.evidence.mergedReviews}</strong>
+            <small>{operationalTruth.evidence.qualityGatePassed} gates passed</small>
+          </div>
+          <div class="value-metric">
+            <span>Flow</span>
+            <strong>{operationalTruth.activeFlow.queued + operationalTruth.activeFlow.active + operationalTruth.activeFlow.review}</strong>
+            <small>{operationalTruth.activeFlow.openSessions} open sessions</small>
+          </div>
+          <div class="value-metric trust {operationalTruth.trust.level}">
+            <span>Trust</span>
+            <strong>{percent(operationalTruth.trust.score)}</strong>
+            <small>{operationalTruth.trust.level}</small>
+          </div>
+        </div>
+        {#if operationalTruth.blockedValue.blockers.length > 0}
+          <ul class="value-blockers">
+            {#each operationalTruth.blockedValue.blockers.slice(0, 3) as blocker}
+              <li class={blocker.severity}>
+                <strong>{blocker.title}</strong>
+                <span>{shortText(blocker.reason)}</span>
+              </li>
+            {/each}
+          </ul>
+        {:else if operationalTruth.activeFlow.narrative.length > 0}
+          <ul class="value-blockers clear">
+            {#each operationalTruth.activeFlow.narrative.slice(0, 2) as line}
+              <li>
+                <strong>Flow</strong>
+                <span>{line}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
+    {/if}
 
     <!-- GitHub Truth — real state, not the system's own bookkeeping -->
     <section class="truth-panel">
@@ -838,6 +906,145 @@
     gap: var(--space-6);
     min-height: calc(100vh - 200px);
     font-family: inherit;
+  }
+
+  .value-summary {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.2fr) minmax(420px, 1.6fr);
+    gap: var(--space-4);
+    align-items: start;
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-left: 4px solid var(--neutral-400);
+    border-radius: 8px;
+    padding: var(--space-4);
+  }
+  .value-summary.trusted {
+    border-left-color: var(--success);
+  }
+  .value-summary.watch {
+    border-left-color: var(--warning);
+  }
+  .value-summary.degraded,
+  .value-summary.blocked {
+    border-left-color: var(--error);
+  }
+  .value-main {
+    min-width: 0;
+  }
+  .value-eyebrow {
+    color: var(--neutral-500);
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+  .value-main h2 {
+    color: var(--neutral-900);
+    font-size: 18px;
+    line-height: 1.25;
+    margin: 4px 0 var(--space-2);
+  }
+  .value-main p {
+    color: var(--neutral-600);
+    font-size: 13px;
+    line-height: 1.45;
+    margin: 0;
+  }
+  .value-metrics {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(96px, 1fr));
+    gap: var(--space-2);
+    min-width: 0;
+  }
+  .value-metric {
+    background: var(--neutral-50);
+    border: 1px solid var(--neutral-100);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 78px;
+    min-width: 0;
+    padding: var(--space-3);
+  }
+  .value-metric span,
+  .value-metric small {
+    color: var(--neutral-500);
+    font-size: 11px;
+    line-height: 1.25;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .value-metric strong {
+    color: var(--neutral-900);
+    font-size: 24px;
+    line-height: 1.1;
+  }
+  .value-metric.trust.trusted strong {
+    color: var(--success);
+  }
+  .value-metric.trust.watch strong {
+    color: var(--warning);
+  }
+  .value-metric.trust.degraded strong,
+  .value-metric.trust.blocked strong {
+    color: var(--error);
+  }
+  .value-blockers {
+    display: grid;
+    gap: var(--space-2);
+    grid-column: 1 / -1;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .value-blockers li {
+    align-items: center;
+    background: var(--error-bg);
+    border: 1px solid #fecaca;
+    border-radius: 8px;
+    display: grid;
+    gap: var(--space-2);
+    grid-template-columns: minmax(140px, 0.35fr) minmax(0, 1fr);
+    min-height: 36px;
+    padding: var(--space-2) var(--space-3);
+  }
+  .value-blockers li.medium {
+    background: #fffbeb;
+    border-color: #fde68a;
+  }
+  .value-blockers.clear li {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+  .value-blockers strong {
+    color: var(--neutral-800);
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .value-blockers span {
+    color: var(--neutral-600);
+    font-size: 12px;
+    line-height: 1.35;
+    min-width: 0;
+  }
+  @media (max-width: 1000px) {
+    .value-summary {
+      grid-template-columns: 1fr;
+    }
+    .value-metrics {
+      grid-template-columns: repeat(2, minmax(120px, 1fr));
+    }
+  }
+  @media (max-width: 640px) {
+    .value-metrics,
+    .value-blockers li {
+      grid-template-columns: 1fr;
+    }
   }
 
   .truth-panel {
