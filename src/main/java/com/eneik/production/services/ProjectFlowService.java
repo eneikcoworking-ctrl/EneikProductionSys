@@ -3402,21 +3402,18 @@ public class ProjectFlowService {
                 }
             }
 
-            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task)) {
-                // Compiler, falsification-audit, and philosophical-audit tasks are deliberately pinned to the
-                // reserved compiler account: all three are low-frequency by design (WIP-gated batching, a
+            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task) || isCoverageAuditTask(task)) {
+                // Compiler, coverage-audit, falsification-audit, and philosophical-audit tasks are deliberately pinned to the
+                // reserved compiler account: all of them are low-frequency by design (WIP-gated batching, a
                 // multi-hour or weekly cron) and share that account's capacity comfortably instead of
                 // contending with real product work.
                 dispatchCompilerTask(task);
                 continue;
             }
 
-            if (isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task)) {
-                // These fire once per PR / per mockup / per client brief - real per-project traffic, not
+            if (isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+                // These fire once per PR / per mockup - real per-project traffic, not
                 // rare housekeeping - so they use the general round-robin pool like implementer tasks do
-                // (see the account-concentration fix earlier this session, commit f005816: routing them
-                // through dispatchCompilerTask here would silently re-pin them to the single reserved
-                // account on this retry path even though their primary dispatch call already moved off it).
                 dispatchToGeneralPool(task);
                 continue;
             }

@@ -116,6 +116,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.enabled = true
+              AND a.api_key IS NOT NULL AND CHAR_LENGTH(TRIM(a.api_key)) > 0
               AND a.status NOT IN ('decommissioned', 'offline', 'daily_limited', 'api_blocked')
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
