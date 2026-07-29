@@ -4,7 +4,7 @@ COPY pom.xml .
 COPY docs ./docs
 COPY BARCAN-*.md ./
 COPY src ./src
-RUN mvn -q package
+RUN mvn -q package -DskipTests
 
 FROM eclipse-temurin:17-jre
 WORKDIR /app
@@ -14,6 +14,6 @@ RUN apt-get update \
 COPY --from=build /app/target/*.jar app.jar
 COPY docs ./docs
 COPY BARCAN-*.md ./
-ENV JAVA_OPTS="-Xms256m -Xmx768m -XX:+UseG1GC"
+ENV JAVA_OPTS="-Xms512m -Xmx1536m -XX:+UseG1GC"
 EXPOSE 8080
 ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
