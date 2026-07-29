@@ -2,6 +2,7 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
