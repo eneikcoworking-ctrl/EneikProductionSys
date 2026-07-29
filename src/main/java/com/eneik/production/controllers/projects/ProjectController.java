@@ -110,7 +110,7 @@ public class ProjectController {
     public ResponseEntity<?> runPhilosophicalFalsification(@PathVariable UUID projectId) {
         try {
             com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
-            falsificationCycleService.executePhilosophicalCycleForProject(project);
+            falsificationCycleService.executePhilosophicalCycleForProject(project, true);
             return ResponseEntity.accepted().body(Map.of(
                     "message", "Philosophical falsification cycle triggered; check task history/logs for the dispatch outcome (it may honestly skip if not ready, already active, or the feature flag is off)"));
         } catch (Exception e) {

@@ -163,23 +163,29 @@ public class FalsificationCycleService {
      * report re-run.
      */
     public void executePhilosophicalCycleForProject(ProjectEntity project) {
+        executePhilosophicalCycleForProject(project, false);
+    }
+
+    public void executePhilosophicalCycleForProject(ProjectEntity project, boolean force) {
         if (!settingsService.effectiveBoolean("philosophical_falsification_enabled")) {
             log.info("FalsificationCycleService: Philosophical falsification track is disabled via feature flag; skipping project {}",
                     project.getName());
             return;
         }
 
-        PhilosophicalReadinessInfo readinessInfo = philosophicalReadinessInfo(project);
-        boolean hasRunBefore = readinessInfo.hasRunBefore();
-        double applicableThreshold = readinessInfo.applicableThreshold();
+        if (!force) {
+            PhilosophicalReadinessInfo readinessInfo = philosophicalReadinessInfo(project);
+            boolean hasRunBefore = readinessInfo.hasRunBefore();
+            double applicableThreshold = readinessInfo.applicableThreshold();
 
-        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        if (!readiness.decompositionComplete() || readiness.ratio() < applicableThreshold) {
-            log.info("FalsificationCycleService: Project {} not ready for philosophical falsification yet "
-                            + "({}% < {}% threshold, {} run); skipping",
-                    project.getName(), Math.round(readiness.ratio() * 100), Math.round(applicableThreshold * 100),
-                    hasRunBefore ? "subsequent" : "first");
-            return;
+            ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+            if (!readiness.decompositionComplete() || readiness.ratio() < applicableThreshold) {
+                log.info("FalsificationCycleService: Project {} not ready for philosophical falsification yet "
+                                + "({}% < {}% threshold, {} run); skipping",
+                        project.getName(), Math.round(readiness.ratio() * 100), Math.round(applicableThreshold * 100),
+                        hasRunBefore ? "subsequent" : "first");
+                return;
+            }
         }
 
         long pendingCount = pendingPhilosophicalWishlistCount(project.getId());
