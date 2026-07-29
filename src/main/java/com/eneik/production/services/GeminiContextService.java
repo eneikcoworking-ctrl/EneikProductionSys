@@ -10,6 +10,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -358,5 +359,49 @@ public class GeminiContextService {
             vector[i] = Float.parseFloat(parts[i]);
         }
         return vector;
+    }
+
+    /**
+     * Concatenates all 12 BARCAN-TAG charters and philosopher patterns into a static text block
+     * suitable for Gemini Prompt Caching (cachedContents/*).
+     */
+    public String buildStaticCorpus() {
+        if (repoRoot == null || repoRoot.isBlank()) {
+            return "";
+        }
+        Path root = Path.of(repoRoot);
+        StringBuilder sb = new StringBuilder();
+        sb.append("=== BARCAN SYSTEM CHARTERS & PHILOSOPHER PATTERNS STANDING CORPUS ===\n\n");
+
+        try (DirectoryStream<Path> charters = Files.newDirectoryStream(root, "BARCAN-TAG-*.md")) {
+            for (Path charterFile : charters) {
+                try {
+                    sb.append("--- FILE: ").append(charterFile.getFileName()).append(" ---\n");
+                    sb.append(Files.readString(charterFile, StandardCharsets.UTF_8)).append("\n\n");
+                } catch (Exception e) {
+                    log.warn("Failed to read charter file {}: {}", charterFile, e.getMessage());
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Failed to list BARCAN-TAG charter files: {}", e.getMessage());
+        }
+
+        Path philosophersDir = root.resolve("docs/philosopher-patterns/philosophers");
+        if (Files.isDirectory(philosophersDir)) {
+            try (DirectoryStream<Path> philosopherFiles = Files.newDirectoryStream(philosophersDir, "*.md")) {
+                for (Path pFile : philosopherFiles) {
+                    try {
+                        sb.append("--- FILE: ").append(pFile.getFileName()).append(" ---\n");
+                        sb.append(Files.readString(pFile, StandardCharsets.UTF_8)).append("\n\n");
+                    } catch (Exception e) {
+                        log.warn("Failed to read philosopher pattern file {}: {}", pFile, e.getMessage());
+                    }
+                }
+            } catch (IOException e) {
+                log.warn("Failed to list philosopher pattern files: {}", e.getMessage());
+            }
+        }
+
+        return sb.toString();
     }
 }
