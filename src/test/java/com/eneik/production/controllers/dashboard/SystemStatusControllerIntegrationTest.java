@@ -59,6 +59,30 @@ class SystemStatusControllerIntegrationTest {
         assertThat(section(response, "accounts")).containsEntry("available", true);
     }
 
+    @Test
+    void returnsSystemDriftReport() {
+        ResponseEntity<Map> response = restTemplate.getForEntity("/api/system/drift", Map.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).containsKeys(
+                "ok",
+                "mountedRepoRoot",
+                "mountedRepoHead",
+                "remoteHead",
+                "runtimeBuildRevision",
+                "runtimeBuildDirty",
+                "runtimeMatchesMountedRepoHead"
+        );
+    }
+
+    @Test
+    void returnsActuatorInfoReport() {
+        ResponseEntity<Map> response = restTemplate.getForEntity("/actuator/info", Map.class);
+
+        assertThat(response.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(response.getBody()).containsKeys("build", "runtimeSource");
+    }
+
     @SuppressWarnings("unchecked")
     private Map<String, Object> section(ResponseEntity<Map> response, String key) {
         return (Map<String, Object>) response.getBody().get(key);
