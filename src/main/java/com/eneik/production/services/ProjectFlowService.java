@@ -1691,14 +1691,13 @@ public class ProjectFlowService {
                 sliceWishlist.setFeatureId(featureId);
                 sliceWishlist = wishlistRepository.save(sliceWishlist);
                 compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole, epicPlan.kanoClass());
-                TaskEntity dependencyTarget = lastInStage != null ? lastInStage : stageAnchor;
                 TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
                         sliceWishlist.getId(),
-                        dependencyTarget,
+                        stageAnchor,
                         graphKey,
                         index,
                         graphSlices.size(),
-                        dependencyEdgeReason(dependencyTarget, ownerRole),
+                        dependencyEdgeReason(stageAnchor, ownerRole),
                         flywayCache
                 );
                 lastInStage = createdTask != null ? createdTask : lastInStage;
