@@ -18,6 +18,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
+import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -48,6 +49,7 @@ public class SystemStatusService {
     private final GoogleAiResourceService googleAiResourceService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
+    private final Environment environment;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -61,7 +63,8 @@ public class SystemStatusService {
                                EmsMetricsService emsMetricsService,
                                GoogleAiResourceService googleAiResourceService,
                                com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
-                               com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker) {
+                               com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker,
+                               Environment environment) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -75,6 +78,7 @@ public class SystemStatusService {
         this.googleAiResourceService = googleAiResourceService;
         this.systemProgressTracker = systemProgressTracker;
         this.aiHealthTracker = aiHealthTracker;
+        this.environment = environment;
     }
 
     public Map<String, Object> getStatus(UUID projectId) {
@@ -91,6 +95,7 @@ public class SystemStatusService {
         status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         status.put("systemHealth", safeSection(this::systemHealth));
+        status.put("runtimeSource", safeSection(this::runtimeSource));
         status.put("aiHealth", safeSection(aiHealthTracker::snapshot));
         return status;
     }
@@ -311,6 +316,20 @@ public class SystemStatusService {
         section.put("minutesSinceProgress", minutesSinceProgress);
         section.put("status", settingsService.effectiveValue("system_stall_status"));
         return section;
+    }
+
+    private Map<String, Object> runtimeSource() {
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("gitSha", buildProperty("git-sha"));
+        section.put("gitDirty", buildProperty("git-dirty"));
+        section.put("buildTime", buildProperty("time"));
+        section.put("knownRevision", !"unknown".equals(buildProperty("git-sha")));
+        return section;
+    }
+
+    private String buildProperty(String name) {
+        String value = environment.getProperty("eneik.build." + name);
+        return value == null || value.isBlank() ? "unknown" : value;
     }
 
     // Same marker EmsMetricsService.isSystemMetaTask() uses: compiler/falsification-audit/review-fallback/

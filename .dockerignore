@@ -5,3 +5,7 @@ data
 frontend/node_modules
 frontend/dist
 src/models/ml/venv
+.playwright-mcp
+dashboard-blocked-items*.png
+check_db_status.py
+repair_flyway.py

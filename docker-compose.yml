@@ -26,6 +26,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+      args:
+        ENEIK_BUILD_GIT_SHA: ${ENEIK_BUILD_GIT_SHA:-unknown}
+        ENEIK_BUILD_GIT_DIRTY: ${ENEIK_BUILD_GIT_DIRTY:-unknown}
+        ENEIK_BUILD_TIME: ${ENEIK_BUILD_TIME:-unknown}
     environment:
       ML_SERVICE_URL: http://ml:8000
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
@@ -53,7 +57,7 @@ services:
       VIDEO_ASSET_ROOT: /app/data/video-assets
       STITCH_ENABLED: ${STITCH_ENABLED:-true}
       STITCH_API_KEY: ${STITCH_API_KEY:-}
-      GITHUB_ENABLED: ${GITHUB_ENABLED:-false}
+      GITHUB_ENABLED: ${GITHUB_ENABLED:-true}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}
       GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
@@ -68,7 +72,6 @@ services:
       - ./data:/app/data
       - ./project-workspaces:/app/project-workspaces
       - .:/app/eneik-system:ro
-      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8080:8080"
     depends_on:

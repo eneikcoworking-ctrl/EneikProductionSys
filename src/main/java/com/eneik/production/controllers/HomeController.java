@@ -19,10 +19,11 @@ public class HomeController {
         );
     }
 
-    @GetMapping("/health")
+    @GetMapping({"/health", "/actuator/health"})
     public Map<String, Object> health() {
         return Map.of(
                 "status", "ok",
+                "springBootStatus", "UP",
                 "timestamp", Instant.now().toString()
         );
     }

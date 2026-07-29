@@ -31,10 +31,12 @@ class SystemStatusControllerIntegrationTest {
                 "julesSessions",
                 "qualityGate",
                 "tasks",
-                "sixSigma"
+                "sixSigma",
+                "runtimeSource"
         );
         assertThat(section(response, "integrations")).containsEntry("available", true);
         assertThat(section(response, "accounts")).containsEntry("available", true);
+        assertThat(section(response, "runtimeSource")).containsEntry("available", true);
     }
 
     @Test
@@ -51,7 +53,8 @@ class SystemStatusControllerIntegrationTest {
                 "julesSessions",
                 "qualityGate",
                 "tasks",
-                "sixSigma"
+                "sixSigma",
+                "runtimeSource"
         );
         assertThat(section(response, "accounts")).containsEntry("available", true);
     }

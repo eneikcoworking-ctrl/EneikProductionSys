@@ -13,3 +13,9 @@ project-workspaces/
 __pycache__/
 *.pyc
 logs/
+
+# Local monitoring/debug artifacts from operator runs.
+.playwright-mcp/
+dashboard-blocked-items*.png
+check_db_status.py
+repair_flyway.py
