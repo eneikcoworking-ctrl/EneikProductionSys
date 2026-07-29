@@ -1691,13 +1691,14 @@ public class ProjectFlowService {
                 sliceWishlist.setFeatureId(featureId);
                 sliceWishlist = wishlistRepository.save(sliceWishlist);
                 compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole, epicPlan.kanoClass());
+                TaskEntity dependencyTarget = lastInStage != null ? lastInStage : stageAnchor;
                 TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(
                         sliceWishlist.getId(),
-                        stageAnchor,
+                        dependencyTarget,
                         graphKey,
                         index,
                         graphSlices.size(),
-                        dependencyEdgeReason(stageAnchor, ownerRole),
+                        dependencyEdgeReason(dependencyTarget, ownerRole),
                         flywayCache
                 );
                 lastInStage = createdTask != null ? createdTask : lastInStage;
@@ -2196,34 +2197,41 @@ public class ProjectFlowService {
     // ceiling is set via AccountEntity.maxConcurrentSessions (see V50 migration), independent of the
     // shared jules.max-concurrent-sessions-per-account default used by every other account.
     private void dispatchToGeneralPool(TaskEntity task) {
-        Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
-                task.getProject().getId(),
-                task.getRole().getTag(),
-                maxConcurrentJulesSessionsPerAccount,
-                null,
-                maxDailySessionsPerAccount
-        );
-        if (accountOpt.isEmpty()) {
-            log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
-            return;
-        }
-
-        AccountEntity account = accountOpt.get();
-        try {
-            claimService.claimSpecificTask(task.getId(), account.getId());
-            TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
-            JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
-            savedTask.setJulesSessionName(dispatch.sessionName());
-            savedTask.setJulesDispatchStatus(dispatch.reason());
-            taskRepository.save(savedTask);
-            if (!dispatch.dispatched()) {
-                claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
-                log.warn("Failed to dispatch task {} to account {}: {}", savedTask.getId(), account.getName(), dispatch.reason());
+        String failedAccountName = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
+                    task.getProject().getId(),
+                    task.getRole().getTag(),
+                    maxConcurrentJulesSessionsPerAccount,
+                    failedAccountName,
+                    maxDailySessionsPerAccount
+            );
+            if (accountOpt.isEmpty()) {
+                log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
                 return;
             }
-            log.info("Dispatched task {} to general-pool account {}", savedTask.getId(), account.getName());
-        } catch (Exception e) {
-            log.error("Failed to claim/dispatch task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
+
+            AccountEntity account = accountOpt.get();
+            try {
+                claimService.claimSpecificTask(task.getId(), account.getId());
+                TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
+                JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+                savedTask.setJulesSessionName(dispatch.sessionName());
+                savedTask.setJulesDispatchStatus(dispatch.reason());
+                taskRepository.save(savedTask);
+                if (!dispatch.dispatched()) {
+                    claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
+                    log.warn("Failed to dispatch task {} to account {} (attempt {}/3): {}. Rotating to next account...",
+                            savedTask.getId(), account.getName(), attempt + 1, dispatch.reason());
+                    failedAccountName = account.getName();
+                    continue;
+                }
+                log.info("Dispatched task {} to general-pool account {}", savedTask.getId(), account.getName());
+                return;
+            } catch (Exception e) {
+                log.error("Failed to claim/dispatch task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
+                failedAccountName = account.getName();
+            }
         }
     }
 

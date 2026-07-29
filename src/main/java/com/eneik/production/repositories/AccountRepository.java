@@ -121,7 +121,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (:reservedName IS NULL OR a.name <> :reservedName)
-              AND a.sessions_dispatched_today < :maxDailySessions
+              AND COALESCE(a.sessions_dispatched_today, 0) < :maxDailySessions
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -129,7 +129,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed')
-              ) < COALESCE(a.max_concurrent_sessions, :maxSessions)
+              ) < COALESCE(a.max_concurrent_sessions, :maxSessions, 3)
             ORDER BY (
                   SELECT COUNT(*)
                   FROM jules_sessions s
