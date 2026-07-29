@@ -137,18 +137,8 @@ public class ClientDeliverableReadinessService {
      */
     public Set<UUID> findWishlistTreeIds(UUID projectId, UUID rootWishlistId) {
         if (rootWishlistId == null) return Set.of();
-        List<WishlistEntity> all = wishlistRepository.findByProjectId(projectId);
         Set<UUID> tree = new java.util.HashSet<>();
         tree.add(rootWishlistId);
-        boolean added = true;
-        while (added) {
-            added = false;
-            for (WishlistEntity w : all) {
-                if (w.getParentWishlistId() != null && tree.contains(w.getParentWishlistId()) && tree.add(w.getId())) {
-                    added = true;
-                }
-            }
-        }
         return tree;
     }
 
