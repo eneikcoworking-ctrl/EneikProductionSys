@@ -57,6 +57,10 @@ public class ProjectAuditPipelineService {
         return projectStages.getOrDefault(projectId, PipelineStage.IDLE);
     }
 
+    public void startPipeline(UUID projectId) {
+        projectStages.put(projectId, PipelineStage.COVERAGE_AUDIT);
+    }
+
     /**
      * Executes the full sequential pipeline step by step for an active project.
      */
@@ -67,19 +71,18 @@ public class ProjectAuditPipelineService {
             return;
         }
 
-        PipelineStage current = projectStages.getOrDefault(projectId, PipelineStage.IDLE);
+        PipelineStage current = projectStages.get(projectId);
+        if (current == null || current == PipelineStage.IDLE || current == PipelineStage.COMPLETED) {
+            return;
+        }
+
         log.info("ProjectAuditPipelineService: executing sequential tick for project {} in stage {}", projectId, current);
 
         try {
             switch (current) {
-                case IDLE:
-                    log.info("Pipeline Step 1/5 [COVERAGE_AUDIT]: Starting coverage audit for project {}", projectId);
-                    projectStages.put(projectId, PipelineStage.COVERAGE_AUDIT);
-                    projectFlowService.checkAndDispatchCoverageAudits(projectId);
-                    projectStages.put(projectId, PipelineStage.COVERAGE_FALSIFICATION);
-                    break;
-
                 case COVERAGE_AUDIT:
+                    log.info("Pipeline Step 1/5 [COVERAGE_AUDIT]: Starting coverage audit for project {}", projectId);
+                    projectFlowService.checkAndDispatchCoverageAudits(projectId);
                     projectStages.put(projectId, PipelineStage.COVERAGE_FALSIFICATION);
                     break;
 
