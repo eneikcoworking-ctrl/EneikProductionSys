@@ -187,7 +187,7 @@ public class SystemSettingsService {
         // day after "она вообще должна была создать свой отдельный лог, а не работать с твоим" - the
         // observer now reasons over a structured evidence snapshot of real project state plus Gemini's own
         // journal (GeminiObserverJournalEntity), never the backend's internal Logback log.
-        definitions.put("gemini_project_observer_enabled", flag("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
+        definitions.put("gemini_project_observer_enabled", flagDefaultTrue("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
         // On by default (2026-07-26 restoration, operator directive: "лог проекта должен независеть от
         // деплоев!! это огромное упущение") - baseline infrastructure, not an opt-in experiment. Seeded
         // 'true' in V61. Gates only the DB write (ProjectEventLogService.flush); the appender always
@@ -200,6 +200,10 @@ public class SystemSettingsService {
         // (SELECT and DML both). Must be explicitly opted into per-environment, never assumed safe.
         definitions.put("debug_sql_endpoint_enabled", flag("debug_sql_endpoint_enabled", "DEBUG_SQL_ENDPOINT_ENABLED", "debug.sql-endpoint.enabled"));
         return definitions;
+    }
+
+    private static SettingDefinition flagDefaultTrue(String key, String envName, String propertyName) {
+        return new SettingDefinition(key, envName, propertyName, true, true);
     }
 
     private static SettingDefinition flag(String key, String envName, String propertyName) {
