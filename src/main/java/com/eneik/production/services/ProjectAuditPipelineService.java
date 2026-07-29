@@ -78,9 +78,7 @@ public class ProjectAuditPipelineService {
         // start next iteration ONLY when all previous tasks are fully completed.
         if (current == PipelineStage.COMPLETED || current == PipelineStage.IDLE) {
             List<TaskEntity> activeTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
-                    .filter(t -> t.getStatus() != TaskStatus.done
-                              && t.getStatus() != TaskStatus.cancelled
-                              && t.getStatus() != TaskStatus.abandoned)
+                    .filter(t -> t.getStatus() != TaskStatus.done && t.getStatus() != TaskStatus.failed)
                     .toList();
             if (activeTasks.isEmpty()) {
                 log.info("Project {} is active and all previous tasks completed. Starting next non-overlapping pipeline iteration...", projectId);
