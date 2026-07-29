@@ -3686,11 +3686,12 @@ public class ProjectFlowService {
         // merge ratio. Deliberately stricter than the old task-based gate for a project with many
         // multi-task epics still in progress - a feature only counts once EVERY one of its code-producing
         // items has reached main (see ClientDeliverableReadinessService.computeForSources), not just "some
-        // task somewhere merged". ratio()/mergedRatio in the DTO below is left as the task-level number -
-        // still useful as an informational progress indicator, just no longer what gates falsification.
+        // task somewhere merged". The dashboard exposes both numbers separately: mergedRatio is the
+        // deliverable-level merge ratio; featureReadinessRatio is the feature-level gate.
         double featureRatio = productReadiness.totalFeatures() > 0
                 ? (double) productReadiness.completeFeatures() / productReadiness.totalFeatures()
                 : 0.0;
+        double deliverableMergeRatio = deliverableMergeRatio(productReadiness);
         boolean falsificationEligible = productReadiness.decompositionComplete()
                 && featureRatio >= falsificationReadinessThreshold;
         ProductReadinessDto productReadinessDto = new ProductReadinessDto(
@@ -3698,7 +3699,8 @@ public class ProjectFlowService {
                 productReadiness.completeFeatures(),
                 productReadiness.totalDeliverables(),
                 productReadiness.mergedDeliverables(),
-                productReadiness.ratio(),
+                deliverableMergeRatio,
+                featureRatio,
                 productReadiness.decompositionComplete(),
                 falsificationReadinessThreshold,
                 falsificationEligible,
@@ -3734,7 +3736,7 @@ public class ProjectFlowService {
         java.time.Instant now = java.time.Instant.now();
         List<BlockedItemDto> blocked = new java.util.ArrayList<>();
         for (TaskEntity task : allTaskEntities) {
-            if (task.getStatus() == TaskStatus.failed) {
+            if (!isActionableBlockedStatus(task.getStatus())) {
                 continue; // terminal and already explains itself - not an actionable "blocked" signal
             }
             String reason;
@@ -3768,6 +3770,17 @@ public class ProjectFlowService {
         }
         blocked.sort((a, b) -> Double.compare(b.hoursSinceUpdate(), a.hoursSinceUpdate()));
         return blocked;
+    }
+
+    static double deliverableMergeRatio(ClientDeliverableReadinessService.Readiness readiness) {
+        if (readiness == null || readiness.totalDeliverables() == 0) {
+            return 1.0;
+        }
+        return (double) readiness.mergedDeliverables() / readiness.totalDeliverables();
+    }
+
+    static boolean isActionableBlockedStatus(TaskStatus status) {
+        return status != TaskStatus.failed && status != TaskStatus.spike_completed;
     }
 
     // Operator directive (2026-07-21): GitHubPullRequestService.pullRequestSnapshot() is shared by

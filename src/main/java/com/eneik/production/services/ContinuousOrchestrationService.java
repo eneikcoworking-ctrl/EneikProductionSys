@@ -111,6 +111,7 @@ public class ContinuousOrchestrationService {
                 if (branchGarbageCollectorService != null) {
                     branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
                 }
+                boolean contentDefect = checkForDuplicateTaskContent(project);
 
                 int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
                 if (resumedPlanTasks > 0) {
@@ -129,10 +130,15 @@ public class ContinuousOrchestrationService {
                 // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
                 // recovery/dispatch calls below.
                 try {
-                    OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
-                    if (orchestration.processedWishlistItems() > 0) {
-                        log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
-                                orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
+                    if (!contentDefect) {
+                        OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
+                        if (orchestration.processedWishlistItems() > 0) {
+                            log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
+                                    orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
+                        }
+                    } else {
+                        log.warn("Continuous Orchestration: Stop-the-line content defect is active for project {}; skipping new wishlist compilation",
+                                project.getName());
                     }
                 } catch (OrchestrationCooldownException e) {
                     log.debug("Continuous Orchestration: Orchestration on cooldown for project {} ({}s remaining)",
@@ -147,7 +153,12 @@ public class ContinuousOrchestrationService {
                         log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
                                 recovered, project.getName());
                     }
-                    projectFlowService.dispatchQueuedTasks(project.getId());
+                    if (!contentDefect) {
+                        projectFlowService.dispatchQueuedTasks(project.getId());
+                    } else {
+                        log.warn("Continuous Orchestration: Stop-the-line content defect is active for project {}; skipping queued-task dispatch",
+                                project.getName());
+                    }
                     projectFlowService.dispatchReviewTasks(project.getId());
                 } catch (OrchestrationCooldownException e) {
                     log.info("Continuous Orchestration: Skipping project {} for {} seconds because orchestration is on cooldown",
@@ -165,7 +176,6 @@ public class ContinuousOrchestrationService {
                     log.error("Continuous Orchestration: Failed to check coverage-audit eligibility for project {}", project.getId(), e);
                 }
 
-                checkForDuplicateTaskTitles(project);
             } finally {
                 LogScope.clear();
             }
@@ -188,7 +198,7 @@ public class ContinuousOrchestrationService {
     // content instead: payload.slice_title carries the real per-slice semantic content ("Internal work
     // item N from wishlist X: <the real JTBD-derived description>"), falling back to the full description
     // for any task that didn't go through the epic-slice compiler path.
-    private void checkForDuplicateTaskTitles(ProjectEntity project) {
+    private boolean checkForDuplicateTaskContent(ProjectEntity project) {
         try {
             List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
                     .stream()
@@ -207,8 +217,14 @@ public class ContinuousOrchestrationService {
                             count, recentTasks.size(), project.getName(), preview(content));
                 }
             });
+            boolean duplicated = contentCounts.values().stream().anyMatch(count -> count >= 3);
+            if (duplicated) {
+                setSystemStatus("content_defect");
+            }
+            return duplicated;
         } catch (Exception e) {
             log.error("Continuous Orchestration: Failed to run duplicate-title check for project {}", project.getId(), e);
+            return false;
         }
     }
 
@@ -244,17 +260,20 @@ public class ContinuousOrchestrationService {
                 return;
             }
 
+            SystemWorkSnapshot work = systemWorkSnapshot();
+            if (!work.hasActionableWork()) {
+                setSystemStatus("idle_no_actionable_work");
+                return;
+            }
+
             boolean idleCapacityExists = accountRepository.findAll().stream()
-                    .anyMatch(a -> a.isEnabled() && a.getStatus() == com.eneik.production.models.persistence.AccountStatus.idle)
-                    || taskRepository.countByStatus(com.eneik.production.models.persistence.TaskStatus.queued) > 0
-                    || wishlistRepository.findAll().stream()
-                            .anyMatch(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending);
+                    .anyMatch(a -> a.isEnabled() && a.getStatus() == com.eneik.production.models.persistence.AccountStatus.idle);
 
             if (idleCapacityExists) {
-                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes while idle capacity or pending work exists. Triggering Branch Garbage Collector.", minutesSinceProgress);
+                log.error("SYSTEM STALLED: no forward progress (dispatch/merge) for {} minutes with actionable work present: {}.", minutesSinceProgress, work.describe());
                 setSystemStatus("stalled");
 
-                if (branchGarbageCollectorService != null) {
+                if (branchGarbageCollectorService != null && work.reviewTasksWithPr() > 0) {
                     List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
                     for (ProjectEntity project : activeProjects) {
                         List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
@@ -277,12 +296,47 @@ public class ContinuousOrchestrationService {
                             }
                         }
                     }
+                } else {
+                    log.warn("SYSTEM STALLED: Branch Garbage Collector not triggered because no review task with a PR URL is actionable.");
                 }
             } else {
-                setSystemStatus("idle_no_work");
+                setSystemStatus("busy_with_actionable_work");
             }
         } catch (Exception e) {
             log.error("Continuous Orchestration: Failed to run system stall check", e);
+        }
+    }
+
+    private SystemWorkSnapshot systemWorkSnapshot() {
+        long queuedTasks = taskRepository.countByStatus(TaskStatus.queued);
+        long pendingWishlists = wishlistRepository.findAll().stream()
+                .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
+                        || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                .count();
+        long activeNonTerminalTasks = taskRepository.findAll().stream()
+                .filter(task -> task.getStatus() == TaskStatus.claimed
+                        || task.getStatus() == TaskStatus.in_progress
+                        || task.getStatus() == TaskStatus.pending_review
+                        || task.getStatus() == TaskStatus.review)
+                .count();
+        long reviewTasksWithPr = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active).stream()
+                .flatMap(project -> taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review).stream())
+                .filter(task -> julesSessionRepository.findByTaskId(task.getId()).stream()
+                        .anyMatch(session -> session.getPrUrl() != null && !session.getPrUrl().isBlank()))
+                .count();
+        return new SystemWorkSnapshot(queuedTasks, pendingWishlists, activeNonTerminalTasks, reviewTasksWithPr);
+    }
+
+    record SystemWorkSnapshot(long queuedTasks, long pendingWishlists, long activeNonTerminalTasks, long reviewTasksWithPr) {
+        boolean hasActionableWork() {
+            return queuedTasks > 0 || pendingWishlists > 0 || activeNonTerminalTasks > 0;
+        }
+
+        String describe() {
+            return "queuedTasks=" + queuedTasks
+                    + ", pendingOrCompilingWishlists=" + pendingWishlists
+                    + ", activeNonTerminalTasks=" + activeNonTerminalTasks
+                    + ", reviewTasksWithPr=" + reviewTasksWithPr;
         }
     }
 

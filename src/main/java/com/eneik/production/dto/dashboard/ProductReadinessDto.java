@@ -8,6 +8,7 @@ public record ProductReadinessDto(
         int totalPlannedTasks,
         int mergedPlannedTasks,
         double mergedRatio,
+        double featureReadinessRatio,
         boolean decompositionComplete,
         double falsificationThreshold,
         boolean falsificationEligible,

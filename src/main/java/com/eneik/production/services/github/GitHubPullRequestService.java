@@ -801,6 +801,25 @@ public class GitHubPullRequestService {
             return Optional.empty();
         }
         RepoRef repoRef = repoRef(project);
+        return fetchPullRequestByNumber(repoRef, token, pullNumber, "project " + project.getId());
+    }
+
+    public Optional<GitHubPullRequest> fetchPullRequestByNumber(String owner, String repo, int pullNumber) {
+        if (owner == null || owner.isBlank() || repo == null || repo.isBlank()
+                || !settingsService.effectiveBoolean("github_enabled")) {
+            return Optional.empty();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return Optional.empty();
+        }
+        return fetchPullRequestByNumber(new RepoRef(owner, repo), token, pullNumber, owner + "/" + repo);
+    }
+
+    private Optional<GitHubPullRequest> fetchPullRequestByNumber(RepoRef repoRef, String token, int pullNumber, String context) {
+        if (repoRef == null) {
+            return Optional.empty();
+        }
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
             HttpRequest request = baseRequest(path, token).GET().build();
@@ -821,7 +840,7 @@ public class GitHubPullRequestService {
                     "closed".equals(pr.path("state").asText(""))
             ));
         } catch (Exception e) {
-            log.warn("Could not fetch PR #{} for project {}: {}", pullNumber, project.getId(), e.getMessage());
+            log.warn("Could not fetch PR #{} for {}: {}", pullNumber, context, e.getMessage());
             return Optional.empty();
         }
     }
@@ -1056,6 +1075,14 @@ public class GitHubPullRequestService {
             if (getRes.statusCode() == 200) {
                 JsonNode json = objectMapper.readTree(getRes.body());
                 sha = json.path("sha").asText(null);
+                String existingContent = new String(
+                        java.util.Base64.getMimeDecoder().decode(json.path("content").asText("")),
+                        StandardCharsets.UTF_8);
+                if (ciYaml.equals(existingContent)) {
+                    log.debug("[CI-SYNC] .github/workflows/ci.yml already aligned to Java {} Temurin for {}/{}",
+                            javaVersion, repoRef.owner(), repoRef.repo());
+                    return true;
+                }
             }
             ObjectNode body = objectMapper.createObjectNode();
             body.put("message", "fix(ci): align GitHub Actions Java version to " + javaVersion + " Temurin matching pom.xml");

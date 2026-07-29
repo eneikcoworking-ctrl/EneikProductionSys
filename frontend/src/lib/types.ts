@@ -204,6 +204,7 @@ export type ProductReadiness = {
   totalPlannedTasks: number;
   mergedPlannedTasks: number;
   mergedRatio: number;
+  featureReadinessRatio: number;
   decompositionComplete: boolean;
   falsificationThreshold: number;
   falsificationEligible: boolean;

@@ -107,6 +107,54 @@ class AutoMergeServiceTest {
     }
 
     @Test
+    void terminalGithubStateMarksClosedPrAsClosedUnmergedBeforePolling() {
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        var gitHub = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        AutoMergeService service = new AutoMergeService(
+                prReviews,
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                settings,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                gitHub,
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+
+        PrReviewEntity review = reviewWithStatus("success");
+        review.setPrUrl("https://github.com/org/repo/pull/44");
+        review.setMerged(false);
+
+        when(settings.effectiveBoolean("github_enabled")).thenReturn(true);
+        when(prReviews.findByMergedFalseOrMergedIsNull()).thenReturn(List.of(review));
+        when(gitHub.fetchPullRequestByNumber("org", "repo", 44)).thenReturn(Optional.of(
+                new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                        "https://github.com/org/repo/pull/44",
+                        44,
+                        "closed stale work",
+                        "jules-closed",
+                        "jules",
+                        false,
+                        "main",
+                        true)));
+
+        assertEquals(1, service.reconcileTerminalGithubStateForReviews());
+        assertEquals("closed_unmerged", review.getCiStatus());
+        assertFalse(AutoMergeService.isReviewPollCandidate(review));
+        verify(prReviews).save(review);
+    }
+
+    @Test
     void mergedSiblingRetiresLateConflictWithoutReopeningTask() {
         var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
         var sessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);

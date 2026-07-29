@@ -135,6 +135,7 @@ public class AutoMergeService {
 
     public void executeAutoMergeCycle() {
         syncOpenPullRequestsFromGitHub();
+        reconcileTerminalGithubStateForReviews();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
         reconcileCleanOpenGitHubPullRequests();
@@ -207,6 +208,41 @@ public class AutoMergeService {
         }
         return java.util.Set.of("success", "pending", "unavailable", "conflict")
                 .contains(ciStatus.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    int reconcileTerminalGithubStateForReviews() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return 0;
+        }
+        int reconciled = 0;
+        List<PrReviewEntity> unmergedReviews = prReviewRepository.findByMergedFalseOrMergedIsNull();
+        for (PrReviewEntity review : unmergedReviews) {
+            try {
+                PullRequestTarget target = parseGithubPullRequestUrl(review.getPrUrl());
+                if (target == null) {
+                    continue;
+                }
+                var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(
+                        target.owner(), target.repo(), Integer.parseInt(target.pullNumber()));
+                if (githubPr.isEmpty()) {
+                    continue;
+                }
+                if (githubPr.get().merged()) {
+                    recordSuccessfulMerge(review, target);
+                    reconciled++;
+                } else if (githubPr.get().closed()) {
+                    review.setCiStatus("closed_unmerged");
+                    prReviewRepository.save(review);
+                    reconciled++;
+                    log.info("AutoMergeService: PR {} is closed without merge on GitHub; terminalized local review.",
+                            review.getPrUrl());
+                }
+            } catch (Exception e) {
+                log.warn("AutoMergeService: terminal GitHub-state reconciliation failed for review {} (PR {}): {}",
+                        review.getId(), review.getPrUrl(), e.getMessage());
+            }
+        }
+        return reconciled;
     }
 
     // Operator directive 2026-07-24 (live incident, 6 simultaneous escalations on test-thirty-seventh, all
@@ -881,7 +917,7 @@ public class AutoMergeService {
                 return;
             }
             GitHubPullRequestService.GitHubPullRequest githubPr = gitHubPullRequestService
-                    .fetchPullRequestByNumber(reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()))
+                    .fetchPullRequestByNumber(pullRequestTarget.owner(), pullRequestTarget.repo(), Integer.parseInt(pullRequestTarget.pullNumber()))
                     .orElse(null);
             // Live incident, 2026-07-24 (operator manually closed PR#57 as a duplicate; the merge-retry loop
             // never found out and kept retrying a 405 "not mergeable" every ~60s forever): a PR that's
@@ -1095,7 +1131,7 @@ public class AutoMergeService {
                 if (project == null) {
                     continue;
                 }
-                var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(project, Integer.parseInt(target.pullNumber()));
+                var githubPr = gitHubPullRequestService.fetchPullRequestByNumber(target.owner(), target.repo(), Integer.parseInt(target.pullNumber()));
                 if (githubPr.isPresent() && githubPr.get().merged()) {
                     log.info("AutoMergeService: resurrected review for PR {} - was already merged on GitHub but "
                                     + "stuck at ciStatus={}, never re-checked; recording as merged now.",
@@ -1702,7 +1738,7 @@ public class AutoMergeService {
             synthesized.setRiskLevel("LOW");
             synthesized.setMerged(true);
             synthesized.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
-            synthesized.setBaseRef(baseRefForMergedPr(task.getProject(), mergedPrUrl));
+            synthesized.setBaseRef(baseRefForMergedPr(mergedPrUrl));
             prReviewRepository.save(synthesized);
         }
 
@@ -1755,16 +1791,13 @@ public class AutoMergeService {
     // GitHub-truth reconciliation path, so a synthesized PrReviewEntity gets a real baseRef instead of
     // silently staying null (which reachedMain() treats as "legacy/unknown, fail open" - correct for old
     // data, but this path creates NEW rows, so it should populate it properly when it can).
-    private String baseRefForMergedPr(com.eneik.production.models.persistence.ProjectEntity project, String prUrl) {
-        if (project == null) {
-            return null;
-        }
+    private String baseRefForMergedPr(String prUrl) {
         PullRequestTarget target = parseGithubPullRequestUrl(prUrl);
         if (target == null) {
             return null;
         }
         try {
-            return gitHubPullRequestService.fetchPullRequestByNumber(project, Integer.parseInt(target.pullNumber()))
+            return gitHubPullRequestService.fetchPullRequestByNumber(target.owner(), target.repo(), Integer.parseInt(target.pullNumber()))
                     .map(GitHubPullRequestService.GitHubPullRequest::baseRef)
                     .orElse(null);
         } catch (NumberFormatException e) {
