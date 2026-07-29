@@ -6,7 +6,6 @@ import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
-import com.eneik.production.services.design.DesignAssetResult;
 import com.eneik.production.services.design.DesignAssetService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -86,7 +85,7 @@ public class ProjectAuditPipelineService {
 
                 case COVERAGE_FALSIFICATION:
                     log.info("Pipeline Step 2/5 [COVERAGE_FALSIFICATION]: Dispatching coverage gap falsification for project {}", projectId);
-                    projectFlowService.dispatchFalsificationAudit(projectId);
+                    projectFlowService.dispatchFalsificationAudit(project, "Coverage gap falsification", 0, "");
                     projectStages.put(projectId, PipelineStage.PHILOSOPHICAL_FALSIFICATION);
                     break;
 
@@ -125,7 +124,7 @@ public class ProjectAuditPipelineService {
                 }
             }
 
-            DesignAssetResult result = designAssetService.generateAsset(
+            DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
                     project,
                     null,
                     combinedBrief.toString(),
