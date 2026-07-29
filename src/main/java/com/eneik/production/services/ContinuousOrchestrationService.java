@@ -43,6 +43,9 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private ProjectAuditPipelineService projectAuditPipelineService;
+
     @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
     private int blockedAccountRecoveryCooldownMinutes;
 
@@ -155,6 +158,9 @@ public class ContinuousOrchestrationService {
 
                 try {
                     projectFlowService.checkAndDispatchCoverageAudits(project.getId());
+                    if (projectAuditPipelineService != null) {
+                        projectAuditPipelineService.executeSequentialAuditPipeline(project.getId());
+                    }
                 } catch (Exception e) {
                     log.error("Continuous Orchestration: Failed to check coverage-audit eligibility for project {}", project.getId(), e);
                 }
