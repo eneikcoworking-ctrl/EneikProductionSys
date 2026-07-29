@@ -71,9 +71,23 @@ public class ProjectAuditPipelineService {
             return;
         }
 
-        PipelineStage current = projectStages.get(projectId);
-        if (current == null || current == PipelineStage.IDLE || current == PipelineStage.COMPLETED) {
-            return;
+        PipelineStage current = projectStages.getOrDefault(projectId, PipelineStage.IDLE);
+
+        // Continuous non-overlapping cycling: if previous cycle is COMPLETED or IDLE,
+        // start next iteration ONLY when all previous tasks are fully completed.
+        if (current == PipelineStage.COMPLETED || current == PipelineStage.IDLE) {
+            List<TaskEntity> activeTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                    .filter(t -> t.getStatus() != TaskStatus.done
+                              && t.getStatus() != TaskStatus.cancelled
+                              && t.getStatus() != TaskStatus.abandoned)
+                    .toList();
+            if (activeTasks.isEmpty()) {
+                log.info("Project {} is active and all previous tasks completed. Starting next non-overlapping pipeline iteration...", projectId);
+                current = PipelineStage.COVERAGE_AUDIT;
+                projectStages.put(projectId, current);
+            } else {
+                return;
+            }
         }
 
         log.info("ProjectAuditPipelineService: executing sequential tick for project {} in stage {}", projectId, current);
