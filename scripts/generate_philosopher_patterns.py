@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import re
 import shutil
 from collections import Counter
@@ -11,6 +12,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "docs" / "philosopher-patterns"
 PEOPLE_DIR = OUT / "philosophers"
+
+EXPECTED_BARCAN_FILES = 13
+EXPECTED_PHILOSOPHERS = 78
+MIN_PERSONAL_PATTERNS = 20
+COMMON_THRESHOLD_PHILOSOPHERS = 5
 
 
 COMMON_PATTERNS = [
@@ -74,6 +80,46 @@ COMMON_PATTERNS = [
     ("ACP-058", "Stale Claim Self-Healing", "Stuck automation claims are released with evidence", "Keeps autonomous queues moving."),
     ("ACP-059", "CI Status Reconciliation", "System reconciles GitHub state with internal task state", "Prevents already-merged work from staying blocked."),
     ("ACP-060", "RAG Source-Grounded Retrieval", "Agents cite exact source chunks before applying doctrine", "Prevents philosophical slogans from becoming hallucinated rules."),
+    ("ACP-061", "Hoare Triple Review", "State precondition, command and postcondition before touching critical code", "Prevents code that is locally plausible but globally unproved."),
+    ("ACP-062", "Temporal Specification", "Describe safety and liveness properties for workflows", "Catches impossible lifecycle promises and stuck-state defects early."),
+    ("ACP-063", "Model Checking", "Explore finite state spaces with tools such as TLA+, Alloy or equivalent", "Finds interleavings and corner states missed by example tests."),
+    ("ACP-064", "State-Space Reduction", "Collapse irrelevant states before verification", "Keeps formal checks tractable without losing the defect class under review."),
+    ("ACP-065", "Algebraic Data Types", "Represent alternatives as tagged sums and products", "Prevents invalid combinations from being representable."),
+    ("ACP-066", "Refinement Types", "Attach predicates to values where the language or tooling supports it", "Moves range, format and permission defects into type or check time."),
+    ("ACP-067", "Dependent Type Boundary", "Use proof-carrying values at the highest-risk interfaces", "Prevents consumers from assuming facts that were never established."),
+    ("ACP-068", "SMT Constraint Check", "Encode conflicting rules as satisfiability constraints", "Finds inconsistent requirements before implementation spreads them."),
+    ("ACP-069", "Abstract Interpretation", "Approximate program behavior over safe abstract domains", "Detects classes of runtime errors without executing every path."),
+    ("ACP-070", "Separation Logic Ownership", "Prove mutable resources have non-overlapping owners", "Prevents aliasing bugs, leaks and hidden shared mutation."),
+    ("ACP-071", "Linear Resource Discipline", "Use single-use or affine ownership for scarce effects", "Stops duplicate sends, double frees and repeated irreversible actions."),
+    ("ACP-072", "Lock Ordering Protocol", "Acquire shared locks in one global order", "Prevents deadlocks during parallel execution."),
+    ("ACP-073", "Lease Fencing Token", "Every worker mutation carries a monotonic lease token", "Prevents stale workers from overwriting newer authority."),
+    ("ACP-074", "Monotonic State Design", "Prefer state transitions that only move forward in a lattice", "Prevents rollback races and non-convergent replicas."),
+    ("ACP-075", "CRDT Convergence", "Use commutative, associative and idempotent merge operations", "Lets distributed edits converge without central locking."),
+    ("ACP-076", "Lattice-Based Merge", "Represent partial knowledge with join/meet operations", "Prevents ad hoc conflict resolution from losing information."),
+    ("ACP-077", "Deterministic Replay", "Persist inputs, time and decisions enough to replay incidents", "Turns intermittent production failures into reproducible traces."),
+    ("ACP-078", "Event Sourcing with Projection Tests", "Derive current state from an append-only event log", "Prevents silent history loss and makes state reconstruction auditable."),
+    ("ACP-079", "Metamorphic Testing", "Assert relations between transformed inputs and outputs", "Finds bugs when no single oracle is available."),
+    ("ACP-080", "Differential Testing", "Compare independent implementations or versions on the same cases", "Finds semantic drift across adapters, clients and runtimes."),
+    ("ACP-081", "Coverage-Guided Fuzzing", "Generate hostile inputs guided by executed paths", "Finds parser, validation and memory defects missed by examples."),
+    ("ACP-082", "Combinatorial Interaction Testing", "Cover pairwise or t-wise parameter interactions", "Reduces configuration defects without exhaustive test explosion."),
+    ("ACP-083", "Symbolic Execution", "Explore path conditions instead of concrete examples only", "Finds branch-specific defects before production traffic finds them."),
+    ("ACP-084", "Taint Tracking", "Mark untrusted data and verify every sink is protected", "Prevents injection and authorization bypass through hidden data flow."),
+    ("ACP-085", "Information Flow Control", "Enforce allowed movement between confidentiality and integrity levels", "Prevents sensitive or untrusted data from crossing forbidden boundaries."),
+    ("ACP-086", "Capability-Based Authority", "Pass explicit unforgeable permissions instead of ambient authority", "Prevents confused-deputy and over-permission defects."),
+    ("ACP-087", "Formal Grammar Boundary", "Parse external languages with an explicit grammar", "Prevents partial parser acceptance and ambiguous syntax handling."),
+    ("ACP-088", "Parser Serializer Round Trip", "Parse, serialize and parse again with semantic equality checks", "Prevents lossy transformations and migration corruption."),
+    ("ACP-089", "Canonical Intermediate Representation", "Normalize equivalent forms before comparison and transformation", "Prevents duplicate identities and representation-dependent behavior."),
+    ("ACP-090", "Total Function Interface", "Every public function defines behavior for every input class", "Prevents implicit undefined behavior at module boundaries."),
+    ("ACP-091", "Option and Result Types", "Represent absence and failure explicitly", "Prevents null dereferences and swallowed errors."),
+    ("ACP-092", "Resource Scope Guard", "Bind acquisition and release to lexical or transaction scope", "Prevents leaks after exceptions and early returns."),
+    ("ACP-093", "Compatibility Matrix", "Track supported producer/consumer and schema version pairs", "Prevents accidental deployment of incompatible components."),
+    ("ACP-094", "Ontology Registry", "Centralize domain vocabulary, ownership and canonical meanings", "Prevents duplicate concepts with different operational semantics."),
+    ("ACP-095", "Trace Context Propagation", "Carry correlation context through every async and remote boundary", "Prevents orphaned logs and untraceable workflow failures."),
+    ("ACP-096", "SLO Error Budget Gate", "Use service objectives to decide release and rollback policy", "Prevents local feature progress from consuming reliability silently."),
+    ("ACP-097", "Chaos Experiment", "Inject controlled dependency, latency and infrastructure faults", "Finds resilience gaps before real incidents compound them."),
+    ("ACP-098", "Kill Switch", "Every risky external effect has a fast disable path", "Prevents prolonged damage from a bad deployment or dependency change."),
+    ("ACP-099", "Shadow Traffic Verification", "Run new behavior beside old behavior before user-visible cutover", "Finds semantic differences without exposing clients."),
+    ("ACP-100", "Canary Invariant Monitor", "Bind rollout progression to live invariant checks", "Prevents a canary from advancing after hidden correctness drift."),
 ]
 
 
@@ -198,17 +244,421 @@ TAG_TITLES = {
 }
 
 
-PERSONAL_SLOTS = [
-    ("name-gate", "Semantic Naming Gate", "Check names against the philosopher's central distinction before code review continues."),
-    ("state-invariant", "State Invariant Kernel", "Turn the principle into a lifecycle invariant that tests and runtime guards can enforce."),
-    ("boundary-map", "Boundary Map", "Draw the exact edge where the principle changes how modules may communicate."),
-    ("counterexample-test", "Counterexample Test", "Create a test designed to break the claim rather than merely demonstrate it."),
-    ("data-shape", "Data Shape Discipline", "Encode the relevant philosophical distinction in schema, type or value-object structure."),
-    ("transition-guard", "Atomic Transition Guard", "Guard state changes with expected state, version or capability context."),
-    ("review-binary", "Binary Review Criterion", "Make the role's approval/rejection rule inspectable and non-vague."),
-    ("evidence-trace", "Evidence Trace", "Record the observable proof needed for later agents to trust the decision."),
-    ("parallel-work", "Parallel Conflict Shield", "Prevent two agents from applying incompatible meanings to the same surface."),
-    ("rag-capsule", "RAG Doctrine Capsule", "Store the philosopher-specific rule as a retrievable decision fragment."),
+TAG_AXES = {
+    "BARCAN-TAG-00_CODE-GUARDIAN": {"language", "review", "meaning", "integration", "evidence", "conflict"},
+    "BARCAN-TAG-01_ACTUALIST-OBJECT": {"ontology", "identity", "boundary", "composition", "types", "domain"},
+    "BARCAN-TAG-02_RIGID-DESIGNATOR": {"reference", "identity", "api", "naming", "compatibility", "context"},
+    "BARCAN-TAG-03_BELIEF-INTENSION": {"cognitive", "ux", "agency", "perception", "feedback", "context"},
+    "BARCAN-TAG-04_MODAL-QUANTIFIER": {"uncertainty", "evidence", "model", "probability", "causal", "prediction"},
+    "BARCAN-TAG-05_NECESSARY-IDENTITY": {"identity", "causal", "runtime", "history", "replay", "composition"},
+    "BARCAN-TAG-06_DEONTIC-CONSISTENCY": {"logic", "truth", "testing", "counterexample", "verification", "status"},
+    "BARCAN-TAG-07_SECOND-ORDER-KNOWLEDGE": {"epistemic", "security", "authority", "information", "validation", "evidence"},
+    "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE": {"logic", "types", "substitution", "data", "lineage", "computation"},
+    "BARCAN-TAG-09_MORAL-DILEMMA": {"pragmatic", "value", "tradeoff", "coherence", "interpretation", "cost"},
+    "BARCAN-TAG-10_DEONTIC-PROHIBITION": {"normative", "policy", "law", "authority", "exception", "permission"},
+    "BARCAN-TAG-11_CLIENT-PERCEPTION": {"cognitive", "perception", "ux", "information", "identity", "accessibility"},
+    "BARCAN-TAG-12_SOCIAL-CONTRACT": {"coordination", "commitment", "institution", "planning", "contract", "parallel"},
+}
+
+
+AXIS_KEYWORDS = [
+    (("language", "meaning", "speech", "conversation", "sense", "reference", "denoting", "interpretation"), "language"),
+    (("ontology", "being", "object", "parts", "whole", "composition", "essence", "places"), "ontology"),
+    (("identity", "necessity", "persistence", "continuity", "supervenience"), "identity"),
+    (("modal", "possible", "world", "intension", "necessity"), "modality"),
+    (("reference", "designation", "indexical", "externalism"), "reference"),
+    (("probability", "decision", "belief", "uncertainty", "forecast"), "uncertainty"),
+    (("causal", "causation", "intervention", "experiment", "measurement"), "causal"),
+    (("truth", "logic", "formalized", "paraconsistent", "four-valued", "minimalist"), "logic"),
+    (("knowledge", "epistemology", "evidence", "knowing", "skepticism", "reliabilism"), "epistemic"),
+    (("information", "computability", "lambda", "type theory", "propositions as types"), "information"),
+    (("law", "deontic", "obligation", "permission", "rights", "duties", "authority", "rules"), "normative"),
+    (("perception", "mind", "consciousness", "body", "cognition", "concepts", "phenomenal"), "cognitive"),
+    (("action", "intention", "agency", "plan", "practical"), "agency"),
+    (("social", "contract", "convention", "joint", "institution", "shared"), "coordination"),
+    (("pragmatism", "value", "capabilities", "reasons", "coherence"), "pragmatic"),
+]
+
+
+DEFECT_TAXONOMY = [
+    ("D001", "Semantic drift", "A name, rule or interface keeps the old spelling but changes meaning."),
+    ("D002", "Invalid state", "The code permits a domain state the role principle forbids."),
+    ("D003", "Contract drift", "Producer and consumer assumptions diverge."),
+    ("D004", "Concurrency conflict", "Two agents or workers claim the same mutable surface."),
+    ("D005", "Partial distributed failure", "One side effect lands while the matching state/event does not."),
+    ("D006", "Authorization ambiguity", "Authority, permission or prohibition is inferred instead of proven."),
+    ("D007", "Evidence gap", "The agent cannot cite code, test, trace or source evidence for a claim."),
+    ("D008", "False green", "A check reports success without covering the relevant behavior."),
+    ("D009", "Substitution failure", "Replacement preserves shape but not semantics."),
+    ("D010", "Data lineage loss", "A value loses origin, identity or transformation history."),
+    ("D011", "Perception failure", "The UI is technically present but not usable, visible or accessible."),
+    ("D012", "Policy contradiction", "Two rules can require incompatible actions."),
+    ("D013", "Runtime drift", "The deployed runtime no longer corresponds to the trusted repository state."),
+    ("D014", "RAG hallucination", "The agent applies doctrine without exact retrieved grounding."),
+]
+
+
+PERSONAL_SLOT_POOL = [
+    {
+        "key": "anchor-bound-name",
+        "title": "Anchor-Bound Name",
+        "axes": {"language", "reference", "naming", "api"},
+        "rule": "Treat every exported name as a promise bound to the philosopher's source principle and publication anchor.",
+        "proof": "Show that renamed or newly introduced symbols preserve the same referent across caller contexts.",
+        "defect": "D001",
+    },
+    {
+        "key": "sense-reference-split",
+        "title": "Sense Reference Split",
+        "axes": {"language", "reference", "context"},
+        "rule": "Separate what a value is called, what it denotes and how clients are expected to understand it.",
+        "proof": "Add a contract or test proving display label, persisted identifier and API identity cannot be confused.",
+        "defect": "D009",
+    },
+    {
+        "key": "category-error-scan",
+        "title": "Category Error Scan",
+        "axes": {"language", "review", "ontology", "types"},
+        "rule": "Reject code that treats a process as an object, an observation as authority or a policy as data without an adapter.",
+        "proof": "Point to the type, schema or adapter that preserves the category boundary.",
+        "defect": "D002",
+    },
+    {
+        "key": "performative-commit",
+        "title": "Performative Commit",
+        "axes": {"language", "commitment", "coordination", "contract"},
+        "rule": "When code declares a status, event or approval, require the matching operational consequence to exist.",
+        "proof": "Trace the declaration to the database transition, emitted event or review gate it performs.",
+        "defect": "D003",
+    },
+    {
+        "key": "conversation-maxim",
+        "title": "Conversation Maxim Check",
+        "axes": {"language", "review", "evidence", "ux"},
+        "rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker.",
+        "proof": "Show the minimal status fields, evidence links and next-action fields consumed downstream.",
+        "defect": "D007",
+    },
+    {
+        "key": "world-version-map",
+        "title": "World Version Map",
+        "axes": {"ontology", "context", "compatibility", "history"},
+        "rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients.",
+        "proof": "Provide a version matrix or migration path covering each supported world.",
+        "defect": "D003",
+    },
+    {
+        "key": "actual-object-register",
+        "title": "Actual Object Register",
+        "axes": {"ontology", "domain", "identity", "types"},
+        "rule": "Create code only for actual domain objects with owner, identity, lifecycle and deletion semantics.",
+        "proof": "Link the object to its aggregate, repository boundary or canonical registry entry.",
+        "defect": "D002",
+    },
+    {
+        "key": "part-whole-ownership",
+        "title": "Part Whole Ownership",
+        "axes": {"ontology", "composition", "boundary", "ownership"},
+        "rule": "Make part ownership and whole invariants explicit before splitting modules, tables or services.",
+        "proof": "Show which aggregate or service is allowed to mutate each part.",
+        "defect": "D004",
+    },
+    {
+        "key": "boundary-topology",
+        "title": "Boundary Topology",
+        "axes": {"ontology", "boundary", "api", "domain"},
+        "rule": "Define the exact boundary where validation, authorization, persistence or ownership changes hands.",
+        "proof": "Add a boundary test or diagram-backed code reference for the handoff.",
+        "defect": "D006",
+    },
+    {
+        "key": "essence-before-option",
+        "title": "Essence Before Option",
+        "axes": {"ontology", "identity", "modality", "types"},
+        "rule": "Before adding a configurable option, state the invariant that must remain true in every permitted mode.",
+        "proof": "Show that configuration branches preserve the invariant or fail closed.",
+        "defect": "D002",
+    },
+    {
+        "key": "rigid-api-referent",
+        "title": "Rigid API Referent",
+        "axes": {"reference", "api", "identity", "compatibility"},
+        "rule": "Keep public identifiers tied to the same behavior across versions unless a formal migration says otherwise.",
+        "proof": "Run or add consumer contract evidence for the old and new referent.",
+        "defect": "D003",
+    },
+    {
+        "key": "intension-compatibility",
+        "title": "Intension Compatibility Split",
+        "axes": {"reference", "context", "modality", "compatibility"},
+        "rule": "Separate what a feature means to existing clients from what it means in the new implementation context.",
+        "proof": "Show compatibility tests for the old interpretation and targeted tests for the new one.",
+        "defect": "D001",
+    },
+    {
+        "key": "indexical-context-lock",
+        "title": "Indexical Context Lock",
+        "axes": {"reference", "context", "ux", "identity"},
+        "rule": "Never let terms like current, owner, user, latest or active float without an explicit context object.",
+        "proof": "Point to the context source and tests that prevent cross-user or stale-context leakage.",
+        "defect": "D006",
+    },
+    {
+        "key": "extended-cognition-tool",
+        "title": "Extended Cognition Tool",
+        "axes": {"cognitive", "ux", "information", "feedback"},
+        "rule": "Treat the UI, dashboard or RAG chunk as part of the agent's thinking loop, not passive decoration.",
+        "proof": "Show that the tool exposes the state, uncertainty and next action needed for correct decisions.",
+        "defect": "D011",
+    },
+    {
+        "key": "perception-action-loop",
+        "title": "Perception Action Loop",
+        "axes": {"cognitive", "perception", "agency", "feedback"},
+        "rule": "Every user or agent action must produce perceivable feedback that closes the loop.",
+        "proof": "Verify visible state, loading, success and failure transitions.",
+        "defect": "D011",
+    },
+    {
+        "key": "self-model-sanity",
+        "title": "Self Model Sanity Check",
+        "axes": {"cognitive", "identity", "runtime", "evidence"},
+        "rule": "Make the system state it is acting from explicit before it makes an irreversible decision.",
+        "proof": "Capture project id, branch, commit, runtime SHA and task state in the decision record.",
+        "defect": "D013",
+    },
+    {
+        "key": "belief-update-ledger",
+        "title": "Belief Update Ledger",
+        "axes": {"epistemic", "uncertainty", "evidence", "model"},
+        "rule": "Record what evidence changed the agent's belief and what uncertainty remains.",
+        "proof": "Attach before/after confidence, source evidence and unresolved hypotheses.",
+        "defect": "D007",
+    },
+    {
+        "key": "decision-expected-loss",
+        "title": "Expected Loss Gate",
+        "axes": {"uncertainty", "probability", "prediction", "value"},
+        "rule": "Choose a repair or merge action by minimizing expected defect cost, not by local convenience.",
+        "proof": "State failure probability, blast radius and rollback cost for the selected action.",
+        "defect": "D005",
+    },
+    {
+        "key": "falsification-harness",
+        "title": "Falsification Harness",
+        "axes": {"logic", "testing", "counterexample", "verification"},
+        "rule": "Write the check that would refute the agent's claim before accepting the claim.",
+        "proof": "Show a failing counterexample or a targeted passing test that would fail under the defect.",
+        "defect": "D008",
+    },
+    {
+        "key": "truth-status-table",
+        "title": "Truth Status Table",
+        "axes": {"logic", "truth", "status", "evidence"},
+        "rule": "Represent true, false, unknown and inconsistent states explicitly in orchestration status.",
+        "proof": "Show how each state is displayed, stored and resolved.",
+        "defect": "D012",
+    },
+    {
+        "key": "paraconsistent-quarantine",
+        "title": "Paraconsistent Quarantine",
+        "axes": {"logic", "truth", "conflict", "status"},
+        "rule": "If evidence conflicts, isolate the contradiction and keep safe operations moving around it.",
+        "proof": "Show the quarantined claim, blocked action and allowed independent action.",
+        "defect": "D012",
+    },
+    {
+        "key": "knowledge-first-gate",
+        "title": "Knowledge First Gate",
+        "axes": {"epistemic", "security", "validation", "evidence"},
+        "rule": "Do not authorize a risky action from belief or intention alone; require knowledge-grade evidence.",
+        "proof": "Attach the check, trace or permission source that makes the claim knowledge-grade.",
+        "defect": "D006",
+    },
+    {
+        "key": "reliability-chain",
+        "title": "Reliability Chain",
+        "axes": {"epistemic", "information", "evidence", "validation"},
+        "rule": "Trust data only when its acquisition process is reliable for this defect class.",
+        "proof": "Show source, timestamp, freshness rule and validation path.",
+        "defect": "D010",
+    },
+    {
+        "key": "substitution-oracle",
+        "title": "Substitution Oracle",
+        "axes": {"logic", "substitution", "types", "data"},
+        "rule": "Before replacing code, dependency, model or schema, prove preservation under the relevant observations.",
+        "proof": "Run equivalence, contract or golden-master evidence for the replacement.",
+        "defect": "D009",
+    },
+    {
+        "key": "constructive-proof-object",
+        "title": "Constructive Proof Object",
+        "axes": {"logic", "types", "computation", "verification"},
+        "rule": "Represent successful completion as a value carrying the evidence needed by the next step.",
+        "proof": "Show the typed result or artifact that cannot exist without satisfying the preconditions.",
+        "defect": "D007",
+    },
+    {
+        "key": "level-of-abstraction-lock",
+        "title": "Level Of Abstraction Lock",
+        "axes": {"information", "data", "ontology", "context"},
+        "rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level.",
+        "proof": "Show source and target abstraction levels plus the transformation contract.",
+        "defect": "D010",
+    },
+    {
+        "key": "lambda-core-reduction",
+        "title": "Lambda Core Reduction",
+        "axes": {"computation", "logic", "types", "verification"},
+        "rule": "Reduce complex behavior to a small pure core before adding effects, adapters or orchestration.",
+        "proof": "Show the pure decision function and tests independent from IO.",
+        "defect": "D008",
+    },
+    {
+        "key": "inferential-scoreboard",
+        "title": "Inferential Scoreboard",
+        "axes": {"pragmatic", "coherence", "review", "evidence"},
+        "rule": "Track what each code claim commits the agent to and what would count against it.",
+        "proof": "Show commitments, entitlement evidence and incompatibility checks.",
+        "defect": "D001",
+    },
+    {
+        "key": "holism-impact-map",
+        "title": "Holism Impact Map",
+        "axes": {"pragmatic", "coherence", "integration", "cost"},
+        "rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows.",
+        "proof": "List the affected neighbors and evidence for each integration boundary.",
+        "defect": "D003",
+    },
+    {
+        "key": "anti-mirror-telemetry",
+        "title": "Anti Mirror Telemetry",
+        "axes": {"pragmatic", "evidence", "runtime", "interpretation"},
+        "rule": "Prefer operational telemetry over the agent's internal story about what the system is doing.",
+        "proof": "Cite logs, metrics, health checks or dashboard state for the actual runtime.",
+        "defect": "D013",
+    },
+    {
+        "key": "prohibition-as-code",
+        "title": "Prohibition As Code",
+        "axes": {"normative", "policy", "law", "permission"},
+        "rule": "Turn every forbidden action into an executable denial path with an explainable reason.",
+        "proof": "Show the policy rule, denial test and user-visible or agent-visible explanation.",
+        "defect": "D006",
+    },
+    {
+        "key": "defeasible-exception-ledger",
+        "title": "Defeasible Exception Ledger",
+        "axes": {"normative", "exception", "policy", "evidence"},
+        "rule": "Allow exceptions only when the defeating reason is explicit, scoped and audited.",
+        "proof": "Show expiry, scope, approver and compensating check for the exception.",
+        "defect": "D012",
+    },
+    {
+        "key": "rights-duties-matrix",
+        "title": "Rights Duties Matrix",
+        "axes": {"normative", "authority", "permission", "contract"},
+        "rule": "Map every actor's claim right, duty, privilege and power before implementing permissions.",
+        "proof": "Show the matrix and tests for at least one allowed and one denied action per relation.",
+        "defect": "D006",
+    },
+    {
+        "key": "principled-integrity",
+        "title": "Principled Integrity Check",
+        "axes": {"normative", "coherence", "policy", "review"},
+        "rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle.",
+        "proof": "Show the higher-level principle and the concrete behavior that preserves it.",
+        "defect": "D012",
+    },
+    {
+        "key": "capability-floor",
+        "title": "Capability Floor",
+        "axes": {"value", "ux", "accessibility", "cognitive"},
+        "rule": "Treat user capability loss as a correctness defect, not a cosmetic issue.",
+        "proof": "Show keyboard, screen-reader, error-recovery or low-resource evidence for the workflow.",
+        "defect": "D011",
+    },
+    {
+        "key": "teleosemantic-feedback",
+        "title": "Teleosemantic Feedback",
+        "axes": {"cognitive", "information", "ux", "feedback"},
+        "rule": "A signal is valid only if it helps the user or agent perform the function it is meant to support.",
+        "proof": "Show how the signal changes the next action and prevents a mistaken action.",
+        "defect": "D011",
+    },
+    {
+        "key": "supervenience-watch",
+        "title": "Supervenience Watch",
+        "axes": {"identity", "runtime", "information", "cognitive"},
+        "rule": "If visible state changes, require a corresponding lower-level state change that explains it.",
+        "proof": "Trace UI, API, database and event state for the same entity.",
+        "defect": "D013",
+    },
+    {
+        "key": "convention-stability",
+        "title": "Convention Stability",
+        "axes": {"coordination", "contract", "parallel", "compatibility"},
+        "rule": "Preserve shared conventions until all participants can switch together or compatibility is proven.",
+        "proof": "Show the migration path, owner approval and compatibility evidence.",
+        "defect": "D004",
+    },
+    {
+        "key": "planning-consistency",
+        "title": "Planning Consistency",
+        "axes": {"coordination", "planning", "commitment", "parallel"},
+        "rule": "Ensure task plans, PRs, branches and agent claims form one consistent plan state.",
+        "proof": "Show dashboard, GitHub and runtime state agreeing on the next action.",
+        "defect": "D004",
+    },
+    {
+        "key": "joint-commitment-lock",
+        "title": "Joint Commitment Lock",
+        "axes": {"coordination", "commitment", "institution", "parallel"},
+        "rule": "Once agents share a contract, no agent may silently reinterpret its obligations.",
+        "proof": "Show the shared contract, claimant, touched paths and review evidence.",
+        "defect": "D004",
+    },
+    {
+        "key": "institutional-fact-register",
+        "title": "Institutional Fact Register",
+        "axes": {"coordination", "institution", "contract", "status"},
+        "rule": "Treat statuses like approved, merged, blocked or done as institutional facts backed by rules.",
+        "proof": "Show the rule that creates the status and the audit event that records it.",
+        "defect": "D007",
+    },
+    {
+        "key": "causal-process-trace",
+        "title": "Causal Process Trace",
+        "axes": {"causal", "runtime", "history", "evidence"},
+        "rule": "Explain incidents through causal chains, not adjacent symptoms.",
+        "proof": "Trace trigger, mechanism, state change and observable effect.",
+        "defect": "D013",
+    },
+    {
+        "key": "inus-factor-check",
+        "title": "INUS Factor Check",
+        "axes": {"causal", "logic", "history", "evidence"},
+        "rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated.",
+        "proof": "List required co-factors and the evidence that each was present or absent.",
+        "defect": "D007",
+    },
+    {
+        "key": "persistence-snapshot",
+        "title": "Persistence Snapshot",
+        "axes": {"identity", "history", "runtime", "replay"},
+        "rule": "For long-lived entities, preserve identity across snapshots, migrations and incident reconstruction.",
+        "proof": "Show stable identifiers and replay evidence across time points.",
+        "defect": "D010",
+    },
+    {
+        "key": "rag-grounding-capsule",
+        "title": "RAG Grounding Capsule",
+        "axes": {"evidence", "information", "review", "context"},
+        "rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class.",
+        "proof": "Cite the exact source row, publication anchor and selected defect taxonomy item.",
+        "defect": "D014",
+    },
 ]
 
 
@@ -290,6 +740,77 @@ def pattern_id(slug: str, slot_index: int, slot_key: str) -> str:
     return f"{slug.upper().replace('-', '_')}_{slot_index:02d}_{slot_key.upper().replace('-', '_')}"
 
 
+def normalize_text(value: object) -> str:
+    return str(value).lower()
+
+
+def axes_from_text(*values: object) -> set[str]:
+    text = " ".join(normalize_text(value) for value in values)
+    axes: set[str] = set()
+    for keywords, axis in AXIS_KEYWORDS:
+        if any(keyword in text for keyword in keywords):
+            axes.add(axis)
+    return axes
+
+
+def stable_jitter(philosopher_key: str, slot_key: str) -> float:
+    digest = hashlib.sha256(f"{philosopher_key}:{slot_key}".encode("utf-8")).hexdigest()
+    return int(digest[:6], 16) / 16_777_215_000
+
+
+def role_axes(row: dict[str, object]) -> set[str]:
+    return axes_from_text(row.get("role", ""), row.get("focus", ""), row.get("principle", ""))
+
+
+def philosopher_axes(row: dict[str, object], anchor: str) -> tuple[set[str], set[str], set[str]]:
+    tag = str(row["tag"])
+    tag_axis_set = set(TAG_AXES[tag])
+    anchor_axis_set = axes_from_text(anchor)
+    role_axis_set = role_axes(row)
+    return tag_axis_set, anchor_axis_set, role_axis_set
+
+
+def score_slot(row: dict[str, object], anchor: str, slot: dict[str, object]) -> float:
+    tag_axis_set, anchor_axis_set, role_axis_set = philosopher_axes(row, anchor)
+    slot_axes = set(slot["axes"])
+    philosopher_key = f"{row['tag']}:{row['ordinal']}:{row['name_ru']}"
+    return (
+        3.0 * len(slot_axes & tag_axis_set)
+        + 2.0 * len(slot_axes & anchor_axis_set)
+        + 1.0 * len(slot_axes & role_axis_set)
+        + stable_jitter(str(philosopher_key), str(slot["key"]))
+    )
+
+
+def theme_from_anchor(anchor: str) -> str:
+    if " - " in anchor:
+        theme = anchor.split(" - ", 1)[1]
+    else:
+        theme = anchor
+    cleaned = re.sub(r"[^A-Za-z0-9 /-]+", " ", theme)
+    words = [word for word in re.split(r"[\s/-]+", cleaned) if word]
+    return " ".join(words[:4]).title() or "Role Principle"
+
+
+def select_personal_slots(row: dict[str, object], anchor: str) -> list[dict[str, object]]:
+    ranked = sorted(
+        PERSONAL_SLOT_POOL,
+        key=lambda slot: (-score_slot(row, anchor, slot), str(slot["key"])),
+    )
+    if len(ranked) < MIN_PERSONAL_PATTERNS:
+        raise SystemExit(
+            f"PERSONAL_SLOT_POOL has {len(ranked)} slots, below MIN_PERSONAL_PATTERNS={MIN_PERSONAL_PATTERNS}"
+        )
+    return ranked[:MIN_PERSONAL_PATTERNS]
+
+
+def taxonomy_name(defect_id: str) -> str:
+    for item_id, name, _description in DEFECT_TAXONOMY:
+        if item_id == defect_id:
+            return name
+    return "Unclassified defect"
+
+
 def make_personal_patterns(row: dict[str, object]) -> list[dict[str, str]]:
     name = str(row["name_ru"])
     slug = slugify(name)
@@ -297,17 +818,28 @@ def make_personal_patterns(row: dict[str, object]) -> list[dict[str, str]]:
     tag = str(row["tag"])
     defect = ROLE_DEFECTS[tag]
     anchor = PUBLICATION_ANCHORS.get(name, f"Role-file principle: {principle}")
+    theme = theme_from_anchor(anchor)
     patterns = []
-    for number, (slot_key, slot_title, slot_rule) in enumerate(PERSONAL_SLOTS, start=1):
+    for number, slot in enumerate(select_personal_slots(row, anchor), start=1):
+        slot_key = str(slot["key"])
+        slot_title = str(slot["title"])
+        slot_score = score_slot(row, anchor, slot)
+        slot_axes = ", ".join(sorted(set(slot["axes"])))
+        defect_id = str(slot["defect"])
         patterns.append(
             {
                 "n": str(number),
                 "id": pattern_id(slug, number, slot_key),
-                "name": f"{name}: {principle} - {slot_title}",
+                "name": f"{name}: {theme} - {slot_title}",
+                "slot_key": slot_key,
+                "axes": slot_axes,
+                "fit_score": f"{slot_score:.6f}",
+                "defect_class": f"{defect_id} {taxonomy_name(defect_id)}",
                 "publication_anchor": anchor,
                 "defect_prevented": f"{defect}; personal failure mode: losing '{principle}' while coding.",
                 "agent_rule": (
-                    f"{slot_rule} Apply it only as a {name}-specific micro-pattern; "
+                    f"{slot['rule']} Proof obligation: {slot['proof']} "
+                    f"Apply it only as a {name}-specific micro-pattern selected by deterministic RAG score; "
                     "use the common ACP file for the broad engineering practice."
                 ),
             }
@@ -326,14 +858,14 @@ def write_common_patterns() -> None:
     lines = [
         "# Common Analytic Programming Patterns",
         "",
-        "These patterns are intentionally shared. They match more than five philosophers in the BARCAN corpus, so they live here instead of being duplicated inside philosopher files.",
+        f"These patterns are intentionally shared. A concrete reusable practice belongs here when it fits more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers in the BARCAN corpus, so it is not duplicated inside philosopher files.",
         "",
         "| ID | Pattern | Technique | Defect Prevention | RAG Rule |",
         "|---|---|---|---|---|",
     ]
     for pid, name, technique, why in COMMON_PATTERNS:
         lines.append(
-            f"| `{pid}` | {name} | {technique} | {why} | Retrieve as common background; do not copy into a philosopher's 10 personal patterns. |"
+            f"| `{pid}` | {name} | {technique} | {why} | Retrieve as common background; do not copy into a philosopher's personal patterns. |"
         )
     lines.extend(
         [
@@ -342,8 +874,9 @@ def write_common_patterns() -> None:
             "",
             "1. Retrieve this file first for universally reusable engineering practices.",
             "2. Retrieve exactly one philosopher file for individual style and judgment.",
-            "3. If a new personal pattern starts fitting more than five philosophers, move it here and replace it in those philosopher files.",
-            "4. For parallel development tasks, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.",
+            f"3. If a new concrete personal pattern starts fitting more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers, move it here and replace it in those philosopher files.",
+            "4. For mathematical assignment and QA rules, retrieve `02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md`.",
+            "5. For parallel development tasks, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.",
             "",
         ]
     )
@@ -376,6 +909,80 @@ def write_conflict_prevention_charter() -> None:
     (OUT / "01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md").write_text("\n".join(lines), encoding="utf-8")
 
 
+def write_rag_assignment_model() -> None:
+    taxonomy_rows = [
+        f"| `{item_id}` | {name} | {description} |" for item_id, name, description in DEFECT_TAXONOMY
+    ]
+    axis_rows = [
+        f"| `{tag}` | {', '.join(sorted(axes))} |" for tag, axes in sorted(TAG_AXES.items())
+    ]
+    lines = [
+        "# RAG Mathematical Assignment Model",
+        "",
+        "This file defines the reproducible assignment rule for the philosopher-pattern corpus. It is the authority for generators, QA and retrieval policy.",
+        "",
+        "## Sets",
+        "",
+        f"- `F`: philosopher rows extracted from `BARCAN-TAG-*.md`; expected cardinality is `{EXPECTED_PHILOSOPHERS}`.",
+        "- `C`: common analytic programming patterns, stored in `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.",
+        "- `S`: parameterized philosopher-specific micro-pattern slots in the generator.",
+        "- `D`: defect taxonomy used as the target prevention space.",
+        "",
+        "## Common Pattern Rule",
+        "",
+        f"A concrete reusable engineering practice is common iff `fit_count(pattern) > {COMMON_THRESHOLD_PHILOSOPHERS}`. Common practices stay in `C` and must not be copied into philosopher files as personal patterns.",
+        "",
+        "## Personal Assignment Score",
+        "",
+        "For philosopher `f` and slot `s`:",
+        "",
+        "```text",
+        "score(f, s) =",
+        "  3 * |axes(tag(f)) intersect axes(s)|",
+        "  + 2 * |axes(publication_anchor(f)) intersect axes(s)|",
+        "  + 1 * |axes(role/focus/principle(f)) intersect axes(s)|",
+        "  + stable_hash_jitter(f, s)",
+        "```",
+        "",
+        "The hash term is deterministic and smaller than `0.001`; it only breaks ties without changing substantive ranking.",
+        "",
+        "## Selection Rule",
+        "",
+        f"For each philosopher, sort `S` by descending `score(f, s)` and then by slot key. Select the first `{MIN_PERSONAL_PATTERNS}` slots. This is a lower-bound invariant: future generators may select more, but QA fails if a philosopher receives fewer.",
+        "",
+        "## RAG Retrieval Policy",
+        "",
+        "1. Retrieve `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md` for reusable defect-prevention techniques.",
+        "2. Retrieve this model file when the agent needs to explain why a philosopher received a pattern.",
+        "3. Retrieve exactly one philosopher file for individual style, principle and defect lens.",
+        "4. For parallel development, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.",
+        "5. A generated answer must cite the source row, publication anchor, selected pattern ID and defect class before applying a doctrine.",
+        "",
+        "## QA Invariants",
+        "",
+        f"- Exactly `{EXPECTED_BARCAN_FILES}` source BARCAN files.",
+        f"- Exactly `{EXPECTED_PHILOSOPHERS}` philosopher source rows and generated philosopher files.",
+        f"- At least `{MIN_PERSONAL_PATTERNS}` personal patterns per philosopher.",
+        "- Personal pattern IDs are globally unique.",
+        "- Personal pattern names are globally unique.",
+        "- Common patterns and personal patterns are separated by the common-threshold rule.",
+        "",
+        "## Tag Axes",
+        "",
+        "| Tag | Axes |",
+        "|---|---|",
+        *axis_rows,
+        "",
+        "## Defect Taxonomy",
+        "",
+        "| ID | Defect class | Description |",
+        "|---|---|---|",
+        *taxonomy_rows,
+        "",
+    ]
+    (OUT / "02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
     tag = str(row["tag"])
     role_name, tag_focus = TAG_TITLES[tag]
@@ -396,9 +1003,11 @@ def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
         f'source_principle: "{str(row["principle"]).replace(chr(34), chr(39))}"',
         f'publication_anchor: "{anchor.replace(chr(34), chr(39))}"',
         'evidence_status: "role_grounded_with_publication_anchor"',
-        "pattern_count: 10",
+        f"pattern_count: {len(patterns)}",
+        f"minimum_personal_patterns: {MIN_PERSONAL_PATTERNS}",
         "personal_patterns_unique: true",
         "common_patterns_excluded: true",
+        f"assignment_model: \"score_top_{MIN_PERSONAL_PATTERNS}_deterministic_axes\"",
         "---",
         "",
         f"# {name}",
@@ -414,16 +1023,17 @@ def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
         "",
         "- These are programming micro-patterns inspired by the role-file principle and the listed publication anchor.",
         "- They are not claims that the philosopher wrote software-engineering advice.",
-        "- Broad patterns that fit more than five philosophers are excluded and kept in the common file.",
+        f"- Broad patterns that fit more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers are excluded and kept in the common file.",
+        "- Pattern selection follows the deterministic scoring model in `02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md`.",
         "",
-        "## 10 Personal Programming Patterns",
+        f"## Personal Programming Patterns ({len(patterns)}, minimum {MIN_PERSONAL_PATTERNS})",
         "",
-        "| # | Personal pattern | Publication-grounded idea | Defect prevented | Agent rule |",
-        "|---:|---|---|---|---|",
+        "| # | Personal pattern | Axes / score | Publication-grounded idea | Defect prevented | Agent rule |",
+        "|---:|---|---|---|---|---|",
     ]
     for pattern in patterns:
         lines.append(
-            f"| {pattern['n']} | `{pattern['id']}` - {pattern['name']} | {pattern['publication_anchor']} | {pattern['defect_prevented']} | {pattern['agent_rule']} |"
+            f"| {pattern['n']} | `{pattern['id']}` - {pattern['name']} | {pattern['axes']}; score `{pattern['fit_score']}`; {pattern['defect_class']} | {pattern['publication_anchor']} | {pattern['defect_prevented']} | {pattern['agent_rule']} |"
         )
     lines.extend(
         [
@@ -434,10 +1044,11 @@ def write_philosopher_file(row: dict[str, object]) -> dict[str, object]:
             "",
             "- [Common Analytic Programming Patterns](../00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md)",
             "- [Parallel Development Conflict Prevention Charter](../01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md)",
+            "- [RAG Mathematical Assignment Model](../02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md)",
             "",
             "## RAG Instruction",
             "",
-            f"When a task belongs to `{tag}` and needs the individual voice of {name}, retrieve this file after the common ACP file. Use the 10 patterns as a focused review lens, then attach concrete code evidence before approving work.",
+            f"When a task belongs to `{tag}` and needs the individual voice of {name}, retrieve this file after the common ACP file. Use these {len(patterns)} patterns as a focused review lens, then attach concrete code evidence before approving work.",
             "",
         ]
     )
@@ -456,12 +1067,13 @@ def write_readme(entries: list[dict[str, object]]) -> None:
     lines = [
         "# Philosopher Patterns RAG Corpus",
         "",
-        f"Generated from `BARCAN-TAG-*.md`: {len(TAG_TITLES)} role files, {len(entries)} philosophers, 10 unique personal programming patterns per philosopher.",
+        f"Generated from `BARCAN-TAG-*.md`: {len(TAG_TITLES)} role files, {len(entries)} philosophers, at least {MIN_PERSONAL_PATTERNS} unique personal programming patterns per philosopher.",
         "",
         "## Files",
         "",
-        "- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) - shared world-class practices that fit more than five philosophers.",
+        f"- [`00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`](00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md) - shared world-class practices that fit more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers.",
         "- [`01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`](01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md) - anti-conflict rules extracted from the session's PR repair work.",
+        "- [`02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md`](02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md) - deterministic scoring, threshold and QA contract for RAG.",
         "- [`PHILOSOPHER_INDEX.md`](PHILOSOPHER_INDEX.md) - navigation table for all philosophers.",
         "- [`philosopher_patterns_index.json`](philosopher_patterns_index.json) - machine-readable RAG index.",
         "- [`QA_REPORT.md`](QA_REPORT.md) - exact count and uniqueness checks.",
@@ -469,7 +1081,14 @@ def write_readme(entries: list[dict[str, object]]) -> None:
         "",
         "## Hard Invariant",
         "",
-        "Each philosopher file has exactly 10 personal patterns. If a pattern becomes useful for more than five philosophers, move it to the common file and replace it with a philosopher-specific micro-pattern.",
+        f"Each philosopher file has at least {MIN_PERSONAL_PATTERNS} personal patterns. If a concrete pattern becomes useful for more than {COMMON_THRESHOLD_PHILOSOPHERS} philosophers, move it to the common file and replace it with a philosopher-specific micro-pattern.",
+        "",
+        "## Retrieval Order",
+        "",
+        "1. Retrieve common ACP patterns.",
+        "2. Retrieve the mathematical assignment model when explanation or audit is needed.",
+        "3. Retrieve the one philosopher file matching the active BARCAN role.",
+        "4. Retrieve the parallel-development charter for merge, PR, queue, schema or route work.",
         "",
     ]
     (OUT / "README.md").write_text("\n".join(lines), encoding="utf-8")
@@ -493,13 +1112,27 @@ def write_json(entries: list[dict[str, object]], pattern_rows: list[dict[str, st
     data = {
         "generated_on": date.today().isoformat(),
         "source": "BARCAN-TAG-*.md",
+        "assignment_model": {
+            "minimum_personal_patterns": MIN_PERSONAL_PATTERNS,
+            "common_threshold_philosophers": COMMON_THRESHOLD_PHILOSOPHERS,
+            "score_formula": "3*tag_axis_overlap + 2*publication_anchor_axis_overlap + 1*role_focus_principle_axis_overlap + stable_hash_jitter",
+            "common_rule": "concrete reusable practice moves to common layer when fit_count > common_threshold_philosophers",
+            "personal_rule": "select top minimum_personal_patterns slots by deterministic score per philosopher",
+        },
         "counts": {
             "barcan_files": len(list(ROOT.glob("BARCAN-TAG-*.md"))),
             "philosophers": len(entries),
             "personal_patterns": len(pattern_rows),
+            "minimum_personal_patterns": MIN_PERSONAL_PATTERNS,
             "common_patterns": len(COMMON_PATTERNS),
             "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
+            "defect_taxonomy_classes": len(DEFECT_TAXONOMY),
         },
+        "defect_taxonomy": [
+            {"id": item_id, "name": name, "description": description}
+            for item_id, name, description in DEFECT_TAXONOMY
+        ],
+        "tag_axes": {tag: sorted(axes) for tag, axes in TAG_AXES.items()},
         "common_patterns": [
             {"id": pid, "name": name, "technique": technique, "why_defect_preventing": why}
             for pid, name, technique, why in COMMON_PATTERNS
@@ -523,16 +1156,18 @@ def write_qa(rows: list[dict[str, object]], entries: list[dict[str, object]], pa
     for path in philosopher_files:
         text = path.read_text(encoding="utf-8")
         per_file_counts[path.name] = len(re.findall(r"^\| \d+ \| `", text, flags=re.MULTILINE))
-    bad_files = {name: count for name, count in per_file_counts.items() if count != 10}
+    bad_files = {name: count for name, count in per_file_counts.items() if count < MIN_PERSONAL_PATTERNS}
     duplicate_ids = {key: value for key, value in id_counts.items() if value > 1}
     duplicate_names = {key: value for key, value in name_counts.items() if value > 1}
+    expected_min_patterns = len(entries) * MIN_PERSONAL_PATTERNS
     status = (
-        len(rows) == 78
-        and len(entries) == 78
-        and len(philosopher_files) == 78
-        and len(pattern_rows) == 780
-        and len(id_counts) == 780
-        and len(name_counts) == 780
+        len(list(ROOT.glob("BARCAN-TAG-*.md"))) == EXPECTED_BARCAN_FILES
+        and len(rows) == EXPECTED_PHILOSOPHERS
+        and len(entries) == EXPECTED_PHILOSOPHERS
+        and len(philosopher_files) == EXPECTED_PHILOSOPHERS
+        and len(pattern_rows) >= expected_min_patterns
+        and len(id_counts) == len(pattern_rows)
+        and len(name_counts) == len(pattern_rows)
         and not bad_files
     )
     lines = [
@@ -544,17 +1179,24 @@ def write_qa(rows: list[dict[str, object]], entries: list[dict[str, object]], pa
         f"| Source philosopher rows | {len(rows)} |",
         f"| Generated philosopher files | {len(philosopher_files)} |",
         f"| Personal pattern entries | {len(pattern_rows)} |",
+        f"| Minimum required personal patterns | {expected_min_patterns} |",
         f"| Unique personal pattern IDs | {len(id_counts)} |",
         f"| Unique personal pattern names | {len(name_counts)} |",
         f"| Duplicate personal pattern IDs | {len(duplicate_ids)} |",
         f"| Duplicate personal pattern names | {len(duplicate_names)} |",
-        f"| Files not equal to 10 patterns | {len(bad_files)} |",
+        f"| Files below {MIN_PERSONAL_PATTERNS} patterns | {len(bad_files)} |",
         f"| Common analytic patterns | {len(COMMON_PATTERNS)} |",
         f"| Conflict prevention rules | {len(CONFLICT_PREVENTION_RULES)} |",
+        f"| Defect taxonomy classes | {len(DEFECT_TAXONOMY)} |",
+        f"| Common threshold philosophers | > {COMMON_THRESHOLD_PHILOSOPHERS} |",
         "",
         "## Verdict",
         "",
-        "PASS: exactly 78 philosopher files and 780 unique personal patterns." if status else "FAIL: count or uniqueness invariant is broken.",
+        (
+            f"PASS: exactly {EXPECTED_PHILOSOPHERS} philosopher files and at least {expected_min_patterns} globally unique personal patterns."
+            if status
+            else "FAIL: count, lower-bound or uniqueness invariant is broken."
+        ),
     ]
     if bad_files:
         lines.extend(["", "## Bad File Counts"])
@@ -573,8 +1215,11 @@ def write_qa(rows: list[dict[str, object]], entries: list[dict[str, object]], pa
 
 def main() -> None:
     rows = extract_rows()
-    if len(rows) != 78:
-        raise SystemExit(f"Expected 78 philosopher rows, found {len(rows)}")
+    if len(rows) != EXPECTED_PHILOSOPHERS:
+        raise SystemExit(f"Expected {EXPECTED_PHILOSOPHERS} philosopher rows, found {len(rows)}")
+    barcan_file_count = len(list(ROOT.glob("BARCAN-TAG-*.md")))
+    if barcan_file_count != EXPECTED_BARCAN_FILES:
+        raise SystemExit(f"Expected {EXPECTED_BARCAN_FILES} BARCAN files, found {barcan_file_count}")
     missing_tags = sorted({str(row["tag"]) for row in rows} - set(TAG_TITLES))
     if missing_tags:
         raise SystemExit(f"Missing TAG_TITLES entries: {missing_tags}")
@@ -585,6 +1230,7 @@ def main() -> None:
     clean_output()
     write_common_patterns()
     write_conflict_prevention_charter()
+    write_rag_assignment_model()
     entries = [write_philosopher_file(row) for row in rows]
     pattern_rows = [pattern for entry in entries for pattern in entry["patterns"]]
     write_readme(entries)
@@ -596,14 +1242,16 @@ def main() -> None:
         json.dumps(
             {
                 "out": str(OUT),
-                "barcan_files": len(list(ROOT.glob("BARCAN-TAG-*.md"))),
+                "barcan_files": barcan_file_count,
                 "philosophers": len(entries),
                 "philosopher_files": len(list(PEOPLE_DIR.glob("*.md"))),
                 "personal_patterns": len(pattern_rows),
+                "minimum_personal_patterns": MIN_PERSONAL_PATTERNS,
                 "unique_personal_pattern_ids": len({pattern["id"] for pattern in pattern_rows}),
                 "unique_personal_pattern_names": len({pattern["name"] for pattern in pattern_rows}),
                 "common_patterns": len(COMMON_PATTERNS),
                 "conflict_prevention_rules": len(CONFLICT_PREVENTION_RULES),
+                "defect_taxonomy_classes": len(DEFECT_TAXONOMY),
             },
             ensure_ascii=False,
             indent=2,
