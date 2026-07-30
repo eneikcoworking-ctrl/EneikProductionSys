@@ -1,0 +1,92 @@
+package com.eneik.production.services.operational;
+
+import com.eneik.production.models.persistence.ProjectStatus;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class FlowSpineServiceTest {
+
+    @Test
+    void frozenProjectDominatesUnderlyingWork() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.frozen, 4, 2, 1, 0, 3, 1,
+                1, 0, 2, 1, 1, 1, 5, 2, 1, 0, 5, 1, false, "stalled", true);
+
+        assertEquals("FROZEN", FlowSpineService.decideState(input));
+        assertTrue(FlowSpineService.isBlockingState("FROZEN"));
+    }
+
+    @Test
+    void localDuplicateContentBlocksBeforeDispatch() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 3, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 3, 0, true, "ok", true);
+
+        assertEquals("BLOCKED_BY_DUPLICATE_CONTENT", FlowSpineService.decideState(input));
+    }
+
+    @Test
+    void failedFrontierWithoutLiveWorkIsNotIdle() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 0, 0, 7, 0,
+                0, 0, 0, 1, 0, 0, 4, 2, 1, 0, 5, 1, true, "ok", false);
+
+        assertEquals("BLOCKED_BY_FAILED_FRONTIER", FlowSpineService.decideState(input));
+    }
+
+    @Test
+    void failingReviewBlocksBeforeUnderReview() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 2, 0, 0, 0,
+                0, 0, 0, 0, 2, 1, 0, 1, 2, 0, 8, 2, true, "ok", false);
+
+        assertEquals("BLOCKED_BY_REVIEW", FlowSpineService.decideState(input));
+    }
+
+    @Test
+    void queuedAndImplementingAndReviewStatesAreStable() {
+        assertEquals("QUEUED", FlowSpineService.decideState(input(ProjectStatus.active, 1, 0, 0, 0, 0, 0,
+                0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 3, 0, true, "ok", false)));
+        assertEquals("IMPLEMENTING", FlowSpineService.decideState(input(ProjectStatus.active, 0, 1, 0, 0, 0, 0,
+                0, 0, 1, 0, 0, 0, 0, 0, 1, 0, 3, 0, true, "ok", false)));
+        assertEquals("UNDER_REVIEW", FlowSpineService.decideState(input(ProjectStatus.active, 0, 0, 1, 0, 0, 0,
+                0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 3, 0, true, "ok", false)));
+    }
+
+    @Test
+    void deliveredRequiresAllFeaturesComplete() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 0, 0, 0, 0,
+                0, 0, 0, 3, 0, 0, 5, 0, 2, 2, 6, 6, true, "ok", false);
+
+        assertEquals("DELIVERED", FlowSpineService.decideState(input));
+        assertEquals("client_value_delivered", FlowSpineService.valueStatus("DELIVERED", input));
+        assertFalse(FlowSpineService.isBlockingState("DELIVERED"));
+    }
+
+    private FlowSpineService.StateInputs input(ProjectStatus projectStatus,
+                                               long queuedTasks,
+                                               long activeTasks,
+                                               long reviewTasks,
+                                               long doneTasks,
+                                               long failedTasks,
+                                               long blockedTasks,
+                                               long pendingWishlist,
+                                               long compilingWishlist,
+                                               long openSessions,
+                                               int mergedReviews,
+                                               int openReviews,
+                                               int failingReviews,
+                                               int qualityGatePassed,
+                                               int qualityGateFailed,
+                                               int totalFeatures,
+                                               int completeFeatures,
+                                               int totalDeliverables,
+                                               int mergedDeliverables,
+                                               boolean decompositionComplete,
+                                               String systemStatus,
+                                               boolean duplicateContentDetected) {
+        return new FlowSpineService.StateInputs(projectStatus, queuedTasks, activeTasks, reviewTasks, doneTasks,
+                failedTasks, blockedTasks, pendingWishlist, compilingWishlist, openSessions, mergedReviews,
+                openReviews, failingReviews, qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
+                totalDeliverables, mergedDeliverables, decompositionComplete, systemStatus, duplicateContentDetected);
+    }
+}
