@@ -91,7 +91,7 @@ public class JulesApiClient {
             githubRepoContext.put("startingBranch", startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch);
 
             ObjectNode sourceContext = objectMapper.createObjectNode();
-            sourceContext.put("source", repoUrl);
+            sourceContext.put("source", toJulesSourceName(repoUrl));
             sourceContext.set("githubRepoContext", githubRepoContext);
 
             ObjectNode body = objectMapper.createObjectNode();
@@ -122,6 +122,47 @@ public class JulesApiClient {
             }
             return new CreateSessionResult(null, 0, e.getMessage());
         }
+    }
+
+    static String toJulesSourceName(String repoUrl) {
+        if (repoUrl == null || repoUrl.isBlank()) {
+            return repoUrl;
+        }
+        String source = repoUrl.trim();
+        if (source.startsWith("sources/")) {
+            return source;
+        }
+        if (source.startsWith("git@github.com:")) {
+            return sourceFromOwnerRepo(source.substring("git@github.com:".length()));
+        }
+        try {
+            URI uri = URI.create(source);
+            String host = uri.getHost();
+            if (host != null && host.equalsIgnoreCase("github.com")) {
+                return sourceFromOwnerRepo(uri.getPath());
+            }
+        } catch (IllegalArgumentException ignored) {
+            // Fall through and return the original value; Jules will surface a precise API error.
+        }
+        return source;
+    }
+
+    private static String sourceFromOwnerRepo(String path) {
+        if (path == null) {
+            return null;
+        }
+        String normalized = path.replace('\\', '/');
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
+        if (normalized.endsWith(".git")) {
+            normalized = normalized.substring(0, normalized.length() - ".git".length());
+        }
+        String[] parts = normalized.split("/");
+        if (parts.length < 2 || parts[0].isBlank() || parts[1].isBlank()) {
+            return path;
+        }
+        return "sources/github/" + parts[0] + "/" + parts[1];
     }
 
     public record CreateSessionResult(String sessionName, int statusCode, String errorBody) {
