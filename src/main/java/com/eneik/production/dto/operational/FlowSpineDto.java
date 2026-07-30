@@ -13,10 +13,13 @@ public record FlowSpineDto(
         String blockingReason,
         Transition nextRequiredTransition,
         List<Transition> allowedTransitions,
+        List<TransitionMatrixEntry> transitionMatrix,
+        List<Bottleneck> bottlenecks,
         List<ForbiddenTransition> forbiddenTransitions,
         EvidenceVector evidence,
         FlowCounts counts,
         List<FlowInvariant> invariants,
+        JournalSummary journal,
         String deterministicRule
 ) {
     public record ProjectRef(UUID id, String name, String status, String repositoryName) {
@@ -36,6 +39,30 @@ public record FlowSpineDto(
             String from,
             String to,
             String reason
+    ) {
+    }
+
+    public record TransitionMatrixEntry(
+            int priority,
+            String from,
+            String condition,
+            String to,
+            String owner,
+            List<String> evidenceRequired,
+            String promotionMode
+    ) {
+    }
+
+    public record Bottleneck(
+            String type,
+            String severity,
+            String state,
+            long ageMinutes,
+            long slaMinutes,
+            String slaStatus,
+            String owner,
+            String reason,
+            String nextAction
     ) {
     }
 
@@ -73,6 +100,35 @@ public record FlowSpineDto(
             String status,
             String statement,
             String evidence
+    ) {
+    }
+
+    public record JournalSummary(
+            UUID latestEventId,
+            Instant lastObservedAt,
+            String previousState,
+            String currentState,
+            String evidenceHash,
+            boolean currentSnapshotRecorded,
+            long eventCount
+    ) {
+    }
+
+    public record FlowEvent(
+            UUID id,
+            UUID cycleId,
+            Instant observedAt,
+            String previousState,
+            String currentState,
+            String nextState,
+            String valueStatus,
+            String bottleneckType,
+            String bottleneckSeverity,
+            long ageInStateMinutes,
+            String owner,
+            String transitionAction,
+            String evidenceHash,
+            String blockingReason
     ) {
     }
 }

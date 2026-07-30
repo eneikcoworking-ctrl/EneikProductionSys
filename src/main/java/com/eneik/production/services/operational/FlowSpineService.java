@@ -1,6 +1,7 @@
 package com.eneik.production.services.operational;
 
 import com.eneik.production.dto.operational.FlowSpineDto;
+import com.eneik.production.models.persistence.FlowSpineEventEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
@@ -9,6 +10,7 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.repositories.FlowSpineEventRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -16,10 +18,15 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClientDeliverableReadinessService;
 import com.eneik.production.services.dashboard.SystemStatusService;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.Duration;
 import java.time.Instant;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -41,6 +48,7 @@ public class FlowSpineService {
     private final WishlistRepository wishlistRepository;
     private final JulesSessionRepository julesSessionRepository;
     private final PrReviewRepository prReviewRepository;
+    private final FlowSpineEventRepository flowSpineEventRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final SystemStatusService systemStatusService;
 
@@ -49,6 +57,7 @@ public class FlowSpineService {
                             WishlistRepository wishlistRepository,
                             JulesSessionRepository julesSessionRepository,
                             PrReviewRepository prReviewRepository,
+                            FlowSpineEventRepository flowSpineEventRepository,
                             ClientDeliverableReadinessService readinessService,
                             SystemStatusService systemStatusService) {
         this.projectRepository = projectRepository;
@@ -56,12 +65,57 @@ public class FlowSpineService {
         this.wishlistRepository = wishlistRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.prReviewRepository = prReviewRepository;
+        this.flowSpineEventRepository = flowSpineEventRepository;
         this.readinessService = readinessService;
         this.systemStatusService = systemStatusService;
     }
 
     @Transactional(readOnly = true)
     public FlowSpineDto build(UUID projectId) {
+        return buildModel(projectId).dto();
+    }
+
+    @Transactional
+    public FlowSpineDto observe(UUID projectId) {
+        FlowModel model = buildModel(projectId);
+        FlowSpineEventEntity latest = model.latestEvent();
+        boolean changed = latest == null
+                || !model.currentState().equals(latest.getCurrentState())
+                || !model.evidenceHash().equals(latest.getEvidenceHash());
+        if (changed) {
+            FlowSpineEventEntity event = new FlowSpineEventEntity();
+            event.setProjectId(projectId);
+            event.setCycleId(UUID.randomUUID());
+            event.setObservedAt(Instant.now());
+            event.setPreviousState(latest == null ? null : latest.getCurrentState());
+            event.setCurrentState(model.currentState());
+            event.setNextState(model.nextTransition().to());
+            event.setValueStatus(model.valueStatus());
+            FlowSpineDto.Bottleneck primary = model.bottlenecks().isEmpty() ? null : model.bottlenecks().get(0);
+            event.setBottleneckType(primary == null ? null : primary.type());
+            event.setBottleneckSeverity(primary == null ? null : primary.severity());
+            event.setAgeInStateMinutes(model.ageInStateMinutes());
+            event.setOwner(model.nextTransition().owner());
+            event.setTransitionAction(model.nextTransition().action());
+            event.setEvidenceHash(model.evidenceHash());
+            event.setEvidenceSummary(model.evidenceSummary());
+            event.setBlockingReason(blankToNull(model.blockingReason()));
+            event.setMode("observe_only");
+            flowSpineEventRepository.save(event);
+        }
+        return buildModel(projectId).dto();
+    }
+
+    @Transactional(readOnly = true)
+    public List<FlowSpineDto.FlowEvent> events(UUID projectId, int limit) {
+        int bounded = Math.max(1, Math.min(limit, 500));
+        return flowSpineEventRepository.findByProjectIdOrderByObservedAtDesc(projectId, PageRequest.of(0, bounded))
+                .stream()
+                .map(this::toEventDto)
+                .toList();
+    }
+
+    private FlowModel buildModel(UUID projectId) {
         ProjectEntity project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
@@ -76,8 +130,19 @@ public class FlowSpineService {
                 systemStatus, duplicateContent);
         String currentState = decideState(inputs);
         FlowSpineDto.Transition next = nextTransition(currentState, inputs);
+        String valueStatus = valueStatus(currentState, inputs);
+        String blockingReason = blockingReason(currentState, inputs);
+        FlowSpineDto.EvidenceVector evidence = evidence(inputs);
+        FlowSpineDto.FlowCounts counts = counts(inputs);
+        long ageInStateMinutes = ageInStateMinutes(currentState, project, tasks, wishlist, sessions, reviews);
+        List<FlowSpineDto.Bottleneck> bottlenecks = bottlenecks(currentState, inputs, next, ageInStateMinutes, blockingReason);
+        String evidenceSummary = evidenceSummary(evidence, counts, blockingReason);
+        String evidenceHash = evidenceHash(currentState, valueStatus, next.to(), evidenceSummary);
+        FlowSpineEventEntity latestEvent = flowSpineEventRepository.findTop1ByProjectIdOrderByObservedAtDesc(projectId)
+                .orElse(null);
+        long eventCount = flowSpineEventRepository.countByProjectId(projectId);
 
-        return new FlowSpineDto(
+        FlowSpineDto dto = new FlowSpineDto(
                 Instant.now(),
                 "observe_only",
                 new FlowSpineDto.ProjectRef(
@@ -86,16 +151,21 @@ public class FlowSpineService {
                         project.getStatus() == null ? "unknown" : project.getStatus().name(),
                         project.getRepositoryName()),
                 currentState,
-                valueStatus(currentState, inputs),
-                blockingReason(currentState, inputs),
+                valueStatus,
+                blockingReason,
                 next,
                 List.of(next),
+                transitionMatrix(),
+                bottlenecks,
                 forbiddenTransitions(),
-                evidence(inputs),
-                counts(inputs),
+                evidence,
+                counts,
                 invariants(inputs),
+                journalSummary(latestEvent, currentState, evidenceHash, eventCount),
                 "deterministic precedence: project terminality > local hard blockers > live WIP > review > evidence > idle"
         );
+        return new FlowModel(dto, currentState, valueStatus, next, bottlenecks, blockingReason,
+                evidenceHash, evidenceSummary, ageInStateMinutes, latestEvent);
     }
 
     static String decideState(StateInputs input) {
@@ -163,6 +233,82 @@ public class FlowSpineService {
     static boolean isBlockingState(String state) {
         return state.startsWith("BLOCKED_") || "FROZEN".equals(state) || "SYSTEM_STALLED".equals(state)
                 || "PROJECT_NOT_ACTIVE".equals(state) || "ARCHIVED".equals(state);
+    }
+
+    static List<FlowSpineDto.TransitionMatrixEntry> transitionMatrix() {
+        return List.of(
+                matrix(10, "ANY", "project.status=frozen", "FROZEN", "ProjectFlowService",
+                        List.of("project.status"), "observe_only"),
+                matrix(20, "ANY", "project.status in {accepted, archived}", "ACCEPTED_OR_ARCHIVED", "ProjectFlowService",
+                        List.of("project.status", "acceptedAt when accepted"), "observe_only"),
+                matrix(30, "ANY", "duplicate recent task content >= 3", "BLOCKED_BY_DUPLICATE_CONTENT", "ContinuousOrchestrationService",
+                        List.of("recent task duplicate key counts"), "hard_gate_existing"),
+                matrix(40, "ANY", "system_stall_status=stalled", "SYSTEM_STALLED", "ContinuousOrchestrationService",
+                        List.of("system status", "lastProgressAt"), "observe_only"),
+                matrix(50, "ANY", "blockedTasks > 0", "BLOCKED_BY_TASK", "ProjectFlowService",
+                        List.of("TaskStatus.blocked"), "observe_only"),
+                matrix(60, "ANY", "failingReviews > 0", "BLOCKED_BY_REVIEW", "AutoMergeService",
+                        List.of("PrReview.ciStatus in failing set"), "observe_only"),
+                matrix(70, "ACTIVE", "queuedTasks > 0", "QUEUED", "JulesDispatchService",
+                        List.of("TaskStatus.queued", "dependency/file-scope checks"), "observe_only"),
+                matrix(80, "ACTIVE", "activeTasks > 0 or openSessions > 0", "IMPLEMENTING", "Jules agent",
+                        List.of("TaskStatus claimed/in_progress", "Jules session open"), "observe_only"),
+                matrix(90, "ACTIVE", "reviewTasks > 0 or openReviews > 0", "UNDER_REVIEW", "AutoMergeService / Gemini review",
+                        List.of("PR URL or review task"), "observe_only"),
+                matrix(100, "ACTIVE", "completeFeatures=totalFeatures and totalFeatures>0", "DELIVERED", "ClientDeliverableReadinessService",
+                        List.of("feature readiness", "merged deliverable mapping"), "observe_only"),
+                matrix(110, "ACTIVE", "pending/compiling wishlist or decomposition incomplete", "DECOMPOSING", "TechnicalLeadCompiler",
+                        List.of("Wishlist status", "decompositionComplete=false"), "observe_only"),
+                matrix(120, "ACTIVE", "failedTasks > 0 and no live work", "BLOCKED_BY_FAILED_FRONTIER", "PlannedWorkRecoveryService",
+                        List.of("TaskStatus.failed", "no queued/active/review"), "observe_only"),
+                matrix(130, "ACTIVE", "done/merged evidence exists but readiness incomplete", "VERIFYING_DELIVERY", "ClientDeliverableReadinessService",
+                        List.of("merged reviews", "done tasks", "readiness mismatch"), "observe_only"),
+                matrix(140, "ACTIVE", "totalFeatures=0", "NO_SCOPE", "ProjectFlowService",
+                        List.of("no FeatureEntity scope"), "observe_only"),
+                matrix(150, "ACTIVE", "no actionable work", "IDLE_NO_ACTIONABLE_WORK", "ContinuousOrchestrationService",
+                        List.of("empty queue", "empty active flow"), "observe_only")
+        );
+    }
+
+    static String bottleneckType(String state, String systemStatus) {
+        return switch (state) {
+            case "FROZEN" -> "frozen_project_bottleneck";
+            case "PROJECT_NOT_ACTIVE" -> "project_activation_bottleneck";
+            case "BLOCKED_BY_DUPLICATE_CONTENT" -> "duplicate_content_bottleneck";
+            case "SYSTEM_STALLED" -> "no_progress_bottleneck";
+            case "BLOCKED_BY_TASK" -> "task_blocker_bottleneck";
+            case "BLOCKED_BY_REVIEW" -> "review_bottleneck";
+            case "BLOCKED_BY_FAILED_FRONTIER" -> "failed_frontier_bottleneck";
+            case "QUEUED" -> "dispatch_bottleneck";
+            case "IMPLEMENTING" -> "agent_progress_bottleneck";
+            case "UNDER_REVIEW" -> "review_bottleneck";
+            case "VERIFYING_DELIVERY" -> "delivery_mapping_bottleneck";
+            default -> isTrustBlockingSystemStatus(systemStatus) ? "runtime_status_bottleneck" : "";
+        };
+    }
+
+    static SlaSpec slaForState(String state) {
+        return switch (state) {
+            case "BLOCKED_BY_DUPLICATE_CONTENT" -> new SlaSpec(0, "critical");
+            case "SYSTEM_STALLED" -> new SlaSpec(45, "high");
+            case "BLOCKED_BY_REVIEW" -> new SlaSpec(30, "high");
+            case "BLOCKED_BY_FAILED_FRONTIER" -> new SlaSpec(60, "high");
+            case "BLOCKED_BY_TASK" -> new SlaSpec(60, "medium");
+            case "QUEUED" -> new SlaSpec(15, "medium");
+            case "IMPLEMENTING" -> new SlaSpec(90, "medium");
+            case "UNDER_REVIEW" -> new SlaSpec(45, "medium");
+            case "VERIFYING_DELIVERY" -> new SlaSpec(30, "medium");
+            case "FROZEN", "PROJECT_NOT_ACTIVE" -> new SlaSpec(-1, "medium");
+            default -> new SlaSpec(-1, "none");
+        };
+    }
+
+    static boolean isTrustBlockingSystemStatus(String status) {
+        if (status == null || status.isBlank()) {
+            return false;
+        }
+        return !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work")
+                .contains(normalize(status));
     }
 
     private StateInputs inputs(ProjectStatus projectStatus,
@@ -347,6 +493,207 @@ public class FlowSpineService {
         );
     }
 
+    private List<FlowSpineDto.Bottleneck> bottlenecks(String state,
+                                                      StateInputs input,
+                                                      FlowSpineDto.Transition next,
+                                                      long ageMinutes,
+                                                      String blockingReason) {
+        SlaSpec sla = slaForState(state);
+        boolean breached = sla.minutes() >= 0 && ageMinutes >= sla.minutes();
+        boolean activeBottleneck = isBlockingState(state) || breached;
+        if (!activeBottleneck) {
+            return List.of();
+        }
+        String type = bottleneckType(state, input.systemStatus());
+        if (type.isBlank()) {
+            return List.of();
+        }
+        String reason = blockingReason == null || blockingReason.isBlank()
+                ? "State `" + state + "` exceeded its operational SLA."
+                : blockingReason;
+        return List.of(new FlowSpineDto.Bottleneck(
+                type,
+                severity(sla.severity(), breached),
+                state,
+                ageMinutes,
+                sla.minutes(),
+                slaStatus(sla, ageMinutes),
+                next.owner(),
+                reason,
+                next.action()
+        ));
+    }
+
+    private String severity(String base, boolean breached) {
+        if (!breached || "critical".equals(base) || "high".equals(base)) {
+            return base;
+        }
+        return "high";
+    }
+
+    private String slaStatus(SlaSpec sla, long ageMinutes) {
+        if (sla.minutes() < 0) {
+            return "no_sla";
+        }
+        return ageMinutes >= sla.minutes() ? "breached" : "within_sla";
+    }
+
+    private long ageInStateMinutes(String state,
+                                   ProjectEntity project,
+                                   List<TaskEntity> tasks,
+                                   List<WishlistEntity> wishlist,
+                                   List<JulesSessionEntity> sessions,
+                                   List<PrReviewEntity> reviews) {
+        Instant since = stateObservedSince(state, project, tasks, wishlist, sessions, reviews);
+        return since == null ? 0 : Math.max(0, Duration.between(since, Instant.now()).toMinutes());
+    }
+
+    private Instant stateObservedSince(String state,
+                                       ProjectEntity project,
+                                       List<TaskEntity> tasks,
+                                       List<WishlistEntity> wishlist,
+                                       List<JulesSessionEntity> sessions,
+                                       List<PrReviewEntity> reviews) {
+        return switch (state) {
+            case "QUEUED" -> earliestTaskTime(tasks, Set.of(TaskStatus.queued));
+            case "IMPLEMENTING" -> earliest(earliestTaskTime(tasks, Set.of(TaskStatus.claimed, TaskStatus.in_progress)),
+                    earliestSessionTime(sessions, OPEN_SESSION_STATUSES));
+            case "UNDER_REVIEW", "BLOCKED_BY_REVIEW" -> earliest(earliestTaskTime(tasks, Set.of(TaskStatus.pending_review, TaskStatus.review)),
+                    earliestReviewTime(reviews));
+            case "DECOMPOSING" -> earliestWishlistTime(wishlist, Set.of(WishlistStatus.pending, WishlistStatus.compiling));
+            case "BLOCKED_BY_TASK" -> earliestTaskTime(tasks, Set.of(TaskStatus.blocked));
+            case "BLOCKED_BY_FAILED_FRONTIER" -> earliestTaskTime(tasks, Set.of(TaskStatus.failed));
+            default -> project.getAcceptedAt() != null ? project.getAcceptedAt() : project.getCreatedAt();
+        };
+    }
+
+    private Instant earliestTaskTime(List<TaskEntity> tasks, Set<TaskStatus> statuses) {
+        return tasks.stream()
+                .filter(task -> statuses.contains(task.getStatus()))
+                .map(task -> firstNonNull(task.getUpdatedAt(), task.getCreatedAt()))
+                .filter(time -> time != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private Instant earliestWishlistTime(List<WishlistEntity> wishlist, Set<WishlistStatus> statuses) {
+        return wishlist.stream()
+                .filter(item -> statuses.contains(item.getStatus()))
+                .map(WishlistEntity::getCreatedAt)
+                .filter(time -> time != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private Instant earliestSessionTime(List<JulesSessionEntity> sessions, Set<String> statuses) {
+        return sessions.stream()
+                .filter(session -> statuses.contains(normalize(session.getStatus())))
+                .map(session -> firstNonNull(session.getLastProgressAt(), session.getUpdatedAt(), session.getCreatedAt()))
+                .filter(time -> time != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private Instant earliestReviewTime(List<PrReviewEntity> reviews) {
+        return reviews.stream()
+                .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
+                .map(PrReviewEntity::getCreatedAt)
+                .filter(time -> time != null)
+                .min(Comparator.naturalOrder())
+                .orElse(null);
+    }
+
+    private Instant earliest(Instant a, Instant b) {
+        if (a == null) {
+            return b;
+        }
+        if (b == null) {
+            return a;
+        }
+        return a.isBefore(b) ? a : b;
+    }
+
+    private Instant firstNonNull(Instant... values) {
+        for (Instant value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String evidenceSummary(FlowSpineDto.EvidenceVector evidence,
+                                   FlowSpineDto.FlowCounts counts,
+                                   String blockingReason) {
+        return "counts=" + counts
+                + "; evidence=" + evidence
+                + "; blockingReason=" + (blockingReason == null ? "" : blockingReason);
+    }
+
+    private String evidenceHash(String currentState, String valueStatus, String nextState, String evidenceSummary) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest((currentState + "|" + valueStatus + "|" + nextState + "|" + evidenceSummary)
+                    .getBytes(StandardCharsets.UTF_8));
+            StringBuilder hex = new StringBuilder(hash.length * 2);
+            for (byte b : hash) {
+                hex.append(String.format("%02x", b));
+            }
+            return hex.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("Could not hash Flow Spine evidence", e);
+        }
+    }
+
+    private FlowSpineDto.JournalSummary journalSummary(FlowSpineEventEntity latest,
+                                                       String currentState,
+                                                       String evidenceHash,
+                                                       long eventCount) {
+        if (latest == null) {
+            return new FlowSpineDto.JournalSummary(null, null, null, null, evidenceHash, false, eventCount);
+        }
+        boolean recorded = currentState.equals(latest.getCurrentState()) && evidenceHash.equals(latest.getEvidenceHash());
+        return new FlowSpineDto.JournalSummary(
+                latest.getId(),
+                latest.getObservedAt(),
+                latest.getPreviousState(),
+                latest.getCurrentState(),
+                evidenceHash,
+                recorded,
+                eventCount
+        );
+    }
+
+    private FlowSpineDto.FlowEvent toEventDto(FlowSpineEventEntity event) {
+        return new FlowSpineDto.FlowEvent(
+                event.getId(),
+                event.getCycleId(),
+                event.getObservedAt(),
+                event.getPreviousState(),
+                event.getCurrentState(),
+                event.getNextState(),
+                event.getValueStatus(),
+                event.getBottleneckType(),
+                event.getBottleneckSeverity(),
+                event.getAgeInStateMinutes(),
+                event.getOwner(),
+                event.getTransitionAction(),
+                event.getEvidenceHash(),
+                event.getBlockingReason()
+        );
+    }
+
+    private static FlowSpineDto.TransitionMatrixEntry matrix(int priority,
+                                                             String from,
+                                                             String condition,
+                                                             String to,
+                                                             String owner,
+                                                             List<String> evidenceRequired,
+                                                             String promotionMode) {
+        return new FlowSpineDto.TransitionMatrixEntry(
+                priority, from, condition, to, owner, evidenceRequired, promotionMode);
+    }
+
     private FlowSpineDto.FlowInvariant invariant(String key, String status, String statement, String evidence) {
         return new FlowSpineDto.FlowInvariant(key, status, statement, evidence);
     }
@@ -416,8 +763,29 @@ public class FlowSpineService {
         return value;
     }
 
+    private String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
+    }
+
     private static String normalize(String value) {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    private record FlowModel(
+            FlowSpineDto dto,
+            String currentState,
+            String valueStatus,
+            FlowSpineDto.Transition nextTransition,
+            List<FlowSpineDto.Bottleneck> bottlenecks,
+            String blockingReason,
+            String evidenceHash,
+            String evidenceSummary,
+            long ageInStateMinutes,
+            FlowSpineEventEntity latestEvent
+    ) {
+    }
+
+    record SlaSpec(long minutes, String severity) {
     }
 
     record StateInputs(

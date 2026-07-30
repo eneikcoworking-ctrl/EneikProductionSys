@@ -62,6 +62,32 @@ class FlowSpineServiceTest {
         assertFalse(FlowSpineService.isBlockingState("DELIVERED"));
     }
 
+    @Test
+    void transitionMatrixContainsDeterministicPrecedenceRows() {
+        assertEquals(15, FlowSpineService.transitionMatrix().size());
+        assertEquals("FROZEN", FlowSpineService.transitionMatrix().get(0).to());
+        assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(14).to());
+    }
+
+    @Test
+    void bottleneckTaxonomySeparatesReviewAndRuntimeDefects() {
+        assertEquals("review_bottleneck", FlowSpineService.bottleneckType("BLOCKED_BY_REVIEW", "ok"));
+        assertEquals("runtime_status_bottleneck", FlowSpineService.bottleneckType("UNKNOWN", "content_defect"));
+        assertEquals("", FlowSpineService.bottleneckType("DELIVERED", "ok"));
+    }
+
+    @Test
+    void slaSpecsMakeBlockingReviewHighUrgency() {
+        FlowSpineService.SlaSpec review = FlowSpineService.slaForState("BLOCKED_BY_REVIEW");
+        FlowSpineService.SlaSpec queued = FlowSpineService.slaForState("QUEUED");
+        FlowSpineService.SlaSpec delivered = FlowSpineService.slaForState("DELIVERED");
+
+        assertEquals(30, review.minutes());
+        assertEquals("high", review.severity());
+        assertEquals(15, queued.minutes());
+        assertEquals(-1, delivered.minutes());
+    }
+
     private FlowSpineService.StateInputs input(ProjectStatus projectStatus,
                                                long queuedTasks,
                                                long activeTasks,
