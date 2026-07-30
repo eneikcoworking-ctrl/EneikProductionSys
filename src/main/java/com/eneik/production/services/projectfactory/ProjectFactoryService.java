@@ -70,6 +70,9 @@ public class ProjectFactoryService {
     }
 
     private String factoryStatus(GitHubProvisioningResult github, LinearProvisioningResult linear) {
+        if (criticalGitHubAccessIncomplete(github)) {
+            return "waiting";
+        }
         if (startsWith(github.status(), "waiting") || startsWith(linear.status(), "waiting")) {
             return "waiting";
         }
@@ -80,6 +83,24 @@ public class ProjectFactoryService {
             return "ready_local";
         }
         return "ready_external";
+    }
+
+    private boolean criticalGitHubAccessIncomplete(GitHubProvisioningResult github) {
+        if (github == null || startsWith(github.status(), "failed")) {
+            return true;
+        }
+        if (github.collaborators() == null || github.collaborators().isEmpty()) {
+            return false;
+        }
+        return github.collaborators().stream().anyMatch(this::collaboratorAccessIncomplete);
+    }
+
+    private boolean collaboratorAccessIncomplete(CollaboratorProvisioningResult collaborator) {
+        if (collaborator == null || collaborator.status() == null || collaborator.status().isBlank()) {
+            return true;
+        }
+        return !java.util.Set.of("invitation_sent", "already_has_access", "validation_failed_or_pending")
+                .contains(collaborator.status());
     }
 
     private boolean startsWith(String value, String prefix) {
