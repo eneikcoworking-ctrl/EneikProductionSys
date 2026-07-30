@@ -14,9 +14,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.ByteArrayOutputStream;
 import java.net.URI;
+import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 @Component
@@ -87,11 +89,20 @@ public class JulesApiClient {
         }
 
         try {
+            String julesSourceName = toJulesSourceName(repoUrl);
+            SourceAvailability sourceAvailability = sourceAvailability(julesSourceName, apiKey);
+            if (sourceAvailability == SourceAvailability.MISSING) {
+                return new CreateSessionResult(null, 404,
+                        "jules_source_not_found: " + julesSourceName
+                                + " is not visible in Jules sources. Configure Jules GitHub source access "
+                                + "or create the repository under a Jules-visible owner.");
+            }
+
             ObjectNode githubRepoContext = objectMapper.createObjectNode();
             githubRepoContext.put("startingBranch", startingBranch == null || startingBranch.isBlank() ? "main" : startingBranch);
 
             ObjectNode sourceContext = objectMapper.createObjectNode();
-            sourceContext.put("source", toJulesSourceName(repoUrl));
+            sourceContext.put("source", julesSourceName);
             sourceContext.set("githubRepoContext", githubRepoContext);
 
             ObjectNode body = objectMapper.createObjectNode();
@@ -121,6 +132,53 @@ public class JulesApiClient {
                 Thread.currentThread().interrupt();
             }
             return new CreateSessionResult(null, 0, e.getMessage());
+        }
+    }
+
+    private SourceAvailability sourceAvailability(String sourceName, String apiKey) {
+        if (sourceName == null || sourceName.isBlank() || !sourceName.startsWith("sources/github/")) {
+            return SourceAvailability.UNKNOWN;
+        }
+        try {
+            String pageToken = "";
+            for (int page = 0; page < 20; page++) {
+                String path = "/sources";
+                if (!pageToken.isBlank()) {
+                    path += "?pageToken=" + URLEncoder.encode(pageToken, StandardCharsets.UTF_8);
+                }
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(apiBaseUrl + path))
+                        .header("X-Goog-Api-Key", apiKey)
+                        .GET()
+                        .build();
+                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    log.warn("Jules source preflight failed: status={} body={}", response.statusCode(), response.body());
+                    return SourceAvailability.UNKNOWN;
+                }
+                JsonNode root = objectMapper.readTree(response.body());
+                JsonNode sources = root.path("sources");
+                if (!sources.isArray()) {
+                    return SourceAvailability.UNKNOWN;
+                }
+                for (JsonNode source : sources) {
+                    if (sourceName.equals(source.path("name").asText(null))) {
+                        return SourceAvailability.VISIBLE;
+                    }
+                }
+                pageToken = root.path("nextPageToken").asText("");
+                if (pageToken.isBlank()) {
+                    return SourceAvailability.MISSING;
+                }
+            }
+            log.warn("Jules source preflight reached pagination safety limit while looking for {}", sourceName);
+            return SourceAvailability.UNKNOWN;
+        } catch (IOException | InterruptedException | IllegalArgumentException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            log.warn("Jules source preflight unavailable for {}: {}", sourceName, e.getMessage());
+            return SourceAvailability.UNKNOWN;
         }
     }
 
@@ -165,7 +223,18 @@ public class JulesApiClient {
         return "sources/github/" + parts[0] + "/" + parts[1];
     }
 
+    private enum SourceAvailability {
+        VISIBLE,
+        MISSING,
+        UNKNOWN
+    }
+
     public record CreateSessionResult(String sessionName, int statusCode, String errorBody) {
+        public boolean sourceNotFound() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return lower.contains("jules_source_not_found");
+        }
+
         public boolean dailyLimitOrQuota() {
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return statusCode == 429

@@ -1017,6 +1017,12 @@ public class ProjectFlowService {
                 continue;
             }
 
+            if (isJulesSourceNotFound(task.getJulesDispatchStatus())) {
+                log.warn("ProjectFlowService: blocked task {} is waiting for Jules source visibility; not fabricating recovery work",
+                        task.getId());
+                continue;
+            }
+
             // A blocked wishlist-compiler task is not "some role's work blocked" - the generic recovery
             // below writes a vague clarify-the-blocker wishlist that has no idea it should re-decompose the
             // client's actual brief (found live: it produced a nonsense "Delivery Plan" task while the real
@@ -2170,6 +2176,12 @@ public class ProjectFlowService {
             savedTask.setJulesDispatchStatus(dispatch.reason());
             taskRepository.save(savedTask);
             if (!dispatch.dispatched()) {
+                if (isJulesSourceNotFound(dispatch.reason())) {
+                    claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
+                    log.warn("Blocked wishlist compiler task {} because Jules cannot see the repository source: {}",
+                            savedTask.getId(), dispatch.reason());
+                    return;
+                }
                 claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                 log.warn("Failed to dispatch wishlist compiler task {} to account {}: {}",
                         savedTask.getId(), account.getName(), dispatch.reason());
@@ -3487,6 +3499,12 @@ public class ProjectFlowService {
                     savedTask.setJulesDispatchStatus(dispatch.reason());
                     taskRepository.save(savedTask);
                     if (!dispatch.dispatched()) {
+                        if (isJulesSourceNotFound(dispatch.reason())) {
+                            claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
+                            log.warn("Blocked queued task {} of project {} because Jules cannot see the repository source: {}",
+                                    savedTask.getId(), project.getName(), dispatch.reason());
+                            continue;
+                        }
                         claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                         log.warn("Failed to dispatch queued task {} of project {} to account {}: {}",
                                 savedTask.getId(), project.getName(), account.getName(), dispatch.reason());
@@ -3512,6 +3530,10 @@ public class ProjectFlowService {
             return 2;
         }
         return 1;
+    }
+
+    private boolean isJulesSourceNotFound(String reason) {
+        return reason != null && reason.toLowerCase(Locale.ROOT).contains("jules_source_not_found");
     }
 
     private boolean isHousekeepingCarrierTask(TaskEntity task) {
