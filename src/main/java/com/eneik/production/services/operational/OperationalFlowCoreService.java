@@ -175,7 +175,7 @@ public class OperationalFlowCoreService {
         return new FlowCoreDto.MathematicalContract(
                 "FlowSpineDto is the authoritative immutable facts snapshot for Flow Core.",
                 "decision = f(snapshot.currentState, snapshot.nextRequiredTransition, snapshot.bottlenecks, snapshot.forbiddenTransitions)",
-                "project terminality > local hard blockers > live WIP > review > delivery evidence > scope > idle",
+                "project terminality > local hard blockers > external truth availability > live WIP > review > delivery evidence > scope > idle",
                 "advisory_only forbids project mutation, agent dispatch, and merge regardless of recommended action.",
                 List.of(
                         "A snapshot maps to exactly one currentState.",
@@ -237,6 +237,10 @@ public class OperationalFlowCoreService {
                     List.of("duplicate task keys are inspected", "canonical task is selected"),
                     List.of("duplicate generation stops before new dispatch"),
                     List.of("queue more duplicate tasks", "promote duplicate work to review"));
+            case "GITHUB_RATE_LIMITED" -> spec("advisory.wait_for_github_budget_reset",
+                    List.of("GitHub API budget is exhausted", "cooldownUntil or resetAt is known, or default backoff is active"),
+                    List.of("GitHub-dependent orchestration stays paused until budget is available"),
+                    List.of("infer PR closed/merged state while GitHub is unavailable", "retry GitHub PR scans during cooldown"));
             case "SYSTEM_STALLED" -> spec("advisory.inspect_scheduler_progress",
                     List.of("last progress marker is stale", "active scheduler token is identified"),
                     List.of("stalled node is made explicit before recovery"),

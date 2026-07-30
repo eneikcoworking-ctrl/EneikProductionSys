@@ -27,6 +27,23 @@ class FlowSpineServiceTest {
     }
 
     @Test
+    void githubRateLimitBlocksBeforeReviewWhenNoLocalHardBlocker() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 2, 0, 0, 0,
+                0, 0, 0, 0, 2, 1, 0, 1, 2, 0, 8, 2, true, "github_rate_limited", false);
+
+        assertEquals("GITHUB_RATE_LIMITED", FlowSpineService.decideState(input));
+        assertTrue(FlowSpineService.isBlockingState("GITHUB_RATE_LIMITED"));
+    }
+
+    @Test
+    void duplicateContentStillDominatesGithubRateLimit() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 3, 0, 2, 0, 0, 0,
+                0, 0, 0, 0, 2, 1, 0, 1, 2, 0, 8, 2, true, "github_rate_limited", true);
+
+        assertEquals("BLOCKED_BY_DUPLICATE_CONTENT", FlowSpineService.decideState(input));
+    }
+
+    @Test
     void failedFrontierWithoutLiveWorkIsNotIdle() {
         FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 0, 0, 7, 0,
                 0, 0, 0, 1, 0, 0, 4, 2, 1, 0, 5, 1, true, "ok", false);
@@ -64,14 +81,16 @@ class FlowSpineServiceTest {
 
     @Test
     void transitionMatrixContainsDeterministicPrecedenceRows() {
-        assertEquals(15, FlowSpineService.transitionMatrix().size());
+        assertEquals(16, FlowSpineService.transitionMatrix().size());
         assertEquals("FROZEN", FlowSpineService.transitionMatrix().get(0).to());
-        assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(14).to());
+        assertEquals("GITHUB_RATE_LIMITED", FlowSpineService.transitionMatrix().get(3).to());
+        assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(15).to());
     }
 
     @Test
     void bottleneckTaxonomySeparatesReviewAndRuntimeDefects() {
         assertEquals("review_bottleneck", FlowSpineService.bottleneckType("BLOCKED_BY_REVIEW", "ok"));
+        assertEquals("github_rate_limit_bottleneck", FlowSpineService.bottleneckType("GITHUB_RATE_LIMITED", "github_rate_limited"));
         assertEquals("runtime_status_bottleneck", FlowSpineService.bottleneckType("UNKNOWN", "content_defect"));
         assertEquals("", FlowSpineService.bottleneckType("DELIVERED", "ok"));
     }
@@ -79,11 +98,14 @@ class FlowSpineServiceTest {
     @Test
     void slaSpecsMakeBlockingReviewHighUrgency() {
         FlowSpineService.SlaSpec review = FlowSpineService.slaForState("BLOCKED_BY_REVIEW");
+        FlowSpineService.SlaSpec github = FlowSpineService.slaForState("GITHUB_RATE_LIMITED");
         FlowSpineService.SlaSpec queued = FlowSpineService.slaForState("QUEUED");
         FlowSpineService.SlaSpec delivered = FlowSpineService.slaForState("DELIVERED");
 
         assertEquals(30, review.minutes());
         assertEquals("high", review.severity());
+        assertEquals(0, github.minutes());
+        assertEquals("high", github.severity());
         assertEquals(15, queued.minutes());
         assertEquals(-1, delivered.minutes());
     }

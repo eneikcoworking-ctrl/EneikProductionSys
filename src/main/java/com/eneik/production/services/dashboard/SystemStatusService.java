@@ -15,6 +15,7 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.github.GitHubApiBudgetService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -47,6 +48,7 @@ public class SystemStatusService {
     private final WishlistRepository wishlistRepository;
     private final EmsMetricsService emsMetricsService;
     private final GoogleAiResourceService googleAiResourceService;
+    private final GitHubApiBudgetService githubApiBudgetService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
     private final Environment environment;
@@ -62,6 +64,7 @@ public class SystemStatusService {
                                WishlistRepository wishlistRepository,
                                EmsMetricsService emsMetricsService,
                                GoogleAiResourceService googleAiResourceService,
+                               GitHubApiBudgetService githubApiBudgetService,
                                com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker,
                                Environment environment) {
@@ -76,6 +79,7 @@ public class SystemStatusService {
         this.wishlistRepository = wishlistRepository;
         this.emsMetricsService = emsMetricsService;
         this.googleAiResourceService = googleAiResourceService;
+        this.githubApiBudgetService = githubApiBudgetService;
         this.systemProgressTracker = systemProgressTracker;
         this.aiHealthTracker = aiHealthTracker;
         this.environment = environment;
@@ -86,6 +90,7 @@ public class SystemStatusService {
         status.put("integrations", safeSection(() -> settingsService.listSettings()));
         status.put("accounts", safeSection(() -> accounts(projectId)));
         status.put("githubAccess", safeSection(this::latestGithubAccess));
+        status.put("githubApiBudget", safeSection(() -> githubApiBudgetService.snapshot().asMap()));
         status.put("linearCompleteness", safeSection(() -> linearCompleteness(projectId)));
         status.put("julesSessions", safeSection(() -> julesSessions(projectId)));
         status.put("qualityGate", safeSection(() -> qualityGate(projectId)));

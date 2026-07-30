@@ -28,14 +28,17 @@ public class GitHubPullRequestService {
     private final GithubConfig githubConfig;
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
+    private final GitHubApiBudgetService githubApiBudgetService;
     private final HttpClient httpClient;
 
     public GitHubPullRequestService(GithubConfig githubConfig,
                                     SystemSettingsService settingsService,
-                                    ObjectMapper objectMapper) {
+                                    ObjectMapper objectMapper,
+                                    GitHubApiBudgetService githubApiBudgetService) {
         this.githubConfig = githubConfig;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
+        this.githubApiBudgetService = githubApiBudgetService;
         // Bounded connect timeout (2026-07-24/25 incident) - see JulesApiClient for the full incident note;
         // same fix applied uniformly across every outbound HTTP client in the codebase.
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(20)).build();
@@ -69,7 +72,7 @@ public class GitHubPullRequestService {
             String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/commits?sha=" + encode(branch) + "&per_page=1";
             HttpRequest request = baseRequest(urlPath, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 log.warn("GitHub latest-commit lookup failed for {}/{} branch={}: status={}",
                         repoRef.owner(), repoRef.repo(), branch, response.statusCode());
@@ -143,7 +146,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/branches/" + encode(branch);
             HttpRequest request = baseRequest(path, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 200) {
                 return true;
             }
@@ -188,7 +191,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/branches?per_page=100";
             HttpRequest request = baseRequest(path, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 log.warn("GitHub branch lookup failed for {}/{}: status={} body={}",
                         repoRef.owner(), repoRef.repo(), response.statusCode(), preview(response.body()));
@@ -345,7 +348,7 @@ public class GitHubPullRequestService {
             String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/contents/" + encodePath(path) + "?ref=" + encode(ref);
             HttpRequest request = baseRequest(urlPath, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 log.warn("GitHub file fetch failed for {}/{} path={} ref={}: status={} body={}",
                         repoRef.owner(), repoRef.repo(), path, ref, response.statusCode(), preview(response.body()));
@@ -392,7 +395,7 @@ public class GitHubPullRequestService {
             String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/contents/" + encodePath(directoryPath) + "?ref=" + encode(ref);
             HttpRequest request = baseRequest(urlPath, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 404) {
                 // Directory doesn't exist yet on this branch - genuinely zero migrations, not an error.
                 return Optional.of(0);
@@ -450,7 +453,7 @@ public class GitHubPullRequestService {
                     .header("X-GitHub-Api-Version", "2022-11-28")
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 200) {
                 return Optional.of(response.body());
             }
@@ -488,7 +491,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(urlPath, token)
                     .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 200 || response.statusCode() == 201) {
                 return true;
             }
@@ -541,7 +544,7 @@ public class GitHubPullRequestService {
                 HttpRequest request = baseRequest(urlPath, token)
                         .method("DELETE", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                         .build();
-                HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+                HttpResponse<String> response = sendGitHub(request);
                 if (response.statusCode() >= 200 && response.statusCode() < 300) {
                     return true;
                 }
@@ -560,7 +563,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(urlPath, token)
                     .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 200 || response.statusCode() == 201) {
                 return true;
             }
@@ -614,7 +617,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(urlPath, token)
                     .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 200 || response.statusCode() == 201) {
                 log.info("resolveProductCodeConflictWithMain: Successfully merged product code for {} on branch {}", path, branch);
                 return true;
@@ -686,7 +689,7 @@ public class GitHubPullRequestService {
             String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/contents/" + encodePath(path) + "?ref=" + encode(ref);
             HttpRequest request = baseRequest(urlPath, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 return Optional.empty();
             }
@@ -736,7 +739,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(path, token)
                     .PUT(HttpRequest.BodyPublishers.ofString("{}", StandardCharsets.UTF_8))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 log.info("Merged record PR {} for {}/{}. reason={}", pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
                 // Record PRs carry exactly one .eneik/*.json file by construction - never product code -
@@ -774,7 +777,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/git/refs/heads/" + encodePath(branchName);
             HttpRequest request = baseRequest(path, token).DELETE().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 204 || response.statusCode() == 404) {
                 log.info("Deleted branch {} for {}/{} (status={})", branchName, repoRef.owner(), repoRef.repo(), response.statusCode());
                 return true;
@@ -823,7 +826,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
             HttpRequest request = baseRequest(path, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 log.warn("GitHub PR fetch failed for #{} in {}/{}: status={}", pullNumber, repoRef.owner(), repoRef.repo(), response.statusCode());
                 return Optional.empty();
@@ -862,9 +865,7 @@ public class GitHubPullRequestService {
         try {
             String pullPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/pulls/" + pullNumber;
-            HttpResponse<String> pullResponse = httpClient.send(
-                    baseRequest(pullPath, token).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> pullResponse = sendGitHub(baseRequest(pullPath, token).GET().build());
             if (pullResponse.statusCode() != 200) {
                 return PullRequestChecks.unavailable("GitHub PR fetch returned HTTP " + pullResponse.statusCode());
             }
@@ -875,9 +876,7 @@ public class GitHubPullRequestService {
 
             String checksPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
                     + "/commits/" + encode(headSha) + "/check-runs?per_page=100";
-            HttpResponse<String> checksResponse = httpClient.send(
-                    baseRequest(checksPath, token).GET().build(),
-                    HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> checksResponse = sendGitHub(baseRequest(checksPath, token).GET().build());
             if (checksResponse.statusCode() != 200) {
                 return PullRequestChecks.unavailable("GitHub check-runs returned HTTP " + checksResponse.statusCode());
             }
@@ -969,7 +968,7 @@ public class GitHubPullRequestService {
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
         String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state=" + encode(state) + "&per_page=100";
         HttpRequest request = baseRequest(path, token).GET().build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendGitHub(request);
         if (response.statusCode() != 200) {
             log.warn("GitHub PR lookup failed for {}/{} state={}: status={} body={}", repoRef.owner(), repoRef.repo(), state, response.statusCode(), preview(response.body()));
             throw new IllegalStateException("GitHub returned HTTP " + response.statusCode() + " for pull request list");
@@ -1005,7 +1004,7 @@ public class GitHubPullRequestService {
         HttpRequest request = baseRequest(path, token)
                 .method("PATCH", HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
                 .build();
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        HttpResponse<String> response = sendGitHub(request);
         if (response.statusCode() >= 200 && response.statusCode() < 300) {
             log.info("Closed GitHub PR {} for {}/{} as WIP cleanup. reason={}",
                     pullRequest.url(), repoRef.owner(), repoRef.repo(), reason);
@@ -1070,7 +1069,7 @@ public class GitHubPullRequestService {
 
         try {
             HttpRequest getReq = baseRequest(path, token).GET().build();
-            HttpResponse<String> getRes = httpClient.send(getReq, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> getRes = sendGitHub(getReq);
             String sha = null;
             if (getRes.statusCode() == 200) {
                 JsonNode json = objectMapper.readTree(getRes.body());
@@ -1094,7 +1093,7 @@ public class GitHubPullRequestService {
             HttpRequest putReq = baseRequest(path, token)
                     .method("PUT", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> putRes = httpClient.send(putReq, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> putRes = sendGitHub(putReq);
             if (putRes.statusCode() >= 200 && putRes.statusCode() < 300) {
                 log.info("[CI-SYNC] Successfully synced .github/workflows/ci.yml to Java {} Temurin for {}/{}", javaVersion, repoRef.owner(), repoRef.repo());
                 return true;
@@ -1113,6 +1112,20 @@ public class GitHubPullRequestService {
                 .header("X-GitHub-Api-Version", "2022-11-28");
     }
 
+    private HttpResponse<String> sendGitHub(HttpRequest request) throws java.io.IOException, InterruptedException {
+        String operation = request.method() + " " + request.uri().getRawPath();
+        if (request.uri().getRawQuery() != null) {
+            operation += "?" + request.uri().getRawQuery();
+        }
+        GitHubApiBudgetService.GuardDecision guard = githubApiBudgetService.guard(operation);
+        if (!guard.allowed()) {
+            throw new IllegalStateException(guard.reason());
+        }
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        githubApiBudgetService.recordResponse(operation, response);
+        return response;
+    }
+
     private RepoRef repoRef(ProjectEntity project) {
         String repositoryUrl = project.getRepositoryUrl();
         if (repositoryUrl != null && repositoryUrl.startsWith("https://github.com/")) {
@@ -1129,7 +1142,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/pom.xml";
             HttpRequest getReq = baseRequest(path, token).GET().build();
-            HttpResponse<String> getRes = httpClient.send(getReq, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> getRes = sendGitHub(getReq);
             if (getRes.statusCode() == 200) {
                 JsonNode json = objectMapper.readTree(getRes.body());
                 String base64Content = json.path("content").asText("");
@@ -1212,7 +1225,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber;
             HttpRequest request = baseRequest(path, token).GET().build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) {
                 return Optional.empty();
             }
@@ -1252,7 +1265,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(path, token)
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(bodyNode)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() == 201) {
                 JsonNode pr = objectMapper.readTree(response.body());
                 return Optional.of(new GitHubPullRequest(
@@ -1289,7 +1302,7 @@ public class GitHubPullRequestService {
         try {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls/" + pullNumber + "/merge";
             HttpRequest request = baseRequest(path, token).PUT(HttpRequest.BodyPublishers.ofString("{}")).build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
                 return true;
             }
@@ -1331,7 +1344,7 @@ public class GitHubPullRequestService {
             HttpRequest request = baseRequest(path, token)
                     .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             return switch (response.statusCode()) {
                 case 201 -> MergeBranchResult.MERGED;
                 case 204 -> MergeBranchResult.UP_TO_DATE;

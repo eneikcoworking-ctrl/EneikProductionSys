@@ -12,6 +12,7 @@ import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.services.github.GitHubApiBudgetService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.logging.LogScope;
 import org.slf4j.Logger;
@@ -52,6 +53,7 @@ public class AutoMergeService {
     private final WishlistRepository wishlistRepository;
     private final MLPredictionServiceClient mlPredictionServiceClient;
     private final GitHubPullRequestService gitHubPullRequestService;
+    private final GitHubApiBudgetService githubApiBudgetService;
     private final com.eneik.production.services.video.VideoAssetService videoAssetService;
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
@@ -81,6 +83,7 @@ public class AutoMergeService {
                             WishlistRepository wishlistRepository,
                             MLPredictionServiceClient mlPredictionServiceClient,
                             GitHubPullRequestService gitHubPullRequestService,
+                            GitHubApiBudgetService githubApiBudgetService,
                             com.eneik.production.services.video.VideoAssetService videoAssetService,
                             com.eneik.production.services.dashboard.ProjectOperationalContextService contextService,
                             com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
@@ -102,6 +105,7 @@ public class AutoMergeService {
         this.wishlistRepository = wishlistRepository;
         this.mlPredictionServiceClient = mlPredictionServiceClient;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.githubApiBudgetService = githubApiBudgetService;
         this.videoAssetService = videoAssetService;
         this.contextService = contextService;
         this.systemProgressTracker = systemProgressTracker;
@@ -134,6 +138,15 @@ public class AutoMergeService {
     }
 
     public void executeAutoMergeCycle() {
+        if (settingsService.effectiveBoolean("github_enabled")) {
+            GitHubApiBudgetService.GuardDecision githubGuard =
+                    githubApiBudgetService.guard("AutoMergeService.executeAutoMergeCycle");
+            if (!githubGuard.allowed()) {
+                log.info("[AUTOMERGE] Cycle skipped while GitHub API budget is unavailable: {}",
+                        githubGuard.reason());
+                return;
+            }
+        }
         syncOpenPullRequestsFromGitHub();
         reconcileTerminalGithubStateForReviews();
         reconcileMergedTaskOutcomes();
@@ -999,7 +1012,7 @@ public class AutoMergeService {
                                 .header("Content-Type", "application/json")
                                 .PUT(HttpRequest.BodyPublishers.ofString("{}"))
                                 .build();
-                        HttpResponse<String> mergeResponse = client.send(mergeRequest, HttpResponse.BodyHandlers.ofString());
+                        HttpResponse<String> mergeResponse = sendGitHub(client, mergeRequest);
                         if (mergeResponse.statusCode() >= 200 && mergeResponse.statusCode() < 300) {
                             log.info("GitHub API: Successfully merged real PR {} on GitHub!", prUrl);
                             if (prUrl != null) {
@@ -1828,7 +1841,7 @@ public class AutoMergeService {
                     .header("Accept", "application/vnd.github+json")
                     .GET()
                     .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(client, request);
             if (response.statusCode() == 200) {
                 JsonNode filesArray = objectMapper.readTree(response.body());
                 List<String> filenames = new ArrayList<>();
@@ -1855,7 +1868,7 @@ public class AutoMergeService {
                     .header("Accept", "application/vnd.github.v3.diff")
                     .GET()
                     .build();
-            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(client, request);
             if (response.statusCode() == 200) {
                 return response.body();
             }
@@ -1863,6 +1876,21 @@ public class AutoMergeService {
             log.error("Failed to fetch PR diff: {}", e.getMessage());
         }
         return "";
+    }
+
+    private HttpResponse<String> sendGitHub(HttpClient client, HttpRequest request)
+            throws java.io.IOException, InterruptedException {
+        String operation = request.method() + " " + request.uri().getRawPath();
+        if (request.uri().getRawQuery() != null) {
+            operation += "?" + request.uri().getRawQuery();
+        }
+        GitHubApiBudgetService.GuardDecision guard = githubApiBudgetService.guard(operation);
+        if (!guard.allowed()) {
+            throw new IllegalStateException(guard.reason());
+        }
+        HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+        githubApiBudgetService.recordResponse(operation, response);
+        return response;
     }
 
     private PullRequestTarget resolvePullRequestTarget(PrReviewEntity review) {

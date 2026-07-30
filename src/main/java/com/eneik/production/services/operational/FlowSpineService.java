@@ -162,7 +162,7 @@ public class FlowSpineService {
                 counts,
                 invariants(inputs),
                 journalSummary(latestEvent, currentState, evidenceHash, eventCount),
-                "deterministic precedence: project terminality > local hard blockers > live WIP > review > evidence > idle"
+                "deterministic precedence: project terminality > local hard blockers > external truth availability > live WIP > review > evidence > idle"
         );
         return new FlowModel(dto, currentState, valueStatus, next, bottlenecks, blockingReason,
                 evidenceHash, evidenceSummary, ageInStateMinutes, latestEvent);
@@ -183,6 +183,9 @@ public class FlowSpineService {
         }
         if (input.duplicateContentDetected()) {
             return "BLOCKED_BY_DUPLICATE_CONTENT";
+        }
+        if ("github_rate_limited".equals(normalize(input.systemStatus()))) {
+            return "GITHUB_RATE_LIMITED";
         }
         if ("stalled".equals(normalize(input.systemStatus()))) {
             return "SYSTEM_STALLED";
@@ -232,7 +235,7 @@ public class FlowSpineService {
 
     static boolean isBlockingState(String state) {
         return state.startsWith("BLOCKED_") || "FROZEN".equals(state) || "SYSTEM_STALLED".equals(state)
-                || "PROJECT_NOT_ACTIVE".equals(state) || "ARCHIVED".equals(state);
+                || "GITHUB_RATE_LIMITED".equals(state) || "PROJECT_NOT_ACTIVE".equals(state) || "ARCHIVED".equals(state);
     }
 
     static List<FlowSpineDto.TransitionMatrixEntry> transitionMatrix() {
@@ -243,7 +246,9 @@ public class FlowSpineService {
                         List.of("project.status", "acceptedAt when accepted"), "observe_only"),
                 matrix(30, "ANY", "duplicate recent task content >= 3", "BLOCKED_BY_DUPLICATE_CONTENT", "ContinuousOrchestrationService",
                         List.of("recent task duplicate key counts"), "hard_gate_existing"),
-                matrix(40, "ANY", "system_stall_status=stalled", "SYSTEM_STALLED", "ContinuousOrchestrationService",
+                matrix(40, "ANY", "githubApiBudget.available=false", "GITHUB_RATE_LIMITED", "GitHubApiBudgetService",
+                        List.of("githubApiBudget.remaining=0 or 403/429 rate-limit response", "cooldownUntil or resetAt"), "degraded_read"),
+                matrix(45, "ANY", "system_stall_status=stalled", "SYSTEM_STALLED", "ContinuousOrchestrationService",
                         List.of("system status", "lastProgressAt"), "observe_only"),
                 matrix(50, "ANY", "blockedTasks > 0", "BLOCKED_BY_TASK", "ProjectFlowService",
                         List.of("TaskStatus.blocked"), "observe_only"),
@@ -275,6 +280,7 @@ public class FlowSpineService {
             case "FROZEN" -> "frozen_project_bottleneck";
             case "PROJECT_NOT_ACTIVE" -> "project_activation_bottleneck";
             case "BLOCKED_BY_DUPLICATE_CONTENT" -> "duplicate_content_bottleneck";
+            case "GITHUB_RATE_LIMITED" -> "github_rate_limit_bottleneck";
             case "SYSTEM_STALLED" -> "no_progress_bottleneck";
             case "BLOCKED_BY_TASK" -> "task_blocker_bottleneck";
             case "BLOCKED_BY_REVIEW" -> "review_bottleneck";
@@ -290,6 +296,7 @@ public class FlowSpineService {
     static SlaSpec slaForState(String state) {
         return switch (state) {
             case "BLOCKED_BY_DUPLICATE_CONTENT" -> new SlaSpec(0, "critical");
+            case "GITHUB_RATE_LIMITED" -> new SlaSpec(0, "high");
             case "SYSTEM_STALLED" -> new SlaSpec(45, "high");
             case "BLOCKED_BY_REVIEW" -> new SlaSpec(30, "high");
             case "BLOCKED_BY_FAILED_FRONTIER" -> new SlaSpec(60, "high");
@@ -359,6 +366,10 @@ public class FlowSpineService {
                     "Collapse or dismiss duplicate generated work before admitting more work.",
                     List.of("duplicate recent task content below threshold", "no semantic duplicate live set"),
                     "Duplicate content is negative evidence for value flow.");
+            case "GITHUB_RATE_LIMITED" -> transition(state, "UNDER_REVIEW_OR_WAITING", "GitHubApiBudgetService / AutoMergeService",
+                    "Pause GitHub-dependent orchestration until rate-limit reset; do not infer PR truth from unavailable GitHub state.",
+                    List.of("githubApiBudget.available=true", "cooldownUntil elapsed or resetAt elapsed"),
+                    "GitHub state is unavailable, so PR, CI, and merge truth cannot be trusted.");
             case "SYSTEM_STALLED" -> transition(state, "QUEUED_OR_IMPLEMENTING", "ContinuousOrchestrationService",
                     "Restore forward progress or prove there is no actionable work.",
                     List.of("lastProgressAt advances", "or system_stall_status=idle_no_actionable_work"),
@@ -419,6 +430,7 @@ public class FlowSpineService {
             case "FROZEN" -> "Project status is frozen; continuous orchestration ignores it.";
             case "PROJECT_NOT_ACTIVE" -> "Project is not in active state.";
             case "BLOCKED_BY_DUPLICATE_CONTENT" -> "Local duplicate-content threshold is active.";
+            case "GITHUB_RATE_LIMITED" -> "GitHub API budget is exhausted; GitHub-dependent PR truth is unavailable.";
             case "SYSTEM_STALLED" -> "System status is stalled.";
             case "BLOCKED_BY_TASK" -> input.blockedTasks() + " blocked task(s) exist.";
             case "BLOCKED_BY_REVIEW" -> input.failingReviews() + " failing/conflicted review(s) exist.";
@@ -489,6 +501,8 @@ public class FlowSpineService {
                 forbidden("UNDER_REVIEW", "DELIVERED", "Review must first produce merge/readiness evidence."),
                 forbidden("BLOCKED_BY_REVIEW", "MERGED", "Failing/conflicted PR evidence cannot be promoted."),
                 forbidden("BLOCKED_BY_DUPLICATE_CONTENT", "QUEUED", "Duplicate generated work must be collapsed before more dispatch."),
+                forbidden("GITHUB_RATE_LIMITED", "MERGED", "Unavailable GitHub state cannot prove merge readiness."),
+                forbidden("GITHUB_RATE_LIMITED", "CLOSED_UNMERGED", "Unavailable GitHub state cannot prove terminal PR state."),
                 forbidden("FROZEN", "IMPLEMENTING", "Frozen projects must be explicitly activated before autonomous work.")
         );
     }
@@ -747,6 +761,16 @@ public class FlowSpineService {
     }
 
     private String systemStallStatus(Map<String, Object> systemStatus) {
+        Object githubBudget = systemStatus.get("githubApiBudget");
+        Object githubData = dataSection(githubBudget);
+        if (githubData instanceof Map<?, ?> map) {
+            Object available = map.get("available");
+            Object status = map.get("status");
+            if (Boolean.FALSE.equals(available) || "exhausted".equals(normalize(status == null ? "" : status.toString()))) {
+                return "github_rate_limited";
+            }
+        }
+
         Object systemHealth = systemStatus.get("systemHealth");
         Object data = dataSection(systemHealth);
         if (data instanceof Map<?, ?> map) {

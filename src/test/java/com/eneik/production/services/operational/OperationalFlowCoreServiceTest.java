@@ -34,6 +34,25 @@ class OperationalFlowCoreServiceTest {
     }
 
     @Test
+    void githubRateLimitMapsToWaitForBudgetResetDecision() {
+        FlowSpineDto snapshot = snapshot(
+                "GITHUB_RATE_LIMITED",
+                "value_blocked",
+                "GitHub API budget is exhausted; GitHub-dependent PR truth is unavailable.",
+                bottleneck("github_rate_limit_bottleneck", "high"),
+                transition("GITHUB_RATE_LIMITED", "UNDER_REVIEW_OR_WAITING", "GitHubApiBudgetService / AutoMergeService")
+        );
+
+        FlowCoreDto.Decision decision = OperationalFlowCoreService.decide(snapshot);
+
+        assertEquals("advisory.wait_for_github_budget_reset", decision.actionKey());
+        assertEquals("NEXT_ACTION_IDENTIFIED", decision.status());
+        assertEquals("high", decision.riskLevel());
+        assertTrue(decision.expectedOutcomes().contains("GitHub-dependent orchestration stays paused until budget is available"));
+        assertTrue(decision.forbiddenActions().contains("retry GitHub PR scans during cooldown"));
+    }
+
+    @Test
     void advisoryAuthorizationNeverAllowsProjectMutationDispatchOrMerge() {
         FlowSpineDto snapshot = snapshot(
                 "QUEUED",
