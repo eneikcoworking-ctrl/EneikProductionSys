@@ -65,6 +65,33 @@ public class FlowSpineEventEntity {
     @Column(nullable = false, length = 32)
     private String mode;
 
+    @Column(name = "decision_hash", length = 64)
+    private String decisionHash;
+
+    @Column(name = "decision_action_key", length = 128)
+    private String decisionActionKey;
+
+    @Column(name = "decision_status", length = 64)
+    private String decisionStatus;
+
+    @Column(name = "authorization_status", length = 64)
+    private String authorizationStatus;
+
+    @Column(name = "risk_level", length = 32)
+    private String riskLevel;
+
+    @Column(name = "decision_reason", columnDefinition = "CLOB")
+    private String decisionReason;
+
+    @Column(name = "decision_preconditions", columnDefinition = "CLOB")
+    private String decisionPreconditions;
+
+    @Column(name = "expected_outcomes", columnDefinition = "CLOB")
+    private String expectedOutcomes;
+
+    @Column(name = "forbidden_actions", columnDefinition = "CLOB")
+    private String forbiddenActions;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -99,4 +126,22 @@ public class FlowSpineEventEntity {
     public void setBlockingReason(String blockingReason) { this.blockingReason = blockingReason; }
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
+    public String getDecisionHash() { return decisionHash; }
+    public void setDecisionHash(String decisionHash) { this.decisionHash = decisionHash; }
+    public String getDecisionActionKey() { return decisionActionKey; }
+    public void setDecisionActionKey(String decisionActionKey) { this.decisionActionKey = decisionActionKey; }
+    public String getDecisionStatus() { return decisionStatus; }
+    public void setDecisionStatus(String decisionStatus) { this.decisionStatus = decisionStatus; }
+    public String getAuthorizationStatus() { return authorizationStatus; }
+    public void setAuthorizationStatus(String authorizationStatus) { this.authorizationStatus = authorizationStatus; }
+    public String getRiskLevel() { return riskLevel; }
+    public void setRiskLevel(String riskLevel) { this.riskLevel = riskLevel; }
+    public String getDecisionReason() { return decisionReason; }
+    public void setDecisionReason(String decisionReason) { this.decisionReason = decisionReason; }
+    public String getDecisionPreconditions() { return decisionPreconditions; }
+    public void setDecisionPreconditions(String decisionPreconditions) { this.decisionPreconditions = decisionPreconditions; }
+    public String getExpectedOutcomes() { return expectedOutcomes; }
+    public void setExpectedOutcomes(String expectedOutcomes) { this.expectedOutcomes = expectedOutcomes; }
+    public String getForbiddenActions() { return forbiddenActions; }
+    public void setForbiddenActions(String forbiddenActions) { this.forbiddenActions = forbiddenActions; }
 }
