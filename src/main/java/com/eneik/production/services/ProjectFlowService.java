@@ -3329,6 +3329,9 @@ public class ProjectFlowService {
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
+        boolean clientScopeDecompositionOpen =
+                wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.pending) > 0
+                        || wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling) > 0;
 
         // Ф-followup (2026-07-21, operator directive - the night's core complaint): review-fallback/
         // design-review/coverage-audit tasks share the SAME general account pool as real implementer work
@@ -3347,6 +3350,15 @@ public class ProjectFlowService {
                 .toList();
 
         for (TaskEntity task : queuedTasks) {
+            if (clientScopeDecompositionOpen && isHousekeepingCarrierTask(task) && !isWishlistCompilerTask(task)) {
+                String waitingStatus = "Waiting for client-scope decomposition to finish";
+                if (!waitingStatus.equals(task.getJulesDispatchStatus())) {
+                    task.setJulesDispatchStatus(waitingStatus);
+                    taskRepository.save(task);
+                }
+                continue;
+            }
+
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
             if (existingSession.isPresent() && existingSession.get().getAccountId() != null) {
                 JulesSessionEntity session = existingSession.get();
@@ -3500,6 +3512,14 @@ public class ProjectFlowService {
             return 2;
         }
         return 1;
+    }
+
+    private boolean isHousekeepingCarrierTask(TaskEntity task) {
+        return isFalsificationAuditTask(task)
+                || isPhilosophicalAuditTask(task)
+                || isCoverageAuditTask(task)
+                || isReviewFallbackTask(task)
+                || isDesignReviewTask(task);
     }
 
     private Optional<JulesSessionEntity> findActiveJulesSession(UUID taskId) {

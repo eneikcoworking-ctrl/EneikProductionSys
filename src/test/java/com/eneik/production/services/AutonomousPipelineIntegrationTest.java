@@ -148,6 +148,44 @@ class AutonomousPipelineIntegrationTest {
     }
 
     @Test
+    void housekeepingCarriersWaitWhileClientScopeIsStillDecomposing() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Client Scope First");
+        project.setSlug("client-scope-first");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("client-scope-first-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity pendingClientBrief = new WishlistEntity();
+        pendingClientBrief.setProjectId(project.getId());
+        pendingClientBrief.setSource(WishlistSource.client);
+        pendingClientBrief.setContent("Authoritative client scope still needs decomposition.");
+        pendingClientBrief.setStatus(WishlistStatus.pending);
+        wishlistRepository.saveAndFlush(pendingClientBrief);
+
+        TaskEntity audit = new TaskEntity();
+        audit.setProject(project);
+        audit.setRole(roleRepository.findById("BARCAN-TAG-09").orElseThrow());
+        audit.setTitle("Falsification Audit");
+        audit.setDescription("Housekeeping must not outrank client scope.");
+        audit.setStatus(TaskStatus.queued);
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        payload.put(ProjectFlowService.WISHLIST_COMPILER_PAYLOAD_KEY, ProjectFlowService.FALSIFICATION_AUDIT_TASK_TYPE);
+        audit.setPayload(payload);
+        audit = taskRepository.saveAndFlush(audit);
+
+        projectFlowService.dispatchQueuedTasks(project.getId());
+
+        TaskEntity refreshedAudit = taskRepository.findById(audit.getId()).orElseThrow();
+        assertThat(refreshedAudit.getStatus()).isEqualTo(TaskStatus.queued);
+        assertThat(refreshedAudit.getJulesDispatchStatus()).isEqualTo("Waiting for client-scope decomposition to finish");
+        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(audit.getId())).isEmpty();
+        assertThat(julesSessionRepository.findByTaskId(audit.getId())).isEmpty();
+    }
+
+    @Test
     void testComplexDomainSpikeStatus() {
         ProjectEntity project = new ProjectEntity();
         project.setName("Complex Project");
