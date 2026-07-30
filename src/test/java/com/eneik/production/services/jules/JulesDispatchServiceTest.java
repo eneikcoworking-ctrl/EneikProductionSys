@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
@@ -310,6 +311,61 @@ class JulesDispatchServiceTest {
                         && context.contains("Патриция Черчланд")
                         && context.contains("REFUSAL CRITERIA")
         ), isNull(), eq("UI Slice"), eq("main"));
+    }
+
+    @Test
+    void dispatchUsesActualProjectRepositoryOwnerForJulesSource() {
+        UUID taskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("test-fortieth");
+        project.setRepositoryUrl("https://github.com/eneikdru/test-fortieth");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-09");
+        role.setDescription("Wishlist Compiler");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setTitle("Compile Wishlist");
+        task.setDescription("Compile the client wishlist into atomic work.");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(julesApiClient.createSessionDetailed(anyString(), anyString(), anyString(), isNull(), eq("Compile Wishlist"), eq("main")))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+        ArgumentCaptor<String> sourceCaptor = ArgumentCaptor.forClass(String.class);
+        verify(julesApiClient).createSessionDetailed(sourceCaptor.capture(), anyString(), anyString(), isNull(), eq("Compile Wishlist"), eq("main"));
+        assertEquals("sources/github/eneikdru/test-fortieth", sourceCaptor.getValue());
+    }
+
+    @Test
+    void adHocDispatchUsesActualProjectRepositoryOwnerForJulesSource() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+        project.setRepositoryName("test-fortieth");
+        project.setRepositoryUrl("https://github.com/eneikdru/test-fortieth");
+
+        AccountEntity account = new AccountEntity();
+        account.setApiKey("jules-key");
+
+        when(accountRepository.findAll()).thenReturn(List.of(account));
+        when(julesApiClient.createSessionDetailed(anyString(), eq("Resolve the branch issue."), eq(""), eq("jules-key"), eq("Branch Fix"), eq("repair-branch")))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+
+        julesDispatchService.dispatchAdHocSessionToBranch(project, "repair-branch", "Resolve the branch issue.", "Branch Fix");
+
+        ArgumentCaptor<String> sourceCaptor = ArgumentCaptor.forClass(String.class);
+        verify(julesApiClient).createSessionDetailed(sourceCaptor.capture(), eq("Resolve the branch issue."), eq(""), eq("jules-key"), eq("Branch Fix"), eq("repair-branch"));
+        assertEquals("sources/github/eneikdru/test-fortieth", sourceCaptor.getValue());
     }
 
     @Test

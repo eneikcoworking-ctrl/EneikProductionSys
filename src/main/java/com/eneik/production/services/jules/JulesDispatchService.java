@@ -325,7 +325,7 @@ public class JulesDispatchService {
                 || description == null || description.isBlank()) {
             return;
         }
-        String repoUrl = sourcePrefix + project.getRepositoryName();
+        String repoUrl = julesSourceForProject(project, project.getRepositoryName());
         // Rare tail case (bounded to one attempt ever, per thread) - not worth the full capacity-aware
         // account picker (AccountRepository.lockNextJulesAccountWithCapacity) that normal dispatch uses;
         // any account with a usable key already has repo access (collaborator invitations are project-wide).
@@ -517,7 +517,9 @@ public class JulesDispatchService {
         String repoName = (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM)
                 ? systemOrchestratorRepositoryName()
                 : project.getRepositoryName();
-        String repoUrl = sourcePrefix + repoName;
+        String repoUrl = (task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.ORCHESTRATOR_SYSTEM)
+                ? sourcePrefix + repoName
+                : julesSourceForProject(project, repoName);
         String sessionTitle = TaskTitleBuilder.displayTitle(task);
         String description = withTaskPromptTitle(sessionTitle, task.getDescription());
         var conflictOpt = taskConflictRepository.findFirstByTaskIdAndResolutionStatus(task.getId(), "pending");
@@ -718,6 +720,13 @@ public class JulesDispatchService {
         String safeTitle = TaskTitleBuilder.enforceTwoOrThreeWords(title);
         String safeDescription = description == null ? "" : description;
         return "Task Title: " + safeTitle + "\n\n" + safeDescription;
+    }
+
+    private String julesSourceForProject(ProjectEntity project, String fallbackRepoName) {
+        if (project != null && project.getRepositoryUrl() != null && !project.getRepositoryUrl().isBlank()) {
+            return JulesApiClient.toJulesSourceName(project.getRepositoryUrl());
+        }
+        return sourcePrefix + fallbackRepoName;
     }
 
     private void appendCompactRoleGuide(StringBuilder roleContextBuilder, String roleTag) {
