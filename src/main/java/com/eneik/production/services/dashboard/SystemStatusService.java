@@ -4,6 +4,8 @@ import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.LinearIssueMetadataEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
@@ -11,6 +13,7 @@ import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.TaskConflictEntity;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
+import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
@@ -46,6 +49,7 @@ public class SystemStatusService {
     private final PrReviewRepository prReviewRepository;
     private final TaskConflictRepository taskConflictRepository;
     private final WishlistRepository wishlistRepository;
+    private final ProjectRepository projectRepository;
     private final EmsMetricsService emsMetricsService;
     private final GoogleAiResourceService googleAiResourceService;
     private final GitHubApiBudgetService githubApiBudgetService;
@@ -62,6 +66,7 @@ public class SystemStatusService {
                                PrReviewRepository prReviewRepository,
                                TaskConflictRepository taskConflictRepository,
                                WishlistRepository wishlistRepository,
+                               ProjectRepository projectRepository,
                                EmsMetricsService emsMetricsService,
                                GoogleAiResourceService googleAiResourceService,
                                GitHubApiBudgetService githubApiBudgetService,
@@ -77,6 +82,7 @@ public class SystemStatusService {
         this.prReviewRepository = prReviewRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.wishlistRepository = wishlistRepository;
+        this.projectRepository = projectRepository;
         this.emsMetricsService = emsMetricsService;
         this.googleAiResourceService = googleAiResourceService;
         this.githubApiBudgetService = githubApiBudgetService;
@@ -100,6 +106,7 @@ public class SystemStatusService {
         status.put("sixSigma", safeSection(() -> sixSigma(projectId)));
         status.put("aiResources", safeSection(googleAiResourceService::resourceMatrix));
         status.put("systemHealth", safeSection(this::systemHealth));
+        status.put("operationalBlockers", safeSection(() -> operationalBlockers(projectId)));
         status.put("runtimeSource", safeSection(this::runtimeSource));
         status.put("aiHealth", safeSection(aiHealthTracker::snapshot));
         return status;
@@ -321,6 +328,100 @@ public class SystemStatusService {
         section.put("minutesSinceProgress", minutesSinceProgress);
         section.put("status", settingsService.effectiveValue("system_stall_status"));
         return section;
+    }
+
+    private Map<String, Object> operationalBlockers(UUID projectId) {
+        List<Map<String, Object>> blockers = new ArrayList<>();
+        String stallStatus = settingsService.effectiveValue("system_stall_status");
+        if (stallStatus != null && !stallStatus.isBlank()
+                && !Set.of("ok", "idle_no_actionable_work", "busy_with_actionable_work", "content_defect")
+                .contains(stallStatus.toLowerCase(java.util.Locale.ROOT))) {
+            blockers.add(blocker("system_status", stallStatus, "high",
+                    "system_stall_status=" + stallStatus));
+        }
+
+        Object budget = githubApiBudgetService.snapshot().asMap();
+        if (budget instanceof Map<?, ?> budgetMap) {
+            Object available = budgetMap.get("available");
+            Object status = budgetMap.get("status");
+            if (Boolean.FALSE.equals(available) || "exhausted".equals(String.valueOf(status))) {
+                blockers.add(blocker("github_api_budget", "github_rate_limited", "high",
+                        "GitHub API budget is unavailable; GitHub-dependent truth must wait."));
+            }
+        }
+
+        List<ProjectEntity> projects = projectId == null
+                ? projectRepository.findAll()
+                : projectRepository.findById(projectId).map(List::of).orElse(List.of());
+        List<JulesSessionEntity> allSessions = julesSessionRepository.findAll();
+        for (ProjectEntity project : projects) {
+            List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+            if (project.getStatus() == ProjectStatus.active && duplicateContent(projectTasks)) {
+                blockers.add(blocker("duplicate_content", "content_defect", "critical",
+                        "project=" + project.getName() + "; duplicate task content threshold reached"));
+            }
+            if (project.getStatus() != ProjectStatus.active) {
+                long staleTasks = projectTasks.stream().filter(this::isNonTerminalTask).count();
+                long staleWishlists = wishlistRepository.findByProjectId(project.getId()).stream()
+                        .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
+                                || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                        .count();
+                Set<UUID> taskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
+                long staleSessions = allSessions.stream()
+                        .filter(session -> taskIds.contains(session.getTaskId()))
+                        .filter(session -> Set.of("queued", "running", "pr_opened", "revising", "stuck")
+                                .contains(session.getStatus()))
+                        .count();
+                if (staleTasks > 0 || staleWishlists > 0 || staleSessions > 0) {
+                    blockers.add(blocker("terminal_project_wip", project.getStatus().name(), "medium",
+                            "project=" + project.getName()
+                                    + "; nonTerminalTasks=" + staleTasks
+                                    + "; pendingOrCompilingWishlists=" + staleWishlists
+                                    + "; openSessions=" + staleSessions));
+                }
+            }
+        }
+
+        Map<String, Object> section = new LinkedHashMap<>();
+        section.put("status", blockers.isEmpty() ? "ok" : "blocked");
+        section.put("count", blockers.size());
+        section.put("items", blockers);
+        section.put("rule", "multi-blocker list; scalar system_stall_status is retained only for backward compatibility");
+        return section;
+    }
+
+    private Map<String, Object> blocker(String type, String status, String severity, String evidence) {
+        Map<String, Object> item = new LinkedHashMap<>();
+        item.put("type", type);
+        item.put("status", status);
+        item.put("severity", severity);
+        item.put("evidence", evidence);
+        return item;
+    }
+
+    private boolean isNonTerminalTask(TaskEntity task) {
+        return task.getStatus() != TaskStatus.done
+                && task.getStatus() != TaskStatus.failed
+                && task.getStatus() != TaskStatus.spike_completed;
+    }
+
+    private boolean duplicateContent(List<TaskEntity> tasks) {
+        Map<String, Long> counts = tasks.stream()
+                .limit(30)
+                .map(this::duplicateKey)
+                .filter(key -> key != null && !key.isBlank())
+                .collect(Collectors.groupingBy(key -> key, Collectors.counting()));
+        return counts.values().stream().anyMatch(count -> count >= 3);
+    }
+
+    private String duplicateKey(TaskEntity task) {
+        if (task.getPayload() != null) {
+            String sliceTitle = task.getPayload().path("slice_title").asText("");
+            if (!sliceTitle.isBlank()) {
+                return sliceTitle;
+            }
+        }
+        return task.getDescription();
     }
 
     private Map<String, Object> runtimeSource() {

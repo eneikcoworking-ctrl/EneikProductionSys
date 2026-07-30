@@ -162,7 +162,7 @@ public class FlowSpineService {
                 counts,
                 invariants(inputs),
                 journalSummary(latestEvent, currentState, evidenceHash, eventCount),
-                "deterministic precedence: project terminality > local hard blockers > external truth availability > live WIP > review > evidence > idle"
+                "deterministic precedence: project terminality > local hard blockers > external truth availability > client-scope decomposition > live WIP > review > delivery evidence > idle"
         );
         return new FlowModel(dto, currentState, valueStatus, next, bottlenecks, blockingReason,
                 evidenceHash, evidenceSummary, ageInStateMinutes, latestEvent);
@@ -196,6 +196,9 @@ public class FlowSpineService {
         if (input.failingReviews() > 0) {
             return "BLOCKED_BY_REVIEW";
         }
+        if (input.pendingWishlist() > 0 || input.compilingWishlist() > 0 || !input.decompositionComplete()) {
+            return "DECOMPOSING";
+        }
         if (input.queuedTasks() > 0) {
             return "QUEUED";
         }
@@ -207,9 +210,6 @@ public class FlowSpineService {
         }
         if (input.totalFeatures() > 0 && input.completeFeatures() >= input.totalFeatures()) {
             return "DELIVERED";
-        }
-        if (input.pendingWishlist() > 0 || input.compilingWishlist() > 0 || !input.decompositionComplete()) {
-            return "DECOMPOSING";
         }
         if (input.failedTasks() > 0) {
             return "BLOCKED_BY_FAILED_FRONTIER";
@@ -254,16 +254,16 @@ public class FlowSpineService {
                         List.of("TaskStatus.blocked"), "observe_only"),
                 matrix(60, "ANY", "failingReviews > 0", "BLOCKED_BY_REVIEW", "AutoMergeService",
                         List.of("PrReview.ciStatus in failing set"), "observe_only"),
-                matrix(70, "ACTIVE", "queuedTasks > 0", "QUEUED", "JulesDispatchService",
-                        List.of("TaskStatus.queued", "dependency/file-scope checks"), "observe_only"),
-                matrix(80, "ACTIVE", "activeTasks > 0 or openSessions > 0", "IMPLEMENTING", "Jules agent",
-                        List.of("TaskStatus claimed/in_progress", "Jules session open"), "observe_only"),
-                matrix(90, "ACTIVE", "reviewTasks > 0 or openReviews > 0", "UNDER_REVIEW", "AutoMergeService / Gemini review",
-                        List.of("PR URL or review task"), "observe_only"),
-                matrix(100, "ACTIVE", "completeFeatures=totalFeatures and totalFeatures>0", "DELIVERED", "ClientDeliverableReadinessService",
-                        List.of("feature readiness", "merged deliverable mapping"), "observe_only"),
-                matrix(110, "ACTIVE", "pending/compiling wishlist or decomposition incomplete", "DECOMPOSING", "TechnicalLeadCompiler",
+                matrix(70, "ACTIVE", "pending/compiling wishlist or decomposition incomplete", "DECOMPOSING", "TechnicalLeadCompiler",
                         List.of("Wishlist status", "decompositionComplete=false"), "observe_only"),
+                matrix(80, "ACTIVE", "queuedTasks > 0", "QUEUED", "JulesDispatchService",
+                        List.of("TaskStatus.queued", "dependency/file-scope checks"), "observe_only"),
+                matrix(90, "ACTIVE", "activeTasks > 0 or openSessions > 0", "IMPLEMENTING", "Jules agent",
+                        List.of("TaskStatus claimed/in_progress", "Jules session open"), "observe_only"),
+                matrix(100, "ACTIVE", "reviewTasks > 0 or openReviews > 0", "UNDER_REVIEW", "AutoMergeService / Gemini review",
+                        List.of("PR URL or review task"), "observe_only"),
+                matrix(110, "ACTIVE", "completeFeatures=totalFeatures and totalFeatures>0", "DELIVERED", "ClientDeliverableReadinessService",
+                        List.of("feature readiness", "merged deliverable mapping"), "observe_only"),
                 matrix(120, "ACTIVE", "failedTasks > 0 and no live work", "BLOCKED_BY_FAILED_FRONTIER", "PlannedWorkRecoveryService",
                         List.of("TaskStatus.failed", "no queued/active/review"), "observe_only"),
                 matrix(130, "ACTIVE", "done/merged evidence exists but readiness incomplete", "VERIFYING_DELIVERY", "ClientDeliverableReadinessService",

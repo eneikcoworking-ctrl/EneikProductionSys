@@ -1,0 +1,15 @@
+package com.eneik.production.services.operational;
+
+public enum OperationalAction {
+    OBSERVE,
+    ADD_WISHLIST,
+    ORCHESTRATE,
+    RECOVER_FAILED_FRONTIER,
+    DISPATCH_QUEUED_TASKS,
+    DISPATCH_REVIEW_TASKS,
+    CHECK_COVERAGE_AUDITS,
+    RUN_PROJECT_AUDIT_PIPELINE,
+    MERGE_PR,
+    SYNC_GITHUB,
+    CLEANUP_TERMINAL_PROJECT
+}

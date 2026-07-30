@@ -70,6 +70,14 @@ class FlowSpineServiceTest {
     }
 
     @Test
+    void pendingClientScopeDominatesQueuedHousekeepingBeforeDecomposition() {
+        FlowSpineService.StateInputs input = input(ProjectStatus.active, 1, 0, 0, 2, 0, 0,
+                1, 0, 0, 0, 0, 0, 1, 2, 0, 0, 0, 0, false, "ok", false);
+
+        assertEquals("DECOMPOSING", FlowSpineService.decideState(input));
+    }
+
+    @Test
     void deliveredRequiresAllFeaturesComplete() {
         FlowSpineService.StateInputs input = input(ProjectStatus.active, 0, 0, 0, 0, 0, 0,
                 0, 0, 0, 3, 0, 0, 5, 0, 2, 2, 6, 6, true, "ok", false);
@@ -84,6 +92,8 @@ class FlowSpineServiceTest {
         assertEquals(16, FlowSpineService.transitionMatrix().size());
         assertEquals("FROZEN", FlowSpineService.transitionMatrix().get(0).to());
         assertEquals("GITHUB_RATE_LIMITED", FlowSpineService.transitionMatrix().get(3).to());
+        assertEquals("DECOMPOSING", FlowSpineService.transitionMatrix().get(7).to());
+        assertEquals("QUEUED", FlowSpineService.transitionMatrix().get(8).to());
         assertEquals("IDLE_NO_ACTIONABLE_WORK", FlowSpineService.transitionMatrix().get(15).to());
     }
 

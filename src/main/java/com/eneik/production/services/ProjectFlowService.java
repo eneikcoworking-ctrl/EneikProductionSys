@@ -19,6 +19,8 @@ import com.eneik.production.services.projectfactory.CollaboratorProvisioningResu
 import com.eneik.production.services.projectfactory.GitHubProjectFactoryClient;
 import com.eneik.production.services.projectfactory.ProjectFactoryResult;
 import com.eneik.production.services.projectfactory.ProjectFactoryService;
+import com.eneik.production.services.operational.OperationalAction;
+import com.eneik.production.services.operational.OperationalPolicyService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -79,6 +81,7 @@ public class ProjectFlowService {
     private final FeatureService featureService;
     private final PersistentWorkerSessionService persistentWorkerSessionService;
     private final SelfFalsificationEpicMatcher selfFalsificationEpicMatcher;
+    private final OperationalPolicyService operationalPolicyService;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -150,7 +153,8 @@ public class ProjectFlowService {
                               ClientDeliverableReadinessService readinessService,
                               FeatureService featureService,
                               PersistentWorkerSessionService persistentWorkerSessionService,
-                              SelfFalsificationEpicMatcher selfFalsificationEpicMatcher) {
+                              SelfFalsificationEpicMatcher selfFalsificationEpicMatcher,
+                              OperationalPolicyService operationalPolicyService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -179,6 +183,7 @@ public class ProjectFlowService {
         this.featureService = featureService;
         this.persistentWorkerSessionService = persistentWorkerSessionService;
         this.selfFalsificationEpicMatcher = selfFalsificationEpicMatcher;
+        this.operationalPolicyService = operationalPolicyService;
     }
 
     @Transactional
@@ -370,6 +375,7 @@ public class ProjectFlowService {
     @Transactional
     public com.eneik.production.dto.WishlistResponseDto addWishlistItem(UUID projectId, com.eneik.production.dto.WishlistRequestDto request) {
         ProjectEntity project = requireActiveProject(projectId);
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.ADD_WISHLIST);
         if (project.getStatus() == com.eneik.production.models.persistence.ProjectStatus.analyzing) {
             throw new IllegalStateException("Cannot add wishlist to a project in analyzing state");
         }
@@ -400,6 +406,7 @@ public class ProjectFlowService {
     @Transactional
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
         recordOrchestrationStartOrThrow(projectId);
 
         // Group similar pending wishlist items using graph theory connected components
@@ -472,6 +479,7 @@ public class ProjectFlowService {
     @Transactional
     public Optional<UUID> ensureEnvironmentBootstrapWork(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
         return ensureEnvironmentBootstrapTask(project).map(TaskEntity::getId);
     }
 
@@ -2456,6 +2464,7 @@ public class ProjectFlowService {
     // trade for a hard duplication guarantee rather than a latency-sensitive one.
     @Transactional
     public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber, String reportPath) {
+        operationalPolicyService.requireAllowed(project.getId(), OperationalAction.RUN_PROJECT_AUDIT_PIPELINE);
         projectRepository.lockProjectForUpdate(project.getId());
         boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .filter(this::isFalsificationAuditTask)
@@ -2674,6 +2683,7 @@ public class ProjectFlowService {
     // audit for the same wishlist (the exact PR#56/#57 duplicate-implementation incident class, 2026-07-24).
     @Transactional
     public void checkAndDispatchCoverageAudits(UUID projectId) {
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.CHECK_COVERAGE_AUDITS);
         projectRepository.lockProjectForUpdate(projectId);
         List<WishlistEntity> clientWishlists = wishlistRepository.findByProjectId(projectId).stream()
                 .filter(w -> w.getSource() == WishlistSource.client)
@@ -3316,6 +3326,7 @@ public class ProjectFlowService {
     @Transactional
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
 
@@ -3332,8 +3343,7 @@ public class ProjectFlowService {
         // tasks aren't included here - they're already isolated on their own reserved account, never
         // competing for the general pool at all (see the dispatchCompilerTask branch below).
         queuedTasks = queuedTasks.stream()
-                .sorted(java.util.Comparator.comparing(
-                        (TaskEntity t) -> isReviewFallbackTask(t) || isDesignReviewTask(t) || isCoverageAuditTask(t)))
+                .sorted(java.util.Comparator.comparingInt(this::queuedDispatchClass))
                 .toList();
 
         for (TaskEntity task : queuedTasks) {
@@ -3481,6 +3491,17 @@ public class ProjectFlowService {
         }
     }
 
+    private int queuedDispatchClass(TaskEntity task) {
+        if (isWishlistCompilerTask(task)) {
+            return 0;
+        }
+        if (isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task) || isCoverageAuditTask(task)
+                || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+            return 2;
+        }
+        return 1;
+    }
+
     private Optional<JulesSessionEntity> findActiveJulesSession(UUID taskId) {
         return julesSessionRepository.findByTaskId(taskId).stream()
                 .filter(session -> session.getExternalSessionId() != null)
@@ -3498,6 +3519,7 @@ public class ProjectFlowService {
     @Transactional
     public void dispatchReviewTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
+        operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_REVIEW_TASKS);
         List<TaskEntity> reviewTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review);
 
         for (TaskEntity task : reviewTasks) {
@@ -3880,10 +3902,11 @@ public class ProjectFlowService {
                 String token = settingsService.effectiveValue("github_token");
 
                 List<CollaboratorProvisioningResult> newResults = new ArrayList<>();
+                String owner = gitHubProjectFactoryClient.repositoryOwnerFromUrl(project.getRepositoryUrl());
                 for (var node : collaboratorsNode) {
                     String username = node.get("username").asText();
                     CollaboratorProvisioningResult result = gitHubProjectFactoryClient.inviteCollaborator(
-                            project.getRepositoryName(), username, token);
+                            owner, project.getRepositoryName(), username, token);
                     newResults.add(result);
                 }
 

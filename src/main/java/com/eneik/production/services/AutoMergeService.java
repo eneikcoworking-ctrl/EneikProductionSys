@@ -15,6 +15,8 @@ import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.services.github.GitHubApiBudgetService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.logging.LogScope;
+import com.eneik.production.services.operational.OperationalAction;
+import com.eneik.production.services.operational.OperationalPolicyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -70,6 +72,8 @@ public class AutoMergeService {
     private com.eneik.production.services.automerge.ConflictEntropyCalculator conflictEntropyCalculator;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private OperationalPolicyService operationalPolicyService;
 
     public AutoMergeService(PrReviewRepository prReviewRepository,
                             com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
@@ -776,6 +780,7 @@ public class AutoMergeService {
                         if (transitionedToPrOpened) {
                             matchingSession.setStatus("pr_opened");
                             matchingSession.setLastProgressAt(Instant.now());
+                            systemProgressTracker.recordProgress();
                             changed = true;
                         }
                         if (changed) {
@@ -899,6 +904,23 @@ public class AutoMergeService {
                     // Review (including hygiene/safety checks) is Jules-only now; see
                     // JulesDispatchService.executeCodeReview and reviewerFallbackPromptBatch's own
                     // block-list (secrets, generated artifacts, unguarded terminal-status writes).
+                }
+            }
+        }
+
+        if (operationalPolicyService != null) {
+            com.eneik.production.models.persistence.JulesSessionEntity session = sessionForReview(review);
+            com.eneik.production.models.persistence.TaskEntity task = session == null
+                    ? null
+                    : taskRepository.findById(session.getTaskId()).orElse(null);
+            if (task != null && task.getProject() != null) {
+                var decision = operationalPolicyService.authorize(task.getProject().getId(), OperationalAction.MERGE_PR);
+                if (!decision.allowed()) {
+                    review.setCiStatus("policy_denied");
+                    prReviewRepository.save(review);
+                    log.warn("AutoMergeService: Refusing to merge PR {} because Flow Core denied MERGE_PR in state {}: {}",
+                            review.getPrUrl(), decision.state(), decision.reason());
+                    return;
                 }
             }
         }

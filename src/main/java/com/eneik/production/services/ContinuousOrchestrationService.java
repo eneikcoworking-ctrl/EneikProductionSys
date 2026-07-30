@@ -7,6 +7,8 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.logging.LogScope;
+import com.eneik.production.services.operational.OperationalAction;
+import com.eneik.production.services.operational.OperationalPolicyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -36,6 +38,7 @@ public class ContinuousOrchestrationService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.settings.SystemSettingsService settingsService;
     private final PlannedWorkRecoveryService plannedWorkRecoveryService;
+    private final OperationalPolicyService operationalPolicyService;
 
     @org.springframework.beans.factory.annotation.Value("${system-stall.threshold-minutes:45}")
     private int stallThresholdMinutes;
@@ -62,7 +65,8 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.settings.SystemSettingsService settingsService,
                                          PlannedWorkRecoveryService plannedWorkRecoveryService,
                                          com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
-                                         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+                                         com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                                         OperationalPolicyService operationalPolicyService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -77,6 +81,7 @@ public class ContinuousOrchestrationService {
         this.plannedWorkRecoveryService = plannedWorkRecoveryService;
         this.branchGarbageCollectorService = branchGarbageCollectorService;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.operationalPolicyService = operationalPolicyService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -105,19 +110,21 @@ public class ContinuousOrchestrationService {
             LogScope.project(project.getId());
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
-                if (gitHubPullRequestService != null) {
+                if (gitHubPullRequestService != null && isAllowed(project, OperationalAction.SYNC_GITHUB)) {
                     gitHubPullRequestService.syncCiWorkflow(project);
                 }
                 if (branchGarbageCollectorService != null) {
                     branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
                 }
-                boolean contentDefect = checkForDuplicateTaskContent(project);
+                checkForDuplicateTaskContent(project);
 
-                int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
-                if (resumedPlanTasks > 0) {
-                    log.warn("Continuous Orchestration: Resumed {} existing planned task(s) for project {}; "
-                                    + "no new task or wishlist identity was created",
-                            resumedPlanTasks, project.getName());
+                if (isAllowed(project, OperationalAction.RECOVER_FAILED_FRONTIER)) {
+                    int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
+                    if (resumedPlanTasks > 0) {
+                        log.warn("Continuous Orchestration: Resumed {} existing planned task(s) for project {}; "
+                                        + "no new task or wishlist identity was created",
+                                resumedPlanTasks, project.getName());
+                    }
                 }
 
                 plannedWorkRecoveryService.recoverStuckCompilingWishlists(project);
@@ -130,14 +137,14 @@ public class ContinuousOrchestrationService {
                 // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
                 // recovery/dispatch calls below.
                 try {
-                    if (!contentDefect) {
+                    if (isAllowed(project, OperationalAction.ORCHESTRATE)) {
                         OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
                         if (orchestration.processedWishlistItems() > 0) {
                             log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
                                     orchestration.processedWishlistItems(), orchestration.createdTasks().size(), project.getName());
                         }
                     } else {
-                        log.warn("Continuous Orchestration: Stop-the-line content defect is active for project {}; skipping new wishlist compilation",
+                        log.warn("Continuous Orchestration: Flow policy denies wishlist compilation for project {}; skipping",
                                 project.getName());
                     }
                 } catch (OrchestrationCooldownException e) {
@@ -153,13 +160,18 @@ public class ContinuousOrchestrationService {
                         log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
                                 recovered, project.getName());
                     }
-                    if (!contentDefect) {
+                    if (isAllowed(project, OperationalAction.DISPATCH_QUEUED_TASKS)) {
                         projectFlowService.dispatchQueuedTasks(project.getId());
                     } else {
-                        log.warn("Continuous Orchestration: Stop-the-line content defect is active for project {}; skipping queued-task dispatch",
+                        log.warn("Continuous Orchestration: Flow policy denies queued-task dispatch for project {}; skipping",
                                 project.getName());
                     }
-                    projectFlowService.dispatchReviewTasks(project.getId());
+                    if (isAllowed(project, OperationalAction.DISPATCH_REVIEW_TASKS)) {
+                        projectFlowService.dispatchReviewTasks(project.getId());
+                    } else {
+                        log.warn("Continuous Orchestration: Flow policy denies review dispatch for project {}; skipping",
+                                project.getName());
+                    }
                 } catch (OrchestrationCooldownException e) {
                     log.info("Continuous Orchestration: Skipping project {} for {} seconds because orchestration is on cooldown",
                             project.getId(), e.getRetryAfterSeconds());
@@ -168,8 +180,10 @@ public class ContinuousOrchestrationService {
                 }
 
                 try {
-                    projectFlowService.checkAndDispatchCoverageAudits(project.getId());
-                    if (projectAuditPipelineService != null) {
+                    if (isAllowed(project, OperationalAction.CHECK_COVERAGE_AUDITS)) {
+                        projectFlowService.checkAndDispatchCoverageAudits(project.getId());
+                    }
+                    if (projectAuditPipelineService != null && isAllowed(project, OperationalAction.RUN_PROJECT_AUDIT_PIPELINE)) {
                         projectAuditPipelineService.executeSequentialAuditPipeline(project.getId());
                     }
                 } catch (Exception e) {
@@ -198,6 +212,21 @@ public class ContinuousOrchestrationService {
     // content instead: payload.slice_title carries the real per-slice semantic content ("Internal work
     // item N from wishlist X: <the real JTBD-derived description>"), falling back to the full description
     // for any task that didn't go through the epic-slice compiler path.
+    private boolean isAllowed(ProjectEntity project, OperationalAction action) {
+        try {
+            var decision = operationalPolicyService.authorize(project.getId(), action);
+            if (!decision.allowed()) {
+                log.info("Continuous Orchestration: policy denied {} for project {} in state {}: {}",
+                        action, project.getName(), decision.state(), decision.reason());
+            }
+            return decision.allowed();
+        } catch (Exception e) {
+            log.warn("Continuous Orchestration: policy check failed for {} on project {}; failing closed: {}",
+                    action, project.getId(), e.getMessage());
+            return false;
+        }
+    }
+
     private boolean checkForDuplicateTaskContent(ProjectEntity project) {
         try {
             List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
@@ -307,20 +336,27 @@ public class ContinuousOrchestrationService {
         }
     }
 
-    private SystemWorkSnapshot systemWorkSnapshot() {
-        long queuedTasks = taskRepository.countByStatus(TaskStatus.queued);
-        long pendingWishlists = wishlistRepository.findAll().stream()
+    SystemWorkSnapshot systemWorkSnapshot() {
+        List<ProjectEntity> activeProjects = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active);
+        List<TaskEntity> activeProjectTasks = activeProjects.stream()
+                .flatMap(project -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream())
+                .toList();
+        long queuedTasks = activeProjectTasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.queued)
+                .count();
+        long pendingWishlists = activeProjects.stream()
+                .flatMap(project -> wishlistRepository.findByProjectId(project.getId()).stream())
                 .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
                         || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
                 .count();
-        long activeNonTerminalTasks = taskRepository.findAll().stream()
+        long activeNonTerminalTasks = activeProjectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.claimed
                         || task.getStatus() == TaskStatus.in_progress
                         || task.getStatus() == TaskStatus.pending_review
                         || task.getStatus() == TaskStatus.review)
                 .count();
-        long reviewTasksWithPr = projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active).stream()
-                .flatMap(project -> taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.review).stream())
+        long reviewTasksWithPr = activeProjectTasks.stream()
+                .filter(task -> task.getStatus() == TaskStatus.review)
                 .filter(task -> julesSessionRepository.findByTaskId(task.getId()).stream()
                         .anyMatch(session -> session.getPrUrl() != null && !session.getPrUrl().isBlank()))
                 .count();

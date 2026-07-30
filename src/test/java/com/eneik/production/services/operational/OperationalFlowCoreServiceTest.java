@@ -53,7 +53,7 @@ class OperationalFlowCoreServiceTest {
     }
 
     @Test
-    void advisoryAuthorizationNeverAllowsProjectMutationDispatchOrMerge() {
+    void enforcedAuthorizationAllowsDispatchWhenQueuedAndUnblocked() {
         FlowSpineDto snapshot = snapshot(
                 "QUEUED",
                 "value_in_progress",
@@ -65,7 +65,27 @@ class OperationalFlowCoreServiceTest {
 
         FlowCoreDto.Authorization authorization = OperationalFlowCoreService.authorization(snapshot, decision);
 
-        assertEquals("ADVISORY_ONLY_AUTHORIZED", authorization.status());
+        assertEquals("ENFORCED_ACTIONS_AVAILABLE", authorization.status());
+        assertTrue(authorization.journalAppendAllowed());
+        assertTrue(authorization.projectMutationAllowed());
+        assertTrue(authorization.agentDispatchAllowed());
+        assertFalse(authorization.mergeAllowed());
+    }
+
+    @Test
+    void enforcedAuthorizationStopsMutationWhenDuplicateContentBlocksFlow() {
+        FlowSpineDto snapshot = snapshot(
+                "BLOCKED_BY_DUPLICATE_CONTENT",
+                "value_blocked",
+                "Local duplicate-content threshold is active.",
+                bottleneck("duplicate_content_bottleneck", "critical"),
+                transition("BLOCKED_BY_DUPLICATE_CONTENT", "DECOMPOSING", "TechnicalLeadCompiler / ProjectFlowService")
+        );
+        FlowCoreDto.Decision decision = OperationalFlowCoreService.decide(snapshot);
+
+        FlowCoreDto.Authorization authorization = OperationalFlowCoreService.authorization(snapshot, decision);
+
+        assertEquals("ENFORCED_STOP_THE_LINE", authorization.status());
         assertTrue(authorization.journalAppendAllowed());
         assertFalse(authorization.projectMutationAllowed());
         assertFalse(authorization.agentDispatchAllowed());
@@ -128,7 +148,7 @@ class OperationalFlowCoreServiceTest {
                 List.of(new FlowSpineDto.ForbiddenTransition("BLOCKED_BY_REVIEW", "MERGED",
                         "Failing/conflicted PR evidence cannot be promoted.")),
                 new FlowSpineDto.EvidenceVector(0, 0, 0, 0, 0, 0, 0, 0, "ok", false),
-                new FlowSpineDto.FlowCounts(0, 0, 0, 0, 0, 0, 1, 0, 1, 0, true),
+                new FlowSpineDto.FlowCounts("QUEUED".equals(state) ? 1 : 0, 0, 0, 0, 0, 0, 1, 0, 1, 0, true),
                 List.of(new FlowSpineDto.FlowInvariant("single_current_state", "pass",
                         "Every project maps to exactly one flow state.", "test evidence")),
                 new FlowSpineDto.JournalSummary(null, null, null, null,

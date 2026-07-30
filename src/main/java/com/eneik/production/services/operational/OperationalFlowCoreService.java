@@ -12,12 +12,13 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Stream;
 
 @Service
 public class OperationalFlowCoreService {
-    static final String MODE = "flow_core_advisory";
+    static final String MODE = "flow_core_enforced";
 
     private final FlowSpineService flowSpineService;
     private final FlowSpineEventRepository flowSpineEventRepository;
@@ -146,14 +147,46 @@ public class OperationalFlowCoreService {
     }
 
     static FlowCoreDto.Authorization authorization(FlowSpineDto snapshot, FlowCoreDto.Decision decision) {
+        String state = snapshot.currentState();
+        boolean activeProject = "active".equalsIgnoreCase(snapshot.project().status());
+        boolean terminal = isTerminalState(state);
+        boolean hardBlocked = isHardStopState(state);
+        boolean controlledMutationAllowed = activeProject && !terminal && !hardBlocked;
+        boolean dispatchAllowed = controlledMutationAllowed
+                && (snapshot.counts().queuedTasks() > 0
+                || snapshot.counts().reviewTasks() > 0
+                || snapshot.evidence().openReviews() > 0);
+        boolean mergeAllowed = controlledMutationAllowed
+                && (snapshot.evidence().openReviews() > 0
+                || "UNDER_REVIEW".equals(state)
+                || "VERIFYING_DELIVERY".equals(state));
+
+        String status;
+        String reason;
+        if (!activeProject || terminal) {
+            status = "ENFORCED_PROJECT_NOT_MUTABLE";
+            reason = "Project lifecycle state " + snapshot.project().status()
+                    + " forbids autonomous project mutation, agent dispatch, and merge.";
+        } else if (hardBlocked) {
+            status = "ENFORCED_STOP_THE_LINE";
+            reason = isBlank(snapshot.blockingReason())
+                    ? "Flow Core hard-stop state " + state + " forbids project mutation, agent dispatch, and merge."
+                    : snapshot.blockingReason();
+        } else if (controlledMutationAllowed || dispatchAllowed || mergeAllowed) {
+            status = "ENFORCED_ACTIONS_AVAILABLE";
+            reason = "Flow Core allows bounded actions whose preconditions match state " + state + ".";
+        } else {
+            status = "ENFORCED_OBSERVE_ONLY";
+            reason = "No state precondition currently justifies autonomous project mutation, agent dispatch, or merge.";
+        }
         return new FlowCoreDto.Authorization(
-                "ADVISORY_ONLY_AUTHORIZED",
+                status,
                 MODE,
                 true,
-                false,
-                false,
-                false,
-                "Flow Core may append its deterministic decision to the journal only; project mutation, agent dispatch, and merge are disabled."
+                controlledMutationAllowed,
+                dispatchAllowed,
+                mergeAllowed,
+                reason
         );
     }
 
@@ -175,14 +208,16 @@ public class OperationalFlowCoreService {
         return new FlowCoreDto.MathematicalContract(
                 "FlowSpineDto is the authoritative immutable facts snapshot for Flow Core.",
                 "decision = f(snapshot.currentState, snapshot.nextRequiredTransition, snapshot.bottlenecks, snapshot.forbiddenTransitions)",
-                "project terminality > local hard blockers > external truth availability > live WIP > review > delivery evidence > scope > idle",
-                "advisory_only forbids project mutation, agent dispatch, and merge regardless of recommended action.",
+                "project terminality > local hard blockers > external truth availability > client-scope decomposition > live WIP > review > delivery evidence > idle",
+                "enforced mode forbids mutation, dispatch, or merge unless authorization is true for the current snapshot.",
                 List.of(
                         "A snapshot maps to exactly one currentState.",
-                        "A currentState maps to exactly one advisory actionKey.",
+                        "A currentState maps to exactly one deterministic actionKey.",
                         "Forbidden transitions dominate recommended actions.",
                         "A decision is journaled only when evidenceHash or decisionHash changes.",
-                        "The journal is append-only and does not advance project state."
+                        "The journal is append-only and does not advance project state.",
+                        "Authorization is a pure function of the current snapshot.",
+                        "Hard blockers dominate every capacity-consuming action."
                 )
         );
     }
@@ -427,6 +462,21 @@ public class OperationalFlowCoreService {
 
     private static boolean isBlank(String value) {
         return value == null || value.isBlank();
+    }
+
+    private static boolean isTerminalState(String state) {
+        return Set.of("ACCEPTED", "ARCHIVED", "FROZEN", "PROJECT_NOT_ACTIVE").contains(state);
+    }
+
+    private static boolean isHardStopState(String state) {
+        return Set.of(
+                "BLOCKED_BY_DUPLICATE_CONTENT",
+                "GITHUB_RATE_LIMITED",
+                "SYSTEM_STALLED",
+                "BLOCKED_BY_TASK",
+                "BLOCKED_BY_REVIEW",
+                "BLOCKED_BY_FAILED_FRONTIER"
+        ).contains(state);
     }
 
     private record ActionSpec(

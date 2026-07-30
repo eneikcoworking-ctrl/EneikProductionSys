@@ -168,11 +168,12 @@ public class PlannedWorkRecoveryService {
 
         for (WishlistEntity w : compiling) {
             boolean hasCompiledTasks = projectTasks.stream().anyMatch(t -> w.getId().equals(t.getSourceWishlistId()));
-            boolean hasSubWishlistsConverted = allProjectWishlists.stream()
-                    .filter(sub -> !sub.getId().equals(w.getId()))
-                    .anyMatch(sub -> sub.getStatus() == WishlistStatus.converted_to_task);
+            ClientDeliverableReadinessService.Readiness rootReadiness =
+                    readinessService.computeForProject(project.getId(), w.getId());
+            boolean hasCompiledFeatureGraph = rootReadiness.decompositionComplete()
+                    && rootReadiness.totalFeatures() > 0;
 
-            if (hasCompiledTasks || hasSubWishlistsConverted) {
+            if (hasCompiledTasks || hasCompiledFeatureGraph) {
                 w.setStatus(WishlistStatus.converted_to_task);
                 wishlistRepository.save(w);
                 log.info("[RECOVERY] Recovered stuck compiling wishlist {} -> converted_to_task for project {}", w.getId(), project.getName());
@@ -195,6 +196,10 @@ public class PlannedWorkRecoveryService {
     @Transactional
     public int cleanoutOrphanedMetaTasksWhenProductComplete(ProjectEntity project) {
         if (project == null) return 0;
+        ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
+        if (!readiness.decompositionComplete() || readiness.totalFeatures() == 0) {
+            return 0;
+        }
         List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
         List<TaskEntity> productFeatureTasks = projectTasks.stream()
                 .filter(t -> !isMetaTask(t))

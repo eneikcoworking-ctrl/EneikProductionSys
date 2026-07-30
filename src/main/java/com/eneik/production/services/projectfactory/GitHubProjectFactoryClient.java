@@ -85,9 +85,10 @@ public class GitHubProjectFactoryClient {
                 JsonNode json = objectMapper.readTree(response.body());
                 String repoUrl = json.path("html_url").asText(fallbackUrl);
                 String repoId = json.path("id").asText(null);
-                List<String> uploadErrors = uploadBootstrapFiles(project, artifacts);
-                List<String> configurationWarnings = configureRepository(project.getRepositoryName(), token);
-                List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaborators(project.getRepositoryName(), token);
+                String owner = repositoryOwner(json);
+                List<String> uploadErrors = uploadBootstrapFiles(owner, project, artifacts, token);
+                List<String> configurationWarnings = configureRepository(owner, project.getRepositoryName(), token);
+                List<CollaboratorProvisioningResult> collaborators = inviteJulesCollaborators(owner, project.getRepositoryName(), token);
                 List<String> warnings = new ArrayList<>();
                 warnings.addAll(uploadErrors);
                 warnings.addAll(configurationWarnings);
@@ -132,47 +133,51 @@ public class GitHubProjectFactoryClient {
                 .toList();
     }
 
-    private List<String> uploadBootstrapFiles(ProjectEntity project, WorkspaceArtifacts artifacts) {
-        String token = selectGitHubToken();
+    private List<String> uploadBootstrapFiles(String owner, ProjectEntity project, WorkspaceArtifacts artifacts, String token) {
         List<String> errors = new ArrayList<>();
-        upsertContent(project.getRepositoryName(), "README.md", artifacts.readme(), token, errors);
-        upsertContent(project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
-        upsertContent(project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
-        upsertContent(project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
-        upsertContent(project.getRepositoryName(), ".gitignore", "# Eneik orchestrator internal record files - never part of product code\n.eneik/\n", token, errors);
+        upsertContent(owner, project.getRepositoryName(), "README.md", artifacts.readme(), token, errors);
+        upsertContent(owner, project.getRepositoryName(), ".env.example", artifacts.envExample(), token, errors);
+        upsertContent(owner, project.getRepositoryName(), ".github/workflows/ci.yml", artifacts.ciWorkflow(), token, errors);
+        upsertContent(owner, project.getRepositoryName(), "docs/PROJECT_BRIEF.md", artifacts.projectBrief(), token, errors);
+        upsertContent(owner, project.getRepositoryName(), ".gitignore", "# Eneik orchestrator internal record files - never part of product code\n.eneik/\n", token, errors);
         return errors;
     }
 
-    private List<String> configureRepository(String repositoryName, String token) {
+    private List<String> configureRepository(String owner, String repositoryName, String token) {
         List<String> warnings = new ArrayList<>();
-        protectMainBranch(repositoryName, token, warnings);
-        registerWebhook(repositoryName, token, warnings);
-        dispatchCiWorkflow(repositoryName, token, warnings);
+        protectMainBranch(owner, repositoryName, token, warnings);
+        registerWebhook(owner, repositoryName, token, warnings);
+        dispatchCiWorkflow(owner, repositoryName, token, warnings);
         return warnings;
     }
 
-    private List<CollaboratorProvisioningResult> inviteJulesCollaborators(String repositoryName, String token) {
+    private List<CollaboratorProvisioningResult> inviteJulesCollaborators(String owner, String repositoryName, String token) {
         Set<String> seen = new LinkedHashSet<>();
         return accountRepository.findByEnabledTrueAndProjectIsNullAndGithubUsernameIsNotNullOrderByNameAsc().stream()
                 .filter(account -> account.getGithubUsername() != null && !account.getGithubUsername().isBlank())
                 .map(account -> account.getGithubUsername().trim())
                 .filter(seen::add)
-                .map(username -> inviteCollaborator(repositoryName, username, token))
+                .map(username -> inviteCollaborator(owner, repositoryName, username, token))
                 .toList();
     }
 
     public CollaboratorProvisioningResult inviteCollaborator(String repositoryName, String username, String token) {
-        if (username.equalsIgnoreCase(organization)) {
+        return inviteCollaborator(organization, repositoryName, username, token);
+    }
+
+    public CollaboratorProvisioningResult inviteCollaborator(String owner, String repositoryName, String username, String token) {
+        String resolvedOwner = owner == null || owner.isBlank() ? organization : owner;
+        if (username.equalsIgnoreCase(resolvedOwner)) {
             return new CollaboratorProvisioningResult(username, "already_has_access", 0, "Repository owner already has access and cannot be invited as collaborator");
         }
         try {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("permission", "push");
 
-            String url = trimBaseUrl() + "/repos/" + encode(organization) + "/" + encode(repositoryName) + "/collaborators/" + encode(username);
+            String url = trimBaseUrl() + "/repos/" + encode(resolvedOwner) + "/" + encode(repositoryName) + "/collaborators/" + encode(username);
             System.out.println("DEBUG: Sending PUT to " + url + " with token: " + (token != null ? token.substring(0, Math.min(token.length(), 4)) + "..." : "null"));
 
-            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/collaborators/" + encode(username), token)
+            HttpRequest request = baseRequest("/repos/" + encode(resolvedOwner) + "/" + encode(repositoryName) + "/collaborators/" + encode(username), token)
                     .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -195,7 +200,7 @@ public class GitHubProjectFactoryClient {
         }
     }
 
-    private void protectMainBranch(String repositoryName, String token, List<String> warnings) {
+    private void protectMainBranch(String owner, String repositoryName, String token, List<String> warnings) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
             ObjectNode statusChecks = body.putObject("required_status_checks");
@@ -209,7 +214,7 @@ public class GitHubProjectFactoryClient {
             body.put("allow_force_pushes", false);
             body.put("allow_deletions", false);
 
-            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/branches/main/protection", token)
+            HttpRequest request = baseRequest("/repos/" + encode(owner) + "/" + encode(repositoryName) + "/branches/main/protection", token)
                     .PUT(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -224,7 +229,7 @@ public class GitHubProjectFactoryClient {
         }
     }
 
-    private void registerWebhook(String repositoryName, String token, List<String> warnings) {
+    private void registerWebhook(String owner, String repositoryName, String token, List<String> warnings) {
         if (webhookUrl == null || webhookUrl.isBlank()) {
             warnings.add("webhook skipped: github.webhook-url is not configured for this local environment");
             return;
@@ -240,7 +245,7 @@ public class GitHubProjectFactoryClient {
             config.put("content_type", "json");
             config.put("insecure_ssl", "0");
 
-            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/hooks", token)
+            HttpRequest request = baseRequest("/repos/" + encode(owner) + "/" + encode(repositoryName) + "/hooks", token)
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -255,12 +260,12 @@ public class GitHubProjectFactoryClient {
         }
     }
 
-    private void dispatchCiWorkflow(String repositoryName, String token, List<String> warnings) {
+    private void dispatchCiWorkflow(String owner, String repositoryName, String token, List<String> warnings) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
             body.put("ref", "main");
 
-            HttpRequest request = baseRequest("/repos/" + encode(organization) + "/" + encode(repositoryName) + "/actions/workflows/ci.yml/dispatches", token)
+            HttpRequest request = baseRequest("/repos/" + encode(owner) + "/" + encode(repositoryName) + "/actions/workflows/ci.yml/dispatches", token)
                     .POST(HttpRequest.BodyPublishers.ofString(body.toString()))
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
@@ -293,9 +298,9 @@ public class GitHubProjectFactoryClient {
         return userResponse;
     }
 
-    private void upsertContent(String repositoryName, String path, String content, String token, List<String> errors) {
+    private void upsertContent(String owner, String repositoryName, String path, String content, String token, List<String> errors) {
         try {
-            String endpoint = "/repos/" + encode(organization) + "/" + encode(repositoryName) + "/contents/" + encodePath(path);
+            String endpoint = "/repos/" + encode(owner) + "/" + encode(repositoryName) + "/contents/" + encodePath(path);
             String sha = existingSha(endpoint, token);
 
             ObjectNode body = objectMapper.createObjectNode();
@@ -327,6 +332,31 @@ public class GitHubProjectFactoryClient {
             return objectMapper.readTree(response.body()).path("sha").asText(null);
         }
         return null;
+    }
+
+    private String repositoryOwner(JsonNode repositoryJson) {
+        String owner = repositoryJson.path("owner").path("login").asText("");
+        if (owner != null && !owner.isBlank()) {
+            return owner;
+        }
+        String fullName = repositoryJson.path("full_name").asText("");
+        int slash = fullName.indexOf('/');
+        if (slash > 0) {
+            return fullName.substring(0, slash);
+        }
+        return organization;
+    }
+
+    public String repositoryOwnerFromUrl(String repositoryUrl) {
+        if (repositoryUrl == null || repositoryUrl.isBlank()) {
+            return organization;
+        }
+        String clean = repositoryUrl.replace("https://github.com/", "").replaceAll("/+$", "");
+        int slash = clean.indexOf('/');
+        if (slash > 0) {
+            return clean.substring(0, slash);
+        }
+        return organization;
     }
 
     private HttpRequest.Builder baseRequest(String path, String token) {

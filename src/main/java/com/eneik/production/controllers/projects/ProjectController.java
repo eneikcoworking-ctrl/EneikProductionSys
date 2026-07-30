@@ -4,6 +4,7 @@ import com.eneik.production.dto.*;
 import com.eneik.production.services.ClaimService;
 import com.eneik.production.services.OrchestrationCooldownException;
 import com.eneik.production.services.ProjectFlowService;
+import com.eneik.production.services.operational.OperationalPolicyDeniedException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -154,6 +155,14 @@ public class ProjectController {
                     "error", e.getMessage(),
                     "code", 429,
                     "retryAfterSeconds", e.getRetryAfterSeconds()
+            ));
+        } catch (OperationalPolicyDeniedException e) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+                    "error", e.getMessage(),
+                    "code", 409,
+                    "action", e.action().name(),
+                    "state", e.state(),
+                    "authorizationStatus", e.authorizationStatus()
             ));
         } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));

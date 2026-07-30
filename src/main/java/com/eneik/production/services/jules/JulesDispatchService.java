@@ -168,6 +168,11 @@ public class JulesDispatchService {
         julesSessionRepository.save(session);
     }
 
+    private void markSessionProgress(JulesSessionEntity session) {
+        session.setLastProgressAt(Instant.now());
+        systemProgressTracker.recordProgress();
+    }
+
     /**
      * Operator-initiated cancel for a stray/duplicate/unwanted session - e.g. a second wishlist-compiler
      * session dispatched against a brief another session already compiled. "cancelled" is a status nothing
@@ -899,7 +904,7 @@ public class JulesDispatchService {
             if (!mappedStatus.equals(oldStatus)) {
                 // Any real status transition (running->pr_opened, stuck->running, etc.) is genuine
                 // forward progress, unlike updatedAt which refreshes on every save regardless.
-                session.setLastProgressAt(Instant.now());
+                markSessionProgress(session);
                 session.setBlindCycleCount(0);
             }
             session.setStatus(mappedStatus);
@@ -989,7 +994,7 @@ public class JulesDispatchService {
             }
             if (existing.isEmpty()) {
                 // Real evidence Jules did something new since the last poll.
-                session.setLastProgressAt(Instant.now());
+                markSessionProgress(session);
                 julesSessionRepository.save(session);
             }
 
@@ -1383,7 +1388,7 @@ public class JulesDispatchService {
         }
 
         if (classification.verdict() == LoopVerdict.PROGRESSING) {
-            session.setLastProgressAt(Instant.now());
+            markSessionProgress(session);
             session.setForcedUnblockAttempts(0);
             session.setBlindCycleCount(0);
             julesSessionRepository.save(session);
@@ -3446,7 +3451,7 @@ public class JulesDispatchService {
             return false;
         }
         session.setStatus("revising");
-        session.setLastProgressAt(Instant.now());
+        markSessionProgress(session);
         julesSessionRepository.save(session);
         return true;
     }
@@ -3945,7 +3950,7 @@ public class JulesDispatchService {
                 }
                 log.info("Persistent worker carrier task {} looked stalled but its PR already has a ready, "
                                 + "parseable result file; processing it instead of closing the session.", task.getId());
-                session.setLastProgressAt(Instant.now());
+                markSessionProgress(session);
                 julesSessionRepository.save(session);
                 completePersistentWorkerCycle(session, task);
                 return true;
@@ -3961,7 +3966,7 @@ public class JulesDispatchService {
                                 + "treating the commit as positive progress evidence instead of closing.",
                         task.getId(), session.getExternalSessionId());
                 session.setStatus("running");
-                session.setLastProgressAt(Instant.now());
+                markSessionProgress(session);
                 session.setForcedUnblockAttempts(0);
                 session.setBlindCycleCount(0);
                 julesSessionRepository.save(session);
