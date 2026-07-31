@@ -148,7 +148,8 @@ class AutoMergeServiceTest {
                         "jules",
                         false,
                         "main",
-                        true)));
+                        true,
+                        java.time.Instant.now())));
 
         assertEquals(1, service.reconcileTerminalGithubStateForReviews());
         assertEquals("closed_unmerged", review.getCiStatus());

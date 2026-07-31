@@ -77,7 +77,8 @@ class GitHubPullRequestServiceTest {
                 "jules",
                 false,
                 "main",
-                false);
+                false,
+                java.time.Instant.now());
 
         assertTrue(GitHubPullRequestService.matchesSessionToken(
                 pullRequest, "sessions/12568286363758467645"));

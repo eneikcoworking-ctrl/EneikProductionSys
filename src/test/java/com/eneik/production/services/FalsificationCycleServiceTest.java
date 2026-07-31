@@ -87,7 +87,7 @@ class FalsificationCycleServiceTest {
         when(runRepository.findTopByProjectIdOrderByRunAtDesc(project.getId())).thenReturn(Optional.empty());
 
         GitHubPullRequestService.GitHubPullRequest mergedPr = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false);
+                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false, java.time.Instant.now());
         when(gitHub.pullRequestSnapshot(project)).thenReturn(
                 new GitHubPullRequestService.PullRequestSnapshot(true, "org", "repo", List.of(), List.of(mergedPr), ""));
         String realDiff = "diff --git a/src/Spintax.java b/src/Spintax.java\n+public class Spintax {\n+    // real code change\n+}\n";
@@ -128,9 +128,9 @@ class FalsificationCycleServiceTest {
         when(runRepository.findTopByProjectIdOrderByRunAtDesc(project.getId())).thenReturn(Optional.of(previousRun));
 
         GitHubPullRequestService.GitHubPullRequest alreadyAudited = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false);
+                "https://github.com/org/repo/pull/42", 42, "Implement spintax parser", "jules-branch", "eneikdru", true, "main", false, java.time.Instant.now());
         GitHubPullRequestService.GitHubPullRequest newlyMerged = new GitHubPullRequestService.GitHubPullRequest(
-                "https://github.com/org/repo/pull/43", 43, "Fix account proxy binding", "jules-branch-2", "eneikdru", true, "main", false);
+                "https://github.com/org/repo/pull/43", 43, "Fix account proxy binding", "jules-branch-2", "eneikdru", true, "main", false, java.time.Instant.now());
         when(gitHub.pullRequestSnapshot(project)).thenReturn(
                 new GitHubPullRequestService.PullRequestSnapshot(true, "org", "repo", List.of(), List.of(alreadyAudited, newlyMerged), ""));
         when(gitHub.fetchDiffText(project, 43)).thenReturn(Optional.of("diff --git a/src/Proxy.java b/src/Proxy.java\n+// proxy fix\n"));
