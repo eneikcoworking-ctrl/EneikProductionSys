@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.PrReviewEntity;
@@ -1654,7 +1655,8 @@ public class JulesDispatchService {
         for (JulesSessionEntity session : openPrSessions) {
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
             if (task == null || task.getStatus() != TaskStatus.claimed
-                    || session.getPrUrl() == null || session.getPrUrl().isBlank()) {
+                    || session.getPrUrl() == null || session.getPrUrl().isBlank()
+                    || task.getProject() == null || task.getProject().getStatus() != ProjectStatus.active) {
                 continue;
             }
             // A persistent worker intentionally parks at pr_opened between batches. Its carrier task is
@@ -1973,8 +1975,15 @@ public class JulesDispatchService {
         String planPath = projectFlowService.compilerPlanPath(compilerTask);
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
                 gitHubPullRequestService.findOpenPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
+        if (prOpt.isEmpty()) {
+            // The PR may already be merged (this completion path can now be entered via
+            // honorDavidsonProgressEvidence's merged-PR evidence, not only via a fresh pr_opened webhook) -
+            // its head branch is commonly deleted on merge, so read the plan file from the PR's base ref
+            // (main), which already contains it, instead of the possibly-gone head ref.
+            prOpt = gitHubPullRequestService.findMergedPullRequestBySession(compilerTask.getProject(), session.getExternalSessionId());
+        }
         List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics = prOpt
-                .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.headRef(), planPath))
+                .map(pr -> parseCompilerPlan(compilerTask.getProject(), pr.merged() ? pr.baseRef() : pr.headRef(), planPath))
                 .orElseGet(List::of);
 
         // Validated against the FULL original batch size (wishlists.size()), not just the still-open subset
@@ -2059,17 +2068,27 @@ public class JulesDispatchService {
      * set, so the existing PR-driven pipeline picks the work up on its next tick - exactly what the operator
      * did manually for the first live incident of this shape (PR#72).
      */
-    private record GitHubEvidence(boolean found, String branchNeedingPullRequest) {
+    private record GitHubEvidence(boolean found, String branchNeedingPullRequest,
+                                   GitHubPullRequestService.GitHubPullRequest mergedPr) {
         static GitHubEvidence none() {
-            return new GitHubEvidence(false, null);
+            return new GitHubEvidence(false, null, null);
         }
 
         static GitHubEvidence foundViaOpenPr() {
-            return new GitHubEvidence(true, null);
+            return new GitHubEvidence(true, null, null);
         }
 
         static GitHubEvidence foundViaBranchFallback(String branch) {
-            return new GitHubEvidence(true, branch);
+            return new GitHubEvidence(true, branch, null);
+        }
+
+        // testimony-vs-evidence Phase 3 (2026-07-30): the PR was already found, reviewed, and merged
+        // through the normal pipeline, but the session's local status never made the running -> pr_opened
+        // jump to trigger the usual completion path. Distinct from foundViaBranchFallback (which means "no
+        // PR was ever opened, we should open one") - here a PR already exists and is closed/merged, so the
+        // caller must complete the task instead of trying to open a second, doomed PR.
+        static GitHubEvidence foundViaMergedPr(GitHubPullRequestService.GitHubPullRequest pr) {
+            return new GitHubEvidence(true, null, pr);
         }
     }
 
@@ -2130,6 +2149,16 @@ public class JulesDispatchService {
                     .map(commitTime -> commitTime.isAfter(lastProgress))
                     .orElse(false);
             return hasNewCommit ? GitHubEvidence.foundViaOpenPr() : GitHubEvidence.none();
+        }
+        // No open PR - before assuming none was ever opened, check whether one already merged (confirmed
+        // live, 2026-07-30, task 51ab7e20/test-fortieth: the local session status missed the running ->
+        // pr_opened jump even though Jules's own PR was found, reviewed, and merged normally; every hourly
+        // stall check afterward found this same already-merged branch and kept retrying a doomed "open a
+        // new PR" call, HTTP 422 "No commits between main and branch", forever).
+        Optional<GitHubPullRequestService.GitHubPullRequest> mergedOpt =
+                gitHubPullRequestService.findMergedPullRequestBySession(task.getProject(), session.getExternalSessionId());
+        if (mergedOpt.isPresent()) {
+            return GitHubEvidence.foundViaMergedPr(mergedOpt.get());
         }
         Optional<String> branchOpt = gitHubPullRequestService.findBranchBySession(task.getProject(), session.getExternalSessionId());
         if (branchOpt.isEmpty()) {
@@ -3720,6 +3749,13 @@ public class JulesDispatchService {
             if (task == null) {
                 continue;
             }
+            // GitHub budget guard (2026-07-30) - see reconcileTaskStatusAgainstGitHubTruth for the same
+            // reasoning and the live-measured numbers. This is the highest-frequency sweep of the three
+            // (every minute) and the most likely single biggest source of GitHub calls spent on projects
+            // nobody is working on anymore.
+            if (task.getProject() == null || task.getProject().getStatus() != ProjectStatus.active) {
+                continue;
+            }
             if (isTerminalTask(task)) {
                 closeSessionForTerminalTask(session, task);
                 continue;
@@ -3829,7 +3865,12 @@ public class JulesDispatchService {
         }
         int reconciled = 0;
         for (TaskEntity task : candidates) {
-            if (task.getProject() == null || claimService.hasActiveClaim(task.getId())) {
+            // GitHub budget guard (2026-07-30, quantified live: 45 of 82 calls in a 20-minute window were
+            // spent on frozen/accepted projects with leftover non-terminal tasks, against 37 for the one
+            // genuinely active project). A project past active has nothing further to reconcile toward -
+            // this sweep now costs it nothing, instead of competing for the same shared rate-limit budget.
+            if (task.getProject() == null || claimService.hasActiveClaim(task.getId())
+                    || task.getProject().getStatus() != ProjectStatus.active) {
                 continue;
             }
             // Operator directive (2026-07-25): scope every log line in this sweep to the task's own
@@ -3968,6 +4009,20 @@ public class JulesDispatchService {
         if (task.getProject() != null) {
             GitHubEvidence evidence = hasNewProgressOnGitHub(session, task, lastProgress);
             if (evidence.found()) {
+                if (evidence.mergedPr() != null) {
+                    log.info("Task {} session {} found an already-merged PR #{} that never went through the "
+                                    + "normal pr_opened completion workflow (local status missed that transition); "
+                                    + "completing it now instead of retrying a doomed recovery-PR open.",
+                            task.getId(), session.getExternalSessionId(), evidence.mergedPr().number());
+                    session.setPrUrl(evidence.mergedPr().url());
+                    session.setStatus("pr_opened");
+                    markSessionProgress(session);
+                    session.setForcedUnblockAttempts(0);
+                    session.setBlindCycleCount(0);
+                    julesSessionRepository.save(session);
+                    handlePrOpenedWorkflow(session);
+                    return true;
+                }
                 if (evidence.branchNeedingPullRequest() != null) {
                     openRecoveryPullRequest(task, evidence.branchNeedingPullRequest(), session.getExternalSessionId());
                 }

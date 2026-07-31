@@ -17,6 +17,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -232,6 +233,32 @@ public class GitHubPullRequestService {
         }
         for (GitHubPullRequest pr : snapshot.closed()) {
             if (!pr.merged() && matchesSessionToken(pr, externalSessionId)) {
+                return Optional.of(pr);
+            }
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * Merged counterpart of findClosedUnmergedPullRequestBySession (testimony-vs-evidence Phase 3,
+     * 2026-07-30): a session's own locally-tracked status can miss the RUNNING -> pr_opened transition
+     * entirely - that mapping only fires when a poll happens to land on Jules reporting SUCCEEDED - even
+     * though the PR it opened was found, reviewed, and merged through the completely normal pipeline.
+     * Without this, evidence checks only ever look for an OPEN PR, see none (because it's already merged
+     * and closed), and wrongly conclude no PR was ever opened - retrying a doomed "open a new PR" call
+     * against a branch already fully contained in main forever. No new HTTP call needed - pullRequestSnapshot
+     * already fetches the closed-PR list, which includes merged ones; this just searches it.
+     */
+    public Optional<GitHubPullRequest> findMergedPullRequestBySession(ProjectEntity project, String externalSessionId) {
+        if (project == null) {
+            return Optional.empty();
+        }
+        PullRequestSnapshot snapshot = pullRequestSnapshot(project);
+        if (!snapshot.available()) {
+            return Optional.empty();
+        }
+        for (GitHubPullRequest pr : snapshot.closed()) {
+            if (pr.merged() && matchesSessionToken(pr, externalSessionId)) {
                 return Optional.of(pr);
             }
         }
@@ -840,7 +867,8 @@ public class GitHubPullRequestService {
                     pr.path("user").path("login").asText(""),
                     pr.hasNonNull("merged_at"),
                     pr.path("base").path("ref").asText(""),
-                    "closed".equals(pr.path("state").asText(""))
+                    "closed".equals(pr.path("state").asText("")),
+                    parsePrCreatedAt(pr)
             ));
         } catch (Exception e) {
             log.warn("Could not fetch PR #{} for {}: {}", pullNumber, context, e.getMessage());
@@ -989,7 +1017,8 @@ public class GitHubPullRequestService {
                     pr.path("user").path("login").asText(""),
                     pr.hasNonNull("merged_at"),
                     pr.path("base").path("ref").asText(""),
-                    "closed".equals(pr.path("state").asText(""))
+                    "closed".equals(pr.path("state").asText("")),
+                    parsePrCreatedAt(pr)
             ));
         }
         return result;
@@ -1193,7 +1222,23 @@ public class GitHubPullRequestService {
     // open, being worked on" - previously indistinguishable, causing AutoMergeService to retry merging a
     // manually-closed PR forever (confirmed live: PR#57, closed by the operator, kept getting a 405 "not
     // mergeable" retry every ~60s since nothing ever told the review polling loop the PR was dead).
-    public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged, String baseRef, boolean closed) {}
+    public record GitHubPullRequest(String url, int number, String title, String headRef, String author, boolean merged, String baseRef, boolean closed, Instant createdAt) {}
+
+    /**
+     * Parses GitHub's ISO-8601 created_at timestamp, tolerant of a missing/malformed value - real evidence
+     * of a PR's age when present, never a reason to fail the whole PR fetch when absent (2026-07-31).
+     */
+    private static Instant parsePrCreatedAt(JsonNode pr) {
+        String raw = pr.path("created_at").asText("");
+        if (raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(raw);
+        } catch (Exception e) {
+            return null;
+        }
+    }
 
     /**
      * `mergeable`: null while GitHub is still computing it asynchronously (this is the normal state for a
@@ -1272,7 +1317,7 @@ public class GitHubPullRequestService {
                         pr.path("html_url").asText(""), pr.path("number").asInt(), pr.path("title").asText(""),
                         pr.path("head").path("ref").asText(""), pr.path("user").path("login").asText(""),
                         pr.hasNonNull("merged_at"), pr.path("base").path("ref").asText(""),
-                        "closed".equals(pr.path("state").asText(""))));
+                        "closed".equals(pr.path("state").asText("")), parsePrCreatedAt(pr)));
             }
             // 422 "No commits between base and head" is a real, expected outcome when the thread branch has
             // already fully landed elsewhere or has nothing new relative to base - not an error to retry loudly.

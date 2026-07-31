@@ -608,8 +608,12 @@ class JulesDispatchServiceTest {
         account.setId(accountId);
         account.setApiKey("jules-key");
 
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+
         TaskEntity task = new TaskEntity();
         task.setId(taskId);
+        task.setProject(project);
 
         when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
@@ -734,7 +738,7 @@ class JulesDispatchServiceTest {
                 .thenReturn(Optional.of(sessionCreatedAt.plus(10, ChronoUnit.MINUTES)));
         when(gitHubPullRequestService.createPullRequest(eq(project), eq("jules-recoverable-1234-abcd"), eq("main"), anyString(), anyString()))
                 .thenReturn(Optional.of(new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
-                        "https://github.com/org/repo/pull/99", 99, "Auto-recovered", "jules-recoverable-1234-abcd", "eneikdru", false, "main", false)));
+                        "https://github.com/org/repo/pull/99", 99, "Auto-recovered", "jules-recoverable-1234-abcd", "eneikdru", false, "main", false, Instant.now())));
 
         julesDispatchService.forceUnblockOverflowedSessions();
 
@@ -786,6 +790,128 @@ class JulesDispatchServiceTest {
         verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
     }
 
+    @Test
+    void forceUnblockCompletesTaskWhenPrAlreadyMergedInsteadOfRetryingRecoveryPr() {
+        // Regression test for the test-fortieth/task 51ab7e20 incident (2026-07-30): Jules opened a real
+        // PR and it was merged through the normal pipeline, but the session's local status never made the
+        // running -> pr_opened jump (only caught if a poll lands exactly on Jules reporting SUCCEEDED).
+        // Every hourly stall check afterward found no OPEN PR, assumed none was ever opened, and retried a
+        // doomed "open a new PR" call against a branch already fully merged into main (HTTP 422 "No commits
+        // between main and branch"), forever, instead of completing the task. Must find the merged PR and
+        // route to real completion instead of retrying that doomed open.
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+        Instant sessionCreatedAt = Instant.now().minus(4, ChronoUnit.HOURS);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/already-merged-9999");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setCreatedAt(sessionCreatedAt);
+        session.setLastProgressAt(Instant.now().minus(65, ChronoUnit.MINUTES));
+
+        com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest mergedPr =
+                new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                        "https://github.com/org/repo/pull/1", 1, "Decompose brief",
+                        "feature/decompose-brief-already-merged-9999", "eneikdru", true, "main", true, Instant.now());
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
+        // Wishlist no longer exists by the time this evidence check runs - the simplest completeWishlistCompilation
+        // exit path, sufficient to prove real completion logic ran rather than just a cosmetic status flip.
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/already-merged-9999"))
+                .thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findMergedPullRequestBySession(project, "sessions/already-merged-9999"))
+                .thenReturn(Optional.of(mergedPr));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
+        assertEquals("pr_opened", session.getStatus());
+        assertEquals("https://github.com/org/repo/pull/1", session.getPrUrl());
+    }
+
+    // --- GitHub budget guard: skip non-active projects in the maintenance sweeps (2026-07-30) --------------
+
+    @Test
+    void forceUnblockSkipsAStalledSessionInAFrozenProjectWithoutCallingGitHub() {
+        // Live-measured regression (2026-07-30): 45 of 82 GitHub calls in a 20-minute window went to
+        // frozen/accepted projects with leftover non-terminal sessions, competing with the one genuinely
+        // active project for the same shared rate-limit budget. This is the highest-frequency sweep (every
+        // minute) and the most likely single biggest source of that waste.
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        Instant sessionCreatedAt = Instant.now().minus(90, ChronoUnit.MINUTES);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.frozen);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/frozen-project-leftover");
+        session.setStatus("running");
+        session.setBlindCycleCount(6);
+        session.setCreatedAt(sessionCreatedAt);
+        session.setLastProgressAt(Instant.now().minus(65, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        verifyNoInteractions(gitHubPullRequestService);
+        assertEquals("running", session.getStatus());
+        verify(julesSessionRepository, never()).save(any());
+    }
+
+    @Test
+    void reconcileStrandedPrOpenedWorkflowsSkipsAnAcceptedProjectWithoutTouchingTheTask() {
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.accepted);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setPrUrl("https://github.com/org/repo/pull/50");
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.findByStatus("pr_opened")).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        assertEquals(0, julesDispatchService.reconcileStrandedPrOpenedWorkflows());
+        verify(claimService, never()).complete(any());
+        verify(taskRepository, never()).save(any());
+    }
+
     // --- Testimony-vs-evidence Phase 2: periodic GitHub-truth reconciliation (2026-07-25) ------------------
 
     private com.eneik.production.services.settings.SystemSettingsService settingsServiceMock() {
@@ -800,6 +926,29 @@ class JulesDispatchServiceTest {
         julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
 
         verifyNoInteractions(taskRepository);
+    }
+
+    @Test
+    void reconciliationSkipsAnAcceptedProjectsTaskWithoutCallingGitHub() {
+        var settings = settingsServiceMock();
+        when(settings.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.accepted);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.review);
+
+        when(taskRepository.findByStatusIn(anyList())).thenReturn(List.of(task));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(false);
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verifyNoInteractions(gitHubPullRequestService);
     }
 
     @Test
@@ -827,7 +976,7 @@ class JulesDispatchServiceTest {
 
         var closedUnmergedPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
                 "https://github.com/org/repo/pull/78", 78, "Fix Flyway migration versioning",
-                "jules-orphaned-flyway-fix-9999", "eneikdru", false, "main", true);
+                "jules-orphaned-flyway-fix-9999", "eneikdru", false, "main", true, Instant.now());
         var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(), List.of(closedUnmergedPr), "");
 
@@ -895,7 +1044,7 @@ class JulesDispatchServiceTest {
 
         var openPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
                 "https://github.com/org/repo/pull/55", 55, "Real work in progress",
-                "jules-still-open-1111-aaaa", "eneikdru", false, "main", false);
+                "jules-still-open-1111-aaaa", "eneikdru", false, "main", false, Instant.now());
         var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(openPr), List.of(), "");
 
@@ -985,7 +1134,7 @@ class JulesDispatchServiceTest {
 
         var closedUnmergedPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
                 "https://github.com/org/repo/pull/99", 99, "Some work",
-                "jules-done-but-closed-unmerged-1234", "eneikdru", false, "main", true);
+                "jules-done-but-closed-unmerged-1234", "eneikdru", false, "main", true, Instant.now());
         var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(), List.of(closedUnmergedPr), "");
 
