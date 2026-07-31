@@ -8,6 +8,8 @@ import com.eneik.production.services.gate.GateOrchestrator;
 import com.eneik.production.services.task.TaskTitleBuilder;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +18,8 @@ import java.util.UUID;
 
 @Service
 public class TechnicalLeadCompiler {
+
+    private static final Logger log = LoggerFactory.getLogger(TechnicalLeadCompiler.class);
 
     private final WishlistRepository wishlistRepository;
     private final TaskRepository taskRepository;
@@ -28,6 +32,7 @@ public class TechnicalLeadCompiler {
     private final ProjectHotspotFileRepository projectHotspotFileRepository;
     private final FeatureService featureService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final ProjectFileClaimRepository projectFileClaimRepository;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
     private static final String FLYWAY_MIGRATION_DIR = "src/main/resources/db/migration";
@@ -42,7 +47,8 @@ public class TechnicalLeadCompiler {
                                  ObjectMapper objectMapper,
                                  ProjectHotspotFileRepository projectHotspotFileRepository,
                                  FeatureService featureService,
-                                 com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+                                 com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                                 ProjectFileClaimRepository projectFileClaimRepository) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
@@ -54,6 +60,7 @@ public class TechnicalLeadCompiler {
         this.projectHotspotFileRepository = projectHotspotFileRepository;
         this.featureService = featureService;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.projectFileClaimRepository = projectFileClaimRepository;
     }
 
     /**
@@ -350,9 +357,16 @@ public class TechnicalLeadCompiler {
         }
         task.setPriority(priority);
         task.setDependsOn(dependsOn);
-        task.setFileScope(determineFileScope(project, roleTag, fileScopeSource(wishlist), isIntegrationTask, hasIntegrationTask));
-        
+
+        FileScopeResult fileScopeResult = determineFileScope(project, roleTag, fileScopeSource(wishlist),
+                isIntegrationTask, hasIntegrationTask, task.getFeatureId());
+        task.setFileScope(fileScopeResult.fileScopeJson());
+        if (fileScopeResult.collisionNotes() != null && !fileScopeResult.collisionNotes().isBlank()) {
+            task.setDescription(task.getDescription() + "\n\n" + fileScopeResult.collisionNotes());
+        }
+
         TaskEntity saved = taskRepository.save(task);
+        recordFileClaims(project, saved, fileScopeResult.finalPaths());
         createdTasks.add(saved);
         return saved;
     }
@@ -544,7 +558,8 @@ public class TechnicalLeadCompiler {
             String edgeReason
     ) {}
 
-    private String determineFileScope(ProjectEntity project, String roleTag, String wishContent, boolean isIntegrationTask, boolean hasIntegrationTask) {
+    private FileScopeResult determineFileScope(ProjectEntity project, String roleTag, String wishContent,
+                                                boolean isIntegrationTask, boolean hasIntegrationTask, UUID featureId) {
         java.util.List<String> paths = new java.util.ArrayList<>();
 
         // 1. If this is the integration task (isIntegrationTask) OR if it is Frontend (TAG-11) and there is no integration task,
@@ -719,10 +734,91 @@ public class TechnicalLeadCompiler {
             }
         }
 
+        CollisionGuardResult guarded = applyCrossEpicCollisionGuard(project, featureId, roleTag, deduped);
+
         try {
-            return objectMapper.writeValueAsString(deduped);
+            return new FileScopeResult(objectMapper.writeValueAsString(guarded.paths()), guarded.collisionNotes(), guarded.paths());
         } catch (Exception e) {
-            return "[]";
+            return new FileScopeResult("[]", null, java.util.List.of());
+        }
+    }
+
+    private record FileScopeResult(String fileScopeJson, String collisionNotes, java.util.List<String> finalPaths) {
+    }
+
+    private record CollisionGuardResult(java.util.List<String> paths, String collisionNotes) {
+    }
+
+    // Cross-эпик file-collision guard (smart decomposition v2, 2026-07-31): general, code-enforced
+    // replacement for the earlier same-day attempt at a compiler-prompt "ceiling rule" the operator
+    // correctly rejected as a заплатка (hardcoded to one resource type, relied on the LLM obeying one more
+    // rule in an already-large prompt). This instead checks the live ProjectFileClaimRepository ledger -
+    // populated by every task ever created (see recordFileClaims below) plus the deterministic bootstrap
+    // scaffolds (ProjectFlowService.commitDeterministicJavaScaffoldIfAbsent/
+    // commitDeterministicFrontendScaffoldIfAbsent, which record global claims with featureId=null) - and
+    // strips any predicted path already owned by a DIFFERENT эпик, regardless of what any LLM decided.
+    // Generalizes to any future resource type with zero new code: the next collision the operator finds
+    // needs no hand-written special case here.
+    private CollisionGuardResult applyCrossEpicCollisionGuard(ProjectEntity project, UUID featureId,
+                                                               String roleTag, java.util.List<String> predictedPaths) {
+        // BARCAN-TAG-00 (integration/merge-hygiene) tasks legitimately need to touch files other эпики own -
+        // that is their whole job - so they are exempt, mirroring the existing isIntegrationTask distinction
+        // already used above in this same method.
+        if ("BARCAN-TAG-00".equals(roleTag) || predictedPaths.isEmpty()) {
+            return new CollisionGuardResult(predictedPaths, null);
+        }
+
+        java.util.List<com.eneik.production.models.persistence.ProjectFileClaimEntity> existingClaims =
+                projectFileClaimRepository.findByProjectIdAndFilePathIn(project.getId(), predictedPaths);
+
+        java.util.List<String> narrowed = new java.util.ArrayList<>(predictedPaths);
+        java.util.List<String> collidingPaths = new java.util.ArrayList<>();
+        for (com.eneik.production.models.persistence.ProjectFileClaimEntity claim : existingClaims) {
+            boolean sameEpic = featureId != null && featureId.equals(claim.getFeatureId());
+            if (sameEpic) {
+                // Same эпик's own internal dependency graph (buildTaskGraphForOneEpic) already sequences
+                // its own slices - this guard only needs to fire cross-эпик.
+                continue;
+            }
+            if (claim.getTaskId() != null) {
+                TaskEntity owner = taskRepository.findById(claim.getTaskId()).orElse(null);
+                if (owner != null && owner.getStatus() == TaskStatus.failed) {
+                    // Stale/void claim - that work never landed, so it shouldn't permanently block the file.
+                    continue;
+                }
+            }
+            if (narrowed.size() > 1 && narrowed.contains(claim.getFilePath())) {
+                // Never narrow a fileScope to nothing - ship the task with something to do rather than an
+                // empty scope; the collision note below still warns Jules away from the contested path.
+                narrowed.remove(claim.getFilePath());
+            }
+            if (!collidingPaths.contains(claim.getFilePath())) {
+                collidingPaths.add(claim.getFilePath());
+            }
+        }
+
+        if (collidingPaths.isEmpty()) {
+            return new CollisionGuardResult(narrowed, null);
+        }
+
+        log.info("Cross-эпик file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
+                project.getId(), featureId, roleTag, collidingPaths);
+        String note = "CROSS-EPIC RESOURCE GUARD: " + String.join(", ", collidingPaths)
+                + " already exist and are owned by other work in this project - do not recreate or rewrite "
+                + "them. Add your own new file(s) for this slice's functionality instead.";
+        return new CollisionGuardResult(narrowed, note);
+    }
+
+    private void recordFileClaims(ProjectEntity project, TaskEntity savedTask, java.util.List<String> fileScopePaths) {
+        for (String path : fileScopePaths) {
+            com.eneik.production.models.persistence.ProjectFileClaimEntity claim =
+                    new com.eneik.production.models.persistence.ProjectFileClaimEntity();
+            claim.setProjectId(project.getId());
+            claim.setFilePath(path);
+            claim.setTaskId(savedTask.getId());
+            claim.setFeatureId(savedTask.getFeatureId());
+            claim.setClaimedAt(Instant.now());
+            projectFileClaimRepository.save(claim);
         }
     }
 

@@ -71,6 +71,33 @@ class OperationalPolicyServiceTest {
     }
 
     @Test
+    void systemStalledNoLongerBlocksTheActionsThatWouldClearTheStall() {
+        // Direct regression test for the 2026-07-31 incident (second pass, same day): SYSTEM_STALLED means
+        // "no dispatch/merge progress despite actionable work" - using it to block the very actions that
+        // would create that progress is circular. Confirmed live on test-fortieth: a task stuck in
+        // pending_review sat blocked for 80+ minutes because DISPATCH_REVIEW_TASKS still used the broad
+        // hardBlocked check, and CHECK_COVERAGE_AUDITS/RUN_PROJECT_AUDIT_PIPELINE were still blocked despite
+        // an earlier same-day narrowing attempt that left a dead `!hardBlocked &&` prefix in front of the
+        // narrower Set check, silently defeating it.
+        FlowCoreDto stalled = core("SYSTEM_STALLED", "active", 0, 1, 1, 1, 0);
+        assertTrue(service.authorize(stalled, OperationalAction.ORCHESTRATE).allowed());
+        assertTrue(service.authorize(stalled, OperationalAction.DISPATCH_REVIEW_TASKS).allowed());
+        assertTrue(service.authorize(stalled, OperationalAction.CHECK_COVERAGE_AUDITS).allowed());
+        assertTrue(service.authorize(stalled, OperationalAction.RUN_PROJECT_AUDIT_PIPELINE).allowed());
+    }
+
+    @Test
+    void orchestrateStaysBlockedByGenuinelyEntangledReviewAndTaskBlockersUnlikeStall() {
+        // ORCHESTRATE deliberately keeps its original entanglement with BLOCKED_BY_REVIEW/BLOCKED_BY_TASK
+        // (new decomposition genuinely waits its turn behind those) - only SYSTEM_STALLED was carved out.
+        FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 5, 0, 0, 1, 0);
+        assertFalse(service.authorize(blockedByReview, OperationalAction.ORCHESTRATE).allowed());
+
+        FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 1, 0);
+        assertFalse(service.authorize(blockedByTask, OperationalAction.ORCHESTRATE).allowed());
+    }
+
+    @Test
     void genuinelyGlobalBlockersStillStopNewQueuedDispatch() {
         // Unlike task/review/stall blockers, these really do mean nothing in the project should move.
         FlowCoreDto rateLimited = core("GITHUB_RATE_LIMITED", "active", 5, 0, 0, 0, 0);

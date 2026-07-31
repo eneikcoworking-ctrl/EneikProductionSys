@@ -82,6 +82,7 @@ public class ProjectFlowService {
     private final PersistentWorkerSessionService persistentWorkerSessionService;
     private final SelfFalsificationEpicMatcher selfFalsificationEpicMatcher;
     private final OperationalPolicyService operationalPolicyService;
+    private final com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -154,7 +155,8 @@ public class ProjectFlowService {
                               FeatureService featureService,
                               PersistentWorkerSessionService persistentWorkerSessionService,
                               SelfFalsificationEpicMatcher selfFalsificationEpicMatcher,
-                              OperationalPolicyService operationalPolicyService) {
+                              OperationalPolicyService operationalPolicyService,
+                              ProjectFileClaimRepository projectFileClaimRepository) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -184,6 +186,7 @@ public class ProjectFlowService {
         this.persistentWorkerSessionService = persistentWorkerSessionService;
         this.selfFalsificationEpicMatcher = selfFalsificationEpicMatcher;
         this.operationalPolicyService = operationalPolicyService;
+        this.projectFileClaimRepository = projectFileClaimRepository;
     }
 
     @Transactional
@@ -549,6 +552,7 @@ public class ProjectFlowService {
             log.warn("Environment bootstrap commit failed for project {}; leaving task queued for normal Jules dispatch as fallback", project.getId());
         }
         commitDeterministicJavaScaffoldIfAbsent(project);
+        commitDeterministicFrontendScaffoldIfAbsent(project);
     }
 
     // Found live (test-thirty-fifth, 2026-07-23): two separate epics each independently dispatched a
@@ -599,6 +603,210 @@ public class ProjectFlowService {
         );
         log.info("Deterministic backend scaffold for project {}: pom.xml={}, .gitignore={}, application.properties={}",
                 project.getId(), pomCommitted, gitignoreCommitted, applicationPropertiesCommitted);
+
+        recordGlobalFileClaimIfCommitted(project, "pom.xml", pomCommitted);
+        recordGlobalFileClaimIfCommitted(project, ".gitignore", gitignoreCommitted);
+        recordGlobalFileClaimIfCommitted(project, "src/main/resources/application.properties", applicationPropertiesCommitted);
+    }
+
+    // Feeds TechnicalLeadCompiler.applyCrossEpicCollisionGuard: a project-wide claim (taskId=null,
+    // featureId=null) always collides with every эпик's predicted fileScope, regardless of which эпик asks -
+    // this is how the deterministic bootstrap scaffolds (backend and frontend) plug into the same general
+    // collision-guard mechanism used for every other cross-эпик file collision, instead of needing their own
+    // separate enforcement path.
+    private void recordGlobalFileClaimIfCommitted(ProjectEntity project, String path, boolean committed) {
+        if (!committed) {
+            return;
+        }
+        com.eneik.production.models.persistence.ProjectFileClaimEntity claim =
+                new com.eneik.production.models.persistence.ProjectFileClaimEntity();
+        claim.setProjectId(project.getId());
+        claim.setFilePath(path);
+        claim.setTaskId(null);
+        claim.setFeatureId(null);
+        claim.setClaimedAt(Instant.now());
+        projectFileClaimRepository.save(claim);
+    }
+
+    // Frontend sibling of commitDeterministicJavaScaffoldIfAbsent above - same root cause, same fix shape.
+    // Found live (test-fortieth, 2026-07-31): three separate эпики each independently dispatched a
+    // BARCAN-TAG-11 frontend task with no shared dependency between them (dependency graphs never span
+    // sibling эпики - see buildTaskGraphForOneEpic), and each one rewrote frontend/src/App.svelte from
+    // scratch as if no shell existed yet, producing real GitHub merge conflicts (PR#13/PR#21 both touching
+    // the same file). Committing a minimal, working Svelte+Vite shell once, deterministically, right after
+    // the backend scaffold (before any эпик's implementer task is ever dispatched) removes the race the
+    // same way the backend fix already does: every later TAG-11 session sees a real shell already on main
+    // and extends it instead of re-inventing it. The shell also commits frontend/src/routes.js - a small,
+    // explicit routes registry - specifically so that adding a new эпик's UI later becomes "add one
+    // component file and append one line to routes.js" instead of "edit App.svelte's shared layout",
+    // shrinking the collision surface even after this one-time bootstrap. Only for greenfield projects, and
+    // only when no frontend/backend manifest of ANY kind already exists yet, mirroring the same convention
+    // the Java scaffold above already uses.
+    // Package-private (not private) so it's directly unit-testable without wiring the whole bootstrap
+    // task-creation pipeline, same convention already used for wishlistCompilerPromptBatch below.
+    void commitDeterministicFrontendScaffoldIfAbsent(ProjectEntity project) {
+        if (!"greenfield".equals(project.getOnboardingMode())) {
+            return;
+        }
+        boolean pomExists = gitHubPullRequestService.fetchFileContent(project, "main", "pom.xml").isPresent();
+        boolean packageJsonExists = gitHubPullRequestService.fetchFileContent(project, "main", "package.json").isPresent();
+        boolean frontendPackageJsonExists = gitHubPullRequestService.fetchFileContent(project, "main", "frontend/package.json").isPresent();
+        boolean appSvelteExists = gitHubPullRequestService.fetchFileContent(project, "main", "frontend/src/App.svelte").isPresent();
+        boolean requirementsExists = gitHubPullRequestService.fetchFileContent(project, "main", "requirements.txt").isPresent();
+        if (pomExists || packageJsonExists || frontendPackageJsonExists || appSvelteExists || requirementsExists) {
+            log.info("Skipping deterministic frontend scaffold for project {}: a manifest already exists "
+                            + "(pom.xml={}, package.json={}, frontend/package.json={}, frontend/src/App.svelte={}, requirements.txt={})",
+                    project.getId(), pomExists, packageJsonExists, frontendPackageJsonExists, appSvelteExists, requirementsExists);
+            return;
+        }
+
+        String appTitle = defaultText(project.getName(), "Generated App");
+        boolean packageJsonCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/package.json",
+                frontendScaffoldPackageJson(javaArtifactId(project)).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: minimal Svelte/Vite package.json (deterministic, avoids cross-эпик scaffold collisions)"
+        );
+        boolean viteConfigCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/vite.config.js",
+                frontendScaffoldViteConfig().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: minimal Vite config"
+        );
+        boolean indexHtmlCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/index.html",
+                frontendScaffoldIndexHtml(appTitle).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: minimal index.html"
+        );
+        boolean mainJsCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/src/main.js",
+                frontendScaffoldMainJs().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: Svelte app entrypoint"
+        );
+        boolean routesJsCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/src/routes.js",
+                frontendScaffoldRoutesJs().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: routes registry (append-only extension point for later эпики's UI)"
+        );
+        boolean appSvelteCommitted = gitHubPullRequestService.commitFile(
+                project,
+                "frontend/src/App.svelte",
+                frontendScaffoldAppSvelte(appTitle).getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: minimal App.svelte shell driven by routes.js (deterministic, avoids cross-эпик scaffold collisions)"
+        );
+        log.info("Deterministic frontend scaffold for project {}: package.json={}, vite.config.js={}, index.html={}, "
+                        + "main.js={}, routes.js={}, App.svelte={}",
+                project.getId(), packageJsonCommitted, viteConfigCommitted, indexHtmlCommitted, mainJsCommitted,
+                routesJsCommitted, appSvelteCommitted);
+
+        recordGlobalFileClaimIfCommitted(project, "frontend/package.json", packageJsonCommitted);
+        recordGlobalFileClaimIfCommitted(project, "frontend/vite.config.js", viteConfigCommitted);
+        recordGlobalFileClaimIfCommitted(project, "frontend/index.html", indexHtmlCommitted);
+        recordGlobalFileClaimIfCommitted(project, "frontend/src/main.js", mainJsCommitted);
+        recordGlobalFileClaimIfCommitted(project, "frontend/src/routes.js", routesJsCommitted);
+        recordGlobalFileClaimIfCommitted(project, "frontend/src/App.svelte", appSvelteCommitted);
+    }
+
+    private String frontendScaffoldPackageJson(String appName) {
+        return """
+                {
+                  "name": "%s-frontend",
+                  "version": "0.0.1",
+                  "private": true,
+                  "type": "module",
+                  "scripts": {
+                    "dev": "vite",
+                    "build": "vite build",
+                    "preview": "vite preview"
+                  },
+                  "devDependencies": {
+                    "@sveltejs/vite-plugin-svelte": "^3.1.1",
+                    "svelte": "^4.2.18",
+                    "vite": "^5.3.5"
+                  }
+                }
+                """.formatted(appName);
+    }
+
+    private String frontendScaffoldViteConfig() {
+        return """
+                import { defineConfig } from 'vite';
+                import { svelte } from '@sveltejs/vite-plugin-svelte';
+
+                export default defineConfig({
+                    plugins: [svelte()],
+                    server: {
+                        port: 3000
+                    }
+                });
+                """;
+    }
+
+    private String frontendScaffoldIndexHtml(String appTitle) {
+        return """
+                <!doctype html>
+                <html lang="en">
+                  <head>
+                    <meta charset="UTF-8" />
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+                    <title>%s</title>
+                  </head>
+                  <body>
+                    <div id="app"></div>
+                    <script type="module" src="/src/main.js"></script>
+                  </body>
+                </html>
+                """.formatted(appTitle);
+    }
+
+    private String frontendScaffoldMainJs() {
+        return """
+                import App from './App.svelte';
+
+                const app = new App({
+                    target: document.getElementById('app')
+                });
+
+                export default app;
+                """;
+    }
+
+    // The extension point every later эпик's TAG-11 slice should touch instead of App.svelte's shared
+    // layout: one new component file, one appended entry here. Kept deliberately tiny and append-only.
+    private String frontendScaffoldRoutesJs() {
+        return """
+                // Routes registry - append-only. Each эпик's UI adds one entry here and its own component
+                // file under frontend/src/, instead of editing App.svelte's shared layout/nav directly.
+                export const routes = [];
+                """;
+    }
+
+    private String frontendScaffoldAppSvelte(String appTitle) {
+        return """
+                <script>
+                  import { routes } from './routes.js';
+
+                  const path = window.location.pathname;
+                  const active = routes.find(r => r.path === path) ?? routes[0];
+                </script>
+
+                <main>
+                  <nav>
+                    <strong>%s</strong>
+                    {#each routes as route}
+                      <a href={route.path}>{route.title}</a>
+                    {/each}
+                  </nav>
+                  {#if active}
+                    <svelte:component this={active.component} />
+                  {:else}
+                    <p>No routes registered yet.</p>
+                  {/if}
+                </main>
+                """.formatted(appTitle);
     }
 
     private String javaArtifactId(ProjectEntity project) {

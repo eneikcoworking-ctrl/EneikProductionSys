@@ -35,9 +35,6 @@ public class OperationalPolicyService {
         boolean allowed = switch (action) {
             case OBSERVE -> authorization.journalAppendAllowed();
             case ADD_WISHLIST -> activeProject && !terminal;
-            case ORCHESTRATE -> activeProject && !hardBlocked && !terminal
-                    && (!"DELIVERED".equals(snapshot.currentState()) || hasPendingScope);
-            case RECOVER_FAILED_FRONTIER -> activeProject && "BLOCKED_BY_FAILED_FRONTIER".equals(snapshot.currentState());
             // Deliberately narrower than hardBlocked (2026-07-31): a task/review/stall-specific blocker
             // (BLOCKED_BY_TASK, BLOCKED_BY_REVIEW, SYSTEM_STALLED, BLOCKED_BY_FAILED_FRONTIER) means
             // something ELSEWHERE in the project needs attention - it carries no evidence that a brand-new,
@@ -45,14 +42,36 @@ public class OperationalPolicyService {
             // review link held 11 other, fully independent queued tasks hostage for 9+ hours under the old
             // "any hard-blocked state stops everything" rule. Genuinely global conditions (frozen/archived/
             // accepted/not-active, GitHub itself unavailable, a content-generation quality gate) still stop
-            // new dispatch - those really do mean nothing in this project should move.
+            // new dispatch - those really do mean nothing in this project should move. Extended same-day
+            // (2026-07-31, second pass) to ORCHESTRATE, DISPATCH_REVIEW_TASKS, CHECK_COVERAGE_AUDITS and
+            // RUN_PROJECT_AUDIT_PIPELINE: SYSTEM_STALLED itself is defined as "no dispatch/merge progress
+            // despite actionable work" (ContinuousOrchestrationService.checkForSystemStall) - using it to
+            // block the very dispatch/audit actions that would CREATE that progress is circular and
+            // self-perpetuating. Confirmed live on test-fortieth: a task stuck in pending_review (not the
+            // `review` status Branch GC's own auto-recovery path checks for) sat blocked for 80+ minutes
+            // because DISPATCH_REVIEW_TASKS still used the broad hardBlocked check, and coverage audits
+            // were STILL blocked under SYSTEM_STALLED despite an earlier same-day narrowing attempt here
+            // that left a redundant `!hardBlocked &&` prefix in front of the narrower Set check below,
+            // silently defeating it - removed that dead prefix along with widening the narrowing to the
+            // two actions that never got it at all.
+            // ORCHESTRATE keeps its original, deliberate entanglement with BLOCKED_BY_REVIEW/BLOCKED_BY_TASK
+            // (new decomposition genuinely waits its turn behind those) - only SYSTEM_STALLED is carved out
+            // here, since that state is specifically "no dispatch/merge progress despite actionable work"
+            // and a pending wishlist never getting decomposed is itself part of what keeps a project stalled.
+            case ORCHESTRATE -> activeProject && !terminal
+                    && (!hardBlocked || "SYSTEM_STALLED".equals(snapshot.currentState()))
+                    && (!"DELIVERED".equals(snapshot.currentState()) || hasPendingScope);
+            case RECOVER_FAILED_FRONTIER -> activeProject && "BLOCKED_BY_FAILED_FRONTIER".equals(snapshot.currentState());
             case DISPATCH_QUEUED_TASKS -> activeProject && snapshot.counts().queuedTasks() > 0
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
-            case DISPATCH_REVIEW_TASKS -> activeProject && !hardBlocked
+            case DISPATCH_REVIEW_TASKS -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
-            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE -> activeProject && !hardBlocked
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED").contains(snapshot.currentState());
+            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             // Deliberately narrower than hardBlocked (2026-07-31, same shape as DISPATCH_QUEUED_TASKS
             // above): confirmed live, PR#13 (task 529e5252) was already approved by review with no
             // problems of its own, but sat unmerged for hours because BLOCKED_BY_REVIEW is project-wide -

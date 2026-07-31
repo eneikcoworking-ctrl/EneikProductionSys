@@ -38,6 +38,9 @@ public class TechnicalLeadCompilerIntegrationTest {
     private ProjectHotspotFileRepository projectHotspotFileRepository;
 
     @Autowired
+    private ProjectFileClaimRepository projectFileClaimRepository;
+
+    @Autowired
     private ClaimRepository claimRepository;
 
     @Autowired
@@ -57,6 +60,7 @@ public class TechnicalLeadCompilerIntegrationTest {
         wishlistItemRepository.deleteAll();
         wishlistRepository.deleteAll();
         projectHotspotFileRepository.deleteAll();
+        projectFileClaimRepository.deleteAll();
         stateRepository.deleteAll();
         projectRepository.deleteAll();
 
@@ -216,5 +220,89 @@ public class TechnicalLeadCompilerIntegrationTest {
         assertTrue(task.getFileScope().contains("frontend/src/components/ChessBoard.svelte"));
         assertFalse(task.getFileScope().contains("src/main/java/com/eneik/production/services/ChessService.java"));
         assertFalse(task.getFileScope().contains("frontend/src/App.svelte"));
+    }
+
+    // Smart-decomposition v2 (2026-07-31): general, code-enforced cross-эпик file-collision guard,
+    // replacing the earlier same-day compiler-prompt "ceiling rule" the operator rejected as a заплатка.
+
+    @Test
+    public void secondEpicsTaskHasAlreadyClaimedHotspotStrippedFromFileScopeWithDirective() {
+        ProjectHotspotFileEntity hotspot = new ProjectHotspotFileEntity();
+        hotspot.setProjectId(projectId);
+        hotspot.setFilePath("frontend/src/App.svelte");
+        projectHotspotFileRepository.save(hotspot);
+
+        // First эпик's TAG-11 task claims frontend/src/App.svelte via the hotspot-broadcast branch
+        // (isIntegrationTask=false, hasIntegrationTask=false triggers it for BARCAN-TAG-11).
+        WishlistEntity firstWish = new WishlistEntity();
+        firstWish.setProjectId(projectId);
+        firstWish.setSource(WishlistSource.client);
+        firstWish.setContent("Build a dashboard screen");
+        firstWish = wishlistRepository.save(firstWish);
+        compiler.compile(firstWish.getId(), "BARCAN-TAG-09",
+                "When I view the dashboard, I want to see my data so I can make decisions.",
+                LeanValue.essential, "toc", "metric",
+                "Completed according to BARCAN-TAG-11 refusal criteria and docs/DESIGN_SYSTEM.md",
+                "Given something, When action, Then result");
+        TaskEntity firstTask = compiler.createTaskFromWishlist(firstWish.getId());
+        assertTrue(firstTask.getFileScope().contains("frontend/src/App.svelte"));
+
+        // Second, genuinely different эпик (a fresh wishlist with no featureId gets its own new feature -
+        // see FeatureService.resolveOrCreateFeatureId) - its TAG-11 task must not be assigned the same
+        // already-claimed path, and its description must carry the collision directive.
+        WishlistEntity secondWish = new WishlistEntity();
+        secondWish.setProjectId(projectId);
+        secondWish.setSource(WishlistSource.client);
+        secondWish.setContent("Build a knowledge base search screen");
+        secondWish = wishlistRepository.save(secondWish);
+        compiler.compile(secondWish.getId(), "BARCAN-TAG-09",
+                "When I search the knowledge base, I want relevant results so I can find answers.",
+                LeanValue.essential, "toc", "metric",
+                "Completed according to BARCAN-TAG-11 refusal criteria and docs/DESIGN_SYSTEM.md",
+                "Given something, When action, Then result");
+        TaskEntity secondTask = compiler.createTaskFromWishlist(secondWish.getId());
+
+        assertNotEquals(firstTask.getFeatureId(), secondTask.getFeatureId());
+        assertFalse(secondTask.getFileScope().contains("frontend/src/App.svelte"));
+        assertTrue(secondTask.getDescription().contains("CROSS-EPIC RESOURCE GUARD"));
+        assertTrue(secondTask.getDescription().contains("frontend/src/App.svelte"));
+    }
+
+    @Test
+    public void secondTaskInTheSameEpicKeepsTheSharedPathItAlreadyOwns() {
+        ProjectHotspotFileEntity hotspot = new ProjectHotspotFileEntity();
+        hotspot.setProjectId(projectId);
+        hotspot.setFilePath("frontend/src/App.svelte");
+        projectHotspotFileRepository.save(hotspot);
+
+        WishlistEntity firstWish = new WishlistEntity();
+        firstWish.setProjectId(projectId);
+        firstWish.setSource(WishlistSource.client);
+        firstWish.setContent("Build a dashboard screen");
+        firstWish = wishlistRepository.save(firstWish);
+        compiler.compile(firstWish.getId(), "BARCAN-TAG-09",
+                "When I view the dashboard, I want to see my data so I can make decisions.",
+                LeanValue.essential, "toc", "metric",
+                "Completed according to BARCAN-TAG-11 refusal criteria and docs/DESIGN_SYSTEM.md",
+                "Given something, When action, Then result");
+        TaskEntity firstTask = compiler.createTaskFromWishlist(firstWish.getId());
+
+        // Same эпик as firstWish - explicitly reuses its featureId rather than letting a fresh one be minted.
+        WishlistEntity secondWish = new WishlistEntity();
+        secondWish.setProjectId(projectId);
+        secondWish.setSource(WishlistSource.client);
+        secondWish.setFeatureId(firstTask.getFeatureId());
+        secondWish.setContent("Add a settings panel to the same dashboard");
+        secondWish = wishlistRepository.save(secondWish);
+        compiler.compile(secondWish.getId(), "BARCAN-TAG-09",
+                "When I configure the dashboard, I want a settings panel so I can customize it.",
+                LeanValue.essential, "toc", "metric",
+                "Completed according to BARCAN-TAG-11 refusal criteria and docs/DESIGN_SYSTEM.md",
+                "Given something, When action, Then result");
+        TaskEntity secondTask = compiler.createTaskFromWishlist(secondWish.getId());
+
+        assertEquals(firstTask.getFeatureId(), secondTask.getFeatureId());
+        assertTrue(secondTask.getFileScope().contains("frontend/src/App.svelte"));
+        assertFalse(secondTask.getDescription().contains("CROSS-EPIC RESOURCE GUARD"));
     }
 }
