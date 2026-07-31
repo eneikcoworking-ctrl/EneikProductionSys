@@ -12,6 +12,8 @@ import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.jules.JulesDispatchService;
+import com.eneik.production.services.operational.OperationalAction;
+import com.eneik.production.services.operational.OperationalPolicyService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -43,24 +45,27 @@ public class GeminiObserverActionService {
     private final JulesDispatchService julesDispatchService;
     private final FalsificationCycleService falsificationCycleService;
     private final GeminiObserverActionRepository actionRepository;
+    private final OperationalPolicyService operationalPolicyService;
 
     public GeminiObserverActionService(WishlistRepository wishlistRepository,
                                         TaskRepository taskRepository,
                                         TaskConflictRepository taskConflictRepository,
                                         JulesDispatchService julesDispatchService,
                                         FalsificationCycleService falsificationCycleService,
-                                        GeminiObserverActionRepository actionRepository) {
+                                        GeminiObserverActionRepository actionRepository,
+                                        OperationalPolicyService operationalPolicyService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.julesDispatchService = julesDispatchService;
         this.falsificationCycleService = falsificationCycleService;
         this.actionRepository = actionRepository;
+        this.operationalPolicyService = operationalPolicyService;
     }
 
     /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
     public String dismissWishlist(ProjectEntity project, String targetId, String reason) {
-        return execute("dismissWishlist", project, targetId, reason, () -> {
+        return execute("dismissWishlist", OperationalAction.DISMISS_WISHLIST, project, targetId, reason, () -> {
             UUID id = parseUuid(targetId);
             if (id == null) return "invalid id";
             WishlistEntity wishlist = wishlistRepository.findById(id).orElse(null);
@@ -78,7 +83,7 @@ public class GeminiObserverActionService {
 
     /** Push through a stagnant session right now instead of waiting for the normal poll timer. */
     public String nudgeStuckSession(ProjectEntity project, String targetId, String reason) {
-        return execute("nudgeStuckSession", project, targetId, reason, () -> {
+        return execute("nudgeStuckSession", OperationalAction.NUDGE_SESSION, project, targetId, reason, () -> {
             requireTaskWithLiveSession(project, targetId);
             return null;
         });
@@ -86,7 +91,7 @@ public class GeminiObserverActionService {
 
     /** Give up on a conflict that has been resurrected/retried past the point of being worth it. */
     public String abandonConflict(ProjectEntity project, String targetId, String reason) {
-        return execute("abandonConflict", project, targetId, reason, () -> {
+        return execute("abandonConflict", OperationalAction.ABANDON_CONFLICT, project, targetId, reason, () -> {
             UUID id = parseUuid(targetId);
             if (id == null) return "invalid id";
             TaskConflictEntity conflict = taskConflictRepository.findById(id).orElse(null);
@@ -111,7 +116,7 @@ public class GeminiObserverActionService {
 
     /** Boost a genuinely stuck queued task above the normal bottleneck-detection priority floor. */
     public String boostPriority(ProjectEntity project, String targetId, String reason) {
-        return execute("boostPriority", project, targetId, reason, () -> {
+        return execute("boostPriority", OperationalAction.BOOST_PRIORITY, project, targetId, reason, () -> {
             UUID id = parseUuid(targetId);
             if (id == null) return "invalid id";
             TaskEntity task = taskRepository.findById(id).orElse(null);
@@ -133,7 +138,7 @@ public class GeminiObserverActionService {
 
     /** Pull the philosophical falsification cycle forward instead of waiting for its own cron. */
     public String triggerFalsificationRun(ProjectEntity project, String targetId, String reason) {
-        return execute("triggerFalsificationRun", project, targetId, reason, () -> {
+        return execute("triggerFalsificationRun", OperationalAction.RUN_PROJECT_AUDIT_PIPELINE, project, targetId, reason, () -> {
             // Runs through the exact same gates as the cron (readiness, pending cap, feature flag) - this
             // is a nudge to check now, not a bypass. Safe to call even if it turns out not ready; it just
             // logs and returns.
@@ -166,7 +171,31 @@ public class GeminiObserverActionService {
         String run();
     }
 
-    private String execute(String tool, ProjectEntity project, String targetId, String reason, Attempt attempt) {
+    private String execute(String tool, OperationalAction action, ProjectEntity project, String targetId,
+                            String reason, Attempt attempt) {
+        // Same gate every other mutating path in the system now goes through (2026-07-30) - she gets no
+        // side door. If Flow Core has the project on a hard stop, her action is denied here exactly like a
+        // scheduled orchestration tick or a manual operator command would be, with the same reason text.
+        var decision = operationalPolicyService.authorize(project.getId(), action);
+        if (!decision.allowed()) {
+            GeminiObserverActionEntity denied = new GeminiObserverActionEntity();
+            denied.setProjectId(project.getId());
+            denied.setCreatedAt(Instant.now());
+            denied.setTool(tool);
+            denied.setTargetId(targetId);
+            denied.setReason(reason);
+            denied.setOutcome("denied");
+            denied.setDetail(decision.reason());
+            // Already a complete, final answer delivered synchronously in this same response - unlike a
+            // real mutation's outcome, there is nothing further to learn later, so this never needs to
+            // force a follow-up cycle.
+            denied.setVerified(true);
+            actionRepository.save(denied);
+            log.info("GeminiObserverActionService: {} for project {} target {} -> denied by policy: {}",
+                    tool, project.getId(), targetId, decision.reason());
+            return "denied: " + decision.reason();
+        }
+
         String outcome;
         String detail = null;
         try {

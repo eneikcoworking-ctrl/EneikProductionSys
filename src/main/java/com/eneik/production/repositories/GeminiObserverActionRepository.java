@@ -10,4 +10,10 @@ import java.util.UUID;
 @Repository
 public interface GeminiObserverActionRepository extends JpaRepository<GeminiObserverActionEntity, UUID> {
     List<GeminiObserverActionEntity> findTop5ByProjectIdOrderByCreatedAtDesc(UUID projectId);
+
+    // Mandatory follow-up gate (2026-07-30): an action she took whose outcome she has not yet been shown
+    // in a real cycle. Existence alone is reason enough to force a real call next cycle, regardless of
+    // whether anything else in the project changed.
+    boolean existsByProjectIdAndVerifiedFalse(UUID projectId);
+    List<GeminiObserverActionEntity> findByProjectIdAndVerifiedFalse(UUID projectId);
 }

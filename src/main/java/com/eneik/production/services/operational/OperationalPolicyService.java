@@ -47,6 +47,8 @@ public class OperationalPolicyService {
                     && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
             case SYNC_GITHUB -> activeProject && !"GITHUB_RATE_LIMITED".equals(snapshot.currentState());
             case CLEANUP_TERMINAL_PROJECT -> true;
+            case NUDGE_SESSION, BOOST_PRIORITY -> activeProject && !hardBlocked;
+            case DISMISS_WISHLIST, ABANDON_CONFLICT -> activeProject && !terminal;
         };
 
         String reason = allowed

@@ -38,6 +38,13 @@ public class GeminiObserverActionEntity {
     @Column(length = 512)
     private String detail;
 
+    // 2026-07-30: whether she has been shown this action's real outcome in a subsequent real observation
+    // cycle yet. False the moment the action runs; flipped true right after the next real cycle includes
+    // it in her prompt - guarantees she is never left not knowing whether her own intervention worked,
+    // instead of that depending on whether something ELSE also happened to change that cycle.
+    @Column(nullable = false)
+    private boolean verified = false;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -54,4 +61,6 @@ public class GeminiObserverActionEntity {
     public void setOutcome(String outcome) { this.outcome = outcome; }
     public String getDetail() { return detail; }
     public void setDetail(String detail) { this.detail = detail; }
+    public boolean isVerified() { return verified; }
+    public void setVerified(boolean verified) { this.verified = verified; }
 }

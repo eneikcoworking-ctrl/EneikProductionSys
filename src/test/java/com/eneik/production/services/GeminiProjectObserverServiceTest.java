@@ -1,5 +1,6 @@
 package com.eneik.production.services;
 
+import com.eneik.production.models.persistence.GeminiObserverActionEntity;
 import com.eneik.production.models.persistence.GeminiObserverJournalEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
@@ -145,11 +146,21 @@ class GeminiProjectObserverServiceTest {
         priorEntry.setEntry("Previously: everything looked healthy.");
         priorEntry.setFindingsCount(0);
         when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(priorEntry));
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(priorEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(priorEntry));
 
         service.runObserverCycle();
 
+        // No LLM call - but a cheap, code-only skip marker is still written (2026-07-30) so the readiness-
+        // ratio/anomaly-fingerprint history keeps accumulating across skipped cycles instead of the
+        // stagnation detector being permanently starved of the 3+ observations it needs.
         verifyNoInteractions(mlPredictionServiceClient);
-        verify(journalRepository, never()).save(any());
+        ArgumentCaptor<GeminiObserverJournalEntity> captor = ArgumentCaptor.forClass(GeminiObserverJournalEntity.class);
+        verify(journalRepository).save(captor.capture());
+        assertEquals(false, captor.getValue().isGeminiCalled());
+        assertEquals("", captor.getValue().getEntry());
     }
 
     @Test
@@ -195,6 +206,10 @@ class GeminiProjectObserverServiceTest {
         priorEntry.setEntry("Previously: everything looked healthy.");
         priorEntry.setFindingsCount(0);
         when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(priorEntry));
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(priorEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(priorEntry));
 
         when(mlPredictionServiceClient.chat(anyString(), anyString(), anyString()))
                 .thenReturn("{\"journalEntry\": \"Noted the failed migration task.\", \"findings\": []}");
@@ -371,5 +386,190 @@ class GeminiProjectObserverServiceTest {
         service.runObserverCycle();
 
         verify(actionService).dismissWishlist(eq(project), eq(wishlistId.toString()), anyString());
+    }
+
+    // --- Journal continuity fix regression tests (2026-07-30, test-fortieth incident) -----------------------
+
+    @Test
+    void stagnationDetectorCountsSkipMarkersNotJustRealCycles() {
+        // Direct regression test for the bug this whole redesign was for: before this fix, a skipped cycle
+        // wrote NOTHING to her journal at all, so the stagnation detector (needs 3+ readiness-ratio history
+        // points) could never accumulate enough history once the first skip happened - a project that went
+        // quiet was silenced forever. One real entry followed by 3 skip markers (impossible before this fix
+        // - skips wrote nothing) must be enough history to trigger stagnation on the next cycle.
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(2, 1, 0.5));
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of());
+        when(geminiContextService.buildContextBlock(anyString())).thenReturn("");
+
+        GeminiObserverJournalEntity realEntry = new GeminiObserverJournalEntity();
+        realEntry.setProjectId(project.getId());
+        realEntry.setCreatedAt(Instant.now().minusSeconds(4000));
+        realEntry.setEntry("Earlier real cycle.");
+        realEntry.setGeminiCalled(true);
+        realEntry.setReadinessRatio(0.5);
+
+        List<GeminiObserverJournalEntity> mixedHistory = new java.util.ArrayList<>();
+        mixedHistory.add(realEntry);
+        for (int i = 0; i < 3; i++) {
+            GeminiObserverJournalEntity marker = new GeminiObserverJournalEntity();
+            marker.setProjectId(project.getId());
+            marker.setCreatedAt(Instant.now().minusSeconds(600L * (i + 1)));
+            marker.setEntry("");
+            marker.setGeminiCalled(false);
+            marker.setReadinessRatio(0.5);
+            mixedHistory.add(marker);
+        }
+        when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(mixedHistory);
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(realEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(realEntry));
+
+        when(mlPredictionServiceClient.chat(anyString(), anyString(), anyString())).thenReturn("""
+                {"journalEntry": "Confirmed readiness has not moved across skip cycles too.", "findings": [], "actions": []}
+                """);
+
+        service.runObserverCycle();
+
+        ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
+        verify(mlPredictionServiceClient).chat(promptCaptor.capture(), anyString(), anyString());
+        assertTrue(promptCaptor.getValue().contains("STAGNATION WARNING"));
+    }
+
+    @Test
+    void alreadyKnownStuckTaskDoesNotAloneForceARealCycle() {
+        // Content-based dedup, not a hardcoded re-notify interval: a stuck task whose fingerprint (id +
+        // status) was already shown to her last real visit must not force another paid call on its own -
+        // repeating an unchanged fact on a timer is waste, not vigilance.
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+
+        UUID stuckTaskId = UUID.randomUUID();
+        TaskEntity stuckTask = new TaskEntity();
+        stuckTask.setId(stuckTaskId);
+        stuckTask.setStatus(TaskStatus.blocked);
+        stuckTask.setTitle("Long-stuck task");
+        stuckTask.setUpdatedAt(Instant.now().minus(5, java.time.temporal.ChronoUnit.HOURS));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(stuckTask));
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(0, 0, 0.0));
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of());
+        when(geminiContextService.buildContextBlock(anyString())).thenReturn("");
+
+        GeminiObserverJournalEntity priorEntry = new GeminiObserverJournalEntity();
+        priorEntry.setProjectId(project.getId());
+        priorEntry.setCreatedAt(Instant.now().minusSeconds(1800));
+        priorEntry.setEntry("Previously: saw this same stuck task already.");
+        priorEntry.setGeminiCalled(true);
+        priorEntry.setReadinessRatio(0.0);
+        priorEntry.setAnomalyFingerprints("[\"task:" + stuckTaskId + ":blocked\"]");
+        when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(priorEntry));
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(priorEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(priorEntry));
+
+        service.runObserverCycle();
+
+        verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    @Test
+    void newlyAppearedStuckTaskForcesARealCycleEvenIfNothingElseChanged() {
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+
+        UUID stuckTaskId = UUID.randomUUID();
+        TaskEntity stuckTask = new TaskEntity();
+        stuckTask.setId(stuckTaskId);
+        stuckTask.setStatus(TaskStatus.blocked);
+        stuckTask.setTitle("Newly stuck task");
+        stuckTask.setUpdatedAt(Instant.now().minus(5, java.time.temporal.ChronoUnit.HOURS));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(stuckTask));
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(0, 0, 0.0));
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of());
+        when(geminiContextService.buildContextBlock(anyString())).thenReturn("");
+
+        GeminiObserverJournalEntity priorEntry = new GeminiObserverJournalEntity();
+        priorEntry.setProjectId(project.getId());
+        priorEntry.setCreatedAt(Instant.now().minusSeconds(1800));
+        priorEntry.setEntry("Previously: no stuck candidates.");
+        priorEntry.setGeminiCalled(true);
+        priorEntry.setReadinessRatio(0.0);
+        priorEntry.setAnomalyFingerprints("[]");
+        when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(priorEntry));
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(priorEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(priorEntry));
+
+        when(mlPredictionServiceClient.chat(anyString(), anyString(), anyString())).thenReturn("""
+                {"journalEntry": "New stuck candidate found.", "findings": [], "actions": []}
+                """);
+
+        service.runObserverCycle();
+
+        verify(mlPredictionServiceClient).chat(anyString(), anyString(), anyString());
+    }
+
+    @Test
+    void unverifiedPriorActionForcesARealCycleEvenWhenNothingElseChangedAndGetsMarkedVerifiedAfterward() {
+        // Direct fix for "она нашла дефект, попыталась что-то сделать и больше никогда не проверяла, что у
+        // неё получилось" - her own action must always get a follow-up check on the next cycle, independent
+        // of the normal content-based dedup, since a failed action leaves the evidence fingerprint
+        // unchanged and would otherwise never resurface.
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of());
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(0, 0, 0.0));
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of());
+        when(geminiContextService.buildContextBlock(anyString())).thenReturn("");
+
+        GeminiObserverJournalEntity priorEntry = new GeminiObserverJournalEntity();
+        priorEntry.setProjectId(project.getId());
+        priorEntry.setCreatedAt(Instant.now().minusSeconds(1800));
+        priorEntry.setEntry("Nudged a stuck session last cycle.");
+        priorEntry.setGeminiCalled(true);
+        priorEntry.setReadinessRatio(0.0);
+        when(journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(priorEntry));
+        when(journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(priorEntry));
+        when(journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(java.util.Optional.of(priorEntry));
+
+        when(actionRepository.existsByProjectIdAndVerifiedFalse(project.getId())).thenReturn(true);
+        GeminiObserverActionEntity pendingAction = new GeminiObserverActionEntity();
+        pendingAction.setProjectId(project.getId());
+        pendingAction.setTool("nudgeStuckSession");
+        pendingAction.setOutcome("success");
+        when(actionRepository.findByProjectIdAndVerifiedFalse(project.getId())).thenReturn(List.of(pendingAction));
+
+        when(mlPredictionServiceClient.chat(anyString(), anyString(), anyString())).thenReturn("""
+                {"journalEntry": "Checked the outcome of my prior nudge - session is still stuck.", "findings": [], "actions": []}
+                """);
+
+        service.runObserverCycle();
+
+        verify(mlPredictionServiceClient).chat(anyString(), anyString(), anyString());
+        assertTrue(pendingAction.isVerified());
+        verify(actionRepository).saveAll(List.of(pendingAction));
     }
 }

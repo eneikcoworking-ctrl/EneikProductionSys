@@ -29,8 +29,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Periodic Gemini observer (2026-07-25, operator directive: "нужен был именно наблюдатель, джемини,
@@ -154,26 +156,45 @@ public class GeminiProjectObserverService {
     }
 
     private void observeProject(ProjectEntity project) {
-        List<GeminiObserverJournalEntity> recentJournal =
+        // Mixed real+skip window (2026-07-30) - correct for stagnation-ratio and anomaly-fingerprint
+        // history, which must keep accumulating even across cycles that skip the actual Gemini call.
+        List<GeminiObserverJournalEntity> recentJournalAny =
                 journalRepository.findTop5ByProjectIdOrderByCreatedAtDesc(project.getId());
-        Instant since = recentJournal.stream()
+        // Real-only counterparts for her own continuity: a long run of skip markers must never look like
+        // "she was just here" or truncate what she actually needs to catch up on.
+        List<GeminiObserverJournalEntity> recentRealJournal =
+                journalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId());
+        Instant sinceRealVisit = journalRepository.findFirstByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(project.getId())
                 .map(GeminiObserverJournalEntity::getCreatedAt)
-                .max(Comparator.naturalOrder())
                 .orElse(project.getCreatedAt());
+        boolean hasPriorJournal = !recentRealJournal.isEmpty();
 
-        EvidenceSnapshot snapshot = buildEvidenceSnapshot(project, since, !recentJournal.isEmpty(), recentJournal);
+        Set<String> lastKnownFingerprints = recentJournalAny.stream()
+                .max(Comparator.comparing(GeminiObserverJournalEntity::getCreatedAt))
+                .map(e -> deserializeFingerprints(e.getAnomalyFingerprints()))
+                .orElse(Set.of());
+        // Mandatory follow-up gate (2026-07-30): if she took an action last cycle, the very next cycle must
+        // consult her again to show its real outcome, regardless of whether anything else changed - an
+        // unresolved defect she tried to act on must never silently drop off the radar just because the
+        // fingerprint of the thing she acted on hasn't moved yet.
+        boolean hasUnverifiedActions = actionRepository.existsByProjectIdAndVerifiedFalse(project.getId());
+
+        EvidenceSnapshot snapshot = buildEvidenceSnapshot(
+                project, sinceRealVisit, hasPriorJournal, recentJournalAny, lastKnownFingerprints, hasUnverifiedActions);
         if (snapshot.nothingChanged()) {
             // Real cost lever (2026-07-25, operator directive: maximize token savings without weakening
-            // Gemini's reasoning): most 30-minute cycles for a stable/idle project have nothing new at all -
-            // skip the Gemini call entirely rather than paying for a round trip whose answer is
-            // structurally guaranteed to be "nothing notable". This is NOT the same as writing a fallback
-            // entry ourselves - it is simply not consulting her this cycle, so nothing is written to her
-            // journal at all, and "since" naturally carries forward to the next cycle that has real change.
+            // Gemini's reasoning): most cycles for a stable/idle project have nothing new at all - skip the
+            // Gemini call entirely rather than paying for a round trip whose answer is structurally
+            // guaranteed to be "nothing notable". A cheap, code-only marker is still written (2026-07-30)
+            // so the readiness-ratio and anomaly-fingerprint history keeps accumulating across the skip -
+            // otherwise the stagnation detector can never gather the 3+ observations it needs, because the
+            // very act of skipping used to prevent any further history from ever existing.
             log.debug("GeminiProjectObserverService: project {} - nothing changed since last visit, skipping Gemini call", project.getId());
+            writeSkipMarker(project, snapshot);
             return;
         }
 
-        String journalBlock = formatJournalForPrompt(recentJournal);
+        String journalBlock = formatJournalForPrompt(recentRealJournal);
         // 2026-07-26 addition: her own last few ACTIONS with their real outcome, not just her journal prose.
         // Confirmed live gap (test-thirty-eighth, 08:00 and 09:00): she proposed triggerFalsificationRun
         // twice in a row with near-identical reasoning, because the only continuity she had was her own
@@ -351,7 +372,20 @@ public class GeminiProjectObserverService {
         journalEntry.setEntry(parsed.journalEntry());
         journalEntry.setFindingsCount(created);
         journalEntry.setReadinessRatio(snapshot.readinessRatio());
+        journalEntry.setGeminiCalled(true);
+        journalEntry.setAnomalyFingerprints(serializeFingerprints(snapshot.anomalyFingerprints()));
         journalRepository.save(journalEntry);
+
+        // She has now been shown (or had the opportunity to be shown, via "Your recent actions" above) the
+        // real outcome of every action pending verification - close the loop instead of leaving it to
+        // depend on something else also having changed this cycle.
+        List<GeminiObserverActionEntity> unverified = actionRepository.findByProjectIdAndVerifiedFalse(project.getId());
+        if (!unverified.isEmpty()) {
+            for (GeminiObserverActionEntity action : unverified) {
+                action.setVerified(true);
+            }
+            actionRepository.saveAll(unverified);
+        }
 
         if (created > 0 || actionsTaken > 0) {
             log.info("GeminiProjectObserverService: project {} - {} new finding(s), {} action(s) taken",
@@ -359,7 +393,47 @@ public class GeminiProjectObserverService {
         }
     }
 
-    private record EvidenceSnapshot(String text, boolean nothingChanged, double readinessRatio, String anomalySummary) {
+    /**
+     * Cheap, code-only journal marker for a cycle that skipped the real Gemini call - carries no LLM cost.
+     * Keeps the stagnation-ratio and anomaly-fingerprint history accumulating across a silent stretch so the
+     * detectors that depend on 3+ observations (see {@link #isReadinessStagnant}) are not structurally
+     * starved by the very act of skipping.
+     */
+    private void writeSkipMarker(ProjectEntity project, EvidenceSnapshot snapshot) {
+        GeminiObserverJournalEntity marker = new GeminiObserverJournalEntity();
+        marker.setProjectId(project.getId());
+        marker.setCreatedAt(Instant.now());
+        marker.setEntry("");
+        marker.setFindingsCount(0);
+        marker.setReadinessRatio(snapshot.readinessRatio());
+        marker.setGeminiCalled(false);
+        marker.setAnomalyFingerprints(serializeFingerprints(snapshot.anomalyFingerprints()));
+        journalRepository.save(marker);
+    }
+
+    private String serializeFingerprints(Set<String> fingerprints) {
+        try {
+            return objectMapper.writeValueAsString(fingerprints);
+        } catch (Exception e) {
+            return "[]";
+        }
+    }
+
+    private Set<String> deserializeFingerprints(String json) {
+        if (json == null || json.isBlank()) {
+            return Set.of();
+        }
+        try {
+            List<String> list = objectMapper.readValue(json, objectMapper.getTypeFactory()
+                    .constructCollectionType(List.class, String.class));
+            return new LinkedHashSet<>(list);
+        } catch (Exception e) {
+            return Set.of();
+        }
+    }
+
+    private record EvidenceSnapshot(String text, boolean nothingChanged, double readinessRatio, String anomalySummary,
+                                     Set<String> anomalyFingerprints) {
     }
 
     /**
@@ -368,7 +442,8 @@ public class GeminiProjectObserverService {
      * Gemini's own last journal entry, not the whole project lifetime.
      */
     private EvidenceSnapshot buildEvidenceSnapshot(ProjectEntity project, Instant since, boolean hasPriorJournal,
-                                                     List<GeminiObserverJournalEntity> recentJournal) {
+                                                     List<GeminiObserverJournalEntity> recentJournal,
+                                                     Set<String> lastKnownFingerprints, boolean hasUnverifiedActions) {
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
         Map<TaskStatus, Long> taskHistogram = new EnumMap<>(TaskStatus.class);
         for (TaskEntity task : tasks) {
@@ -481,13 +556,40 @@ public class GeminiProjectObserverService {
                         .append(truncateForSnapshot(wishlist.getContent(), 120));
             }
         }
+        // Content-based dedup, not a hardcoded re-notify interval (2026-07-30): a stuck/stale candidate
+        // that is genuinely new since the fingerprint last shown to her (its id was not there at all, or
+        // its status has changed) forces a real cycle; one she has already been shown and that has not
+        // moved stays silent indefinitely, no matter how much wall-clock time passes - repeating an
+        // unchanged fact on a timer is waste, not vigilance.
+        Set<String> currentFingerprints = computeAnomalyFingerprints(stuckTasks, staleWishlists);
+        Set<String> newFingerprints = new LinkedHashSet<>(currentFingerprints);
+        newFingerprints.removeAll(lastKnownFingerprints);
+        boolean hasNewStuckEvidence = !newFingerprints.isEmpty();
+        if (hasNewStuckEvidence) {
+            anomalies.add(newFingerprints.size() + " new stuck/stale candidate(s) not previously surfaced");
+        }
+
         // "Nothing changed" only ever suppresses the call once a real baseline cycle has already run once
         // (hasPriorJournal) - the very first cycle for a project always calls Gemini so a baseline journal
-        // entry exists to compare against later. A newly-detected anomaly (duplicates or stagnation) always
-        // forces a real cycle regardless, even if no task resolved recently.
+        // entry exists to compare against later. A newly-detected anomaly (duplicates, stagnation, a new/
+        // changed stuck candidate) always forces a real cycle regardless, even if no task resolved
+        // recently - and an action of hers still pending verification always forces one too (2026-07-30),
+        // so she is never left not knowing whether her own intervention worked.
         boolean nothingChanged = hasPriorJournal && recentlyResolved.isEmpty()
-                && duplicateDescriptionGroups.isEmpty() && !stagnant;
-        return new EvidenceSnapshot(sb.toString(), nothingChanged, readiness.ratio(), String.join("; ", anomalies));
+                && duplicateDescriptionGroups.isEmpty() && !stagnant
+                && !hasNewStuckEvidence && !hasUnverifiedActions;
+        return new EvidenceSnapshot(sb.toString(), nothingChanged, readiness.ratio(), String.join("; ", anomalies), currentFingerprints);
+    }
+
+    private Set<String> computeAnomalyFingerprints(List<TaskEntity> stuckTasks, List<WishlistEntity> staleWishlists) {
+        Set<String> fingerprints = new LinkedHashSet<>();
+        for (TaskEntity task : stuckTasks) {
+            fingerprints.add("task:" + task.getId() + ":" + task.getStatus());
+        }
+        for (WishlistEntity wishlist : staleWishlists) {
+            fingerprints.add("wishlist:" + wishlist.getId() + ":" + wishlist.getStatus());
+        }
+        return fingerprints;
     }
 
     /**
