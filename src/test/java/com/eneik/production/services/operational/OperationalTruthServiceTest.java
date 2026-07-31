@@ -1,11 +1,33 @@
 package com.eneik.production.services.operational;
 
+import com.eneik.production.dto.operational.OperationalTruthDto;
+import com.eneik.production.kaizen.repository.DefectJournalRepository;
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.PrReviewRepository;
+import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClientDeliverableReadinessService;
+import com.eneik.production.services.dashboard.SystemStatusService;
 import org.junit.jupiter.api.Test;
+
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class OperationalTruthServiceTest {
 
@@ -43,5 +65,64 @@ class OperationalTruthServiceTest {
         assertEquals(1.0, OperationalTruthService.clamp(1.5));
         assertEquals(0.0, OperationalTruthService.clamp(-0.1));
         assertEquals(0.67, OperationalTruthService.clamp(0.666));
+    }
+
+    @Test
+    void aTerminallyFailedTasksLongDeadReviewNoLongerAppearsAsALiveBlocker() {
+        // Same architectural class as the FlowSpineService fix (2026-07-31, task 529e5252/test-fortieth):
+        // this dashboard computed failingReviews/openReviews over the project's entire history too, so a
+        // review belonging to an already-terminal task would misreport as a live "review_not_mergeable"
+        // blocker forever. This service never gates autonomous actions (only OperationalTruthController
+        // reads it), so the practical impact was a misleading dashboard, not a stall - but it's the same
+        // bug and deserves the same fix for consistency and honest reporting.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID deadTaskId = UUID.randomUUID();
+        TaskEntity deadTask = new TaskEntity();
+        deadTask.setId(deadTaskId);
+        deadTask.setStatus(TaskStatus.failed);
+        deadTask.setDescription("Runtime Contract 20666c21");
+
+        JulesSessionEntity deadSession = new JulesSessionEntity();
+        deadSession.setId(UUID.randomUUID());
+        deadSession.setTaskId(deadTaskId);
+        deadSession.setStatus("stuck");
+
+        PrReviewEntity deadReview = new PrReviewEntity();
+        deadReview.setJulesSessionId(deadSession.getId());
+        deadReview.setCiStatus("closed_unmerged");
+        deadReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(deadTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(deadTaskId))).thenReturn(List.of(deadSession));
+        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        assertEquals(0, dto.evidence().failingReviews());
+        assertEquals(0, dto.evidence().openReviews());
+        assertTrue(dto.blockedValue().blockers().stream()
+                .noneMatch(b -> "review_not_mergeable".equals(b.type())));
     }
 }

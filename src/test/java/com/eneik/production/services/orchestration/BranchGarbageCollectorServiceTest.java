@@ -23,11 +23,16 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
- * Regression suite for the 2026-07-31 incident: a real, 36-second-old PR with genuine committed work
- * (Flyway migration) was closed by this sweep purely because its branch was named "feat/..." instead of
- * "jules-..." - a naming-convention check standing in for real evidence. Every case here proves the
- * decision now depends only on independently-verifiable facts (a live session/task, and real elapsed time),
- * never on how Jules happened to name a branch or title a PR.
+ * Regression suite for two related 2026-07-31 incidents on this sweep. First: a naming-convention check
+ * ("jules-..." branches only) skipped the live-session lookup entirely for a descriptively-named branch,
+ * closing real committed work purely because of how it was named. Second, after that first fix: the
+ * replacement lookup matched a PR to its session by exact `session.prUrl` string equality - a field only
+ * written back to our DB in a separate round trip after Jules reports pr_opened, racing this very sweep. A
+ * 13-second-old PR with real, mergeable work (PR#3, task ff03b176) was closed by exactly that race, papered
+ * over at the time with a fixed 10-minute grace period rather than a real fix. Every case here proves the
+ * decision now depends only on the session-token embedded in the branch name (available from dispatch time
+ * onward, with no such race) and real elapsed time since actual progress - never on branch naming, PR title,
+ * or whether a separate DB field happened to have been written back yet.
  */
 class BranchGarbageCollectorServiceTest {
 
@@ -60,27 +65,39 @@ class BranchGarbageCollectorServiceTest {
     }
 
     @Test
-    void neverTouchesAPrYoungerThanTheGracePeriodRegardlessOfBranchName() {
-        // Direct regression test for the incident shape: a descriptively-named branch, 36 seconds old,
-        // must not be touched at all - not even inspected for a live session - until it clears the grace
-        // period.
+    void protectsABrandNewDescriptivelyNamedBranchViaTokenMatchWithNoWaitingAtAll() {
+        // Direct regression test for the ff03b176/PR#3 incident shape: a PR only 13 seconds old, whose
+        // branch carries a live session's token, must never be touched - immediately, with no grace period
+        // needed, because the session (and its externalSessionId) already existed before the PR did.
         setUp();
         ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
         var freshPr = pr(3, "Runtime Contract: Schema and Persistence Implementation",
-                "feat/data-schema-strategy-20666c21-abc", Instant.now().minusSeconds(36));
+                "feat/data-schema-strategy-20666c21-3279867026003486022", Instant.now().minusSeconds(13));
         when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(freshPr));
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/3279867026003486022");
+        session.setLastProgressAt(Instant.now());
+        when(julesSessionRepository.findAll()).thenReturn(List.of(session));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
 
         int cleaned = service.cleanOrphanedAndStagnatedPullRequests(project);
 
         assertEquals(0, cleaned);
-        verifyNoInteractions(julesSessionRepository);
         verify(gitHubPullRequestService, never()).closeSinglePullRequest(any(), any(), anyString());
+        verify(taskRepository, never()).save(any());
     }
 
     @Test
     void doesNotCloseADescriptivelyNamedBranchWithARecentLiveSession() {
-        // The core fix: a branch NOT named "jules-..." must still get the same live-task lookup as one
-        // that is - naming was never legitimate evidence of anything.
+        // The naming-convention fix: a branch NOT named "jules-..." must still get the same live-task
+        // lookup as one that is - naming was never legitimate evidence of anything.
         setUp();
         ProjectEntity project = project();
         UUID taskId = UUID.randomUUID();
@@ -90,7 +107,7 @@ class BranchGarbageCollectorServiceTest {
 
         JulesSessionEntity session = new JulesSessionEntity();
         session.setTaskId(taskId);
-        session.setPrUrl("https://github.com/org/repo/pull/3");
+        session.setExternalSessionId("sessions/20666c21-abc");
         session.setLastProgressAt(Instant.now().minus(5, ChronoUnit.MINUTES));
         when(julesSessionRepository.findAll()).thenReturn(List.of(session));
 
@@ -111,13 +128,13 @@ class BranchGarbageCollectorServiceTest {
         setUp();
         ProjectEntity project = project();
         UUID taskId = UUID.randomUUID();
-        var openPr = pr(7, "Some feature", "feat/genuinely-abandoned-work",
+        var openPr = pr(7, "Some feature", "feat/genuinely-abandoned-work-xyz789",
                 Instant.now().minus(3, ChronoUnit.HOURS));
         when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
 
         JulesSessionEntity session = new JulesSessionEntity();
         session.setTaskId(taskId);
-        session.setPrUrl("https://github.com/org/repo/pull/7");
+        session.setExternalSessionId("sessions/xyz789");
         session.setLastProgressAt(Instant.now().minus(2, ChronoUnit.HOURS));
         when(julesSessionRepository.findAll()).thenReturn(List.of(session));
 
@@ -136,11 +153,13 @@ class BranchGarbageCollectorServiceTest {
     }
 
     @Test
-    void closesATrulyOrphanedPrWithNoSessionAnywhereOnceItClearsTheGracePeriod() {
+    void closesATrulyOrphanedPrWithNoSessionAnywhereImmediately() {
+        // No grace period needed here either: a session's token exists from dispatch time onward, so if
+        // literally no session anywhere - live or historical - was ever dispatched with a token matching
+        // this branch, nothing will ever come along later to claim it either.
         setUp();
         ProjectEntity project = project();
-        var openPr = pr(9, "Abandoned work", "some-random-branch-name",
-                Instant.now().minus(1, ChronoUnit.HOURS));
+        var openPr = pr(9, "Abandoned work", "some-random-branch-name", Instant.now());
         when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
         when(julesSessionRepository.findAll()).thenReturn(List.of());
 

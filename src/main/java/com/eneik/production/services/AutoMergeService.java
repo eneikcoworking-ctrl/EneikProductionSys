@@ -224,7 +224,16 @@ public class AutoMergeService {
         if (ciStatus == null || ciStatus.isBlank()) {
             return true;
         }
-        return java.util.Set.of("success", "pending", "unavailable", "conflict")
+        // "policy_denied" (2026-07-31): confirmed live self-inflicted deadlock, same shape as the
+        // "conflict" fix above - executeMerge sets this status the moment Flow Core denies MERGE_PR (e.g.
+        // an unrelated review elsewhere is failing/conflicted), then returns without merging. Before this
+        // fix, that status was NOT in this allow-list, so the review permanently dropped out of
+        // pendingReviews on the very next cycle - executeMerge was never called for it again, even after
+        // the unrelated blocker that caused the original denial fully resolved. Confirmed live: PR#13
+        // (task 529e5252), already approved with no problems of its own, sat unmerged for hours purely
+        // because of this. Like "conflict", there is no separate "is it safe now" check to add - the real
+        // policy check against live Flow Core state IS that check, it just needs to be allowed to run again.
+        return java.util.Set.of("success", "pending", "unavailable", "conflict", "policy_denied")
                 .contains(ciStatus.toLowerCase(java.util.Locale.ROOT));
     }
 
@@ -1814,29 +1823,37 @@ public class AutoMergeService {
                 .filter(review -> !"superseded".equals(review.getCiStatus()))
                 .toList();
         boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
-        // Ф-followup (2026-07-23): the GitHub-truth reconciliation path (reconcileMergedGitHubPullRequests)
-        // calls this with a winning session that has no PrReviewEntity at all yet - without one,
+        // Ф-followup (2026-07-23, widened 2026-07-31): the GitHub-truth reconciliation path
+        // (reconcileMergedGitHubPullRequests) calls this with a winning session whose PrReviewEntity may be
+        // missing OR stale - without a review row with merged=true and a matching prUrl,
         // ClientDeliverableReadinessService.isTaskMerged/isDependencySatisfied can never see this task as
-        // merged (they specifically require a merged=true review row, not just TaskStatus.done), so every
-        // task depending on it would stay queued forever even after this "repair". Synthesize the missing
-        // review here, classifying hasCode the same way the normal merge path does (classifyAndHandleBranch),
-        // so non-TAG-09 dependents correctly require real code, not just a done status.
-        boolean reviewNeedsSynthesis = winningSession != null && reviewBySession.get(winningSession.getId()) == null;
+        // merged (they specifically require that, not just TaskStatus.done), so every task depending on it
+        // stays queued forever even after this "repair". The original version only handled the missing-row
+        // case; confirmed live (2026-07-31, task ff03b176/PR#3->#17 recovery) that a session which had
+        // already reached pr_opened once already owns an unmerged review row pointing at the OLD (since
+        // closed) PR - that row silently stayed untouched forever, because "a review exists" and "this
+        // review reflects the actual merge" are different facts. Handle both: create the row if it doesn't
+        // exist, or bring an existing one in line with reality if it doesn't yet.
+        PrReviewEntity winningReview = winningSession != null ? reviewBySession.get(winningSession.getId()) : null;
+        boolean reviewNeedsUpdate = winningSession != null
+                && (winningReview == null
+                        || !Boolean.TRUE.equals(winningReview.getMerged())
+                        || !mergedPrUrl.equals(winningReview.getPrUrl()));
 
-        if (!taskNeedsRepair && !reviewNeedsSynthesis && activeDuplicates.isEmpty() && staleReviews.isEmpty()) {
+        if (!taskNeedsRepair && !reviewNeedsUpdate && activeDuplicates.isEmpty() && staleReviews.isEmpty()) {
             return;
         }
 
-        if (reviewNeedsSynthesis) {
-            PrReviewEntity synthesized = new PrReviewEntity();
-            synthesized.setJulesSessionId(winningSession.getId());
-            synthesized.setPrUrl(mergedPrUrl);
-            synthesized.setCiStatus("success");
-            synthesized.setRiskLevel("LOW");
-            synthesized.setMerged(true);
-            synthesized.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
-            synthesized.setBaseRef(baseRefForMergedPr(mergedPrUrl));
-            prReviewRepository.save(synthesized);
+        if (reviewNeedsUpdate) {
+            PrReviewEntity target = winningReview != null ? winningReview : new PrReviewEntity();
+            target.setJulesSessionId(winningSession.getId());
+            target.setPrUrl(mergedPrUrl);
+            target.setCiStatus("success");
+            target.setRiskLevel("LOW");
+            target.setMerged(true);
+            target.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
+            target.setBaseRef(baseRefForMergedPr(mergedPrUrl));
+            prReviewRepository.save(target);
         }
 
         if (taskNeedsRepair) {

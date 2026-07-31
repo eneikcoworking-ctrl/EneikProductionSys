@@ -53,7 +53,16 @@ public class OperationalPolicyService {
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
             case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE -> activeProject && !hardBlocked
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED").contains(snapshot.currentState());
-            case MERGE_PR -> activeProject && !hardBlocked
+            // Deliberately narrower than hardBlocked (2026-07-31, same shape as DISPATCH_QUEUED_TASKS
+            // above): confirmed live, PR#13 (task 529e5252) was already approved by review with no
+            // problems of its own, but sat unmerged for hours because BLOCKED_BY_REVIEW is project-wide -
+            // it fired on account of a DIFFERENT, unrelated review's failure, which carries no evidence
+            // that THIS already-approved PR is unsafe to merge. Genuinely global conditions still stop
+            // merging (frozen/archived/accepted/not-active, GitHub itself unavailable, a content-generation
+            // quality gate) - those really do mean nothing in this project should move.
+            case MERGE_PR -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
             case SYNC_GITHUB -> activeProject && !"GITHUB_RATE_LIMITED".equals(snapshot.currentState());
             case CLEANUP_TERMINAL_PROJECT -> true;

@@ -1,11 +1,32 @@
 package com.eneik.production.services.operational;
 
+import com.eneik.production.dto.operational.FlowSpineDto;
+import com.eneik.production.models.persistence.JulesSessionEntity;
+import com.eneik.production.models.persistence.PrReviewEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
+import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.repositories.FlowSpineEventRepository;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.repositories.PrReviewRepository;
+import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.ClientDeliverableReadinessService;
+import com.eneik.production.services.dashboard.SystemStatusService;
 import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class FlowSpineServiceTest {
 
@@ -118,6 +139,112 @@ class FlowSpineServiceTest {
         assertEquals("high", github.severity());
         assertEquals(15, queued.minutes());
         assertEquals(-1, delivered.minutes());
+    }
+
+    @Test
+    void aTerminallyFailedTasksLongDeadReviewNoLongerBlocksTheWholeProjectForever() {
+        // Regression test for the 2026-07-31 incident: task 529e5252 (test-fortieth) failed once, its PR
+        // review reached ciStatus=closed_unmerged, and that ONE historical, already-resolved failure kept
+        // the whole project in BLOCKED_BY_REVIEW indefinitely - blocking dispatch, merge, and orchestration
+        // for everything else - because failingReviews/openReviews were computed over the project's ENTIRE
+        // history with no exclusion for tasks whose fate is already decided.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID deadTaskId = UUID.randomUUID();
+        TaskEntity deadTask = new TaskEntity();
+        deadTask.setId(deadTaskId);
+        deadTask.setStatus(TaskStatus.failed);
+        deadTask.setDescription("Runtime Contract 20666c21");
+
+        JulesSessionEntity deadSession = new JulesSessionEntity();
+        deadSession.setId(UUID.randomUUID());
+        deadSession.setTaskId(deadTaskId);
+        deadSession.setStatus("stuck");
+
+        PrReviewEntity deadReview = new PrReviewEntity();
+        deadReview.setJulesSessionId(deadSession.getId());
+        deadReview.setCiStatus("closed_unmerged");
+        deadReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(deadTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(deadTaskId))).thenReturn(List.of(deadSession));
+        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertNotEquals("BLOCKED_BY_REVIEW", dto.currentState());
+        assertEquals(0, dto.evidence().failingReviews());
+        assertEquals(0, dto.evidence().openReviews());
+    }
+
+    @Test
+    void aFailingReviewOnAStillLiveTaskStillBlocksTheProject() {
+        // Same setup, but the task is still non-terminal (claimed) - this failing review IS live evidence
+        // of a real, actionable problem, and must still block exactly as before.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID liveTaskId = UUID.randomUUID();
+        TaskEntity liveTask = new TaskEntity();
+        liveTask.setId(liveTaskId);
+        liveTask.setStatus(TaskStatus.claimed);
+        liveTask.setDescription("Still being worked on");
+
+        JulesSessionEntity liveSession = new JulesSessionEntity();
+        liveSession.setId(UUID.randomUUID());
+        liveSession.setTaskId(liveTaskId);
+        liveSession.setStatus("stuck");
+
+        PrReviewEntity liveReview = new PrReviewEntity();
+        liveReview.setJulesSessionId(liveSession.getId());
+        liveReview.setCiStatus("conflict");
+        liveReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(liveTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(liveTaskId))).thenReturn(List.of(liveSession));
+        when(reviews.findAll()).thenReturn(List.of(liveReview));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertEquals("BLOCKED_BY_REVIEW", dto.currentState());
+        assertEquals(1, dto.evidence().failingReviews());
     }
 
     private FlowSpineService.StateInputs input(ProjectStatus projectStatus,

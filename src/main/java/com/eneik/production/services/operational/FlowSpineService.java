@@ -335,10 +335,38 @@ public class FlowSpineService {
         long pendingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.pending).count();
         long compilingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.compiling).count();
         long openSessions = sessions.stream().filter(session -> OPEN_SESSION_STATUSES.contains(normalize(session.getStatus()))).count();
+        // Live-evidence scoping (2026-07-31): `tasks` above is the project's ENTIRE history
+        // (findByProjectIdOrderByCreatedAtDesc, unbounded), by design - done/failed counts are meant to be
+        // cumulative for progress reporting. But `reviews` cascades from every session of every one of
+        // those tasks, including ones that reached a terminal status days ago, and openReviews/
+        // failingReviews below feed live blocking decisions (BLOCKED_BY_REVIEW, MERGE_PR, DISPATCH_REVIEW_
+        // TASKS), not reporting. Without this scope, a single task that ever failed with a terminal review
+        // status (closed_unmerged/escalated/invalid_pr/unowned) inflates failingReviews FOREVER - nothing
+        // in the codebase ever re-derives this count excluding it, so BLOCKED_BY_REVIEW becomes a one-way
+        // ratchet toward permanently unresolvable as a project accumulates ordinary history. Confirmed live
+        // (2026-07-31, test-fortieth): task 529e5252's long-since-terminal `failed` review kept the whole
+        // project in BLOCKED_BY_REVIEW indefinitely, blocking dispatch/merge/orchestration for everything
+        // else, with no code path that could ever clear it. A task whose own fate is already decided
+        // (done/failed/spike_completed) cannot be live evidence of an in-progress review problem - only
+        // sessions still attached to a non-terminal task represent work anyone could still act on. Sessions
+        // with no resolvable task are kept (fail toward counting, not silently hiding a real problem).
+        Set<TaskStatus> terminalTaskStatuses = Set.of(TaskStatus.done, TaskStatus.failed, TaskStatus.spike_completed);
+        Set<UUID> terminalTaskIds = tasks.stream()
+                .filter(task -> terminalTaskStatuses.contains(task.getStatus()))
+                .map(TaskEntity::getId)
+                .collect(Collectors.toSet());
+        Set<UUID> liveSessionIds = sessions.stream()
+                .filter(session -> session.getTaskId() == null || !terminalTaskIds.contains(session.getTaskId()))
+                .map(JulesSessionEntity::getId)
+                .collect(Collectors.toSet());
         int mergedReviews = (int) reviews.stream().filter(reviewEntity -> Boolean.TRUE.equals(reviewEntity.getMerged())).count();
-        int openReviews = (int) reviews.stream().filter(reviewEntity -> !Boolean.TRUE.equals(reviewEntity.getMerged())).count();
+        int openReviews = (int) reviews.stream()
+                .filter(reviewEntity -> !Boolean.TRUE.equals(reviewEntity.getMerged()))
+                .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
+                .count();
         int failingReviews = (int) reviews.stream()
                 .filter(reviewEntity -> FAILING_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
+                .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .count();
         int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isQualityGatePassed).count();
         int qualityGateFailed = (int) tasks.stream()

@@ -31,11 +31,6 @@ public class BranchGarbageCollectorService {
 
     private static final Logger log = LoggerFactory.getLogger(BranchGarbageCollectorService.class);
 
-    // Evidence-based grace period (2026-07-31): a PR younger than this is never touched, regardless of
-    // task/session state - protects against acting before the orchestrator has even finished linking a
-    // fresh PR to its session (confirmed live: a 36-second-old PR with real committed work was closed by
-    // this sweep before any real evidence could exist either way).
-    private static final Duration MIN_PR_AGE_BEFORE_CLEANUP = Duration.ofMinutes(10);
     // Same trust-window concept JulesDispatchService's own stall detection uses (DAVIDSON_TRUST_WINDOW_MINUTES)
     // - reused here rather than inventing a second number for "how long is silence before we distrust it".
     private static final int STALENESS_TRUST_WINDOW_MINUTES = 60;
@@ -145,18 +140,20 @@ public class BranchGarbageCollectorService {
                 continue;
             }
 
-            // Grace period first, before anything else - a PR younger than this has not had a fair chance
-            // to be linked to its session yet, regardless of what its branch happens to be named.
-            if (pr.createdAt() == null || pr.createdAt().isAfter(now.minus(MIN_PR_AGE_BEFORE_CLEANUP))) {
-                continue;
-            }
-
-            // Evidence-based decision (2026-07-31): look for a real, live session tied to this PR for
-            // EVERY open PR, never gated on how Jules happened to name its branch (that naming-convention
-            // check used to skip this lookup entirely for any branch not starting with "jules-", closing a
-            // brand-new PR with real committed work purely because of its name).
+            // Token-based evidence, not a guessed clock (2026-07-31, replacing yesterday's own
+            // MIN_PR_AGE_BEFORE_CLEANUP patch): the previous version matched a PR to its owning session by
+            // exact `session.prUrl` string equality - a field that only gets written back to our DB in a
+            // separate round trip AFTER Jules reports pr_opened, racing this very sweep (confirmed live: a
+            // 13-second-old PR with real committed, mergeable work - PR#3, task ff03b176 - was closed by
+            // this exact race before that field had a chance to populate). A fixed N-minute grace period
+            // only worked around the symptom. The session's externalSessionId, by contrast, is written at
+            // dispatch time - before Jules ever pushes a branch or opens a PR - so matching the PR's branch
+            // name against it via the same session-token scheme every other reconciliation path in this
+            // codebase already uses (GitHubPullRequestService.matchesSessionToken) has no such race at all:
+            // by construction, if a PR exists, the session that will eventually own it already does too.
             Optional<JulesSessionEntity> sessionOpt = julesSessionRepository.findAll().stream()
-                    .filter(s -> s.getPrUrl() != null && s.getPrUrl().contains(String.valueOf(pullNumber)))
+                    .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
+                    .filter(s -> GitHubPullRequestService.matchesSessionToken(pr, s.getExternalSessionId()))
                     .findFirst();
 
             if (sessionOpt.isPresent()) {
@@ -180,8 +177,9 @@ public class BranchGarbageCollectorService {
                 }
             }
 
-            // No live session/task found anywhere for this PR, and it has already cleared the grace
-            // period above - genuinely orphaned.
+            // No session anywhere - past or present - was ever dispatched with a token matching this PR's
+            // branch name. Since a session's token exists from dispatch time onward, this is not a timing
+            // gap: nothing will ever come along later to claim this PR. Genuinely orphaned.
             gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Orphaned PR without active task");
             gitHubPullRequestService.deleteBranch(project, headRef);
             log.info("[BRANCH-GC] Retired orphaned PR #{} ('{}') with branch '{}' on project {}", pullNumber, title, headRef, project.getName());

@@ -32,6 +32,12 @@ class AutoMergeServiceTest {
         // Jules pushed a fix commit, CI went green, but GitHub still reported a real conflict - and nothing
         // ever re-checked because the review had already dropped out of pendingReviews for good.
         assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("conflict")));
+        // Systemic fix (2026-07-31, confirmed live: PR#13/task 529e5252, already approved with nothing
+        // wrong of its own): executeMerge sets this status the instant Flow Core denies MERGE_PR for a
+        // reason unrelated to this specific review (e.g. a DIFFERENT review elsewhere is failing). Same
+        // deadlock shape as "conflict" above - excluding it here meant the review permanently dropped out
+        // of pendingReviews the moment it was first denied, even after the real blocker fully resolved.
+        assertTrue(AutoMergeService.isReviewPollCandidate(reviewWithStatus("policy_denied")));
 
         assertFalse(AutoMergeService.isReviewPollCandidate(reviewWithStatus("failure")));
         // Genuinely terminal - handleMergeConflict's own 3-attempt cap is exhausted, so unlike plain
@@ -408,6 +414,92 @@ class AutoMergeServiceTest {
         assertEquals(TaskStatus.done, task.getStatus());
         verify(tasks).save(task);
         verify(claims).releaseTerminalClaim(taskId);
+    }
+
+    @Test
+    void mergedGithubPrUpdatesAnExistingButStaleUnmergedReviewInstantly() {
+        // Regression test for the second half of the same 2026-07-31 incident (task ff03b176/PR#3->#17):
+        // the winning session had ALREADY reached pr_opened once before (against the original, since-closed
+        // PR), so it already owned a PrReviewEntity - just one with merged=false and a prUrl pointing at the
+        // dead PR. The old code only ever synthesized a review when NONE existed for the session at all, so
+        // this existing-but-stale row was silently never updated, and isDependencySatisfied kept returning
+        // false for every downstream dependent forever, even after the task itself was marked done.
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var sessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var conflicts = mock(com.eneik.production.repositories.TaskConflictRepository.class);
+        var claims = mock(ClaimService.class);
+        var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        var gitHub = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
+        AutoMergeService service = new AutoMergeService(
+                prReviews, sessions, tasks, settings,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                conflicts, mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                gitHub,
+                new com.eneik.production.services.github.GitHubApiBudgetService(),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                claims, projects,
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+
+        com.eneik.production.models.persistence.ProjectEntity project =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.queued);
+        task.setProject(project);
+
+        JulesSessionEntity winningSession = new JulesSessionEntity();
+        winningSession.setId(UUID.randomUUID());
+        winningSession.setTaskId(taskId);
+        winningSession.setStatus("pr_opened");
+        winningSession.setExternalSessionId("sessions/3279867026003486022");
+        winningSession.setPrUrl("https://github.com/eneikdru/test-fortieth/pull/3");
+
+        PrReviewEntity staleUnmergedReview = reviewWithStatus("pending");
+        staleUnmergedReview.setJulesSessionId(winningSession.getId());
+        staleUnmergedReview.setPrUrl("https://github.com/eneikdru/test-fortieth/pull/3");
+        staleUnmergedReview.setMerged(false);
+
+        GitHubPullRequestService.GitHubPullRequest mergedPr = new GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/eneikdru/test-fortieth/pull/17",
+                17,
+                "Runtime Contract 20666c21",
+                "feat/data-schema-strategy-20666c21-3279867026003486022",
+                "jules",
+                true,
+                "main",
+                true,
+                java.time.Instant.now());
+
+        when(settings.effectiveBoolean("github_enabled")).thenReturn(true);
+        when(projects.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active))
+                .thenReturn(List.of(project));
+        when(gitHub.pullRequestSnapshot(project)).thenReturn(new GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", List.of(), List.of(mergedPr), null));
+        when(sessions.findAll()).thenReturn(List.of());
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
+        when(sessions.findByTaskId(taskId)).thenReturn(List.of(winningSession));
+        when(prReviews.findAll()).thenReturn(List.of(staleUnmergedReview));
+        when(conflicts.findFirstByTaskIdAndResolutionStatus(taskId, "pending")).thenReturn(Optional.empty());
+
+        service.reconcileMergedGitHubPullRequests();
+
+        assertEquals(TaskStatus.done, task.getStatus());
+        assertEquals(true, staleUnmergedReview.getMerged());
+        assertEquals("https://github.com/eneikdru/test-fortieth/pull/17", staleUnmergedReview.getPrUrl());
+        verify(prReviews).save(staleUnmergedReview);
     }
 
     @Test

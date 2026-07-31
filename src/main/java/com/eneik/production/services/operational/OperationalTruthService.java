@@ -42,6 +42,8 @@ public class OperationalTruthService {
     );
     private static final Set<String> REVIEW_PENDING_STATUSES = Set.of("pending", "unavailable", "success", "conflict");
     private static final Set<String> OPEN_SESSION_STATUSES = Set.of("queued", "running", "pr_opened");
+    private static final Set<TaskStatus> TERMINAL_TASK_STATUSES =
+            Set.of(TaskStatus.done, TaskStatus.failed, TaskStatus.spike_completed);
 
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
@@ -89,12 +91,25 @@ public class OperationalTruthService {
         Map<UUID, List<PrReviewEntity>> reviewsBySession = reviews.stream()
                 .collect(Collectors.groupingBy(PrReviewEntity::getJulesSessionId));
 
+        // Live-evidence scoping (2026-07-31, same fix as FlowSpineService.inputs): `tasks` is the
+        // project's entire history, so a review belonging to a session whose task's fate is already
+        // decided (done/failed/spike_completed) is historical, not a currently-actionable problem or
+        // signal. See FlowSpineService for the full incident writeup (task 529e5252/test-fortieth).
+        Set<UUID> terminalTaskIds = tasks.stream()
+                .filter(task -> TERMINAL_TASK_STATUSES.contains(task.getStatus()))
+                .map(TaskEntity::getId)
+                .collect(Collectors.toSet());
+        Set<UUID> liveSessionIds = sessions.stream()
+                .filter(session -> session.getTaskId() == null || !terminalTaskIds.contains(session.getTaskId()))
+                .map(JulesSessionEntity::getId)
+                .collect(Collectors.toSet());
+
         OperationalTruthDto.Delivery delivery = delivery(readiness);
         OperationalTruthDto.ActiveFlow activeFlow = activeFlow(tasks, wishlist, sessions);
-        OperationalTruthDto.EvidenceSummary evidence = evidence(tasks, reviews);
+        OperationalTruthDto.EvidenceSummary evidence = evidence(tasks, reviews, liveSessionIds);
         OperationalTruthDto.DefectSummary defects = defects(recentDefects);
         List<OperationalTruthDto.Blocker> blockers = blockers(
-                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession);
+                tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds);
         List<OperationalTruthDto.InvariantStatus> invariants = invariants(
                 readiness, tasks, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, recentDefects);
         OperationalTruthDto.Trust trust = trust(evidence, blockers, systemStatus, duplicateContent, recentDefects);
@@ -230,14 +245,20 @@ public class OperationalTruthService {
                 queued, active, review, done, failed, pendingWishlist, compilingWishlist, openSessions, narrative);
     }
 
-    private OperationalTruthDto.EvidenceSummary evidence(List<TaskEntity> tasks, List<PrReviewEntity> reviews) {
+    private OperationalTruthDto.EvidenceSummary evidence(List<TaskEntity> tasks, List<PrReviewEntity> reviews,
+                                                          Set<UUID> liveSessionIds) {
         int mergedReviews = (int) reviews.stream().filter(review -> Boolean.TRUE.equals(review.getMerged())).count();
-        int openReviews = (int) reviews.stream().filter(review -> !Boolean.TRUE.equals(review.getMerged())).count();
+        int openReviews = (int) reviews.stream()
+                .filter(review -> !Boolean.TRUE.equals(review.getMerged()))
+                .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
+                .count();
         int pendingReviews = (int) reviews.stream()
                 .filter(review -> REVIEW_PENDING_STATUSES.contains(normalize(review.getCiStatus())))
+                .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
                 .count();
         int failingReviews = (int) reviews.stream()
                 .filter(review -> REVIEW_FAILING_STATUSES.contains(normalize(review.getCiStatus())))
+                .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
                 .count();
         int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isQualityGatePassed).count();
         int qualityGateFailed = (int) tasks.stream()
@@ -289,7 +310,8 @@ public class OperationalTruthService {
                                                        String systemStatus,
                                                        DuplicateContent duplicateContent,
                                                        Map<UUID, List<JulesSessionEntity>> sessionsByTask,
-                                                       Map<UUID, List<PrReviewEntity>> reviewsBySession) {
+                                                       Map<UUID, List<PrReviewEntity>> reviewsBySession,
+                                                       Set<UUID> liveSessionIds) {
         List<OperationalTruthDto.Blocker> blockers = new ArrayList<>();
         if (isTrustBlockingSystemStatus(systemStatus)) {
             blockers.add(new OperationalTruthDto.Blocker(
@@ -322,6 +344,7 @@ public class OperationalTruthService {
         }
         long failingReviews = reviews.stream()
                 .filter(review -> REVIEW_FAILING_STATUSES.contains(normalize(review.getCiStatus())))
+                .filter(review -> liveSessionIds.contains(review.getJulesSessionId()))
                 .count();
         if (failingReviews > 0) {
             blockers.add(new OperationalTruthDto.Blocker(

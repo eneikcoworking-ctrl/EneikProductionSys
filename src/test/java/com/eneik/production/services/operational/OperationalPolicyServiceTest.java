@@ -80,6 +80,29 @@ class OperationalPolicyServiceTest {
         assertFalse(service.authorize(frozen, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
     }
 
+    @Test
+    void oneFailingReviewNoLongerBlocksMergingADifferentAlreadyApprovedReview() {
+        // Direct regression test for the 2026-07-31 incident: PR#13 (task 529e5252), already approved by
+        // review with nothing wrong of its own, sat unmerged for hours because BLOCKED_BY_REVIEW is
+        // project-wide - it fired on account of a DIFFERENT, unrelated review's failure. That carries no
+        // evidence THIS review is unsafe to merge, exactly the same reasoning already applied to
+        // DISPATCH_QUEUED_TASKS above.
+        FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 0, 0, 1, 0, 0);
+        assertTrue(service.authorize(blockedByReview, OperationalAction.MERGE_PR).allowed());
+
+        FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 0, 0, 1, 0, 0);
+        assertTrue(service.authorize(blockedByTask, OperationalAction.MERGE_PR).allowed());
+    }
+
+    @Test
+    void genuinelyGlobalBlockersStillStopMerging() {
+        FlowCoreDto rateLimited = core("GITHUB_RATE_LIMITED", "active", 0, 0, 1, 0, 0);
+        assertFalse(service.authorize(rateLimited, OperationalAction.MERGE_PR).allowed());
+
+        FlowCoreDto frozen = core("FROZEN", "frozen", 0, 0, 1, 0, 0);
+        assertFalse(service.authorize(frozen, OperationalAction.MERGE_PR).allowed());
+    }
+
     private FlowCoreDto core(String state,
                              String projectStatus,
                              long queuedTasks,
