@@ -70,7 +70,8 @@ public class OnboardingAuditService {
         }
 
         // 1. Analyze stack
-        RepositoryStackAnalyzer.AnalysisResult result = stackAnalyzer.analyze(project.getRepositoryName());
+        String owner = RepositoryStackAnalyzer.ownerFromRepositoryUrl(project.getRepositoryUrl());
+        RepositoryStackAnalyzer.AnalysisResult result = stackAnalyzer.analyze(project.getRepositoryName(), owner);
         StackProfile stackProfile = result.profile();
         log.info("Stack Profile analyzed: Language={}, Framework={}, DB={}, Branch={}, SHA={}, TotalFiles={}, Analyzed={}",
                 stackProfile.primaryLanguage(), stackProfile.framework(), stackProfile.database(),
@@ -107,7 +108,7 @@ public class OnboardingAuditService {
         // Major: MVC boundaries violation
         for (RepositoryStackAnalyzer.FileEntry file : result.filesToScan()) {
             if (file.path().contains("Controller") && (file.path().endsWith(".java") || file.path().endsWith(".ts") || file.path().endsWith(".js"))) {
-                String content = stackAnalyzer.fetchFileContent(project.getRepositoryName(), file.path());
+                String content = stackAnalyzer.fetchFileContent(project.getRepositoryName(), owner, file.path());
                 if (content.contains("JdbcTemplate") || content.contains("SELECT ") || content.contains("select ") || content.contains("Repository")) {
                     findings.add(createFindingEntity(project, "BARCAN-TAG-01", "major", file.path(), null,
                             "Major architectural warning: DB queries or repository operations found inside controller layer, violating Bounded Contexts."));
@@ -145,12 +146,13 @@ public class OnboardingAuditService {
     }
 
     private List<OnboardingAuditFindingEntity> scanForSecrets(ProjectEntity project, List<RepositoryStackAnalyzer.FileEntry> files) {
+        String owner = RepositoryStackAnalyzer.ownerFromRepositoryUrl(project.getRepositoryUrl());
         List<OnboardingAuditFindingEntity> findings = new ArrayList<>();
         for (RepositoryStackAnalyzer.FileEntry file : files) {
             String path = file.path();
             if (isBinaryFile(path)) continue;
 
-            String content = stackAnalyzer.fetchFileContent(project.getRepositoryName(), path);
+            String content = stackAnalyzer.fetchFileContent(project.getRepositoryName(), owner, path);
             if (content.isBlank()) continue;
 
             String[] lines = content.split("\r?\n");

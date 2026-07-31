@@ -41,6 +41,11 @@ public class RepositoryStackAnalyzer {
     }
 
     public AnalysisResult analyze(String repositoryName) {
+        return analyze(repositoryName, null);
+    }
+
+    public AnalysisResult analyze(String repositoryName, String owner) {
+        String effectiveOwner = resolveOwner(owner);
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) {
             log.warn("GitHub token not configured, returning empty StackProfile");
@@ -51,7 +56,7 @@ public class RepositoryStackAnalyzer {
 
         try {
             // 1. Get default branch
-            String repoInfoUrl = apiBaseUrl + "/repos/" + organization + "/" + repositoryName;
+            String repoInfoUrl = apiBaseUrl + "/repos/" + effectiveOwner + "/" + repositoryName;
             String defaultBranch = "main";
             HttpRequest repoRequest = createGetRequest(repoInfoUrl, token);
             HttpResponse<String> repoResponse = httpClient.send(repoRequest, HttpResponse.BodyHandlers.ofString());
@@ -65,7 +70,7 @@ public class RepositoryStackAnalyzer {
             }
 
             // 2. Get baseline commit SHA
-            String branchInfoUrl = apiBaseUrl + "/repos/" + organization + "/" + repositoryName + "/branches/" + defaultBranch;
+            String branchInfoUrl = apiBaseUrl + "/repos/" + effectiveOwner + "/" + repositoryName + "/branches/" + defaultBranch;
             String baselineCommitSha = "";
             HttpRequest branchRequest = createGetRequest(branchInfoUrl, token);
             HttpResponse<String> branchResponse = httpClient.send(branchRequest, HttpResponse.BodyHandlers.ofString());
@@ -75,7 +80,7 @@ public class RepositoryStackAnalyzer {
             } else {
                 log.warn("Failed to fetch branch info for {}, status={}", defaultBranch, branchResponse.statusCode());
                 // Fallback to commits API
-                String commitsUrl = apiBaseUrl + "/repos/" + organization + "/" + repositoryName + "/commits?sha=" + defaultBranch + "&per_page=1";
+                String commitsUrl = apiBaseUrl + "/repos/" + effectiveOwner + "/" + repositoryName + "/commits?sha=" + defaultBranch + "&per_page=1";
                 HttpRequest commitsRequest = createGetRequest(commitsUrl, token);
                 HttpResponse<String> commitsResponse = httpClient.send(commitsRequest, HttpResponse.BodyHandlers.ofString());
                 if (commitsResponse.statusCode() == 200) {
@@ -87,7 +92,7 @@ public class RepositoryStackAnalyzer {
             }
 
             // 3. Get recursive tree
-            String treeUrl = apiBaseUrl + "/repos/" + organization + "/" + repositoryName + "/git/trees/" + defaultBranch + "?recursive=1";
+            String treeUrl = apiBaseUrl + "/repos/" + effectiveOwner + "/" + repositoryName + "/git/trees/" + defaultBranch + "?recursive=1";
             HttpRequest treeRequest = createGetRequest(treeUrl, token);
             HttpResponse<String> treeResponse = httpClient.send(treeRequest, HttpResponse.BodyHandlers.ofString());
             if (treeResponse.statusCode() != 200) {
@@ -117,7 +122,7 @@ public class RepositoryStackAnalyzer {
                     .filter(f -> f.path().equals(".gitignore"))
                     .findFirst();
             if (gitignoreEntry.isPresent()) {
-                String gitignoreContent = fetchFileContent(repositoryName, ".gitignore", token);
+                String gitignoreContent = fetchFileContent(repositoryName, effectiveOwner, ".gitignore", token);
                 if (!gitignoreContent.isBlank()) {
                     for (String line : gitignoreContent.split("\n")) {
                         String trimmed = line.trim();
@@ -186,14 +191,14 @@ public class RepositoryStackAnalyzer {
             if (rootFilePaths.contains("pom.xml") || rootFilePaths.contains("build.gradle")) {
                 primaryLanguage = "Java/Kotlin";
                 if (rootFilePaths.contains("pom.xml")) {
-                    String pomContent = fetchFileContent(repositoryName, "pom.xml", token);
+                    String pomContent = fetchFileContent(repositoryName, effectiveOwner, "pom.xml", token);
                     if (pomContent.contains("spring-boot-starter")) {
                         framework = "Spring Boot";
                     }
                 }
             } else if (rootFilePaths.contains("package.json")) {
                 primaryLanguage = "JavaScript/TypeScript";
-                String packageJsonStr = fetchFileContent(repositoryName, "package.json", token);
+                String packageJsonStr = fetchFileContent(repositoryName, effectiveOwner, "package.json", token);
                 try {
                     JsonNode packageJson = objectMapper.readTree(packageJsonStr);
                     JsonNode deps = packageJson.path("dependencies");
@@ -216,9 +221,9 @@ public class RepositoryStackAnalyzer {
                 primaryLanguage = "Python";
                 String reqs = "";
                 if (rootFilePaths.contains("requirements.txt")) {
-                    reqs = fetchFileContent(repositoryName, "requirements.txt", token).toLowerCase();
+                    reqs = fetchFileContent(repositoryName, effectiveOwner, "requirements.txt", token).toLowerCase();
                 } else if (rootFilePaths.contains("pyproject.toml")) {
-                    reqs = fetchFileContent(repositoryName, "pyproject.toml", token).toLowerCase();
+                    reqs = fetchFileContent(repositoryName, effectiveOwner, "pyproject.toml", token).toLowerCase();
                 }
                 if (reqs.contains("django")) framework = "Django";
                 else if (reqs.contains("flask")) framework = "Flask";
@@ -235,7 +240,7 @@ public class RepositoryStackAnalyzer {
 
             // Database detection
             if (rootFilePaths.contains("docker-compose.yml")) {
-                String compose = fetchFileContent(repositoryName, "docker-compose.yml", token).toLowerCase();
+                String compose = fetchFileContent(repositoryName, effectiveOwner, "docker-compose.yml", token).toLowerCase();
                 if (compose.contains("postgres")) database = "PostgreSQL";
                 else if (compose.contains("mysql")) database = "MySQL";
                 else if (compose.contains("mongo")) database = "MongoDB";
@@ -269,7 +274,7 @@ public class RepositoryStackAnalyzer {
             }
 
             if (readmeFile != null) {
-                String readmeContent = fetchFileContent(repositoryName, readmeFile, token);
+                String readmeContent = fetchFileContent(repositoryName, effectiveOwner, readmeFile, token);
                 if (!readmeContent.isBlank()) {
                     declaredPurpose = extractPurpose(readmeContent);
                 }
@@ -288,6 +293,34 @@ public class RepositoryStackAnalyzer {
         }
     }
 
+    private String resolveOwner(String owner) {
+        return (owner == null || owner.isBlank()) ? organization : owner;
+    }
+
+    /**
+     * Extracts the GitHub owner/org from a repository URL (e.g. "https://github.com/eneikdru/foo" -> "eneikdru").
+     * A project's actual repository owner can differ from the globally configured {@code github.org} (a repo
+     * created under a personal account rather than the org), so callers should always prefer this over the
+     * global default when a project's repositoryUrl is available.
+     */
+    public static String ownerFromRepositoryUrl(String repositoryUrl) {
+        if (repositoryUrl == null || repositoryUrl.isBlank()) {
+            return null;
+        }
+        try {
+            URI uri = URI.create(repositoryUrl.trim());
+            String path = uri.getPath();
+            if (path == null || path.isBlank()) {
+                return null;
+            }
+            String normalized = path.replaceAll("^/+", "").replaceAll("/+$", "");
+            String[] parts = normalized.split("/");
+            return parts.length >= 1 && !parts[0].isBlank() ? parts[0] : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
     private HttpRequest createGetRequest(String url, String token) {
         return HttpRequest.newBuilder(URI.create(url))
                 .header("Authorization", "Bearer " + token)
@@ -302,13 +335,17 @@ public class RepositoryStackAnalyzer {
     }
 
     public String fetchFileContent(String repositoryName, String path) {
-        String token = settingsService.effectiveValue("github_token");
-        return fetchFileContent(repositoryName, path, token);
+        return fetchFileContent(repositoryName, null, path);
     }
 
-    public String fetchFileContent(String repositoryName, String path, String token) {
+    public String fetchFileContent(String repositoryName, String owner, String path) {
+        String token = settingsService.effectiveValue("github_token");
+        return fetchFileContent(repositoryName, owner, path, token);
+    }
+
+    public String fetchFileContent(String repositoryName, String owner, String path, String token) {
         try {
-            String url = apiBaseUrl + "/repos/" + organization + "/" + repositoryName + "/contents/" + path;
+            String url = apiBaseUrl + "/repos/" + resolveOwner(owner) + "/" + repositoryName + "/contents/" + path;
             HttpRequest request = createGetRequest(url, token);
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() == 200) {
