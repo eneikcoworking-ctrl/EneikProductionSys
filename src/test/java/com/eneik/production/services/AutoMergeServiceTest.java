@@ -224,6 +224,130 @@ class AutoMergeServiceTest {
         assertEquals("success", review.getCiStatus());
     }
 
+    // 2026-08-01: the belongsToActiveProject guard above was originally wired into ONLY
+    // reconcileTerminalGithubStateForReviews - confirmed live that resurrectTriviallyEscalatedConflicts and
+    // resurrectAlreadyMergedReviews shared the exact same unscoped prReviewRepository query and kept
+    // burning the shared GitHub API budget on an already-accepted project (test-thirty-third) every single
+    // processAutoMerge tick, starving the genuinely active project's coverage/review dispatch. Both direct
+    // regression tests for that incident.
+
+    @Test
+    void resurrectTriviallyEscalatedConflictsSkipsAReviewBelongingToANonActiveProjectWithoutCallingGitHub() {
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        var gitHub = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        var julesSessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        AutoMergeService service = new AutoMergeService(
+                prReviews,
+                julesSessions,
+                tasks,
+                settings,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                gitHub,
+                new com.eneik.production.services.github.GitHubApiBudgetService(),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+
+        java.util.UUID sessionId = java.util.UUID.randomUUID();
+        java.util.UUID taskId = java.util.UUID.randomUUID();
+        PrReviewEntity review = reviewWithStatus("escalated");
+        review.setPrUrl("https://github.com/org/repo/pull/5");
+        review.setMerged(false);
+        review.setJulesSessionId(sessionId);
+
+        com.eneik.production.models.persistence.ProjectEntity acceptedProject =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        acceptedProject.setId(java.util.UUID.randomUUID());
+        acceptedProject.setStatus(com.eneik.production.models.persistence.ProjectStatus.accepted);
+        com.eneik.production.models.persistence.TaskEntity task =
+                new com.eneik.production.models.persistence.TaskEntity();
+        task.setId(taskId);
+        task.setProject(acceptedProject);
+        com.eneik.production.models.persistence.JulesSessionEntity session =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+
+        when(settings.effectiveBoolean("github_enabled")).thenReturn(true);
+        when(settings.effectiveValue("github_token")).thenReturn("dummy-token");
+        when(prReviews.findByMergedFalseOrMergedIsNull()).thenReturn(List.of(review));
+        when(julesSessions.findById(sessionId)).thenReturn(Optional.of(session));
+        when(tasks.findById(taskId)).thenReturn(Optional.of(task));
+
+        service.resurrectTriviallyEscalatedConflicts();
+
+        verifyNoInteractions(gitHub);
+    }
+
+    @Test
+    void resurrectAlreadyMergedReviewsSkipsAReviewBelongingToANonActiveProjectWithoutCallingGitHub() {
+        var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);
+        var settings = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        var gitHub = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        var julesSessions = mock(com.eneik.production.repositories.JulesSessionRepository.class);
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        AutoMergeService service = new AutoMergeService(
+                prReviews,
+                julesSessions,
+                tasks,
+                settings,
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), mock(com.eneik.production.repositories.WishlistRepository.class),
+                mock(MLPredictionServiceClient.class),
+                gitHub,
+                new com.eneik.production.services.github.GitHubApiBudgetService(),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class));
+
+        java.util.UUID sessionId = java.util.UUID.randomUUID();
+        java.util.UUID taskId = java.util.UUID.randomUUID();
+        PrReviewEntity review = reviewWithStatus("success");
+        review.setPrUrl("https://github.com/org/repo/pull/5");
+        review.setMerged(false);
+        review.setJulesSessionId(sessionId);
+
+        com.eneik.production.models.persistence.ProjectEntity acceptedProject =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        acceptedProject.setId(java.util.UUID.randomUUID());
+        acceptedProject.setStatus(com.eneik.production.models.persistence.ProjectStatus.accepted);
+        com.eneik.production.models.persistence.TaskEntity task =
+                new com.eneik.production.models.persistence.TaskEntity();
+        task.setId(taskId);
+        task.setProject(acceptedProject);
+        com.eneik.production.models.persistence.JulesSessionEntity session =
+                new com.eneik.production.models.persistence.JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+
+        when(settings.effectiveBoolean("github_enabled")).thenReturn(true);
+        when(prReviews.findAll()).thenReturn(List.of(review));
+        when(julesSessions.findById(sessionId)).thenReturn(Optional.of(session));
+        when(tasks.findById(taskId)).thenReturn(Optional.of(task));
+
+        service.resurrectAlreadyMergedReviews();
+
+        verifyNoInteractions(gitHub);
+    }
+
     @Test
     void mergedSiblingRetiresLateConflictWithoutReopeningTask() {
         var prReviews = mock(com.eneik.production.repositories.PrReviewRepository.class);

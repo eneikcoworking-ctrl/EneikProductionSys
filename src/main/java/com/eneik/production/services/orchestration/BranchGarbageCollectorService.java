@@ -104,6 +104,27 @@ public class BranchGarbageCollectorService {
             taskConflictRepository.save(c);
         }
 
+        // Step 3.5: Close any non-terminal JulesSessionEntity still pointing at the branch/PR just retired
+        // above (2026-08-01, confirmed live on test-fortieth/d9f35f4b). Without this, the OLD session sits
+        // in "pr_opened" - one of JulesDispatchService.ACTIVE_SESSION_STATUSES - which its own dispatch()
+        // duplicate-guard reads as "this task already has an active session in flight" and refuses to
+        // create a new one, even though the PR/branch that session referred to was just closed/deleted a
+        // moment ago. Step 4 re-queues the TASK, but a stale ACTIVE session silently swallows every
+        // redispatch attempt that follows - the task sits "queued" forever with no real session working it,
+        // until GitHub-truth reconciliation eventually notices the closed PR and marks it failed, hours
+        // later, with nothing left to retry it. Mirrors JulesDispatchService.cancelSession's own convention
+        // exactly (status="cancelled", not in ACTIVE_SESSION_STATUSES, so it's fully inert going forward).
+        for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
+            if (java.util.Set.of("running", "queued", "revising", "pr_opened", "stuck").contains(session.getStatus())) {
+                session.setStatus("cancelled");
+                session.setClosedAt(Instant.now());
+                session.setClosureReason("Branch GC: superseded by fresh re-queue - " + reason);
+                julesSessionRepository.save(session);
+                log.info("[BRANCH-GC] Cancelled stale session {} (was {}) for task {} so redispatch is not blocked",
+                        session.getId(), session.getStatus(), task.getId());
+            }
+        }
+
         // Step 4: Re-queue task off clean main with Priority 100
         task.setStatus(TaskStatus.queued);
         task.setPriority(100);

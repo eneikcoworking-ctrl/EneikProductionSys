@@ -165,6 +165,7 @@ public class AutoMergeService {
         List<PrReviewEntity> pendingReviews = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(AutoMergeService::isReviewPollCandidate)
                 .filter(r -> !isAlreadyResolvedSpike(r))
+                .filter(this::belongsToActiveProject)
                 .toList();
 
         for (PrReviewEntity review : pendingReviews) {
@@ -245,11 +246,17 @@ public class AutoMergeService {
         List<PrReviewEntity> unmergedReviews = prReviewRepository.findByMergedFalseOrMergedIsNull();
         for (PrReviewEntity review : unmergedReviews) {
             try {
-                // GitHub budget guard (2026-07-31): this loop's GitHub calls go through the owner/repo
-                // overload (parsed straight from the stored PR URL), which has no ProjectEntity of its own
-                // to check - unlike pullRequestSnapshot/fetchOpenPullRequests, which now guard themselves.
-                // Confirmed live: the large majority of this method's GitHub calls were spent reconciling
-                // reviews belonging to frozen/accepted projects with nothing left to reconcile toward.
+                // GitHub budget guard (2026-07-31, widened 2026-08-01): this loop's GitHub calls go through
+                // the owner/repo overload (parsed straight from the stored PR URL), which has no
+                // ProjectEntity of its own to check - unlike pullRequestSnapshot/fetchOpenPullRequests,
+                // which now guard themselves. Confirmed live: the large majority of this method's GitHub
+                // calls were spent reconciling reviews belonging to frozen/accepted projects with nothing
+                // left to reconcile toward. This guard was originally added ONLY here - confirmed live a
+                // day later that the main pendingReviews/executeMerge loop above, resurrectAlreadyMerged-
+                // Reviews, and resurrectTriviallyEscalatedConflicts all shared the exact same unscoped
+                // prReviewRepository query and kept burning the shared GitHub API budget on an already-
+                // accepted project (test-thirty-third) every single processAutoMerge tick, starving the
+                // genuinely active project. belongsToActiveProject is now applied at all four call sites.
                 if (!belongsToActiveProject(review)) {
                     continue;
                 }
@@ -317,7 +324,10 @@ public class AutoMergeService {
     // regardless of what else changed - real code is never touched by this path, and if the actual conflict
     // turns out to be in one of those other files too, the next merge attempt simply fails 405 again and
     // falls straight back through the normal rebase/escalation path, so widening this is safe.
-    private void resurrectTriviallyEscalatedConflicts() {
+    // Package-private (not private), same convention as reconcileTerminalGithubStateForReviews, so the
+    // 2026-08-01 active-project guard is directly unit-testable without wiring the entire processAutoMerge
+    // cycle.
+    void resurrectTriviallyEscalatedConflicts() {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
@@ -327,6 +337,7 @@ public class AutoMergeService {
         }
         List<PrReviewEntity> escalated = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(r -> "escalated".equalsIgnoreCase(r.getCiStatus()))
+                .filter(this::belongsToActiveProject)
                 .toList();
         for (PrReviewEntity review : escalated) {
             try {
@@ -1181,12 +1192,16 @@ public class AutoMergeService {
     // already fixed for "escalated". Runs every tick, checks EVERY still-unmerged review's real GitHub state
     // regardless of its stored ciStatus (cheap - one fetchPullRequestByNumber call per still-open review),
     // and runs the exact same success bookkeeping a fresh merge would via recordSuccessfulMerge.
-    private void resurrectAlreadyMergedReviews() {
+    // Package-private (not private), same convention as reconcileTerminalGithubStateForReviews, so the
+    // 2026-08-01 active-project guard is directly unit-testable without wiring the entire processAutoMerge
+    // cycle.
+    void resurrectAlreadyMergedReviews() {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
         List<PrReviewEntity> unmerged = prReviewRepository.findAll().stream()
                 .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+                .filter(this::belongsToActiveProject)
                 .toList();
         for (PrReviewEntity review : unmerged) {
             try {
