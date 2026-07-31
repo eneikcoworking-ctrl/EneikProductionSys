@@ -38,7 +38,17 @@ public class OperationalPolicyService {
             case ORCHESTRATE -> activeProject && !hardBlocked && !terminal
                     && (!"DELIVERED".equals(snapshot.currentState()) || hasPendingScope);
             case RECOVER_FAILED_FRONTIER -> activeProject && "BLOCKED_BY_FAILED_FRONTIER".equals(snapshot.currentState());
-            case DISPATCH_QUEUED_TASKS -> activeProject && !hardBlocked && snapshot.counts().queuedTasks() > 0;
+            // Deliberately narrower than hardBlocked (2026-07-31): a task/review/stall-specific blocker
+            // (BLOCKED_BY_TASK, BLOCKED_BY_REVIEW, SYSTEM_STALLED, BLOCKED_BY_FAILED_FRONTIER) means
+            // something ELSEWHERE in the project needs attention - it carries no evidence that a brand-new,
+            // never-dispatched queued task is unsafe to start. Confirmed live: one task with a broken
+            // review link held 11 other, fully independent queued tasks hostage for 9+ hours under the old
+            // "any hard-blocked state stops everything" rule. Genuinely global conditions (frozen/archived/
+            // accepted/not-active, GitHub itself unavailable, a content-generation quality gate) still stop
+            // new dispatch - those really do mean nothing in this project should move.
+            case DISPATCH_QUEUED_TASKS -> activeProject && snapshot.counts().queuedTasks() > 0
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             case DISPATCH_REVIEW_TASKS -> activeProject && !hardBlocked
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
             case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE -> activeProject && !hardBlocked

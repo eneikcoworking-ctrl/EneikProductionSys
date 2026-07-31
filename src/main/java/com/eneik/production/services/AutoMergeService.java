@@ -12,6 +12,7 @@ import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.services.github.GitHubApiBudgetService;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.logging.LogScope;
@@ -235,6 +236,14 @@ public class AutoMergeService {
         List<PrReviewEntity> unmergedReviews = prReviewRepository.findByMergedFalseOrMergedIsNull();
         for (PrReviewEntity review : unmergedReviews) {
             try {
+                // GitHub budget guard (2026-07-31): this loop's GitHub calls go through the owner/repo
+                // overload (parsed straight from the stored PR URL), which has no ProjectEntity of its own
+                // to check - unlike pullRequestSnapshot/fetchOpenPullRequests, which now guard themselves.
+                // Confirmed live: the large majority of this method's GitHub calls were spent reconciling
+                // reviews belonging to frozen/accepted projects with nothing left to reconcile toward.
+                if (!belongsToActiveProject(review)) {
+                    continue;
+                }
                 PullRequestTarget target = parseGithubPullRequestUrl(review.getPrUrl());
                 if (target == null) {
                     continue;
@@ -260,6 +269,24 @@ public class AutoMergeService {
             }
         }
         return reconciled;
+    }
+
+    /**
+     * Resolves a review's project through its session -> task -> project chain and checks it's active.
+     * Fails open (returns true) whenever the chain can't be resolved - an unresolvable review is not
+     * evidence its project is inactive, and this guard must never silently stop reconciling a review it
+     * simply can't trace, only ones it can positively confirm belong to a non-active project.
+     */
+    private boolean belongsToActiveProject(PrReviewEntity review) {
+        if (review.getJulesSessionId() == null) {
+            return true;
+        }
+        return julesSessionRepository.findById(review.getJulesSessionId())
+                .map(com.eneik.production.models.persistence.JulesSessionEntity::getTaskId)
+                .flatMap(taskRepository::findById)
+                .map(com.eneik.production.models.persistence.TaskEntity::getProject)
+                .map(project -> project.getStatus() == ProjectStatus.active)
+                .orElse(true);
     }
 
     // Operator directive 2026-07-24 (live incident, 6 simultaneous escalations on test-thirty-seventh, all
@@ -1625,7 +1652,7 @@ public class AutoMergeService {
     // `claimed`, stalling the system for 3.5+ hours with idle Jules capacity sitting unused. This checks
     // GitHub's own merge truth directly as a second, independent signal that does not require any local
     // review record to exist at all.
-    private void reconcileMergedGitHubPullRequests() {
+    void reconcileMergedGitHubPullRequests() {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
@@ -1657,6 +1684,41 @@ public class AutoMergeService {
                         continue;
                     }
                     repairTaskForConfirmedMerge(task, session, session.getPrUrl());
+                }
+
+                // Testimony-vs-evidence Phase 4 (2026-07-31): the exact-prUrl match above requires
+                // session.getPrUrl() to already be populated locally - but a session can reach a real,
+                // merged GitHub PR without ever crossing the local edge that sets prUrl (same root cause
+                // fixed twice already this session: honorDavidsonProgressEvidence's GitHub-lookup fallback
+                // in JulesDispatchService, and GitHubPullRequestService.findMergedPullRequestBySession).
+                // Confirmed live: task 597cbced sat in pending_review for 9+ hours because its session's
+                // local prUrl was never set, so this sweep's exact-URL match never found the underlying
+                // already-merged PR despite running every cycle the whole time - the same class of gap as
+                // reconcileTaskStatusAgainstGitHubTruth, which also only checks closed-unmerged/open PRs
+                // and has no merged-PR branch at all. This second pass matches by the same branch-name
+                // session token every other reconciliation path in this codebase already uses, independent
+                // of whether prUrl was ever locally recorded.
+                List<GitHubPullRequestService.GitHubPullRequest> mergedPrs = snapshot.closed().stream()
+                        .filter(GitHubPullRequestService.GitHubPullRequest::merged)
+                        .toList();
+                List<com.eneik.production.models.persistence.TaskEntity> nonTerminalTasks =
+                        taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                                .filter(task -> task.getStatus() != TaskStatus.done)
+                                .toList();
+                for (com.eneik.production.models.persistence.TaskEntity task : nonTerminalTasks) {
+                    for (com.eneik.production.models.persistence.JulesSessionEntity session
+                            : julesSessionRepository.findByTaskId(task.getId())) {
+                        if (session.getExternalSessionId() == null || session.getExternalSessionId().isBlank()) {
+                            continue;
+                        }
+                        if (session.getPrUrl() != null && mergedPrUrls.contains(session.getPrUrl())) {
+                            continue;
+                        }
+                        mergedPrs.stream()
+                                .filter(pr -> GitHubPullRequestService.matchesSessionToken(pr, session.getExternalSessionId()))
+                                .findFirst()
+                                .ifPresent(pr -> repairTaskForConfirmedMerge(task, session, pr.url()));
+                    }
                 }
             }
         } catch (Exception e) {

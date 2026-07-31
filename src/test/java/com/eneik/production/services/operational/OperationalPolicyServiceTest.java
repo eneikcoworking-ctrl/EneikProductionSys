@@ -52,6 +52,34 @@ class OperationalPolicyServiceTest {
         assertTrue(service.authorize(core, OperationalAction.CLEANUP_TERMINAL_PROJECT).allowed());
     }
 
+    @Test
+    void oneFailingReviewNoLongerBlocksDispatchOfUnrelatedQueuedTasks() {
+        // Direct regression test for the 2026-07-31 incident: one task's failing/conflicted review held
+        // 11 other, fully independent queued tasks hostage for 9+ hours because DISPATCH_QUEUED_TASKS used
+        // to share the same hard-blocked set as every other action in the project - a task/review/stall-
+        // specific blocker carries no evidence that a brand-new, never-dispatched task is unsafe to start.
+        FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 5, 0, 0, 0, 0);
+        assertTrue(service.authorize(blockedByReview, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
+        // ORCHESTRATE stays blocked - unchanged, still genuinely entangled with the failing review.
+        assertFalse(service.authorize(blockedByReview, OperationalAction.ORCHESTRATE).allowed());
+
+        FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 0, 0);
+        assertTrue(service.authorize(blockedByTask, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
+
+        FlowCoreDto stalled = core("SYSTEM_STALLED", "active", 5, 0, 0, 0, 0);
+        assertTrue(service.authorize(stalled, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
+    }
+
+    @Test
+    void genuinelyGlobalBlockersStillStopNewQueuedDispatch() {
+        // Unlike task/review/stall blockers, these really do mean nothing in the project should move.
+        FlowCoreDto rateLimited = core("GITHUB_RATE_LIMITED", "active", 5, 0, 0, 0, 0);
+        assertFalse(service.authorize(rateLimited, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
+
+        FlowCoreDto frozen = core("FROZEN", "frozen", 5, 0, 0, 0, 0);
+        assertFalse(service.authorize(frozen, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
+    }
+
     private FlowCoreDto core(String state,
                              String projectStatus,
                              long queuedTasks,

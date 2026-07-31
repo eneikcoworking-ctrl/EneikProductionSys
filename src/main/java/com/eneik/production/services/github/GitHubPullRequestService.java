@@ -2,6 +2,7 @@ package com.eneik.production.services.github;
 
 import com.eneik.production.config.GithubConfig;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.services.settings.SystemSettingsService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -268,6 +269,15 @@ public class GitHubPullRequestService {
     public PullRequestSnapshot pullRequestSnapshot(ProjectEntity project) {
         if (project == null) {
             return PullRequestSnapshot.unavailable("", "", "Project is not selected");
+        }
+        // GitHub budget guard (2026-07-31): a single choke point, not one check per caller - every current
+        // and future caller of this method (findOpenPullRequestBySession, findMergedPullRequestBySession,
+        // findClosedUnmergedPullRequestBySession, BranchGarbageCollectorService, ...) is protected from
+        // spending real GitHub calls on a project that isn't active, without needing to remember the check
+        // itself. Confirmed live (2026-07-30/31): frozen/accepted projects' leftover work was consuming the
+        // large majority of the shared rate-limit budget every hour.
+        if (project.getStatus() != ProjectStatus.active) {
+            return PullRequestSnapshot.unavailable("", "", "Project is not active");
         }
         if (!settingsService.effectiveBoolean("github_enabled")) {
             RepoRef repoRef = repoRef(project);
@@ -979,7 +989,8 @@ public class GitHubPullRequestService {
     }
 
     public java.util.List<GitHubPullRequest> fetchOpenPullRequests(ProjectEntity project) {
-        if (project == null || !settingsService.effectiveBoolean("github_enabled")) return java.util.List.of();
+        if (project == null || project.getStatus() != ProjectStatus.active
+                || !settingsService.effectiveBoolean("github_enabled")) return java.util.List.of();
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) return java.util.List.of();
         RepoRef repoRef = repoRef(project);
