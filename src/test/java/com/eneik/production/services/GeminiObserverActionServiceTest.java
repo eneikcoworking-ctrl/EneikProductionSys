@@ -2,6 +2,8 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.GeminiObserverActionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.GeminiObserverActionRepository;
@@ -37,6 +39,7 @@ class GeminiObserverActionServiceTest {
     private FalsificationCycleService falsificationCycleService;
     private GeminiObserverActionRepository actionRepository;
     private OperationalPolicyService operationalPolicyService;
+    private PlannedWorkRecoveryService plannedWorkRecoveryService;
     private GeminiObserverActionService service;
 
     private void setUp() {
@@ -47,8 +50,10 @@ class GeminiObserverActionServiceTest {
         falsificationCycleService = mock(FalsificationCycleService.class);
         actionRepository = mock(GeminiObserverActionRepository.class);
         operationalPolicyService = mock(OperationalPolicyService.class);
+        plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
         service = new GeminiObserverActionService(wishlistRepository, taskRepository, taskConflictRepository,
-                julesDispatchService, falsificationCycleService, actionRepository, operationalPolicyService);
+                julesDispatchService, falsificationCycleService, actionRepository, operationalPolicyService,
+                plannedWorkRecoveryService);
     }
 
     private ProjectEntity project() {
@@ -129,5 +134,39 @@ class GeminiObserverActionServiceTest {
 
         assertTrue(outcome.startsWith("denied:"));
         verifyNoInteractions(taskConflictRepository);
+    }
+
+    @Test
+    void reviveFailedTaskDeniedByPolicyNeverTouchesPlannedWorkRecovery() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.REVIVE_FAILED_TASK))
+                .thenReturn(decision(project, OperationalAction.REVIVE_FAILED_TASK, false, "GitHub rate limited"));
+
+        String outcome = service.reviveFailedTask(project, taskId.toString(), "PR closed without merge");
+
+        assertTrue(outcome.startsWith("denied:"));
+        verifyNoInteractions(plannedWorkRecoveryService);
+    }
+
+    @Test
+    void reviveFailedTaskCallsThePlannedWorkRecoveryAtomicResumePath() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.REVIVE_FAILED_TASK))
+                .thenReturn(decision(project, OperationalAction.REVIVE_FAILED_TASK, true, "allowed"));
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.failed);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(plannedWorkRecoveryService.resumeTask(taskId)).thenReturn(true);
+
+        String outcome = service.reviveFailedTask(project, taskId.toString(), "PR closed without merge");
+
+        assertEquals("success", outcome);
+        verify(plannedWorkRecoveryService).resumeTask(taskId);
     }
 }

@@ -11,7 +11,13 @@ public class KaizenProposal {
         WASTE_REDUCTION,      // Elimination of Muda (waiting waste, orphaned claims)
         SPEED_OPTIMIZATION,   // Latency & bottleneck throughput optimization
         DEFECT_ELIMINATION,   // Preventing repeated quality gate & conflict failures
-        BUFFER_TUNING         // DBR buffer capacity & timeout sensitivity adjustment
+        BUFFER_TUNING,        // DBR buffer capacity & timeout sensitivity adjustment
+        // 2026-08-01: findings about the orchestrator/factory's OWN code (not the client product) - e.g.
+        // Gemini Observer noticing a bug in EneikProductionSys itself. Deliberately review-only, never
+        // auto-applied by periodicKaizenCycle (see KaizenService.recordSystemicDefectProposal's 0%
+        // expectedGainPercent) - fixing the factory's own source code is never a safe automatic action,
+        // unlike this engine's other three categories which only ever tune runtime parameters.
+        SYSTEMIC_DEFECT
     }
 
     public enum ProposalStatus {

@@ -71,47 +71,69 @@ public class PlannedWorkRecoveryService {
             if (resumed >= Math.max(1, frontierResumeLimit)) {
                 break;
             }
-            if (!isEligibleRetiredPlanTask(task) || resumeCount(task) >= 1) {
-                continue;
+            if (resumeEligibleTask(task, project.getId(), resumed)) {
+                resumed++;
             }
-            if (claimService.hasActiveClaim(task.getId()) || hasActiveSession(task)) {
-                continue;
-            }
-            if (readinessService.isTaskMerged(task.getId())) {
-                continue;
-            }
-            if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
-                continue;
-            }
-
-            // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
-            // are both stale reads by the time this write executes - two overlapping scheduler ticks (or
-            // this method racing the self-healing/lease-expiry paths in ClaimService) could otherwise both
-            // pass the checks and resume the same failed task twice, producing two live claims/sessions for
-            // one task identity (the exact IncorrectResultSizeDataAccessException incident, 2026-07-24).
-            // The status flip only lands if the row is still exactly 'failed' at this instant; a concurrent
-            // resume attempt sees 0 rows affected and correctly backs off instead of resurrecting it again.
-            int revived = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued);
-            if (revived == 0) {
-                log.info("PlannedWorkRecoveryService: skipped resume for task {} - it left 'failed' concurrently (already resumed elsewhere)", task.getId());
-                continue;
-            }
-
-            ObjectNode payload = objectPayload(task.getPayload());
-            payload.put(RESUME_COUNT_KEY, 1);
-            payload.put("ems_bounded_plan_resume_at", Instant.now().toString());
-            task.setPayload(payload);
-            task.setStatus(TaskStatus.queued);
-            task.setJulesSessionName(null);
-            task.setJulesDispatchStatus("Poka-yoke bounded resume 1/1: reusing the original planned task identity");
-            task.setUpdatedAt(Instant.now());
-            taskRepository.save(task);
-            resumed++;
-            log.warn("PlannedWorkRecoveryService: resumed existing task {} for project {} (frontier {}/{}); "
-                            + "no new task or wishlist was created",
-                    task.getId(), project.getId(), resumed, Math.max(1, frontierResumeLimit));
         }
         return resumed;
+    }
+
+    /**
+     * Single-task entry point (2026-08-01) for GeminiObserverActionService's reviveFailedTask tool - same
+     * atomic CAS/resume-count-cap/dependency-safety guarantees as resumeNextFrontier, just targeted at one
+     * task instead of scanning the whole project. Returns false (with a specific reason logged) rather than
+     * throwing when the task isn't actually eligible, so the caller can surface a clear denial instead of a
+     * stack trace for what is, from Gemini's side, an ordinary "not applicable right now" outcome.
+     */
+    @Transactional
+    public boolean resumeTask(java.util.UUID taskId) {
+        TaskEntity task = taskRepository.findById(taskId).orElse(null);
+        if (task == null || task.getProject() == null) {
+            return false;
+        }
+        return resumeEligibleTask(task, task.getProject().getId(), 0);
+    }
+
+    private boolean resumeEligibleTask(TaskEntity task, java.util.UUID projectId, int frontierIndexForLog) {
+        if (!isEligibleRetiredPlanTask(task) || resumeCount(task) >= 1) {
+            return false;
+        }
+        if (claimService.hasActiveClaim(task.getId()) || hasActiveSession(task)) {
+            return false;
+        }
+        if (readinessService.isTaskMerged(task.getId())) {
+            return false;
+        }
+        if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
+            return false;
+        }
+
+        // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
+        // are both stale reads by the time this write executes - two overlapping scheduler ticks (or
+        // this method racing the self-healing/lease-expiry paths in ClaimService) could otherwise both
+        // pass the checks and resume the same failed task twice, producing two live claims/sessions for
+        // one task identity (the exact IncorrectResultSizeDataAccessException incident, 2026-07-24).
+        // The status flip only lands if the row is still exactly 'failed' at this instant; a concurrent
+        // resume attempt sees 0 rows affected and correctly backs off instead of resurrecting it again.
+        int revived = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued);
+        if (revived == 0) {
+            log.info("PlannedWorkRecoveryService: skipped resume for task {} - it left 'failed' concurrently (already resumed elsewhere)", task.getId());
+            return false;
+        }
+
+        ObjectNode payload = objectPayload(task.getPayload());
+        payload.put(RESUME_COUNT_KEY, 1);
+        payload.put("ems_bounded_plan_resume_at", Instant.now().toString());
+        task.setPayload(payload);
+        task.setStatus(TaskStatus.queued);
+        task.setJulesSessionName(null);
+        task.setJulesDispatchStatus("Poka-yoke bounded resume 1/1: reusing the original planned task identity");
+        task.setUpdatedAt(Instant.now());
+        taskRepository.save(task);
+        log.warn("PlannedWorkRecoveryService: resumed existing task {} for project {} (frontier {}); "
+                        + "no new task or wishlist was created",
+                task.getId(), projectId, frontierIndexForLog + 1);
+        return true;
     }
 
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
@@ -124,8 +146,19 @@ public class PlannedWorkRecoveryService {
             return false;
         }
         String reason = task.getJulesDispatchStatus() == null ? "" : task.getJulesDispatchStatus();
+        // Widened 2026-08-01 (confirmed live, test-fortieth: tasks d9f35f4b/529e5252 both died this exact
+        // way and had to be revived by hand via a raw status PATCH, bypassing this method's own atomic
+        // CAS/resume-count/dependency safety entirely). The two original strings below cover one specific
+        // historical incident; this new substring covers the GENERAL case - any task
+        // reconcileClosedUnmergedPullRequest (JulesDispatchService) marked failed because its PR closed
+        // without merging and nothing was left actively working it. Whether the underlying PR died from
+        // infra flakiness or a real merge conflict, retrying once from clean main is the same safe default
+        // action either way - this method's existing resume-count cap (max 1 auto-resume per task) already
+        // protects against a repeatedly-failing task being retried forever, so widening the trigger
+        // condition does not widen the blast radius.
         return reason.contains("auto-recovery is disabled; dependent task retired")
-                || reason.contains("Blocked task retired; auto-recovery follow-up disabled during task-expansion incident");
+                || reason.contains("Blocked task retired; auto-recovery follow-up disabled during task-expansion incident")
+                || reason.contains("left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)");
     }
 
     private int resumeCount(TaskEntity task) {

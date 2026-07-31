@@ -108,6 +108,20 @@ class OperationalPolicyServiceTest {
     }
 
     @Test
+    void reviveFailedTaskIsUnaffectedByAnUnrelatedTaskOrReviewBlockerButStopsForGenuinelyGlobalOnes() {
+        // 2026-08-01: GeminiObserverActionService.reviveFailedTask's gate - reviving ONE specific already-
+        // dead task carries no dependency on an unrelated task/review/stall elsewhere in the project.
+        FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 0, 0, 0, 0, 0);
+        assertTrue(service.authorize(blockedByReview, OperationalAction.REVIVE_FAILED_TASK).allowed());
+
+        FlowCoreDto stalled = core("SYSTEM_STALLED", "active", 0, 0, 0, 0, 0);
+        assertTrue(service.authorize(stalled, OperationalAction.REVIVE_FAILED_TASK).allowed());
+
+        FlowCoreDto rateLimited = core("GITHUB_RATE_LIMITED", "active", 0, 0, 0, 0, 0);
+        assertFalse(service.authorize(rateLimited, OperationalAction.REVIVE_FAILED_TASK).allowed());
+    }
+
+    @Test
     void oneFailingReviewNoLongerBlocksMergingADifferentAlreadyApprovedReview() {
         // Direct regression test for the 2026-07-31 incident: PR#13 (task 529e5252), already approved by
         // review with nothing wrong of its own, sat unmerged for hours because BLOCKED_BY_REVIEW is

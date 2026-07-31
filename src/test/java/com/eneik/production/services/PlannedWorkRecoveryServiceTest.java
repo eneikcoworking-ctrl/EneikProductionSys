@@ -173,6 +173,41 @@ class PlannedWorkRecoveryServiceTest {
         return source;
     }
 
+    @Test
+    void resumeTaskRevivesAGeneralGithubTruthReconciliationFailureNotJustTheTwoHistoricalStrings() {
+        // 2026-08-01 regression test: tasks d9f35f4b/529e5252 (test-fortieth) both died via
+        // reconcileClosedUnmergedPullRequest's generic reason text and had to be revived by hand via a raw
+        // status PATCH, bypassing this service's atomic CAS/resume-count safety entirely - this is the
+        // single-task entry point GeminiObserverActionService.reviveFailedTask now calls instead.
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity task = retiredTask(project, source.getId());
+        task.setJulesDispatchStatus("PR#22 closed without merge on GitHub; task had no active claim/session "
+                + "left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)");
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(sessionRepository.findByTaskId(task.getId())).thenReturn(List.of());
+        when(readinessService.isTaskMerged(task.getId())).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued)).thenReturn(1);
+
+        assertEquals(true, service.resumeTask(task.getId()));
+        assertEquals(TaskStatus.queued, task.getStatus());
+        verify(taskRepository, times(1)).save(task);
+    }
+
+    @Test
+    void resumeTaskRefusesATaskThatFailedForAnUnrelatedReason() {
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity task = retiredTask(project, source.getId());
+        task.setJulesDispatchStatus("Review rejected: security vulnerability found in submitted code");
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+
+        assertEquals(false, service.resumeTask(task.getId()));
+        verify(taskRepository, never()).compareAndSetStatus(any(), any(), any());
+    }
+
     private TaskEntity retiredTask(ProjectEntity project, UUID sourceWishlistId) {
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());

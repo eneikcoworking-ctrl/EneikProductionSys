@@ -225,6 +225,35 @@ public class KaizenService {
     }
 
     /**
+     * External entry point (2026-08-01) for a finding about the orchestrator/factory's OWN code, not the
+     * client project - GeminiProjectObserverService routes any self-referential finding here instead of
+     * the normal wishlist pipeline (which would otherwise dispatch Jules against the CLIENT project's repo
+     * to "fix" something that only exists in EneikProductionSys' own source - confirmed live, several
+     * gemini_observer wishlists like "Fix pending_review state transition logic" were unfixable no-ops for
+     * exactly this reason). expectedGainPercent is fixed at 0 so periodicKaizenCycle's auto-apply loop
+     * (">= 5.0" threshold) never fires for this category - review and any resulting code change stay
+     * human/Claude-only, matching operator directive ("им занимаемся только мы с тобой").
+     */
+    public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
+                                                         String title, String actionDescription) {
+        String propId = "kz-systemic-" + java.util.UUID.randomUUID();
+        KaizenProposal proposal = new KaizenProposal(
+                propId,
+                title,
+                KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT,
+                "EneikProductionSys",
+                actionDescription,
+                0.0,
+                projectId,
+                projectName == null ? "Global" : projectName
+        );
+        proposals.put(propId, proposal);
+        log.info("[KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal '{}' from project {}: {}",
+                propId, projectId, title);
+        return proposal;
+    }
+
+    /**
      * Do Phase: Executes a single, safe micro-improvement step.
      */
     public boolean applyMicroStep(String proposalId) {
@@ -250,6 +279,8 @@ public class KaizenService {
             case SPEED_OPTIMIZATION -> {
                 log.info("[KAIZEN-ACTION] Micro-tuned dynamic timeout sensitivity.");
             }
+            case SYSTEMIC_DEFECT -> log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' marked applied by "
+                    + "explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
         }
 
         proposal.setStatus(KaizenProposal.ProposalStatus.APPLIED);

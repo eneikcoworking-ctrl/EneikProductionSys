@@ -19,5 +19,10 @@ public enum OperationalAction {
     NUDGE_SESSION,
     DISMISS_WISHLIST,
     ABANDON_CONFLICT,
-    BOOST_PRIORITY
+    BOOST_PRIORITY,
+    // 2026-08-01: revives a specific failed task via PlannedWorkRecoveryService.resumeTask's atomic,
+    // rate-limited resume path - never a raw status edit. Confirmed live gap: GeminiObserverActionService
+    // had no way to act on a failed task at all, so this exact class of bug (task d9f35f4b/529e5252 on
+    // test-fortieth) sat unaddressed until an operator noticed and intervened by hand.
+    REVIVE_FAILED_TASK
 }

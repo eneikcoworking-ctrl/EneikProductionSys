@@ -87,6 +87,12 @@ public class OperationalPolicyService {
             case CLEANUP_TERMINAL_PROJECT -> true;
             case NUDGE_SESSION, BOOST_PRIORITY -> activeProject && !hardBlocked;
             case DISMISS_WISHLIST, ABANDON_CONFLICT -> activeProject && !terminal;
+            // Same narrowing reasoning as DISPATCH_QUEUED_TASKS/MERGE_PR above (2026-08-01): reviving ONE
+            // specific already-dead task carries no dependency on an unrelated task/review/stall elsewhere
+            // in the project - only genuinely global conditions should stop it.
+            case REVIVE_FAILED_TASK -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
         };
 
         String reason = allowed

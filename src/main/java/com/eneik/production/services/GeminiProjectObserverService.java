@@ -103,6 +103,9 @@ public class GeminiProjectObserverService {
     private final GeminiObserverActionService actionService;
     private final FalsificationCycleService falsificationCycleService;
     private final SystemSettingsService settingsService;
+    private final com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService;
+    private final com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService;
+    private final com.eneik.production.kaizen.service.KaizenService kaizenService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     public GeminiProjectObserverService(ProjectRepository projectRepository,
@@ -116,7 +119,10 @@ public class GeminiProjectObserverService {
                                          WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher,
                                          GeminiObserverActionService actionService,
                                          FalsificationCycleService falsificationCycleService,
-                                         SystemSettingsService settingsService) {
+                                         SystemSettingsService settingsService,
+                                         com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService,
+                                         com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService,
+                                         com.eneik.production.kaizen.service.KaizenService kaizenService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -129,6 +135,9 @@ public class GeminiProjectObserverService {
         this.actionService = actionService;
         this.falsificationCycleService = falsificationCycleService;
         this.settingsService = settingsService;
+        this.gitHubApiBudgetService = gitHubApiBudgetService;
+        this.operationalFlowCoreService = operationalFlowCoreService;
+        this.kaizenService = kaizenService;
     }
 
     // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
@@ -240,6 +249,17 @@ public class GeminiProjectObserverService {
                 in a prior cycle and nothing about it has changed - check "Your recent actions" and your own
                 journal below first; repeating the same finding every cycle just spawns redundant tasks for
                 the same underlying issue.
+                Every finding has a "scope": "product" (something wrong or missing in THIS project's own
+                client-facing application - the normal case) or "platform" (something wrong in the
+                orchestrator/factory system itself that runs and dispatches every project, e.g. a task stuck
+                in the same status for a mechanical/administrative reason unrelated to this project's own
+                code, an obviously wrong or self-contradictory readiness/state number, a dispatch decision
+                that makes no sense given the evidence). Get this right - it changes where the finding goes.
+                A "platform" finding is NEVER turned into work dispatched against this project's own
+                repository (there is nothing in this project's own codebase that could fix an orchestrator
+                bug) - it goes to a separate, human-reviewed queue instead. When genuinely unsure, use
+                "product" - misrouting a real product issue into the review-only platform queue is worse than
+                the reverse.
                 Money is being spent on every cycle you run whether or not the project moves forward - going
                 quiet ("I will just keep observing") is only acceptable when the snapshot genuinely gives you
                 NO candidate to act on. If triggerFalsificationRun is gated shut (per the Falsification
@@ -278,12 +298,17 @@ public class GeminiProjectObserverService {
                   below the required threshold, triggering this will just be gated and do nothing; only
                   propose it when the ratio has actually reached the threshold, or you have a genuine reason
                   to believe the gate itself is being evaluated incorrectly.
+                - reviveFailedTask: requeue a task listed under FAILED TASK candidates for a fresh attempt -
+                  targetId = the task id. Only ever tried once per task (the backend enforces this, not you)
+                  and only for a task whose failure came from its PR closing without merging on GitHub with
+                  nothing left actively working it - never for a task that failed for a content/quality
+                  reason unrelated to that. Safe to try even if it turns out not eligible.
 
                 Return ONLY JSON: {"journalEntry": "one short paragraph, your own notes for your future self -
                 what you checked and concluded this cycle, even if nothing notable happened",
                 "findings": [{"summary": "one sentence", "evidence": "what in the snapshot shows this",
-                "severity": "low|medium|high"}],
-                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun",
+                "severity": "low|medium|high", "scope": "product|platform"}],
+                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|reviveFailedTask",
                 "targetId": "an id copied exactly from the snapshot", "reason": "one sentence, why this is justified"}]}
                 Use empty arrays when nothing genuinely warrants them - still always write a journalEntry.
                 """;
@@ -322,6 +347,17 @@ public class GeminiProjectObserverService {
             }
             String content = "Gemini project observer finding (severity: " + finding.severity() + "): " + finding.summary()
                     + "\nEvidence from the project's current state: " + finding.evidence();
+            // 2026-08-01: a "platform" finding is about EneikProductionSys' own orchestrator code, not this
+            // project's - dispatching it as a normal wishlist would create a task whose Jules session works
+            // in THIS project's repo, where the thing it's meant to fix does not exist (confirmed live:
+            // several such findings became permanently-unfixable "API Slice" tasks). Routed to a review-only
+            // Kaizen proposal instead - never auto-applied, never touches source code autonomously.
+            if ("platform".equals(finding.scope())) {
+                kaizenService.recordSystemicDefectProposal(project.getId(), project.getName(),
+                        "Gemini observer (platform): " + finding.summary(), content);
+                created++;
+                continue;
+            }
             if (wishlistContentSimilarityMatcher.findLikelyDuplicate(existingLive, content).isPresent()) {
                 continue;
             }
@@ -357,6 +393,7 @@ public class GeminiProjectObserverService {
                 case "abandonConflict" -> actionService.abandonConflict(project, action.targetId(), action.reason());
                 case "boostPriority" -> actionService.boostPriority(project, action.targetId(), action.reason());
                 case "triggerFalsificationRun" -> actionService.triggerFalsificationRun(project, action.targetId(), action.reason());
+                case "reviveFailedTask" -> actionService.reviveFailedTask(project, action.targetId(), action.reason());
                 default -> null;
             };
             if (outcome == null) {
@@ -504,6 +541,31 @@ public class GeminiProjectObserverService {
                 .append("%, required ").append(Math.round(falsificationInfo.applicableThreshold() * 100))
                 .append("% (").append(falsificationInfo.hasRunBefore() ? "subsequent" : "first").append(" run) - ")
                 .append(readiness.ratio() >= falsificationInfo.applicableThreshold() ? "GATE MET" : "gate not met yet");
+        // 2026-08-01 addition: without this she could never distinguish "genuinely nothing to do" from
+        // "orchestration is denying its own actions" - confirmed live, test-fortieth's SYSTEM_STALLED state
+        // self-blocked the very actions that would have cleared it, invisible to every earlier snapshot
+        // version since it only ever showed readiness numbers, never Flow Core's own current state/reason.
+        // Best-effort, like the hotspot lookups elsewhere in this codebase: a failure here must never break
+        // the whole evidence-gathering pass, it should just fall back to not having this one extra signal.
+        try {
+            var flowCore = operationalFlowCoreService.build(project.getId());
+            sb.append("\nFlow Core state: ").append(flowCore.snapshot().currentState());
+            if (flowCore.snapshot().blockingReason() != null && !flowCore.snapshot().blockingReason().isBlank()) {
+                sb.append(" - ").append(flowCore.snapshot().blockingReason());
+            }
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not read Flow Core state for project {}: {}", project.getId(), e.getMessage());
+        }
+        // 2026-08-01 addition: same incident - coverage/review dispatch looked identical to "nothing to do"
+        // when the real cause was the shared GitHub API budget being exhausted by another project entirely.
+        try {
+            var githubBudget = gitHubApiBudgetService.snapshot();
+            sb.append("\nGitHub API budget: ").append(githubBudget.status())
+                    .append(" (").append(githubBudget.remaining() == null ? "?" : githubBudget.remaining())
+                    .append('/').append(githubBudget.limit() == null ? "?" : githubBudget.limit()).append(")");
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not read GitHub API budget for project {}: {}", project.getId(), e.getMessage());
+        }
         sb.append("\nResolved since your last visit (").append(since).append("): ");
         if (recentlyResolved.isEmpty()) {
             sb.append("none");
@@ -556,12 +618,31 @@ public class GeminiProjectObserverService {
                         .append(truncateForSnapshot(wishlist.getContent(), 120));
             }
         }
+        // 2026-08-01 addition: closes the exact gap that let task d9f35f4b/529e5252 sit unaddressed on
+        // test-fortieth for hours - a terminal `failed` status was never shown here at all (only the
+        // idle-too-long STUCK_CANDIDATE_STATUSES list above, which deliberately excludes failed since it's
+        // not "idle", it's finished-but-broken). Scoped to the same reviveFailedTask-eligible cause
+        // (PlannedWorkRecoveryService's marker string) so what she's shown here always matches what the
+        // tool can actually act on - no point listing a failed task she'd only get "not eligible" back for.
+        List<TaskEntity> revivableFailedTasks = tasks.stream()
+                .filter(t -> t.getStatus() == TaskStatus.failed)
+                .filter(t -> t.getJulesDispatchStatus() != null && t.getJulesDispatchStatus()
+                        .contains("left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)"))
+                .limit(MAX_STALE_CANDIDATES_LISTED)
+                .toList();
+        if (!revivableFailedTasks.isEmpty()) {
+            sb.append("\nFAILED TASK CANDIDATES (PR closed without merging, nothing left working it - reviveFailedTask may apply): ");
+            for (TaskEntity task : revivableFailedTasks) {
+                sb.append("\n  - taskId=").append(task.getId()).append(" ")
+                        .append(truncateForSnapshot(task.getTitle() != null ? task.getTitle() : task.getDescription(), 120));
+            }
+        }
         // Content-based dedup, not a hardcoded re-notify interval (2026-07-30): a stuck/stale candidate
         // that is genuinely new since the fingerprint last shown to her (its id was not there at all, or
         // its status has changed) forces a real cycle; one she has already been shown and that has not
         // moved stays silent indefinitely, no matter how much wall-clock time passes - repeating an
         // unchanged fact on a timer is waste, not vigilance.
-        Set<String> currentFingerprints = computeAnomalyFingerprints(stuckTasks, staleWishlists);
+        Set<String> currentFingerprints = computeAnomalyFingerprints(stuckTasks, staleWishlists, revivableFailedTasks);
         Set<String> newFingerprints = new LinkedHashSet<>(currentFingerprints);
         newFingerprints.removeAll(lastKnownFingerprints);
         boolean hasNewStuckEvidence = !newFingerprints.isEmpty();
@@ -581,13 +662,17 @@ public class GeminiProjectObserverService {
         return new EvidenceSnapshot(sb.toString(), nothingChanged, readiness.ratio(), String.join("; ", anomalies), currentFingerprints);
     }
 
-    private Set<String> computeAnomalyFingerprints(List<TaskEntity> stuckTasks, List<WishlistEntity> staleWishlists) {
+    private Set<String> computeAnomalyFingerprints(List<TaskEntity> stuckTasks, List<WishlistEntity> staleWishlists,
+                                                     List<TaskEntity> revivableFailedTasks) {
         Set<String> fingerprints = new LinkedHashSet<>();
         for (TaskEntity task : stuckTasks) {
             fingerprints.add("task:" + task.getId() + ":" + task.getStatus());
         }
         for (WishlistEntity wishlist : staleWishlists) {
             fingerprints.add("wishlist:" + wishlist.getId() + ":" + wishlist.getStatus());
+        }
+        for (TaskEntity task : revivableFailedTasks) {
+            fingerprints.add("task:" + task.getId() + ":" + task.getStatus());
         }
         return fingerprints;
     }
@@ -673,7 +758,14 @@ public class GeminiProjectObserverService {
         return sb.toString();
     }
 
-    private record Finding(String summary, String evidence, String severity) {
+    private record Finding(String summary, String evidence, String severity, String scope) {
+        // Defaults an absent/blank/unrecognized scope to "product" (2026-08-01) rather than failing parsing -
+        // a model response predating this field, or one that omits it, must never be silently treated as a
+        // platform finding (the more consequential misroute of the two: a real product issue disappearing
+        // into a review-only Kaizen queue instead of ever reaching the client project).
+        Finding {
+            scope = "platform".equalsIgnoreCase(scope) ? "platform" : "product";
+        }
     }
 
     private record ProposedAction(String tool, String targetId, String reason) {
@@ -714,7 +806,8 @@ public class GeminiProjectObserverService {
                     if (summary.isBlank()) {
                         continue;
                     }
-                    findings.add(new Finding(summary, f.path("evidence").asText(""), f.path("severity").asText("low")));
+                    findings.add(new Finding(summary, f.path("evidence").asText(""), f.path("severity").asText("low"),
+                            f.path("scope").asText("product")));
                 }
             }
             JsonNode rawActions = root.path("actions");

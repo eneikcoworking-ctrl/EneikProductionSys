@@ -48,6 +48,9 @@ class GeminiProjectObserverServiceTest {
     private GeminiObserverActionService actionService;
     private FalsificationCycleService falsificationCycleService;
     private SystemSettingsService settingsService;
+    private com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService;
+    private com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService;
+    private com.eneik.production.kaizen.service.KaizenService kaizenService;
     private GeminiProjectObserverService service;
 
     private void setUp() {
@@ -63,12 +66,21 @@ class GeminiProjectObserverServiceTest {
         actionService = mock(GeminiObserverActionService.class);
         falsificationCycleService = mock(FalsificationCycleService.class);
         settingsService = mock(SystemSettingsService.class);
+        gitHubApiBudgetService = mock(com.eneik.production.services.github.GitHubApiBudgetService.class);
+        operationalFlowCoreService = mock(com.eneik.production.services.operational.OperationalFlowCoreService.class);
+        kaizenService = mock(com.eneik.production.kaizen.service.KaizenService.class);
         when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         when(falsificationCycleService.philosophicalReadinessInfo(any()))
                 .thenReturn(new FalsificationCycleService.PhilosophicalReadinessInfo(0.9, false));
+        // Both new evidence-enrichment calls are wrapped in try/catch in production code (best-effort, like
+        // the hotspot lookups elsewhere) specifically so an unstubbed mock here (-> null -> NPE inside the
+        // try) degrades to "signal omitted", not a test failure - deliberately NOT stubbed by default so
+        // every existing test keeps passing unchanged; only the two tests that care about this new signal
+        // stub it explicitly.
         service = new GeminiProjectObserverService(projectRepository, wishlistRepository, taskRepository,
                 readinessService, journalRepository, actionRepository, geminiContextService, mlPredictionServiceClient,
-                wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService);
+                wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService,
+                gitHubApiBudgetService, operationalFlowCoreService, kaizenService);
     }
 
     private ProjectEntity project() {
@@ -251,6 +263,30 @@ class GeminiProjectObserverServiceTest {
         ArgumentCaptor<GeminiObserverJournalEntity> journalCaptor = ArgumentCaptor.forClass(GeminiObserverJournalEntity.class);
         verify(journalRepository).save(journalCaptor.capture());
         assertEquals(1, journalCaptor.getValue().getFindingsCount());
+    }
+
+    @Test
+    void platformScopeFindingGoesToKaizenNeverBecomesAWishlist() {
+        // 2026-08-01 regression test: a finding about the orchestrator/factory's OWN code (e.g. "Fix
+        // pending_review state transition logic") used to become a normal gemini_observer wishlist, which
+        // dispatched a Jules session against THIS project's own repo - where the thing it's meant to fix
+        // does not exist, an unfixable no-op. Must go to KaizenService's review-only queue instead.
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubCommonEvidence(project);
+        when(wishlistContentSimilarityMatcher.findLikelyDuplicate(any(), anyString())).thenReturn(java.util.Optional.empty());
+        when(mlPredictionServiceClient.chat(anyString(), anyString(), anyString())).thenReturn("""
+                {"journalEntry": "Found a bug in the orchestrator itself, not this project.",
+                 "findings": [{"summary": "pending_review tasks never transition automatically", "evidence": "task stuck 6h", "severity": "high", "scope": "platform"}]}
+                """);
+
+        service.runObserverCycle();
+
+        verify(wishlistRepository, never()).save(any());
+        verify(kaizenService).recordSystemicDefectProposal(eq(project.getId()), eq(project.getName()),
+                contains("pending_review tasks never transition automatically"), anyString());
     }
 
     @Test

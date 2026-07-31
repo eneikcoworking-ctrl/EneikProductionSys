@@ -46,6 +46,7 @@ public class GeminiObserverActionService {
     private final FalsificationCycleService falsificationCycleService;
     private final GeminiObserverActionRepository actionRepository;
     private final OperationalPolicyService operationalPolicyService;
+    private final PlannedWorkRecoveryService plannedWorkRecoveryService;
 
     public GeminiObserverActionService(WishlistRepository wishlistRepository,
                                         TaskRepository taskRepository,
@@ -53,7 +54,8 @@ public class GeminiObserverActionService {
                                         JulesDispatchService julesDispatchService,
                                         FalsificationCycleService falsificationCycleService,
                                         GeminiObserverActionRepository actionRepository,
-                                        OperationalPolicyService operationalPolicyService) {
+                                        OperationalPolicyService operationalPolicyService,
+                                        PlannedWorkRecoveryService plannedWorkRecoveryService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
@@ -61,6 +63,7 @@ public class GeminiObserverActionService {
         this.falsificationCycleService = falsificationCycleService;
         this.actionRepository = actionRepository;
         this.operationalPolicyService = operationalPolicyService;
+        this.plannedWorkRecoveryService = plannedWorkRecoveryService;
     }
 
     /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
@@ -133,6 +136,32 @@ public class GeminiObserverActionService {
             task.setPriority(boosted);
             taskRepository.save(task);
             return null;
+        });
+    }
+
+    /**
+     * Revive one specific failed task via PlannedWorkRecoveryService.resumeTask's atomic, rate-limited
+     * resume path (2026-08-01) - never a raw status edit. Confirmed live gap (test-fortieth, tasks
+     * d9f35f4b/529e5252): a task that dies because its PR closed without merging on GitHub (infra flakiness
+     * or a real conflict, either way nothing is left retrying it) previously had no path back except an
+     * operator noticing and PATCHing it by hand. Eligibility, the 1-attempt-per-task cap, and the
+     * dependency/claim/session safety checks all live in PlannedWorkRecoveryService, not here - this is
+     * only the guarded entry point.
+     */
+    public String reviveFailedTask(ProjectEntity project, String targetId, String reason) {
+        return execute("reviveFailedTask", OperationalAction.REVIVE_FAILED_TASK, project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            TaskEntity task = taskRepository.findById(id).orElse(null);
+            if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+                return "not found in this project";
+            }
+            if (task.getStatus() != TaskStatus.failed) {
+                return "not failed (status=" + task.getStatus() + "), nothing to revive";
+            }
+            boolean revived = plannedWorkRecoveryService.resumeTask(id);
+            return revived ? null : "not eligible for automatic revival (wrong failure cause, already resumed once, "
+                    + "or an active claim/session/dependency still blocks it)";
         });
     }
 
