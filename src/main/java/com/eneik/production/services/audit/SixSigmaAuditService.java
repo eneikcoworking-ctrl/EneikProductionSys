@@ -92,51 +92,14 @@ public class SixSigmaAuditService {
         final UUID targetProjectId = projectId;
 
         // 1. Category A: PR Merge & Conflict Opportunities
-        List<PrReviewEntity> reviews = prReviewRepository.findAll();
-        List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
-
-        if (targetProjectId != null) {
-            reviews = reviews.stream()
-                    .filter(r -> {
-                        if (r.getJulesSessionId() == null) return false;
-                        var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
-                        if (sessionOpt.isEmpty()) return false;
-                        var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                        return taskOpt.isPresent() && taskOpt.get().getProject() != null && targetProjectId.equals(taskOpt.get().getProject().getId());
-                    })
-                    .toList();
-            conflicts = conflicts.stream()
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && targetProjectId.equals(c.getTask().getProject().getId()))
-                    .toList();
-        }
-
-        long mergedPrs = reviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
-        long conflictDefects = conflicts.size();
-        long prOpportunities = mergedPrs + conflictDefects;
+        DefectOpportunityCount prCounts = computePrConflictCounts(targetProjectId, null);
+        long conflictDefects = prCounts.defects();
+        long prOpportunities = prCounts.opportunities();
 
         // 2. Category B: Quality Gate Checks
-        List<TaskEntity> tasks = taskRepository.findAll();
-        if (targetProjectId != null) {
-            tasks = tasks.stream()
-                    .filter(t -> t.getProject() != null && targetProjectId.equals(t.getProject().getId()))
-                    .toList();
-        }
-
-        long qgOpportunities = 0;
-        long qgDefects = 0;
-
-        for (TaskEntity task : tasks) {
-            JsonNode report = task.getQualityGateReport();
-            if (report != null && report.has("checks")) {
-                JsonNode checks = report.get("checks");
-                qgOpportunities += checks.size();
-                for (JsonNode check : checks) {
-                    if (!check.path("passed").asBoolean(true)) {
-                        qgDefects++;
-                    }
-                }
-            }
-        }
+        DefectOpportunityCount qgCounts = computeQualityGateCounts(targetProjectId, null);
+        long qgDefects = qgCounts.defects();
+        long qgOpportunities = qgCounts.opportunities();
 
         // 3. Category C: Onboarding Audit Findings
         List<OnboardingAuditFindingEntity> onboardingFindings = onboardingAuditFindingRepository.findAll();
@@ -207,6 +170,81 @@ public class SixSigmaAuditService {
                 projectName, report.dpmo(), report.yieldRatePercent(), report.sigmaLevel(), report.qualityTier(), report.totalDefects(), report.totalOpportunities());
 
         return report;
+    }
+
+    /**
+     * u₁/u₂ raw counts (Layer 1 of the unified Lean/TOC/Six Sigma system, 2026-08-01). Shared by both
+     * the project-wide audit above and ProcessControlService's per-эпик u-chart - same computation,
+     * narrower scope, never duplicated. Exactly one of projectId/featureId should be non-null: featureId
+     * takes priority (эпик is the u-chart subgroup - within one project, never mixed across projects).
+     */
+    public record DefectOpportunityCount(long defects, long opportunities) {}
+
+    public DefectOpportunityCount computeQualityGateCounts(UUID projectId, UUID featureId) {
+        List<TaskEntity> tasks;
+        if (featureId != null) {
+            tasks = taskRepository.findByFeatureId(featureId);
+        } else {
+            tasks = taskRepository.findAll();
+            if (projectId != null) {
+                tasks = tasks.stream()
+                        .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                        .toList();
+            }
+        }
+
+        long opportunities = 0;
+        long defects = 0;
+        for (TaskEntity task : tasks) {
+            JsonNode report = task.getQualityGateReport();
+            if (report != null && report.has("checks")) {
+                JsonNode checks = report.get("checks");
+                opportunities += checks.size();
+                for (JsonNode check : checks) {
+                    if (!check.path("passed").asBoolean(true)) {
+                        defects++;
+                    }
+                }
+            }
+        }
+        return new DefectOpportunityCount(defects, opportunities);
+    }
+
+    public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId) {
+        List<PrReviewEntity> reviews = prReviewRepository.findAll();
+        List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
+
+        if (featureId != null) {
+            reviews = reviews.stream()
+                    .filter(r -> {
+                        if (r.getJulesSessionId() == null) return false;
+                        var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
+                        if (sessionOpt.isEmpty()) return false;
+                        var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
+                        return taskOpt.isPresent() && featureId.equals(taskOpt.get().getFeatureId());
+                    })
+                    .toList();
+            conflicts = conflicts.stream()
+                    .filter(c -> c.getTask() != null && featureId.equals(c.getTask().getFeatureId()))
+                    .toList();
+        } else if (projectId != null) {
+            reviews = reviews.stream()
+                    .filter(r -> {
+                        if (r.getJulesSessionId() == null) return false;
+                        var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
+                        if (sessionOpt.isEmpty()) return false;
+                        var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
+                        return taskOpt.isPresent() && taskOpt.get().getProject() != null && projectId.equals(taskOpt.get().getProject().getId());
+                    })
+                    .toList();
+            conflicts = conflicts.stream()
+                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projectId.equals(c.getTask().getProject().getId()))
+                    .toList();
+        }
+
+        long mergedPrs = reviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
+        long conflictDefects = conflicts.size();
+        return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
     }
 
     private double calculateDpmo(long defects, long opportunities) {

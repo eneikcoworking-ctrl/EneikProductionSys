@@ -30,8 +30,18 @@ public class DefectJournalService {
     public DefectJournalEntity recordDefect(UUID projectId, String severity, String category,
                                              String sourceComponent, String defectType,
                                              String description, Double metricValue) {
+        return recordDefect(projectId, null, null, severity, category, sourceComponent, defectType,
+                description, metricValue);
+    }
+
+    // 2026-08-01: featureId (u-chart subgroup) + rootCausePatternId (charter pattern 1-12, or null pending
+    // triage) - see DefectJournalEntity's own doc comment for why both exist.
+    public DefectJournalEntity recordDefect(UUID projectId, UUID featureId, Integer rootCausePatternId,
+                                             String severity, String category, String sourceComponent,
+                                             String defectType, String description, Double metricValue) {
         DefectJournalEntity defect = new DefectJournalEntity(
-                projectId, severity, category, sourceComponent, defectType, description, metricValue
+                projectId, featureId, rootCausePatternId, severity, category, sourceComponent, defectType,
+                description, metricValue
         );
         DefectJournalEntity saved = defectJournalRepository.save(defect);
         log.debug("[DEFECT-RECORDED] Under-the-hood defect stored: [{}] {} - {}", category, sourceComponent, description);

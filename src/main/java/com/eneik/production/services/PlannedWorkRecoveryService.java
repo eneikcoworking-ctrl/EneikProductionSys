@@ -31,10 +31,21 @@ import java.util.Set;
 public class PlannedWorkRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(PlannedWorkRecoveryService.class);
     private static final String RESUME_COUNT_KEY = "ems_bounded_plan_resume_count";
+    // Widened 2026-08-01: confirmed live, task 0cb354e9 (test-fortieth) failed with the exact general
+    // GitHub-truth-reconciliation reason isEligibleRetiredPlanTask was widened for earlier today, but its
+    // wishlist source is gemini_observer - NOT in this set - so Gemini's own reviveFailedTask calls (she
+    // correctly found and tried it three separate cycles: 22:20, 23:20, 02:20) were silently rejected here
+    // every single time. Safe to include now: as of today's Kaizen-routing fix
+    // (GeminiProjectObserverService), a gemini_observer wishlist only ever reaches this pipeline at all when
+    // its finding was scope=product - a self-referential platform finding never becomes a wishlist/task in
+    // the first place anymore, it goes to KaizenService.recordSystemicDefectProposal instead. So any
+    // gemini_observer-sourced task seen here is, by construction, real product-scoped work exactly like a
+    // client-sourced one - excluding it from revival was never intentional, it just predated that split.
     private static final Set<WishlistSource> PRODUCT_SOURCES = EnumSet.of(
             WishlistSource.client,
             WishlistSource.coverage_gap,
-            WishlistSource.self_falsification
+            WishlistSource.self_falsification,
+            WishlistSource.gemini_observer
     );
 
     @org.springframework.beans.factory.annotation.Value("${project.failed-plan-frontier-resume-limit:3}")

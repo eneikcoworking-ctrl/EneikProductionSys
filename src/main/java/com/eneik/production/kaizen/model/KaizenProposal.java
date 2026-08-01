@@ -17,7 +17,14 @@ public class KaizenProposal {
         // auto-applied by periodicKaizenCycle (see KaizenService.recordSystemicDefectProposal's 0%
         // expectedGainPercent) - fixing the factory's own source code is never a safe automatic action,
         // unlike this engine's other three categories which only ever tune runtime parameters.
-        SYSTEMIC_DEFECT
+        SYSTEMIC_DEFECT,
+        // 2026-08-01 (Layer 4 of the unified Lean/TOC/Six Sigma system, closing Measure->Analyze->
+        // Improve->Control): a u-chart out-of-control signal (ProcessControlService) whose underlying
+        // defect events already carry a rootCausePatternId matching one of the 12 documented patterns in
+        // docs/ENGINEERING_INVARIANTS_CHARTER.md - a KNOWN fix shape, cited by number. Review-only, same
+        // boundary as SYSTEMIC_DEFECT (expectedGainPercent=0, never auto-applied) - the specific code fix
+        // still needs human/Claude judgment, but the diagnosis itself is no longer free-text guesswork.
+        KNOWN_PATTERN_VIOLATION
     }
 
     public enum ProposalStatus {

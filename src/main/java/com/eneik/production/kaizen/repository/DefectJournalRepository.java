@@ -14,4 +14,9 @@ public interface DefectJournalRepository extends JpaRepository<DefectJournalEnti
     List<DefectJournalEntity> findByCreatedAtAfter(Instant fromTime);
 
     List<DefectJournalEntity> findByProjectIdAndCreatedAtAfter(UUID projectId, Instant fromTime);
+
+    // 2026-08-01: subgroup query for ProcessControlService's u-chart - all defects attributed to one эпик,
+    // full history (no time window - the u-chart's own Phase 1/Phase 2 subgroup sequencing IS the ordering,
+    // not wall-clock recency).
+    List<DefectJournalEntity> findByFeatureId(UUID featureId);
 }

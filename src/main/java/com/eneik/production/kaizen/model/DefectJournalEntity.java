@@ -15,6 +15,19 @@ public class DefectJournalEntity {
     @Column(name = "project_id")
     private UUID projectId;
 
+    // 2026-08-01: subgroup for the u-chart layer (ProcessControlService) - an эпик's own, bounded task set,
+    // never a calendar-date bucket or a cross-project aggregate (see ENGINEERING_INVARIANTS_CHARTER "one
+    // project = one closed experimental run"). Nullable: not every defect (e.g. a TOC buffer breach) is
+    // attributable to a single эпик.
+    @Column(name = "feature_id")
+    private UUID featureId;
+
+    // 2026-08-01: links this defect to a numbered pattern in docs/ENGINEERING_INVARIANTS_CHARTER.md (1-12),
+    // or null when the root cause hasn't been triaged yet - what makes Pareto analysis by CAUSE possible
+    // instead of only by which subsystem happened to notice the symptom.
+    @Column(name = "root_cause_pattern_id")
+    private Integer rootCausePatternId;
+
     @Column(name = "severity", nullable = false, length = 32)
     private String severity;
 
@@ -40,7 +53,15 @@ public class DefectJournalEntity {
 
     public DefectJournalEntity(UUID projectId, String severity, String category, String sourceComponent,
                                String defectType, String description, Double metricValue) {
+        this(projectId, null, null, severity, category, sourceComponent, defectType, description, metricValue);
+    }
+
+    public DefectJournalEntity(UUID projectId, UUID featureId, Integer rootCausePatternId, String severity,
+                               String category, String sourceComponent, String defectType, String description,
+                               Double metricValue) {
         this.projectId = projectId;
+        this.featureId = featureId;
+        this.rootCausePatternId = rootCausePatternId;
         this.severity = severity;
         this.category = category;
         this.sourceComponent = sourceComponent;
@@ -55,6 +76,12 @@ public class DefectJournalEntity {
 
     public UUID getProjectId() { return projectId; }
     public void setProjectId(UUID projectId) { this.projectId = projectId; }
+
+    public UUID getFeatureId() { return featureId; }
+    public void setFeatureId(UUID featureId) { this.featureId = featureId; }
+
+    public Integer getRootCausePatternId() { return rootCausePatternId; }
+    public void setRootCausePatternId(Integer rootCausePatternId) { this.rootCausePatternId = rootCausePatternId; }
 
     public String getSeverity() { return severity; }
     public void setSeverity(String severity) { this.severity = severity; }

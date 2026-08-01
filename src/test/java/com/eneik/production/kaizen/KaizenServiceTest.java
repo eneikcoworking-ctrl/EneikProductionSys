@@ -54,7 +54,9 @@ public class KaizenServiceTest {
                 ))
         );
 
-        kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository, defectJournalService);
+        com.eneik.production.services.toc.ConstraintIdentificationService constraintIdentificationService =
+                mock(com.eneik.production.services.toc.ConstraintIdentificationService.class);
+        kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository, defectJournalService, constraintIdentificationService);
     }
 
     @Test

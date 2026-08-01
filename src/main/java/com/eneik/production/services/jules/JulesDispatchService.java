@@ -114,6 +114,7 @@ public class JulesDispatchService {
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
     private final com.eneik.production.services.GeminiContextService geminiContextService;
+    private final com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
@@ -392,6 +393,7 @@ public class JulesDispatchService {
                                 com.eneik.production.services.WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher,
                                 com.eneik.production.services.settings.SystemSettingsService settingsService,
                                 com.eneik.production.services.GeminiContextService geminiContextService,
+                                com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -418,6 +420,7 @@ public class JulesDispatchService {
         this.wishlistContentSimilarityMatcher = wishlistContentSimilarityMatcher;
         this.settingsService = settingsService;
         this.geminiContextService = geminiContextService;
+        this.reviewConcernRepository = reviewConcernRepository;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -2775,9 +2778,13 @@ public class JulesDispatchService {
                 Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
                 (this EXACT path - it is unique to this batch, do not use any other path), with EXACTLY
                 this shape and no other files changed - one entry per PR listed below, in the same order,
-                each carrying its own "sourceIndex":
+                each carrying its own "sourceIndex". Each concern carries its own "severity"
+                (critical|high|medium|low - a real security/correctness risk like unverified auth headers is
+                high or critical; a style nit like px vs rem is low) - you already judge this when you decide
+                whether something is worth mentioning at all, just make that judgment explicit instead of
+                flattening every concern to the same weight:
                 {"verdicts": [
-                  {"sourceIndex": 0, "verdict": "approve", "criticalReason": "", "concerns": ["short concern 1"]},
+                  {"sourceIndex": 0, "verdict": "approve", "criticalReason": "", "concerns": [{"text": "short concern 1", "severity": "low"}]},
                   {"sourceIndex": 1, "verdict": "block", "criticalReason": "concrete, specific blocking reason tied to PR #1's diff", "concerns": []}
                 ]}
                 Every PR listed below MUST have exactly one corresponding entry, matched by sourceIndex.
@@ -2789,7 +2796,30 @@ public class JulesDispatchService {
                 """.formatted(tasks.size(), verdictPath, tasks.size(), prBlocks.toString());
     }
 
-    private record ReviewVerdictEntry(int sourceIndex, String verdict, String criticalReason, List<String> concerns) {
+    // 2026-08-01: severity-tagged concern (u₄ of the unified Six Sigma layer - see
+    // docs/ENGINEERING_INVARIANTS_CHARTER.md and ReviewConcernEntity). Parses a bare string entry as a
+    // "low"-severity concern for backward compatibility with any in-flight verdict written before this
+    // schema change - never fails parsing outright over a missing severity field.
+    private record ConcernEntry(String text, String severity) {
+    }
+
+    private record ReviewVerdictEntry(int sourceIndex, String verdict, String criticalReason, List<ConcernEntry> concerns) {
+    }
+
+    private static List<ConcernEntry> parseConcernEntries(JsonNode rawConcerns) {
+        List<ConcernEntry> concerns = new java.util.ArrayList<>();
+        if (rawConcerns.isArray()) {
+            for (JsonNode c : rawConcerns) {
+                if (c.isTextual()) {
+                    concerns.add(new ConcernEntry(c.asText(""), "low"));
+                } else {
+                    String text = c.path("text").asText("");
+                    String severity = c.path("severity").asText("low");
+                    concerns.add(new ConcernEntry(text, severity));
+                }
+            }
+        }
+        return concerns;
     }
 
     private List<ReviewVerdictEntry> parseReviewVerdictBatch(ProjectEntity project, String headRef, String verdictPath) {
@@ -2807,13 +2837,7 @@ public class JulesDispatchService {
                     int sourceIndex = v.path("sourceIndex").asInt(-1);
                     String verdict = v.path("verdict").asText("approve");
                     String criticalReason = v.path("criticalReason").asText("");
-                    List<String> concerns = new java.util.ArrayList<>();
-                    JsonNode rawConcerns = v.path("concerns");
-                    if (rawConcerns.isArray()) {
-                        for (JsonNode c : rawConcerns) {
-                            concerns.add(c.asText(""));
-                        }
-                    }
+                    List<ConcernEntry> concerns = parseConcernEntries(v.path("concerns"));
                     entries.add(new ReviewVerdictEntry(sourceIndex, verdict, criticalReason, concerns));
                 }
             }
@@ -2982,12 +3006,31 @@ public class JulesDispatchService {
         systemProgressTracker.recordProgress();
         log.info("PR review fallback: task {} (PR {}) approved by Jules reviewer with {} concern(s)", originalTaskId, prUrl, verdict.concerns().size());
 
-        for (String concern : verdict.concerns()) {
-            if (concern == null || concern.isBlank()) {
+        for (ConcernEntry concern : verdict.concerns()) {
+            if (concern.text() == null || concern.text().isBlank()) {
                 continue;
             }
             log.info("Poka-yoke: recorded non-blocking review concern for task {} without creating wishlist work: {}",
-                    originalTaskId, concern);
+                    originalTaskId, concern.text());
+            persistReviewConcern(originalTask, concern);
+        }
+    }
+
+    // 2026-08-01: the u₄ numerator write-through - see ReviewConcernEntity's own doc comment for why this
+    // used to only ever reach a log line. Best-effort: a persistence failure here must never break the real
+    // review-approval flow above it, it should just be logged and skipped.
+    private void persistReviewConcern(TaskEntity task, ConcernEntry concern) {
+        try {
+            com.eneik.production.models.persistence.ReviewConcernEntity entity =
+                    new com.eneik.production.models.persistence.ReviewConcernEntity();
+            entity.setProjectId(task.getProject() != null ? task.getProject().getId() : null);
+            entity.setFeatureId(task.getFeatureId());
+            entity.setTaskId(task.getId());
+            entity.setSeverity(concern.severity() == null || concern.severity().isBlank() ? "low" : concern.severity());
+            entity.setText(concern.text());
+            reviewConcernRepository.save(entity);
+        } catch (Exception e) {
+            log.warn("Failed to persist review concern for task {}: {}", task.getId(), e.getMessage());
         }
     }
 
@@ -3139,7 +3182,7 @@ public class JulesDispatchService {
                 auditTask.getId(), targetWishlistId, gaps.size(), created);
     }
 
-    private record DesignVerdict(String verdict, String reason, List<String> concerns) {
+    private record DesignVerdict(String verdict, String reason, List<ConcernEntry> concerns) {
     }
 
     private DesignVerdict parseDesignVerdict(ProjectEntity project, String headRef, String verdictPath) {
@@ -3152,13 +3195,7 @@ public class JulesDispatchService {
             JsonNode root = mapper.readTree(content.get());
             String verdict = root.path("verdict").asText("approve");
             String reason = root.path("reason").asText("");
-            List<String> concerns = new java.util.ArrayList<>();
-            JsonNode rawConcerns = root.path("concerns");
-            if (rawConcerns.isArray()) {
-                for (JsonNode c : rawConcerns) {
-                    concerns.add(c.asText(""));
-                }
-            }
+            List<ConcernEntry> concerns = parseConcernEntries(root.path("concerns"));
             return new DesignVerdict(verdict, reason, concerns);
         } catch (Exception e) {
             log.warn("Failed to parse design review verdict for project {}: {}", project.getId(), e.getMessage());
@@ -3243,12 +3280,13 @@ public class JulesDispatchService {
             log.warn("Design review: draft {} approved but promotion to {} failed (no files copied)", draftPath, approvedDir);
         }
 
-        for (String concern : verdict.concerns()) {
-            if (concern == null || concern.isBlank()) {
+        for (ConcernEntry concern : verdict.concerns()) {
+            if (concern.text() == null || concern.text().isBlank()) {
                 continue;
             }
             log.info("Poka-yoke: recorded non-blocking design concern for {} without creating wishlist work: {}",
-                    approvedDir, concern);
+                    approvedDir, concern.text());
+            persistReviewConcern(reviewTask, concern);
         }
     }
 

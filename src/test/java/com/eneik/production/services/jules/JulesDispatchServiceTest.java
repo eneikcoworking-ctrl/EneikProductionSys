@@ -49,6 +49,7 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.ProjectFlowService projectFlowService;
     private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private com.eneik.production.services.GeminiContextService geminiContextService;
+    private com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -72,6 +73,7 @@ class JulesDispatchServiceTest {
         readinessService = mock(com.eneik.production.services.ClientDeliverableReadinessService.class);
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         geminiContextService = mock(com.eneik.production.services.GeminiContextService.class);
+        reviewConcernRepository = mock(com.eneik.production.repositories.ReviewConcernRepository.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
@@ -85,6 +87,7 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
             mock(com.eneik.production.services.settings.SystemSettingsService.class),
             geminiContextService,
+            reviewConcernRepository,
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);

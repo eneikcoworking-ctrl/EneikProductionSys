@@ -196,6 +196,29 @@ class PlannedWorkRecoveryServiceTest {
     }
 
     @Test
+    void resumeTaskRevivesAGeminiObserverSourcedTaskNotJustClientBriefWork() {
+        // 2026-08-01 regression test: confirmed live on test-fortieth (task 0cb354e9) - Gemini's own
+        // reviveFailedTask calls were silently rejected three separate cycles in a row because
+        // PRODUCT_SOURCES excluded WishlistSource.gemini_observer, even though the failure reason matched
+        // and the task was otherwise perfectly eligible. Safe now that platform-scope findings never reach
+        // this pipeline at all (see GeminiProjectObserverService's Kaizen routing).
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        source.setSource(WishlistSource.gemini_observer);
+        TaskEntity task = retiredTask(project, source.getId());
+        task.setJulesDispatchStatus("PR#27 closed without merge on GitHub; task had no active claim/session "
+                + "left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)");
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(sessionRepository.findByTaskId(task.getId())).thenReturn(List.of());
+        when(readinessService.isTaskMerged(task.getId())).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed, TaskStatus.queued)).thenReturn(1);
+
+        assertEquals(true, service.resumeTask(task.getId()));
+        assertEquals(TaskStatus.queued, task.getStatus());
+    }
+
+    @Test
     void resumeTaskRefusesATaskThatFailedForAnUnrelatedReason() {
         ProjectEntity project = project();
         WishlistEntity source = source(project.getId());

@@ -2580,8 +2580,16 @@ public class ProjectFlowService {
                 - "requirements" must contain stable entries formatted "R1: concrete requirement". Each
                   slice's "requirementRefs" may contain only ids declared by that epic. The union of all
                   slice requirementRefs MUST equal the epic requirement-id set.
-                - Do not create QA or integration slices unless the brief explicitly asks to verify
-                  existing code, fix merge hygiene, or review an already implemented slice.
+                - Every epic MUST include at least one BARCAN-TAG-06 QA slice covering the epic's own new
+                  work - this is a FLOOR like the BARCAN-TAG-08/BARCAN-TAG-02 structural rule below, never
+                  omit it just because the brief itself never mentions testing. Its description and
+                  acceptanceCriteria MUST span the full test pyramid the epic actually needs, not unit
+                  tests alone: unit tests for pure logic, integration tests for API/data flows the epic
+                  introduces, and E2E tests for the critical user journey the epic enables end-to-end -
+                  omit a pyramid layer only when the epic genuinely has no surface at that layer (e.g. a
+                  pure backend epic with no UI has no E2E layer). Do not create a separate BARCAN-TAG-00
+                  integration/merge-hygiene slice unless the brief explicitly asks to verify existing
+                  code, fix merge hygiene, or review an already implemented slice.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
                   spike/decision slice instead of guessing at implementation.
                 - Some layers are structurally required even if the brief's narrative never explicitly
@@ -2614,8 +2622,10 @@ public class ProjectFlowService {
                   one - do not just copy the epic's value onto every task.
                 - Choose roleTag from: BARCAN-TAG-00 integration/merge hygiene only; BARCAN-TAG-01
                   architecture; BARCAN-TAG-02 backend/API; BARCAN-TAG-03 UI/UX design; BARCAN-TAG-04
-                  AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing existing
-                  implementation only; BARCAN-TAG-07 security/auth/access; BARCAN-TAG-08
+                  AI/ML/RAG; BARCAN-TAG-05 build/Docker/CI/deploy; BARCAN-TAG-06 QA/testing (verifies
+                  this epic's own new work across the test pyramid, per the mandatory-QA-slice rule
+                  above; also used to verify already-existing implementation when that's what a
+                  non-client brief specifically asks for); BARCAN-TAG-07 security/auth/access; BARCAN-TAG-08
                   data/schema/storage/parsing; BARCAN-TAG-09 delivery/spike/decision; BARCAN-TAG-10
                   compliance/legal/policy; BARCAN-TAG-11 frontend/browser implementation; BARCAN-TAG-12
                   API contract definition shared by a parallel backend+frontend pair only.
@@ -3529,8 +3539,11 @@ public class ProjectFlowService {
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
                 (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY
-                this shape and no other files changed:
-                {"verdict": "approve", "reason": "", "concerns": ["short concern 1"]}
+                this shape and no other files changed. Each concern carries its own "severity"
+                (critical|high|medium|low) - a real accessibility failure is higher severity than a
+                debatable color choice, make that judgment explicit instead of flattening every concern
+                to the same weight:
+                {"verdict": "approve", "reason": "", "concerns": [{"text": "short concern 1", "severity": "low"}]}
                 or, only for a genuine severe blocker:
                 {"verdict": "reject", "reason": "concrete, specific reason tied to the file", "concerns": []}
                 Do not write, modify, or delete any other file.

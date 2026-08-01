@@ -4,6 +4,7 @@ import com.eneik.production.kaizen.model.DefectJournalEntity;
 import com.eneik.production.kaizen.model.KaizenProposal;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
+import com.eneik.production.services.toc.ConstraintIdentificationService;
 import com.eneik.production.toc.service.TocSentinelService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +31,7 @@ public class KaizenService {
     private final SixSigmaAuditService sixSigmaAuditService;
     private final TaskRepository taskRepository;
     private final DefectJournalService defectJournalService;
+    private final ConstraintIdentificationService constraintIdentificationService;
 
     // In-memory deduplicated proposals store (max 1 active proposal per category & target component per 2-hour window)
     private final Map<String, KaizenProposal> proposals = new ConcurrentHashMap<>();
@@ -37,11 +39,13 @@ public class KaizenService {
     public KaizenService(TocSentinelService tocSentinelService,
                           SixSigmaAuditService sixSigmaAuditService,
                           TaskRepository taskRepository,
-                          DefectJournalService defectJournalService) {
+                          DefectJournalService defectJournalService,
+                          ConstraintIdentificationService constraintIdentificationService) {
         this.tocSentinelService = tocSentinelService;
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.taskRepository = taskRepository;
         this.defectJournalService = defectJournalService;
+        this.constraintIdentificationService = constraintIdentificationService;
         log.info("[KAIZEN-INIT] 2-Hour Aggregated Kaizen Micro-Improvement Service initialized.");
     }
 
@@ -254,6 +258,35 @@ public class KaizenService {
     }
 
     /**
+     * External entry point (2026-08-01, Layer 4 loop-closing) for a u-chart out-of-control signal
+     * (ProcessControlService) whose underlying defect events already carry a rootCausePatternId matching
+     * one of the 12 documented patterns in docs/ENGINEERING_INVARIANTS_CHARTER.md - review-only, same
+     * boundary as recordSystemicDefectProposal (expectedGainPercent fixed at 0, never auto-applied).
+     */
+    public KaizenProposal recordKnownPatternViolationProposal(java.util.UUID projectId, String projectName,
+                                                                int rootCausePatternId, String patternName,
+                                                                String title, String actionDescription) {
+        String propId = "kz-pattern-" + java.util.UUID.randomUUID();
+        String fullDescription = String.format(
+                "Charter pattern #%d (%s, docs/ENGINEERING_INVARIANTS_CHARTER.md): %s",
+                rootCausePatternId, patternName, actionDescription);
+        KaizenProposal proposal = new KaizenProposal(
+                propId,
+                title,
+                KaizenProposal.KaizenCategory.KNOWN_PATTERN_VIOLATION,
+                "EneikProductionSys",
+                fullDescription,
+                0.0,
+                projectId,
+                projectName == null ? "Global" : projectName
+        );
+        proposals.put(propId, proposal);
+        log.info("[KAIZEN-KNOWN-PATTERN] Recorded review-only known-pattern-violation proposal '{}' from project {}: charter #{} ({})",
+                propId, projectId, rootCausePatternId, patternName);
+        return proposal;
+    }
+
+    /**
      * Do Phase: Executes a single, safe micro-improvement step.
      */
     public boolean applyMicroStep(String proposalId) {
@@ -267,8 +300,22 @@ public class KaizenService {
         switch (proposal.getCategory()) {
             case BUFFER_TUNING -> {
                 long currentCap = tocSentinelService.getOptimizer().getMaxBufferCapacity();
-                tocSentinelService.getOptimizer().setMaxBufferCapacity(currentCap + 2);
-                log.info("[KAIZEN-ACTION] Micro-tuned DBR Max Buffer Capacity from %d to %d.", currentCap, currentCap + 2);
+                UUID targetProjectId = proposal.getProjectId() != null
+                        ? proposal.getProjectId() : sixSigmaAuditService.getActiveProjectId();
+                long newCap = currentCap + 2; // safe floor if this project has no measured task-cycle variance yet
+                if (targetProjectId != null) {
+                    var recommendation = constraintIdentificationService.recommendedBufferCapacity(targetProjectId, 3.0);
+                    // Never shrink capacity while responding to a buffer-full alert - the variance-based
+                    // number replaces the ARBITRARINESS of "+2", not the guarantee that this step makes
+                    // forward progress.
+                    newCap = Math.max(currentCap + 1, recommendation.bufferCapacity());
+                    log.info("[KAIZEN-ACTION] project={} measured task-cycle-time stdDev={}s over {} samples, throughput={}/s -> recommended buffer={}",
+                            targetProjectId, String.format("%.1f", recommendation.stdDevCycleTimeSeconds()),
+                            recommendation.sampleSize(), String.format("%.4f", recommendation.throughputPerSecond()),
+                            recommendation.bufferCapacity());
+                }
+                tocSentinelService.getOptimizer().setMaxBufferCapacity(newCap);
+                log.info("[KAIZEN-ACTION] Micro-tuned DBR Max Buffer Capacity from {} to {} (variance-based, not a hardcoded increment).", currentCap, newCap);
             }
             case WASTE_REDUCTION -> {
                 log.info("[KAIZEN-ACTION] Refreshing task queue priorities to eliminate waiting waste.");
@@ -281,6 +328,8 @@ public class KaizenService {
             }
             case SYSTEMIC_DEFECT -> log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' marked applied by "
                     + "explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
+            case KNOWN_PATTERN_VIOLATION -> log.info("[KAIZEN-ACTION] Known-pattern-violation proposal '{}' marked "
+                    + "applied by explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
         }
 
         proposal.setStatus(KaizenProposal.ProposalStatus.APPLIED);
