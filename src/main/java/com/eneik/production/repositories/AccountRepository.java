@@ -59,13 +59,19 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     // api_blocked (and resets statusChangedAt via AccountEntity.setStatus), so this can never get stuck
     // claiming a false recovery. Also catches accounts left blocked from unrelated past projects that
     // nothing else would ever re-check.
+    //
+    // 2026-08-01: the cooldown itself is now exponential per account (see
+    // ContinuousOrchestrationService.recoverStaleBlockedAccounts and AccountEntity.consecutiveApiBlockCount),
+    // so a single bulk UPDATE with one shared threshold no longer fits - candidates are fetched here, the
+    // per-account cooldown is computed in Java, then each eligible one is reset individually via the
+    // compare-and-swap method below (still guarded against a concurrent status change).
+    List<AccountEntity> findByStatusAndEnabledTrue(AccountStatus status);
+
     @Modifying
     @Transactional
     @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle " +
-            "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.api_blocked " +
-            "AND a.enabled = true " +
-            "AND (a.statusChangedAt IS NULL OR a.statusChangedAt < :staleBefore)")
-    int recoverStaleBlockedAccounts(@Param("staleBefore") Instant staleBefore);
+            "WHERE a.id = :id AND a.status = com.eneik.production.models.persistence.AccountStatus.api_blocked")
+    int resetSingleAccountFromApiBlocked(@Param("id") UUID id);
 
     @Modifying
     @Transactional

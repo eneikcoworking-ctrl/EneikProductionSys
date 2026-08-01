@@ -125,4 +125,60 @@ class OperationalTruthServiceTest {
         assertTrue(dto.blockedValue().blockers().stream()
                 .noneMatch(b -> "review_not_mergeable".equals(b.type())));
     }
+
+    @Test
+    void aSupersededSessionsDeadReviewNoLongerAppearsAsALiveBlockerAfterBranchGcRequeuedTheTask() {
+        // Same architectural gap as FlowSpineServiceTest's identical regression test (2026-08-01,
+        // test-fortieth/PR#119, task 72ec0f54): Branch GC cancelled the stale session and re-queued the
+        // TASK itself for a fresh attempt - the task never went terminal, so it wasn't excluded, and the
+        // old session's real "closed_unmerged" review kept misreporting as a live blocker.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID requeuedTaskId = UUID.randomUUID();
+        TaskEntity requeuedTask = new TaskEntity();
+        requeuedTask.setId(requeuedTaskId);
+        requeuedTask.setStatus(TaskStatus.queued);
+        requeuedTask.setDescription("API Slice 9a624cbf");
+
+        JulesSessionEntity supersededSession = new JulesSessionEntity();
+        supersededSession.setId(UUID.randomUUID());
+        supersededSession.setTaskId(requeuedTaskId);
+        supersededSession.setStatus("cancelled");
+
+        PrReviewEntity deadReview = new PrReviewEntity();
+        deadReview.setJulesSessionId(supersededSession.getId());
+        deadReview.setCiStatus("closed_unmerged");
+        deadReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(requeuedTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(requeuedTaskId))).thenReturn(List.of(supersededSession));
+        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        assertEquals(0, dto.evidence().failingReviews());
+        assertTrue(dto.blockedValue().blockers().stream()
+                .noneMatch(b -> "review_not_mergeable".equals(b.type())));
+    }
 }

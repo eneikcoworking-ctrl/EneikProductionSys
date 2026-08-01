@@ -54,6 +54,16 @@ public class AccountEntity {
     @Column(name = "max_concurrent_sessions")
     private Integer maxConcurrentSessions;
 
+    // 2026-08-01 (operator: "падение должно быть редким" - failures should become rare): before this,
+    // ContinuousOrchestrationService.recoverStaleBlockedAccounts retried every api_blocked account on a
+    // single FIXED cooldown (30 min) forever, regardless of how many times in a row it had just failed -
+    // confirmed live, one account failed FAILED_PRECONDITION 9-13 times over a single day, every ~15-45
+    // minutes, because nothing ever slowed the retry cadence down. This counter drives an exponential
+    // backoff instead: incremented every time THIS account gets marked api_blocked, reset to 0 the moment
+    // it successfully creates a session again (real proof of recovery, not just elapsed time).
+    @Column(name = "consecutive_api_block_count", nullable = false)
+    private int consecutiveApiBlockCount = 0;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -86,4 +96,6 @@ public class AccountEntity {
     public void setSessionsDispatchedToday(int sessionsDispatchedToday) { this.sessionsDispatchedToday = sessionsDispatchedToday; }
     public Integer getMaxConcurrentSessions() { return maxConcurrentSessions; }
     public void setMaxConcurrentSessions(Integer maxConcurrentSessions) { this.maxConcurrentSessions = maxConcurrentSessions; }
+    public int getConsecutiveApiBlockCount() { return consecutiveApiBlockCount; }
+    public void setConsecutiveApiBlockCount(int consecutiveApiBlockCount) { this.consecutiveApiBlockCount = consecutiveApiBlockCount; }
 }

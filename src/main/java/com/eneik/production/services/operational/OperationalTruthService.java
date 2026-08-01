@@ -42,6 +42,12 @@ public class OperationalTruthService {
     );
     private static final Set<String> REVIEW_PENDING_STATUSES = Set.of("pending", "unavailable", "success", "conflict");
     private static final Set<String> OPEN_SESSION_STATUSES = Set.of("queued", "running", "pr_opened");
+    // 2026-08-01 (live incident, test-fortieth/PR#119) - see FlowSpineService's identical constant for the
+    // full writeup: a session Branch GC/JulesDispatchService.cancelSession individually retires
+    // (status="cancelled") to fast-track a fresh re-dispatch, without the task itself going terminal, was
+    // still counted as "live" review evidence by the terminal-task-only filter, permanently stuck
+    // BLOCKED_BY_REVIEW on a review whose session had already been superseded.
+    private static final String SUPERSEDED_SESSION_STATUS = "cancelled";
     private static final Set<TaskStatus> TERMINAL_TASK_STATUSES =
             Set.of(TaskStatus.done, TaskStatus.failed, TaskStatus.spike_completed);
 
@@ -101,6 +107,7 @@ public class OperationalTruthService {
                 .collect(Collectors.toSet());
         Set<UUID> liveSessionIds = sessions.stream()
                 .filter(session -> session.getTaskId() == null || !terminalTaskIds.contains(session.getTaskId()))
+                .filter(session -> !SUPERSEDED_SESSION_STATUS.equals(session.getStatus()))
                 .map(JulesSessionEntity::getId)
                 .collect(Collectors.toSet());
 

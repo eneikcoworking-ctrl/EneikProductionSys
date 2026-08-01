@@ -247,6 +247,60 @@ class FlowSpineServiceTest {
         assertEquals(1, dto.evidence().failingReviews());
     }
 
+    @Test
+    void aSupersededSessionsDeadReviewNoLongerBlocksAfterBranchGcRequeuedTheTask() {
+        // Regression test for the 2026-08-01 incident: test-fortieth/PR#119, task 72ec0f54. Branch GC
+        // cancelled the stale session (status="cancelled") and re-queued the TASK for a fresh attempt - the
+        // task itself never went terminal (queued, not done/failed/spike_completed), so the prior fix above
+        // didn't exclude it. The old session's real "closed_unmerged" review still counted as live evidence
+        // and kept BLOCKED_BY_REVIEW stuck even though the task had already moved on to retry.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID requeuedTaskId = UUID.randomUUID();
+        TaskEntity requeuedTask = new TaskEntity();
+        requeuedTask.setId(requeuedTaskId);
+        requeuedTask.setStatus(TaskStatus.queued);
+        requeuedTask.setDescription("API Slice 9a624cbf");
+
+        JulesSessionEntity supersededSession = new JulesSessionEntity();
+        supersededSession.setId(UUID.randomUUID());
+        supersededSession.setTaskId(requeuedTaskId);
+        supersededSession.setStatus("cancelled");
+
+        PrReviewEntity deadReview = new PrReviewEntity();
+        deadReview.setJulesSessionId(supersededSession.getId());
+        deadReview.setCiStatus("closed_unmerged");
+        deadReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(requeuedTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(requeuedTaskId))).thenReturn(List.of(supersededSession));
+        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertNotEquals("BLOCKED_BY_REVIEW", dto.currentState());
+        assertEquals(0, dto.evidence().failingReviews());
+    }
+
     private FlowSpineService.StateInputs input(ProjectStatus projectStatus,
                                                long queuedTasks,
                                                long activeTasks,

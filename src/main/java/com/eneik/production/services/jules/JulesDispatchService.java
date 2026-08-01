@@ -701,6 +701,7 @@ public class JulesDispatchService {
             } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
                 accountRepository.findById(accountId).ifPresent(account -> {
                     account.setStatus(AccountStatus.api_blocked);
+                    account.setConsecutiveApiBlockCount(account.getConsecutiveApiBlockCount() + 1);
                     accountRepository.save(account);
                 });
                 session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
@@ -712,6 +713,10 @@ public class JulesDispatchService {
             if (accountId != null) {
                 accountRepository.findById(accountId).ifPresent(account -> {
                     account.setSessionsDispatchedToday(account.getSessionsDispatchedToday() + 1);
+                    // A real successful session creation is proof of actual recovery, not just elapsed
+                    // time - reset the backoff counter so a genuinely healthy account isn't still throttled
+                    // by yesterday's block streak.
+                    account.setConsecutiveApiBlockCount(0);
                     accountRepository.save(account);
                 });
             }
