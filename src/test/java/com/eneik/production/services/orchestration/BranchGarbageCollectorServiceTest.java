@@ -48,7 +48,8 @@ class BranchGarbageCollectorServiceTest {
         taskConflictRepository = mock(TaskConflictRepository.class);
         julesSessionRepository = mock(JulesSessionRepository.class);
         service = new BranchGarbageCollectorService(gitHubPullRequestService, taskRepository,
-                taskConflictRepository, julesSessionRepository);
+                taskConflictRepository, julesSessionRepository,
+                mock(com.eneik.production.services.jules.SessionLifecycleService.class));
     }
 
     private ProjectEntity project() {

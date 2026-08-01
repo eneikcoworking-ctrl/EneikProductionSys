@@ -19,4 +19,11 @@ public interface DefectJournalRepository extends JpaRepository<DefectJournalEnti
     // full history (no time window - the u-chart's own Phase 1/Phase 2 subgroup sequencing IS the ordering,
     // not wall-clock recency).
     List<DefectJournalEntity> findByFeatureId(UUID featureId);
+
+    // 2026-08-01: data-driven account-recovery backoff (AccountHealthService) - sourceComponent=account
+    // name, defectType="ACCOUNT_RECOVERY_DURATION". Per-account history first; findByDefectType (pooled
+    // across all accounts) is the fallback when one account has too few observations of its own yet.
+    List<DefectJournalEntity> findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(String sourceComponent, String defectType);
+
+    List<DefectJournalEntity> findByDefectTypeOrderByCreatedAtDesc(String defectType);
 }

@@ -57,6 +57,15 @@ public class JulesSessionEntity {
     @Column(name = "forced_unblock_attempts", nullable = false)
     private int forcedUnblockAttempts = 0;
 
+    // 2026-08-01 (operator: "те сессии джулс, которые не продуктовые... можно убирать в архив или
+    // удалять"): before this, our own "cancelled"/terminal session status was purely local fiction - Jules
+    // itself was never told a session is done (confirmed live via JulesApiClient.deleteSession +
+    // checkSessionRaw: DELETE returned 200, a follow-up GET then returned a real 404). Non-null here means
+    // SessionLifecycleService confirmed the real remote deletion happened, not just that we attempted it -
+    // testimony vs evidence, same discipline as everywhere else in this system.
+    @Column(name = "remote_deleted_at")
+    private Instant remoteDeletedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -98,6 +107,9 @@ public class JulesSessionEntity {
 
     public int getForcedUnblockAttempts() { return forcedUnblockAttempts; }
     public void setForcedUnblockAttempts(int forcedUnblockAttempts) { this.forcedUnblockAttempts = forcedUnblockAttempts; }
+
+    public Instant getRemoteDeletedAt() { return remoteDeletedAt; }
+    public void setRemoteDeletedAt(Instant remoteDeletedAt) { this.remoteDeletedAt = remoteDeletedAt; }
 
     @PreUpdate
     public void preUpdate() {

@@ -1,8 +1,6 @@
 package com.eneik.production.services;
 
 import com.eneik.production.dto.OrchestrationResultDto;
-import com.eneik.production.models.persistence.AccountEntity;
-import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.TaskEntity;
@@ -51,13 +49,10 @@ public class ContinuousOrchestrationService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private ProjectAuditPipelineService projectAuditPipelineService;
 
-    @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
-    private int blockedAccountRecoveryCooldownMinutes;
-
-    // 2026-08-01 (operator: "падение должно быть редким"): ceiling for the exponential backoff below - an
-    // account that keeps failing precondition should be retried less and less often, never literally never.
-    @org.springframework.beans.factory.annotation.Value("${jules.blocked-account-recovery-max-cooldown-minutes:480}")
-    private int blockedAccountRecoveryMaxCooldownMinutes;
+    // 2026-08-01: account-health ownership (status transitions, backoff math, statusChangedAt correctness)
+    // moved entirely to AccountHealthService - this class only triggers it on schedule now, matching the
+    // "single choke point for a shared invariant" fix for the same class of bug found live today.
+    private final com.eneik.production.services.accounts.AccountHealthService accountHealthService;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -73,7 +68,8 @@ public class ContinuousOrchestrationService {
                                          PlannedWorkRecoveryService plannedWorkRecoveryService,
                                          com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
                                          com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
-                                         OperationalPolicyService operationalPolicyService) {
+                                         OperationalPolicyService operationalPolicyService,
+                                         com.eneik.production.services.accounts.AccountHealthService accountHealthService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -89,6 +85,7 @@ public class ContinuousOrchestrationService {
         this.branchGarbageCollectorService = branchGarbageCollectorService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.operationalPolicyService = operationalPolicyService;
+        this.accountHealthService = accountHealthService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -395,7 +392,7 @@ public class ContinuousOrchestrationService {
     @Scheduled(cron = "${jules.daily-limit-reset-cron:0 5 0 * * ?}")
     @Transactional
     public void resetDailyLimitedAccounts() {
-        int reset = accountRepository.resetDailyLimitedAccounts();
+        int reset = accountHealthService.resetDailyLimitedAccounts();
         if (reset > 0) {
             log.info("Continuous Orchestration: Reset {} Jules account(s) from daily_limited to idle", reset);
         }
@@ -404,43 +401,14 @@ public class ContinuousOrchestrationService {
 
     // api_blocked accounts otherwise stay blocked indefinitely once nothing left references them (e.g. the
     // project that blocked them finished or was abandoned) - no other scheduled job ever revisits them, so
-    // a block picked up on one project silently starves every future project of that account forever. The
-    // cooldown-then-retry approach is self-correcting: if an account is still genuinely blocked, the very
-    // next real dispatch attempt flips it right back to api_blocked (AccountEntity.setStatus resets
-    // statusChangedAt), so this can never get stuck claiming a false recovery.
-    //
-    // 2026-08-01 (operator, live incident: several accounts failed FAILED_PRECONDITION 9-13 times in a
-    // single day on the same fixed 30-minute cooldown, every retry a guaranteed failure): the cooldown is
-    // now exponential per account - 30min, 60min, 120min, 240min, capped at
-    // blockedAccountRecoveryMaxCooldownMinutes (default 8h) - driven by AccountEntity.consecutiveApiBlockCount,
-    // which JulesDispatchService increments on every fresh api_blocked classification and resets to 0 on the
-    // next genuinely successful session creation. An account blocked once retries soon; one stuck blocked
-    // for hours gets retried less and less often instead of hammering the same guaranteed failure forever.
+    // a block picked up on one project silently starves every future project of that account forever.
+    // 2026-08-01: the actual recovery math (data-driven, median+z*sigma of observed recovery durations,
+    // falling back to exponential backoff when too few samples exist) now lives entirely in
+    // AccountHealthService - this is just the scheduled trigger.
     @Scheduled(fixedRateString = "${jules.blocked-account-recovery-rate-ms:900000}")
     @Transactional
     public void recoverStaleBlockedAccounts() {
-        List<AccountEntity> blocked = accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked);
-        Instant now = Instant.now();
-        int recovered = 0;
-        for (AccountEntity account : blocked) {
-            Instant changedAt = account.getStatusChangedAt();
-            if (changedAt == null) {
-                changedAt = now;
-            }
-            // consecutiveApiBlockCount=1 (first-ever block) -> base cooldown, unchanged from before this
-            // fix; each further consecutive block doubles it, capped at the max.
-            int doublings = Math.min(Math.max(account.getConsecutiveApiBlockCount() - 1, 0), 20);
-            long cooldownMinutes = Math.min(
-                    (long) blockedAccountRecoveryCooldownMinutes * (1L << doublings),
-                    blockedAccountRecoveryMaxCooldownMinutes);
-            if (changedAt.isBefore(now.minus(Duration.ofMinutes(cooldownMinutes)))) {
-                if (accountRepository.resetSingleAccountFromApiBlocked(account.getId()) > 0) {
-                    recovered++;
-                    log.info("Continuous Orchestration: Reset account '{}' from api_blocked to idle after a {}-minute cooldown (consecutive block count was {})",
-                            account.getName(), cooldownMinutes, account.getConsecutiveApiBlockCount());
-                }
-            }
-        }
+        int recovered = accountHealthService.recoverEligibleAccounts();
         if (recovered > 0) {
             log.info("Continuous Orchestration: Reset {} Jules account(s) from api_blocked to idle for retry", recovered);
         }
@@ -448,7 +416,7 @@ public class ContinuousOrchestrationService {
 
     @Transactional
     public void repairMisclassifiedJulesAccountLimits() {
-        int repaired = accountRepository.reclassifyPreconditionDailyLimitedAccounts();
+        int repaired = accountHealthService.reclassifyPreconditionDailyLimitedAccounts();
         if (repaired > 0) {
             log.warn("Continuous Orchestration: Reclassified {} Jules account(s) from daily_limited to api_blocked because the latest evidence is precondition/API refusal, not quota", repaired);
         }

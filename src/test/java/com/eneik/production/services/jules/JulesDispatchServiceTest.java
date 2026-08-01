@@ -88,6 +88,13 @@ class JulesDispatchServiceTest {
             mock(com.eneik.production.services.settings.SystemSettingsService.class),
             geminiContextService,
             reviewConcernRepository,
+            mock(com.eneik.production.services.accounts.AccountHealthService.class),
+            // Real instance, not a mock: cancelSession delegates the actual local-status mutation +
+            // remote-delete attempt to this service (2026-08-01, single choke point for "session is done").
+            // Wired to the SAME julesSessionRepository/accountRepository/taskRepository mocks this test
+            // class already uses, so it observably behaves the same way production wiring does - a mock
+            // here would silently no-op the mutation these tests assert on.
+            new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, mock(JulesApiClient.class)),
             "prefix/"
         );
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);

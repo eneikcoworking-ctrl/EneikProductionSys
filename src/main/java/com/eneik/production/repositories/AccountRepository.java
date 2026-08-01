@@ -47,11 +47,17 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query("UPDATE AccountEntity a SET a.status = :status, a.lastHeartbeat = :now WHERE a.id = :id")
     void updateStatus(@Param("id") UUID id, @Param("status") AccountStatus status, @Param("now") Instant now);
 
+    // 2026-08-01 (live bug, found while auditing every account-status writer): this bulk JPQL UPDATE
+    // bypassed AccountEntity.setStatus() entirely, so statusChangedAt was never touched - harmless for
+    // THIS specific transition (idle isn't backoff-timed), but a real, silent invariant break kept for
+    // consistency's sake: "status changed" must always mean "statusChangedAt updated", everywhere, not
+    // only where a caller happens to currently depend on it. Same CURRENT_TIMESTAMP HQL type-check issue
+    // noted on updateStatus above applies here too - bound Instant parameter, not CURRENT_TIMESTAMP.
     @Modifying
     @Transactional
-    @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle " +
+    @Query("UPDATE AccountEntity a SET a.status = com.eneik.production.models.persistence.AccountStatus.idle, a.statusChangedAt = :now " +
             "WHERE a.status = com.eneik.production.models.persistence.AccountStatus.daily_limited")
-    int resetDailyLimitedAccounts();
+    int resetDailyLimitedAccounts(@Param("now") Instant now);
 
     // api_blocked has no clean "resets at midnight" signal like daily_limited does, so instead of a fixed
     // cron this is retried periodically once the block has sat for at least the cooldown - self-correcting:
@@ -78,11 +84,17 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     @Query("UPDATE AccountEntity a SET a.sessionsDispatchedToday = 0")
     int resetDailySessionCounts();
 
+    // 2026-08-01 (live bug, confirmed): this native UPDATE also skipped status_changed_at - unlike the
+    // idle-reset above, THIS one directly corrupted AccountHealthService's data-driven backoff for any
+    // account reclassified through this specific path (its cooldown was computed from a stale timestamp
+    // dating back to whenever it first became daily_limited, not from the real api_blocked transition).
+    // Native SQL isn't subject to the HQL type-check issue that forces bound-parameter timestamps
+    // elsewhere in this file - CURRENT_TIMESTAMP is safe to use directly here.
     @Modifying
     @Transactional
     @Query(value = """
             UPDATE accounts
-            SET status = 'api_blocked'
+            SET status = 'api_blocked', status_changed_at = CURRENT_TIMESTAMP
             WHERE status = 'daily_limited'
               AND id IN (
                   SELECT DISTINCT account_id

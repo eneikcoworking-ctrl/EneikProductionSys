@@ -443,6 +443,67 @@ public class JulesApiClient {
         return null;
     }
 
+    /**
+     * DELETE /v1alpha/sessions/{session} (2026-08-01, operator: "те сессии джулс, которые не продуктовые...
+     * можно убирать в архив или удалять"). Confirmed against Jules's own public API reference
+     * (https://jules.google/docs/api/reference/sessions/) - a real, documented endpoint our own
+     * cancelSession/Branch-GC retirement never called (both are purely local bookkeeping; Jules itself was
+     * never told a "cancelled" session is done). Whether this actually relieves any account-level quota is
+     * NOT documented - this is a verification/manual-use capability, not yet wired into any automatic flow.
+     */
+    public record DeleteSessionResult(boolean success, int statusCode, String errorBody) {}
+
+    /**
+     * Raw GET on a session, returning the real HTTP status code - unlike {@link #getSessionStatus} (which
+     * swallows the status code entirely, returning null for both "genuinely deleted" and "network hiccup"),
+     * this exists specifically to distinguish a real 404 (proof of deletion) from any other failure.
+     */
+    public record RawSessionCheckResult(int statusCode, String body) {}
+
+    public RawSessionCheckResult checkSessionRaw(String externalSessionId, String apiKey) {
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBaseUrl + "/" + normalizeSessionPath(externalSessionId)))
+                    .header("X-Goog-Api-Key", apiKey)
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            return new RawSessionCheckResult(response.statusCode(), response.body());
+        } catch (IOException | InterruptedException e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new RawSessionCheckResult(-1, e.getMessage());
+        }
+    }
+
+    public DeleteSessionResult deleteSession(String externalSessionId, String apiKey) {
+        if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank()
+                || externalSessionId == null || "skipped".equals(externalSessionId)) {
+            return new DeleteSessionResult(false, 0, "jules disabled or missing api key/session id");
+        }
+        try {
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(apiBaseUrl + "/" + normalizeSessionPath(externalSessionId)))
+                    .header("X-Goog-Api-Key", apiKey)
+                    .DELETE()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            boolean ok = response.statusCode() >= 200 && response.statusCode() < 300;
+            if (!ok) {
+                log.warn("Jules delete session failed: status={} body={}", response.statusCode(), response.body());
+            }
+            return new DeleteSessionResult(ok, response.statusCode(), response.body());
+        } catch (IOException | InterruptedException e) {
+            log.error("Error deleting Jules session", e);
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            return new DeleteSessionResult(false, -1, e.getMessage());
+        }
+    }
+
     private String normalizeSessionPath(String externalSessionId) {
         return externalSessionId.startsWith("sessions/")
                 ? externalSessionId

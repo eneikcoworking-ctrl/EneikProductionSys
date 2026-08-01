@@ -1,7 +1,6 @@
 package com.eneik.production.services.jules;
 
 import com.eneik.production.dto.RoleRules;
-import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.models.persistence.JulesActivityResponseEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
@@ -115,6 +114,8 @@ public class JulesDispatchService {
     private final com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
     private final com.eneik.production.services.GeminiContextService geminiContextService;
     private final com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository;
+    private final com.eneik.production.services.accounts.AccountHealthService accountHealthService;
+    private final SessionLifecycleService sessionLifecycleService;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
@@ -189,10 +190,19 @@ public class JulesDispatchService {
         if (session == null) {
             return;
         }
-        session.setStatus("cancelled");
-        session.setClosedAt(java.time.Instant.now());
-        session.setClosureReason(reason);
-        julesSessionRepository.save(session);
+        // Single choke point for "this session is done, locally AND on Jules's side" - see
+        // SessionLifecycleService's own doc comment. Best-effort: a Jules-side hiccup must never break the
+        // local cancel/task-consequence flow below, which is what actually keeps dispatch correct.
+        try {
+            sessionLifecycleService.retireSessionOnly(sessionId, reason);
+        } catch (Exception e) {
+            log.warn("cancelSession: SessionLifecycleService.retireSessionOnly failed for {}, continuing with local-only cancel: {}",
+                    sessionId, e.getMessage());
+            session.setStatus("cancelled");
+            session.setClosedAt(java.time.Instant.now());
+            session.setClosureReason(reason);
+            julesSessionRepository.save(session);
+        }
 
         if (session.getTaskId() != null) {
             TaskEntity task = taskRepository.findById(session.getTaskId()).orElse(null);
@@ -394,6 +404,8 @@ public class JulesDispatchService {
                                 com.eneik.production.services.settings.SystemSettingsService settingsService,
                                 com.eneik.production.services.GeminiContextService geminiContextService,
                                 com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository,
+                                com.eneik.production.services.accounts.AccountHealthService accountHealthService,
+                                SessionLifecycleService sessionLifecycleService,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
@@ -421,6 +433,8 @@ public class JulesDispatchService {
         this.settingsService = settingsService;
         this.geminiContextService = geminiContextService;
         this.reviewConcernRepository = reviewConcernRepository;
+        this.accountHealthService = accountHealthService;
+        this.sessionLifecycleService = sessionLifecycleService;
         this.sourcePrefix = sourcePrefix;
     }
 
@@ -691,19 +705,17 @@ public class JulesDispatchService {
             session.setClosureReason("jules_create_session_failed"
                     + (createResult.statusCode() > 0 ? ": HTTP " + createResult.statusCode() : "")
                     + (createResult.compactError().isBlank() ? "" : " " + createResult.compactError()));
+            UUID dispatchProjectId = task.getProject() != null ? task.getProject().getId() : null;
             if (accountId != null && createResult.dailyLimitOrQuota()) {
-                accountRepository.findById(accountId).ifPresent(account -> {
-                    account.setStatus(AccountStatus.daily_limited);
-                    accountRepository.save(account);
-                });
+                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.DAILY_LIMIT,
+                        createResult.compactError());
                 session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
                         + session.getClosureReason());
             } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
-                accountRepository.findById(accountId).ifPresent(account -> {
-                    account.setStatus(AccountStatus.api_blocked);
-                    account.setConsecutiveApiBlockCount(account.getConsecutiveApiBlockCount() + 1);
-                    accountRepository.save(account);
-                });
+                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_BLOCKED,
+                        createResult.compactError());
                 session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
                         + "This is not a daily limit. " + session.getClosureReason());
             }
@@ -711,14 +723,9 @@ public class JulesDispatchService {
             session.setExternalSessionId(externalId);
             session.setStatus("running");
             if (accountId != null) {
-                accountRepository.findById(accountId).ifPresent(account -> {
-                    account.setSessionsDispatchedToday(account.getSessionsDispatchedToday() + 1);
-                    // A real successful session creation is proof of actual recovery, not just elapsed
-                    // time - reset the backoff counter so a genuinely healthy account isn't still throttled
-                    // by yesterday's block streak.
-                    account.setConsecutiveApiBlockCount(0);
-                    accountRepository.save(account);
-                });
+                UUID successProjectId = task.getProject() != null ? task.getProject().getId() : null;
+                accountHealthService.reportDispatchOutcome(accountId, successProjectId,
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.SUCCESS, null);
             }
         }
 

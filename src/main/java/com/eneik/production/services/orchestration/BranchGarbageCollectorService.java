@@ -39,15 +39,18 @@ public class BranchGarbageCollectorService {
     private final TaskRepository taskRepository;
     private final TaskConflictRepository taskConflictRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
+    private final com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService;
 
     public BranchGarbageCollectorService(GitHubPullRequestService gitHubPullRequestService,
                                          TaskRepository taskRepository,
                                          TaskConflictRepository taskConflictRepository,
-                                         com.eneik.production.repositories.JulesSessionRepository julesSessionRepository) {
+                                         com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
+                                         com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService) {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.julesSessionRepository = julesSessionRepository;
+        this.sessionLifecycleService = sessionLifecycleService;
     }
 
     /**
@@ -112,16 +115,22 @@ public class BranchGarbageCollectorService {
         // moment ago. Step 4 re-queues the TASK, but a stale ACTIVE session silently swallows every
         // redispatch attempt that follows - the task sits "queued" forever with no real session working it,
         // until GitHub-truth reconciliation eventually notices the closed PR and marks it failed, hours
-        // later, with nothing left to retry it. Mirrors JulesDispatchService.cancelSession's own convention
-        // exactly (status="cancelled", not in ACTIVE_SESSION_STATUSES, so it's fully inert going forward).
+        // later, with nothing left to retry it.
+        //
+        // 2026-08-01: routed through SessionLifecycleService.retireSessionOnly instead of a local-only copy
+        // of JulesDispatchService.cancelSession's status-flip - a second real bug this exact duplication
+        // caused (found live): the review-liveness filter in FlowSpineService/OperationalTruthService only
+        // ever excluded a review whose TASK reached a terminal status, never one whose SESSION was
+        // individually retired this way while the task lived on for a fresh attempt (test-fortieth/PR#119,
+        // task 72ec0f54) - a dead review kept BLOCKED_BY_REVIEW stuck indefinitely. That gap is now fixed at
+        // the filter itself, but the duplication that made "cancelled" mean two slightly different things in
+        // two places was the same charter #10 violation as the account-status one - one call site now, not two.
         for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
             if (java.util.Set.of("running", "queued", "revising", "pr_opened", "stuck").contains(session.getStatus())) {
-                session.setStatus("cancelled");
-                session.setClosedAt(Instant.now());
-                session.setClosureReason("Branch GC: superseded by fresh re-queue - " + reason);
-                julesSessionRepository.save(session);
+                String originalStatus = session.getStatus();
+                sessionLifecycleService.retireSessionOnly(session.getId(), "Branch GC: superseded by fresh re-queue - " + reason);
                 log.info("[BRANCH-GC] Cancelled stale session {} (was {}) for task {} so redispatch is not blocked",
-                        session.getId(), session.getStatus(), task.getId());
+                        session.getId(), originalStatus, task.getId());
             }
         }
 
