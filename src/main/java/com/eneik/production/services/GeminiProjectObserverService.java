@@ -258,8 +258,15 @@ public class GeminiProjectObserverService {
                 A "platform" finding is NEVER turned into work dispatched against this project's own
                 repository (there is nothing in this project's own codebase that could fix an orchestrator
                 bug) - it goes to a separate, human-reviewed queue instead. When genuinely unsure, use
-                "product" - misrouting a real product issue into the review-only platform queue is worse than
-                the reverse.
+                "platform", not "product": a wrongly-"platform" finding only delays a real product issue
+                into that human-reviewed queue, recoverable at the next review pass; a wrongly-"product"
+                finding becomes a live task dispatched straight into this project's own repository - and
+                if it's actually about this factory's own pipeline/orchestrator, that task can never
+                succeed, since the thing it's meant to fix does not exist in this project's codebase. Your
+                own scope call here is also cross-checked against a deterministic list of this factory's
+                own internal vocabulary (pipeline, dispatch, orchestrator, Jules session, wishlist compiler,
+                and similar) - classify honestly based on what your evidence actually names, not by guessing
+                which label sends it where you'd prefer.
                 Money is being spent on every cycle you run whether or not the project moves forward - going
                 quiet ("I will just keep observing") is only acceptable when the snapshot genuinely gives you
                 NO candidate to act on. If triggerFalsificationRun is gated shut (per the Falsification
@@ -352,9 +359,26 @@ public class GeminiProjectObserverService {
             // in THIS project's repo, where the thing it's meant to fix does not exist (confirmed live:
             // several such findings became permanently-unfixable "API Slice" tasks). Routed to a review-only
             // Kaizen proposal instead - never auto-applied, never touches source code autonomously.
-            if ("platform".equals(finding.scope())) {
+            //
+            // 2026-08-02 (Charter Pattern #12 - independent verification, not self-attestation): her own
+            // scope self-classification is one signal, not the sole authority on it. Confirmed live in
+            // test-fortieth: findings self-reported as "product" whose evidence was self-evidently about
+            // this factory's own pipeline ("fix the state transition bug, so that the pipeline queue
+            // resumes processing") polluted the project's real feature list with fake epics - 14 of 18
+            // "epics" in that project turned out to be this kind of noise, not real client JTBDs. A
+            // deterministic vocabulary scan (PlatformSelfReferenceDetector) cross-checks every
+            // self-reported "product" finding; when it disagrees, don't trust either side blind - route
+            // through the same review-only Kaizen path, tagged disputed, instead of creating a live
+            // wishlist item.
+            boolean selfReportedPlatform = "platform".equals(finding.scope());
+            boolean looksLikePlatform = !selfReportedPlatform
+                    && PlatformSelfReferenceDetector.looksLikePlatformFinding(finding.summary() + " " + finding.evidence());
+            if (selfReportedPlatform || looksLikePlatform) {
+                String label = selfReportedPlatform
+                        ? "Gemini observer (platform): "
+                        : "Gemini observer (disputed - self-reported product, but evidence names this factory's own internals): ";
                 kaizenService.recordSystemicDefectProposal(project.getId(), project.getName(),
-                        "Gemini observer (platform): " + finding.summary(), content);
+                        label + finding.summary(), content);
                 created++;
                 continue;
             }

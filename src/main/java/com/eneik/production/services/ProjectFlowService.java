@@ -403,7 +403,7 @@ public class ProjectFlowService {
         item.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
         item = wishlistRepository.save(item);
 
-        return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt());
+        return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt(), item.getFeatureId());
     }
 
     @Transactional
@@ -2424,6 +2424,17 @@ public class ProjectFlowService {
     // ceiling is set via AccountEntity.maxConcurrentSessions (see V50 migration), independent of the
     // shared jules.max-concurrent-sessions-per-account default used by every other account.
     private void dispatchToGeneralPool(TaskEntity task) {
+        dispatchToGeneralPool(task, java.util.Set.of());
+    }
+
+    // Charter Pattern #12 (independent verification, not self-attestation): review-fallback carrier
+    // tasks must exclude the account(s) that implemented the code under review, so the general-pool
+    // round-robin selector can't hand a PR's review back to the same account that wrote it - nothing
+    // about the underlying capacity query otherwise prevents that. Callers with nothing to exclude
+    // (plain implementer dispatch, design-review - see the call site comment at isDesignReviewTask)
+    // use the no-arg overload above.
+    private void dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames) {
+        String excludedNamesCsv = excludedAccountNames.isEmpty() ? null : String.join(",", excludedAccountNames);
         String failedAccountName = null;
         for (int attempt = 0; attempt < 3; attempt++) {
             Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
@@ -2431,7 +2442,8 @@ public class ProjectFlowService {
                     task.getRole().getTag(),
                     maxConcurrentJulesSessionsPerAccount,
                     failedAccountName,
-                    maxDailySessionsPerAccount
+                    maxDailySessionsPerAccount,
+                    excludedNamesCsv
             );
             if (accountOpt.isEmpty()) {
                 log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
@@ -2460,6 +2472,26 @@ public class ProjectFlowService {
                 failedAccountName = account.getName();
             }
         }
+    }
+
+    // Charter Pattern #12: resolves the account(s) that implemented the code a review-fallback batch is
+    // about to review, so dispatchToGeneralPool can exclude them from picking up the review. Uses the
+    // same implementer-session lookup JulesDispatchService.applyReviewVerdictToTask already uses to find
+    // the PR being judged (prefer the session sitting at "pr_opened", else any session that has a PR).
+    private java.util.Set<String> implementerAccountNamesForReviewFallback(TaskEntity reviewFallbackTask) {
+        java.util.Set<String> names = new java.util.HashSet<>();
+        for (UUID originalTaskId : reviewFallbackTargetTaskIds(reviewFallbackTask)) {
+            java.util.List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(originalTaskId);
+            JulesSessionEntity implementerSession = sessions.stream()
+                    .filter(s -> "pr_opened".equals(s.getStatus()))
+                    .findFirst()
+                    .orElseGet(() -> sessions.stream().filter(s -> s.getPrUrl() != null).findFirst().orElse(null));
+            if (implementerSession == null || implementerSession.getAccountId() == null) {
+                continue;
+            }
+            accountRepository.findById(implementerSession.getAccountId()).ifPresent(a -> names.add(a.getName()));
+        }
+        return names;
     }
 
     // Package-private for the same reason as dispatchBatchedWishlistCompiler above.
@@ -3675,8 +3707,17 @@ public class ProjectFlowService {
 
             if (isReviewFallbackTask(task) || isDesignReviewTask(task)) {
                 // These fire once per PR / per mockup - real per-project traffic, not
-                // rare housekeeping - so they use the general round-robin pool like implementer tasks do
-                dispatchToGeneralPool(task);
+                // rare housekeeping - so they use the general round-robin pool like implementer tasks do.
+                // Review-fallback excludes the implementer's own account (Charter Pattern #12 -
+                // independent verification, not self-attestation: the account that wrote a PR must not
+                // also be handed that PR's review by an accident of round-robin ordering). Design-review
+                // has no equivalent implementer-account concept - mockup drafts come from design
+                // generation, not a Jules implementer session claiming/dispatching a code task - so it
+                // gets no exclusion.
+                java.util.Set<String> excludedAccountNames = isReviewFallbackTask(task)
+                        ? implementerAccountNamesForReviewFallback(task)
+                        : java.util.Set.of();
+                dispatchToGeneralPool(task, excludedAccountNames);
                 continue;
             }
 
@@ -3705,7 +3746,8 @@ public class ProjectFlowService {
                     roleTag,
                     maxConcurrentJulesSessionsPerAccount,
                     null,
-                    maxDailySessionsPerAccount
+                    maxDailySessionsPerAccount,
+                    null
             );
             if (accountOpt.isPresent()) {
                 AccountEntity account = accountOpt.get();
@@ -3822,7 +3864,8 @@ public class ProjectFlowService {
                         roleTag,
                         maxConcurrentJulesSessionsPerAccount,
                         null,
-                        maxDailySessionsPerAccount
+                        maxDailySessionsPerAccount,
+                        null
                 );
                 if (accountOpt.isPresent()) {
                     AccountEntity account = accountOpt.get();
@@ -3945,7 +3988,7 @@ public class ProjectFlowService {
         List<com.eneik.production.dto.WishlistResponseDto> wishlist = wishlistEntities
                 .stream()
                 .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
-                .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt()))
+                .map(w -> new com.eneik.production.dto.WishlistResponseDto(w.getId(), w.getProjectId(), w.getSource(), w.getSourceRoleTag(), w.getContent(), w.getStatus(), w.getCreatedAt(), w.getFeatureId()))
                 .toList();
         List<TaskDto> tasks = taskEntities.stream()
                 .map(task -> new TaskDto(

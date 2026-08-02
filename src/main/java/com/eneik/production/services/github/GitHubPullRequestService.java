@@ -464,6 +464,44 @@ public class GitHubPullRequestService {
     }
 
     /**
+     * Parses the PR number out of a "https://github.com/{owner}/{repo}/pull/{number}" URL. Returns null
+     * for a blank/malformed URL or the placeholder "/mock-..." URLs some callers substitute when no real
+     * PR exists yet - never throws.
+     */
+    public Integer parsePullNumber(String prUrl) {
+        if (prUrl == null || prUrl.isBlank() || prUrl.contains("/mock-")) {
+            return null;
+        }
+        try {
+            java.net.URI uri = java.net.URI.create(prUrl);
+            String[] parts = uri.getPath().replaceAll("^/+", "").split("/");
+            if (parts.length >= 4 && "pull".equals(parts[2]) && parts[3].matches("\\d+")) {
+                return Integer.parseInt(parts[3]);
+            }
+        } catch (Exception e) {
+            log.warn("Could not parse PR number from URL {}: {}", prUrl, e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Extracts the list of changed file paths from a unified diff's own "+++ b/<path>" header lines -
+     * real evidence of what a PR actually touched, as opposed to a self-reported file list.
+     */
+    public static List<String> changedFilePathsFromDiff(String diffText) {
+        List<String> paths = new java.util.ArrayList<>();
+        if (diffText == null || diffText.isBlank()) {
+            return paths;
+        }
+        for (String line : diffText.split("\n")) {
+            if (line.startsWith("+++ b/")) {
+                paths.add(line.substring("+++ b/".length()).trim());
+            }
+        }
+        return paths;
+    }
+
+    /**
      * Fetches the unified diff text for a PR - used by the Jules-reviewer fallback
      * (JulesDispatchService.dispatchReviewerFallback) to embed the real code change directly in that
      * session's prompt, since Jules sessions always start from main and have no way to check out an

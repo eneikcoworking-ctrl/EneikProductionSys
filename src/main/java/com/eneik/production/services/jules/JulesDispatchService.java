@@ -45,7 +45,9 @@ import java.util.UUID;
 @Service
 public class JulesDispatchService {
     private static final Logger log = LoggerFactory.getLogger(JulesDispatchService.class);
-    private static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
+    // Public (2026-08-02): reused by ProjectTreeService to derive a feature branch's live-pulse signal
+    // from real session state - the same canonical "is this session active" definition, not a duplicate.
+    public static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
     private static final int DAVIDSON_TRUST_WINDOW_MINUTES = 60;
     private static final int DAVIDSON_CLOSE_WINDOW_MINUTES = 120;
@@ -2818,6 +2820,25 @@ public class JulesDispatchService {
     private record ReviewVerdictEntry(int sourceIndex, String verdict, String criticalReason, List<ConcernEntry> concerns) {
     }
 
+    private static final java.util.Set<String> RECOGNIZED_VERDICTS = java.util.Set.of("approve", "block", "reject");
+
+    /**
+     * Fail-closed verdict parsing (Charter Pattern #12 - independent verification, not self-attestation):
+     * returns null when the "verdict" field is missing, blank, or not a recognized value, instead of
+     * silently defaulting to "approve". Shared by review-fallback ("approve"/"block") and design-review
+     * ("approve"/"reject") parsing below - both used to hand-roll the same asText("approve") default
+     * independently, which meant a reviewing session that returned a malformed or incomplete report was
+     * auto-approved rather than treated as "no verdict available".
+     */
+    private static String parseVerdictFailClosed(JsonNode node) {
+        String raw = node.path("verdict").asText(null);
+        if (raw == null) {
+            return null;
+        }
+        String normalized = raw.trim().toLowerCase(java.util.Locale.ROOT);
+        return RECOGNIZED_VERDICTS.contains(normalized) ? normalized : null;
+    }
+
     private static List<ConcernEntry> parseConcernEntries(JsonNode rawConcerns) {
         List<ConcernEntry> concerns = new java.util.ArrayList<>();
         if (rawConcerns.isArray()) {
@@ -2847,7 +2868,15 @@ public class JulesDispatchService {
             if (rawVerdicts.isArray()) {
                 for (JsonNode v : rawVerdicts) {
                     int sourceIndex = v.path("sourceIndex").asInt(-1);
-                    String verdict = v.path("verdict").asText("approve");
+                    String verdict = parseVerdictFailClosed(v);
+                    if (verdict == null) {
+                        // Fail closed: a missing/garbled verdict field must not be fabricated into an
+                        // "approve" entry - skip it so applyReviewVerdictToTask's sourceIndex lookup finds
+                        // nothing and takes the same bounded-retry path as a genuinely missing verdict.
+                        log.warn("Review fallback verdict batch for project {}: sourceIndex {} has a missing or "
+                                        + "unrecognized 'verdict' field, treating as no verdict", project.getId(), sourceIndex);
+                        continue;
+                    }
                     String criticalReason = v.path("criticalReason").asText("");
                     List<ConcernEntry> concerns = parseConcernEntries(v.path("concerns"));
                     entries.add(new ReviewVerdictEntry(sourceIndex, verdict, criticalReason, concerns));
@@ -2945,6 +2974,20 @@ public class JulesDispatchService {
             return;
         }
 
+        // Charter Pattern #12 (independent verification, not self-attestation): a reviewer's own verdict
+        // alone is not sufficient to approve - task.isQualityGatePassed() is a fully separate, mechanical
+        // signal (GateOrchestrator, zero LLM involvement) that ClaimService.complete already computes and
+        // requires BEFORE a task can even reach `review` status, so this should be structurally impossible
+        // to see false here in production. Kept as defense in depth: if it ever is, a reviewer verdict must
+        // not override a failed mechanical gate - fall back to the same bounded-retry path used for a
+        // missing verdict below, rather than silently promoting on the reviewer's word alone.
+        if (verdict != null && !originalTask.isQualityGatePassed()) {
+            log.error("PR review fallback task {}: original task {} has NOT passed the quality gate; a "
+                            + "reviewer verdict alone cannot approve it. Treating as no valid verdict.",
+                    reviewTask.getId(), originalTaskId);
+            verdict = null;
+        }
+
         if (verdict == null) {
             int retries = projectFlowService.recordReviewFallbackNullVerdict(originalTask);
             if (retries >= com.eneik.production.services.ProjectFlowService.PR_REVIEW_FALLBACK_MAX_NULL_VERDICT_RETRIES) {
@@ -3003,7 +3046,20 @@ public class JulesDispatchService {
         // Approved (or a "block" without a real critical reason, which is treated as approve by design -
         // never stall on an unsubstantiated objection).
         com.eneik.production.dto.monitor.PrDataDto prData = new com.eneik.production.dto.monitor.PrDataDto();
-        prData.setCiStatus("success");
+        // Charter Pattern #12: don't hardcode ciStatus to "success" just because the reviewer approved -
+        // fetch the real GitHub check-run state. AutoMergeService.executeMerge independently re-checks
+        // this again right before merging either way, so this isn't the last line of defense, but nothing
+        // downstream of here should see a fabricated "success" for a PR whose real CI never ran or failed.
+        Integer pullNumber = parsePullNumber(prUrl);
+        String ciStatus = "success";
+        if (pullNumber != null) {
+            GitHubPullRequestService.PullRequestChecks checks =
+                    gitHubPullRequestService.pullRequestChecks(originalTask.getProject(), pullNumber);
+            if (checks.available()) {
+                ciStatus = checks.successful() ? "success" : "failure";
+            }
+        }
+        prData.setCiStatus(ciStatus);
         prData.setLinesChanged(120);
         prData.setFilesChanged(4);
         prData.setChangedFiles(java.util.Collections.emptyList());
@@ -3205,7 +3261,14 @@ public class JulesDispatchService {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             JsonNode root = mapper.readTree(content.get());
-            String verdict = root.path("verdict").asText("approve");
+            String verdict = parseVerdictFailClosed(root);
+            if (verdict == null) {
+                // Fail closed: same reasoning as parseReviewVerdictBatch above - a missing or unrecognized
+                // verdict field must not be fabricated into an "approve", it must fall through to the
+                // existing "no valid verdict report found; left unpromoted" handling in completeDesignReview.
+                log.warn("Design review verdict for project {} has a missing or unrecognized 'verdict' field", project.getId());
+                return null;
+            }
             String reason = root.path("reason").asText("");
             List<ConcernEntry> concerns = parseConcernEntries(root.path("concerns"));
             return new DesignVerdict(verdict, reason, concerns);
@@ -3266,17 +3329,18 @@ public class JulesDispatchService {
             return;
         }
 
-        boolean rejected = "reject".equalsIgnoreCase(verdict.verdict())
-                && verdict.reason() != null && !verdict.reason().isBlank();
-
-        if (rejected) {
-            log.warn("Poka-yoke: design draft {} rejected without creating follow-up wishlist work; "
-                    + "the finding is deferred to falsification: {}", draftPath, verdict.reason());
+        // Charter Pattern #12 (independent verification, not self-attestation): promotion requires an
+        // EXPLICIT "approve", not "anything except reject with a reason" - the prior fail-open version
+        // silently promoted a "reject" with a blank reason (and anything else parseVerdictFailClosed
+        // would have let through), which is exactly the shape of bug this pattern exists to close. A
+        // reject without a real reason is still a reject, it just gets logged without a reason attached.
+        if (!"approve".equalsIgnoreCase(verdict.verdict())) {
+            log.warn("Poka-yoke: design draft {} not approved (verdict: {}); left unpromoted, no follow-up "
+                            + "wishlist work created - the finding is deferred to falsification.{}",
+                    draftPath, verdict.verdict(),
+                    verdict.reason() != null && !verdict.reason().isBlank() ? " Reason: " + verdict.reason() : "");
             return;
         }
-
-        // Approved (or a "reject" without a real reason, treated as approve by design - never block
-        // promotion on an unsubstantiated objection).
         String basename = draftPath.startsWith(com.eneik.production.services.design.DesignAssetService.DESIGN_DRAFT_ROOT + "/")
                 ? draftPath.substring(com.eneik.production.services.design.DesignAssetService.DESIGN_DRAFT_ROOT.length() + 1)
                 : draftPath;

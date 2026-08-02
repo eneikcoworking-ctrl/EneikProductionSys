@@ -18,6 +18,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -25,15 +26,20 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -75,6 +81,13 @@ class GateOrchestratorIntegrationTest {
     @Autowired
     private PrReviewRepository prReviewRepository;
 
+    // 2026-08-02 (Charter Pattern #12): BackendContractGate no longer reads a self-reported
+    // payload.changedFiles list - it resolves the task's real implementer session and fetches the real
+    // PR diff via GitHubPullRequestService. Mocked here (real GitHub calls are disabled in the test
+    // profile anyway) so fullGateRunsBackendGateForBackendTaskPastBuildPhase can simulate a real diff.
+    @MockBean
+    private GitHubPullRequestService gitHubPullRequestService;
+
     @Test
     void fullGateRunsDesignGateForUiTaskPastBuildPhase() {
         ObjectNode payload = basePayload();
@@ -99,10 +112,10 @@ class GateOrchestratorIntegrationTest {
     @Test
     void fullGateRunsBackendGateForBackendTaskPastBuildPhase() {
         ObjectNode payload = basePayload();
-        payload.putArray("changedFiles").add("src/test/java/com/eneik/LeadControllerTest.java");
 
         TaskEntity task = createTask("BARCAN-TAG-02", payload);
         markProjectPastBuildPhase(task.getProject());
+        stubRealDiffForTask(task, "src/test/java/com/eneik/LeadControllerTest.java");
 
         gateOrchestrator.runQualityGate(task);
 
@@ -214,6 +227,20 @@ class GateOrchestratorIntegrationTest {
         review.setMerged(true);
         review.setHasCode(true);
         prReviewRepository.save(review);
+    }
+
+    // 2026-08-02 (Charter Pattern #12): simulates a real implementer PR whose diff genuinely contains
+    // the given changed file path, so BackendContractGate's real-diff lookup has something to find.
+    private void stubRealDiffForTask(TaskEntity task, String changedFilePath) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(task.getId());
+        session.setExternalSessionId("sessions/fixture-backend-gate-" + task.getId());
+        session.setStatus("pr_opened");
+        session.setPrUrl("https://github.com/example/repo/pull/99");
+        julesSessionRepository.save(session);
+        when(gitHubPullRequestService.parsePullNumber("https://github.com/example/repo/pull/99")).thenReturn(99);
+        when(gitHubPullRequestService.fetchDiffText(any(), eq(99)))
+                .thenReturn(Optional.of("+++ b/" + changedFilePath + "\n"));
     }
 
     private ObjectNode basePayload() {

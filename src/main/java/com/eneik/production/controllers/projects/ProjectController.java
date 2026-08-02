@@ -22,19 +22,22 @@ public class ProjectController {
     private final com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
+    private final com.eneik.production.services.tree.ProjectTreeService projectTreeService;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
                              com.eneik.production.repositories.OnboardingAuditFindingRepository onboardingAuditFindingRepository,
                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
                              com.eneik.production.services.ClientDeliverableReadinessService readinessService,
-                             com.eneik.production.services.FalsificationCycleService falsificationCycleService) {
+                             com.eneik.production.services.FalsificationCycleService falsificationCycleService,
+                             com.eneik.production.services.tree.ProjectTreeService projectTreeService) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
         this.onboardingAuditService = onboardingAuditService;
         this.readinessService = readinessService;
         this.falsificationCycleService = falsificationCycleService;
+        this.projectTreeService = projectTreeService;
     }
 
     @GetMapping
@@ -142,6 +145,15 @@ public class ProjectController {
     @GetMapping("/{projectId}/epics")
     public List<com.eneik.production.services.ClientDeliverableReadinessService.EpicDiagnostic> epics(@PathVariable UUID projectId) {
         return readinessService.listEpicDiagnostics(projectId);
+    }
+
+    // Backend for the "living tree" primary frontend view (2026-08-02) - read-only, additive: new
+    // projection of data that already exists/is already computed server-side, nothing new written or
+    // recomputed. Branches are the same PRODUCT_ITERATION_SOURCES-filtered feature set as /epics above
+    // (built on the same listEpicDiagnostics call), so the two must always agree for a given featureId.
+    @GetMapping("/{projectId}/tree")
+    public com.eneik.production.dto.tree.ProjectTreeDto tree(@PathVariable UUID projectId) {
+        return projectTreeService.getTree(projectId);
     }
 
 

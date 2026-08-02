@@ -12,5 +12,6 @@ public record WishlistResponseDto(
     String sourceRoleTag,
     String content,
     WishlistStatus status,
-    Instant createdAt
+    Instant createdAt,
+    UUID featureId
 ) {}

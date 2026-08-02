@@ -247,7 +247,9 @@ public class SixSigmaAuditService {
         return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
     }
 
-    private double calculateDpmo(long defects, long opportunities) {
+    // Public static (2026-08-02): reused as-is by ProjectTreeService for per-feature DPMO - same
+    // formula, not duplicated.
+    public static double calculateDpmo(long defects, long opportunities) {
         if (opportunities <= 0) return 0.0;
         return Math.round((((double) defects / opportunities) * 1_000_000.0) * 100.0) / 100.0;
     }

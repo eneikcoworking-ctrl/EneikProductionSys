@@ -1,6 +1,9 @@
 package com.eneik.production.services.gate;
 
+import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.TaskEntity;
+import com.eneik.production.repositories.JulesSessionRepository;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Service;
@@ -17,6 +20,15 @@ public class BackendContractGate implements GateCheck {
     private static final String CHECK_NAME = "backend_contract";
     private static final Pattern ERROR_PATTERN = Pattern.compile("400|401|403|error", Pattern.CASE_INSENSITIVE);
     private static final Pattern AUTH_VALIDATION_PATTERN = Pattern.compile("auth|validation", Pattern.CASE_INSENSITIVE);
+
+    private final JulesSessionRepository julesSessionRepository;
+    private final GitHubPullRequestService gitHubPullRequestService;
+
+    public BackendContractGate(JulesSessionRepository julesSessionRepository,
+                                GitHubPullRequestService gitHubPullRequestService) {
+        this.julesSessionRepository = julesSessionRepository;
+        this.gitHubPullRequestService = gitHubPullRequestService;
+    }
 
     @Override
     public GateStage stage() {
@@ -48,17 +60,12 @@ public class BackendContractGate implements GateCheck {
             return new GateResult(false, CHECK_NAME, List.of("task payload is missing"));
         }
 
-        // 1. Проверить наличие файла теста (*Test.java)
-        JsonNode changedFiles = payload.get("changedFiles");
-        boolean hasTestFile = false;
-        if (changedFiles != null && changedFiles.isArray()) {
-            for (JsonNode file : changedFiles) {
-                if (file.asText().endsWith("Test.java")) {
-                    hasTestFile = true;
-                    break;
-                }
-            }
-        }
+        // 1. Test-file presence, from the PR's own real diff (Charter Pattern #12 - independent
+        // verification, not self-attestation: this used to read payload.changedFiles, a field no
+        // production code path was ever found to actually populate - reading the real unified diff
+        // instead of a self-reported/always-empty list closes both problems at once).
+        List<String> changedFiles = realChangedFiles(task);
+        boolean hasTestFile = changedFiles.stream().anyMatch(f -> f.endsWith("Test.java"));
         if (!hasTestFile) {
             failureReasons.add("missing test file (*Test.java)");
         }
@@ -79,5 +86,29 @@ public class BackendContractGate implements GateCheck {
 
         boolean passed = failureReasons.isEmpty();
         return new GateResult(passed, CHECK_NAME, failureReasons);
+    }
+
+    private List<String> realChangedFiles(TaskEntity task) {
+        JulesSessionEntity session = resolveSessionWithPr(task);
+        if (session == null || task.getProject() == null) {
+            return List.of();
+        }
+        Integer pullNumber = gitHubPullRequestService.parsePullNumber(session.getPrUrl());
+        if (pullNumber == null) {
+            return List.of();
+        }
+        return gitHubPullRequestService.fetchDiffText(task.getProject(), pullNumber)
+                .map(GitHubPullRequestService::changedFilePathsFromDiff)
+                .orElse(List.of());
+    }
+
+    // Same implementer-session lookup used elsewhere (JulesDispatchService.applyReviewVerdictToTask):
+    // prefer the session sitting at "pr_opened", else fall back to any session that already has a PR.
+    private JulesSessionEntity resolveSessionWithPr(TaskEntity task) {
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(task.getId());
+        return sessions.stream()
+                .filter(s -> "pr_opened".equals(s.getStatus()))
+                .findFirst()
+                .orElseGet(() -> sessions.stream().filter(s -> s.getPrUrl() != null).findFirst().orElse(null));
     }
 }

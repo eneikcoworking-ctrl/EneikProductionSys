@@ -48,7 +48,8 @@ public class WishlistService {
                 entity.getSourceRoleTag(),
                 entity.getContent(),
                 entity.getStatus(),
-                entity.getCreatedAt()
+                entity.getCreatedAt(),
+                entity.getFeatureId()
         );
     }
 }

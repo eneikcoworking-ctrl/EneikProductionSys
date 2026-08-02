@@ -12,6 +12,7 @@ import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClaimService;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -19,16 +20,21 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.StreamSupport;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
@@ -67,6 +73,13 @@ public class TaskClaimServiceTest {
 
     @Autowired
     private PrReviewRepository prReviewRepository;
+
+    // 2026-08-02 (Charter Pattern #12): BackendContractGate no longer reads a self-reported
+    // payload.changedFiles list - it resolves the task's real implementer session and fetches the real
+    // PR diff via GitHubPullRequestService. Mocked here so completeRunsBackendGateAfterBackendClaimCycle
+    // PastBuildPhase can simulate a real diff without a live GitHub call.
+    @MockBean
+    private GitHubPullRequestService gitHubPullRequestService;
 
     @Test
     void testValidateTaskAvailability() {
@@ -129,10 +142,10 @@ public class TaskClaimServiceTest {
     @Test
     void completeRunsBackendGateAfterBackendClaimCyclePastBuildPhase() {
         ObjectNode payload = basePayload();
-        payload.putArray("changedFiles").add("src/test/java/com/eneik/LeadControllerTest.java");
         TaskEntity task = createQueuedTask("BARCAN-TAG-02", payload);
         markProjectPastBuildPhase(task.getProject());
         AccountEntity account = createAccount(task.getProject(), "BARCAN-TAG-02");
+        stubRealDiffForTask(task, "src/test/java/com/eneik/LeadControllerTest.java");
 
         ClaimDto claim = taskClaimService.claimForProject(task.getProject().getId(), account.getId());
         taskClaimService.complete(claim.taskId());
@@ -297,6 +310,20 @@ public class TaskClaimServiceTest {
         review.setMerged(true);
         review.setHasCode(true);
         prReviewRepository.saveAndFlush(review);
+    }
+
+    // 2026-08-02 (Charter Pattern #12): simulates a real implementer PR whose diff genuinely contains
+    // the given changed file path, so BackendContractGate's real-diff lookup has something to find.
+    private void stubRealDiffForTask(TaskEntity task, String changedFilePath) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(task.getId());
+        session.setExternalSessionId("sessions/fixture-backend-gate-" + task.getId());
+        session.setStatus("pr_opened");
+        session.setPrUrl("https://github.com/example/repo/pull/99");
+        julesSessionRepository.save(session);
+        when(gitHubPullRequestService.parsePullNumber("https://github.com/example/repo/pull/99")).thenReturn(99);
+        when(gitHubPullRequestService.fetchDiffText(any(), eq(99)))
+                .thenReturn(Optional.of("+++ b/" + changedFilePath + "\n"));
     }
 
     private ObjectNode basePayload() {

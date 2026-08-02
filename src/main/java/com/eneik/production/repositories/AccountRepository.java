@@ -139,6 +139,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND (a.current_project_id IS NULL OR a.current_project_id = :projectId)
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (:reservedName IS NULL OR a.name <> :reservedName)
+              AND (:excludedNamesCsv IS NULL OR ',' || :excludedNamesCsv || ',' NOT LIKE '%,' || a.name || ',%')
               AND COALESCE(a.sessions_dispatched_today, 0) < :maxDailySessions
               AND (
                   SELECT COUNT(*)
@@ -162,7 +163,8 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                                                              @Param("tag") String tag,
                                                              @Param("maxSessions") int maxSessions,
                                                              @Param("reservedName") String reservedName,
-                                                             @Param("maxDailySessions") int maxDailySessions);
+                                                             @Param("maxDailySessions") int maxDailySessions,
+                                                             @Param("excludedNamesCsv") String excludedNamesCsv);
 
     // No daily-session-budget check here: this method is only ever called with the configured reserved
     // compiler/falsification account's own name (ProjectFlowService.taskCompilerAccountName()), so every
