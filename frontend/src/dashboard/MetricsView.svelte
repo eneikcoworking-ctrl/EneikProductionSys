@@ -1,7 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import { roleDisplayName } from '../lib/roleDisplay';
-  import DependencyGraphView from './DependencyGraphView.svelte';
   import { API_BASE } from '../lib/api';
 
   export let projectId: string = '';
@@ -211,8 +210,6 @@
             <span class="stat-label">Tasks Done</span>
           </div>
 
-          <!-- Dependency Graph Topology View -->
-          <DependencyGraphView emsMetrics={metrics?.emsMetrics} />
           <div class="stat-item">
             <span class="stat-number text-red">{metrics.tasks?.data?.failed ?? 0}</span>
             <span class="stat-label">Failed Tasks</span>

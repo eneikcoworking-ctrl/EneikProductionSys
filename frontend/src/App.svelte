@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { ProjectDashboard, ProjectSummary } from './lib/types';
-  import CommandDashboardV2 from './dashboard/CommandDashboardV2.svelte';
+  import ProductTree from './dashboard/ProductTree.svelte';
   import MetricsView from './dashboard/MetricsView.svelte';
   import AdminDashboard from './dashboard/AdminDashboard.svelte';
   import AiResourcesDashboard from './dashboard/AiResourcesDashboard.svelte';
@@ -16,7 +16,11 @@
   let status = 'Ready';
   let bootLoading = true;
   let loadError = '';
+  // 'dashboard' is the primary living-tree view (default). The other five are internal diagnostics,
+  // gated behind the engineering-mode toggle - not co-equal primary navigation (2026-08-02 redesign:
+  // the operator does not want internal plumbing competing for attention with real product progress).
   let activeView: 'dashboard' | 'toc' | 'kaizen' | 'metrics' | 'resources' | 'admin' = 'dashboard';
+  let engineeringOpen = false;
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
   let showWishlistPrompt = false;
@@ -113,8 +117,8 @@
 
   onMount(loadProjects);
 
-  // Keep the header's project name/status in sync with CommandDashboardV2's own 10s poll cycle —
-  // without this, dashboard.project here goes stale the moment the child dashboard picks up a change.
+  // Keep the header's project name/status in sync with ProductTree's own 10s poll cycle —
+  // without this, dashboard.project here goes stale the moment the child view picks up a change.
   let headerRefreshInterval: ReturnType<typeof setInterval> | undefined;
   onMount(() => {
     headerRefreshInterval = setInterval(() => {
@@ -137,12 +141,20 @@
     </div>
     
     <div class="nav-links" role="tablist" aria-label="Main Navigation">
-      <button role="tab" aria-selected={activeView === 'dashboard'} onclick={() => activeView = 'dashboard'} class:active={activeView === 'dashboard'}>Project</button>
-      <button role="tab" aria-selected={activeView === 'toc'} onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
-      <button role="tab" aria-selected={activeView === 'kaizen'} onclick={() => activeView = 'kaizen'} class:active={activeView === 'kaizen'}>Six Sigma &amp; Kaizen</button>
-      <button role="tab" aria-selected={activeView === 'metrics'} onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
-      <button role="tab" aria-selected={activeView === 'resources'} onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
-      <button role="tab" aria-selected={activeView === 'admin'} onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
+      <button
+        role="tab"
+        aria-selected={activeView === 'dashboard' && !engineeringOpen}
+        onclick={() => { activeView = 'dashboard'; engineeringOpen = false; }}
+        class:active={activeView === 'dashboard' && !engineeringOpen}
+      >Project</button>
+      <button
+        class="engineering-toggle"
+        aria-pressed={engineeringOpen}
+        aria-label="Engineering mode"
+        title="Engineering mode: raw data for diagnostics"
+        onclick={() => (engineeringOpen = !engineeringOpen)}
+        class:active={engineeringOpen}
+      >⚙</button>
     </div>
 
     <div class="create-project">
@@ -150,6 +162,18 @@
       <button onclick={() => promptForWishlist('greenfield')}>Create</button>
     </div>
   </section>
+
+  {#if engineeringOpen}
+    <section class="engineering-bar">
+      <div class="nav-links secondary" role="tablist" aria-label="Engineering Navigation">
+        <button role="tab" aria-selected={activeView === 'toc'} onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
+        <button role="tab" aria-selected={activeView === 'kaizen'} onclick={() => activeView = 'kaizen'} class:active={activeView === 'kaizen'}>Six Sigma &amp; Kaizen</button>
+        <button role="tab" aria-selected={activeView === 'metrics'} onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
+        <button role="tab" aria-selected={activeView === 'resources'} onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
+        <button role="tab" aria-selected={activeView === 'admin'} onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
+      </div>
+    </section>
+  {/if}
 
   <!-- View Content Slot -->
   {#if activeView === 'admin'}
@@ -160,29 +184,27 @@
     <TocSentinelView />
   {:else if activeView === 'kaizen'}
     <SixSigmaKaizenPanel />
+  {:else if activeView === 'metrics' && dashboard}
+    <MetricsView projectId={dashboard.project.id} />
   {:else if dashboard}
-    {#if activeView === 'dashboard'}
-      <CommandDashboardV2 projectId={dashboard.project.id} />
+    <ProductTree projectId={dashboard.project.id} />
 
-      <!-- Collapsed non-active projects at the bottom of Dashboard view -->
-      <section class="other-projects-section">
-        <details class="collapsed-projects">
-          <summary class="toggle-title">Other projects and archive ({projects.filter(p => p.id !== dashboard?.project.id).length})</summary>
-          <div class="projects-details-grid">
-            {#each projects.filter(p => p.id !== dashboard?.project.id) as project}
-              <button class="project-details-item" onclick={() => loadDashboard(project.id)}>
-                <strong>{project.name}</strong>
-                <span class="badge {project.status}">{project.status}</span>
-              </button>
-            {:else}
-              <p class="empty-state">No other saved projects.</p>
-            {/each}
-          </div>
-        </details>
-      </section>
-    {:else if activeView === 'metrics'}
-      <MetricsView projectId={dashboard.project.id} />
-    {/if}
+    <!-- Collapsed non-active projects at the bottom of the tree view -->
+    <section class="other-projects-section">
+      <details class="collapsed-projects">
+        <summary class="toggle-title">Other projects and archive ({projects.filter(p => p.id !== dashboard?.project.id).length})</summary>
+        <div class="projects-details-grid">
+          {#each projects.filter(p => p.id !== dashboard?.project.id) as project}
+            <button class="project-details-item" onclick={() => loadDashboard(project.id)}>
+              <strong>{project.name}</strong>
+              <span class="badge {project.status}">{project.status}</span>
+            </button>
+          {:else}
+            <p class="empty-state">No other saved projects.</p>
+          {/each}
+        </div>
+      </details>
+    </section>
   {:else if bootLoading}
     <section class="empty loading-state" aria-live="polite">
       <div class="loader-spinner"></div>
@@ -328,6 +350,33 @@
   }
   .nav-links button:hover:not(.active) {
     background: var(--neutral-200);
+  }
+
+  .engineering-toggle {
+    font-size: 16px;
+    padding: 6px 12px;
+  }
+
+  .engineering-bar {
+    margin-top: var(--space-2);
+  }
+
+  .nav-links.secondary {
+    background: var(--surface);
+    border: 1px solid var(--neutral-200);
+    border-radius: var(--radius);
+    padding: var(--space-2);
+  }
+
+  .nav-links.secondary button {
+    background: transparent;
+    color: var(--neutral-600);
+    font-size: 13px;
+  }
+
+  .nav-links.secondary button.active {
+    background: var(--neutral-700);
+    color: white;
   }
 
   .other-projects-section {
