@@ -1946,6 +1946,19 @@ public class JulesDispatchService {
      * NeedsHumanReviewEntity.
      */
     private void completeWishlistCompilation(JulesSessionEntity session, TaskEntity compilerTask) {
+        // 2026-08-03 (confirmed live incident, test-forty-first): the idempotency guard below is a
+        // classic check-then-act race without this lock - handlePrOpenedWorkflow can be invoked
+        // concurrently for the same session/PR (a direct webhook racing reconcileStrandedPrOpenedWorkflows's
+        // ~60s poll replay), and without serialization both invocations read the wishlist as "not yet
+        // converted" before either commits, so both proceed to independently call buildTaskGraphFromSlices -
+        // the same brief gets fully decomposed and dispatched multiple times despite the guard existing.
+        // Same lockProjectForUpdate primitive already used for this exact race class elsewhere
+        // (checkAndDispatchCoverageAudits, dispatchFalsificationAudit) - serializes concurrent completions
+        // for the same project so the second one correctly re-reads "already compiled" after the first
+        // commits, instead of both racing past the check.
+        if (compilerTask.getProject() != null) {
+            projectRepository.lockProjectForUpdate(compilerTask.getProject().getId());
+        }
         List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
         if (wishlistIds.isEmpty()) {
             log.error("Compiler task {} has no compilesWishlistIds payload marker; cannot complete compilation", compilerTask.getId());
