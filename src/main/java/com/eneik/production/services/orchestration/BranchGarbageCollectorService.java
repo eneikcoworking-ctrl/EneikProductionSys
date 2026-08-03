@@ -128,8 +128,35 @@ public class BranchGarbageCollectorService {
         // task 72ec0f54) - a dead review kept BLOCKED_BY_REVIEW stuck indefinitely. That gap is now fixed at
         // the filter itself, but the duplication that made "cancelled" mean two slightly different things in
         // two places was the same charter #10 violation as the account-status one - one call site now, not two.
-        for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
-            if (java.util.Set.of("running", "queued", "revising", "pr_opened", "stuck").contains(session.getStatus())) {
+        // 2026-08-03 (confirmed live on test-forty-first, task 074efcb3): the loop below used to cancel
+        // EVERY active session on the task, not just the one tied to the branch/PR actually being retired
+        // above. A task can legitimately have more than one concurrent session/PR (e.g. an earlier attempt
+        // still winding down while a later one already succeeded) - cancelling all of them here silently
+        // orphaned a completely unrelated, genuinely successful PR (#38) the moment a DIFFERENT stale PR
+        // (#37) on the same task got cleaned up. Its session was cancelled, which excludes it from every
+        // other sweep in the system (all of them filter by active session status), so the real PR sat open
+        // on GitHub, invisible, for hours. Scope this to only the session whose externalSessionId matches
+        // the branch actually being retired - same token-substring scheme GitHubPullRequestService.
+        // matchesSessionToken and this file's own cleanOrphanedAndStagnatedPullRequests already use. If
+        // branchName is blank we have no way to know which session is ours to touch, so skip rather than
+        // guess - guessing was exactly today's bug.
+        if (branchName == null || branchName.isBlank()) {
+            log.warn("[BRANCH-GC] No branch name available while retiring task {}; skipping session cleanup (Step 3.5) "
+                    + "rather than guessing which session to cancel", task.getId());
+        } else {
+            for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
+                if (!java.util.Set.of("running", "queued", "revising", "pr_opened", "stuck").contains(session.getStatus())) {
+                    continue;
+                }
+                String externalId = session.getExternalSessionId();
+                if (externalId == null || externalId.isBlank()) {
+                    continue;
+                }
+                String token = externalId.startsWith("sessions/") ? externalId.substring("sessions/".length()) : externalId;
+                if (token.isBlank() || !branchName.contains(token)) {
+                    // A different session on the same task - e.g. another still-legitimate PR - not ours to touch.
+                    continue;
+                }
                 String originalStatus = session.getStatus();
                 sessionLifecycleService.retireSessionOnly(session.getId(), "Branch GC: superseded by fresh re-queue - " + reason);
                 log.info("[BRANCH-GC] Cancelled stale session {} (was {}) for task {} so redispatch is not blocked",
@@ -229,5 +256,57 @@ public class BranchGarbageCollectorService {
             cleaned++;
         }
         return cleaned;
+    }
+
+    /**
+     * A GitHub PR whose owning session ended up in a terminal/inactive status (cancelled,
+     * closed_terminal_task, failed) while the PR itself is still open - exactly the shape of the
+     * 2026-08-03 incident (task 074efcb3/PR#38): real, successful work whose session got collaterally
+     * cancelled and is now invisible to every status-filtered sweep in the system. Distinct from a
+     * genuinely orphaned PR (no session anywhere ever matched it, handled by
+     * cleanOrphanedAndStagnatedPullRequests's own "no session anywhere" branch) - here a session DID exist
+     * and DID do the work, it just never got to finish being processed.
+     */
+    public record OrphanedPrCandidate(java.util.UUID taskId, int pullNumber, String pullUrl, String headRef,
+                                       String sessionStatus, com.eneik.production.models.persistence.TaskEntity task) {
+    }
+
+    private static final java.util.Set<String> ORPHANED_CANDIDATE_SESSION_STATUSES =
+            java.util.Set.of("cancelled", "closed_terminal_task", "failed");
+
+    /**
+     * Read-only detector reused by both GeminiProjectObserverService (surfacing this as an evidence signal)
+     * and GeminiObserverActionService.resolveOrphanedPr (re-verifying at execution time) - one source of
+     * truth for what counts as an orphan, not two copies of the same matching logic.
+     */
+    public List<OrphanedPrCandidate> findOrphanedPrCandidates(ProjectEntity project) {
+        if (project == null) return List.of();
+        var openPrs = gitHubPullRequestService.fetchOpenPullRequests(project);
+        if (openPrs.isEmpty()) return List.of();
+
+        List<JulesSessionEntity> allSessions = julesSessionRepository.findAll();
+        List<OrphanedPrCandidate> candidates = new java.util.ArrayList<>();
+        for (var pr : openPrs) {
+            JulesSessionEntity match = allSessions.stream()
+                    .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
+                    .filter(s -> GitHubPullRequestService.matchesSessionToken(pr, s.getExternalSessionId()))
+                    .findFirst()
+                    .orElse(null);
+            if (match == null || !ORPHANED_CANDIDATE_SESSION_STATUSES.contains(match.getStatus())) {
+                continue;
+            }
+            TaskEntity task = taskRepository.findById(match.getTaskId()).orElse(null);
+            if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+                continue;
+            }
+            if (task.getStatus() == TaskStatus.done) {
+                // Consistent with cleanOrphanedAndStagnatedPullRequests's own done-task skip - a "done" task
+                // is presumed already handled elsewhere (e.g. genuinely merged via a different PR); not this
+                // detector's job to second-guess that.
+                continue;
+            }
+            candidates.add(new OrphanedPrCandidate(task.getId(), pr.number(), pr.url(), pr.headRef(), match.getStatus(), task));
+        }
+        return candidates;
     }
 }

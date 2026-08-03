@@ -41,6 +41,7 @@ class BranchGarbageCollectorServiceTest {
     private TaskConflictRepository taskConflictRepository;
     private JulesSessionRepository julesSessionRepository;
     private com.eneik.production.services.ProjectFlowService projectFlowService;
+    private com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService;
     private BranchGarbageCollectorService service;
 
     private void setUp() {
@@ -49,9 +50,10 @@ class BranchGarbageCollectorServiceTest {
         taskConflictRepository = mock(TaskConflictRepository.class);
         julesSessionRepository = mock(JulesSessionRepository.class);
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
+        sessionLifecycleService = mock(com.eneik.production.services.jules.SessionLifecycleService.class);
         service = new BranchGarbageCollectorService(gitHubPullRequestService, taskRepository,
                 taskConflictRepository, julesSessionRepository,
-                mock(com.eneik.production.services.jules.SessionLifecycleService.class),
+                sessionLifecycleService,
                 projectFlowService);
     }
 
@@ -189,5 +191,148 @@ class BranchGarbageCollectorServiceTest {
         verify(gitHubPullRequestService).closeSinglePullRequest(project, closeoutPr,
                 "Branch GC: Orphaned closeout PR superseded by main");
         verifyNoInteractions(julesSessionRepository);
+    }
+
+    /**
+     * Direct regression test for the 2026-08-03 incident (task 074efcb3, PR#37 stale/PR#38 real and
+     * successful, both on the same task): retireAbandonedBranchAndPR's own session cleanup ("Step 3.5")
+     * used to cancel EVERY active session on the task, not just the one tied to the branch/PR actually
+     * being retired - collaterally cancelling a completely unrelated, genuinely successful PR's session the
+     * moment a different stale PR on the same task got cleaned up.
+     */
+    @Test
+    void retireAbandonedBranchAndPrOnlyCancelsTheSessionMatchingTheRetiredBranch() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+
+        JulesSessionEntity staleSession = new JulesSessionEntity();
+        staleSession.setId(UUID.randomUUID());
+        staleSession.setTaskId(taskId);
+        staleSession.setExternalSessionId("sessions/17697520428508506718");
+        staleSession.setStatus("pr_opened");
+
+        JulesSessionEntity unrelatedLiveSession = new JulesSessionEntity();
+        unrelatedLiveSession.setId(UUID.randomUUID());
+        unrelatedLiveSession.setTaskId(taskId);
+        unrelatedLiveSession.setExternalSessionId("sessions/5354685196398021436");
+        unrelatedLiveSession.setStatus("pr_opened");
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(staleSession, unrelatedLiveSession));
+        when(gitHubPullRequestService.fetchPullRequestByNumber(project, 37))
+                .thenReturn(Optional.of(pr(37, "Stale attempt", "jules-17697520428508506718-1fb880b9", Instant.now())));
+
+        boolean retired = service.retireAbandonedBranchAndPR(project, task,
+                "jules-17697520428508506718-1fb880b9", 37, "Branch GC: Cleaning stagnated PR #37");
+
+        assertEquals(true, retired);
+        verify(sessionLifecycleService).retireSessionOnly(eq(staleSession.getId()), anyString());
+        verify(sessionLifecycleService, never()).retireSessionOnly(eq(unrelatedLiveSession.getId()), anyString());
+    }
+
+    @Test
+    void retireAbandonedBranchAndPrSkipsSessionCleanupWhenBranchNameIsBlank() {
+        // We have no way to know which session is ours to touch without a branch name - skip rather than
+        // guess (guessing "cancel everything on the task" was exactly the 2026-08-03 bug).
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/abc");
+        session.setStatus("pr_opened");
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(session));
+
+        boolean retired = service.retireAbandonedBranchAndPR(project, task, null, null, "no branch known");
+
+        assertEquals(true, retired);
+        verifyNoInteractions(sessionLifecycleService);
+    }
+
+    /**
+     * findOrphanedPrCandidates coverage: a session whose owning task's PR is still open on GitHub but whose
+     * own status already ended terminal (cancelled/closed_terminal_task/failed) is a real orphan - nothing
+     * else in the system will ever pick it back up, since every other sweep filters by active session
+     * status. A session that is still genuinely live (running/pr_opened/etc.) is not an orphan candidate -
+     * flagging it would be a false positive on real, ongoing work.
+     */
+    @Test
+    void findOrphanedPrCandidatesDetectsATerminalSessionWithAStillOpenPr() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        var openPr = pr(38, "Moodle Financial Visibility Verification",
+                "jules-5354685196398021436-be7bfa86", Instant.now().minus(5, ChronoUnit.HOURS));
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
+
+        JulesSessionEntity cancelledSession = new JulesSessionEntity();
+        cancelledSession.setTaskId(taskId);
+        cancelledSession.setExternalSessionId("sessions/5354685196398021436");
+        cancelledSession.setStatus("cancelled");
+        when(julesSessionRepository.findAll()).thenReturn(List.of(cancelledSession));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        List<BranchGarbageCollectorService.OrphanedPrCandidate> candidates = service.findOrphanedPrCandidates(project);
+
+        assertEquals(1, candidates.size());
+        assertEquals(38, candidates.get(0).pullNumber());
+        assertEquals(taskId, candidates.get(0).taskId());
+    }
+
+    @Test
+    void findOrphanedPrCandidatesIgnoresAGenuinelyLiveSession() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        var openPr = pr(40, "Still in progress", "jules-999-abc", Instant.now());
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
+
+        JulesSessionEntity liveSession = new JulesSessionEntity();
+        liveSession.setTaskId(taskId);
+        liveSession.setExternalSessionId("sessions/999");
+        liveSession.setStatus("pr_opened");
+        when(julesSessionRepository.findAll()).thenReturn(List.of(liveSession));
+
+        List<BranchGarbageCollectorService.OrphanedPrCandidate> candidates = service.findOrphanedPrCandidates(project);
+
+        assertEquals(0, candidates.size());
+    }
+
+    @Test
+    void findOrphanedPrCandidatesExcludesDoneTasksConsistentWithTheOtherSweep() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        var openPr = pr(41, "Already done elsewhere", "jules-777-abc", Instant.now());
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(openPr));
+
+        JulesSessionEntity terminalSession = new JulesSessionEntity();
+        terminalSession.setTaskId(taskId);
+        terminalSession.setExternalSessionId("sessions/777");
+        terminalSession.setStatus("failed");
+        when(julesSessionRepository.findAll()).thenReturn(List.of(terminalSession));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.done);
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        List<BranchGarbageCollectorService.OrphanedPrCandidate> candidates = service.findOrphanedPrCandidates(project);
+
+        assertEquals(0, candidates.size());
     }
 }
