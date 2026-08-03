@@ -2161,6 +2161,14 @@ public class JulesDispatchService {
     }
 
     private boolean hasParseableCarrierAnswer(TaskEntity carrierTask, String ref) {
+        if (projectFlowService.isPhilosophicalAuditTask(carrierTask)) {
+            // No single parseable "plan" shape for a discussion turn - real evidence is the report file
+            // itself having landed on this branch at all (its content only fully validates at the final
+            // turn, once every active role is covered - see completePersistentPhilosophicalAuditCycle).
+            String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
+            return reportPath != null
+                    && gitHubPullRequestService.fetchFileContent(carrierTask.getProject(), ref, reportPath).isPresent();
+        }
         if (projectFlowService.isReviewFallbackTask(carrierTask)) {
             return !parseReviewVerdictBatch(carrierTask.getProject(), ref,
                     projectFlowService.reviewFallbackVerdictPath(carrierTask)).isEmpty();
@@ -2235,12 +2243,19 @@ public class JulesDispatchService {
             // JulesDispatchService.createFreshReviewFallbackPersistentWorker). The carrier task's own
             // creation-time payload IS cycle 1's batch.
             com.eneik.production.models.persistence.PersistentWorkerPurpose purpose =
-                    projectFlowService.isReviewFallbackTask(carrierTask)
-                            ? com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
-                            : com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER;
-            batchIds = purpose == com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
-                    ? projectFlowService.reviewFallbackTargetTaskIds(carrierTask)
-                    : compilerTaskWishlistIds(carrierTask);
+                    projectFlowService.isPhilosophicalAuditTask(carrierTask)
+                            ? com.eneik.production.models.persistence.PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT
+                            : projectFlowService.isReviewFallbackTask(carrierTask)
+                                    ? com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
+                                    : com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER;
+            // Philosophical-audit's real batch state is the covered-role-tags list already recorded on the
+            // carrier task's own payload (role tags aren't UUIDs, so they can't live in currentBatchIds) -
+            // this marker only needs to be non-empty to satisfy the generic "in flight" bookkeeping below.
+            batchIds = purpose == com.eneik.production.models.persistence.PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT
+                    ? java.util.List.of(UUID.randomUUID())
+                    : purpose == com.eneik.production.models.persistence.PersistentWorkerPurpose.REVIEW_FALLBACK
+                            ? projectFlowService.reviewFallbackTargetTaskIds(carrierTask)
+                            : compilerTaskWishlistIds(carrierTask);
             worker = persistentWorkerSessionService.registerFreshWorker(
                     carrierTask.getProject().getId(), purpose, carrierTask.getId(), session.getId(), batchIds);
             // The batch we just registered IS the one this pr_opened edge is responding to - consume it
@@ -2250,7 +2265,9 @@ public class JulesDispatchService {
                     carrierTask.getId(), purpose);
         }
 
-        if (projectFlowService.isReviewFallbackTask(carrierTask)) {
+        if (projectFlowService.isPhilosophicalAuditTask(carrierTask)) {
+            completePersistentPhilosophicalAuditCycle(session, carrierTask);
+        } else if (projectFlowService.isReviewFallbackTask(carrierTask)) {
             completePersistentReviewFallbackCycle(session, carrierTask, batchIds);
         } else {
             completePersistentCompilerCycle(session, carrierTask, batchIds);
@@ -2335,6 +2352,73 @@ public class JulesDispatchService {
         }
         log.info("Persistent review-fallback worker (carrier task {}): applied verdicts for {} PR(s) this cycle",
                 carrierTask.getId(), originalTaskIds.size());
+    }
+
+    /**
+     * Completion handler for a PHILOSOPHICAL_AUDIT persistent worker's pr_opened edge. Unlike
+     * completePersistentCompilerCycle/completePersistentReviewFallbackCycle (which always leave the
+     * session parked open at pr_opened for an indefinite next cycle), this purpose has a real finite
+     * end: ProjectFlowService.dispatchToPhilosophicalAuditPersistentWorker records each turn's role
+     * batch onto the carrier task's own payload at dispatch time, so once every currently-active role
+     * has already been asked, THIS turn's answer is the closing synthesis and the discussion is over -
+     * reuse completePhilosophicalAudit's merge/archive/close/critique-parsing exactly, then also retire
+     * the worker row (the other two persistent purposes are deliberately left open forever; this one is
+     * not - see PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT's javadoc).
+     */
+    private void completePersistentPhilosophicalAuditCycle(JulesSessionEntity session, TaskEntity carrierTask) {
+        List<String> covered = projectFlowService.coveredPhilosophicalAuditRoles(carrierTask);
+        List<String> activeRoleTags = roleRepository.findAll().stream()
+                .filter(com.eneik.production.models.persistence.RoleEntity::isActive)
+                .map(com.eneik.production.models.persistence.RoleEntity::getTag)
+                .toList();
+        boolean allRolesCovered = !activeRoleTags.isEmpty() && covered.containsAll(activeRoleTags);
+
+        if (!allRolesCovered) {
+            log.info("Persistent philosophical-audit worker (carrier task {}): turn complete, {} of {} active role(s) "
+                            + "covered so far; staying parked at pr_opened for the next turn",
+                    carrierTask.getId(), covered.size(), activeRoleTags.size());
+            return;
+        }
+
+        boolean firstCompletion = claimService.hasActiveClaim(carrierTask.getId());
+        String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
+        String screenshotDir = reportPath == null ? null
+                : reportPath.replaceFirst("\\.json$", "") + "-screenshots/";
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
+        List<com.eneik.production.services.FalsificationCycleService.PhilosophicalCritique> critiques = firstCompletion && reportPath != null
+                ? prOpt.map(pr -> parsePhilosophicalReport(carrierTask.getProject(), pr.headRef(), reportPath)).orElseGet(List::of)
+                : List.of();
+
+        if (firstCompletion) {
+            falsificationCycleService.applyPhilosophicalCritiques(carrierTask.getProject(), critiques, screenshotDir);
+        }
+
+        String mergeReason = firstCompletion
+                ? "multi-turn philosophical falsification discussion (all roles) parsed into product-critique wishlist(s)"
+                : "duplicate persistent philosophical-audit completion discarded";
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(carrierTask.getProject(), pr, mergeReason);
+            if (reportPath != null) {
+                archiveRecordFile(carrierTask.getProject(), reportPath, "philosophical-falsification-report");
+            }
+            closeSessionAsNoCode(session, "Multi-turn philosophical falsification discussion complete (all roles covered); branch deleted.");
+        });
+
+        persistentWorkerSessionService.findByCarrierTaskId(carrierTask.getId())
+                .ifPresent(worker -> persistentWorkerSessionService.retire(worker, "all role-batches covered, discussion complete"));
+
+        if (!firstCompletion) {
+            log.warn("Persistent philosophical-audit final turn (carrier task {}): completion discarded - another "
+                    + "session already applied this discussion's critiques.", carrierTask.getId());
+            return;
+        }
+        claimService.complete(carrierTask.getId());
+        markSystemTaskDone(carrierTask);
+        systemProgressTracker.recordProgress();
+        log.info("Persistent philosophical-audit discussion for project {} completed (carrier task {}): {} critique(s) from {} role(s)",
+                carrierTask.getProject().getId(), carrierTask.getId(), critiques.size(), activeRoleTags.size());
     }
 
     /**
@@ -3910,7 +3994,8 @@ public class JulesDispatchService {
                     || projectFlowService.isFalsificationAuditTask(task)
                     || projectFlowService.isReviewFallbackTask(task)
                     || projectFlowService.isDesignReviewTask(task)
-                    || projectFlowService.isCoverageAuditTask(task);
+                    || projectFlowService.isCoverageAuditTask(task)
+                    || projectFlowService.isPhilosophicalAuditTask(task);
             if (honorDavidsonProgressEvidence(session, task, lastProgress)) {
                 continue;
             }

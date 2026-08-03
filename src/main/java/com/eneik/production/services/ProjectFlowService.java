@@ -2872,6 +2872,153 @@ public class ProjectFlowService {
         return raw == null || raw.isBlank() ? null : raw;
     }
 
+    // 2026-08-03: multi-turn philosophical audit (see FalsificationCycleService.
+    // executePhilosophicalCycleForProject's class javadoc for the live incident this replaces - 13
+    // fully isolated one-role sessions with no discussion between them). One continuous Jules session
+    // per project, one role-batch (3 roles) per follow-up turn - the covered-role-tags list lives on
+    // the carrier task's own payload (not PersistentWorkerSessionEntity.currentBatchIds, which stays a
+    // generic UUID array unrelated to role tags) so completion-time code can derive "was this the last
+    // batch" by comparing against the current active-role set, with no separate flag to keep in sync.
+    public static final String PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY = "philosophicalAuditCoveredRoles";
+
+    public java.util.List<String> coveredPhilosophicalAuditRoles(TaskEntity carrierTask) {
+        if (carrierTask.getPayload() == null) {
+            return java.util.List.of();
+        }
+        JsonNode arr = carrierTask.getPayload().path(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
+        if (!arr.isArray()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> roles = new java.util.ArrayList<>();
+        arr.forEach(n -> roles.add(n.asText()));
+        return roles;
+    }
+
+    private void appendCoveredPhilosophicalAuditRoles(TaskEntity carrierTask, java.util.List<String> roleBatch) {
+        ObjectNode payload = carrierTask.getPayload() != null
+                ? carrierTask.getPayload().deepCopy() : objectMapper.createObjectNode();
+        java.util.List<String> merged = new java.util.ArrayList<>(coveredPhilosophicalAuditRoles(carrierTask));
+        merged.addAll(roleBatch);
+        ArrayNode arr = payload.putArray(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
+        merged.forEach(arr::add);
+        carrierTask.setPayload(payload);
+        taskRepository.save(carrierTask);
+    }
+
+    /**
+     * Persistent-worker equivalent of dispatchPhilosophicalAudit: reuses an existing idle worker's
+     * session (follow-up message, same branch/PR/report file) when one exists, otherwise creates a
+     * fresh carrier task/session exactly like the one-shot path used to unconditionally. Unlike
+     * dispatchToCompilerPersistentWorker (confirmed to have no row lock at all), this acquires
+     * lockProjectForUpdate up front, same as the one-shot dispatchPhilosophicalAudit already does -
+     * new code inherits that protection rather than reproducing the compiler path's gap.
+     *
+     * @param roleBatch the role tags this turn's message covers (already excludes previously-covered
+     *                  roles - the caller, FalsificationCycleService, computes this)
+     * @param message   the full turn message: role charters/philosopher content for a fresh dispatch,
+     *                  or the follow-up text (next roles + prior-turns digest, or the final synthesis
+     *                  instruction) for an existing worker
+     * @param reportPath used only when creating a fresh worker (first turn)
+     * @return true if the turn was sent/dispatched, false if skipped (busy) or failed
+     */
+    @Transactional
+    public boolean dispatchToPhilosophicalAuditPersistentWorker(ProjectEntity project,
+            java.util.List<String> roleBatch, String message, String reportPath) {
+        projectRepository.lockProjectForUpdate(project.getId());
+
+        Optional<PersistentWorkerSessionEntity> existingOpt =
+                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT);
+
+        if (existingOpt.isPresent()) {
+            PersistentWorkerSessionEntity worker = existingOpt.get();
+            if (persistentWorkerSessionService.needsRotation(worker)) {
+                // A philosophical-audit cycle has a real finite end (see completePersistentPhilosophicalAuditCycle) -
+                // reaching the generic rotation cap without finishing is unexpected but handled the same
+                // defensive way the other two purposes handle it: retire and start clean.
+                persistentWorkerSessionService.retire(worker, "cycle/age cap reached before discussion finished");
+            } else if (persistentWorkerSessionService.isIdleAndFresh(worker)) {
+                JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
+                        ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
+                        : null;
+                if (session != null && julesDispatchService.sendFollowUpMessage(session, message)) {
+                    // currentBatchIds only needs to be non-empty to mark "in flight" for isIdleAndFresh's
+                    // generic busy check - the real role-batch content lives on the carrier task's payload,
+                    // updated below, since role tags aren't UUIDs.
+                    persistentWorkerSessionService.recordBatchSent(worker, java.util.List.of(UUID.randomUUID()));
+                    TaskEntity carrierTask = worker.getCarrierTaskId() != null
+                            ? taskRepository.findById(worker.getCarrierTaskId()).orElse(null) : null;
+                    if (carrierTask != null) {
+                        appendCoveredPhilosophicalAuditRoles(carrierTask, roleBatch);
+                    }
+                    log.info("Sent philosophical-audit follow-up turn (roles {}) to persistent worker {} (cycle {})",
+                            roleBatch, worker.getId(), worker.getCycleCount());
+                    return true;
+                }
+                log.warn("Persistent philosophical-audit worker {} exists but could not be messaged this cycle", worker.getId());
+                return false;
+            } else {
+                log.info("Persistent philosophical-audit worker {} is still busy; role batch {} deferred to next cycle",
+                        worker.getId(), roleBatch);
+                return false;
+            }
+        }
+
+        return createPhilosophicalAuditPersistentWorker(project, roleBatch, message, reportPath);
+    }
+
+    private boolean createPhilosophicalAuditPersistentWorker(ProjectEntity project,
+            java.util.List<String> roleBatch, String prompt, String reportPath) {
+        RoleEntity compilerRole = roleRepository.findById(ORCHESTRATOR_ROLE).orElse(null);
+        if (compilerRole == null) {
+            log.error("Cannot create persistent philosophical-audit worker for project {}: role {} not found",
+                    project.getId(), ORCHESTRATOR_ROLE);
+            return false;
+        }
+
+        TaskEntity carrierTask = new TaskEntity();
+        carrierTask.setProject(project);
+        carrierTask.setRole(compilerRole);
+        carrierTask.setTitle("Persistent philosophical audit worker (" + shortId(project.getId()) + ")");
+        carrierTask.setDescription(prompt);
+        carrierTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PHILOSOPHICAL_AUDIT_TASK_TYPE);
+        payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
+        if (reportPath != null && !reportPath.isBlank()) {
+            payload.put(PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY, reportPath);
+        }
+        ArrayNode rolesArray = payload.putArray(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
+        roleBatch.forEach(rolesArray::add);
+        carrierTask.setPayload(payload);
+        carrierTask = taskRepository.save(carrierTask);
+
+        dispatchCompilerTask(carrierTask);
+
+        TaskEntity refreshed = taskRepository.findById(carrierTask.getId()).orElse(carrierTask);
+        if (refreshed.getJulesSessionName() == null) {
+            // No account capacity this cycle - stays queued for the normal retry sweep, same as the
+            // compiler worker's own lazy-registration fallback (completePersistentWorkerCycle registers
+            // the row on first pr_opened using this task's own payload as cycle 1).
+            log.warn("Persistent philosophical-audit worker carrier task {} could not be dispatched this cycle; will retry via the normal queued-task sweep",
+                    carrierTask.getId());
+            return false;
+        }
+        List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskId(carrierTask.getId());
+        JulesSessionEntity newSession = sessions.stream()
+                .max(java.util.Comparator.comparing(JulesSessionEntity::getCreatedAt))
+                .orElse(null);
+        if (newSession == null) {
+            log.error("Persistent philosophical-audit worker carrier task {} dispatched but no JulesSessionEntity found", carrierTask.getId());
+            return false;
+        }
+        persistentWorkerSessionService.registerFreshWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT,
+                carrierTask.getId(), newSession.getId(), java.util.List.of(UUID.randomUUID()));
+        log.info("Created persistent philosophical-audit worker for project {}: carrier task {}, session {}, first roles {}",
+                project.getId(), carrierTask.getId(), newSession.getId(), roleBatch);
+        return true;
+    }
+
     /**
      * True for implementation work compiled from a non-client iteration source. Public (not just used
      * internally by dispatchQueuedTasks's build-phase hold) so TaskWaitTimeService can classify a queued
