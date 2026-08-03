@@ -103,6 +103,8 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "loopCloseSimilarThreshold", 3);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockBlindCycleThreshold", 5);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
+        ReflectionTestUtils.setField(julesDispatchService, "activitiesPageSize", 20);
+        ReflectionTestUtils.setField(julesDispatchService, "maxActivityPagesPerCycle", 20);
     }
 
     @Test
@@ -209,7 +211,8 @@ class JulesDispatchServiceTest {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(julesApiClient.getSessionStatus("sessions/abc", "jules-key")).thenReturn("RUNNING");
-        when(julesApiClient.getSessionActivities("sessions/abc", "jules-key")).thenReturn(objectMapper.readTree(activities));
+        when(julesApiClient.getSessionActivities(eq("sessions/abc"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.readTree(activities));
         when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
         when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(history);
         when(mlPredictionServiceClient.chat(anyString(), anyString())).thenReturn("Root cause: repeated artifact blocker\nKano classification: Must-Be\nCynefin domain: clear");
@@ -263,7 +266,9 @@ class JulesDispatchServiceTest {
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(julesApiClient.getSessionStatus("sessions/overflow", "jules-key")).thenReturn("RUNNING");
-        when(julesApiClient.getSessionActivities("sessions/overflow", "jules-key"))
+        // Overflows at every page size down to 1 - the true last-resort case (adaptive shrink-and-retry
+        // exhausted every step: 20 -> 10 -> 5 -> 2 -> 1).
+        when(julesApiClient.getSessionActivities(eq("sessions/overflow"), eq("jules-key"), anyInt(), isNull()))
                 .thenReturn(objectMapper.createObjectNode()
                         .put("activitiesOverflow", true)
                         .put("maxBytes", 2_097_152));
@@ -278,6 +283,264 @@ class JulesDispatchServiceTest {
         verify(julesApiClient, never()).sendMessage(eq("sessions/overflow"), anyString(), eq("jules-key"));
         verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
         verify(wishlistRepository, never()).save(any(WishlistEntity.class));
+    }
+
+    /**
+     * Regression coverage for the 2026-08-03 blind-cycle incident (test-forty-first): the old
+     * unparameterized /activities call always returned Jules's own default (oldest-first) page and never
+     * advanced, so a long-running session's recent activity was never actually scanned. This walks a
+     * two-page session end to end and asserts the cursor lands on the last non-blank pageToken used (the
+     * position to resume/re-check from next cycle), not blank - see answerAgentQuestions's javadoc for why
+     * blank would incorrectly restart the whole walk from page 1.
+     */
+    @Test
+    void walksForwardAcrossMultiplePagesInOneCycleAndPersistsTheTailCursor() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/paged");
+        session.setStatus("running");
+        session.setActivitiesPageCursor(null);
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Multi-page QA task");
+
+        String page1 = """
+                {"activities": [{"originator": "agent", "name": "q1",
+                    "agentMessaged": {"message": "Generated/local artifact detected in PR diff: .env. What should I do?"}}],
+                 "nextPageToken": "tok1"}
+                """;
+        String page2 = """
+                {"activities": [{"originator": "agent", "name": "q2",
+                    "agentMessaged": {"message": "Generated/local artifact detected in PR diff: dist/. What should I do?"}}],
+                 "nextPageToken": ""}
+                """;
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/paged", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/paged"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.readTree(page1));
+        when(julesApiClient.getSessionActivities(eq("sessions/paged"), eq("jules-key"), eq(20), eq("tok1")))
+                .thenReturn(objectMapper.readTree(page2));
+        when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
+        when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of());
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
+        when(julesApiClient.sendMessage(eq("sessions/paged"), anyString(), eq("jules-key"))).thenReturn(true);
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        verify(julesApiClient, times(2)).sendMessage(eq("sessions/paged"), anyString(), eq("jules-key"));
+        verify(julesApiClient).getSessionActivities(eq("sessions/paged"), eq("jules-key"), eq(20), isNull());
+        verify(julesApiClient).getSessionActivities(eq("sessions/paged"), eq("jules-key"), eq(20), eq("tok1"));
+        assertEquals("tok1", result.getActivitiesPageCursor(),
+                "cursor must land on the last non-blank pageToken used, not blank - blank would restart the whole walk from page 1 next cycle");
+        assertEquals(0, result.getBlindCycleCount());
+    }
+
+    /**
+     * Regression coverage: a session pre-seeded with a cursor from a previous cycle must resume from that
+     * position, not restart from page 1 - the entire point of persisting the cursor.
+     */
+    @Test
+    void resumesFromThePersistedCursorOnASubsequentCycle() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/resume");
+        session.setStatus("running");
+        session.setActivitiesPageCursor("tok1");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Resumed QA task");
+
+        String page2 = """
+                {"activities": [], "nextPageToken": ""}
+                """;
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/resume", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/resume"), eq("jules-key"), eq(20), eq("tok1")))
+                .thenReturn(objectMapper.readTree(page2));
+
+        julesDispatchService.pollStatus(sessionId);
+
+        verify(julesApiClient, never()).getSessionActivities(eq("sessions/resume"), eq("jules-key"), anyInt(), isNull());
+        verify(julesApiClient).getSessionActivities(eq("sessions/resume"), eq("jules-key"), eq(20), eq("tok1"));
+    }
+
+    /**
+     * Regression coverage: an individual activity can embed a large artifact (git diff, screenshot, bash
+     * output) that overflows the byte cap even at a small page size, independent of session length - see
+     * JulesApiClient.getSessionActivities's javadoc. Halving the page size before giving up must eventually
+     * succeed rather than treating every overflow as unrecoverable.
+     */
+    @Test
+    void shrinksPageSizeOnOverflowUntilAPageFits() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/shrink");
+        session.setStatus("running");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Screenshot-heavy QA task");
+
+        String fittingPage = """
+                {"activities": [{"originator": "agent", "name": "q1",
+                    "agentMessaged": {"message": "Generated/local artifact detected in PR diff: .env. What should I do?"}}],
+                 "nextPageToken": ""}
+                """;
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/shrink", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.createObjectNode().put("activitiesOverflow", true).put("maxBytes", 2_097_152));
+        when(julesApiClient.getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(10), isNull()))
+                .thenReturn(objectMapper.createObjectNode().put("activitiesOverflow", true).put("maxBytes", 2_097_152));
+        when(julesApiClient.getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(5), isNull()))
+                .thenReturn(objectMapper.readTree(fittingPage));
+        when(julesActivityResponseRepository.findByJulesSessionIdAndActivityHash(eq(sessionId), anyString())).thenReturn(Optional.empty());
+        when(julesActivityResponseRepository.findByJulesSessionIdOrderByCreatedAtDesc(sessionId)).thenReturn(List.of());
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of());
+        when(julesApiClient.sendMessage(eq("sessions/shrink"), anyString(), eq("jules-key"))).thenReturn(true);
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        verify(julesApiClient).getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(20), isNull());
+        verify(julesApiClient).getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(10), isNull());
+        verify(julesApiClient).getSessionActivities(eq("sessions/shrink"), eq("jules-key"), eq(5), isNull());
+        verify(julesApiClient, times(1)).sendMessage(eq("sessions/shrink"), anyString(), eq("jules-key"));
+        assertEquals(0, result.getBlindCycleCount(), "a page that eventually fit is a successful cycle, not a blind one");
+    }
+
+    /**
+     * Regression coverage: a session with a large activity backlog (e.g. the first scan of an
+     * already-long-running session after this feature ships) must not turn into one unbounded synchronous
+     * walk - it should stop after maxActivityPagesPerCycle pages and resume from the saved cursor next
+     * cycle.
+     */
+    @Test
+    void stopsAtThePageCapAndResumesNextCycleInsteadOfWalkingForever() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/deep-history");
+        session.setStatus("running");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Deep-history QA task");
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/deep-history", "jules-key")).thenReturn("RUNNING");
+        // Every page has an empty activities array and a genuine (non-blank) nextPageToken equal to its own
+        // input pageToken bumped by one - an endless chain that would run forever without the page cap.
+        when(julesApiClient.getSessionActivities(eq("sessions/deep-history"), eq("jules-key"), eq(20), any()))
+                .thenAnswer(invocation -> {
+                    String inputToken = invocation.getArgument(3);
+                    int next = inputToken == null ? 1 : Integer.parseInt(inputToken) + 1;
+                    return objectMapper.createObjectNode()
+                            .put("nextPageToken", String.valueOf(next))
+                            .set("activities", objectMapper.createArrayNode());
+                });
+        ReflectionTestUtils.setField(julesDispatchService, "maxActivityPagesPerCycle", 3);
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        verify(julesApiClient, times(3)).getSessionActivities(eq("sessions/deep-history"), eq("jules-key"), eq(20), any());
+        assertEquals("3", result.getActivitiesPageCursor(),
+                "must stop at the page cap and persist wherever it got to, resuming from there next cycle rather than looping forever");
     }
 
     @Test

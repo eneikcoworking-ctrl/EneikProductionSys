@@ -66,6 +66,14 @@ public class JulesSessionEntity {
     @Column(name = "remote_deleted_at")
     private Instant remoteDeletedAt;
 
+    // 2026-08-03 (blind-cycle incident, test-forty-first): the last Jules activities.list nextPageToken
+    // this session has fully scanned through. Null means "never scanned under the incremental-walk scheme
+    // yet, start from page 1" - see JulesDispatchService.answerAgentQuestions. Without this, every poll
+    // re-requested Jules's own default (oldest-first) page forever, so a long-running session's recent
+    // activity was never actually looked at.
+    @Column(name = "activities_page_cursor", length = 128)
+    private String activitiesPageCursor;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -110,6 +118,9 @@ public class JulesSessionEntity {
 
     public Instant getRemoteDeletedAt() { return remoteDeletedAt; }
     public void setRemoteDeletedAt(Instant remoteDeletedAt) { this.remoteDeletedAt = remoteDeletedAt; }
+
+    public String getActivitiesPageCursor() { return activitiesPageCursor; }
+    public void setActivitiesPageCursor(String activitiesPageCursor) { this.activitiesPageCursor = activitiesPageCursor; }
 
     @PreUpdate
     public void preUpdate() {

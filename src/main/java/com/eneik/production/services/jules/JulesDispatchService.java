@@ -380,6 +380,19 @@ public class JulesDispatchService {
     @Value("${jules.forced-unblock-max-attempts:2}")
     private int forcedUnblockMaxAttempts;
 
+    // 2026-08-03 (blind-cycle incident, test-forty-first): small enough that a page rarely overflows the
+    // byte cap on its own (activities can embed large git diffs/screenshots/bash output - see
+    // JulesApiClient.getSessionActivities's javadoc), but see answerAgentQuestions's shrink-and-retry for
+    // when even this isn't small enough.
+    @Value("${jules.activities-page-size:20}")
+    private int activitiesPageSize;
+
+    // How many pages answerAgentQuestions will walk forward in a single poll cycle before saving progress
+    // and deferring the rest to the next cycle - bounds worst-case per-cycle fetch time when a session has
+    // a large backlog (e.g. the first scan of an already-long-running session after this feature ships).
+    @Value("${jules.max-activity-pages-per-cycle:20}")
+    private int maxActivityPagesPerCycle;
+
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
                                 JulesActivityResponseRepository julesActivityResponseRepository,
@@ -984,6 +997,18 @@ public class JulesDispatchService {
                 || "stuck".equals(status);
     }
 
+    /**
+     * 2026-08-03 rewrite (blind-cycle incident, test-forty-first): the old version made one unparameterized
+     * call to /activities every cycle, which - confirmed live via a real pagination probe - always returns
+     * Jules's own default page: the OLDEST ~50 activities from session start, never advancing. A
+     * long-running session's actual recent activity was never being looked at, and a single page can be
+     * large on its own regardless of session length (activities can embed full git diffs, base64
+     * screenshots, or raw command output - see the real Activity resource schema). This version walks
+     * forward incrementally from a persisted per-session cursor (JulesSessionEntity.activitiesPageCursor),
+     * a small page at a time, so per-cycle payload size depends on how much is genuinely NEW since the last
+     * poll, not on total session history - no total-size cap can ever be "big enough" for that, but a small
+     * page almost always is.
+     */
     private void answerAgentQuestions(JulesSessionEntity session, TaskEntity task, String apiKey) {
         if (apiKey == null || apiKey.isBlank()) {
             return;
@@ -992,31 +1017,85 @@ public class JulesDispatchService {
             return;
         }
 
-        JsonNode root = julesApiClient.getSessionActivities(session.getExternalSessionId(), apiKey);
-        if (root != null && root.path("activitiesOverflow").asBoolean(false)) {
-            // A large activity payload just means the session has a long history (lots of tool calls/file
-            // reads) - it is not evidence the session is stuck. Closing the loop here used to throw away
-            // sessions that were actively progressing toward a PR, purely because Eneik's own log-scanner
-            // hit its memory guard. Skip this cycle's question scan instead; blindCycleCount tracks how
-            // many consecutive cycles this has happened so forceUnblockOverflowedSessions can still
-            // recover a session that is genuinely stuck behind this exact skip.
-            session.setBlindCycleCount(session.getBlindCycleCount() + 1);
-            julesSessionRepository.save(session);
-            log.warn("Jules activities payload for session {} exceeded the backend safety limit; skipping question scan this cycle (session left running, blind cycle {})",
-                    session.getExternalSessionId(), session.getBlindCycleCount());
-            return;
-        }
-        if (root == null || !root.path("activities").isArray()) {
-            return;
-        }
+        String pageToken = session.getActivitiesPageCursor();
 
-        if (session.getBlindCycleCount() != 0) {
-            // A "sighted" cycle - the activity log is back under the size cap.
-            session.setBlindCycleCount(0);
-            julesSessionRepository.save(session);
-        }
+        for (int pageCount = 0; pageCount < maxActivityPagesPerCycle; pageCount++) {
+            JsonNode root = fetchActivitiesPageWithShrink(session, apiKey, pageToken, activitiesPageSize);
+            if (root != null && root.path("activitiesOverflow").asBoolean(false)) {
+                // True last resort now (see fetchActivitiesPageWithShrink): even a single activity at this
+                // cursor position overflowed the byte cap. Same fallback semantics as before this rewrite -
+                // skip the rest of this cycle, blindCycleCount tracks consecutive occurrences so
+                // forceUnblockOverflowedSessions can still recover a session genuinely stuck behind this.
+                session.setBlindCycleCount(session.getBlindCycleCount() + 1);
+                julesSessionRepository.save(session);
+                log.warn("Jules activities page for session {} could not be fetched under any page size down to a single activity; skipping question scan this cycle (session left running, blind cycle {})",
+                        session.getExternalSessionId(), session.getBlindCycleCount());
+                return;
+            }
+            if (root == null || !root.path("activities").isArray()) {
+                // Genuine null (jules disabled, network hiccup, session skipped) - not evidence of
+                // anything, same as the pre-rewrite behavior: do nothing, try again next cycle.
+                return;
+            }
 
-        for (JsonNode activity : root.path("activities")) {
+            boolean stopEverything = processActivitiesPage(session, task, apiKey, root.path("activities"));
+
+            String nextPageToken = root.path("nextPageToken").asText("");
+            if (!nextPageToken.isBlank()) {
+                pageToken = nextPageToken;
+            }
+            // When nextPageToken is blank, this is the tail as of this snapshot - persist the token that
+            // got us HERE (not blank) so next cycle re-queries this same position, which - verified live
+            // against the real Jules API this session - correctly surfaces whatever's newly appended since,
+            // rather than restarting the whole walk from page 1.
+            session.setActivitiesPageCursor(pageToken);
+            if (session.getBlindCycleCount() != 0) {
+                session.setBlindCycleCount(0);
+            }
+            julesSessionRepository.save(session);
+
+            if (stopEverything || nextPageToken.isBlank()) {
+                return;
+            }
+        }
+        log.info("Jules activities walk for session {} hit the {}-page-per-cycle cap; resuming from cursor next cycle",
+                session.getExternalSessionId(), maxActivityPagesPerCycle);
+    }
+
+    /**
+     * Fetches one activities page, shrinking pageSize (halving down to 1) if the response overflows the
+     * backend safety limit, before giving up - guards against a single embedded artifact (screenshot/diff/
+     * bash output) being large enough to overflow even a small page. Returns null for a genuine non-overflow
+     * null/error (caller must not treat this as a blind cycle); returns the last overflow marker node
+     * (activitiesOverflow=true) if even pageSize=1 couldn't fit - the true last-resort case.
+     */
+    private JsonNode fetchActivitiesPageWithShrink(JulesSessionEntity session, String apiKey, String pageToken, int startingPageSize) {
+        int pageSize = Math.max(1, startingPageSize);
+        JsonNode lastOverflow = null;
+        while (true) {
+            JsonNode root = julesApiClient.getSessionActivities(session.getExternalSessionId(), apiKey, pageSize, pageToken);
+            if (root == null) {
+                return null;
+            }
+            if (!root.path("activitiesOverflow").asBoolean(false)) {
+                return root;
+            }
+            lastOverflow = root;
+            if (pageSize == 1) {
+                return lastOverflow;
+            }
+            pageSize = Math.max(1, pageSize / 2);
+        }
+    }
+
+    /**
+     * Processes one page's worth of activities with the exact same per-activity logic
+     * answerAgentQuestions always used (extraction, hash-based idempotency, circuit-breaker close). Returns
+     * true if closeLoopAndCreateFollowUps fired - the caller must stop walking further pages this cycle,
+     * same as the old single-page version's "break" out of its loop entirely.
+     */
+    private boolean processActivitiesPage(JulesSessionEntity session, TaskEntity task, String apiKey, JsonNode activities) {
+        for (JsonNode activity : activities) {
             String question = extractAgentQuestion(activity);
             if (question == null || question.isBlank()) {
                 continue;
@@ -1056,7 +1135,7 @@ public class JulesDispatchService {
                     julesActivityResponseRepository.save(record);
 
                     closeLoopAndCreateFollowUps(session, task, question, responseHistory, closeReason);
-                    break;
+                    return true;
                 }
 
                 String answer = buildJulesQuestionAnswer(task, question, previousSimilarQuestions);
@@ -1084,6 +1163,7 @@ public class JulesDispatchService {
                 log.warn("Could not answer Jules agent question activity {} for session {}: {}", activityName, session.getExternalSessionId(), e.getMessage());
             }
         }
+        return false;
     }
 
     private String extractAgentQuestion(JsonNode activity) {

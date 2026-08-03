@@ -300,13 +300,37 @@ public class JulesApiClient {
     }
 
     public JsonNode getSessionActivities(String externalSessionId, String apiKey) {
+        return getSessionActivities(externalSessionId, apiKey, 0, null);
+    }
+
+    /**
+     * 2026-08-03 (diagnosing a live blind-cycle incident, test-forty-first): the unparameterized call above
+     * always asked Jules for its default page instead of ever paging through a session's full activity
+     * history - see JulesDispatchService.answerAgentQuestions's overflow branch, which had been treating
+     * "this one page didn't fit under maxActivitiesResponseBytes" as reason to skip the whole session for a
+     * cycle, when a single page can already be large purely from embedded artifacts (git diffs, base64
+     * screenshots, bash output - confirmed via the real Activity schema) regardless of session length.
+     * pageSize &lt;= 0 keeps the old default-page behavior; pageToken null requests the first page.
+     */
+    public JsonNode getSessionActivities(String externalSessionId, String apiKey, int pageSize, String pageToken) {
         if (!settingsService.effectiveBoolean("jules_enabled") || apiKey == null || apiKey.isBlank() || "skipped".equals(externalSessionId) || externalSessionId == null) {
             return null;
         }
 
         try {
+            StringBuilder path = new StringBuilder("/" + normalizeSessionPath(externalSessionId) + "/activities");
+            java.util.List<String> params = new java.util.ArrayList<>();
+            if (pageSize > 0) {
+                params.add("pageSize=" + pageSize);
+            }
+            if (pageToken != null && !pageToken.isBlank()) {
+                params.add("pageToken=" + URLEncoder.encode(pageToken, StandardCharsets.UTF_8));
+            }
+            if (!params.isEmpty()) {
+                path.append("?").append(String.join("&", params));
+            }
             HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiBaseUrl + "/" + normalizeSessionPath(externalSessionId) + "/activities"))
+                    .uri(URI.create(apiBaseUrl + path))
                     .header("X-Goog-Api-Key", apiKey)
                     .GET()
                     .build();
