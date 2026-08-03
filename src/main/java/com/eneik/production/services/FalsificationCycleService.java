@@ -47,6 +47,9 @@ public class FalsificationCycleService {
     private final ClientDeliverableReadinessService readinessService;
     private final WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher;
     private final GeminiContextService geminiContextService;
+    private final TaskRepository taskRepository;
+    private final JulesSessionRepository julesSessionRepository;
+    private final PersistentWorkerSessionService persistentWorkerSessionService;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
@@ -74,7 +77,10 @@ public class FalsificationCycleService {
                                      @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
                                      ClientDeliverableReadinessService readinessService,
                                      WishlistContentSimilarityMatcher wishlistContentSimilarityMatcher,
-                                     GeminiContextService geminiContextService) {
+                                     GeminiContextService geminiContextService,
+                                     TaskRepository taskRepository,
+                                     JulesSessionRepository julesSessionRepository,
+                                     PersistentWorkerSessionService persistentWorkerSessionService) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -86,6 +92,9 @@ public class FalsificationCycleService {
         this.readinessService = readinessService;
         this.wishlistContentSimilarityMatcher = wishlistContentSimilarityMatcher;
         this.geminiContextService = geminiContextService;
+        this.taskRepository = taskRepository;
+        this.julesSessionRepository = julesSessionRepository;
+        this.persistentWorkerSessionService = persistentWorkerSessionService;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -163,10 +172,27 @@ public class FalsificationCycleService {
      * for the weekly cron - same "force" idiom already used elsewhere in this codebase for the onboarding
      * report re-run.
      */
+    // 2026-08-03: batch size for the multi-turn discussion below. Per-role payload measured at ~128-129KB
+    // (charter + 6 philosopher pattern files); 3 roles plus the ~25KB common file and a compact prior-turns
+    // digest stays comfortably under the ~1.7MB size that made the old all-13-roles-at-once request fail
+    // (see the incident note this replaces, kept on PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT's javadoc),
+    // while keeping a full 13-role sweep to 5 turns instead of 13.
+    private static final int PHILOSOPHICAL_AUDIT_ROLE_BATCH_SIZE = 3;
+
     public void executePhilosophicalCycleForProject(ProjectEntity project) {
         executePhilosophicalCycleForProject(project, false);
     }
 
+    /**
+     * 2026-08-03 rewrite: a philosophical audit is now one continuous, multi-turn Jules session per project
+     * (a persistent worker, PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT) rather than a single one-shot
+     * dispatch - see PersistentWorkerPurpose's javadoc for the live incident (test-forty-first) this
+     * replaces: cramming every active role's full charter+philosopher content into one ~1.7MB request got
+     * flatly rejected by Jules's API, and a first fix (isolated one-role sessions) accidentally destroyed
+     * the track's actual point - philosophers genuinely discussing the same product together, each turn
+     * able to see and respond to everything earlier turns already said. This method now just decides, each
+     * cycle, whether to start a brand new discussion or advance an existing one by one role-batch.
+     */
     public void executePhilosophicalCycleForProject(ProjectEntity project, boolean force) {
         if (!settingsService.effectiveBoolean("philosophical_falsification_enabled")) {
             log.info("FalsificationCycleService: Philosophical falsification track is disabled via feature flag; skipping project {}",
@@ -174,6 +200,24 @@ public class FalsificationCycleService {
             return;
         }
 
+        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
+                .filter(RoleEntity::isActive)
+                .toList();
+        if (activeRoles.isEmpty()) {
+            return;
+        }
+
+        java.util.Optional<PersistentWorkerSessionEntity> existingWorkerOpt =
+                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT);
+        if (existingWorkerOpt.isPresent()) {
+            continuePhilosophicalDiscussion(project, existingWorkerOpt.get(), activeRoles);
+            return;
+        }
+
+        // No discussion in flight: starting a brand new one is gated by the same readiness/pending-proposal
+        // checks the old one-shot dispatch used. A follow-up turn of an already-started discussion is
+        // deliberately NOT re-gated by these (see continuePhilosophicalDiscussion) - a discussion once
+        // begun should be allowed to finish even if readiness or pending-wishlist counts shift mid-way.
         if (!force) {
             PhilosophicalReadinessInfo readinessInfo = philosophicalReadinessInfo(project);
             boolean hasRunBefore = readinessInfo.hasRunBefore();
@@ -197,50 +241,228 @@ public class FalsificationCycleService {
             return;
         }
 
-        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
-                .filter(RoleEntity::isActive)
-                .toList();
-        if (activeRoles.isEmpty()) {
-            return;
-        }
-
-        // 2026-08-03 (confirmed live incident, test-forty-first): embedding every active role's FULL raw
-        // charter plus all 6 of its philosopher-pattern files for ALL active roles in one request produces
-        // a ~1.7MB+ prompt (measured: ~128KB per role x 13 roles + ~25KB common file) - Jules's session-
-        // creation API rejects this outright with HTTP 400 "Request contains an invalid argument", every
-        // single time, deterministically. The task never becomes un-stuck on its own: it just sits `queued`
-        // forever, and the general dispatch sweep keeps retrying the exact same oversized payload against
-        // whichever account is available, blocking that account (jules_api_blocked) on every attempt -
-        // confirmed via 3 consecutive failures against the SAME task id, each one triggering a longer
-        // AccountHealthService cooldown (30min, then 60min) with zero chance of ever succeeding.
-        //
-        // Fix: cover exactly ONE role's full, unabridged charter+philosopher content per audit dispatch
-        // (~150KB, comfortably under any reasonable request-size limit) instead of trying to compress or
-        // summarize the content - the whole point of this track is the philosophers' real, ungutted
-        // worldview (see the class javadoc above), so shrinking via lossy summarization was rejected in
-        // favor of shrinking via dispatch granularity. Rotates through all active roles across successive
-        // cycles via a stateless cursor (count of this project's own past audit tasks, modulo the active
-        // role count) - no new schema needed, and it naturally self-heals if roles are added/removed.
-        long pastAuditCount = projectFlowService.countPastPhilosophicalAuditTasks(project.getId());
-        int roleIndex = (int) (pastAuditCount % activeRoles.size());
-        RoleEntity roleForThisAudit = activeRoles.get(roleIndex);
-
+        List<RoleEntity> firstBatch = activeRoles.subList(0, Math.min(PHILOSOPHICAL_AUDIT_ROLE_BATCH_SIZE, activeRoles.size()));
         String runId = UUID.randomUUID().toString();
         String reportPath = ".eneik/records/philosophical-falsification-" + runId + ".json";
         String screenshotDir = ".eneik/records/philosophical-falsification-" + runId + "-screenshots/";
-        String prompt = buildPhilosophicalAuditPrompt(project, List.of(roleForThisAudit), reportPath, screenshotDir);
+        String prompt = buildPhilosophicalAuditPrompt(project, firstBatch, activeRoles.size(), reportPath, screenshotDir);
 
-        UUID taskId = projectFlowService.dispatchPhilosophicalAudit(project, prompt, reportPath);
-        if (taskId == null) {
-            log.warn("FalsificationCycleService: Could not dispatch philosophical falsification audit for project {}", project.getName());
+        List<String> roleTags = firstBatch.stream().map(RoleEntity::getTag).toList();
+        boolean dispatched = projectFlowService.dispatchToPhilosophicalAuditPersistentWorker(project, roleTags, prompt, reportPath);
+        if (!dispatched) {
+            log.warn("FalsificationCycleService: Could not start philosophical falsification discussion for project {} this cycle",
+                    project.getName());
             return;
         }
-        log.info("FalsificationCycleService: Dispatched philosophical falsification audit task {} for project {} covering role {} "
-                        + "({} of {} in rotation, 6 philosopher voices)",
-                taskId, project.getName(), roleForThisAudit.getTag(), roleIndex + 1, activeRoles.size());
+        log.info("FalsificationCycleService: Started multi-turn philosophical falsification discussion for project {} - "
+                        + "turn 1 covers {} of {} active role(s): {}",
+                project.getName(), firstBatch.size(), activeRoles.size(), roleTags);
     }
 
-    private String buildPhilosophicalAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String reportPath, String screenshotDir) {
+    /**
+     * Advances an already-started discussion by one turn: either the next role-batch (with a digest of
+     * every critique reported so far, so the new voices can genuinely respond to earlier ones) or, once
+     * every active role has already spoken, the closing synthesis turn. dispatchToPhilosophicalAuditPersistentWorker
+     * silently no-ops (returns false) if the worker is currently busy - this cycle just tries again next time.
+     */
+    private void continuePhilosophicalDiscussion(ProjectEntity project, PersistentWorkerSessionEntity worker, List<RoleEntity> activeRoles) {
+        TaskEntity carrierTask = worker.getCarrierTaskId() != null
+                ? taskRepository.findById(worker.getCarrierTaskId()).orElse(null) : null;
+        if (carrierTask == null) {
+            log.warn("FalsificationCycleService: Persistent philosophical-audit worker {} for project {} has no "
+                    + "resolvable carrier task; skipping this cycle", worker.getId(), project.getId());
+            return;
+        }
+
+        List<String> covered = projectFlowService.coveredPhilosophicalAuditRoles(carrierTask);
+        List<RoleEntity> remainingRoles = activeRoles.stream().filter(r -> !covered.contains(r.getTag())).toList();
+        String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
+        List<PhilosophicalCritique> priorCritiques = fetchInProgressReportCritiques(project, worker, reportPath);
+
+        String message;
+        List<String> nextRoleTags;
+        if (remainingRoles.isEmpty()) {
+            message = buildPhilosophicalSynthesisPrompt(priorCritiques, reportPath);
+            nextRoleTags = List.of();
+        } else {
+            List<RoleEntity> nextBatch = remainingRoles.subList(0, Math.min(PHILOSOPHICAL_AUDIT_ROLE_BATCH_SIZE, remainingRoles.size()));
+            nextRoleTags = nextBatch.stream().map(RoleEntity::getTag).toList();
+            message = buildPhilosophicalFollowUpPrompt(nextBatch, priorCritiques, reportPath);
+        }
+
+        boolean sent = projectFlowService.dispatchToPhilosophicalAuditPersistentWorker(project, nextRoleTags, message, reportPath);
+        if (!sent) {
+            log.info("FalsificationCycleService: Philosophical-audit follow-up deferred for project {} this cycle "
+                    + "(worker busy or unavailable)", project.getName());
+            return;
+        }
+        if (nextRoleTags.isEmpty()) {
+            log.info("FalsificationCycleService: Sent closing-synthesis turn to philosophical-audit discussion for "
+                    + "project {} - all {} active role(s) already covered", project.getName(), activeRoles.size());
+        } else {
+            log.info("FalsificationCycleService: Sent follow-up turn (roles {}) to philosophical-audit discussion "
+                            + "for project {} ({} of {} active role(s) covered so far)",
+                    nextRoleTags, project.getName(), covered.size(), activeRoles.size());
+        }
+    }
+
+    /**
+     * Mid-discussion peek at the report file this worker's session has been building across all its prior
+     * turns, used only to render the "what earlier turns already said" digest for the next follow-up
+     * prompt. Deliberately separate from JulesDispatchService.parsePhilosophicalReport (the authoritative
+     * final parse used once the discussion closes and critiques get applied to wishlists) - this one is
+     * advisory only, feeding a prompt rather than driving any state change, so a parse failure here just
+     * means a thinner digest, not a broken cycle.
+     */
+    private List<PhilosophicalCritique> fetchInProgressReportCritiques(ProjectEntity project,
+            PersistentWorkerSessionEntity worker, String reportPath) {
+        if (reportPath == null || worker.getCurrentJulesSessionId() == null) {
+            return List.of();
+        }
+        JulesSessionEntity session = julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null);
+        if (session == null || session.getExternalSessionId() == null) {
+            return List.of();
+        }
+        return gitHubPullRequestService.findOpenPullRequestBySession(project, session.getExternalSessionId())
+                .map(pr -> parseInProgressPhilosophicalReport(project, pr.headRef(), reportPath))
+                .orElseGet(List::of);
+    }
+
+    private List<PhilosophicalCritique> parseInProgressPhilosophicalReport(ProjectEntity project, String headRef, String reportPath) {
+        java.util.Optional<String> content = gitHubPullRequestService.fetchFileContent(project, headRef, reportPath);
+        if (content.isEmpty()) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(content.get());
+            com.fasterxml.jackson.databind.JsonNode rawCritiques = root.path("critiques");
+            if (!rawCritiques.isArray()) {
+                return List.of();
+            }
+            java.util.Set<String> validKano = java.util.Set.of("must-be", "performance", "attractive", "indifferent");
+            List<PhilosophicalCritique> result = new java.util.ArrayList<>();
+            for (com.fasterxml.jackson.databind.JsonNode c : rawCritiques) {
+                String roleTag = c.path("roleTag").asText("");
+                String philosopher = c.path("philosopher").asText("");
+                String proposal = c.path("proposal").asText("");
+                String kanoClass = c.path("kanoClass").asText("");
+                if (roleTag.isBlank() || philosopher.isBlank() || proposal.isBlank()
+                        || kanoClass.isBlank() || !validKano.contains(kanoClass.toLowerCase(java.util.Locale.ROOT))) {
+                    continue;
+                }
+                result.add(new PhilosophicalCritique(roleTag, philosopher, c.path("worldview").asText(""),
+                        c.path("critique").asText(""), proposal, c.path("dislike").asText(""), kanoClass,
+                        c.path("confidence").asText(""), c.path("evidence").asText(""), c.path("screenshotFile").asText("")));
+            }
+            return result;
+        } catch (Exception e) {
+            log.warn("FalsificationCycleService: failed to parse in-progress philosophical report for project {}: {}",
+                    project.getId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    private String renderCritiqueDigest(List<PhilosophicalCritique> critiques) {
+        if (critiques.isEmpty()) {
+            return "(no critiques reported in earlier turns of this discussion yet)";
+        }
+        StringBuilder digest = new StringBuilder();
+        for (PhilosophicalCritique c : critiques) {
+            String proposal = c.proposal() == null ? "" : c.proposal();
+            digest.append("- [").append(c.roleTag()).append("] ").append(c.philosopher())
+                    .append(" (Kano: ").append(c.kanoClass()).append("): ")
+                    .append(proposal.length() <= 220 ? proposal : proposal.substring(0, 220) + "...")
+                    .append("\n");
+        }
+        return digest.toString();
+    }
+
+    private String buildPhilosophicalFollowUpPrompt(List<RoleEntity> roleBatch, List<PhilosophicalCritique> priorCritiques, String reportPath) {
+        StringBuilder charters = new StringBuilder();
+        for (RoleEntity role : roleBatch) {
+            String rawRules = readRawRules(role);
+            if (rawRules == null || rawRules.isBlank()) {
+                continue;
+            }
+            charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
+        }
+        try {
+            java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
+            if (java.nio.file.Files.isDirectory(philosophersDir)) {
+                for (RoleEntity role : roleBatch) {
+                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, role.getTag() + "*.md")) {
+                        for (java.nio.file.Path philFile : stream) {
+                            charters.append("\n\n=== PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append(" ===\n")
+                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("FalsificationCycleService: failed to attach philosopher pattern files for follow-up turn: {}", e.getMessage());
+        }
+
+        String digest = renderCritiqueDigest(priorCritiques);
+
+        return """
+                This is the next turn of the SAME ongoing philosophical product falsification discussion, not
+                a new audit - keep using the understanding of the real product (UI, backend, data model,
+                business logic) you already built in your first message this conversation; only re-examine
+                something specific if genuinely relevant to these new roles.
+
+                Here is what earlier turns of this discussion already reported, so your new voices can
+                genuinely agree, disagree, or build on what came before - a real discussion, not an isolated
+                monologue:
+                %s
+
+                Now bring in %d more role(s)' worth of philosophers - 6 real historical thinkers per role,
+                same standards as before: reason as each actual thinker using their real published worldview
+                (not a narrow paraphrase of any "application" column); most or all may have nothing to say
+                about this product, which is the correct honest outcome, not a failure to find something;
+                every reported critique needs an explicit "kanoClass" chosen from exactly Must-Be,
+                Performance, Attractive, or Indifferent.
+
+                Role charters for this turn (each contains its own philosophy table):
+                %s
+
+                Update the SAME report file `%s` on your SAME branch/PR: read what is already there and
+                APPEND your new critiques for this turn's roles to the existing "critiques" array - do not
+                remove, rewrite, or renumber anything already reported by earlier turns.
+                """.formatted(digest, roleBatch.size(), charters, reportPath);
+    }
+
+    /**
+     * Final turn once every active role has already spoken. Deliberately light-touch ("confirm and
+     * consolidate", not "write new critique") - every voice was already appended to the report file
+     * incrementally by its own turn (buildPhilosophicalFollowUpPrompt's instruction above), so asking for
+     * heavy new synthesis text here would only risk Jules inventing or garbling something instead of just
+     * faithfully closing out what is already a complete, real discussion.
+     */
+    private String buildPhilosophicalSynthesisPrompt(List<PhilosophicalCritique> allCritiquesSoFar, String reportPath) {
+        String digest = renderCritiqueDigest(allCritiquesSoFar);
+        return """
+                Every active role has now spoken in this philosophical product falsification discussion. This
+                is the FINAL turn: no new roles, no new product examination.
+
+                For your own reference, here is a compact summary of every critique reported across all turns
+                of this discussion (the report file on your branch is the authoritative full version):
+                %s
+
+                Re-read the full report file `%s` you have been building on your branch across this entire
+                conversation and confirm/commit its final state:
+                - Every critique from every turn is still present, verbatim, unchanged.
+                - Nothing is deleted, summarized away, or merged into a different voice - each philosopher's
+                  individual critique stays exactly as they gave it.
+                - The JSON shape stays exactly {"critiques": [...]} - no new required fields, no restructuring.
+
+                Commit this final version to the SAME branch/PR you have used for this whole conversation. Do
+                not open a new PR or start a new branch.
+                """.formatted(digest, reportPath);
+    }
+
+    private String buildPhilosophicalAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, int totalActiveRoleCount,
+            String reportPath, String screenshotDir) {
         StringBuilder charters = new StringBuilder();
         for (RoleEntity role : activeRoles) {
             String rawRules = readRawRules(role);
@@ -307,9 +529,11 @@ public class FalsificationCycleService {
                   (code you read, or the parts that did run), and never invent or assume behavior you did not
                   observe. If NOTHING at all is examinable, return "critiques": [].
 
-                STEP 2 - the 6-voice pass for this role. The role charter below names 6 real philosophers in
-                its "ФИЛОСОФСКИЙ ФУНДАМЕНТ" table (this is one role out of this project's full active-role
-                set - other roles are covered by separate audit passes, not this one). For EACH of these 6
+                STEP 2 - the 6-voice pass for each role below. This is turn 1 of an ongoing SINGLE conversation
+                covering %d of this project's %d active roles; the remaining roles will join in follow-up
+                messages later in this SAME conversation and will be able to see everything you report here -
+                a real, sequential discussion, not an isolated one-off report. Each role charter below names 6
+                real philosophers in its "ФИЛОСОФСКИЙ ФУНДАМЕНТ" table. For EACH of these 6 (per role)
                 philosophers individually, reason as that actual historical thinker, using their real
                 published worldview - explicitly NOT the narrow pre-baked "application" column in the table
                 (e.g. if a table's "application" column only mentions a 100ms latency threshold, the real
@@ -350,7 +574,7 @@ public class FalsificationCycleService {
                 %s
 
                 %s
-                """.formatted(screenshotDir, reportPath, screenshotDir, charters, knownContext);
+                """.formatted(screenshotDir, activeRoles.size(), totalActiveRoleCount, reportPath, screenshotDir, charters, knownContext);
     }
 
     public record PhilosophicalCritique(

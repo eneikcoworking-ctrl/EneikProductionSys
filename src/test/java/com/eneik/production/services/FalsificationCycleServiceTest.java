@@ -59,7 +59,10 @@ class FalsificationCycleServiceTest {
                 projectFlowService,
                 readinessService,
                 mock(WishlistContentSimilarityMatcher.class),
-                mock(com.eneik.production.services.GeminiContextService.class)
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class)
         );
     }
 
@@ -204,7 +207,10 @@ class FalsificationCycleServiceTest {
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class),
                 mock(SystemSettingsService.class), gitHub, flow, readiness,
                 mock(WishlistContentSimilarityMatcher.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("still-decomposing");
@@ -231,7 +237,10 @@ class FalsificationCycleServiceTest {
                 wishlistRepository, runs, mock(SystemSettingsService.class),
                 mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
                 mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("bounded-cycle");
@@ -272,7 +281,10 @@ class FalsificationCycleServiceTest {
                 wishlistRepository, runRepository, settingsService,
                 mock(GitHubPullRequestService.class), projectFlowService, readinessService,
                 mock(WishlistContentSimilarityMatcher.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class));
     }
 
     @Test
@@ -289,7 +301,7 @@ class FalsificationCycleServiceTest {
 
         service.executePhilosophicalCycleForProject(project);
 
-        verify(flow, never()).dispatchPhilosophicalAudit(any(), any(), any());
+        verify(flow, never()).dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any());
     }
 
     @Test
@@ -304,13 +316,22 @@ class FalsificationCycleServiceTest {
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("capped-project");
+        // No active worker in flight yet (Mockito default: empty Optional) - the pending-wishlist cap only
+        // gates STARTING a brand new discussion, so at least one active role must exist or the method
+        // returns before ever reaching that check.
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+        // Must actually reach MAX_PENDING_PHILOSOPHICAL_WISHLISTS (10) - a smaller stubbed count here would
+        // let the cap check pass through without binding, silently testing nothing (the pre-existing bug
+        // this exact mistake would reproduce: this test used to "pass" only because roles.findAll() was
+        // left unstubbed/empty, short-circuiting on the unrelated active-roles-empty check before the cap
+        // check ever ran).
         when(wishlistRepository.countByProjectIdAndSourceAndStatus(
                 project.getId(), WishlistSource.philosophical_falsification, com.eneik.production.models.persistence.WishlistStatus.pending))
-                .thenReturn(5L);
+                .thenReturn(10L);
 
         service.executePhilosophicalCycleForProject(project);
 
-        verify(flow, never()).dispatchPhilosophicalAudit(any(), any(), any());
+        verify(flow, never()).dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any());
     }
 
     @Test
@@ -335,12 +356,12 @@ class FalsificationCycleServiceTest {
             throw new RuntimeException(e);
         }
         when(roles.findAll()).thenReturn(List.of(roleWithCharter));
-        when(flow.dispatchPhilosophicalAudit(any(), any(), any())).thenReturn(UUID.randomUUID());
+        when(flow.dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any())).thenReturn(true);
 
         service.executePhilosophicalCycleForProject(project);
 
         ArgumentCaptor<String> promptCaptor = ArgumentCaptor.forClass(String.class);
-        verify(flow).dispatchPhilosophicalAudit(eq(project), promptCaptor.capture(), any());
+        verify(flow).dispatchToPhilosophicalAuditPersistentWorker(eq(project), eq(List.of("BARCAN-TAG-11")), promptCaptor.capture(), any());
         // Normalize whitespace: the prompt is a Java text block wrapped at ~100 chars for source
         // readability, so a phrase asserted here may legitimately contain an embedded newline where the
         // text block happened to wrap - collapse all whitespace runs to a single space before matching so
@@ -378,7 +399,10 @@ class FalsificationCycleServiceTest {
                 wishlistRepository, runRepository, mock(SystemSettingsService.class),
                 mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
                 mock(ClientDeliverableReadinessService.class), new WishlistContentSimilarityMatcher(),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("clustering-project");
@@ -450,7 +474,10 @@ class FalsificationCycleServiceTest {
                 wishlistRepository, runRepository, mock(SystemSettingsService.class),
                 mock(GitHubPullRequestService.class), mock(ProjectFlowService.class),
                 mock(ClientDeliverableReadinessService.class), mock(WishlistContentSimilarityMatcher.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("watermark-independence-project");
