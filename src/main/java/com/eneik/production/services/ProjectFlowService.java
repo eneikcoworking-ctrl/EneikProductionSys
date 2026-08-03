@@ -122,6 +122,15 @@ public class ProjectFlowService {
     @Value("${orchestration.wip-limit-feature-in-flight:3}")
     private int wipLimitFeatureInFlight;
 
+    // Confirmed live incident 2026-08-02 (eneikdru account overload, 26 coverage-audit dispatches in ~5h):
+    // the merge-watermark check alone (see checkAndDispatchCoverageAudits) has no time floor - a wishlist
+    // that keeps toggling in and out of "fully merged" (new coverage_gap-sourced tasks landing under the
+    // same featureId, each one re-crossing 100%) re-triggers a fresh audit on every single one of those
+    // merges, with no cooldown. This does not replace the watermark - it's an additional floor: even when
+    // new code has genuinely merged since the last audit, don't dispatch another one sooner than this.
+    @Value("${orchestration.coverage-audit-min-interval-hours:4}")
+    private int coverageAuditMinIntervalHours;
+
     @Value("${falsification.readiness-threshold:0.9}")
     private double falsificationReadinessThreshold;
 
@@ -2995,6 +3004,18 @@ public class ProjectFlowService {
                 // No watermark on the previous audit (predates this fix) or no GitHub data available right
                 // now to compare against - fail closed exactly like before: don't re-audit on a guess.
                 continue;
+            }
+            // Minimum cooldown, independent of the watermark above (existingAuditTasks is already sorted
+            // createdAt DESC, so auditsForThisWishlist.get(0) is the most recent dispatch for this wishlist).
+            if (!auditsForThisWishlist.isEmpty()) {
+                Instant lastDispatchedAt = auditsForThisWishlist.get(0).getCreatedAt();
+                Instant cooldownUntil = lastDispatchedAt.plus(Duration.ofHours(coverageAuditMinIntervalHours));
+                if (Instant.now().isBefore(cooldownUntil)) {
+                    log.debug("Coverage audit for wishlist {} is watermark-stale but still within the {}h cooldown "
+                            + "(last dispatched {}) - deferring to a later tick", wishlist.getId(),
+                            coverageAuditMinIntervalHours, lastDispatchedAt);
+                    continue;
+                }
             }
 
             ClientDeliverableReadinessService.Readiness readiness =
