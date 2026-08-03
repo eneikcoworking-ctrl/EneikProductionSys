@@ -22,10 +22,11 @@ public class FalsificationCycleService {
 
     // Philosophical falsification track (2026-07-25, operator directive): the formal track above answers
     // "does the shipped code contradict its own charters?" - this answers "is the shipped PRODUCT genuinely
-    // what users need?", per philosopher (up to 13 roles x 6 philosophers = 78 voices), evaluated in Kano
-    // terms. Deliberately generative, not corrective - see WishlistSource.philosophical_falsification and
-    // applyPhilosophicalCritiques below for why it cannot share self_falsification's gating/dedup/Cynefin
-    // semantics.
+    // what users need?", per philosopher (up to 13 roles x 6 philosophers = 78 voices total, covered ONE
+    // role's 6 philosophers per audit dispatch - see the rotation cursor in executePhilosophicalCycleForProject
+    // - not all 13 roles in a single request), evaluated in Kano terms. Deliberately generative, not
+    // corrective - see WishlistSource.philosophical_falsification and applyPhilosophicalCritiques below for
+    // why it cannot share self_falsification's gating/dedup/Cynefin semantics.
     //
     // These two numbers are deliberately NOT the noise-control mechanism - clustering (see
     // applyPhilosophicalCritiques/WishlistContentSimilarityMatcher.clusterBySimilarity) is: converging
@@ -203,18 +204,40 @@ public class FalsificationCycleService {
             return;
         }
 
+        // 2026-08-03 (confirmed live incident, test-forty-first): embedding every active role's FULL raw
+        // charter plus all 6 of its philosopher-pattern files for ALL active roles in one request produces
+        // a ~1.7MB+ prompt (measured: ~128KB per role x 13 roles + ~25KB common file) - Jules's session-
+        // creation API rejects this outright with HTTP 400 "Request contains an invalid argument", every
+        // single time, deterministically. The task never becomes un-stuck on its own: it just sits `queued`
+        // forever, and the general dispatch sweep keeps retrying the exact same oversized payload against
+        // whichever account is available, blocking that account (jules_api_blocked) on every attempt -
+        // confirmed via 3 consecutive failures against the SAME task id, each one triggering a longer
+        // AccountHealthService cooldown (30min, then 60min) with zero chance of ever succeeding.
+        //
+        // Fix: cover exactly ONE role's full, unabridged charter+philosopher content per audit dispatch
+        // (~150KB, comfortably under any reasonable request-size limit) instead of trying to compress or
+        // summarize the content - the whole point of this track is the philosophers' real, ungutted
+        // worldview (see the class javadoc above), so shrinking via lossy summarization was rejected in
+        // favor of shrinking via dispatch granularity. Rotates through all active roles across successive
+        // cycles via a stateless cursor (count of this project's own past audit tasks, modulo the active
+        // role count) - no new schema needed, and it naturally self-heals if roles are added/removed.
+        long pastAuditCount = projectFlowService.countPastPhilosophicalAuditTasks(project.getId());
+        int roleIndex = (int) (pastAuditCount % activeRoles.size());
+        RoleEntity roleForThisAudit = activeRoles.get(roleIndex);
+
         String runId = UUID.randomUUID().toString();
         String reportPath = ".eneik/records/philosophical-falsification-" + runId + ".json";
         String screenshotDir = ".eneik/records/philosophical-falsification-" + runId + "-screenshots/";
-        String prompt = buildPhilosophicalAuditPrompt(project, activeRoles, reportPath, screenshotDir);
+        String prompt = buildPhilosophicalAuditPrompt(project, List.of(roleForThisAudit), reportPath, screenshotDir);
 
         UUID taskId = projectFlowService.dispatchPhilosophicalAudit(project, prompt, reportPath);
         if (taskId == null) {
             log.warn("FalsificationCycleService: Could not dispatch philosophical falsification audit for project {}", project.getName());
             return;
         }
-        log.info("FalsificationCycleService: Dispatched philosophical falsification audit task {} for project {} covering {} active role(s) ({} philosopher voices)",
-                taskId, project.getName(), activeRoles.size(), activeRoles.size() * 6);
+        log.info("FalsificationCycleService: Dispatched philosophical falsification audit task {} for project {} covering role {} "
+                        + "({} of {} in rotation, 6 philosopher voices)",
+                taskId, project.getName(), roleForThisAudit.getTag(), roleIndex + 1, activeRoles.size());
     }
 
     private String buildPhilosophicalAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String reportPath, String screenshotDir) {
@@ -266,8 +289,8 @@ public class FalsificationCycleService {
                 everything the user's experience depends on: the UI, the backend behavior, the data model, and
                 the business logic - a missing validation rule, a data model that can't represent what the
                 client actually needs, or an API that silently does the wrong thing are just as real a product
-                gap as a confusing screen, and most of the 13 roles' philosophers (data, backend, security,
-                delivery) have essentially nothing to reason about from a screenshot alone.
+                gap as a confusing screen, and a philosopher whose lens is about data, backend, security, or
+                delivery may have essentially nothing to reason about from a screenshot alone.
                   (a) UI: if this repository has a runnable frontend, install and start it using whatever its
                       own README/package.json declares. Using Playwright (or an equivalent browser-automation
                       tool already available in this environment), capture screenshots at 1440px and 375px
@@ -284,20 +307,22 @@ public class FalsificationCycleService {
                   (code you read, or the parts that did run), and never invent or assume behavior you did not
                   observe. If NOTHING at all is examinable, return "critiques": [].
 
-                STEP 2 - the 78-voice pass. Each role charter below names 6 real philosophers in its
-                "ФИЛОСОФСКИЙ ФУНДАМЕНТ" table. For EACH of these philosophers individually, reason as that
-                actual historical thinker, using their real published worldview - explicitly NOT the narrow
-                pre-baked "application" column in the table (e.g. if a table's "application" column only
-                mentions a 100ms latency threshold, the real philosopher's worldview is much broader than
-                that one column - use the whole of what they actually thought, not just this system's narrow
-                paraphrase of it). Looking at the WHOLE product you just examined in STEP 1 - its UI where you
-                could see it, AND its backend behavior, data model, and business logic - ask genuinely: what
-                would THIS philosopher find missing, wrong, or worth adding about the product as a whole,
-                judged by their own real standards? A philosopher whose lens is about data integrity, security,
-                or business value should be reasoning about the backend/data-model evidence, not straining to
-                say something about a screenshot. Most of the 78 will have nothing to say about this particular
-                product - that is the expected, correct, honest outcome. Do not manufacture an opinion to have
-                something to report.
+                STEP 2 - the 6-voice pass for this role. The role charter below names 6 real philosophers in
+                its "ФИЛОСОФСКИЙ ФУНДАМЕНТ" table (this is one role out of this project's full active-role
+                set - other roles are covered by separate audit passes, not this one). For EACH of these 6
+                philosophers individually, reason as that actual historical thinker, using their real
+                published worldview - explicitly NOT the narrow pre-baked "application" column in the table
+                (e.g. if a table's "application" column only mentions a 100ms latency threshold, the real
+                philosopher's worldview is much broader than that one column - use the whole of what they
+                actually thought, not just this system's narrow paraphrase of it). Looking at the WHOLE
+                product you just examined in STEP 1 - its UI where you could see it, AND its backend
+                behavior, data model, and business logic - ask genuinely: what would THIS philosopher find
+                missing, wrong, or worth adding about the product as a whole, judged by their own real
+                standards? A philosopher whose lens is about data integrity, security, or business value
+                should be reasoning about the backend/data-model evidence, not straining to say something
+                about a screenshot. Most or all of the 6 may have nothing to say about this particular
+                product - that is the expected, correct, honest outcome. Do not manufacture an opinion to
+                have something to report.
 
                 STEP 3 - forced Kano classification. Every critique you report MUST carry an explicit
                 "kanoClass" chosen from exactly: "Must-Be", "Performance", "Attractive", "Indifferent". There

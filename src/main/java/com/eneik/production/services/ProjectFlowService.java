@@ -2851,6 +2851,15 @@ public class ProjectFlowService {
                 && PHILOSOPHICAL_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
     }
 
+    // Used by FalsificationCycleService to rotate which single role's charter+philosopher-pattern content
+    // gets embedded in the next audit dispatch (see the class javadoc there for why one request can no
+    // longer cover every active role at once).
+    public long countPastPhilosophicalAuditTasks(UUID projectId) {
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(this::isPhilosophicalAuditTask)
+                .count();
+    }
+
     public String philosophicalAuditReportPath(TaskEntity task) {
         if (task.getPayload() == null) {
             return null;
