@@ -40,17 +40,20 @@ public class BranchGarbageCollectorService {
     private final TaskConflictRepository taskConflictRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService;
+    private final com.eneik.production.services.ProjectFlowService projectFlowService;
 
     public BranchGarbageCollectorService(GitHubPullRequestService gitHubPullRequestService,
                                          TaskRepository taskRepository,
                                          TaskConflictRepository taskConflictRepository,
                                          com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
-                                         com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService) {
+                                         com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService,
+                                         com.eneik.production.services.ProjectFlowService projectFlowService) {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.sessionLifecycleService = sessionLifecycleService;
+        this.projectFlowService = projectFlowService;
     }
 
     /**
@@ -192,6 +195,16 @@ public class BranchGarbageCollectorService {
                 if (taskOpt.isPresent()) {
                     TaskEntity task = taskOpt.get();
                     if (task.getStatus() == TaskStatus.done) {
+                        continue;
+                    }
+                    // 2026-08-03 (confirmed live risk during philosophical-audit persistent-worker design):
+                    // a persistent worker (compiler/review-fallback/philosophical-audit) deliberately parks
+                    // at pr_opened for long stretches between follow-ups - by design, not stagnation. This
+                    // sweep had no awareness of that at all and would destructively close the PR, delete the
+                    // branch, and re-queue the carrier task the moment STALENESS_TRUST_WINDOW_MINUTES elapsed,
+                    // silently wiping out an in-progress multi-cycle worker (already a live risk for the two
+                    // pre-existing purposes, not just the new one).
+                    if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
                         continue;
                     }
                     // Real staleness evidence - the session's own last observed progress - not a status

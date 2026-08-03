@@ -40,6 +40,7 @@ class BranchGarbageCollectorServiceTest {
     private TaskRepository taskRepository;
     private TaskConflictRepository taskConflictRepository;
     private JulesSessionRepository julesSessionRepository;
+    private com.eneik.production.services.ProjectFlowService projectFlowService;
     private BranchGarbageCollectorService service;
 
     private void setUp() {
@@ -47,9 +48,11 @@ class BranchGarbageCollectorServiceTest {
         taskRepository = mock(TaskRepository.class);
         taskConflictRepository = mock(TaskConflictRepository.class);
         julesSessionRepository = mock(JulesSessionRepository.class);
+        projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         service = new BranchGarbageCollectorService(gitHubPullRequestService, taskRepository,
                 taskConflictRepository, julesSessionRepository,
-                mock(com.eneik.production.services.jules.SessionLifecycleService.class));
+                mock(com.eneik.production.services.jules.SessionLifecycleService.class),
+                projectFlowService);
     }
 
     private ProjectEntity project() {

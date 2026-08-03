@@ -66,6 +66,7 @@ public class AutoMergeService {
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final GeminiContextService geminiContextService;
+    private final ProjectFlowService projectFlowService;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
@@ -97,7 +98,8 @@ public class AutoMergeService {
                             ClaimService claimService,
                             com.eneik.production.repositories.ProjectRepository projectRepository,
                             ClientDeliverableReadinessService readinessService,
-                            GeminiContextService geminiContextService) {
+                            GeminiContextService geminiContextService,
+                            ProjectFlowService projectFlowService) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -120,6 +122,7 @@ public class AutoMergeService {
         this.projectRepository = projectRepository;
         this.readinessService = readinessService;
         this.geminiContextService = geminiContextService;
+        this.projectFlowService = projectFlowService;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -1763,6 +1766,23 @@ public class AutoMergeService {
                     continue;
                 }
                 for (var openPr : snapshot.open()) {
+                    // 2026-08-03 (confirmed live risk during philosophical-audit persistent-worker design):
+                    // this sweep merges ANY GitHub-clean open PR with zero task/session-type awareness. A
+                    // persistent worker's record PR (compiler/review-fallback/philosophical-audit) is
+                    // deliberately kept open across many follow-up cycles - its lone changed file (a JSON
+                    // report/plan) is almost always trivially mergeable, so without this check it would get
+                    // merged and effectively terminated after its very first cycle. Same session-token
+                    // lookup BranchGarbageCollectorService already uses to find a PR's owning task.
+                    boolean isPersistentWorkerCarrier = julesSessionRepository.findAll().stream()
+                            .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
+                            .filter(s -> GitHubPullRequestService.matchesSessionToken(openPr, s.getExternalSessionId()))
+                            .findFirst()
+                            .flatMap(s -> taskRepository.findById(s.getTaskId()))
+                            .map(projectFlowService::isPersistentWorkerCarrierTask)
+                            .orElse(false);
+                    if (isPersistentWorkerCarrier) {
+                        continue;
+                    }
                     var mergeableState = gitHubPullRequestService.mergeableState(project, openPr.number());
                     if (mergeableState.isPresent() && Boolean.TRUE.equals(mergeableState.get().mergeable())) {
                         log.info("AutoMergeService [DIRECT-SWEEP]: Found clean open GitHub PR #{} ({}) for project {}. Executing direct merge...",

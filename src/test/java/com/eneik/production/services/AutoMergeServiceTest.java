@@ -73,7 +73,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 claims, mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         UUID taskId = UUID.randomUUID();
         UUID sessionId = UUID.randomUUID();
@@ -138,7 +139,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         PrReviewEntity review = reviewWithStatus("success");
         review.setPrUrl("https://github.com/org/repo/pull/44");
@@ -192,7 +194,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         java.util.UUID sessionId = java.util.UUID.randomUUID();
         java.util.UUID taskId = java.util.UUID.randomUUID();
@@ -257,7 +260,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         java.util.UUID sessionId = java.util.UUID.randomUUID();
         java.util.UUID taskId = java.util.UUID.randomUUID();
@@ -316,7 +320,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         java.util.UUID sessionId = java.util.UUID.randomUUID();
         java.util.UUID taskId = java.util.UUID.randomUUID();
@@ -371,7 +376,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 claims, mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         UUID taskId = UUID.randomUUID();
         JulesSessionEntity staleSession = new JulesSessionEntity();
@@ -424,7 +430,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 claims, mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         UUID taskId = UUID.randomUUID();
         JulesSessionEntity winner = new JulesSessionEntity();
@@ -492,7 +499,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 claims, projects,
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         com.eneik.production.models.persistence.ProjectEntity project =
                 new com.eneik.production.models.persistence.ProjectEntity();
@@ -571,7 +579,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 claims, projects,
                 mock(ClientDeliverableReadinessService.class),
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         com.eneik.production.models.persistence.ProjectEntity project =
                 new com.eneik.production.models.persistence.ProjectEntity();
@@ -650,7 +659,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), featureThreads,
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 readiness,
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         com.eneik.production.models.persistence.ProjectEntity project = new com.eneik.production.models.persistence.ProjectEntity();
         project.setId(UUID.randomUUID());
@@ -703,7 +713,8 @@ class AutoMergeServiceTest {
                 mock(CodeChangeClassifier.class), featureThreads,
                 mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
                 readiness,
-                mock(com.eneik.production.services.GeminiContextService.class));
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         com.eneik.production.models.persistence.ProjectEntity project = new com.eneik.production.models.persistence.ProjectEntity();
         project.setId(UUID.randomUUID());
