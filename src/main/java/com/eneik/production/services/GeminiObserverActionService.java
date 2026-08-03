@@ -47,6 +47,7 @@ public class GeminiObserverActionService {
     private final GeminiObserverActionRepository actionRepository;
     private final OperationalPolicyService operationalPolicyService;
     private final PlannedWorkRecoveryService plannedWorkRecoveryService;
+    private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
 
     public GeminiObserverActionService(WishlistRepository wishlistRepository,
                                         TaskRepository taskRepository,
@@ -55,7 +56,8 @@ public class GeminiObserverActionService {
                                         FalsificationCycleService falsificationCycleService,
                                         GeminiObserverActionRepository actionRepository,
                                         OperationalPolicyService operationalPolicyService,
-                                        PlannedWorkRecoveryService plannedWorkRecoveryService) {
+                                        PlannedWorkRecoveryService plannedWorkRecoveryService,
+                                        com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
@@ -64,6 +66,7 @@ public class GeminiObserverActionService {
         this.actionRepository = actionRepository;
         this.operationalPolicyService = operationalPolicyService;
         this.plannedWorkRecoveryService = plannedWorkRecoveryService;
+        this.branchGarbageCollectorService = branchGarbageCollectorService;
     }
 
     /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
@@ -173,6 +176,33 @@ public class GeminiObserverActionService {
             // logs and returns.
             falsificationCycleService.executePhilosophicalCycleForProject(project);
             return null;
+        });
+    }
+
+    /**
+     * Close+requeue a PR whose owning session ended up terminal (cancelled/closed_terminal_task/failed)
+     * while the PR itself is still open on GitHub - see BranchGarbageCollectorService.
+     * findOrphanedPrCandidates (2026-08-03, confirmed live gap: task 074efcb3/PR#38 on test-forty-first, a
+     * session that did real successful work got collaterally cancelled by an unrelated cleanup and its PR
+     * sat orphaned for hours, invisible to every status-filtered sweep). targetId is the TASK id, not the
+     * PR - re-verifies against the real candidate list at execution time rather than trusting the snapshot
+     * she was shown, which may already be stale by the time she acts on it.
+     */
+    public String resolveOrphanedPr(ProjectEntity project, String targetId, String reason) {
+        return execute("resolveOrphanedPr", OperationalAction.RESOLVE_ORPHANED_PR, project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            var candidate = branchGarbageCollectorService.findOrphanedPrCandidates(project).stream()
+                    .filter(c -> id.equals(c.taskId()))
+                    .findFirst()
+                    .orElse(null);
+            if (candidate == null) {
+                return "no orphaned PR found for this task - already resolved, or never actually orphaned";
+            }
+            boolean retired = branchGarbageCollectorService.retireAbandonedBranchAndPR(
+                    project, candidate.task(), candidate.headRef(), candidate.pullNumber(),
+                    "Gemini observer: resolving orphaned PR - " + reason);
+            return retired ? null : "retireAbandonedBranchAndPR could not complete";
         });
     }
 

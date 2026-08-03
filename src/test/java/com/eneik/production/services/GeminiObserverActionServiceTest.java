@@ -40,6 +40,7 @@ class GeminiObserverActionServiceTest {
     private GeminiObserverActionRepository actionRepository;
     private OperationalPolicyService operationalPolicyService;
     private PlannedWorkRecoveryService plannedWorkRecoveryService;
+    private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private GeminiObserverActionService service;
 
     private void setUp() {
@@ -51,9 +52,10 @@ class GeminiObserverActionServiceTest {
         actionRepository = mock(GeminiObserverActionRepository.class);
         operationalPolicyService = mock(OperationalPolicyService.class);
         plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
+        branchGarbageCollectorService = mock(com.eneik.production.services.orchestration.BranchGarbageCollectorService.class);
         service = new GeminiObserverActionService(wishlistRepository, taskRepository, taskConflictRepository,
                 julesDispatchService, falsificationCycleService, actionRepository, operationalPolicyService,
-                plannedWorkRecoveryService);
+                plannedWorkRecoveryService, branchGarbageCollectorService);
     }
 
     private ProjectEntity project() {
@@ -168,5 +170,51 @@ class GeminiObserverActionServiceTest {
 
         assertEquals("success", outcome);
         verify(plannedWorkRecoveryService).resumeTask(taskId);
+    }
+
+    /**
+     * Regression coverage for the 2026-08-03 incident (task 074efcb3/PR#38): resolveOrphanedPr must
+     * re-verify against the real candidate list at execution time, never just trust the target id she was
+     * given - a candidate that already resolved itself between snapshot and action must be skipped, not
+     * blindly acted on (testimony vs evidence, same discipline as abandonConflict's own re-check).
+     */
+    @Test
+    void resolveOrphanedPrSkipsWhenTheCandidateNoLongerExists() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RESOLVE_ORPHANED_PR))
+                .thenReturn(decision(project, OperationalAction.RESOLVE_ORPHANED_PR, true, "allowed"));
+        when(branchGarbageCollectorService.findOrphanedPrCandidates(project)).thenReturn(List.of());
+
+        String outcome = service.resolveOrphanedPr(project, taskId.toString(), "owning session terminal");
+
+        assertTrue(outcome.startsWith("skipped"));
+        verify(branchGarbageCollectorService, never()).retireAbandonedBranchAndPR(any(), any(), any(), any(), anyString());
+    }
+
+    @Test
+    void resolveOrphanedPrReusesRetireAbandonedBranchAndPrForAConfirmedCandidate() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RESOLVE_ORPHANED_PR))
+                .thenReturn(decision(project, OperationalAction.RESOLVE_ORPHANED_PR, true, "allowed"));
+        var candidate = new com.eneik.production.services.orchestration.BranchGarbageCollectorService.OrphanedPrCandidate(
+                taskId, 38, "https://github.com/eneikdru/test-forty-first/pull/38",
+                "jules-5354685196398021436-be7bfa86", "cancelled", task);
+        when(branchGarbageCollectorService.findOrphanedPrCandidates(project)).thenReturn(List.of(candidate));
+        when(branchGarbageCollectorService.retireAbandonedBranchAndPR(
+                eq(project), eq(task), eq("jules-5354685196398021436-be7bfa86"), eq(38), anyString()))
+                .thenReturn(true);
+
+        String outcome = service.resolveOrphanedPr(project, taskId.toString(), "owning session terminal");
+
+        assertEquals("success", outcome);
+        verify(branchGarbageCollectorService).retireAbandonedBranchAndPR(
+                eq(project), eq(task), eq("jules-5354685196398021436-be7bfa86"), eq(38), anyString());
     }
 }

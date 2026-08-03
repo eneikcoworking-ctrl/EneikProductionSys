@@ -106,7 +106,19 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService;
     private final com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService;
     private final com.eneik.production.kaizen.service.KaizenService kaizenService;
+    private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // 2026-08-03: loggers worth her forensic attention for defect root-causing - the same three services
+    // involved in every incident traced by hand this session (session/PR lifecycle and reconciliation).
+    // Deliberately NOT the whole durable log - that would repeat the exact mistake the 2026-07-25/26 fix
+    // corrected (feeding her the raw, ever-growing internal log as if it were the project).
+    private static final Set<String> FORENSIC_LOGGERS = Set.of(
+            "com.eneik.production.services.orchestration.BranchGarbageCollectorService",
+            "com.eneik.production.services.AutoMergeService",
+            "com.eneik.production.services.jules.JulesDispatchService");
+    private static final int MAX_FORENSIC_LOG_LINES = 40;
 
     public GeminiProjectObserverService(ProjectRepository projectRepository,
                                          WishlistRepository wishlistRepository,
@@ -122,7 +134,9 @@ public class GeminiProjectObserverService {
                                          SystemSettingsService settingsService,
                                          com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService,
                                          com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService,
-                                         com.eneik.production.kaizen.service.KaizenService kaizenService) {
+                                         com.eneik.production.kaizen.service.KaizenService kaizenService,
+                                         com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
+                                         com.eneik.production.services.ProjectEventLogService projectEventLogService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -138,6 +152,8 @@ public class GeminiProjectObserverService {
         this.gitHubApiBudgetService = gitHubApiBudgetService;
         this.operationalFlowCoreService = operationalFlowCoreService;
         this.kaizenService = kaizenService;
+        this.branchGarbageCollectorService = branchGarbageCollectorService;
+        this.projectEventLogService = projectEventLogService;
     }
 
     // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
@@ -310,12 +326,17 @@ public class GeminiProjectObserverService {
                   and only for a task whose failure came from its PR closing without merging on GitHub with
                   nothing left actively working it - never for a task that failed for a content/quality
                   reason unrelated to that. Safe to try even if it turns out not eligible.
+                - resolveOrphanedPr: close and re-queue a PR listed under ORPHANED PR WARNING - its owning
+                  session already ended terminal (cancelled/closed_terminal_task/failed), so nothing else in
+                  the system will ever pick this back up on its own; targetId = the task id. Re-checked
+                  against real current state before acting, so safe to try even if it already resolved
+                  itself between when you were shown it and now.
 
                 Return ONLY JSON: {"journalEntry": "one short paragraph, your own notes for your future self -
                 what you checked and concluded this cycle, even if nothing notable happened",
                 "findings": [{"summary": "one sentence", "evidence": "what in the snapshot shows this",
                 "severity": "low|medium|high", "scope": "product|platform"}],
-                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|reviveFailedTask",
+                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|reviveFailedTask|resolveOrphanedPr",
                 "targetId": "an id copied exactly from the snapshot", "reason": "one sentence, why this is justified"}]}
                 Use empty arrays when nothing genuinely warrants them - still always write a journalEntry.
                 """;
@@ -418,6 +439,7 @@ public class GeminiProjectObserverService {
                 case "boostPriority" -> actionService.boostPriority(project, action.targetId(), action.reason());
                 case "triggerFalsificationRun" -> actionService.triggerFalsificationRun(project, action.targetId(), action.reason());
                 case "reviveFailedTask" -> actionService.reviveFailedTask(project, action.targetId(), action.reason());
+                case "resolveOrphanedPr" -> actionService.resolveOrphanedPr(project, action.targetId(), action.reason());
                 default -> null;
             };
             if (outcome == null) {
@@ -661,12 +683,59 @@ public class GeminiProjectObserverService {
                         .append(truncateForSnapshot(task.getTitle() != null ? task.getTitle() : task.getDescription(), 120));
             }
         }
+        // 2026-08-03 addition (operator directive after a live incident, task 074efcb3/PR#38 on
+        // test-forty-first, traced by hand): a session whose owning task collaterally cancelled it while it
+        // had already done real, successful work (opened a mergeable PR) becomes invisible to every other
+        // status-filtered sweep in the system - nothing else will ever surface it again on its own. Best-
+        // effort like the other lookups here: never breaks the whole snapshot if it fails.
+        List<com.eneik.production.services.orchestration.BranchGarbageCollectorService.OrphanedPrCandidate> orphanedPrs;
+        try {
+            orphanedPrs = branchGarbageCollectorService.findOrphanedPrCandidates(project);
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not check orphaned PRs for project {}: {}", project.getId(), e.getMessage());
+            orphanedPrs = List.of();
+        }
+        if (!orphanedPrs.isEmpty()) {
+            sb.append("\nORPHANED PR WARNING (owning session ended terminal, but the PR is still open on GitHub - resolveOrphanedPr may apply): ");
+            for (var candidate : orphanedPrs) {
+                sb.append("\n  - taskId=").append(candidate.taskId()).append(" PR #").append(candidate.pullNumber())
+                        .append(" (").append(candidate.pullUrl()).append("), owning session status=").append(candidate.sessionStatus());
+            }
+            anomalies.add(orphanedPrs.size() + " orphaned PR(s) with a terminal owning session");
+        }
+        // 2026-08-03 addition (operator directive: "это её прямая задача читать все постоянные логи и
+        // находить дефекты и причины дефектов" - after I had to trace today's incident by hand through
+        // ProjectEventLogService because docker's own log buffer had already been lost across redeploys).
+        // Bounded and filtered to the loggers that matter for defect forensics - the corrected, project-
+        // scoped version of "read the log", not the whole-backend raw dump that was deliberately removed
+        // in V58/restored durable-but-bounded on 2026-07-26. WARN/ERROR only - INFO noise (every routine
+        // poll tick) would drown the signal and blow the token budget for no benefit.
+        try {
+            List<com.eneik.production.models.persistence.ProjectEventLogEntity> recentEvents =
+                    projectEventLogService.since(project.getId(), since);
+            List<com.eneik.production.models.persistence.ProjectEventLogEntity> forensicEvents = recentEvents.stream()
+                    .filter(e -> ("WARN".equalsIgnoreCase(e.getLevel()) || "ERROR".equalsIgnoreCase(e.getLevel())))
+                    .filter(e -> e.getLogger() != null && FORENSIC_LOGGERS.contains(e.getLogger()))
+                    .toList();
+            if (!forensicEvents.isEmpty()) {
+                List<com.eneik.production.models.persistence.ProjectEventLogEntity> tail = forensicEvents.size() > MAX_FORENSIC_LOG_LINES
+                        ? forensicEvents.subList(forensicEvents.size() - MAX_FORENSIC_LOG_LINES, forensicEvents.size())
+                        : forensicEvents;
+                sb.append("\nRECENT WARN/ERROR LOG (durable, deploy-independent - real evidence for root-causing a defect, not just its symptom count): ");
+                for (var e : tail) {
+                    sb.append("\n  - ").append(e.getCreatedAt()).append(" [").append(e.getLevel()).append("] ")
+                            .append(truncateForSnapshot(e.getMessage(), 300));
+                }
+            }
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not read durable project log for project {}: {}", project.getId(), e.getMessage());
+        }
         // Content-based dedup, not a hardcoded re-notify interval (2026-07-30): a stuck/stale candidate
         // that is genuinely new since the fingerprint last shown to her (its id was not there at all, or
         // its status has changed) forces a real cycle; one she has already been shown and that has not
         // moved stays silent indefinitely, no matter how much wall-clock time passes - repeating an
         // unchanged fact on a timer is waste, not vigilance.
-        Set<String> currentFingerprints = computeAnomalyFingerprints(stuckTasks, staleWishlists, revivableFailedTasks);
+        Set<String> currentFingerprints = computeAnomalyFingerprints(stuckTasks, staleWishlists, revivableFailedTasks, orphanedPrs);
         Set<String> newFingerprints = new LinkedHashSet<>(currentFingerprints);
         newFingerprints.removeAll(lastKnownFingerprints);
         boolean hasNewStuckEvidence = !newFingerprints.isEmpty();
@@ -687,7 +756,8 @@ public class GeminiProjectObserverService {
     }
 
     private Set<String> computeAnomalyFingerprints(List<TaskEntity> stuckTasks, List<WishlistEntity> staleWishlists,
-                                                     List<TaskEntity> revivableFailedTasks) {
+                                                     List<TaskEntity> revivableFailedTasks,
+                                                     List<com.eneik.production.services.orchestration.BranchGarbageCollectorService.OrphanedPrCandidate> orphanedPrs) {
         Set<String> fingerprints = new LinkedHashSet<>();
         for (TaskEntity task : stuckTasks) {
             fingerprints.add("task:" + task.getId() + ":" + task.getStatus());
@@ -697,6 +767,9 @@ public class GeminiProjectObserverService {
         }
         for (TaskEntity task : revivableFailedTasks) {
             fingerprints.add("task:" + task.getId() + ":" + task.getStatus());
+        }
+        for (var candidate : orphanedPrs) {
+            fingerprints.add("orphaned-pr:" + candidate.taskId() + ":" + candidate.pullNumber());
         }
         return fingerprints;
     }

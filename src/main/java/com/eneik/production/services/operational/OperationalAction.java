@@ -24,5 +24,12 @@ public enum OperationalAction {
     // rate-limited resume path - never a raw status edit. Confirmed live gap: GeminiObserverActionService
     // had no way to act on a failed task at all, so this exact class of bug (task d9f35f4b/529e5252 on
     // test-fortieth) sat unaddressed until an operator noticed and intervened by hand.
-    REVIVE_FAILED_TASK
+    REVIVE_FAILED_TASK,
+    // 2026-08-03: closes+requeues a PR whose owning session ended up terminal (cancelled/closed_terminal_
+    // task/failed) while the PR itself is still open on GitHub - see BranchGarbageCollectorService.
+    // findOrphanedPrCandidates. Confirmed live gap (task 074efcb3/PR#38 on test-forty-first): a session
+    // that did real, successful work got collaterally cancelled by an unrelated cleanup and its PR sat
+    // orphaned, invisible to every status-filtered sweep, until an operator noticed and Claude traced it by
+    // hand.
+    RESOLVE_ORPHANED_PR
 }

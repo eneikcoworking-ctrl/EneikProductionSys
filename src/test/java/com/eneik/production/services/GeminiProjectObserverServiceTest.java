@@ -51,6 +51,8 @@ class GeminiProjectObserverServiceTest {
     private com.eneik.production.services.github.GitHubApiBudgetService gitHubApiBudgetService;
     private com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService;
     private com.eneik.production.kaizen.service.KaizenService kaizenService;
+    private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    private ProjectEventLogService projectEventLogService;
     private GeminiProjectObserverService service;
 
     private void setUp() {
@@ -69,6 +71,8 @@ class GeminiProjectObserverServiceTest {
         gitHubApiBudgetService = mock(com.eneik.production.services.github.GitHubApiBudgetService.class);
         operationalFlowCoreService = mock(com.eneik.production.services.operational.OperationalFlowCoreService.class);
         kaizenService = mock(com.eneik.production.kaizen.service.KaizenService.class);
+        branchGarbageCollectorService = mock(com.eneik.production.services.orchestration.BranchGarbageCollectorService.class);
+        projectEventLogService = mock(ProjectEventLogService.class);
         when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         when(falsificationCycleService.philosophicalReadinessInfo(any()))
                 .thenReturn(new FalsificationCycleService.PhilosophicalReadinessInfo(0.9, false));
@@ -76,11 +80,14 @@ class GeminiProjectObserverServiceTest {
         // the hotspot lookups elsewhere) specifically so an unstubbed mock here (-> null -> NPE inside the
         // try) degrades to "signal omitted", not a test failure - deliberately NOT stubbed by default so
         // every existing test keeps passing unchanged; only the two tests that care about this new signal
-        // stub it explicitly.
+        // stub it explicitly. Same reasoning applies to findOrphanedPrCandidates/projectEventLogService.since
+        // below - unstubbed, Mockito's default for a List-returning method is an empty list anyway, so both
+        // degrade to "no signal" with no extra stubbing needed for every other existing test.
         service = new GeminiProjectObserverService(projectRepository, wishlistRepository, taskRepository,
                 readinessService, journalRepository, actionRepository, geminiContextService, mlPredictionServiceClient,
                 wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService,
-                gitHubApiBudgetService, operationalFlowCoreService, kaizenService);
+                gitHubApiBudgetService, operationalFlowCoreService, kaizenService, branchGarbageCollectorService,
+                projectEventLogService);
     }
 
     private ProjectEntity project() {

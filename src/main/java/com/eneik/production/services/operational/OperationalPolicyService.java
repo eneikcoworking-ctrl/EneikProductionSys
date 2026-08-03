@@ -93,6 +93,12 @@ public class OperationalPolicyService {
             case REVIVE_FAILED_TASK -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+            // Same narrowing reasoning as REVIVE_FAILED_TASK/MERGE_PR (2026-08-03): resolving one specific
+            // already-dead-ended task's orphaned PR carries no dependency on an unrelated task/review/stall
+            // elsewhere in the project - only genuinely global conditions should stop it.
+            case RESOLVE_ORPHANED_PR -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
         };
 
         String reason = allowed
