@@ -1920,6 +1920,10 @@ public class ProjectFlowService {
                 sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
                 sliceWishlist.setStatus(WishlistStatus.pending);
                 sliceWishlist.setFeatureId(featureId);
+                // Persist the compiler's own real per-slice classification (not re-derived later from a
+                // keyword search over the whole replicated brief text - see TechnicalLeadCompiler.
+                // cynefinDomain's fix commit for the live incident this closes).
+                sliceWishlist.setCynefinDomain(slice.cynefinDomain());
                 sliceWishlist = wishlistRepository.save(sliceWishlist);
                 compileSliceMetadata(project, sliceWishlist.getId(), slice, ownerRole, epicPlan.kanoClass());
                 TaskEntity createdTask = technicalLeadCompiler.createTaskFromWishlist(

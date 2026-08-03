@@ -48,6 +48,15 @@ public class WishlistEntity {
     @Column(name = "compiled_by_role")
     private String compiledByRole;
 
+    // The compiler's own real classification for this slice (TaskSliceMetadata.cynefinDomain), persisted
+    // so TechnicalLeadCompiler.cynefinDomain(wishlist) can use real, already-decided data instead of
+    // re-deriving it via a keyword search over the full replicated brief text - see that method's fix
+    // commit (2026-08-03) for the live incident this closes (the word "researchers" in an unrelated design-
+    // system note false-triggered "complex"/spike classification for every task in the project, since every
+    // task's description embeds the whole brief, not just its own slice).
+    @Column(name = "cynefin_domain")
+    private String cynefinDomain;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "target_context")
     private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
@@ -163,6 +172,14 @@ public class WishlistEntity {
 
     public void setCompiledByRole(String compiledByRole) {
         this.compiledByRole = compiledByRole;
+    }
+
+    public String getCynefinDomain() {
+        return cynefinDomain;
+    }
+
+    public void setCynefinDomain(String cynefinDomain) {
+        this.cynefinDomain = cynefinDomain;
     }
 
     public Instant getCreatedAt() {

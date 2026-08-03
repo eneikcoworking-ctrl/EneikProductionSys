@@ -1357,7 +1357,22 @@ public class TechnicalLeadCompiler {
         return "Must-Be";
     }
 
+    // 2026-08-03 (confirmed live incident, test-forty-first): this used to ALWAYS re-derive the domain by
+    // keyword-scanning the wishlist's content/jtbd/dod text, discarding the compiler's own real, already-
+    // decided per-slice classification (TaskSliceMetadata.cynefinDomain, now persisted on the wishlist row
+    // - see ProjectFlowService's slice-creation loop). That re-derivation is fragile against a huge
+    // embedded document: every task's content includes the ENTIRE replicated client brief (not just its
+    // own slice), so ANY brief that happens to contain the English word "research" ANYWHERE - e.g. this
+    // project's own added design-system note said "knowledge workers/researchers", describing the
+    // product's target USERS, not a task property - false-triggers "complex" (spike, never merges) for
+    // every task in the project regardless of role, mass-corrupting the readiness/coverage math (every
+    // task got excluded from codeProducingItemCount as "auxiliary"). Real classification wins when present;
+    // the keyword heuristic is now only a fallback for wishlist rows that never went through the
+    // structured per-slice compile path (e.g. a raw top-level client wishlist).
     private String cynefinDomain(WishlistEntity wishlist) {
+        if (wishlist.getCynefinDomain() != null && !wishlist.getCynefinDomain().isBlank()) {
+            return wishlist.getCynefinDomain();
+        }
         String source = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
                 + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
                 + (wishlist.getDod() != null ? wishlist.getDod() : "")).toLowerCase(java.util.Locale.ROOT);

@@ -77,6 +77,11 @@ public class InternalTaskController {
         if (updates.containsKey("status")) {
             task.setStatus(TaskStatus.valueOf((String) updates.get("status")));
         }
+        // Manual correction for tasks whose cynefinDomain was mis-derived before the 2026-08-03 fix (see
+        // TechnicalLeadCompiler.cynefinDomain) - restores the compiler's real original per-slice value.
+        if (updates.containsKey("cynefinDomain")) {
+            task.setCynefinDomain((String) updates.get("cynefinDomain"));
+        }
         // Wiring fields for manually-inserted tasks (e.g. an operator patching a gap the compiler missed
         // into the existing graph) - the compiler's own buildTaskGraphFromSlices sets these the same way,
         // this just exposes the same two fields for a one-off manual correction.
