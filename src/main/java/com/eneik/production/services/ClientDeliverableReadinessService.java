@@ -316,8 +316,25 @@ public class ClientDeliverableReadinessService {
      */
     private List<FeatureEntity> deduplicateFeaturesByTitle(List<FeatureEntity> features,
             List<WishlistEntity> allWishlist, UUID projectId) {
+        // 2026-08-03 (confirmed live incident, test-forty-first): this tie-break was designed for a
+        // narrower, EARLIER incident shape (a lock-retry storm leaving spurious near-empty duplicates with
+        // exactly one bogus wishlist item each, vs. one real row with many) - "most wishlist items wins"
+        // was a fine heuristic there. It breaks completely for a genuine parallel-decomposition duplicate
+        // (see the duplicate-decomposition incident class), where EVERY duplicate gets a full, real-looking
+        // set of ~5-6 "Internal work item" wishlist rows attached, regardless of which one actually went on
+        // to produce merged code. Counting ALL wishlist rows (including dismissed/coverage_gap/non-product
+        // noise) let a duplicate with more incidental rows outrank the sibling that actually shipped -
+        // confirmed live: all 9 duplicate FeatureEntity rows for this project (including the "winners") were
+        // deleted by deleteValuelessEpicsForProject as valueless, despite real merged PRs existing, because
+        // the wishlist items evidencing that real work were attached to the LOSING sibling ID and excluded
+        // from the readiness computation entirely. Counting only real, still-in-scope planned work (compiled,
+        // not dismissed, product-sourced - same filter listEpicDiagnostics itself applies to plannedItems)
+        // makes the tie-break track actual product evidence instead of raw row count.
         Map<UUID, Long> itemCountByFeatureId = allWishlist.stream()
                 .filter(w -> w.getFeatureId() != null)
+                .filter(w -> w.getCompiledByRole() != null)
+                .filter(w -> w.getStatus() != WishlistStatus.dismissed)
+                .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
         Map<String, List<FeatureEntity>> byKey = features.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
