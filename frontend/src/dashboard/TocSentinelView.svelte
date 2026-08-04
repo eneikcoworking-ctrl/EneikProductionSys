@@ -49,8 +49,9 @@
   <div class="header-banner">
     <div class="title-group">
       <span class="badge-tag">Theory of Constraints</span>
+      <span class="badge-tag badge-layer">🏭 Factory layer - all projects</span>
       <h2>TOC Sentinel Service &amp; DBR Operational Control</h2>
-      <p class="subtitle">Deterministic State Machine, Dynamic Bottleneck Identification &amp; Real-time Anomaly Detection</p>
+      <p class="subtitle">Deterministic State Machine, Dynamic Bottleneck Identification &amp; Real-time Anomaly Detection. This view is system-wide by design - it tracks the one execution graph the whole factory shares, not any single project.</p>
     </div>
     <button class="btn-refresh" onclick={loadTocData}>
       ↻ Refresh Telemetry
@@ -234,6 +235,13 @@
     padding: 0.25rem 0.6rem;
     border-radius: 6px;
     border: 1px solid rgba(56, 189, 248, 0.2);
+  }
+
+  .badge-layer {
+    color: #fbbf24;
+    background: rgba(251, 191, 36, 0.1);
+    border-color: rgba(251, 191, 36, 0.25);
+    margin-left: 0.5rem;
   }
 
   .title-group h2 {

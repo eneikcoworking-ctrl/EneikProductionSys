@@ -1,13 +1,16 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
   import type { SixSigmaAuditReport, KaizenProposalDto, ProjectSummary } from '../lib/types';
-  import { projectsStore, currentDashboardStore } from '../lib/dashboardStore';
+  import { projectsStore, currentDashboardStore, fetchProjects } from '../lib/dashboardStore';
   import { API_BASE } from '../lib/api';
 
   let sixSigmaReport: SixSigmaAuditReport | null = null;
   let proposals: KaizenProposalDto[] = [];
   let availableProjects: ProjectSummary[] = [];
   let selectedProjectId: string = '';
+  // 2026-08-04 (3-layer Factory/Delivery/Product model): "delivery" matches the pre-existing behavior
+  // (whole-project flat aggregate) so nothing changes for anyone who never touches this selector.
+  let selectedLayer: 'factory' | 'delivery' | 'product' = 'delivery';
   let loading = true;
   let scanning = false;
   let executingId: string | null = null;
@@ -27,7 +30,8 @@
     try {
       errorMsg = '';
       const pidParam = selectedProjectId ? `?projectId=${selectedProjectId}` : '';
-      const sixSigmaUrl = `${API_BASE}/api/audit/six-sigma${pidParam}`;
+      const layerParam = (pidParam ? '&' : '?') + `layer=${selectedLayer}`;
+      const sixSigmaUrl = `${API_BASE}/api/audit/six-sigma${pidParam}${layerParam}`;
       const kaizenUrl = `${API_BASE}/api/kaizen/history${pidParam}`;
 
       const [sixSigmaRes, kaizenRes] = await Promise.all([
@@ -63,6 +67,12 @@
     loadData();
   }
 
+  function onLayerChange(e: Event) {
+    const target = e.target as HTMLSelectElement;
+    selectedLayer = target.value as 'factory' | 'delivery' | 'product';
+    loadData();
+  }
+
   async function triggerKaizenScan() {
     scanning = true;
     try {
@@ -93,6 +103,10 @@
   }
 
   onMount(() => {
+    // 2026-08-04: this is the one missing wire - dashboardStore.fetchProjects() already existed and
+    // already does the right thing, but nothing in the frontend ever called it, so projectsStore stayed
+    // permanently empty and the Scope Audit dropdown above had zero options to render.
+    fetchProjects();
     loadData();
     pollInterval = setInterval(loadData, 8000);
   });
@@ -124,6 +138,20 @@
         </select>
       </div>
 
+      <div class="scope-selector-group">
+        <label for="six-sigma-layer" class="scope-label">Layer:</label>
+        <select
+          id="six-sigma-layer"
+          class="scope-select"
+          value={selectedLayer}
+          onchange={onLayerChange}
+        >
+          <option value="factory">🏭 Factory (all projects)</option>
+          <option value="delivery">🚚 Delivery (full history, this project)</option>
+          <option value="product">📦 Product (shipped epics only)</option>
+        </select>
+      </div>
+
       <button class="btn-scan" onclick={triggerKaizenScan} disabled={scanning}>
         {scanning ? '🔍 Scanning...' : '🔍 Scan Kaizen Opportunities'}
       </button>
@@ -146,7 +174,16 @@
     <!-- Section 1: Six Sigma Metrics Overview -->
     <div class="section-container">
       <h3>Six Sigma Quality Metrics &amp; Defect Analysis</h3>
-      
+      <p class="layer-explainer">
+        {#if selectedLayer === 'factory'}
+          🏭 <strong>Factory layer:</strong> cross-project, every project in the system combined - not this project alone.
+        {:else if selectedLayer === 'product'}
+          📦 <strong>Product layer:</strong> only this project's shipped, non-dismissed epics - no process/platform noise.
+        {:else}
+          🚚 <strong>Delivery layer:</strong> this project's full history, including dismissed/duplicate/failed work - what Gemini sees.
+        {/if}
+      </p>
+
       <div class="metrics-grid">
         <!-- Sigma Level Card -->
         <div class="metric-card sigma-card">
@@ -314,6 +351,20 @@
     margin: 0;
     color: #94a3b8;
     font-size: 0.875rem;
+  }
+
+  .layer-explainer {
+    margin: 0 0 1rem 0;
+    padding: 0.6rem 0.9rem;
+    background: #0f172a;
+    border: 1px solid #334155;
+    border-radius: 6px;
+    color: #cbd5e1;
+    font-size: 0.85rem;
+  }
+
+  .layer-explainer strong {
+    color: #f8fafc;
   }
 
   .scope-selector-group {
