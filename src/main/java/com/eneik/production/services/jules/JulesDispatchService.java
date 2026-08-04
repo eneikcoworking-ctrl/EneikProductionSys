@@ -1096,6 +1096,12 @@ public class JulesDispatchService {
      */
     private boolean processActivitiesPage(JulesSessionEntity session, TaskEntity task, String apiKey, JsonNode activities) {
         for (JsonNode activity : activities) {
+            if (activity.has("sessionCompleted") || activity.has("sessionFailed")) {
+                if (isOldEnoughToActOn(activity) && handleTerminalActivityWithoutDeliverable(session, task, activity)) {
+                    return true;
+                }
+                continue;
+            }
             String question = extractAgentQuestion(activity);
             if (question == null || question.isBlank()) {
                 continue;
@@ -1164,6 +1170,77 @@ public class JulesDispatchService {
             }
         }
         return false;
+    }
+
+    /**
+     * 2026-08-04 (operator review of the fix below): a session that finishes and pushes its PR in close
+     * succession could otherwise be closed the instant this poll cycle's cursor reaches its sessionCompleted
+     * activity - racing ahead of GitHub's own PR-listing sync with a single one-shot check and no way back
+     * once the task is blocked. Gated on the SAME Davidson trust window every other closure decision in this
+     * class already uses (DAVIDSON_TRUST_WINDOW_MINUTES) - the activity's own createTime, not our polling
+     * clock, is what has to age past it. A too-fresh terminal activity is simply left unacted-on this cycle;
+     * it is not lost - the unconditional per-cycle GitHub PR recheck a few lines above this call site (for
+     * any session with a still-blank prUrl) will pick up a delayed PR on a later cycle regardless, and if
+     * none ever appears, this same check will pass once the activity is old enough.
+     */
+    private boolean isOldEnoughToActOn(JsonNode activity) {
+        String createTime = activity.path("createTime").asText(null);
+        if (createTime == null || createTime.isBlank()) {
+            return false; // no timestamp to judge by - do not act on an unknown-age signal
+        }
+        try {
+            Instant activityCreatedAt = Instant.parse(createTime);
+            return activityCreatedAt.isBefore(Instant.now().minus(Duration.ofMinutes(DAVIDSON_TRUST_WINDOW_MINUTES)));
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 2026-08-04 (live incident, test-forty-first task 1fbb3086): the activities feed logged a definitive
+     * sessionCompleted event while Jules's own /sessions/{id} status API kept reporting a non-terminal
+     * state for over 24h - no branch or PR ever appeared on GitHub. processActivitiesPage previously only
+     * reacted to activities carrying a question, silently walking past this stronger, structural signal
+     * every single cycle - confirmed via grep, "sessionCompleted"/"sessionFailed" were never checked
+     * anywhere in this codebase before this method. Charter Pattern #12 (testimony vs evidence): the
+     * activity's own type field is a fact Jules recorded about itself, strictly more authoritative than
+     * either its own polled liveness state or any natural-language classification of it - so this
+     * deliberately bypasses classifyBeforeClosing's Davidson veto entirely (that machinery exists to judge
+     * ambiguous silence, not to second-guess a hard schema fact). Routes through the same
+     * claimService.closeTaskAsBlocked convention the silence-based circuit breaker already uses, so the
+     * task becomes eligible for ProjectFlowService.recoverBlockedWork's existing automatic recovery -
+     * no new revival mechanism needed, just correctly reaching the one that already exists. Only ever
+     * called once isOldEnoughToActOn has confirmed the activity itself is past the Davidson trust window.
+     */
+    private boolean handleTerminalActivityWithoutDeliverable(JulesSessionEntity session, TaskEntity task, JsonNode activity) {
+        if (session.getPrUrl() != null && !session.getPrUrl().isBlank()) {
+            return false; // already has a PR - normal completion path already handled this session
+        }
+        // One more real-time check before giving up - GitHub sync can lag a few seconds behind session
+        // completion, and this activity may have already been sitting in a resumable page walk for a while.
+        Optional<GitHubPullRequestService.GitHubPullRequest> detectedPr = detectOpenPullRequestFromGitHub(session, task);
+        if (detectedPr.isPresent()) {
+            session.setPrUrl(detectedPr.get().url());
+            session.setStatus("pr_opened");
+            markSessionProgress(session);
+            julesSessionRepository.save(session);
+            log.info("Session {} for task {} had a real PR after all (found via GitHub, not the activities/status APIs) at terminal-activity reconciliation",
+                    session.getExternalSessionId(), task.getId());
+            return false;
+        }
+        boolean failed = activity.has("sessionFailed");
+        String reason = (failed ? "session_failed_no_deliverable" : "session_completed_no_deliverable")
+                + ": Jules's own activity log recorded " + (failed ? "sessionFailed" : "sessionCompleted")
+                + " but no PR/branch was ever found on GitHub for this session.";
+        session.setStatus("loop_closed");
+        session.setClosedAt(Instant.now());
+        session.setClosureReason(reason);
+        julesSessionRepository.save(session);
+        claimService.closeTaskAsBlocked(task.getId(), reason);
+        saveJulesDialogueLog(task.getId(), session.getExternalSessionId(), reason,
+                "Jules session closed - self-reported terminal with no deliverable (evidence-based, not a silence/staleness inference)");
+        log.warn("Closed Jules session {} for task {}: {}", session.getExternalSessionId(), task.getId(), reason);
+        return true;
     }
 
     private String extractAgentQuestion(JsonNode activity) {

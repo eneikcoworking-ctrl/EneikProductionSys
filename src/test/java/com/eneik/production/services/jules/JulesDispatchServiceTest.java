@@ -286,6 +286,204 @@ class JulesDispatchServiceTest {
     }
 
     /**
+     * Regression coverage for the 2026-08-04 ghost-session incident (test-forty-first, task 1fbb3086): a
+     * session logged a definitive sessionCompleted activity while /sessions/{id} kept reporting a
+     * non-terminal state for over 24h - no PR ever appeared on GitHub, and the task stayed stuck 'claimed'
+     * forever because nothing checked the activities feed's own terminal event type. This asserts the
+     * activity's own sessionCompleted field is now enough on its own to close the loop, without needing the
+     * silence-based classifyBeforeClosing/Davidson-veto machinery (no mlPredictionServiceClient stub is
+     * provided at all - if the fix accidentally routed through that path, this test would NPE/fail loudly).
+     */
+    @Test
+    void closesSessionAndBlocksTaskWhenActivityLogReportsCompletionButNoPrEverExisted() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/ghost");
+        session.setStatus("running");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Design Brief that never produced a PR");
+
+        String activities = """
+                {
+                  "activities": [
+                    {
+                      "originator": "agent",
+                      "name": "activity-completed",
+                      "createTime": "%s",
+                      "sessionCompleted": {}
+                    }
+                  ]
+                }
+                """.formatted(Instant.now().minus(2, ChronoUnit.HOURS));
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/ghost", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/ghost"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.readTree(activities));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/ghost")).thenReturn(Optional.empty());
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        assertEquals("loop_closed", result.getStatus());
+        verify(claimService).closeTaskAsBlocked(eq(taskId), contains("session_completed_no_deliverable"));
+        verify(mlPredictionServiceClient, never()).chatCritical(anyString(), anyString());
+    }
+
+    /**
+     * Direct coverage for the exact race the operator flagged reviewing the fix above: a session that
+     * finishes and pushes its PR in close succession must not be permanently blocked just because this
+     * poll cycle's cursor happened to reach the sessionCompleted activity before GitHub's own PR listing
+     * caught up. A terminal activity newer than the Davidson trust window must be left unacted-on, not
+     * closed - regardless of whether GitHub currently shows a PR or not.
+     */
+    @Test
+    void doesNotCloseOnAFreshSessionCompletedActivityEvenWithNoPrYetVisible() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/just-finished");
+        session.setStatus("running");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Design Brief that just finished seconds ago");
+
+        String activities = """
+                {
+                  "activities": [
+                    {
+                      "originator": "agent",
+                      "name": "activity-completed",
+                      "createTime": "%s",
+                      "sessionCompleted": {}
+                    }
+                  ]
+                }
+                """.formatted(Instant.now().minus(30, ChronoUnit.SECONDS));
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/just-finished", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/just-finished"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.readTree(activities));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/just-finished")).thenReturn(Optional.empty());
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        assertEquals("running", result.getStatus());
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+    }
+
+    @Test
+    void reconcilesRealPrInsteadOfClosingWhenGitHubHasOneEvenThoughActivityLogReportsCompletion() throws Exception {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/late-pr");
+        session.setStatus("running");
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-03");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setDescription("Design Brief whose PR sync just lagged behind completion");
+
+        String activities = """
+                {
+                  "activities": [
+                    {
+                      "originator": "agent",
+                      "name": "activity-completed",
+                      "createTime": "%s",
+                      "sessionCompleted": {}
+                    }
+                  ]
+                }
+                """.formatted(Instant.now().minus(2, ChronoUnit.HOURS));
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/late-pr", "jules-key")).thenReturn("RUNNING");
+        when(julesApiClient.getSessionActivities(eq("sessions/late-pr"), eq("jules-key"), eq(20), isNull()))
+                .thenReturn(objectMapper.readTree(activities));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/late-pr"))
+                .thenReturn(Optional.of(new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                        "https://github.com/org/repo/pull/7", 7, "Late PR", "jules-late-pr", "jules",
+                        false, "main", false, Instant.now())));
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        assertEquals("pr_opened", result.getStatus());
+        assertEquals("https://github.com/org/repo/pull/7", result.getPrUrl());
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+    }
+
+    /**
      * Regression coverage for the 2026-08-03 blind-cycle incident (test-forty-first): the old
      * unparameterized /activities call always returned Jules's own default (oldest-first) page and never
      * advanced, so a long-running session's recent activity was never actually scanned. This walks a
