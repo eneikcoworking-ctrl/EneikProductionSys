@@ -71,7 +71,7 @@ public class ProjectTreeService {
 
     public ProjectTreeDto getTree(UUID projectId) {
         List<ClientDeliverableReadinessService.EpicDiagnostic> epics = readinessService.listEpicDiagnostics(projectId);
-        Map<UUID, FeatureEntity> featuresById = featureRepository.findByProjectId(projectId).stream()
+        Map<UUID, FeatureEntity> featuresById = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
                 .collect(Collectors.toMap(FeatureEntity::getId, f -> f));
 
         List<FeatureBranchDto> branches = new ArrayList<>();

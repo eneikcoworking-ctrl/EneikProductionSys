@@ -112,7 +112,7 @@ public class ProcessControlServiceTest {
         Instant t0 = Instant.now().minus(3, ChronoUnit.DAYS);
 
         List<FeatureEntity> epics = List.of(epic(f1, project), epic(f2, project), epic(f3, project));
-        when(featureRepository.findByProjectId(projectId)).thenReturn(epics);
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(epics);
 
         stubCompletedEpic(f1, project, t0);
         stubCompletedEpic(f2, project, t0.plus(1, ChronoUnit.DAYS));
@@ -169,7 +169,7 @@ public class ProcessControlServiceTest {
             stubCompletedEpic(fid, project, t0.plus(2 + i, ChronoUnit.DAYS));
             when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(fid))).thenReturn(new DefectOpportunityCount(1, 10));
         }
-        when(featureRepository.findByProjectId(projectId)).thenReturn(epics);
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(epics);
 
         List<ProcessControlSnapshotEntity> saved = service.recomputeForProject(projectId).stream()
                 .filter(s -> ProcessControlService.STREAM_QUALITY_GATE.equals(s.getStream()))

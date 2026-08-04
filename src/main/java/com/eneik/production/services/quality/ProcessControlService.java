@@ -161,7 +161,7 @@ public class ProcessControlService {
     }
 
     private List<EpicPoint> completedEpicsInOrder(UUID projectId) {
-        List<FeatureEntity> epics = featureRepository.findByProjectId(projectId);
+        List<FeatureEntity> epics = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId);
         List<EpicPoint> points = new ArrayList<>();
         for (FeatureEntity epic : epics) {
             List<TaskEntity> tasks = taskRepository.findByFeatureId(epic.getId());

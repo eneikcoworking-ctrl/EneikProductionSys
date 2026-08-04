@@ -32,13 +32,23 @@ public class SystemAuditController {
         this.tocSentinelService = tocSentinelService;
     }
 
+    // 2026-08-04 (3-layer Factory/Delivery/Product model): layer defaults to "delivery" - the pre-existing
+    // whole-project flat aggregate, unchanged shape, for backward compatibility with any existing caller
+    // that never sent this param. "factory" and "product" are the two new, honestly distinct numbers -
+    // see SixSigmaAuditService.calculateFullSixSigmaAudit/calculateProductLayerSixSigmaAudit's own
+    // javadoc for exactly what each one counts and why they're allowed to legitimately differ.
     @GetMapping("/six-sigma")
     public ResponseEntity<SixSigmaAuditService.SixSigmaAuditReport> getSixSigmaAudit(
-            @RequestParam(name = "projectId", required = false) String projectId) {
-        UUID pId = (projectId != null && !projectId.isBlank() && !"null".equalsIgnoreCase(projectId.trim())) 
-                ? UUID.fromString(projectId.trim()) 
+            @RequestParam(name = "projectId", required = false) String projectId,
+            @RequestParam(name = "layer", required = false, defaultValue = "delivery") String layer) {
+        UUID pId = (projectId != null && !projectId.isBlank() && !"null".equalsIgnoreCase(projectId.trim()))
+                ? UUID.fromString(projectId.trim())
                 : sixSigmaAuditService.getActiveProjectId();
-        return ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
+        return switch (layer.toLowerCase(java.util.Locale.ROOT)) {
+            case "factory" -> ResponseEntity.ok(sixSigmaAuditService.calculateFullSixSigmaAudit());
+            case "product" -> ResponseEntity.ok(sixSigmaAuditService.calculateProductLayerSixSigmaAudit(pId));
+            default -> ResponseEntity.ok(sixSigmaAuditService.calculateProjectSixSigmaAudit(pId));
+        };
     }
 
     @GetMapping("/six-sigma/project/{projectId}")

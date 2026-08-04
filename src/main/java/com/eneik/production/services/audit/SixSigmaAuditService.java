@@ -35,6 +35,7 @@ public class SixSigmaAuditService {
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final TocSentinelService tocSentinelService;
+    private final com.eneik.production.repositories.FeatureRepository featureRepository;
 
     public SixSigmaAuditService(PrReviewRepository prReviewRepository,
                                 TaskConflictRepository taskConflictRepository,
@@ -42,7 +43,8 @@ public class SixSigmaAuditService {
                                 OnboardingAuditFindingRepository onboardingAuditFindingRepository,
                                 com.eneik.production.repositories.ProjectRepository projectRepository,
                                 com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
-                                TocSentinelService tocSentinelService) {
+                                TocSentinelService tocSentinelService,
+                                com.eneik.production.repositories.FeatureRepository featureRepository) {
         this.prReviewRepository = prReviewRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.taskRepository = taskRepository;
@@ -50,6 +52,7 @@ public class SixSigmaAuditService {
         this.projectRepository = projectRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.tocSentinelService = tocSentinelService;
+        this.featureRepository = featureRepository;
     }
 
     public record SixSigmaAuditReport(
@@ -66,9 +69,18 @@ public class SixSigmaAuditService {
             Instant auditedAt
     ) {}
 
+    /**
+     * 2026-08-04 (3-layer Factory/Delivery/Product model, real bug fixed as part of building it): this
+     * used to call calculateProjectSixSigmaAudit(getActiveProjectId()) - which, despite the method's own
+     * name, is NOT factory-wide at all. calculateProjectSixSigmaAudit immediately coerces any null
+     * projectId to a specific project via getActiveProjectId() before its own targetProjectId==null
+     * branches (cross-project TOC anomalies, factory-wide opportunity floors) ever get a chance to run -
+     * they were dead code, unreachable through any public call path. This is the genuine Layer 1
+     * "Factory" number: cross-project, the only caller of calculateSixSigmaAuditInternal with a real null.
+     */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public SixSigmaAuditReport calculateFullSixSigmaAudit() {
-        return calculateProjectSixSigmaAudit(getActiveProjectId());
+        return calculateSixSigmaAuditInternal(null);
     }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
@@ -83,12 +95,103 @@ public class SixSigmaAuditService {
                         .orElse(null));
     }
 
+    /**
+     * Layer 2 "Delivery" number: full history for ONE project (including dismissed/duplicate/failed work
+     * that ever went through PR review or a quality gate for it), including its default-active-project
+     * fallback for backward compatibility with every existing caller that passes null expecting "whichever
+     * project is active" rather than genuinely cross-project. For the real Layer 1 factory-wide number,
+     * use {@link #calculateFullSixSigmaAudit()} instead, which bypasses this fallback entirely.
+     */
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public SixSigmaAuditReport calculateProjectSixSigmaAudit(UUID projectId) {
         if (projectId == null) {
             projectId = getActiveProjectId();
         }
+        return calculateSixSigmaAuditInternal(projectId);
+    }
 
+    /**
+     * Layer 3 "Product" number: one эпик's own shipped-work quality only (quality gates + PR conflicts,
+     * no onboarding findings, no runtime anomalies - those are process/platform signals, not product
+     * defects). Reuses the exact per-эпик category counts ProjectTreeService already computes for the
+     * dashboard tree, so the tree's per-epic sigma and this endpoint's product-layer sigma can never
+     * silently diverge into two different formulas for "the same" number.
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public SixSigmaAuditReport calculateFeatureSixSigmaAudit(UUID projectId, UUID featureId) {
+        DefectOpportunityCount qgCounts = computeQualityGateCounts(null, featureId);
+        DefectOpportunityCount prCounts = computePrConflictCounts(null, featureId);
+        long totalOpportunities = qgCounts.opportunities() + prCounts.opportunities();
+        long totalDefects = qgCounts.defects() + prCounts.defects();
+        if (totalOpportunities == 0) {
+            totalOpportunities = 10; // same "fresh subgroup" baseline ProcessControlService's u-chart uses
+        }
+        double dpmo = calculateDpmo(totalDefects, totalOpportunities);
+        double sigmaLevel = calculateSigmaLevel(dpmo);
+        double yieldRatePercent = Math.max(0.0, ((double) (totalOpportunities - totalDefects) / totalOpportunities) * 100.0);
+
+        Map<String, Object> breakdown = new LinkedHashMap<>();
+        breakdown.put("prConflicts", Map.of("opportunities", prCounts.opportunities(), "defects", prCounts.defects(),
+                "dpmo", calculateDpmo(prCounts.defects(), prCounts.opportunities())));
+        breakdown.put("qualityGateChecks", Map.of("opportunities", qgCounts.opportunities(), "defects", qgCounts.defects(),
+                "dpmo", calculateDpmo(qgCounts.defects(), qgCounts.opportunities())));
+
+        String projectName = projectId != null
+                ? projectRepository.findById(projectId).map(com.eneik.production.models.persistence.ProjectEntity::getName)
+                        .orElse("PROJECT_" + projectId.toString().substring(0, 8))
+                : "UNKNOWN_PROJECT";
+
+        return new SixSigmaAuditReport(
+                projectId, projectName, totalOpportunities, totalDefects,
+                Math.round(dpmo * 100.0) / 100.0, Math.round(yieldRatePercent * 100.0) / 100.0,
+                Math.round(sigmaLevel * 100.0) / 100.0, getQualityTier(sigmaLevel),
+                breakdown, Map.of(), Instant.now());
+    }
+
+    /**
+     * Layer 3 "Product" number for a whole project: sums {@link #calculateFeatureSixSigmaAudit} across
+     * every one of the project's non-dismissed features - real shipped-epic quality only, no process
+     * waste (dismissed/duplicate epics never counted, per {@code findByProjectIdAndDismissedAtIsNull})
+     * and no platform noise (onboarding findings, runtime anomalies) mixed in, unlike the Layer 2 number.
+     */
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
+    public SixSigmaAuditReport calculateProductLayerSixSigmaAudit(UUID projectId) {
+        var features = projectId != null ? featureRepository.findByProjectIdAndDismissedAtIsNull(projectId) : List.<com.eneik.production.models.persistence.FeatureEntity>of();
+        long totalOpportunities = 0;
+        long totalDefects = 0;
+        long prOpp = 0, prDef = 0, qgOpp = 0, qgDef = 0;
+        for (var feature : features) {
+            DefectOpportunityCount qg = computeQualityGateCounts(null, feature.getId());
+            DefectOpportunityCount pr = computePrConflictCounts(null, feature.getId());
+            qgOpp += qg.opportunities(); qgDef += qg.defects();
+            prOpp += pr.opportunities(); prDef += pr.defects();
+        }
+        totalOpportunities = qgOpp + prOpp;
+        totalDefects = qgDef + prDef;
+        if (totalOpportunities == 0) {
+            totalOpportunities = 10;
+        }
+        double dpmo = calculateDpmo(totalDefects, totalOpportunities);
+        double sigmaLevel = calculateSigmaLevel(dpmo);
+        double yieldRatePercent = Math.max(0.0, ((double) (totalOpportunities - totalDefects) / totalOpportunities) * 100.0);
+
+        Map<String, Object> breakdown = new LinkedHashMap<>();
+        breakdown.put("prConflicts", Map.of("opportunities", prOpp, "defects", prDef, "dpmo", calculateDpmo(prDef, prOpp)));
+        breakdown.put("qualityGateChecks", Map.of("opportunities", qgOpp, "defects", qgDef, "dpmo", calculateDpmo(qgDef, qgOpp)));
+
+        String projectName = projectId != null
+                ? projectRepository.findById(projectId).map(com.eneik.production.models.persistence.ProjectEntity::getName)
+                        .orElse("PROJECT_" + projectId.toString().substring(0, 8))
+                : "UNKNOWN_PROJECT";
+
+        return new SixSigmaAuditReport(
+                projectId, projectName, totalOpportunities, totalDefects,
+                Math.round(dpmo * 100.0) / 100.0, Math.round(yieldRatePercent * 100.0) / 100.0,
+                Math.round(sigmaLevel * 100.0) / 100.0, getQualityTier(sigmaLevel),
+                breakdown, Map.of("shippedEpicCount", features.size()), Instant.now());
+    }
+
+    private SixSigmaAuditReport calculateSixSigmaAuditInternal(UUID projectId) {
         final UUID targetProjectId = projectId;
 
         // 1. Category A: PR Merge & Conflict Opportunities

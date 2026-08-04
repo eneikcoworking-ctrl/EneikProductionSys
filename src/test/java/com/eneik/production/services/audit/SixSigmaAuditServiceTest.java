@@ -1,5 +1,7 @@
 package com.eneik.production.services.audit;
 
+import com.eneik.production.models.persistence.FeatureEntity;
+import com.eneik.production.repositories.FeatureRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.OnboardingAuditFindingRepository;
 import com.eneik.production.repositories.PrReviewRepository;
@@ -14,6 +16,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.util.Collections;
+import java.util.List;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -26,6 +30,7 @@ public class SixSigmaAuditServiceTest {
     private TaskRepository taskRepository;
     private OnboardingAuditFindingRepository onboardingAuditFindingRepository;
     private TocSentinelService tocSentinelService;
+    private FeatureRepository featureRepository;
 
     private SixSigmaAuditService auditService;
 
@@ -35,6 +40,7 @@ public class SixSigmaAuditServiceTest {
         taskConflictRepository = mock(TaskConflictRepository.class);
         taskRepository = mock(TaskRepository.class);
         onboardingAuditFindingRepository = mock(OnboardingAuditFindingRepository.class);
+        featureRepository = mock(FeatureRepository.class);
 
         TocExecutionGraph graph = new TocExecutionGraph();
         TocAnomalyDetector anomalyDetector = new TocAnomalyDetector(graph);
@@ -56,7 +62,8 @@ public class SixSigmaAuditServiceTest {
                 onboardingAuditFindingRepository,
                 projectRepository,
                 julesSessionRepository,
-                tocSentinelService
+                tocSentinelService,
+                featureRepository
         );
     }
 
@@ -85,5 +92,64 @@ public class SixSigmaAuditServiceTest {
         assertThat(report.yieldRatePercent()).isEqualTo(100.0);
         assertThat(report.sigmaLevel()).isEqualTo(6.0);
         assertThat(report.qualityTier()).isEqualTo("WORLD_CLASS_SIX_SIGMA");
+    }
+
+    // --- 3-layer Factory/Delivery/Product model (2026-08-04) ------------------------------------------
+
+    @Test
+    void factoryLayerIsGenuinelyCrossProjectNotAnAliasForOneActiveProject() {
+        // Regression test for the real bug this refactor fixed: calculateFullSixSigmaAudit() used to
+        // call calculateProjectSixSigmaAudit(getActiveProjectId()), which coerced a null projectId to a
+        // specific project BEFORE the factory-wide (targetProjectId==null) branches ever ran - those
+        // branches were unreachable dead code. Now it must call the internal calc with a real null.
+        var report = auditService.calculateFullSixSigmaAudit();
+
+        assertThat(report.projectId()).isNull();
+        assertThat(report.projectName()).isEqualTo("FACTORY_WIDE_ALL_PROJECTS");
+        // Runtime anomalies (Category D) are only ever counted when targetProjectId is genuinely null -
+        // their presence here is proof the factory-wide branch actually ran.
+        assertThat(report.defectBreakdown()).containsKey("runtimeAnomalies");
+    }
+
+    @Test
+    void deliveryLayerStaysScopedToOneProjectAndExcludesRuntimeAnomalies() {
+        UUID projectId = UUID.randomUUID();
+
+        var report = auditService.calculateProjectSixSigmaAudit(projectId);
+
+        assertThat(report.projectId()).isEqualTo(projectId);
+        // Layer 2 "Delivery" deliberately never mixes in factory-wide runtime anomalies - that's Layer 1
+        // only, per calculateSixSigmaAuditInternal's targetProjectId==null guard.
+        assertThat(report.defectBreakdown()).doesNotContainKey("runtimeAnomalies");
+    }
+
+    @Test
+    void productLayerSumsOnlyNonDismissedFeaturesAndReportsShippedEpicCount() {
+        UUID projectId = UUID.randomUUID();
+        FeatureEntity feature1 = new FeatureEntity();
+        feature1.setId(UUID.randomUUID());
+        FeatureEntity feature2 = new FeatureEntity();
+        feature2.setId(UUID.randomUUID());
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(List.of(feature1, feature2));
+        when(taskRepository.findByFeatureId(feature1.getId())).thenReturn(Collections.emptyList());
+        when(taskRepository.findByFeatureId(feature2.getId())).thenReturn(Collections.emptyList());
+
+        var report = auditService.calculateProductLayerSixSigmaAudit(projectId);
+
+        assertThat(report.projectId()).isEqualTo(projectId);
+        assertThat(report.tocOperationalMetrics()).containsEntry("shippedEpicCount", 2);
+        // A dismissed feature was never in the featureRepository stub above, so it can't have
+        // contributed - the query itself (findByProjectIdAndDismissedAtIsNull) is what enforces this.
+    }
+
+    @Test
+    void productLayerWithNoFeaturesIsNotApplicableNotZeroDefects() {
+        UUID projectId = UUID.randomUUID();
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(Collections.emptyList());
+
+        var report = auditService.calculateProductLayerSixSigmaAudit(projectId);
+
+        assertThat(report.tocOperationalMetrics()).containsEntry("shippedEpicCount", 0);
+        assertThat(report.sigmaLevel()).isEqualTo(6.0);
     }
 }
