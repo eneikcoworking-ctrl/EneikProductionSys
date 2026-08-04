@@ -158,6 +158,12 @@ public class SystemSettingsService {
         definitions.put("veo_model", plain("veo_model", "VEO_MODEL", "veo.model"));
         definitions.put("stitch_enabled", flag("stitch_enabled", "STITCH_ENABLED", "stitch.enabled"));
         definitions.put("stitch_api_key", secret("stitch_api_key", "STITCH_API_KEY", "stitch.api-key"));
+        // 2026-08-04 (design/QA acceptance redesign, Phase B): live incident - this key was read via
+        // effectiveBoolean in DesignSystemFalsificationService without ever being registered here, so
+        // every 30-minute cron tick threw IllegalArgumentException("Unknown setting key") before the flag
+        // check could even short-circuit - the whole falsification pass never ran, not once, silently.
+        definitions.put("design_system_falsification_enabled", flag("design_system_falsification_enabled",
+                "DESIGN_SYSTEM_FALSIFICATION_ENABLED", "design-system-falsification.enabled"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         // Independent of falsification_cycle_enabled above - the philosophical track (product-critique per
         // real philosopher, Kano-classified) is a separate generative track from the formal/corrective one
