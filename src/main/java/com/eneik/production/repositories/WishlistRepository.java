@@ -55,4 +55,8 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
     // Feature-thread closeout (2026-07-24): is any wishlist for this feature still being turned into a
     // task? See ClientDeliverableReadinessService.isFeatureReadyForCloseout.
     List<WishlistEntity> findByFeatureId(UUID featureId);
+
+    // Idempotency check for DesignSystemFalsificationService (2026-08-04, Phase B): has this epic already
+    // had a design-system pass recorded, so the per-epic cron never reapplies one twice.
+    boolean existsByFeatureIdAndSource(UUID featureId, WishlistSource source);
 }

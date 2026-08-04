@@ -445,6 +445,56 @@ public class ClientDeliverableReadinessService {
         return result;
     }
 
+    public record UiCodeEpic(UUID featureId, String title) {}
+
+    /**
+     * FALSIFICATION-stage design eligibility (2026-08-04, Phase B of the design/QA acceptance redesign):
+     * an epic whose real UI code has already merged to main - the OPPOSITE condition from
+     * hasRequiredMergeEvidence's BARCAN-TAG-03 build-time exemption above, which deliberately accepts
+     * hasCode=false design drafts. This requires hasCode==true specifically, read directly from
+     * mergedReviews, because Stitch's design-system application (DesignSystemFalsificationService) is
+     * meant to run AFTER real shipped UI exists, not against a speculative build-time mockup. Reuses
+     * DesignExcellenceGate.UI_TAGS for the role set instead of redefining TAG-03/TAG-11 a third time.
+     * Deliberately re-derives its own productFeatures scope rather than sharing computeForSources'/
+     * listEpicDiagnostics' scaffolding - same established precedent as listEpicDiagnostics' own javadoc:
+     * independent read paths for different questions, not merged behind a harder-to-reason-about helper.
+     */
+    public List<UiCodeEpic> listEpicsWithMergedUiCode(UUID projectId) {
+        List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
+        Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
+        for (WishlistEntity item : allWishlist) {
+            wishlistById.put(item.getId(), item);
+        }
+        Set<UUID> featureIdsWithWishlistWork = allWishlist.stream()
+                .map(WishlistEntity::getFeatureId)
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toSet());
+
+        List<FeatureEntity> sourceMatchedFeatures = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
+                .filter(feature -> {
+                    WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
+                    return root != null && PRODUCT_ITERATION_SOURCES.contains(root.getSource());
+                })
+                .toList();
+        List<FeatureEntity> nonOrphanFeatures = sourceMatchedFeatures.stream()
+                .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))
+                .toList();
+        List<FeatureEntity> productFeatures = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist, projectId);
+
+        List<UiCodeEpic> result = new java.util.ArrayList<>();
+        for (FeatureEntity feature : productFeatures) {
+            boolean hasMergedUiCode = taskRepository.findByFeatureId(feature.getId()).stream()
+                    .filter(t -> t.getRole() != null
+                            && com.eneik.production.services.gate.DesignExcellenceGate.UI_TAGS.contains(t.getRole().getTag()))
+                    .filter(this::reachedMain)
+                    .anyMatch(t -> mergedReviews(t.getId()).stream().anyMatch(r -> Boolean.TRUE.equals(r.getHasCode())));
+            if (hasMergedUiCode) {
+                result.add(new UiCodeEpic(feature.getId(), feature.getTitle()));
+            }
+        }
+        return result;
+    }
+
     /**
      * Deletes epics with zero real code value (2026-07-25, operator directive: "эпик - это реальная фича с
      * jtbd для пользователей - там не может не быть реальной ценности. ценность - это код"). An epic ends
@@ -553,15 +603,53 @@ public class ClientDeliverableReadinessService {
         return "complex".equals(task.getCynefinDomain());
     }
 
+    // Roles whose build-time deliverable is real, legitimate work that is not source code by design -
+    // reachedMain alone is sufficient evidence; a mergedReviews().hasCode()==false is EXPECTED for these,
+    // not a sign anything went wrong. BARCAN-TAG-09 = delivery/decision record. BARCAN-TAG-03 (2026-08-04
+    // live incident, "Core Knowledge Base Portal" epic stuck at 6/11): its build-time deliverable is a
+    // static design mockup (image+HTML) committed under design/draft/... via DesignAssetService -
+    // CodeChangeClassifier correctly never counts that as code. Deliberately narrower than widening
+    // isAuxiliaryTask/EmsFlowStage.EXPERIENCE: BARCAN-TAG-11 shares TAG-03's EXPERIENCE stage but writes
+    // real frontend code and must keep requiring hasCode=true, and isAuxiliaryTask has two external
+    // callers (ProjectFlowService, JulesDispatchService) whose behavior must not change for TAG-03/TAG-11.
+    // Design's REAL completion signal now lives later, at the falsification stage, once real UI has
+    // actually merged - see DesignSystemFalsificationService; this exemption only covers the build-time
+    // draft, which was never meant to be the final acceptance moment.
+    private static final Set<String> HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-09", "BARCAN-TAG-03");
+
     private boolean hasRequiredMergeEvidence(TaskEntity task) {
         if (!reachedMain(task)) {
             return false;
         }
         String roleTag = task.getRole() != null ? task.getRole().getTag() : "";
-        if ("BARCAN-TAG-09".equals(roleTag)) {
+        if (HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag)) {
             return true;
         }
+        // Phase C (2026-08-04, design/QA acceptance redesign): QA (BARCAN-TAG-06) is Delivery-layer work
+        // (verifying the product), not Product-layer work (producing it) - a real, correct QA outcome can
+        // legitimately merge a PR with ZERO file changes (nothing new to test), which CodeChangeClassifier
+        // always classifies as hasCode=false. QA gets its own acceptance criterion instead: real
+        // verification evidence via VerificationEvidenceGate, not a source-code diff.
+        if (com.eneik.production.services.gate.VerificationEvidenceGate.QA_TAGS.contains(roleTag)) {
+            return hasPassingGateCheck(task, com.eneik.production.services.gate.VerificationEvidenceGate.CHECK_NAME);
+        }
         return mergedReviews(task.getId()).stream().anyMatch(review -> Boolean.TRUE.equals(review.getHasCode()));
+    }
+
+    // Deliberately reads the SPECIFIC check's own passed flag from the checks array, not
+    // task.getQualityGatePassed() (the aggregate across every gate, e.g. BusinessValueGate/DoDGate) - a QA
+    // task must not fail readiness because of an unrelated gate's formatting nit.
+    private boolean hasPassingGateCheck(TaskEntity task, String checkName) {
+        com.fasterxml.jackson.databind.JsonNode report = task.getQualityGateReport();
+        if (report == null || !report.has("checks")) {
+            return false;
+        }
+        for (com.fasterxml.jackson.databind.JsonNode check : report.get("checks")) {
+            if (checkName.equals(check.path("name").asText(""))) {
+                return check.path("passed").asBoolean(false);
+            }
+        }
+        return false;
     }
 
     /**

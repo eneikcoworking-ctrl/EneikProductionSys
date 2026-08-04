@@ -591,6 +591,18 @@ public class JulesDispatchService {
         if ("BARCAN-TAG-06".equals(task.getRole().getTag())) {
             roleContextBuilder.append("- QA default: if you ask whether to continue verification, continue with required test ratios and deeper AC verification; document assumptions instead of waiting.\n");
         }
+        if (com.eneik.production.services.gate.VerificationEvidenceGate.QA_TAGS.contains(task.getRole().getTag())) {
+            String reportPath = com.eneik.production.services.gate.VerificationEvidenceGate.verificationReportPath(task);
+            roleContextBuilder.append("- Verification evidence (required even when your change touches zero other files - a "
+                    + "verification pass that confirms existing behavior with nothing new to add is a legitimate, complete "
+                    + "outcome, but it must still prove it happened): before opening the PR, commit a structured report at "
+                    + "exactly " + reportPath + " with this shape: {\"testsRun\":N,\"testsPassed\":N,\"testsFailed\":N,"
+                    + "\"acceptanceCriteriaVerified\":[\"...\"],\"coverageDeltaPercent\":N-or-null,\"verdict\":\"pass\"-or-\"fail\","
+                    + "\"notes\":\"...\"}. This is the only evidence the platform's automated gate accepts as proof your "
+                    + "verification work happened - without this real file at this exact path, with testsRun matching "
+                    + "testsPassed+testsFailed and a non-empty acceptanceCriteriaVerified list, the task will fail the gate "
+                    + "regardless of what you report in the PR summary.\n");
+        }
         if (com.eneik.production.services.gate.DesignExcellenceGate.UI_TAGS.contains(task.getRole().getTag())) {
             String designCheckDir = com.eneik.production.services.gate.DesignExcellenceGate.designCheckDir(task);
             roleContextBuilder.append("- Design verification (exception to the no-screenshots rule above): before opening the PR, "

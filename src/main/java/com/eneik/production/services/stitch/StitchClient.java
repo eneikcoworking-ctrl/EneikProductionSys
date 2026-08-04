@@ -104,6 +104,68 @@ public class StitchClient {
         return GeneratedScreen.unavailable("Stitch response contained no generated screen.");
     }
 
+    // 2026-08-04 (Phase B, design/QA acceptance redesign): unlike generateScreenFromText's response shape
+    // (proven live against the real Stitch API), the field names below (name/designSystems) are a
+    // best-effort mirror of the same create_project/generate_screen_from_text convention - NOT yet
+    // confirmed against a real create_design_system/apply_design_system/list_design_systems call. Verify
+    // against a live Stitch response before relying on this in production; callTool's own null-on-failure
+    // contract means a wrong field name degrades to "unavailable", not a crash, so this is safe to ship
+    // and correct once confirmed.
+
+    public record DesignSystemResult(boolean available, String status, String designSystemId, String message) {
+        public static DesignSystemResult unavailable(String message) {
+            return new DesignSystemResult(false, "unavailable", "", message);
+        }
+    }
+
+    /** Creates a Stitch design system for a project from a text prompt and returns its bare ID. */
+    public DesignSystemResult createDesignSystem(String projectId, String prompt) {
+        JsonNode result = callTool("create_design_system", java.util.Map.of(
+                "projectId", projectId,
+                "prompt", prompt == null ? "" : prompt));
+        if (result == null) {
+            return DesignSystemResult.unavailable("Stitch create_design_system call failed.");
+        }
+        String name = result.path("name").asText("");
+        if (name.isBlank()) {
+            return DesignSystemResult.unavailable("Stitch response contained no design system.");
+        }
+        int slash = name.lastIndexOf('/');
+        String id = slash >= 0 ? name.substring(slash + 1) : name;
+        return new DesignSystemResult(true, "ok", id, "Created Stitch design system.");
+    }
+
+    public record ApplyDesignSystemResult(boolean available, String status, String message) {}
+
+    /** Applies an existing design system to the given screens (or every screen in the project if null/empty). */
+    public ApplyDesignSystemResult applyDesignSystem(String projectId, String designSystemId, java.util.List<String> screenIds) {
+        JsonNode result = callTool("apply_design_system", java.util.Map.of(
+                "projectId", projectId,
+                "designSystemId", designSystemId == null ? "" : designSystemId,
+                "screenIds", screenIds == null ? java.util.List.of() : screenIds));
+        if (result == null) {
+            return new ApplyDesignSystemResult(false, "unavailable", "Stitch apply_design_system call failed.");
+        }
+        return new ApplyDesignSystemResult(true, "ok", "Applied design system.");
+    }
+
+    /** Lists the bare IDs of every design system already created for a Stitch project. */
+    public java.util.List<String> listDesignSystems(String projectId) {
+        JsonNode result = callTool("list_design_systems", java.util.Map.of("projectId", projectId));
+        if (result == null || !result.path("designSystems").isArray()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> ids = new java.util.ArrayList<>();
+        for (JsonNode ds : result.path("designSystems")) {
+            String name = ds.path("name").asText("");
+            if (!name.isBlank()) {
+                int slash = name.lastIndexOf('/');
+                ids.add(slash >= 0 ? name.substring(slash + 1) : name);
+            }
+        }
+        return ids;
+    }
+
     /** Downloads a Stitch file (screenshot image or HTML) using the same API key as authentication. */
     public byte[] download(String downloadUrl) {
         String apiKey = stitchApiKey();

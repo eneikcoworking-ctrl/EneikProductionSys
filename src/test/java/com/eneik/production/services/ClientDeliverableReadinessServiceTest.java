@@ -89,6 +89,182 @@ class ClientDeliverableReadinessServiceTest {
         assertEquals(0, service.computeForProject(projectId).mergedDeliverables());
     }
 
+    // --- BARCAN-TAG-03 build-time exemption (2026-08-04, live incident: "Core Knowledge Base Portal"
+    // epic stuck at 6/11 - 3 of the 5 unfulfilled items were TAG-03 design-brief tasks whose real,
+    // correct deliverable is a static mockup, never source code) -------------------------------------
+
+    @Test
+    void designBriefMergeWithoutCodeCountsAsFulfilled() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-03");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+        assertEquals(1, readiness.mergedDeliverables());
+        assertEquals(1, readiness.completeFeatures());
+    }
+
+    @Test
+    void uiImplementationMergeWithoutCodeStillDoesNotCount() {
+        // Regression guard: BARCAN-TAG-11 shares TAG-03's EXPERIENCE EmsFlowStage but writes real
+        // frontend code and must NOT be swept up by a careless widening to the whole stage.
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-11");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+
+        assertEquals(0, service.computeForProject(projectId).mergedDeliverables());
+    }
+
+    @Test
+    void designBriefTaskNotReachedMainStillDoesNotCount() {
+        // The exemption only skips the hasCode requirement - it never bypasses reachedMain.
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-03");
+        stubPlan(projectId, root, feature, items, tasks);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        PrReviewEntity review = new PrReviewEntity();
+        review.setMerged(true);
+        review.setHasCode(false);
+        review.setBaseRef("feat/some-thread-branch");
+        when(julesSessionRepository.findByTaskId(tasks.get(0).getId())).thenReturn(List.of(session));
+        when(prReviewRepository.findByJulesSessionIdInAndMergedTrue(List.of(session.getId())))
+                .thenReturn(List.of(review));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId()))
+                .thenReturn(java.util.Optional.of(new com.eneik.production.models.persistence.FeatureThreadEntity()));
+
+        assertEquals(0, service.computeForProject(projectId).mergedDeliverables());
+        assertFalse(service.reachedMain(tasks.get(0)));
+    }
+
+    @Test
+    void listEpicDiagnosticsAgreesWithComputeForProjectForDesignBriefExemption() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-03");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+
+        List<ClientDeliverableReadinessService.EpicDiagnostic> diagnostics = service.listEpicDiagnostics(projectId);
+
+        assertEquals(1, diagnostics.size());
+        assertEquals(1, diagnostics.get(0).mergedItemCount());
+        assertTrue(diagnostics.get(0).complete());
+    }
+
+    // --- listEpicsWithMergedUiCode (2026-08-04, Phase B): the OPPOSITE signal from the TAG-03 build-time
+    // exemption above - here hasCode=true is REQUIRED, because this is the falsification-stage eligibility
+    // check for applying a real Stitch design system against already-shipped UI, not the build-time draft.
+
+    @Test
+    void designBriefWithRealMergedCodeIsEligibleForDesignSystemFalsification() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setTitle("Core Knowledge Base Portal");
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-03");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), true);
+        when(taskRepository.findByFeatureId(feature.getId())).thenReturn(tasks);
+
+        List<ClientDeliverableReadinessService.UiCodeEpic> eligible = service.listEpicsWithMergedUiCode(projectId);
+
+        assertEquals(1, eligible.size());
+        assertEquals(feature.getId(), eligible.get(0).featureId());
+        assertEquals("Core Knowledge Base Portal", eligible.get(0).title());
+    }
+
+    @Test
+    void designBriefWithOnlyTheBuildTimeDraftIsNotEligibleForDesignSystemFalsification() {
+        // Same fixture as designBriefMergeWithoutCodeCountsAsFulfilled (Phase A's exemption case) - must
+        // NOT also satisfy Phase B's eligibility, which requires real hasCode=true.
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-03");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+        when(taskRepository.findByFeatureId(feature.getId())).thenReturn(tasks);
+
+        assertTrue(service.listEpicsWithMergedUiCode(projectId).isEmpty());
+    }
+
+    @Test
+    void nonUiRoleWithRealMergedCodeIsNotEligibleForDesignSystemFalsification() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), true);
+        when(taskRepository.findByFeatureId(feature.getId())).thenReturn(tasks);
+
+        assertTrue(service.listEpicsWithMergedUiCode(projectId).isEmpty());
+    }
+
+    // --- BARCAN-TAG-06 verification-evidence acceptance (2026-08-04, Phase C: the other half of the live
+    // incident - a real, correct zero-file-diff QA merge must count once it carries a passing
+    // verification_evidence gate check, exactly the evidence VerificationEvidenceGate writes) -----------
+
+    @Test
+    void qaTaskWithPassingVerificationEvidenceCountsAsMerged() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-06");
+        stubPlan(projectId, root, feature, items, tasks);
+        // hasCode=false: the merge itself has no code diff (the live-incident shape) - reachedMain must
+        // still be true (a real merge happened), only the acceptance criterion differs for this role.
+        stubMerged(tasks.get(0), false);
+        tasks.get(0).setQualityGateReport(new ObjectMapper().readTree(
+                "{\"checks\":[{\"name\":\"verification_evidence\",\"passed\":true}]}"));
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+        assertEquals(1, readiness.mergedDeliverables());
+    }
+
+    @Test
+    void qaTaskWithoutPassingVerificationEvidenceDoesNotCount() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-06");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+        tasks.get(0).setQualityGateReport(new ObjectMapper().readTree(
+                "{\"checks\":[{\"name\":\"verification_evidence\",\"passed\":false}]}"));
+
+        assertEquals(0, service.computeForProject(projectId).mergedDeliverables());
+    }
+
     @Test
     void mergeIntoOpenFeatureThreadDoesNotCountUntilThreadClosesIntoMain() {
         UUID projectId = UUID.randomUUID();
