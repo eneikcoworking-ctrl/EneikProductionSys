@@ -625,15 +625,27 @@ public class ClientDeliverableReadinessService {
         if (HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag)) {
             return true;
         }
+        boolean hasCode = mergedReviews(task.getId()).stream().anyMatch(review -> Boolean.TRUE.equals(review.getHasCode()));
         // Phase C (2026-08-04, design/QA acceptance redesign): QA (BARCAN-TAG-06) is Delivery-layer work
         // (verifying the product), not Product-layer work (producing it) - a real, correct QA outcome can
         // legitimately merge a PR with ZERO file changes (nothing new to test), which CodeChangeClassifier
-        // always classifies as hasCode=false. QA gets its own acceptance criterion instead: real
-        // verification evidence via VerificationEvidenceGate, not a source-code diff.
+        // always classifies as hasCode=false. QA gets an ADDITIONAL acceptance path - real verification
+        // evidence via VerificationEvidenceGate - on top of the normal hasCode path, not INSTEAD of it.
+        // Live regression (2026-08-04, caught immediately after deploy): an earlier version of this branch
+        // used `return hasPassingGateCheck(...)` here, which replaced the hasCode check entirely for every
+        // TAG-06 task - silently un-counting every pre-existing QA task that legitimately touched real code
+        // (hasCode=true) but predates VerificationEvidenceGate and so has no verification_evidence entry
+        // yet. Confirmed live: two previously-100%-complete epics ("LMS and Messenger Integration",
+        // "Financial and HR Configuration in Moodle") dropped from 3/3 and 5/5 to 2/3 and 2/5 the moment
+        // this deployed. A QA task must pass via EITHER real code evidence OR real verification evidence,
+        // never lose the path it already had.
+        if (hasCode) {
+            return true;
+        }
         if (com.eneik.production.services.gate.VerificationEvidenceGate.QA_TAGS.contains(roleTag)) {
             return hasPassingGateCheck(task, com.eneik.production.services.gate.VerificationEvidenceGate.CHECK_NAME);
         }
-        return mergedReviews(task.getId()).stream().anyMatch(review -> Boolean.TRUE.equals(review.getHasCode()));
+        return false;
     }
 
     // Deliberately reads the SPECIFIC check's own passed flag from the checks array, not

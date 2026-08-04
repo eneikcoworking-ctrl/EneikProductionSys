@@ -266,6 +266,27 @@ class ClientDeliverableReadinessServiceTest {
     }
 
     @Test
+    void qaTaskWithRealCodeStillCountsEvenWithoutAVerificationEvidenceCheck() {
+        // Regression test for a live incident (2026-08-04): the first version of the TAG-06 branch used
+        // `return hasPassingGateCheck(...)`, which replaced the hasCode path entirely instead of adding to
+        // it - silently un-counting every pre-existing QA task that legitimately touched real code but
+        // predates VerificationEvidenceGate (so has no verification_evidence entry yet). Confirmed live:
+        // two previously-100%-complete epics dropped to below 100% the moment that version deployed. A QA
+        // task must pass via EITHER path, never lose the one it already had.
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-06");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), true); // hasCode=true, no qualityGateReport set at all
+        assertEquals(null, tasks.get(0).getQualityGateReport());
+
+        assertEquals(1, service.computeForProject(projectId).mergedDeliverables());
+    }
+
+    @Test
     void mergeIntoOpenFeatureThreadDoesNotCountUntilThreadClosesIntoMain() {
         UUID projectId = UUID.randomUUID();
         UUID rootId = UUID.randomUUID();
