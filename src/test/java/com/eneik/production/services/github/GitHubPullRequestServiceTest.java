@@ -95,6 +95,43 @@ class GitHubPullRequestServiceTest {
         assertFalse(GitHubPullRequestService.matchesSessionToken(pullRequest, "skipped"));
     }
 
+    /**
+     * Regression coverage for the 2026-08-04 incident (test-forty-first task 1fbb3086): findOpenPullRequestBySession
+     * used to fall back to matching ANY open PR whose branch/title merely looked like a compiler/task-plan
+     * pattern once the exact-token match failed - it silently attributed an unrelated compiler session's PR
+     * to a completely different, long-dead session with no PR of its own. That fallback is now removed
+     * entirely; a session with no exact token match in any open PR's branch must get back empty, even when
+     * an unrelated compiler-pattern PR exists in the same project.
+     */
+    @Test
+    void findOpenPullRequestBySessionNeverFallsBackToAnUnrelatedCompilerPatternPr() {
+        SystemSettingsService settingsService = mock(SystemSettingsService.class);
+        GitHubPullRequestService service = org.mockito.Mockito.spy(new GitHubPullRequestService(
+                mock(GithubConfig.class), settingsService, objectMapper, mock(GitHubApiBudgetService.class)));
+
+        GitHubPullRequestService.GitHubPullRequest unrelatedCompilerPr = new GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/52",
+                52,
+                "Compile 1 Wishlist",
+                "task-plan-500b9d0c-9092139308873395481",
+                "jules",
+                false,
+                "main",
+                false,
+                java.time.Instant.now());
+        GitHubPullRequestService.PullRequestSnapshot snapshot = new GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", java.util.List.of(unrelatedCompilerPr), java.util.List.of(), null);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+        org.mockito.Mockito.doReturn(snapshot).when(service).pullRequestSnapshot(project);
+
+        var result = service.findOpenPullRequestBySession(project, "sessions/8898497391970975137");
+
+        assertTrue(result.isEmpty());
+    }
+
     // --- GitHub budget guard (2026-07-31): single choke point for every project-aware caller -------------
 
     @Test

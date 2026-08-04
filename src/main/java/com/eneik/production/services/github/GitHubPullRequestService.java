@@ -95,6 +95,25 @@ public class GitHubPullRequestService {
         }
     }
 
+    /**
+     * 2026-08-04 (live incident, test-forty-first task 1fbb3086): this used to fall back to matching ANY
+     * open PR whose branch/title merely looked like a compiler/task-plan pattern once the exact-token
+     * match failed - added 2026-07-22 (a5c5b96) on the premise that compiler PR branches don't reliably
+     * embed their own session's token. Confirmed live that premise doesn't hold: PR#52
+     * ("task-plan-500b9d0c-9092139308873395481") does embed a real session token, just not the one asking
+     * - the fallback silently attributed an unrelated compiler session's PR to task 1fbb3086's long-dead
+     * session, which had no PR of its own, marking it falsely "done" with zero real deliverable.
+     * Soundness (a match is only ever correct) and completeness (a session's real PR is eventually found)
+     * are not equally costly to get wrong here: a false negative just means waiting one more poll cycle -
+     * cheap, and now bounded by the sessionCompleted/Davidson-trust-window closure added the same day this
+     * comment was written. A false positive silently corrupts task status, the dependency graph, and every
+     * readiness metric downstream of it - there is no cheap recovery from that. Only the exact-token match
+     * is sound; keeping it as the only branch is a deliberate choice, not an oversight. If a genuine case
+     * ever surfaces where a session's own PR really doesn't carry its token, the correct fix is parsing
+     * Jules's own "for task [id]" self-reference out of the PR body (a fact Jules states about itself,
+     * same evidentiary tier as an activity's own sessionCompleted field) and matching against the
+     * session's own recorded Jules task id - not guessing from keywords in someone else's branch name.
+     */
     public Optional<GitHubPullRequest> findOpenPullRequestBySession(ProjectEntity project, String externalSessionId) {
         String sessionToken = sessionToken(externalSessionId);
         if (project == null) {
@@ -110,15 +129,6 @@ public class GitHubPullRequestService {
                 if (pr.headRef() != null && pr.headRef().contains(sessionToken)) {
                     return Optional.of(pr);
                 }
-            }
-        }
-
-        // Fallback matching for compiler PRs or PRs where branch/title follows jules-task-plan/compiler pattern
-        for (GitHubPullRequest pr : snapshot.open()) {
-            String head = pr.headRef() != null ? pr.headRef().toLowerCase(java.util.Locale.ROOT) : "";
-            String title = pr.title() != null ? pr.title().toLowerCase(java.util.Locale.ROOT) : "";
-            if (head.contains("task-plan") || head.contains("compiler") || title.contains("compiler") || title.contains("decomposition")) {
-                return Optional.of(pr);
             }
         }
         return Optional.empty();
