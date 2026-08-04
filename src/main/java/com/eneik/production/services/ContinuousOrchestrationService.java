@@ -231,11 +231,25 @@ public class ContinuousOrchestrationService {
         }
     }
 
+    // 2026-08-04 (live incident, test-forty-first): this used to count ALL of the last 30 tasks regardless
+    // of status, including ones already done/failed/blocked long ago. That created a permanent deadlock -
+    // once 3+ historical (fully resolved) duplicates existed in that window, BLOCKED_BY_DUPLICATE_CONTENT
+    // (a hard-stop state, see OperationalFlowCoreService.isHardStopState) blocked wishlist compilation AND
+    // task dispatch alike, so no NEW task could ever be created to push the old duplicates out of the
+    // window - the only way out was more dispatch, which was exactly what the block forbade. Confirmed
+    // live: 4 duplicate pairs, all long since `done`, kept the entire project stuck for hours with no
+    // recovery path (this state has no Gemini lever either). The detector's real purpose is catching a
+    // generation fallback actively wasting capacity RIGHT NOW - a duplicate that already completed spent
+    // its waste once and is not still spending it, so it must not count toward the block.
+    private static final java.util.Set<TaskStatus> TERMINAL_STATUSES = java.util.Set.of(
+            TaskStatus.done, TaskStatus.failed, TaskStatus.blocked, TaskStatus.spike_completed);
+
     private boolean checkForDuplicateTaskContent(ProjectEntity project) {
         try {
             List<TaskEntity> recentTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
                     .stream()
                     .limit(30)
+                    .filter(task -> !TERMINAL_STATUSES.contains(task.getStatus()))
                     .toList();
             java.util.Map<String, Long> contentCounts = recentTasks.stream()
                     .map(this::duplicateDetectionKey)

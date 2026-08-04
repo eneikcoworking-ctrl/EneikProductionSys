@@ -120,6 +120,69 @@ class ContinuousOrchestrationServiceTest {
         verify(accountHealthService, times(1)).recoverEligibleAccounts();
     }
 
+    // --- checkForDuplicateTaskContent (2026-08-04, live incident: test-forty-first stuck for hours in
+    // BLOCKED_BY_DUPLICATE_CONTENT, a hard-stop state with no recovery path, purely because 4 pairs of
+    // long-since-`done` duplicate tasks sat in the last-30-tasks window) --------------------------------
+
+    private TaskEntity taskWithSliceTitle(ProjectEntity project, TaskStatus status, String sliceTitle) {
+        TaskEntity task = task(project, status);
+        com.fasterxml.jackson.databind.node.ObjectNode payload = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        payload.put("slice_title", sliceTitle);
+        task.setPayload(payload);
+        return task;
+    }
+
+    @Test
+    void duplicateContentAmongOnlyTerminalTasksDoesNotBlock() {
+        ProjectEntity project = project(UUID.randomUUID(), "test-forty-first", ProjectStatus.active);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        List<TaskEntity> duplicates = List.of(
+                taskWithSliceTitle(project, TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(project, TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(project, TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(project, TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(duplicates);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class), mock(ProjectFlowService.class), mock(AccountRepository.class),
+                mock(JulesSessionRepository.class), mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class), mock(TechnicalLeadCompiler.class), mock(MLPredictionServiceClient.class),
+                taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class));
+
+        boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
+
+        assertEquals(false, duplicated);
+    }
+
+    @Test
+    void duplicateContentAmongActiveTasksStillBlocks() {
+        // Regression guard: the fix must only exempt already-resolved duplicates, not disable the
+        // detector entirely - a real, currently-active generation fallback must still be caught.
+        ProjectEntity project = project(UUID.randomUUID(), "test-forty-first", ProjectStatus.active);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        List<TaskEntity> duplicates = List.of(
+                taskWithSliceTitle(project, TaskStatus.queued, "Coverage gap falsification"),
+                taskWithSliceTitle(project, TaskStatus.queued, "Coverage gap falsification"),
+                taskWithSliceTitle(project, TaskStatus.review, "Coverage gap falsification"));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(duplicates);
+
+        ContinuousOrchestrationService service = new ContinuousOrchestrationService(
+                mock(ProjectRepository.class), mock(ProjectFlowService.class), mock(AccountRepository.class),
+                mock(JulesSessionRepository.class), mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(WishlistRepository.class), mock(TechnicalLeadCompiler.class), mock(MLPredictionServiceClient.class),
+                taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class));
+
+        boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
+
+        assertEquals(true, duplicated);
+    }
+
     private ProjectEntity project(UUID id, String name, ProjectStatus status) {
         ProjectEntity project = new ProjectEntity();
         project.setId(id);
