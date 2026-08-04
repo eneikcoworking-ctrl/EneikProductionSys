@@ -70,6 +70,14 @@ public class WishlistEntity {
     @Column(name = "feature_id")
     private UUID featureId;
 
+    // 2026-08-04 (3-layer Factory/Delivery/Product model): immutable lineage, set once alongside
+    // featureId the first time this item is stamped (compile or inheritance), never rewritten again -
+    // same reasoning as TaskEntity.originFeatureId. Lets Layer 2 delivery history (including dismissed/
+    // duplicate/superseded wishlist items, e.g. philosophical falsification critiques) trace back to
+    // where they came from even after featureId itself gets repointed.
+    @Column(name = "origin_feature_id")
+    private UUID originFeatureId;
+
     public UUID getId() {
         return id;
     }
@@ -196,6 +204,14 @@ public class WishlistEntity {
 
     public void setFeatureId(UUID featureId) {
         this.featureId = featureId;
+    }
+
+    public UUID getOriginFeatureId() {
+        return originFeatureId;
+    }
+
+    public void setOriginFeatureId(UUID originFeatureId) {
+        this.originFeatureId = originFeatureId;
     }
 
     public TargetContext getTargetContext() {

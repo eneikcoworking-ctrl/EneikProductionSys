@@ -347,6 +347,9 @@ public class TechnicalLeadCompiler {
         task.setCynefinDomain(cynefin);
         task.setSourceWishlistId(wishlist.getId());
         task.setFeatureId(featureService.resolveOrCreateFeatureId(wishlist, project.getId()));
+        // 2026-08-04: inherit the immutable lineage from the wishlist that produced this task -
+        // resolveOrCreateFeatureId above just stamped it if this is the wishlist's first task.
+        task.setOriginFeatureId(wishlist.getOriginFeatureId() != null ? wishlist.getOriginFeatureId() : task.getFeatureId());
 
         int priority = bottleneckAwarePriorityService.computePriority(wishlist.getTocConstraintRef());
         if (wishlist.getSourceRoleTag() != null && !wishlist.getSourceRoleTag().isBlank()) {

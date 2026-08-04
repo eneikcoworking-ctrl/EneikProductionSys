@@ -39,7 +39,14 @@ public class FeatureService {
         feature.setProjectId(projectId);
         feature.setRootWishlistId(wishlist.getId());
         feature = featureRepository.save(feature);
+        // 2026-08-04: a brand-new feature is its own lineage origin - stamped once here, alongside
+        // featureId, and never touched again (see FeatureEntity.originFeatureId's javadoc).
+        feature.setOriginFeatureId(feature.getId());
+        feature = featureRepository.save(feature);
         wishlist.setFeatureId(feature.getId());
+        if (wishlist.getOriginFeatureId() == null) {
+            wishlist.setOriginFeatureId(feature.getId());
+        }
         wishlistRepository.save(wishlist);
         return feature.getId();
     }
@@ -51,7 +58,7 @@ public class FeatureService {
      * the compiler to judge a narrative match without dumping every task inside each эпик into the prompt).
      */
     public List<FeatureEntity> listExistingEpics(UUID projectId) {
-        return featureRepository.findByProjectId(projectId);
+        return featureRepository.findByProjectIdAndDismissedAtIsNull(projectId);
     }
 
     /**
@@ -90,6 +97,8 @@ public class FeatureService {
         feature.setCynefinDomain(cynefinDomain);
         feature.setSixSigmaMetric(sixSigmaMetric);
         feature.setTocConstraintRef(tocConstraintRef);
+        feature = featureRepository.save(feature);
+        feature.setOriginFeatureId(feature.getId());
         return featureRepository.save(feature);
     }
 }

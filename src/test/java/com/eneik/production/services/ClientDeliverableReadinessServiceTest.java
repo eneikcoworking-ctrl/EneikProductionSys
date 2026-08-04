@@ -233,7 +233,7 @@ class ClientDeliverableReadinessServiceTest {
         all.add(dismissedAudit);
         all.addAll(items);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(all);
-        when(featureRepository.findByProjectId(projectId)).thenReturn(List.of(feature));
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(List.of(feature));
         when(taskRepository.findBySourceWishlistIdIn(items.stream().map(WishlistEntity::getId).toList()))
                 .thenReturn(tasks);
 
@@ -341,7 +341,7 @@ class ClientDeliverableReadinessServiceTest {
         all.add(root);
         all.addAll(items);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(all);
-        when(featureRepository.findByProjectId(projectId)).thenReturn(List.of(feature));
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(List.of(feature));
         when(taskRepository.findBySourceWishlistIdIn(items.stream().map(WishlistEntity::getId).toList()))
                 .thenReturn(tasks);
     }
@@ -440,10 +440,15 @@ class ClientDeliverableReadinessServiceTest {
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
         stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
         when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId())).thenReturn(java.util.Optional.empty());
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
 
         service.deleteValuelessEpics();
 
-        verify(featureRepository).deleteById(feature.getId());
+        // 2026-08-04 (3-layer model): soft-delete now, not deleteById - the row survives with its
+        // originFeatureId lineage intact, only dismissedAt marks it as excluded from active readiness.
+        verify(featureRepository, never()).deleteById(any());
+        verify(featureRepository).save(feature);
+        assertNotNull(feature.getDismissedAt());
     }
 
     @Test
@@ -467,11 +472,14 @@ class ClientDeliverableReadinessServiceTest {
         FeatureThreadEntity thread = new FeatureThreadEntity();
         thread.setFeatureId(feature.getId());
         when(featureThreadRepository.findByProjectIdAndFeatureId(projectId, feature.getId())).thenReturn(java.util.Optional.of(thread));
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
 
         service.deleteValuelessEpics();
 
         verify(featureThreadRepository).delete(thread);
-        verify(featureRepository).deleteById(feature.getId());
+        verify(featureRepository, never()).deleteById(any());
+        verify(featureRepository).save(feature);
+        assertNotNull(feature.getDismissedAt());
     }
 
     @Test
@@ -495,6 +503,8 @@ class ClientDeliverableReadinessServiceTest {
         service.deleteValuelessEpics();
 
         verify(featureRepository, never()).deleteById(any());
+        verify(featureRepository, never()).save(any());
+        assertNull(feature.getDismissedAt());
     }
 
     @Test
@@ -515,6 +525,7 @@ class ClientDeliverableReadinessServiceTest {
         service.deleteValuelessEpics();
 
         verify(featureRepository, never()).deleteById(any());
+        verify(featureRepository, never()).save(any());
     }
 
     @Test
@@ -538,5 +549,6 @@ class ClientDeliverableReadinessServiceTest {
         service.deleteValuelessEpics();
 
         verify(featureRepository, never()).deleteById(any());
+        verify(featureRepository, never()).save(any());
     }
 }

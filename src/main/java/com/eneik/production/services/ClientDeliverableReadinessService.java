@@ -146,7 +146,7 @@ public class ClientDeliverableReadinessService {
         if (rootWishlistId == null) return List.of();
         Set<UUID> treeIds = findWishlistTreeIds(projectId, rootWishlistId);
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
-        Set<UUID> featureIds = featureRepository.findByProjectId(projectId).stream()
+        Set<UUID> featureIds = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
                 .filter(feature -> treeIds.contains(feature.getRootWishlistId()) ||
                         allWishlist.stream().anyMatch(w -> treeIds.contains(w.getId()) && feature.getId().equals(w.getFeatureId())))
                 .map(FeatureEntity::getId)
@@ -186,7 +186,7 @@ public class ClientDeliverableReadinessService {
                 .filter(id -> id != null)
                 .collect(java.util.stream.Collectors.toSet());
 
-        List<FeatureEntity> sourceMatchedFeatures = featureRepository.findByProjectId(projectId).stream()
+        List<FeatureEntity> sourceMatchedFeatures = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
                 .filter(feature -> {
                     WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
                     return root != null && sources.contains(root.getSource());
@@ -392,7 +392,7 @@ public class ClientDeliverableReadinessService {
                 .filter(id -> id != null)
                 .collect(java.util.stream.Collectors.toSet());
 
-        List<FeatureEntity> sourceMatchedFeatures = featureRepository.findByProjectId(projectId).stream()
+        List<FeatureEntity> sourceMatchedFeatures = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
                 .filter(feature -> {
                     WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
                     return root != null && PRODUCT_ITERATION_SOURCES.contains(root.getSource());
@@ -504,9 +504,17 @@ public class ClientDeliverableReadinessService {
             }
             featureThreadRepository.findByProjectIdAndFeatureId(projectId, diagnostic.id())
                     .ifPresent(featureThreadRepository::delete);
-            featureRepository.deleteById(diagnostic.id());
-            log.info("ClientDeliverableReadinessService: deleted valueless epic '{}' ({}) for project {} - "
-                            + "zero code-producing items, nothing left pending for it",
+            // 2026-08-04 (3-layer model): soft-delete, not featureRepository.deleteById - a hard delete
+            // destroyed originFeatureId lineage entirely (confirmed live earlier today: manual SQL repair
+            // was needed after this exact call wiped 3 real features during a dedup tie-break incident).
+            // The row survives with its lineage intact for Layer 2 "Delivery" history; it just stops
+            // counting toward active readiness via the dismissedAt-filtered queries above.
+            featureRepository.findById(diagnostic.id()).ifPresent(feature -> {
+                feature.setDismissedAt(now);
+                featureRepository.save(feature);
+            });
+            log.info("ClientDeliverableReadinessService: dismissed valueless epic '{}' ({}) for project {} - "
+                            + "zero code-producing items, nothing left pending for it (soft-deleted, lineage preserved)",
                     diagnostic.title(), diagnostic.id(), projectId);
         }
     }

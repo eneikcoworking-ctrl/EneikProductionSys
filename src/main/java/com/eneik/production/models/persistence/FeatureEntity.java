@@ -45,6 +45,22 @@ public class FeatureEntity {
     @Column(name = "toc_constraint_ref", columnDefinition = "TEXT")
     private String tocConstraintRef;
 
+    // 2026-08-04 (3-layer Factory/Delivery/Product model, operator directive): the immutable lineage id
+    // this feature was originally created under - set once at creation (defaults to this row's own id,
+    // i.e. a brand-new feature is its own origin) and never rewritten afterward by anything, unlike
+    // featureId on Task/Wishlist which is freely reassigned during dedup/merge/repair. Layer 2 "Delivery"
+    // history is grouped by this field so a feature that gets dismissed/superseded still traces back to
+    // where it came from, instead of vanishing the way deleteValuelessEpicsForProject used to make rows
+    // disappear entirely.
+    @Column(name = "origin_feature_id")
+    private UUID originFeatureId;
+
+    // 2026-08-04: soft-delete marker replacing the old hard featureRepository.deleteById call in
+    // deleteValuelessEpicsForProject - a dismissed feature's row (and its originFeatureId lineage) now
+    // survives; only its "counts toward active readiness" status changes. Null = still active.
+    @Column(name = "dismissed_at")
+    private Instant dismissedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -65,4 +81,8 @@ public class FeatureEntity {
     public void setSixSigmaMetric(String sixSigmaMetric) { this.sixSigmaMetric = sixSigmaMetric; }
     public String getTocConstraintRef() { return tocConstraintRef; }
     public void setTocConstraintRef(String tocConstraintRef) { this.tocConstraintRef = tocConstraintRef; }
+    public UUID getOriginFeatureId() { return originFeatureId; }
+    public void setOriginFeatureId(UUID originFeatureId) { this.originFeatureId = originFeatureId; }
+    public Instant getDismissedAt() { return dismissedAt; }
+    public void setDismissedAt(Instant dismissedAt) { this.dismissedAt = dismissedAt; }
 }

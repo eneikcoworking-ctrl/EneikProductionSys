@@ -77,6 +77,14 @@ public class TaskEntity {
     @Column(name = "feature_id")
     private UUID featureId;
 
+    // 2026-08-04 (3-layer Factory/Delivery/Product model): immutable lineage - set once, at the same
+    // moment featureId is first assigned at task creation, and never touched again by any of the several
+    // places that freely rewrite featureId afterward (admin repair endpoints, follow-up-task inheritance,
+    // closeout wiring). featureId still means "what this task currently counts toward"; this field means
+    // "where it actually came from" - Layer 2 delivery history is grouped by this, not by featureId.
+    @Column(name = "origin_feature_id")
+    private UUID originFeatureId;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "target_context")
     private TargetContext targetContext = TargetContext.PRODUCT_CODEBASE;
@@ -125,6 +133,8 @@ public class TaskEntity {
     public void setSourceWishlistId(UUID sourceWishlistId) { this.sourceWishlistId = sourceWishlistId; }
     public UUID getFeatureId() { return featureId; }
     public void setFeatureId(UUID featureId) { this.featureId = featureId; }
+    public UUID getOriginFeatureId() { return originFeatureId; }
+    public void setOriginFeatureId(UUID originFeatureId) { this.originFeatureId = originFeatureId; }
     public TargetContext getTargetContext() { return targetContext == null ? TargetContext.PRODUCT_CODEBASE : targetContext; }
     public void setTargetContext(TargetContext targetContext) { this.targetContext = targetContext; }
     public Instant getCreatedAt() { return createdAt; }

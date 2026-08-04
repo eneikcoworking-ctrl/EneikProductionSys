@@ -1052,6 +1052,7 @@ public class ProjectFlowService {
         followUp.setSourceRoleTag(roleTag);
         followUp.setStatus(WishlistStatus.pending);
         followUp.setFeatureId(task.getFeatureId());
+        followUp.setOriginFeatureId(task.getOriginFeatureId() != null ? task.getOriginFeatureId() : task.getFeatureId());
         followUp.setContent(truncate("""
                 [Operator postmortem from bad Jules session]
                 Operator postmortem source session: %s
@@ -1920,6 +1921,9 @@ public class ProjectFlowService {
                 sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
                 sliceWishlist.setStatus(WishlistStatus.pending);
                 sliceWishlist.setFeatureId(featureId);
+                // A feature's own originFeatureId always equals its own id by construction
+                // (FeatureService stamps it that way at creation) - safe to use featureId directly here.
+                sliceWishlist.setOriginFeatureId(featureId);
                 // Persist the compiler's own real per-slice classification (not re-derived later from a
                 // keyword search over the whole replicated brief text - see TechnicalLeadCompiler.
                 // cynefinDomain's fix commit for the live incident this closes).

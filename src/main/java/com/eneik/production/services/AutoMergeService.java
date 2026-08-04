@@ -760,6 +760,7 @@ public class AutoMergeService {
         wishlist.setProjectId(project.getId());
         wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.closeout_abandoned);
         wishlist.setFeatureId(thread.getFeatureId());
+        wishlist.setOriginFeatureId(thread.getFeatureId());
         wishlist.setSourceRoleTag(thread.getLastRoleTag());
         wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
         wishlist.setContent("Feature " + thread.getFeatureId() + "'s accumulated work (last role: "
