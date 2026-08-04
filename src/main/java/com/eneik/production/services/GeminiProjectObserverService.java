@@ -108,6 +108,7 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.kaizen.service.KaizenService kaizenService;
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
+    private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // 2026-08-03: loggers worth her forensic attention for defect root-causing - the same three services
@@ -136,7 +137,8 @@ public class GeminiProjectObserverService {
                                          com.eneik.production.services.operational.OperationalFlowCoreService operationalFlowCoreService,
                                          com.eneik.production.kaizen.service.KaizenService kaizenService,
                                          com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
-                                         com.eneik.production.services.ProjectEventLogService projectEventLogService) {
+                                         com.eneik.production.services.ProjectEventLogService projectEventLogService,
+                                         com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -154,6 +156,7 @@ public class GeminiProjectObserverService {
         this.kaizenService = kaizenService;
         this.branchGarbageCollectorService = branchGarbageCollectorService;
         this.projectEventLogService = projectEventLogService;
+        this.sixSigmaAuditService = sixSigmaAuditService;
     }
 
     // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
@@ -611,6 +614,20 @@ public class GeminiProjectObserverService {
                     .append('/').append(githubBudget.limit() == null ? "?" : githubBudget.limit()).append(")");
         } catch (Exception e) {
             log.debug("GeminiProjectObserverService: could not read GitHub API budget for project {}: {}", project.getId(), e.getMessage());
+        }
+        // 2026-08-04 (3-layer Factory/Delivery/Product model, operator directive): a genuine cross-project
+        // signal - is the WHOLE factory healthy, not just this one project - which she has never had
+        // before. Everything else in this snapshot is project-scoped (Layer 2); this one line is Layer 1.
+        // Uses calculateFullSixSigmaAudit, which - as of this same change - genuinely aggregates across
+        // every project rather than silently resolving to one "active" project (a real, separate bug fixed
+        // as part of building this).
+        try {
+            var factoryWide = sixSigmaAuditService.calculateFullSixSigmaAudit();
+            sb.append("\nFactory-wide (Layer 1, all projects) Six Sigma: ").append(factoryWide.sigmaLevel())
+                    .append("σ, DPMO ").append(factoryWide.dpmo()).append(", tier ").append(factoryWide.qualityTier())
+                    .append(" - this is cross-project context, not evidence about THIS project specifically.");
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not read factory-wide Six Sigma audit: {}", e.getMessage());
         }
         sb.append("\nResolved since your last visit (").append(since).append("): ");
         if (recentlyResolved.isEmpty()) {

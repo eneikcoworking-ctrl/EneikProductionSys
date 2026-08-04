@@ -53,6 +53,7 @@ class GeminiProjectObserverServiceTest {
     private com.eneik.production.kaizen.service.KaizenService kaizenService;
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private ProjectEventLogService projectEventLogService;
+    private com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
     private GeminiProjectObserverService service;
 
     private void setUp() {
@@ -73,6 +74,7 @@ class GeminiProjectObserverServiceTest {
         kaizenService = mock(com.eneik.production.kaizen.service.KaizenService.class);
         branchGarbageCollectorService = mock(com.eneik.production.services.orchestration.BranchGarbageCollectorService.class);
         projectEventLogService = mock(ProjectEventLogService.class);
+        sixSigmaAuditService = mock(com.eneik.production.services.audit.SixSigmaAuditService.class);
         when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         when(falsificationCycleService.philosophicalReadinessInfo(any()))
                 .thenReturn(new FalsificationCycleService.PhilosophicalReadinessInfo(0.9, false));
@@ -87,7 +89,7 @@ class GeminiProjectObserverServiceTest {
                 readinessService, journalRepository, actionRepository, geminiContextService, mlPredictionServiceClient,
                 wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService,
                 gitHubApiBudgetService, operationalFlowCoreService, kaizenService, branchGarbageCollectorService,
-                projectEventLogService);
+                projectEventLogService, sixSigmaAuditService);
     }
 
     private ProjectEntity project() {
