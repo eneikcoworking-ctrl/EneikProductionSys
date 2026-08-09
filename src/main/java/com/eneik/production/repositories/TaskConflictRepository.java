@@ -12,4 +12,5 @@ public interface TaskConflictRepository extends JpaRepository<TaskConflictEntity
     Optional<TaskConflictEntity> findFirstByTaskIdAndResolutionStatus(UUID taskId, String resolutionStatus);
     List<TaskConflictEntity> findByResolutionStatusNot(String resolutionStatus);
     List<TaskConflictEntity> findByResolutionStatusIsNull();
+    List<TaskConflictEntity> findByTaskIdIn(List<UUID> taskIds);
 }

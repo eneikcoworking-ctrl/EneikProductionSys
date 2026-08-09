@@ -3,12 +3,12 @@
 | Check | Result |
 |---|---:|
 | Source BARCAN files | 13 |
-| Source philosopher rows | 78 |
-| Generated philosopher files | 78 |
-| Personal pattern entries | 1560 |
-| Minimum required personal patterns | 1560 |
-| Unique personal pattern IDs | 1560 |
-| Unique personal pattern names | 1560 |
+| Source philosopher rows | 82 |
+| Generated philosopher files | 82 |
+| Personal pattern entries | 1640 |
+| Minimum required personal patterns | 1640 |
+| Unique personal pattern IDs | 1640 |
+| Unique personal pattern names | 1640 |
 | Duplicate personal pattern IDs | 0 |
 | Duplicate personal pattern names | 0 |
 | Files below 20 patterns | 0 |
@@ -19,4 +19,4 @@
 
 ## Verdict
 
-PASS: exactly 78 philosopher files and at least 1560 globally unique personal patterns.
+PASS: exactly 82 philosopher files and at least 1640 globally unique personal patterns.

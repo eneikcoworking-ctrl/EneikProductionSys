@@ -51,6 +51,22 @@ public class WishlistContentSimilarityMatcher {
             "given", "then", "must", "should", "this", "with", "as", "are", "be", "it"
     );
 
+    /**
+     * Pairwise Jaccard similarity between two free-text strings, on the same tokenizer/stopword rules as
+     * findLikelyDuplicate/clusterBySimilarity above - added 2026-08-05 for EvidenceCoherenceService's WEAK
+     * (topically-similar-but-no-shared-structural-id) edges, so it reuses this class's exact tokenization
+     * instead of a second, possibly-diverging implementation. Same fail-open contract: a scoring exception
+     * is treated as "not similar" (0.0), never propagated.
+     */
+    public double similarity(String a, String b) {
+        try {
+            return jaccard(tokenize(a), tokenize(b));
+        } catch (Exception e) {
+            log.warn("WishlistContentSimilarityMatcher: similarity scoring failed, treating as 0.0: {}", e.getMessage(), e);
+            return 0.0;
+        }
+    }
+
     public Optional<UUID> findLikelyDuplicate(List<WishlistEntity> existingLiveWishlists, String candidateText) {
         try {
             return findLikelyDuplicateInternal(existingLiveWishlists, candidateText);

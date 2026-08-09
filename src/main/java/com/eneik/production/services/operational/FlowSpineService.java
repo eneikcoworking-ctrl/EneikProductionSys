@@ -17,8 +17,15 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.ClientDeliverableReadinessService;
+import com.eneik.production.services.EmbeddingSimilarityUtil;
+import com.eneik.production.services.MLPredictionServiceClient;
 import com.eneik.production.services.dashboard.SystemStatusService;
+import com.eneik.production.services.lever.LeverAgreement;
+import com.eneik.production.services.lever.LeverPromotionService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -62,6 +69,10 @@ public class FlowSpineService {
     private final FlowSpineEventRepository flowSpineEventRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final SystemStatusService systemStatusService;
+    private final MLPredictionServiceClient mlPredictionServiceClient;
+    private final LeverPromotionService leverPromotionService;
+
+    private static final Logger log = LoggerFactory.getLogger(FlowSpineService.class);
 
     public FlowSpineService(ProjectRepository projectRepository,
                             TaskRepository taskRepository,
@@ -70,7 +81,9 @@ public class FlowSpineService {
                             PrReviewRepository prReviewRepository,
                             FlowSpineEventRepository flowSpineEventRepository,
                             ClientDeliverableReadinessService readinessService,
-                            SystemStatusService systemStatusService) {
+                            SystemStatusService systemStatusService,
+                            MLPredictionServiceClient mlPredictionServiceClient,
+                            LeverPromotionService leverPromotionService) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.wishlistRepository = wishlistRepository;
@@ -79,6 +92,8 @@ public class FlowSpineService {
         this.flowSpineEventRepository = flowSpineEventRepository;
         this.readinessService = readinessService;
         this.systemStatusService = systemStatusService;
+        this.mlPredictionServiceClient = mlPredictionServiceClient;
+        this.leverPromotionService = leverPromotionService;
     }
 
     @Transactional(readOnly = true)
@@ -777,13 +792,126 @@ public class FlowSpineService {
                 .toList();
     }
 
+    // 2026-08-04 (live incident: test-forty-first stuck for hours in BLOCKED_BY_DUPLICATE_CONTENT with no
+    // recovery path): this hard-stop gate exists to catch an ACTIVE generation fallback churning out
+    // repeated fabricated content, not to permanently flag work that has already been resolved. Without
+    // excluding terminal tasks, once 3+ historical (fully resolved) duplicates existed in the last-30-tasks
+    // window, the block could never clear on its own. Mirrors the same terminal-status exclusion applied to
+    // ContinuousOrchestrationService's own duplicate-content check.
+    private static final Set<TaskStatus> DUPLICATE_CONTENT_TERMINAL_STATUSES = Set.of(
+            TaskStatus.done, TaskStatus.failed, TaskStatus.blocked, TaskStatus.spike_completed);
+
     private boolean duplicateContent(List<TaskEntity> tasks) {
         Map<String, Long> counts = tasks.stream()
                 .limit(30)
+                .filter(task -> !DUPLICATE_CONTENT_TERMINAL_STATUSES.contains(task.getStatus()))
+                .filter(task -> !isDeliberateRecoveryTask(task))
                 .map(this::duplicateKey)
                 .filter(key -> key != null && !key.isBlank())
                 .collect(Collectors.groupingBy(Function.identity(), HashMap::new, Collectors.counting()));
         return counts.values().stream().anyMatch(count -> count >= 3);
+    }
+
+    // 2026-08-08 (ML-update patch, Phase 2 / lever D3_EMBEDDING_DUPLICATE_DETECTION): incumbent above is
+    // exact slice_title/description match only - live incident 2026-08-07 found ~half of one decomposition's
+    // 41 tasks were 2x near-duplicates ACROSS different titles, invisible to exact match until 3 literal
+    // collisions happened (Hacking's point on historically constructed measurement categories, BARCAN-TAG-04
+    // philosopher 5: exact-title-match is itself an arbitrary category, not the real "same work" relation).
+    // Deliberately runs on its OWN schedule, decoupled from duplicateContent()'s hot call path
+    // (OperationalPolicyService.authorize -> OperationalFlowCoreService.build -> FlowSpineService.build runs
+    // on every dispatch decision) - a real network embed() call inside that path would reproduce exactly the
+    // "lock/coupling held across a network call" mistake fixed elsewhere tonight (engineering invariant #11),
+    // just for embeddings instead of a DB transaction. Bounded to MAX_CANDIDATES_PER_PROJECT tasks per active
+    // project per tick so worst-case embed-call volume stays predictable.
+    static final String D3_LEVER_KEY = "D3_EMBEDDING_DUPLICATE_DETECTION";
+    private static final double SIMILARITY_DETECTION_THRESHOLD = 0.90;
+    // Stricter self-contained confirmation bar used ONLY as this lever's ground-truth proxy (real evidence,
+    // just interpreted at a higher confidence level) - honestly documented limitation: without a wired
+    // rejection signal (e.g. Gemini/operator declining to collapseDuplicateTask a flagged pair), this lever
+    // can currently only accumulate TRUE/NEITHER observations, never FALSE, so it can be promoted but not
+    // yet demoted by this mechanism alone.
+    private static final double SIMILARITY_CONFIRMATION_THRESHOLD = 0.95;
+    private static final int MAX_CANDIDATES_PER_PROJECT = 15;
+
+    @Scheduled(fixedRate = 900000, initialDelay = 300000)
+    public void shadowCheckEmbeddingDuplicatesAcrossActiveProjects() {
+        for (ProjectEntity project : projectRepository.findAll()) {
+            if (project.getStatus() != ProjectStatus.active) {
+                continue;
+            }
+            try {
+                shadowCheckEmbeddingDuplicatesForProject(project.getId());
+            } catch (Exception e) {
+                log.warn("[D3-SHADOW] embedding duplicate shadow check failed for project {}: {}", project.getId(), e.getMessage());
+            }
+        }
+    }
+
+    private void shadowCheckEmbeddingDuplicatesForProject(UUID projectId) {
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        boolean incumbentDuplicate = duplicateContent(tasks);
+
+        List<TaskEntity> candidates = tasks.stream()
+                .limit(30)
+                .filter(task -> !DUPLICATE_CONTENT_TERMINAL_STATUSES.contains(task.getStatus()))
+                .filter(task -> !isDeliberateRecoveryTask(task))
+                .toList();
+
+        Map<String, Long> exactCounts = candidates.stream()
+                .map(this::duplicateKey)
+                .filter(key -> key != null && !key.isBlank())
+                .collect(Collectors.groupingBy(Function.identity(), HashMap::new, Collectors.counting()));
+
+        // Only tasks whose exact key is UNIQUE in this window are worth comparing pairwise - anything
+        // already sharing an exact key is already visible to the incumbent, not new candidate evidence.
+        List<String> uniqueKeyedTexts = candidates.stream()
+                .map(this::duplicateKey)
+                .filter(key -> key != null && !key.isBlank() && exactCounts.getOrDefault(key, 0L) == 1)
+                .distinct()
+                .limit(MAX_CANDIDATES_PER_PROJECT)
+                .toList();
+
+        if (uniqueKeyedTexts.size() < 2) {
+            return;
+        }
+
+        double bestSimilarity = 0.0;
+        for (int i = 0; i < uniqueKeyedTexts.size(); i++) {
+            float[] vectorI = mlPredictionServiceClient.embed(uniqueKeyedTexts.get(i));
+            if (vectorI == null) {
+                continue;
+            }
+            for (int j = i + 1; j < uniqueKeyedTexts.size(); j++) {
+                float[] vectorJ = mlPredictionServiceClient.embed(uniqueKeyedTexts.get(j));
+                if (vectorJ == null) {
+                    continue;
+                }
+                bestSimilarity = Math.max(bestSimilarity, EmbeddingSimilarityUtil.cosineSimilarity(vectorI, vectorJ));
+            }
+        }
+
+        if (bestSimilarity < SIMILARITY_DETECTION_THRESHOLD) {
+            return;
+        }
+
+        String incumbentDecision = incumbentDuplicate ? "duplicate" : "not_duplicate";
+        LeverAgreement agreement = bestSimilarity >= SIMILARITY_CONFIRMATION_THRESHOLD
+                ? LeverAgreement.TRUE : LeverAgreement.NEITHER;
+        leverPromotionService.recordObservation(D3_LEVER_KEY, projectId.toString(), incumbentDecision, "duplicate",
+                agreement, agreement == LeverAgreement.TRUE ? "high_confidence_semantic_duplicate" : null);
+        log.info("[D3-SHADOW] project {} - candidate found a semantic-duplicate pair (similarity={}) that exact-match {} catch",
+                projectId, String.format("%.3f", bestSimilarity), incumbentDuplicate ? "ALSO did" : "did NOT");
+    }
+
+    // 2026-08-07 (same-morning follow-on incident, test-forty-third): OpsAuditorService.createTargetedRecoveryTask
+    // deliberately deep-copies a dead task's ENTIRE payload verbatim - including slice_title - because
+    // ClientDeliverableReadinessService.isDependencySatisfied only recognizes a replacement via an EXACT
+    // match on role/featureId/ems_semantic_key, not by title. That is a single, deliberate, audited
+    // replacement for one specific dead task, not evidence of an uncontrolled generation loop - counting it
+    // toward this threshold retripped the exact same hard-stop the recovery mechanism exists to route
+    // around, within the same orchestration cycle that created it.
+    private static boolean isDeliberateRecoveryTask(TaskEntity task) {
+        return task.getPayload() != null && task.getPayload().has("recoversFailedTaskId");
     }
 
     private String duplicateKey(TaskEntity task) {

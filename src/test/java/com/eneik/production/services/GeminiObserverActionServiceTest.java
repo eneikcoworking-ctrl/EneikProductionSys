@@ -41,6 +41,8 @@ class GeminiObserverActionServiceTest {
     private OperationalPolicyService operationalPolicyService;
     private PlannedWorkRecoveryService plannedWorkRecoveryService;
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private GeminiObserverActionService service;
 
     private void setUp() {
@@ -53,9 +55,12 @@ class GeminiObserverActionServiceTest {
         operationalPolicyService = mock(OperationalPolicyService.class);
         plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
         branchGarbageCollectorService = mock(com.eneik.production.services.orchestration.BranchGarbageCollectorService.class);
+        featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
+        gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         service = new GeminiObserverActionService(wishlistRepository, taskRepository, taskConflictRepository,
                 julesDispatchService, falsificationCycleService, actionRepository, operationalPolicyService,
-                plannedWorkRecoveryService, branchGarbageCollectorService);
+                plannedWorkRecoveryService, branchGarbageCollectorService, featureThreadRepository,
+                gitHubPullRequestService);
     }
 
     private ProjectEntity project() {
@@ -216,5 +221,159 @@ class GeminiObserverActionServiceTest {
         assertEquals("success", outcome);
         verify(branchGarbageCollectorService).retireAbandonedBranchAndPR(
                 eq(project), eq(task), eq("jules-5354685196398021436-be7bfa86"), eq(38), anyString());
+    }
+
+    /**
+     * 2026-08-07 (test-forty-third live incident): collapseDuplicateTask is the only action that can clear
+     * BLOCKED_BY_DUPLICATE_CONTENT, so it must never trust the target id alone - it has to independently
+     * confirm the task is still part of a genuine 3+ non-terminal cluster sharing the same content key
+     * before touching anything, exactly mirroring FlowSpineService.duplicateContent's own threshold.
+     */
+    @Test
+    void collapseDuplicateTaskRefusesWhenNotPartOfAGenuineThreeWayCluster() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity target = new TaskEntity();
+        target.setId(taskId);
+        target.setProject(project);
+        target.setStatus(TaskStatus.queued);
+        target.setPayload(com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode()
+                .put("slice_title", "Frontend UI implementation"));
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.COLLAPSE_DUPLICATE_TASK))
+                .thenReturn(decision(project, OperationalAction.COLLAPSE_DUPLICATE_TASK, true, "allowed"));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(target));
+        // Only the target itself shares its key - no genuine cluster.
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(target));
+
+        String outcome = service.collapseDuplicateTask(project, taskId.toString(), "looked like a duplicate");
+
+        assertTrue(outcome.startsWith("skipped"));
+        assertEquals(TaskStatus.queued, target.getStatus());
+        verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    void collapseDuplicateTaskBlocksAConfirmedDuplicateFromAGenuineThreeWayCluster() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        com.fasterxml.jackson.databind.node.ObjectNode sameTitle =
+                com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode().put("slice_title", "Frontend UI implementation");
+        TaskEntity target = new TaskEntity();
+        target.setId(taskId);
+        target.setProject(project);
+        target.setStatus(TaskStatus.queued);
+        target.setPayload(sameTitle);
+        TaskEntity sibling1 = new TaskEntity();
+        sibling1.setId(UUID.randomUUID());
+        sibling1.setStatus(TaskStatus.queued);
+        sibling1.setPayload(sameTitle);
+        TaskEntity sibling2 = new TaskEntity();
+        sibling2.setId(UUID.randomUUID());
+        sibling2.setStatus(TaskStatus.queued);
+        sibling2.setPayload(sameTitle);
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.COLLAPSE_DUPLICATE_TASK))
+                .thenReturn(decision(project, OperationalAction.COLLAPSE_DUPLICATE_TASK, true, "allowed"));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(target));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()))
+                .thenReturn(List.of(target, sibling1, sibling2));
+
+        String outcome = service.collapseDuplicateTask(project, taskId.toString(), "3-way duplicate confirmed");
+
+        assertEquals("success", outcome);
+        assertEquals(TaskStatus.blocked, target.getStatus());
+        verify(taskRepository).save(target);
+    }
+
+    /**
+     * 2026-08-08 (test-forty-third live incident, feature 1ad15184): retryAbandonedCloseout's whole job is
+     * clearing a stale closeoutPrUrl so AutoMergeService.progressCloseout's own existing cycle re-opens a
+     * fresh PR - never a new PR-opening code path of its own.
+     */
+    @Test
+    void retryAbandonedCloseoutClearsTheStalePrUrlWhenTheThreadIsStillGenuinelyLive() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        var thread = new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        thread.setBranchName("jules-11503086808993865276-3ddbe98e");
+        thread.setCloseoutPrUrl("https://github.com/eneikdru/test-forty-third/pull/53");
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETRY_FEATURE_CLOSEOUT))
+                .thenReturn(decision(project, OperationalAction.RETRY_FEATURE_CLOSEOUT, true, "allowed"));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+        when(gitHubPullRequestService.branchExists(project, "jules-11503086808993865276-3ddbe98e")).thenReturn(true);
+
+        String outcome = service.retryAbandonedCloseout(project, featureId.toString(), "closed by branch GC bug, feature never merged");
+
+        assertEquals("success", outcome);
+        assertEquals(null, thread.getCloseoutPrUrl());
+        verify(featureThreadRepository).save(thread);
+    }
+
+    @Test
+    void retryAbandonedCloseoutRefusesWhenTheThreadWasFormallyAbandoned() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        var thread = new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        thread.setBranchName("jules-abandoned-branch");
+        thread.setAbandonedAt(java.time.Instant.now());
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETRY_FEATURE_CLOSEOUT))
+                .thenReturn(decision(project, OperationalAction.RETRY_FEATURE_CLOSEOUT, true, "allowed"));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+
+        String outcome = service.retryAbandonedCloseout(project, featureId.toString(), "trying anyway");
+
+        assertTrue(outcome.startsWith("skipped"));
+        verify(featureThreadRepository, never()).save(any());
+        verifyNoInteractions(gitHubPullRequestService);
+    }
+
+    @Test
+    void retryAbandonedCloseoutRefusesWhenAlreadyMerged() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        var thread = new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        thread.setMergedToMainAt(java.time.Instant.now());
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETRY_FEATURE_CLOSEOUT))
+                .thenReturn(decision(project, OperationalAction.RETRY_FEATURE_CLOSEOUT, true, "allowed"));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+
+        String outcome = service.retryAbandonedCloseout(project, featureId.toString(), "trying anyway");
+
+        assertTrue(outcome.startsWith("skipped"));
+        verify(featureThreadRepository, never()).save(any());
+    }
+
+    @Test
+    void retryAbandonedCloseoutRefusesWhenTheBranchIsGone() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        var thread = new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        thread.setBranchName("jules-deleted-branch");
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETRY_FEATURE_CLOSEOUT))
+                .thenReturn(decision(project, OperationalAction.RETRY_FEATURE_CLOSEOUT, true, "allowed"));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+        when(gitHubPullRequestService.branchExists(project, "jules-deleted-branch")).thenReturn(false);
+
+        String outcome = service.retryAbandonedCloseout(project, featureId.toString(), "trying anyway");
+
+        assertTrue(outcome.startsWith("skipped"));
+        verify(featureThreadRepository, never()).save(any());
     }
 }

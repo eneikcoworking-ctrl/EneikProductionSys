@@ -8,6 +8,9 @@ import com.eneik.production.repositories.OnboardingAuditFindingRepository;
 import com.eneik.production.repositories.PrReviewRepository;
 import com.eneik.production.repositories.TaskConflictRepository;
 import com.eneik.production.repositories.TaskRepository;
+import com.eneik.production.services.lever.LeverAgreement;
+import com.eneik.production.services.lever.LeverPromotionService;
+import com.eneik.production.services.lever.LeverStage;
 import com.eneik.production.toc.service.TocSentinelService;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.slf4j.Logger;
@@ -36,6 +39,11 @@ public class SixSigmaAuditService {
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final TocSentinelService tocSentinelService;
     private final com.eneik.production.repositories.FeatureRepository featureRepository;
+    private final com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository;
+    private final com.eneik.production.repositories.FalsificationRunRepository falsificationRunRepository;
+    private final LeverPromotionService leverPromotionService;
+
+    public static final String P1_ROLE_DRIFT_EWMA = "P1_ROLE_DRIFT_EWMA";
 
     public SixSigmaAuditService(PrReviewRepository prReviewRepository,
                                 TaskConflictRepository taskConflictRepository,
@@ -44,7 +52,10 @@ public class SixSigmaAuditService {
                                 com.eneik.production.repositories.ProjectRepository projectRepository,
                                 com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                 TocSentinelService tocSentinelService,
-                                com.eneik.production.repositories.FeatureRepository featureRepository) {
+                                com.eneik.production.repositories.FeatureRepository featureRepository,
+                                com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository,
+                                com.eneik.production.repositories.FalsificationRunRepository falsificationRunRepository,
+                                LeverPromotionService leverPromotionService) {
         this.prReviewRepository = prReviewRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.taskRepository = taskRepository;
@@ -53,6 +64,9 @@ public class SixSigmaAuditService {
         this.julesSessionRepository = julesSessionRepository;
         this.tocSentinelService = tocSentinelService;
         this.featureRepository = featureRepository;
+        this.codeIntegrityFindingRepository = codeIntegrityFindingRepository;
+        this.falsificationRunRepository = falsificationRunRepository;
+        this.leverPromotionService = leverPromotionService;
     }
 
     public record SixSigmaAuditReport(
@@ -121,8 +135,9 @@ public class SixSigmaAuditService {
     public SixSigmaAuditReport calculateFeatureSixSigmaAudit(UUID projectId, UUID featureId) {
         DefectOpportunityCount qgCounts = computeQualityGateCounts(null, featureId);
         DefectOpportunityCount prCounts = computePrConflictCounts(null, featureId);
-        long totalOpportunities = qgCounts.opportunities() + prCounts.opportunities();
-        long totalDefects = qgCounts.defects() + prCounts.defects();
+        DefectOpportunityCount ciCounts = computeCodeIntegrityFindingCounts(projectId, featureId);
+        long totalOpportunities = qgCounts.opportunities() + prCounts.opportunities() + ciCounts.opportunities();
+        long totalDefects = qgCounts.defects() + prCounts.defects() + ciCounts.defects();
         if (totalOpportunities == 0) {
             totalOpportunities = 10; // same "fresh subgroup" baseline ProcessControlService's u-chart uses
         }
@@ -135,6 +150,8 @@ public class SixSigmaAuditService {
                 "dpmo", calculateDpmo(prCounts.defects(), prCounts.opportunities())));
         breakdown.put("qualityGateChecks", Map.of("opportunities", qgCounts.opportunities(), "defects", qgCounts.defects(),
                 "dpmo", calculateDpmo(qgCounts.defects(), qgCounts.opportunities())));
+        breakdown.put("codeIntegrityFindings", Map.of("opportunities", ciCounts.opportunities(), "defects", ciCounts.defects(),
+                "dpmo", calculateDpmo(ciCounts.defects(), ciCounts.opportunities())));
 
         String projectName = projectId != null
                 ? projectRepository.findById(projectId).map(com.eneik.production.models.persistence.ProjectEntity::getName)
@@ -166,8 +183,15 @@ public class SixSigmaAuditService {
             qgOpp += qg.opportunities(); qgDef += qg.defects();
             prOpp += pr.opportunities(); prDef += pr.defects();
         }
-        totalOpportunities = qgOpp + prOpp;
-        totalDefects = qgDef + prDef;
+        // Code-integrity findings are NOT summed per-feature here like the two categories above - see
+        // computeCodeIntegrityFindingCounts's own javadoc: "opportunities" for this category is per-RUN,
+        // and a single audit run's diff can span multiple features, so summing the per-feature call across
+        // this loop would double-count any run whose findings landed in more than one feature. Called once,
+        // directly, with featureId=null - this naturally includes every attributed finding (regardless of
+        // which feature) plus every unattributed one, each counted against its own run exactly once.
+        DefectOpportunityCount ciCounts = computeCodeIntegrityFindingCounts(projectId, null);
+        totalOpportunities = qgOpp + prOpp + ciCounts.opportunities();
+        totalDefects = qgDef + prDef + ciCounts.defects();
         if (totalOpportunities == 0) {
             totalOpportunities = 10;
         }
@@ -178,6 +202,8 @@ public class SixSigmaAuditService {
         Map<String, Object> breakdown = new LinkedHashMap<>();
         breakdown.put("prConflicts", Map.of("opportunities", prOpp, "defects", prDef, "dpmo", calculateDpmo(prDef, prOpp)));
         breakdown.put("qualityGateChecks", Map.of("opportunities", qgOpp, "defects", qgDef, "dpmo", calculateDpmo(qgDef, qgOpp)));
+        breakdown.put("codeIntegrityFindings", Map.of("opportunities", ciCounts.opportunities(), "defects", ciCounts.defects(),
+                "dpmo", calculateDpmo(ciCounts.defects(), ciCounts.opportunities())));
 
         String projectName = projectId != null
                 ? projectRepository.findById(projectId).map(com.eneik.production.models.persistence.ProjectEntity::getName)
@@ -313,6 +339,49 @@ public class SixSigmaAuditService {
         return new DefectOpportunityCount(defects, opportunities);
     }
 
+    /** One quality-gate check type's own Pareto contribution - checkName is GateResult.checkName() (see GateOrchestrator). */
+    public record CtqEntry(String checkName, long defects, long opportunities) {}
+
+    /**
+     * 2026-08-08 (ML-update patch, Phase 1 / lever F1_KAIZEN_CTQ_TARGETING): per-check-name breakdown of
+     * computeQualityGateCounts' same underlying data - previously only computed inline inside
+     * SystemStatusService.qualityGate's dashboard JSON assembly (ctqBreakdown), never exposed as a reusable
+     * query. KaizenService's DEFECT_ELIMINATION proposal used to name its target generically ("QualityGate")
+     * even though ~91% of factory-wide defects concentrate in a small number of specific checks (Sober's
+     * parsimony/AIC-BIC, BARCAN-TAG-04 philosopher 6: the simplest explanation of a DPMO spike sufficient to
+     * act on is the single dominant check, not "everything"). SystemStatusService.qualityGate is expected to
+     * be migrated onto this method too so the two never silently diverge (engineering invariant #14).
+     */
+    public List<CtqEntry> computeCtqBreakdown(UUID projectId) {
+        List<TaskEntity> tasks = taskRepository.findAll();
+        if (projectId != null) {
+            tasks = tasks.stream()
+                    .filter(t -> t.getProject() != null && projectId.equals(t.getProject().getId()))
+                    .toList();
+        }
+
+        Map<String, long[]> counts = new LinkedHashMap<>(); // checkName -> [defects, opportunities]
+        for (TaskEntity task : tasks) {
+            JsonNode report = task.getQualityGateReport();
+            if (report == null || !report.has("checks")) {
+                continue;
+            }
+            for (JsonNode check : report.get("checks")) {
+                String checkName = check.path("name").asText("unknown_check");
+                long[] entry = counts.computeIfAbsent(checkName, k -> new long[2]);
+                entry[1]++;
+                if (!check.path("passed").asBoolean(true)) {
+                    entry[0]++;
+                }
+            }
+        }
+
+        return counts.entrySet().stream()
+                .map(e -> new CtqEntry(e.getKey(), e.getValue()[0], e.getValue()[1]))
+                .sorted((a, b) -> Long.compare(b.defects(), a.defects()))
+                .toList();
+    }
+
     public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId) {
         List<PrReviewEntity> reviews = prReviewRepository.findAll();
         List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
@@ -348,6 +417,141 @@ public class SixSigmaAuditService {
         long mergedPrs = reviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
         long conflictDefects = conflicts.size();
         return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
+    }
+
+    /**
+     * Code-integrity defect category (2026-08-05): stub code / architectural layer violations found by
+     * the methodological falsification audit ({@link com.eneik.production.services.FalsificationCycleService
+     * #applyAuditViolations}), attributed to the real feature a finding's cited PR belongs to. Unlike
+     * {@link #computeQualityGateCounts} / {@link #computePrConflictCounts} above - both inherently
+     * per-task/per-feature quantities with no cross-feature overlap - "opportunities" here is a PER-RUN
+     * quantity (one audit invocation checks every active role charter at once, not per feature). Summed
+     * once per DISTINCT falsification run referenced by these findings, never once per finding, so a run
+     * whose findings landed in two different roles/features never has its own roles-checked count counted
+     * twice. Callers must NOT sum this method's per-feature result across a feature loop to get a
+     * project-wide total (that would double-count any run spanning multiple features) - call with
+     * featureId=null directly instead, as {@link #calculateProductLayerSixSigmaAudit} does.
+     */
+    public DefectOpportunityCount computeCodeIntegrityFindingCounts(UUID projectId, UUID featureId) {
+        List<com.eneik.production.models.persistence.CodeIntegrityFindingEntity> findings = featureId != null
+                ? codeIntegrityFindingRepository.findByFeatureId(featureId)
+                : (projectId != null ? codeIntegrityFindingRepository.findByProjectId(projectId) : List.of());
+        long defects = findings.size();
+        Set<UUID> runIds = findings.stream()
+                .map(com.eneik.production.models.persistence.CodeIntegrityFindingEntity::getFalsificationRunId)
+                .collect(java.util.stream.Collectors.toSet());
+        long opportunities = falsificationRunRepository.findAllById(runIds).stream()
+                .mapToLong(com.eneik.production.models.persistence.FalsificationRunEntity::getRolesCheckedCount)
+                .sum();
+        return new DefectOpportunityCount(defects, opportunities);
+    }
+
+    /** One role's ems_defect_weight trend within a single project's own history - see detectRoleDefectWeightDrift. */
+    public record RoleQualityDrift(String roleTag, double historicalAverage, double recentAverage,
+                                    int historicalSampleSize, int recentSampleSize) {
+    }
+
+    private static final int DRIFT_MIN_SAMPLES_PER_SIDE = 3;
+    // Recent-half average must be at least 50% higher than the earlier-half average to count as a real
+    // trend, not sampling noise - deliberately a ratio, not an absolute delta, since defectWeight's own
+    // scale (TechnicalLeadCompiler.defectWeight) already varies by role/cynefin.
+    private static final double DRIFT_RATIO_THRESHOLD = 1.5;
+
+    // 2026-08-08 (ML-update patch, Phase 6 / lever P1_ROLE_DRIFT_EWMA): standard Six Sigma EWMA control-
+    // chart parameters - lambda=0.2 (smoothing weight on the newest sample) and L=3 (3-sigma control limit),
+    // both textbook defaults, not tuned for this project specifically. Sellars' "myth of the given"
+    // (BARCAN-TAG-09 philosopher 5): the raw ems_defect_weight numbers don't self-interpret - a control
+    // limit is a constructed inferential frame, documented explicitly here rather than treated as objectively
+    // self-evident, same as the ratio threshold above.
+    private static final double EWMA_LAMBDA = 0.2;
+    private static final double EWMA_L_FACTOR = 3.0;
+
+    /**
+     * 2026-08-07 (Kaizen/DMAIC Control-phase wiring): ems_defect_weight has been computed per-task at
+     * compile time (TechnicalLeadCompiler.criticalityScore) and persisted into every task's own payload
+     * since the EMS metadata framework was built - but the persisted field itself was never read back
+     * anywhere (confirmed live audit, 2026-08-07): real effort spent computing and storing a genuine
+     * quality signal, then never actually looked at again. This is the "Measure" half of DMAIC without a
+     * "Control" half - a control chart nobody reads. Splits each role's own DONE/failed task history for
+     * one project into an older and a newer half (both already ordered by createdAt) and flags a role whose
+     * recent average is meaningfully higher than its own earlier average - a leading indicator that
+     * something about how that role is being executed has gotten worse, not a one-off failure. Deliberately
+     * scoped to ONE project's own history, not cross-project: a role's inherent difficulty varies by domain,
+     * comparing against ITS OWN past is the only fair baseline.
+     */
+    public List<RoleQualityDrift> detectRoleDefectWeightDrift(UUID projectId) {
+        List<TaskEntity> terminalTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.done
+                        || t.getStatus() == com.eneik.production.models.persistence.TaskStatus.failed)
+                .filter(t -> t.getRole() != null && t.getPayload() != null)
+                .toList();
+
+        Map<String, List<Double>> weightsByRoleNewestFirst = new LinkedHashMap<>();
+        for (TaskEntity task : terminalTasks) {
+            JsonNode weightNode = task.getPayload().path("ems_defect_weight");
+            if (!weightNode.isNumber()) {
+                continue;
+            }
+            weightsByRoleNewestFirst.computeIfAbsent(task.getRole().getTag(), k -> new ArrayList<>()).add(weightNode.asDouble());
+        }
+
+        boolean useEwma = leverPromotionService.currentStage(P1_ROLE_DRIFT_EWMA).atLeast(LeverStage.SOFT_GATE);
+
+        List<RoleQualityDrift> drifts = new ArrayList<>();
+        for (Map.Entry<String, List<Double>> entry : weightsByRoleNewestFirst.entrySet()) {
+            List<Double> weightsNewestFirst = entry.getValue();
+            if (weightsNewestFirst.size() < DRIFT_MIN_SAMPLES_PER_SIDE * 2) {
+                continue;
+            }
+            int half = weightsNewestFirst.size() / 2;
+            List<Double> recent = weightsNewestFirst.subList(0, half);
+            List<Double> historical = weightsNewestFirst.subList(half, weightsNewestFirst.size());
+            double recentAvg = recent.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            double historicalAvg = historical.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+            boolean incumbentFlag = historicalAvg > 0.0 && recentAvg >= historicalAvg * DRIFT_RATIO_THRESHOLD;
+
+            boolean candidateFlag = ewmaExceedsUpperControlLimit(historical, recent);
+            String subjectId = projectId + ":" + entry.getKey();
+            LeverAgreement agreement = incumbentFlag == candidateFlag ? LeverAgreement.TRUE : LeverAgreement.FALSE;
+            leverPromotionService.recordObservation(P1_ROLE_DRIFT_EWMA, subjectId,
+                    incumbentFlag ? "drift" : "no_drift", candidateFlag ? "drift" : "no_drift",
+                    agreement, incumbentFlag ? "ratio_flagged_drift" : "ratio_flagged_no_drift");
+
+            boolean effectiveFlag = useEwma ? candidateFlag : incumbentFlag;
+            if (effectiveFlag) {
+                drifts.add(new RoleQualityDrift(entry.getKey(), historicalAvg, recentAvg, historical.size(), recent.size()));
+            }
+        }
+        return drifts;
+    }
+
+    /**
+     * EWMA control-chart candidate (see EWMA_LAMBDA/EWMA_L_FACTOR above). Uses the historical half as the
+     * reference distribution (center = its mean, sigma = its own std dev) and walks the recent half in
+     * chronological order (oldest first - both input lists are newest-first, so iterated in reverse) to
+     * build the smoothed statistic; flags only an UPPER breach, since a defect-weight DECREASE is not the
+     * failure mode this control chart exists to catch. Uses the asymptotic (steady-state) control limit -
+     * a standard, well-established simplification, not a per-sample time-varying limit - since this
+     * project's sample sizes are small enough that the two are practically indistinguishable.
+     */
+    private boolean ewmaExceedsUpperControlLimit(List<Double> historicalNewestFirst, List<Double> recentNewestFirst) {
+        double mean = historicalNewestFirst.stream().mapToDouble(Double::doubleValue).average().orElse(0.0);
+        double variance = historicalNewestFirst.stream()
+                .mapToDouble(v -> Math.pow(v - mean, 2))
+                .average().orElse(0.0);
+        double sigma = Math.sqrt(variance);
+        if (sigma <= 0.0) {
+            return false; // no dispersion in the reference distribution - a control limit is not meaningful
+        }
+        double upperControlLimit = mean + EWMA_L_FACTOR * sigma * Math.sqrt(EWMA_LAMBDA / (2 - EWMA_LAMBDA));
+
+        double z = mean;
+        List<Double> recentOldestFirst = new ArrayList<>(recentNewestFirst);
+        java.util.Collections.reverse(recentOldestFirst);
+        for (double x : recentOldestFirst) {
+            z = EWMA_LAMBDA * x + (1 - EWMA_LAMBDA) * z;
+        }
+        return z > upperControlLimit;
     }
 
     // Public static (2026-08-02): reused as-is by ProjectTreeService for per-feature DPMO - same

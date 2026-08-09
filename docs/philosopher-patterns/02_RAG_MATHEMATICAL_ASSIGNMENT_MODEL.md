@@ -4,7 +4,7 @@ This file defines the reproducible assignment rule for the philosopher-pattern c
 
 ## Sets
 
-- `F`: philosopher rows extracted from `BARCAN-TAG-*.md`; expected cardinality is `78`.
+- `F`: philosopher rows extracted from `BARCAN-TAG-*.md`; expected cardinality is `82`.
 - `C`: common analytic programming patterns, stored in `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 - `S`: parameterized philosopher-specific micro-pattern slots in the generator.
 - `D`: defect taxonomy used as the target prevention space.
@@ -42,7 +42,7 @@ For each philosopher, sort `S` by descending `score(f, s)` and then by slot key.
 ## QA Invariants
 
 - Exactly `13` source BARCAN files.
-- Exactly `78` philosopher source rows and generated philosopher files.
+- Exactly `82` philosopher source rows and generated philosopher files.
 - At least `20` personal patterns per philosopher.
 - Personal pattern IDs are globally unique.
 - Personal pattern names are globally unique.
@@ -55,7 +55,7 @@ For each philosopher, sort `S` by descending `score(f, s)` and then by slot key.
 | `BARCAN-TAG-00_CODE-GUARDIAN` | conflict, evidence, integration, language, meaning, review |
 | `BARCAN-TAG-01_ACTUALIST-OBJECT` | boundary, composition, domain, identity, ontology, types |
 | `BARCAN-TAG-02_RIGID-DESIGNATOR` | api, compatibility, context, identity, naming, reference |
-| `BARCAN-TAG-03_BELIEF-INTENSION` | agency, cognitive, context, feedback, perception, ux |
+| `BARCAN-TAG-03_BELIEF-INTENSION` | agency, causal, cognitive, context, feedback, perception, ux |
 | `BARCAN-TAG-04_MODAL-QUANTIFIER` | causal, evidence, model, prediction, probability, uncertainty |
 | `BARCAN-TAG-05_NECESSARY-IDENTITY` | causal, composition, history, identity, replay, runtime |
 | `BARCAN-TAG-06_DEONTIC-CONSISTENCY` | counterexample, logic, status, testing, truth, verification |

@@ -67,6 +67,8 @@ public class AutoMergeService {
     private final ClientDeliverableReadinessService readinessService;
     private final GeminiContextService geminiContextService;
     private final ProjectFlowService projectFlowService;
+    private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
+    private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
@@ -99,7 +101,9 @@ public class AutoMergeService {
                             com.eneik.production.repositories.ProjectRepository projectRepository,
                             ClientDeliverableReadinessService readinessService,
                             GeminiContextService geminiContextService,
-                            ProjectFlowService projectFlowService) {
+                            ProjectFlowService projectFlowService,
+                            com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
+                            com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository) {
         this.prReviewRepository = prReviewRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.taskRepository = taskRepository;
@@ -123,6 +127,8 @@ public class AutoMergeService {
         this.readinessService = readinessService;
         this.geminiContextService = geminiContextService;
         this.projectFlowService = projectFlowService;
+        this.evidenceNodeRepository = evidenceNodeRepository;
+        this.operationalRealityFindingRepository = operationalRealityFindingRepository;
     }
 
     @Scheduled(fixedRateString = "${automerge.rate-ms:60000}")
@@ -159,6 +165,7 @@ public class AutoMergeService {
         reconcileTerminalGithubStateForReviews();
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
+        reconcileOpenGitHubPullRequests();
         reconcileCleanOpenGitHubPullRequests();
         reconcileLocalMockTasksWithoutReviews();
         resurrectTriviallyEscalatedConflicts();
@@ -246,7 +253,18 @@ public class AutoMergeService {
             return 0;
         }
         int reconciled = 0;
-        List<PrReviewEntity> unmergedReviews = prReviewRepository.findByMergedFalseOrMergedIsNull();
+        // 2026-08-08 (live incident, test-forty-third: PR #174 and 9 siblings re-"terminalized" every single
+        // cycle for hours, ~163 times just since the last deploy, plus a distinct but same-root case where
+        // an already-"closed_unmerged" review kept being re-fetched from GitHub and re-saved every cycle
+        // with no new information) - this loop used to run over EVERY merged=false review with no filter at
+        // all, while the main pendingReviews loop above (line ~176) already excludes exactly this class via
+        // isReviewPollCandidate - two independently-maintained definitions of "is this review still
+        // undetermined", one of which forgot every terminal outcome (closed_unmerged, superseded, escalated,
+        // invalid_pr, unowned, owner_mismatch), not just one. Reusing the same canonical predicate here
+        // closes the whole class at once (engineering invariant #14), not one ciStatus value at a time.
+        List<PrReviewEntity> unmergedReviews = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
+                .filter(AutoMergeService::isReviewPollCandidate)
+                .toList();
         for (PrReviewEntity review : unmergedReviews) {
             try {
                 // GitHub budget guard (2026-07-31, widened 2026-08-01): this loop's GitHub calls go through
@@ -800,6 +818,14 @@ public class AutoMergeService {
                         if (prUrl == null || prUrl.isBlank()) {
                             continue;
                         }
+                        // Engineering invariant #14 (2026-08-08): never attach a Closeout PR to a task's own
+                        // session as if it were that task's implementation evidence - see
+                        // GitHubPullRequestService.isCloseoutPr's own javadoc for the live incident this
+                        // root-prevents (stops the corruption here, at the one place a session first learns
+                        // about a PR, instead of only cleaning it up later downstream).
+                        if (GitHubPullRequestService.isCloseoutPr(pr)) {
+                            continue;
+                        }
 
                         com.eneik.production.models.persistence.JulesSessionEntity matchingSession =
                                 findMatchingSession(projectSessions, pr);
@@ -1090,6 +1116,7 @@ public class AutoMergeService {
                             log.info("GitHub API: Successfully merged real PR {} on GitHub!", prUrl);
                             if (prUrl != null) {
                                 review.setPrUrl(prUrl);
+                                review.setPrNumber(Integer.parseInt(pullNumber));
                             }
                             mergeSuccess = true;
                             resolveActiveConflict(review.getJulesSessionId());
@@ -1345,10 +1372,30 @@ public class AutoMergeService {
             String summary = review.getDiffSummary();
             thread.setSummary(summary == null ? pr.title() : (summary.length() > 2000 ? summary.substring(0, 2000) : summary));
             thread.setUpdatedAt(java.time.Instant.now());
-            // Closeout tracking (2026-07-24): this merge just moved the thread's tip forward - a NEW commit
-            // that has never reached main, even if this same feature closed out once before. Reset the
-            // closeout state so the next processAutoMerge tick treats it as freshly reopened rather than
-            // silently trusting a stale "already in main" timestamp for code that isn't there.
+            // Closeout-PR churn fix (2026-08-08, live audit - 35 Closeout PRs across 11 features tonight,
+            // averaging 3-5 per feature instead of 1, 28 of 115 merged PRs across the project had 0 changed
+            // files): the reset below used to fire unconditionally on EVERY has-code merge for the feature,
+            // even when this task's own PR merged directly to `main` (the common case - confirmed live,
+            // most implementer PRs tonight had baseRef=main already, not a shared continuation branch).
+            // Resetting closeoutPrUrl/mergedToMainAt in that case pointed the thread at a branch whose
+            // content is ALREADY in main by definition (that's what this merge just did), so the very next
+            // closeOutReadyFeatureThreads tick dutifully opened ANOTHER closeout PR with nothing left to
+            // integrate - 0 files, a pure no-op, and (before the earlier fix tonight) a live source of
+            // evidence corruption via branch-token collision. Real, causal fix: only treat the thread as
+            // "freshly reopened, needs a future closeout" when THIS merge did NOT go straight to main -
+            // i.e. it landed on a genuine shared continuation branch that still needs its own separate trip
+            // to main. When it already merged to main, the feature's tip IS main right now - record that
+            // directly instead of scheduling a redundant integration.
+            if ("main".equals(pr.baseRef())) {
+                thread.setMergedToMainAt(java.time.Instant.now());
+                thread.setCloseoutPrUrl(null);
+                thread.setCloseoutConflictEscalatedAt(null);
+                featureThreadRepository.save(thread);
+                log.info("AutoMergeService: PR {} classified as has-code and merged directly to main; thread for "
+                                + "feature {} (last role {}) in project {} recorded as already integrated - no closeout PR needed.",
+                        pullRequestTarget.url(), featureId, roleTag, task.getProject().getId());
+                return;
+            }
             thread.setMergedToMainAt(null);
             thread.setCloseoutPrUrl(null);
             thread.setCloseoutConflictEscalatedAt(null);
@@ -1661,6 +1708,17 @@ public class AutoMergeService {
             if (task == null) {
                 continue;
             }
+            // 2026-08-07 fix, live incident: unlike its 3 sibling reconcile methods in this file (all
+            // correctly scoped to ProjectStatus.active), this one had no project-status filter at all -
+            // findAll() over EVERY PrReviewEntity ever created, across every project regardless of status,
+            // every automerge cycle, forever. Confirmed live: a frozen/accepted project (test-thirty-third,
+            // already correctly retired weeks ago) was still getting its ~20 already-merged PRs fully
+            // re-walked on every single cycle (repaired=false every time - pure waste), same guard as the
+            // frozen/accepted/cancelled check already used elsewhere in this file (see line ~385 above).
+            if (task.getProject() == null
+                    || task.getProject().getStatus() != com.eneik.production.models.persistence.ProjectStatus.active) {
+                continue;
+            }
             repairTaskForConfirmedMerge(task, winningSession, mergedReview.getPrUrl());
         }
     }
@@ -1726,14 +1784,27 @@ public class AutoMergeService {
                 // and has no merged-PR branch at all. This second pass matches by the same branch-name
                 // session token every other reconciliation path in this codebase already uses, independent
                 // of whether prUrl was ever locally recorded.
+                //
+                // Engineering invariant #14 (2026-08-08, docs/ENGINEERING_INVARIANTS_CHARTER.md, AGM belief
+                // revision): used to filter this list to `task.getStatus() != TaskStatus.done` ("only check
+                // non-terminal tasks"). That is exactly backwards - this codebase's own established fact
+                // (see ProjectFlowService's dependsOn-gate comment) is that TaskStatus.done is set at review
+                // approval, INDEPENDENTLY of whether the PR itself ever actually merged. Excluding done tasks
+                // from reality-reconciliation meant a task that reached "done" via review-approval alone
+                // (no real merge evidence) could NEVER have that evidence backfilled by this sweep, even
+                // though a real GitHub merge for it existed the whole time - confirmed live, test-forty-third
+                // 2026-08-08: task aeae7e9a-5fe3-4dc4-9f9e-432c3dd90252 reached PR#95, merged clean to main,
+                // while every other PR in the same batch got reconciled - only this one was invisible,
+                // because it alone had already reached "done". Scanning every task regardless of status is
+                // the belief-revision success postulate applied literally: new evidence (a real GitHub merge)
+                // must update the local belief (the review row), whether or not that belief already looks
+                // "settled" from the task's own status.
                 List<GitHubPullRequestService.GitHubPullRequest> mergedPrs = snapshot.closed().stream()
                         .filter(GitHubPullRequestService.GitHubPullRequest::merged)
                         .toList();
-                List<com.eneik.production.models.persistence.TaskEntity> nonTerminalTasks =
-                        taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
-                                .filter(task -> task.getStatus() != TaskStatus.done)
-                                .toList();
-                for (com.eneik.production.models.persistence.TaskEntity task : nonTerminalTasks) {
+                List<com.eneik.production.models.persistence.TaskEntity> allProjectTasks =
+                        taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+                for (com.eneik.production.models.persistence.TaskEntity task : allProjectTasks) {
                     for (com.eneik.production.models.persistence.JulesSessionEntity session
                             : julesSessionRepository.findByTaskId(task.getId())) {
                         if (session.getExternalSessionId() == null || session.getExternalSessionId().isBlank()) {
@@ -1743,6 +1814,12 @@ public class AutoMergeService {
                             continue;
                         }
                         mergedPrs.stream()
+                                // Engineering invariant #14 (2026-08-08) - see GitHubPullRequestService.
+                                // isCloseoutPr's own javadoc: this is the exact live-confirmed corruption
+                                // site (task 9d572d25/71664264, test-forty-third) - without this exclusion,
+                                // a matching Closeout PR (empty, unrelated event) can overwrite a task's
+                                // already-correct hasCode=true evidence with hasCode=false.
+                                .filter(pr -> !GitHubPullRequestService.isCloseoutPr(pr))
                                 .filter(pr -> GitHubPullRequestService.matchesSessionToken(pr, session.getExternalSessionId()))
                                 .findFirst()
                                 .ifPresent(pr -> repairTaskForConfirmedMerge(task, session, pr.url()));
@@ -1751,6 +1828,163 @@ public class AutoMergeService {
             }
         } catch (Exception e) {
             log.warn("AutoMergeService: Failed to reconcile merged GitHub PRs: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Real, structural fix (2026-08-06 incident) for the open-but-not-yet-merged analogue of the gap
+     * reconcileMergedGitHubPullRequests already closes for the merged case: a session can have its prUrl set
+     * (something detected the real PR) while its own status field never advances to "pr_opened" AND no
+     * PrReviewEntity ever gets created for it - invisible to the whole review/merge pipeline
+     * (hasUnmergedPrEvidence, isDependencySatisfied) even though the real GitHub PR is sitting open,
+     * mergeable, CI green. The trigger here is objective, not a status guess: does a PrReviewEntity exist for
+     * this session at all, or does the local status disagree with GitHub's own confirmed-open state.
+     */
+    void reconcileOpenGitHubPullRequests() {
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return;
+        }
+        try {
+            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
+                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
+            for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
+                var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+                if (snapshot == null || !snapshot.available() || snapshot.open() == null || snapshot.open().isEmpty()) {
+                    continue;
+                }
+                Map<String, GitHubPullRequestService.GitHubPullRequest> openPrByUrl = snapshot.open().stream()
+                        .collect(java.util.stream.Collectors.toMap(
+                                GitHubPullRequestService.GitHubPullRequest::url, pr -> pr, (a, b) -> b));
+
+                List<com.eneik.production.models.persistence.JulesSessionEntity> sessionsWithOpenPr =
+                        julesSessionRepository.findAll().stream()
+                                .filter(session -> session.getPrUrl() != null && openPrByUrl.containsKey(session.getPrUrl()))
+                                .toList();
+                for (var session : sessionsWithOpenPr) {
+                    com.eneik.production.models.persistence.TaskEntity task =
+                            taskRepository.findById(session.getTaskId()).orElse(null);
+                    if (task == null || task.getProject() == null
+                            || !project.getId().equals(task.getProject().getId())) {
+                        continue;
+                    }
+                    // 2026-08-09 (live incident): a task's fate can already be decided (failed/done/blocked)
+                    // through a different path while a stale open-PR snapshot still lists its old session -
+                    // repairing that session back toward "pr_opened" here only re-triggers
+                    // JulesDispatchService.closeSessionsForTerminalTasks to close it again next cycle,
+                    // forever. The canonical "is this task's fate already decided" definition lives there
+                    // (engineering invariant #14) - deferring to it, not re-deriving a second copy here.
+                    if (com.eneik.production.services.jules.JulesDispatchService.isTerminalTask(task)) {
+                        continue;
+                    }
+                    repairSessionForConfirmedOpenPr(project, task, session, openPrByUrl.get(session.getPrUrl()));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("AutoMergeService: Failed to reconcile open GitHub PRs: {}", e.getMessage());
+        }
+    }
+
+    private void repairSessionForConfirmedOpenPr(com.eneik.production.models.persistence.ProjectEntity project,
+            com.eneik.production.models.persistence.TaskEntity task,
+            com.eneik.production.models.persistence.JulesSessionEntity session,
+            GitHubPullRequestService.GitHubPullRequest openPr) {
+        boolean reviewMissing = !prReviewRepository.existsByJulesSessionId(session.getId());
+        boolean statusStale = !"pr_opened".equals(session.getStatus());
+        if (!reviewMissing && !statusStale) {
+            return;
+        }
+        String statusBeforeRepair = session.getStatus();
+
+        if (statusStale) {
+            // Real fix, not a status-field patch (2026-08-06 incident, task 9783149b): syncOpenPullRequestsFromGitHub
+            // already learned this exact lesson (see its own comment ~line 824) - writing session.status
+            // directly from a scheduled method OTHER than JulesDispatchService.pollStatus is invisible to
+            // pollStatus's own oldStatus/mappedStatus edge-detection, so handlePrOpenedWorkflow (the real
+            // completion workflow - persistent-worker cycle advance, philosophical-audit turn, implementer
+            // hand-off, etc.) never fires. A bare status write here would repeat that same mistake: task
+            // 9783149b's session sat at status="pr_opened" for 50+ minutes after the first version of this
+            // reconciler ran, task never left "claimed", because nothing ever invoked the real workflow.
+            session.setStatus("pr_opened");
+            session.setLastProgressAt(Instant.now());
+            julesSessionRepository.save(session);
+            systemProgressTracker.recordProgress();
+            try {
+                julesDispatchService.handlePrOpenedWorkflow(session);
+            } catch (Exception e) {
+                log.warn("AutoMergeService: handlePrOpenedWorkflow failed for reconciled session {} (task {}): {}",
+                        session.getId(), task.getId(), e.getMessage(), e);
+            }
+            // The real workflow may have created its own PrReviewEntity (the implementer path does, via
+            // PrReviewPipelineService) - only fall back to a bare one below if it genuinely didn't.
+            reviewMissing = !prReviewRepository.existsByJulesSessionId(session.getId());
+        }
+
+        if (reviewMissing) {
+            var mergeable = gitHubPullRequestService.mergeableState(project, openPr.number());
+            PrReviewEntity review = new PrReviewEntity();
+            review.setJulesSessionId(session.getId());
+            review.setPrUrl(openPr.url());
+            review.setPrNumber(openPr.number());
+            // ciStatus must be the real CI-checks vocabulary ("success"/"pending"/"unavailable"/...) that
+            // isReviewPollCandidate and executeMerge's CI gate actually understand - the same call the normal
+            // merge path uses at line ~1050. mergeableState().mergeStateStatus() is a DIFFERENT GitHub axis
+            // (branch mergeability: "clean"/"dirty"/"blocked"/...), not a CI vocabulary value; setting it here
+            // silently excluded every reconciled review from isReviewPollCandidate forever (confirmed live,
+            // 2026-08-06: task 9783149b's review sat with ciStatus="clean", never polled, PR never merged).
+            var checks = gitHubPullRequestService.pullRequestChecks(project, openPr.number());
+            review.setCiStatus(checks.status());
+            review.setRiskLevel(mergeable.map(m -> Boolean.TRUE.equals(m.mergeable()) ? "LOW" : "UNKNOWN").orElse("UNKNOWN"));
+            review.setMerged(false);
+            review.setHasCode(classifyHasCodeForPr(openPr.url()));
+            review.setBaseRef(openPr.baseRef());
+            prReviewRepository.save(review);
+        }
+
+        writeOperationalRealityFinding(task, session, statusBeforeRepair, "open, mergeable", openPr.url(), openPr.number());
+
+        log.info("Poka-yoke: reconciled open-but-unreconciled PR for task {} from PR {}; created review={}, corrected status={}",
+                task.getId(), openPr.url(), reviewMissing, statusStale);
+    }
+
+    /**
+     * Additive evidence for EvidenceCoherenceService (Thagard/ECHO) - see OperationalRealityFindingEntity's
+     * own doc for why this is a real 5th source, not a bolted-on special case. Deliberately generic (a
+     * short state-descriptor string, not a GitHubPullRequestService.GitHubPullRequest object) so every
+     * belief-revision call site in this class - open-PR reconciliation AND merged-PR reconciliation - writes
+     * through the exact same function (engineering invariant #14: one canonical revision function, not one
+     * per reconciliation shape).
+     */
+    private void writeOperationalRealityFinding(com.eneik.production.models.persistence.TaskEntity task,
+            com.eneik.production.models.persistence.JulesSessionEntity session,
+            String expectedStatus, String actualGithubState, String prUrl, Integer prNumber) {
+        try {
+            com.eneik.production.models.persistence.OperationalRealityFindingEntity finding =
+                    new com.eneik.production.models.persistence.OperationalRealityFindingEntity();
+            finding.setTaskId(task.getId());
+            finding.setJulesSessionId(session.getId());
+            // The local status BEFORE this reconciler touched it - what the pipeline wrongly believed - vs.
+            // the real GitHub state below. (Previously compared session.getStatus() against itself post-
+            // mutation, always "pr_opened" on both sides - a vacuous, always-equal field.)
+            finding.setExpectedStatus(expectedStatus);
+            // Short state descriptor only - prUrl is already its own column right below, duplicating the
+            // full URL here overflowed VARCHAR(64) for real PR URLs (confirmed live, 2026-08-06: 69 chars
+            // for PR #10, silently dropping this evidence row every cycle via the catch below).
+            finding.setActualGithubState(actualGithubState);
+            finding.setPrUrl(prUrl);
+            finding = operationalRealityFindingRepository.save(finding);
+
+            com.eneik.production.models.persistence.EvidenceNodeEntity node =
+                    new com.eneik.production.models.persistence.EvidenceNodeEntity();
+            node.setProjectId(task.getProject() != null ? task.getProject().getId() : null);
+            node.setFeatureId(task.getFeatureId());
+            node.setPrNumber(prNumber);
+            node.setPolarity(com.eneik.production.models.persistence.EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+            node.setSummaryText("Session " + session.getId() + " status disagreed with real GitHub PR state for task "
+                    + task.getId() + " (" + prUrl + ")");
+            node.setOperationalRealityFindingId(finding.getId());
+            evidenceNodeRepository.save(node);
+        } catch (Exception e) {
+            log.warn("AutoMergeService: failed to record operational-reality evidence for task {}: {}", task.getId(), e.getMessage());
         }
     }
 
@@ -1881,15 +2115,32 @@ public class AutoMergeService {
         }
 
         if (reviewNeedsUpdate) {
+            // Engineering invariant #14 (2026-08-08, AGM belief revision): capture the task's belief BEFORE
+            // this repair touches anything - taskNeedsRepair may flip it to `done` a few lines below, which
+            // would make this evidence node vacuously compare "done" against "done" (same class of bug this
+            // very fix pattern already caught once in repairSessionForConfirmedOpenPr's own history).
+            String statusBeforeRepair = task.getStatus() != null ? task.getStatus().name() : "unknown";
             PrReviewEntity target = winningReview != null ? winningReview : new PrReviewEntity();
             target.setJulesSessionId(winningSession.getId());
             target.setPrUrl(mergedPrUrl);
+            PullRequestTarget parsedMergedTarget = parseGithubPullRequestUrl(mergedPrUrl);
+            Integer prNumber = null;
+            if (parsedMergedTarget != null) {
+                prNumber = Integer.parseInt(parsedMergedTarget.pullNumber());
+                target.setPrNumber(prNumber);
+            }
             target.setCiStatus("success");
             target.setRiskLevel("LOW");
             target.setMerged(true);
-            target.setHasCode(classifyHasCodeForMergedPr(mergedPrUrl));
+            target.setHasCode(classifyHasCodeForPr(mergedPrUrl));
             target.setBaseRef(baseRefForMergedPr(mergedPrUrl));
             prReviewRepository.save(target);
+            // Same canonical evidence write repairSessionForConfirmedOpenPr uses for the open-PR case - a
+            // local belief (this review row, or the task's own status) disagreed with real GitHub state
+            // (the PR really merged) until this repair just now revised it. Feeds Gemini's stuck-candidate
+            // detection (GeminiProjectObserverService reads recent OperationalRealityFindingEntity rows
+            // regardless of the task's own status), not just EvidenceCoherenceService's coherence graph.
+            writeOperationalRealityFinding(task, winningSession, statusBeforeRepair, "merged", mergedPrUrl, prNumber);
         }
 
         if (taskNeedsRepair) {
@@ -1921,7 +2172,7 @@ public class AutoMergeService {
                 activeDuplicates.size(), staleReviews.size());
     }
 
-    private boolean classifyHasCodeForMergedPr(String prUrl) {
+    private boolean classifyHasCodeForPr(String prUrl) {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return false;
         }
@@ -1937,7 +2188,7 @@ public class AutoMergeService {
         return codeChangeClassifier.hasCode(changedFiles);
     }
 
-    // Dashboard-number correctness (2026-07-24) - mirrors classifyHasCodeForMergedPr's pattern for the same
+    // Dashboard-number correctness (2026-07-24) - mirrors classifyHasCodeForPr's pattern for the same
     // GitHub-truth reconciliation path, so a synthesized PrReviewEntity gets a real baseRef instead of
     // silently staying null (which reachedMain() treats as "legacy/unknown, fail open" - correct for old
     // data, but this path creates NEW rows, so it should populate it properly when it can).

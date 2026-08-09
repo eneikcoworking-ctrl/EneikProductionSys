@@ -27,4 +27,5 @@ public interface ClaimRepository extends JpaRepository<ClaimEntity, UUID> {
 
     List<ClaimEntity> findByReleasedAtIsNullAndLeaseExpiresAtBefore(java.time.Instant now);
     List<ClaimEntity> findByReleasedAtIsNull();
+    List<ClaimEntity> findByTaskIdIn(List<UUID> taskIds);
 }

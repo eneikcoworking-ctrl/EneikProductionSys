@@ -56,6 +56,7 @@ public class SystemStatusService {
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
     private final Environment environment;
+    private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
 
     public SystemStatusService(SystemSettingsService settingsService,
                                AccountRepository accountRepository,
@@ -72,7 +73,8 @@ public class SystemStatusService {
                                GitHubApiBudgetService githubApiBudgetService,
                                com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker,
-                               Environment environment) {
+                               Environment environment,
+                               com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService) {
         this.settingsService = settingsService;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
@@ -88,6 +90,7 @@ public class SystemStatusService {
         this.githubApiBudgetService = githubApiBudgetService;
         this.systemProgressTracker = systemProgressTracker;
         this.aiHealthTracker = aiHealthTracker;
+        this.sixSigmaAuditService = sixSigmaAuditService;
         this.environment = environment;
     }
 
@@ -255,7 +258,6 @@ public class SystemStatusService {
         long totalDefects = 0;
         long passedChecks = 0;
         long failedChecks = 0;
-        Map<String, CtqAccumulator> ctq = new LinkedHashMap<>();
         List<Map<String, Object>> defectItems = new ArrayList<>();
 
         List<TaskEntity> tasks = taskRepository.findAll();
@@ -274,12 +276,9 @@ public class SystemStatusService {
                 for (JsonNode check : checks) {
                     String checkName = check.path("name").asText("unknown_check");
                     boolean passed = check.path("passed").asBoolean(false);
-                    CtqAccumulator item = ctq.computeIfAbsent(checkName, key -> new CtqAccumulator(key, "quality_gate"));
-                    item.opportunities++;
                     if (!check.path("passed").asBoolean()) {
                         totalDefects++;
                         failedChecks++;
-                        item.defects++;
                         if (defectItems.size() < 20) {
                             Map<String, Object> defect = new LinkedHashMap<>();
                             defect.put("taskId", task.getId());
@@ -311,10 +310,12 @@ public class SystemStatusService {
                 .filter(task -> task.getQualityGateReport() != null && task.getQualityGateReport().has("checks"))
                 .filter(TaskEntity::isQualityGatePassed)
                 .count() / (double) totalAttempts));
+        // 2026-08-08 (ML-update patch, Phase 1): ctqBreakdown now comes from SixSigmaAuditService's shared
+        // computeCtqBreakdown - same per-check-name Pareto KaizenService's F1_KAIZEN_CTQ_TARGETING lever
+        // reads, so the dashboard and the Kaizen proposal generator can never silently diverge (invariant #14).
         long qualityDefectTotal = totalDefects;
-        section.put("ctqBreakdown", ctq.values().stream()
-                .map(acc -> ctqMap(acc, qualityDefectTotal))
-                .sorted((a, b) -> Long.compare(((Number) b.get("defects")).longValue(), ((Number) a.get("defects")).longValue()))
+        section.put("ctqBreakdown", sixSigmaAuditService.computeCtqBreakdown(projectId).stream()
+                .map(entry -> ctqMap(new CtqAccumulator(entry.checkName(), "quality_gate", entry.opportunities(), entry.defects()), qualityDefectTotal))
                 .toList());
         section.put("defectItems", defectItems);
         return section;
@@ -793,6 +794,13 @@ public class SystemStatusService {
         private CtqAccumulator(String name, String source) {
             this.name = name;
             this.source = source;
+        }
+
+        private CtqAccumulator(String name, String source, long opportunities, long defects) {
+            this.name = name;
+            this.source = source;
+            this.opportunities = opportunities;
+            this.defects = defects;
         }
     }
 

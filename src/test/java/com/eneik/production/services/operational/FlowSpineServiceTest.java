@@ -156,8 +156,11 @@ class FlowSpineServiceTest {
         var events = mock(FlowSpineEventRepository.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
         var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
         FlowSpineService service = new FlowSpineService(
-                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
 
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
@@ -208,8 +211,11 @@ class FlowSpineServiceTest {
         var events = mock(FlowSpineEventRepository.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
         var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
         FlowSpineService service = new FlowSpineService(
-                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
 
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
@@ -262,8 +268,11 @@ class FlowSpineServiceTest {
         var events = mock(FlowSpineEventRepository.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
         var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
         FlowSpineService service = new FlowSpineService(
-                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus);
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
 
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
@@ -301,6 +310,107 @@ class FlowSpineServiceTest {
         assertEquals(0, dto.evidence().failingReviews());
     }
 
+    @Test
+    void duplicateContentAmongOnlyTerminalTasksDoesNotBlockLiveState() {
+        // Regression test for the 2026-08-04 incident: test-forty-first stuck for hours in
+        // BLOCKED_BY_DUPLICATE_CONTENT with no recovery path, purely because 4 pairs of long-since-`done`
+        // duplicate tasks sat in the last-30-tasks window. This mirrors
+        // ContinuousOrchestrationServiceTest#duplicateContentAmongOnlyTerminalTasksDoesNotBlock but exercises
+        // FlowSpineService.duplicateContent - the actual authority OperationalPolicyService gates on, which
+        // has its own separate (and, until this fix, separately-unpatched) duplicate-detection logic.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        List<TaskEntity> duplicates = List.of(
+                taskWithSliceTitle(TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"),
+                taskWithSliceTitle(TaskStatus.done, "Internal work item 2 (BARCAN-TAG-06) from wishlist"));
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(duplicates);
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(reviews.findAll()).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertNotEquals("BLOCKED_BY_DUPLICATE_CONTENT", dto.currentState());
+    }
+
+    @Test
+    void duplicateContentAmongActiveTasksStillBlocksLiveState() {
+        // Regression guard: the fix must only exempt already-resolved duplicates, not disable the detector
+        // entirely - a real, currently-active generation fallback must still be caught.
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        List<TaskEntity> duplicates = List.of(
+                taskWithSliceTitle(TaskStatus.queued, "Coverage gap falsification"),
+                taskWithSliceTitle(TaskStatus.queued, "Coverage gap falsification"),
+                taskWithSliceTitle(TaskStatus.review, "Coverage gap falsification"));
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(duplicates);
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(reviews.findAll()).thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertEquals("BLOCKED_BY_DUPLICATE_CONTENT", dto.currentState());
+    }
+
+    private TaskEntity taskWithSliceTitle(TaskStatus status, String sliceTitle) {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(status);
+        task.setDescription(sliceTitle);
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        payload.put("slice_title", sliceTitle);
+        task.setPayload(payload);
+        return task;
+    }
+
     private FlowSpineService.StateInputs input(ProjectStatus projectStatus,
                                                long queuedTasks,
                                                long activeTasks,
@@ -327,5 +437,100 @@ class FlowSpineServiceTest {
                 failedTasks, blockedTasks, pendingWishlist, compilingWishlist, openSessions, mergedReviews,
                 openReviews, failingReviews, qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
                 totalDeliverables, mergedDeliverables, decompositionComplete, systemStatus, duplicateContentDetected);
+    }
+
+    // 2026-08-08 (ML-update patch, Phase 2): D3_EMBEDDING_DUPLICATE_DETECTION shadow check - decoupled from
+    // the hot duplicateContent() path, runs on its own schedule against active projects only.
+
+    private FlowSpineService serviceWithMocks(ProjectRepository projects, TaskRepository tasks,
+                                               com.eneik.production.services.MLPredictionServiceClient mlClient,
+                                               com.eneik.production.services.lever.LeverPromotionService leverService) {
+        return new FlowSpineService(projects, tasks, mock(WishlistRepository.class), mock(JulesSessionRepository.class),
+                mock(PrReviewRepository.class), mock(FlowSpineEventRepository.class),
+                mock(ClientDeliverableReadinessService.class), mock(SystemStatusService.class), mlClient, leverService);
+    }
+
+    @Test
+    void candidateFindsASemanticDuplicateExactMatchMissesAndRecordsAStrongObservation() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+        when(projects.findAll()).thenReturn(List.of(project));
+
+        TaskEntity taskA = new TaskEntity();
+        taskA.setId(UUID.randomUUID());
+        taskA.setStatus(TaskStatus.queued);
+        taskA.setDescription("Frontend UI implementation for the billing module");
+        TaskEntity taskB = new TaskEntity();
+        taskB.setId(UUID.randomUUID());
+        taskB.setStatus(TaskStatus.queued);
+        taskB.setDescription("Svelte UI slice covering billing screens");
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(taskA, taskB));
+
+        // Identical vectors -> cosine similarity 1.0, above both the detection and confirmation thresholds.
+        float[] vector = new float[]{1f, 0f, 0f};
+        when(mlClient.embed(taskA.getDescription())).thenReturn(vector);
+        when(mlClient.embed(taskB.getDescription())).thenReturn(vector);
+
+        serviceWithMocks(projects, tasks, mlClient, leverService).shadowCheckEmbeddingDuplicatesAcrossActiveProjects();
+
+        org.mockito.Mockito.verify(leverService).recordObservation(
+                org.mockito.ArgumentMatchers.eq(FlowSpineService.D3_LEVER_KEY),
+                org.mockito.ArgumentMatchers.eq(projectId.toString()),
+                org.mockito.ArgumentMatchers.eq("not_duplicate"),
+                org.mockito.ArgumentMatchers.eq("duplicate"),
+                org.mockito.ArgumentMatchers.eq(com.eneik.production.services.lever.LeverAgreement.TRUE),
+                org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void noObservationRecordedWithFewerThanTwoUniqueKeyedCandidates() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+        when(projects.findAll()).thenReturn(List.of(project));
+
+        TaskEntity onlyTask = new TaskEntity();
+        onlyTask.setId(UUID.randomUUID());
+        onlyTask.setStatus(TaskStatus.queued);
+        onlyTask.setDescription("Only one candidate task");
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(onlyTask));
+
+        serviceWithMocks(projects, tasks, mlClient, leverService).shadowCheckEmbeddingDuplicatesAcrossActiveProjects();
+
+        org.mockito.Mockito.verifyNoInteractions(mlClient);
+        org.mockito.Mockito.verify(leverService, org.mockito.Mockito.never())
+                .recordObservation(org.mockito.ArgumentMatchers.eq(FlowSpineService.D3_LEVER_KEY),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(),
+                        org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void nonActiveProjectsAreSkippedEntirely() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var mlClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+
+        ProjectEntity frozenProject = new ProjectEntity();
+        frozenProject.setId(UUID.randomUUID());
+        frozenProject.setStatus(ProjectStatus.frozen);
+        when(projects.findAll()).thenReturn(List.of(frozenProject));
+
+        serviceWithMocks(projects, tasks, mlClient, leverService).shadowCheckEmbeddingDuplicatesAcrossActiveProjects();
+
+        org.mockito.Mockito.verifyNoInteractions(tasks, mlClient, leverService);
     }
 }

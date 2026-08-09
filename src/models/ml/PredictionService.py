@@ -170,6 +170,36 @@ def ask_gemini_cached(prompt: str, cached_content_name: str, model: str, api_key
         return res_data["candidates"][0]["content"]["parts"][0]["text"]
 
 
+def gemini_generate_raw(payload: dict, api_key: str, model_tier: str = "", model_override: str = "") -> dict:
+    """Shared retry/model-fallback core (extracted 2026-08-05 so the new tool-calling path reuses the exact
+    same candidate-model iteration and transient-error handling as ask_gemini below, instead of a second,
+    possibly-diverging copy). Returns the raw parsed Gemini generateContent response body, or raises."""
+    headers = {"Content-Type": "application/json"}
+    retryable_errors = []
+    for model in gemini_candidate_models(model_tier, model_override):
+        try:
+            req = urllib.request.Request(
+                gemini_generate_url(model, api_key),
+                data=json.dumps(payload).encode("utf-8"),
+                headers=headers,
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=gemini_request_timeout()) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            print(f"HTTP Error calling Gemini API model {model}: {e.code} - {error_body}")
+            if e.code in (404, 429, 503):
+                retryable_errors.append(f"{model}: HTTP {e.code} {error_body}")
+                continue
+            raise Exception(f"API Error {e.code}: {error_body}") from e
+        except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
+            print(f"Transient error calling Gemini API model {model}: {e}")
+            retryable_errors.append(f"{model}: transient {e}")
+            continue
+    raise Exception("All Gemini candidate models failed: " + " | ".join(retryable_errors))
+
+
 def ask_gemini(
     prompt: str,
     system_instruction: str = "",
@@ -197,9 +227,6 @@ def ask_gemini(
         return "{}"
 
     try:
-        headers = {"Content-Type": "application/json"}
-
-        # Structure the payload for Gemini API
         payload = {
             "contents": [
                 {"parts": [{"text": prompt}]}
@@ -214,36 +241,56 @@ def ask_gemini(
         if "return only json" in lower_instruction or "return valid json" in lower_instruction:
             payload["generationConfig"] = {"responseMimeType": "application/json"}
 
-        retryable_errors = []
-        for model in gemini_candidate_models(model_tier, model_override):
-            try:
-                req = urllib.request.Request(
-                    gemini_generate_url(model, api_key),
-                    data=json.dumps(payload).encode("utf-8"),
-                    headers=headers,
-                    method="POST",
-                )
-                with urllib.request.urlopen(req, timeout=gemini_request_timeout()) as response:
-                    res_data = json.loads(response.read().decode("utf-8"))
-                    text = res_data["candidates"][0]["content"]["parts"][0]["text"]
-                    return text
-            except urllib.error.HTTPError as e:
-                error_body = e.read().decode("utf-8")
-                print(f"HTTP Error calling Gemini API model {model}: {e.code} - {error_body}")
-                if e.code in (404, 429, 503):
-                    retryable_errors.append(f"{model}: HTTP {e.code} {error_body}")
-                    continue
-                raise Exception(f"API Error {e.code}: {error_body}") from e
-            except (urllib.error.URLError, TimeoutError, socket.timeout) as e:
-                print(f"Transient error calling Gemini API model {model}: {e}")
-                retryable_errors.append(f"{model}: transient {e}")
-                continue
-
-        if retryable_errors:
-            raise Exception("All Gemini candidate models failed: " + " | ".join(retryable_errors))
+        raw = gemini_generate_raw(payload, api_key, model_tier, model_override)
+        return raw["candidates"][0]["content"]["parts"][0]["text"]
     except Exception as e:
         print(f"Error calling Gemini API: {e}")
         raise Exception(f"API Error: {str(e)}") from e
+
+
+def ask_gemini_with_tools(
+    contents: list,
+    system_instruction: str,
+    tools: list,
+    api_key: str,
+    model_tier: str = "",
+    model_override: str = "",
+) -> dict:
+    """One round of a multi-turn tool-use conversation (Phase 5, 2026-08-05: EvidenceCoherenceService's
+    consuming caller decides WHEN and HOW MANY rounds - this function is deliberately single-round, Java
+    owns the loop, see MLPredictionServiceClient.chatWithTools). Returns
+    {"text": str|None, "functionCall": {"name": str, "args": dict}|None, "contents": list} - the returned
+    contents already include this turn's model response part, ready to be extended with a functionResponse
+    part and passed back unchanged as the next round's request.
+    """
+    if not api_key:
+        return {"text": (
+            "Gemini API key is not configured for the ML service. "
+            "Free-form tool-assisted answering is disabled."
+        ), "functionCall": None, "contents": contents}
+
+    payload = {"contents": contents}
+    if system_instruction:
+        payload["systemInstruction"] = {"parts": [{"text": system_instruction}]}
+    if tools:
+        payload["tools"] = [{"functionDeclarations": tools}]
+
+    raw = gemini_generate_raw(payload, api_key, model_tier, model_override)
+    candidate_content = raw["candidates"][0]["content"]
+    parts = candidate_content.get("parts", [])
+    updated_contents = contents + [candidate_content]
+
+    for part in parts:
+        if "functionCall" in part:
+            fc = part["functionCall"]
+            return {
+                "text": None,
+                "functionCall": {"name": fc.get("name"), "args": fc.get("args", {})},
+                "contents": updated_contents,
+            }
+
+    text = "".join(p.get("text", "") for p in parts)
+    return {"text": text, "functionCall": None, "contents": updated_contents}
 
 
 class BottleneckRequest(BaseModel):
@@ -254,10 +301,25 @@ class BottleneckRequest(BaseModel):
 class BottleneckResponse(BaseModel):
     risk_score: float
     is_bottleneck_predicted: bool
+    # 2026-08-08 (ML-update patch, Phase 5): candidate logistic score alongside the incumbent linear
+    # fallback, for future shadow comparison once/if this endpoint is wired to a real live decision -
+    # see predict_bottleneck_logistic's own docstring for why this is NOT yet promoted to drive anything.
+    candidate_risk_score: float
+
+
+class FunctionDeclarationDto(BaseModel):
+    name: str
+    description: str = ""
+    parameters: dict = {}
+
+
+class FunctionCallDto(BaseModel):
+    name: str
+    args: dict = {}
 
 
 class ChatRequest(BaseModel):
-    prompt: str
+    prompt: str = ""
     systemInstruction: str = ""
     apiKey: str = ""
     modelTier: str = ""
@@ -266,10 +328,18 @@ class ChatRequest(BaseModel):
     # systemInstruction is static/repeated across calls (e.g. GeminiProjectObserverService's instruction
     # text, identical every cycle for every project). Empty means "don't cache", the existing uncached behavior.
     cacheKey: str = ""
+    # Phase 5 (2026-08-05) tool-use loop - both empty means the existing single-shot text-in/text-out path,
+    # byte-identical to before this field existed. tools declares what the model may call this round;
+    # contents (Gemini's own {role,parts} shape) carries the accumulated conversation - Java owns the loop
+    # and the round-over-round history, this endpoint only ever executes ONE round per call.
+    tools: list[FunctionDeclarationDto] = []
+    contents: list[dict] = []
 
 
 class ChatResponse(BaseModel):
-    text: str
+    text: str = ""
+    functionCall: FunctionCallDto | None = None
+    contents: list[dict] = []
 
 
 class EmbedRequest(BaseModel):
@@ -330,6 +400,26 @@ class PredictionService:
             is_bottleneck_predicted = risk_score > 0.7
             return risk_score, is_bottleneck_predicted
 
+    # 2026-08-08 (ML-update patch, Phase 5): candidate for the linear fallback above (Salmon's causal
+    # processes / mark transmission, BARCAN-TAG-05 philosopher 4 - WIP and cycle time are treated as a real
+    # causal process leaving a "mark", a genuine stall, not just a correlate). Coefficients below are an
+    # UNFITTED, provisional starting point (b0=-2, matching the linear formula's own 0.7 trigger point
+    # roughly), deliberately NOT presented as fitted-on-real-data - honestly labeled so, per this project's
+    # own fail-closed-honesty discipline, rather than fabricating a "trained" model that never saw real
+    # TocSentinelService anomaly history. A real periodic refit job (reading real anomaly outcomes) is
+    # explicitly out of scope for this cut: /api/v1/predict/bottleneck itself is not currently wired into
+    # any live TOC decision anywhere in the Java backend (its only caller, GreetingController, is demo
+    # scaffolding that discards the result) - there is no real incumbent DECISION to shadow-test yet, so
+    # building the full lever-promotion-ladder wiring for this endpoint would test nothing real. Kept as a
+    # second, real, honestly-labeled score for whenever this endpoint becomes a genuine decision input.
+    def predict_bottleneck_logistic(self, wip_count: int, avg_cycle_time: float) -> float:
+        import math
+        wip_factor = min(wip_count / self.MAX_WIP, 1.0)
+        time_factor = min(avg_cycle_time / self.SLA_THRESHOLD, 1.0)
+        b0, b_wip, b_time = -2.0, 2.0, 2.0
+        z = b0 + b_wip * wip_factor + b_time * time_factor
+        return 1.0 / (1.0 + math.exp(-z))
+
     def get_charter_rules(self, role_tag: str):
         # Look for charter files in the mounted project root
         files = glob.glob(f"/project/{role_tag}_*.md")
@@ -350,8 +440,13 @@ async def bottleneck_endpoint(request: BottleneckRequest):
     risk_score, is_bottleneck = predictor.predict_bottleneck(
         request.wip_count, request.avg_cycle_time
     )
+    candidate_risk_score = predictor.predict_bottleneck_logistic(
+        request.wip_count, request.avg_cycle_time
+    )
     return BottleneckResponse(
-        risk_score=risk_score, is_bottleneck_predicted=is_bottleneck
+        risk_score=risk_score,
+        is_bottleneck_predicted=is_bottleneck,
+        candidate_risk_score=candidate_risk_score,
     )
 
 
@@ -376,6 +471,27 @@ async def assistant_chat_endpoint(request: ChatRequest):
                 "Gemini API key is not configured for the ML service. "
                 "Backend project facts may be available, but free-form model answering is disabled."
             ))
+
+        if request.tools or request.contents:
+            # Tool-use round (Phase 5) - separate path from the cached/uncached plain-text flow below,
+            # deliberately: caching a systemInstruction only makes sense for a static, repeated single-shot
+            # prompt, not a growing multi-turn tool conversation whose contents differ every round.
+            contents = request.contents if request.contents else [
+                {"role": "user", "parts": [{"text": request.prompt}]}
+            ]
+            tools_payload = [
+                {"name": t.name, "description": t.description, "parameters": t.parameters}
+                for t in request.tools
+            ]
+            result = ask_gemini_with_tools(
+                contents, request.systemInstruction, tools_payload,
+                api_key.strip(), request.modelTier, request.modelOverride,
+            )
+            return ChatResponse(
+                text=result["text"] or "",
+                functionCall=FunctionCallDto(**result["functionCall"]) if result["functionCall"] else None,
+                contents=result["contents"],
+            )
 
         response_text = None
         if request.cacheKey:

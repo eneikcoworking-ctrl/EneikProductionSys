@@ -33,9 +33,19 @@ public class TechnicalLeadCompiler {
     private final FeatureService featureService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final ProjectFileClaimRepository projectFileClaimRepository;
+    private final com.eneik.production.services.GeminiContextService geminiContextService;
 
     private static final String TECH_LEAD_ROLE_TAG = "BARCAN-TAG-09";
     private static final String FLYWAY_MIGRATION_DIR = "src/main/resources/db/migration";
+
+    // How many relevance-ranked excerpts of the root brief a single slice's task description may include -
+    // deliberately small: this is meant to be the excerpt genuinely relevant to one slice, not a second
+    // copy of the whole document under a different name.
+    private static final int ORIGINAL_BRIEF_RETRIEVAL_TOP_K = 6;
+    // Outer safety cap on the retrieved/fallback text, mirrors GeminiContextService.RAW_FALLBACK_MAX_CHARS -
+    // not the real scoping mechanism (retrieval top-K is), just a last-resort bound so a degraded raw
+    // fallback (RAG unavailable) can never reproduce the old unbounded-dump behavior.
+    private static final int RAW_BRIEF_FALLBACK_MAX_CHARS = 8000;
 
     public TechnicalLeadCompiler(WishlistRepository wishlistRepository,
                                  TaskRepository taskRepository,
@@ -48,7 +58,8 @@ public class TechnicalLeadCompiler {
                                  ProjectHotspotFileRepository projectHotspotFileRepository,
                                  FeatureService featureService,
                                  com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
-                                 ProjectFileClaimRepository projectFileClaimRepository) {
+                                 ProjectFileClaimRepository projectFileClaimRepository,
+                                 com.eneik.production.services.GeminiContextService geminiContextService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.projectRepository = projectRepository;
@@ -61,6 +72,7 @@ public class TechnicalLeadCompiler {
         this.featureService = featureService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.projectFileClaimRepository = projectFileClaimRepository;
+        this.geminiContextService = geminiContextService;
     }
 
     /**
@@ -831,7 +843,12 @@ public class TechnicalLeadCompiler {
         for (java.io.File file : files) {
             String name = file.getName();
             if (file.isDirectory()) {
-                if (name.equals(".git") || name.equals("node_modules") || name.equals("target") || name.equals("bin") || name.equals("project-workspaces")) {
+                // .m2-cache (2026-08-06, discovered live while diagnosing a 40+ minute test hang: a full
+                // local Maven repository cache checked into this project's own root, thousands of jar/pom
+                // files across a deep groupId/artifactId/version tree) is build tooling, never real project
+                // source - same reasoning as .git/node_modules/target/bin.
+                if (name.equals(".git") || name.equals("node_modules") || name.equals("target") || name.equals("bin")
+                        || name.equals("project-workspaces") || name.equals(".m2-cache")) {
                     continue;
                 }
                 findFilesWithName(file, keywords, foundFiles);
@@ -1071,17 +1088,22 @@ public class TechnicalLeadCompiler {
                     .append(englishMetadata(wishlist.getContent(), "Circuit-breaker recovery for a previous Jules session."))
                     .append("\n\n");
         }
-        // Always include the real original wishlist text verbatim, in whatever language it's in - task
-        // compilation no longer routes through Gemini, so this is the only place the actual client ask
-        // reaches Jules at all. Previously this was omitted for most wishlist sources and the JTBD/
-        // acceptance-criteria fields above were the only signal Jules received - when those were
-        // AI-fallback placeholders (e.g. during a Gemini outage), Jules had no way to recover the real
-        // intent because it never saw the source text.
-        String originalBrief = wishlist.getContent();
+        // 2026-08-07 (Gricean quantity-optimal grounding, ACP-101 - operator directive: "нельзя обрезать и
+        // нельзя давать бриф целиком... это шум"): the real original wishlist text must still reach Jules -
+        // task compilation doesn't route through Gemini, so this is the only place the actual client ask
+        // reaches Jules at all - but a fixed-length truncation of the whole document cuts off at the same
+        // point in the document for every slice regardless of which part that slice actually needs
+        // (confirmed live, test-forty-third: financial-module and design-system slices never received their
+        // own relevant section of a 30,963-char multi-domain brief), and dumping the whole document into
+        // every slice is pure noise for a slice that only needs one part of it. Retrieve only the excerpt of
+        // the ROOT brief whose relevance to THIS slice's own role/JTBD/acceptance-criteria clears the
+        // similarity floor (Grice's Maxim of Quantity, formalized by Sperber & Wilson's Relevance Theory as
+        // cognitive effect over processing effort) - see buildGroundedOriginalBrief.
+        String originalBrief = buildGroundedOriginalBrief(wishlist, roleTag, jtbd, acceptanceCriteria);
         if (originalBrief != null && !originalBrief.isBlank()) {
-            sb.append("Original Brief (verbatim, may be in any language - read and understand it yourself,\n")
-                    .append("do not rely only on the JTBD/Acceptance Criteria above if they look generic):\n")
-                    .append(compactLines(originalBrief, 4000))
+            sb.append("Original Brief (relevant excerpt(s), may be in any language - read and understand it\n")
+                    .append("yourself, do not rely only on the JTBD/Acceptance Criteria above if they look generic):\n")
+                    .append(compactLines(originalBrief, RAW_BRIEF_FALLBACK_MAX_CHARS))
                     .append("\n\n");
         }
         // Operator directive 2026-07-24 (live incident, test-thirty-seventh PR#6 vs PR#8): this used to be
@@ -1459,6 +1481,49 @@ public class TechnicalLeadCompiler {
         return "Given this role completes the Atomic Goal, When the relevant verification command runs, Then the change passes without unrelated scope.\n"
                 + "Given the change is reviewed, When the PR diff is inspected, Then it contains only source, config, test, or documentation files needed for this slice.\n"
                 + "Given a blocker remains after one objective attempt, When the Jules session would otherwise loop, Then the agent stops and records one concrete blocker or follow-up.";
+    }
+
+    // 2026-08-07 (Gricean quantity-optimal grounding, ACP-101). `wishlist` here is always a compiler-
+    // generated slice, never the root client wishlist itself (see ProjectFlowService.internalSliceContent,
+    // which no longer duplicates the root brief into the slice's own content column). Retrieves only the
+    // excerpt(s) of the ROOT brief relevant to this slice's own role/JTBD/acceptance-criteria - the most
+    // precise query available at this point in the pipeline, since those fields are already fully formed.
+    // Applies uniformly regardless of how long the root brief is: a short brief is not exempt from the same
+    // relevance filter, since even a short client message can mix concerns that don't all belong in the
+    // same task (operator directive: "длина брифа не важна, если там избыточная для задачи информация").
+    // Package-private (not private) so TechnicalLeadCompilerTest can exercise this directly - the novel,
+    // risk-bearing logic of this whole change, worth testing in isolation from the much larger
+    // createTaskFromWishlist call graph.
+    String buildGroundedOriginalBrief(WishlistEntity wishlist, String roleTag, String jtbd, String acceptanceCriteria) {
+        UUID rootWishlistId = wishlist.getOriginWishlistId();
+        if (rootWishlistId == null) {
+            // This wishlist IS the root (never sliced, or a non-compiler-generated source) - nothing to
+            // retrieve from, its own content is the only text there is.
+            return wishlist.getContent();
+        }
+        String retrievalQuery = roleLabel(roleTag) + ". " + defaultText(jtbd, "") + " " + defaultText(acceptanceCriteria, "");
+        java.util.List<com.eneik.production.services.GeminiContextService.RetrievedChunk> relevant;
+        try {
+            relevant = geminiContextService.retrieveRelevantContext(
+                    retrievalQuery, ORIGINAL_BRIEF_RETRIEVAL_TOP_K, "client_brief:" + rootWishlistId);
+        } catch (Exception e) {
+            log.warn("TechnicalLeadCompiler: brief retrieval failed for slice wishlist {} (root {}), " +
+                    "falling back to the raw root brief: {}", wishlist.getId(), rootWishlistId, e.getMessage());
+            relevant = java.util.List.of();
+        }
+        if (!relevant.isEmpty()) {
+            return relevant.stream()
+                    .map(com.eneik.production.services.GeminiContextService.RetrievedChunk::content)
+                    .collect(java.util.stream.Collectors.joining("\n\n---\n\n"));
+        }
+        // RAG unavailable (feature flag off, embedding call failed, or nothing indexed yet for this root) -
+        // degrade to a capped raw read of the root brief rather than leaving the task ungrounded entirely.
+        String rawRoot = wishlistRepository.findById(rootWishlistId).map(WishlistEntity::getContent).orElse(null);
+        return rawRoot == null || rawRoot.isBlank() ? wishlist.getContent() : rawRoot;
+    }
+
+    private String defaultText(String value, String fallback) {
+        return value == null ? fallback : value;
     }
 
     private String compactLines(String value, int maxLength) {

@@ -48,6 +48,8 @@ public class GeminiObserverActionService {
     private final OperationalPolicyService operationalPolicyService;
     private final PlannedWorkRecoveryService plannedWorkRecoveryService;
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
+    private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
 
     public GeminiObserverActionService(WishlistRepository wishlistRepository,
                                         TaskRepository taskRepository,
@@ -57,7 +59,9 @@ public class GeminiObserverActionService {
                                         GeminiObserverActionRepository actionRepository,
                                         OperationalPolicyService operationalPolicyService,
                                         PlannedWorkRecoveryService plannedWorkRecoveryService,
-                                        com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService) {
+                                        com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
+                                        com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                                        com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
@@ -67,6 +71,8 @@ public class GeminiObserverActionService {
         this.operationalPolicyService = operationalPolicyService;
         this.plannedWorkRecoveryService = plannedWorkRecoveryService;
         this.branchGarbageCollectorService = branchGarbageCollectorService;
+        this.featureThreadRepository = featureThreadRepository;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
@@ -180,6 +186,22 @@ public class GeminiObserverActionService {
     }
 
     /**
+     * Pull the REGULAR (code-defect) self_falsification cycle forward instead of waiting for its own daily
+     * cron - the ONLY mechanism authorized to create replacement work for a task the iteration-admission
+     * poka-yoke retired without one (see ClientDeliverableReadinessService.Readiness.selfFalsificationReadyRatio's
+     * own javadoc for the full deadlock this closes). Before this (2026-08-06), only the philosophical track
+     * had a Gemini-callable tool for this general shape of problem - a project stuck behind THIS gate had no
+     * autonomous recovery path at all, only a human noticing and waiting for 2am. Runs through the exact
+     * same gate the cron uses (readiness) - a nudge to check now, not a bypass.
+     */
+    public String triggerCodeDefectFalsificationRun(ProjectEntity project, String targetId, String reason) {
+        return execute("triggerCodeDefectFalsificationRun", OperationalAction.RUN_PROJECT_AUDIT_PIPELINE, project, targetId, reason, () -> {
+            falsificationCycleService.executeCycleForProject(project);
+            return null;
+        });
+    }
+
+    /**
      * Close+requeue a PR whose owning session ended up terminal (cancelled/closed_terminal_task/failed)
      * while the PR itself is still open on GitHub - see BranchGarbageCollectorService.
      * findOrphanedPrCandidates (2026-08-03, confirmed live gap: task 074efcb3/PR#38 on test-forty-first, a
@@ -204,6 +226,110 @@ public class GeminiObserverActionService {
                     "Gemini observer: resolving orphaned PR - " + reason);
             return retired ? null : "retireAbandonedBranchAndPR could not complete";
         });
+    }
+
+    /**
+     * Re-opens a feature thread's closeout PR after it was closed by something other than the real, bounded
+     * 3-attempt conflict-resolution escalation (2026-08-08, engineering invariant #14, confirmed live
+     * incident: feature 1ad15184 on test-forty-third - BranchGarbageCollectorService's Case A used to close
+     * ANY open PR titled "Closeout", including a genuinely live one, under two minutes after it opened).
+     * targetId is the FEATURE id, not the PR - AutoMergeService.progressCloseout already knows how to open a
+     * fresh closeout PR whenever thread.closeoutPrUrl is null, so the real fix here is simply clearing the
+     * stale pointer and letting that existing, already-correct cycle pick the thread back up - never a new,
+     * separate PR-opening code path. Deliberately refuses (not "retries anyway") the two cases where a real
+     * retry would be unsafe or pointless: the thread was formally ABANDONED (its branch was actually
+     * deleted by abandonFeatureThread - the code is gone, no retry can recover it, see the recorded
+     * closeout_abandoned wishlist item for the real recommendation), or the feature is already merged.
+     */
+    public String retryAbandonedCloseout(ProjectEntity project, String targetId, String reason) {
+        return execute("retryAbandonedCloseout", OperationalAction.RETRY_FEATURE_CLOSEOUT, project, targetId, reason, () -> {
+            UUID featureId = parseUuid(targetId);
+            if (featureId == null) return "invalid id";
+            var thread = featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId).orElse(null);
+            if (thread == null) {
+                return "no feature thread record found for this feature id";
+            }
+            if (thread.getMergedToMainAt() != null) {
+                return "feature is already merged to main - nothing to retry";
+            }
+            if (thread.getAbandonedAt() != null) {
+                return "feature thread was formally abandoned after " + thread.getCloseoutConflictAttempts()
+                        + " failed conflict-resolution attempt(s) and its branch was deleted - the code is gone, "
+                        + "this cannot be safely retried automatically; see the closeout_abandoned wishlist item "
+                        + "for this feature for the real recommendation (re-implement from current main, or a "
+                        + "human decision on the underlying design clash)";
+            }
+            if (!gitHubPullRequestService.branchExists(project, thread.getBranchName())) {
+                return "feature thread branch '" + thread.getBranchName() + "' no longer exists on GitHub - "
+                        + "cannot retry a closeout with no branch to close out";
+            }
+            thread.setCloseoutPrUrl(null);
+            featureThreadRepository.save(thread);
+            return null;
+        });
+    }
+
+    /**
+     * Blocks one confirmed-duplicate QUEUED task so it stops counting toward the 3+ same-titled-non-terminal
+     * threshold that trips BLOCKED_BY_DUPLICATE_CONTENT (see FlowSpineService.duplicateContent) - the ONLY
+     * way that hard-stop can clear, since it denies DISPATCH_QUEUED_TASKS itself, so nothing in it can
+     * otherwise reach a terminal status on its own (2026-08-07, confirmed live gap: test-forty-third sat
+     * halted for 3+ hours - the observer could already see and report the duplicate cluster, but had no
+     * tool that could act on it). targetId is the task to collapse, NOT the one being kept - re-verifies
+     * against the live task list that it is genuinely still part of a >=3 same-key non-terminal cluster
+     * (the exact FlowSpineService.duplicateKey convention: payload.slice_title, falling back to
+     * description) rather than trusting the snapshot she was shown, which may already be stale, and refuses
+     * to collapse the LAST remaining member of a cluster (that would just be deleting real, unique work).
+     */
+    public String collapseDuplicateTask(ProjectEntity project, String targetId, String reason) {
+        return execute("collapseDuplicateTask", OperationalAction.COLLAPSE_DUPLICATE_TASK, project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            TaskEntity target = taskRepository.findById(id).orElse(null);
+            if (target == null || target.getProject() == null || !project.getId().equals(target.getProject().getId())) {
+                return "not found in this project";
+            }
+            if (target.getStatus() != TaskStatus.queued) {
+                return "not queued (status=" + target.getStatus() + "), nothing to collapse";
+            }
+            // 2026-08-07 (same-morning follow-on incident): a recovery task (OpsAuditorService.
+            // createTargetedRecoveryTask) deliberately deep-copies a dead task's payload verbatim, including
+            // slice_title, as the only way ClientDeliverableReadinessService.isDependencySatisfied can match
+            // it to the dependent it's meant to unblock - collapsing it would just re-orphan that dependent.
+            if (target.getPayload() != null && target.getPayload().has("recoversFailedTaskId")) {
+                return "this is a deliberate recovery task for a dead dependency, not generation noise - refusing to collapse it";
+            }
+            String targetKey = duplicateKey(target);
+            if (targetKey == null || targetKey.isBlank()) {
+                return "no comparable content key on this task";
+            }
+            long siblingCount = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                    .limit(30)
+                    .filter(t -> t.getStatus() != TaskStatus.done && t.getStatus() != TaskStatus.failed
+                            && t.getStatus() != TaskStatus.blocked && t.getStatus() != TaskStatus.spike_completed)
+                    .filter(t -> t.getPayload() == null || !t.getPayload().has("recoversFailedTaskId"))
+                    .filter(t -> targetKey.equals(duplicateKey(t)))
+                    .count();
+            if (siblingCount < 3) {
+                return "not part of a genuine 3+ duplicate cluster (found " + siblingCount
+                        + " matching non-terminal task(s) in the last 30) - refusing to collapse real work";
+            }
+            target.setStatus(TaskStatus.blocked);
+            taskRepository.save(target);
+            return null;
+        });
+    }
+
+    /** Same key convention as FlowSpineService.duplicateKey - kept in sync deliberately, not shared, since
+     * that method is private to the Flow Core state machine and this is a one-way read for verification. */
+    private static String duplicateKey(TaskEntity task) {
+        if (task.getPayload() != null) {
+            String sliceTitle = task.getPayload().path("slice_title").asText("");
+            if (!sliceTitle.isBlank()) {
+                return sliceTitle;
+            }
+        }
+        return task.getDescription();
     }
 
     private void requireTaskWithLiveSession(ProjectEntity project, String targetId) {

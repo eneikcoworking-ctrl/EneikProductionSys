@@ -119,7 +119,7 @@ public class ProcessControlService {
         this.self = self;
     }
 
-    private record EpicPoint(UUID featureId, Instant completedAt) {}
+    private record EpicPoint(UUID featureId, Instant completedAt, String sixSigmaMetricLabel) {}
 
     /**
      * Periodic entry point (2026-08-01) - without this, ProcessControlService's u-chart math has no live
@@ -160,11 +160,30 @@ public class ProcessControlService {
         return all;
     }
 
+    // Engineering invariant #13 (docs/ENGINEERING_INVARIANTS_CHARTER.md, Frege substitutivity salva
+    // veritate): this used to query dismissedAt-filtered epics directly, with no knowledge at all of
+    // ClientDeliverableReadinessService's duplicate-epic tie-break - a duplicate pair (one "winner", one
+    // "loser", same real epic) read as TWO separate u-chart subgroups here, while /epics and productReadiness
+    // saw only one. Reading FeatureEntity.canonicalFeatureId directly (set once, rigidly, by
+    // ClientDeliverableReadinessService.unionDuplicateFeature) instead of calling into that service avoids
+    // adding a new bean dependency here - the pointer itself, once persisted, is the single source of truth
+    // every consumer can read independently and still agree (that agreement IS the invariant).
     private List<EpicPoint> completedEpicsInOrder(UUID projectId) {
         List<FeatureEntity> epics = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId);
+        Map<UUID, List<UUID>> memberIdsByCanonical = new java.util.HashMap<>();
+        for (FeatureEntity epic : epics) {
+            UUID canonical = epic.getCanonicalFeatureId() != null ? epic.getCanonicalFeatureId() : epic.getId();
+            memberIdsByCanonical.computeIfAbsent(canonical, k -> new ArrayList<>()).add(epic.getId());
+        }
         List<EpicPoint> points = new ArrayList<>();
         for (FeatureEntity epic : epics) {
-            List<TaskEntity> tasks = taskRepository.findByFeatureId(epic.getId());
+            if (epic.getCanonicalFeatureId() != null) {
+                continue; // a duplicate's own real work is rolled into its canonical epic's point below
+            }
+            List<UUID> memberIds = memberIdsByCanonical.getOrDefault(epic.getId(), List.of(epic.getId()));
+            List<TaskEntity> tasks = memberIds.stream()
+                    .flatMap(id -> taskRepository.findByFeatureId(id).stream())
+                    .toList();
             if (tasks.isEmpty()) continue;
             boolean allTerminal = tasks.stream().allMatch(t -> TERMINAL_STATUSES.contains(t.getStatus()));
             if (!allTerminal) continue;
@@ -173,7 +192,7 @@ public class ProcessControlService {
                     .filter(java.util.Objects::nonNull)
                     .max(Comparator.naturalOrder())
                     .orElse(epic.getCreatedAt());
-            points.add(new EpicPoint(epic.getId(), completedAt));
+            points.add(new EpicPoint(epic.getId(), completedAt, epic.getSixSigmaMetric()));
         }
         points.sort(Comparator.comparing(EpicPoint::completedAt));
         return points;
@@ -252,6 +271,7 @@ public class ProcessControlService {
             snap.setPhase(isMonitoring ? "MONITORING" : "BASELINE");
             snap.setOutOfControl(outOfControl);
             snap.setWesternElectricSignal(weSignal);
+            snap.setSixSigmaMetricLabel(ep.sixSigmaMetricLabel());
             snap.setComputedAt(Instant.now());
             snapshots.add(snap);
         }
@@ -301,11 +321,16 @@ public class ProcessControlService {
                 .orElse(null);
         String title = String.format("u-chart out of control: %s (эпик %s)", stream, signal.getFeatureId());
         String description = String.format(
-                "Stream '%s' u=%.4f outside [%.4f, %.4f] (centerline %.4f)%s at эпик sequence #%d.",
+                "Stream '%s' u=%.4f outside [%.4f, %.4f] (centerline %.4f)%s at эпик sequence #%d.%s",
                 stream, signal.getU(), signal.getLowerControlLimit(), signal.getUpperControlLimit(),
                 signal.getCenterLine(),
                 signal.getWesternElectricSignal() != null ? " [Western Electric: " + signal.getWesternElectricSignal() + "]" : "",
-                signal.getSequenceIndex());
+                signal.getSequenceIndex(),
+                // 2026-08-07: the эпик owner's own operational definition of what quality means here
+                // (FeatureEntity.sixSigmaMetric, carried onto the snapshot in recomputeStream) - gives a
+                // human reviewer the actual business meaning of this excursion, not just a raw stream name.
+                signal.getSixSigmaMetricLabel() != null && !signal.getSixSigmaMetricLabel().isBlank()
+                        ? " Эпик's own quality target: \"" + signal.getSixSigmaMetricLabel() + "\"." : "");
 
         if (!patternIds.isEmpty()) {
             int dominant = patternIds.stream()

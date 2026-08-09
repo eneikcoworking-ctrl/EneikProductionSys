@@ -3,8 +3,12 @@ package com.eneik.production.services.accounts;
 import com.eneik.production.kaizen.model.DefectJournalEntity;
 import com.eneik.production.kaizen.repository.DefectJournalRepository;
 import com.eneik.production.models.persistence.AccountEntity;
+import com.eneik.production.models.persistence.AccountRoleSuccessStatsEntity;
 import com.eneik.production.models.persistence.AccountStatus;
 import com.eneik.production.repositories.AccountRepository;
+import com.eneik.production.repositories.AccountRoleSuccessStatsRepository;
+import com.eneik.production.services.lever.LeverAgreement;
+import com.eneik.production.services.lever.LeverPromotionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -50,6 +54,10 @@ public class AccountHealthService {
 
     private final AccountRepository accountRepository;
     private final DefectJournalRepository defectJournalRepository;
+    private final AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository;
+    private final LeverPromotionService leverPromotionService;
+
+    public static final String F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY = "F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY";
 
     @Value("${jules.blocked-account-recovery-cooldown-minutes:30}")
     private int baseCooldownMinutes;
@@ -63,9 +71,42 @@ public class AccountHealthService {
     @Value("${jules.account-recovery-z-factor:1.0}")
     private double zFactor;
 
-    public AccountHealthService(AccountRepository accountRepository, DefectJournalRepository defectJournalRepository) {
+    // 2026-08-05, fix for the live incident where one malformed request (a single oversized prompt) blocked
+    // an entire 15-slot-capacity account: PRECONDITION_BLOCKED used to set the whole account to api_blocked
+    // on the very first occurrence, with no way to distinguish "this one request was malformed" from "this
+    // account itself is broken" (revoked auth, corrupted config - something that would fail on every future
+    // request too). Below this many CONSECUTIVE precondition failures (reset to 0 by any real SUCCESS), the
+    // account keeps its other concurrent capacity; only a repeat failure - real evidence the problem isn't
+    // request-specific - escalates to a full account block.
+    // Slow-start floor for an account with no falsified belief yet (estimatedDailyCapacity == null) -
+    // same default the capacity query itself falls back to, so a never-tested account's first probe
+    // starts from the same conservative point the rest of the system already assumes.
+    @Value("${jules.max-daily-sessions-per-account:15}")
+    private int defaultDailyCapacity;
+
+    // Popperian probe step (BARCAN-TAG-06 philosopher #1): how far past the current, not-yet-refuted
+    // ceiling to conjecture on each real success that reaches it. Deliberately additive, not multiplicative
+    // - a bold jump risks a real Jules rejection on the very next dispatch for no informational gain, a
+    // small step keeps testing cheap.
+    @Value("${jules.daily-capacity-probe-step:5}")
+    private int dailyCapacityProbeStep;
+
+    // Falsification backoff factor: on a real DAILY_LIMIT rejection, the new belief is this fraction of the
+    // actual observed failure point (today's real dispatched count when Jules said no) - a genuine
+    // Bayesian-style update from real evidence, not a return to the old unverified constant.
+    @Value("${jules.daily-capacity-backoff-factor:0.7}")
+    private double dailyCapacityBackoffFactor;
+
+    @Value("${jules.precondition-block-escalation-threshold:2}")
+    private int preconditionBlockEscalationThreshold;
+
+    public AccountHealthService(AccountRepository accountRepository, DefectJournalRepository defectJournalRepository,
+                                 AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository,
+                                 LeverPromotionService leverPromotionService) {
         this.accountRepository = accountRepository;
         this.defectJournalRepository = defectJournalRepository;
+        this.accountRoleSuccessStatsRepository = accountRoleSuccessStatsRepository;
+        this.leverPromotionService = leverPromotionService;
     }
 
     /**
@@ -74,6 +115,65 @@ public class AccountHealthService {
      */
     @Transactional
     public void reportDispatchOutcome(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason) {
+        reportDispatchOutcome(accountId, projectId, outcome, rawReason, null);
+    }
+
+    /**
+     * 2026-08-08 (ML-update patch, Phase 4 / lever F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY): same as the 4-arg
+     * overload, plus a Beta-Bernoulli update of THIS (account, role) pair's own success-probability
+     * posterior - a separate question from invariant #15's estimatedDailyCapacity (how many dispatches fit)
+     * or from AccountStatus (is the account healthy at all). Constructive-empiricist discipline (van
+     * Fraassen, BARCAN-TAG-04 philosopher 4): models only the observed frequency of real outcomes, never
+     * posits a metaphysically "true" success rate. roleTag==null (unknown role context) skips the update
+     * entirely - Jeffrey conditionalization (BARCAN-TAG-04 philosopher 2) only applies to real evidence.
+     */
+    @Transactional
+    public void reportDispatchOutcome(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason, String roleTag) {
+        if (accountId == null) return;
+        if (roleTag != null && (outcome == DispatchOutcome.SUCCESS || outcome == DispatchOutcome.PRECONDITION_BLOCKED)) {
+            updateRoleSuccessStats(accountId, roleTag, outcome);
+        }
+        reportDispatchOutcomeCore(accountId, projectId, outcome, rawReason);
+    }
+
+    /**
+     * Records this pair's PRIOR (pre-update) predicted probability against the real outcome, then updates
+     * the posterior. Ordering matters: predicting AFTER updating on the very same evidence would be
+     * circular (Goodman's "grue" caution, BARCAN-TAG-00 philosopher 6, applied here as "don't let the
+     * newest point also validate itself") - the observation must reflect what the belief predicted BEFORE
+     * seeing this outcome, not after.
+     */
+    private void updateRoleSuccessStats(UUID accountId, String roleTag, DispatchOutcome outcome) {
+        AccountRoleSuccessStatsEntity stats = accountRoleSuccessStatsRepository
+                .findByAccountIdAndRoleTag(accountId, roleTag)
+                .orElseGet(() -> {
+                    AccountRoleSuccessStatsEntity fresh = new AccountRoleSuccessStatsEntity();
+                    fresh.setAccountId(accountId);
+                    fresh.setRoleTag(roleTag);
+                    return fresh;
+                });
+
+        double priorProbability = stats.getAlpha() / (stats.getAlpha() + stats.getBeta());
+        boolean predictedSuccess = priorProbability >= 0.5;
+        boolean actualSuccess = outcome == DispatchOutcome.SUCCESS;
+        LeverAgreement agreement = predictedSuccess == actualSuccess ? LeverAgreement.TRUE : LeverAgreement.FALSE;
+        leverPromotionService.recordObservation(F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY,
+                accountId + ":" + roleTag,
+                "no_prediction",
+                predictedSuccess ? "predict_success" : "predict_failure",
+                agreement,
+                actualSuccess ? "success" : "failure");
+
+        if (actualSuccess) {
+            stats.setAlpha(stats.getAlpha() + 1);
+        } else {
+            stats.setBeta(stats.getBeta() + 1);
+        }
+        stats.setUpdatedAt(Instant.now());
+        accountRoleSuccessStatsRepository.save(stats);
+    }
+
+    private void reportDispatchOutcomeCore(UUID accountId, UUID projectId, DispatchOutcome outcome, String rawReason) {
         if (accountId == null) return;
         AccountEntity account = accountRepository.findById(accountId).orElse(null);
         if (account == null) return;
@@ -90,25 +190,54 @@ public class AccountHealthService {
                             "Account '" + account.getName() + "' recovered from api_blocked after " + durationMinutes + " minute(s)",
                             (double) durationMinutes));
                 }
-                account.setSessionsDispatchedToday(account.getSessionsDispatchedToday() + 1);
+                int newDailyCount = account.getSessionsDispatchedToday() + 1;
+                account.setSessionsDispatchedToday(newDailyCount);
                 account.setConsecutiveApiBlockCount(0);
+                // Engineering invariant #15: this real success just reached (or passed) the current,
+                // not-yet-refuted ceiling belief - a bold conjecture that survived a severe test (Popper),
+                // so the belief revises upward. A success well below the current ceiling tests nothing new
+                // and leaves the belief alone.
+                int currentCeiling = account.getEstimatedDailyCapacity() != null
+                        ? account.getEstimatedDailyCapacity() : defaultDailyCapacity;
+                if (newDailyCount >= currentCeiling) {
+                    account.setEstimatedDailyCapacity(currentCeiling + dailyCapacityProbeStep);
+                    log.info("[ACCOUNT-CAPACITY] Account '{}' probed past its believed daily ceiling ({}) with a real "
+                                    + "success at count={} - revised estimate upward to {}.",
+                            account.getName(), currentCeiling, newDailyCount, account.getEstimatedDailyCapacity());
+                }
                 accountRepository.save(account);
             }
             case DAILY_LIMIT -> {
                 account.setStatus(AccountStatus.daily_limited);
+                // Engineering invariant #15: a real Jules rejection is the only event that falsifies the
+                // daily-capacity belief - revise down from the ACTUAL observed failure point (today's real
+                // dispatched count), never back to the old unverified constant. Backoff factor leaves
+                // margin so the very next probe doesn't immediately re-trigger the same rejection.
+                int observedFailurePoint = account.getSessionsDispatchedToday();
+                int revisedCeiling = Math.max(1, (int) Math.round(observedFailurePoint * dailyCapacityBackoffFactor));
+                Integer priorEstimate = account.getEstimatedDailyCapacity();
+                account.setEstimatedDailyCapacity(revisedCeiling);
+                log.warn("[ACCOUNT-CAPACITY] Account '{}' real daily-limit rejection from Jules at count={} - "
+                                + "revised estimate from {} down to {}.",
+                        account.getName(), observedFailurePoint,
+                        priorEstimate != null ? priorEstimate : defaultDailyCapacity, revisedCeiling);
                 accountRepository.save(account);
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
                         DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, null));
             }
             case PRECONDITION_BLOCKED -> {
-                account.setStatus(AccountStatus.api_blocked);
-                account.setConsecutiveApiBlockCount(account.getConsecutiveApiBlockCount() + 1);
+                int newCount = account.getConsecutiveApiBlockCount() + 1;
+                account.setConsecutiveApiBlockCount(newCount);
+                boolean escalate = newCount >= preconditionBlockEscalationThreshold;
+                if (escalate) {
+                    account.setStatus(AccountStatus.api_blocked);
+                }
                 accountRepository.save(account);
                 defectJournalRepository.save(new DefectJournalEntity(
-                        projectId, null, null, "HIGH", HEALTH_CATEGORY, account.getName(),
+                        projectId, null, null, escalate ? "HIGH" : "MEDIUM", HEALTH_CATEGORY, account.getName(),
                         PRECONDITION_DEFECT_TYPE, rawReason == null ? "" : rawReason,
-                        (double) account.getConsecutiveApiBlockCount()));
+                        (double) newCount));
             }
         }
     }

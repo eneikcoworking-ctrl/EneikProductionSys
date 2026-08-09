@@ -122,6 +122,23 @@ public class ProjectController {
         }
     }
 
+    // Manual trigger for the regular (code-defect) self_falsification cycle (2026-08-06) - same reasoning
+    // as the philosophical one above, and specifically needed to verify the selfFalsificationReadyRatio
+    // deadlock fix live without waiting for the daily 2am cron. Unlike the philosophical endpoint, this
+    // has no force/bypass parameter - executeCycleForProject's own readiness gate always applies, so a
+    // successful dispatch here is real proof the gate is actually passing, not a bypassed one.
+    @PostMapping("/{projectId}/falsification/run")
+    public ResponseEntity<?> runFalsification(@PathVariable UUID projectId) {
+        try {
+            com.eneik.production.models.persistence.ProjectEntity project = projectFlowService.requireProject(projectId);
+            falsificationCycleService.executeCycleForProject(project);
+            return ResponseEntity.accepted().body(Map.of(
+                    "message", "Self-falsification cycle triggered; check task history/logs for the outcome (it may honestly skip if not ready, an audit is already active, or GitHub is unavailable)"));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+
 
     @PostMapping("/{projectId}/wishlist")
     public ResponseEntity<?> addWishlist(@PathVariable java.util.UUID projectId, @RequestBody com.eneik.production.dto.WishlistRequestDto request) {
@@ -217,6 +234,18 @@ public class ProjectController {
         try {
             return ResponseEntity.ok(projectFlowService.pauseProject(projectId));
         } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
+        }
+    }
+
+    // 2026-08-07 (operator directive): deletes a frozen project's first decomposition (tasks, wishlist
+    // slices, features) and re-submits the given brief as a fresh client wishlist on the SAME project -
+    // same repo/GitHub collaborators, no need to create a brand-new project just to redo decomposition.
+    @PostMapping("/{projectId}/reset-for-redecomposition")
+    public ResponseEntity<?> resetForRedecomposition(@PathVariable UUID projectId, @RequestBody Map<String, String> body) {
+        try {
+            return ResponseEntity.ok(projectFlowService.resetProjectForRedecomposition(projectId, body.get("wishlist")));
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage(), "code", 400));
         }
     }

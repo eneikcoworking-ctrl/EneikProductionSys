@@ -131,6 +131,27 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
 
+    // Live incident (2026-08-08, test-forty-third): 'blocked' was missing from every one of this file's
+    // "is this task's session still occupying capacity" exclusions, which only ever listed ('done', 'failed').
+    // ClaimService.closeTaskAsBlocked sets this status specifically when a task can never resume on its own
+    // (e.g. "Jules cannot see the repository source") - a genuine dead end, not a live retry candidate - yet
+    // its jules_sessions row is never touched, so it stayed 'queued'/'stuck' forever. Confirmed live: 6 tasks
+    // sitting in 'blocked' since 2026-07-20 through 2026-07-29, belonging to projects that are themselves
+    // long since frozen/accepted (test-thirtieth, test-thirty-second, test-thirty-third, test-thirty-sixth x2,
+    // test-thirty-ninth - none 'active'), were still counted against BARCAN-TAG-11/07's shared account
+    // capacity tonight, starving test-forty-third's real, active, freshly-decomposed work from ever getting
+    // a session slot even though nothing was actually running. Excluding 'blocked' here is the direct fix;
+    // it does not touch ClaimService.isTerminal() (which deliberately excludes 'blocked' for its own, separate
+    // claim-release semantics) - scoped narrowly to the capacity count that was actually observed starving
+    // real work.
+    //
+    // Engineering invariant #15 (2026-08-08): the daily-limit comparison below prefers
+    // a.estimated_daily_capacity (AccountHealthService.reportDispatchOutcome's Popperian/Bayesian belief,
+    // revised only by real Jules evidence) over the raw :maxDailySessions config constant, an unverified
+    // global guess applied identically to every account regardless of that account's real quota. Deliberately
+    // does NOT extend to max_concurrent_sessions below - DispatchOutcome has no distinct "rejected because
+    // too many concurrent sessions" signal, so there is no real evidence channel to falsify a belief about it
+    // (a one-directional "probe up, never verified down" would violate the same invariant it's meant to satisfy).
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.enabled = true
@@ -140,14 +161,14 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
               AND (:tag IS NULL OR a.capabilities = '*' OR ',' || a.capabilities || ',' LIKE '%,' || :tag || ',%')
               AND (:reservedName IS NULL OR a.name <> :reservedName)
               AND (:excludedNamesCsv IS NULL OR ',' || :excludedNamesCsv || ',' NOT LIKE '%,' || a.name || ',%')
-              AND COALESCE(a.sessions_dispatched_today, 0) < :maxDailySessions
+              AND COALESCE(a.sessions_dispatched_today, 0) < COALESCE(a.estimated_daily_capacity, :maxDailySessions)
               AND (
                   SELECT COUNT(*)
                   FROM jules_sessions s
                   JOIN tasks t ON t.id = s.task_id
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
-                    AND t.status NOT IN ('done', 'failed')
+                    AND t.status NOT IN ('done', 'failed', 'blocked')
               ) < COALESCE(a.max_concurrent_sessions, :maxSessions, 3)
             ORDER BY (
                   SELECT COUNT(*)
@@ -155,7 +176,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   JOIN tasks t ON t.id = s.task_id
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
-                    AND t.status NOT IN ('done', 'failed')
+                    AND t.status NOT IN ('done', 'failed', 'blocked')
               ) ASC, a.last_heartbeat DESC
             LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
@@ -181,7 +202,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   JOIN tasks t ON t.id = s.task_id
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
-                    AND t.status NOT IN ('done', 'failed')
+                    AND t.status NOT IN ('done', 'failed', 'blocked')
               ) < COALESCE(a.max_concurrent_sessions, :maxSessions)
             ORDER BY a.last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
@@ -199,7 +220,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   JOIN tasks t ON t.id = s.task_id
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
-                    AND t.status NOT IN ('done', 'failed')
+                    AND t.status NOT IN ('done', 'failed', 'blocked')
               ) < :maxSessions
             """, nativeQuery = true)
     boolean existsJulesAccountWithCapacity(@Param("tag") String tag,

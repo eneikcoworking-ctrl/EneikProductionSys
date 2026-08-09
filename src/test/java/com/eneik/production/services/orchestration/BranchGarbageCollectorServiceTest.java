@@ -42,6 +42,7 @@ class BranchGarbageCollectorServiceTest {
     private JulesSessionRepository julesSessionRepository;
     private com.eneik.production.services.ProjectFlowService projectFlowService;
     private com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService;
+    private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private BranchGarbageCollectorService service;
 
     private void setUp() {
@@ -51,10 +52,12 @@ class BranchGarbageCollectorServiceTest {
         julesSessionRepository = mock(JulesSessionRepository.class);
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         sessionLifecycleService = mock(com.eneik.production.services.jules.SessionLifecycleService.class);
+        featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
         service = new BranchGarbageCollectorService(gitHubPullRequestService, taskRepository,
                 taskConflictRepository, julesSessionRepository,
                 sessionLifecycleService,
-                projectFlowService);
+                projectFlowService,
+                featureThreadRepository);
     }
 
     private ProjectEntity project() {
@@ -176,10 +179,73 @@ class BranchGarbageCollectorServiceTest {
         verify(gitHubPullRequestService).deleteBranch(project, "some-random-branch-name");
     }
 
+    /**
+     * Direct regression test for the 2026-08-08 incident (feature 1ad15184, test-forty-third, PR#53): the
+     * old version of this branch closed ANY open PR whose title merely started with "Closeout", on every
+     * ~1-2 minute sweep, with no check that the feature was actually already merged - a real closeout PR
+     * got destroyed under two minutes after opening, before it ever had a chance to merge. This test proves
+     * a closeout PR whose feature thread confirms it is STILL the live, unmerged closeout attempt must be
+     * left alone.
+     */
     @Test
-    void closeoutTitledPrsAreStillClosedImmediately() {
-        // Unchanged behavior sanity check - this path is system-generated (our own title, not Jules's
-        // branch naming) and is intentionally left as-is.
+    void leavesALiveCloseoutPrAloneWhenItsFeatureThreadConfirmsItIsStillTheRealAttempt() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        String prUrl = "https://github.com/org/repo/pull/11";
+        var closeoutPr = new GitHubPullRequestService.GitHubPullRequest(prUrl, 11,
+                "Closeout: integrate feature " + featureId + " into main", "closeout-branch", "eneikdru",
+                false, "main", false, Instant.now());
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(closeoutPr));
+
+        com.eneik.production.models.persistence.FeatureThreadEntity thread =
+                new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        thread.setCloseoutPrUrl(prUrl);
+        thread.setMergedToMainAt(null);
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+
+        int cleaned = service.cleanOrphanedAndStagnatedPullRequests(project);
+
+        assertEquals(0, cleaned);
+        verify(gitHubPullRequestService, never()).closeSinglePullRequest(any(), any(), anyString());
+        verifyNoInteractions(julesSessionRepository);
+    }
+
+    @Test
+    void closesACloseoutPrOnlyWhenItsFeatureThreadConfirmsItIsGenuinelySuperseded() {
+        setUp();
+        ProjectEntity project = project();
+        UUID featureId = UUID.randomUUID();
+        var staleClosePr = new GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/11", 11,
+                "Closeout: integrate feature " + featureId + " into main", "closeout-branch", "eneikdru",
+                false, "main", false, Instant.now());
+        when(gitHubPullRequestService.fetchOpenPullRequests(project)).thenReturn(List.of(staleClosePr));
+
+        com.eneik.production.models.persistence.FeatureThreadEntity thread =
+                new com.eneik.production.models.persistence.FeatureThreadEntity();
+        thread.setProjectId(project.getId());
+        thread.setFeatureId(featureId);
+        // Thread's own record says already merged elsewhere - this specific still-open PR is stale.
+        thread.setMergedToMainAt(Instant.now().minusSeconds(60));
+        when(featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), featureId))
+                .thenReturn(Optional.of(thread));
+
+        int cleaned = service.cleanOrphanedAndStagnatedPullRequests(project);
+
+        assertEquals(1, cleaned);
+        verify(gitHubPullRequestService).closeSinglePullRequest(project, staleClosePr,
+                "Branch GC: Orphaned closeout PR superseded by main");
+        verifyNoInteractions(julesSessionRepository);
+    }
+
+    @Test
+    void leavesACloseoutTitledPrAloneWhenNoFeatureThreadRecordCanConfirmSupersession() {
+        // Unparseable title or no matching thread row - cannot positively confirm supersession, so this
+        // must NOT default to closing (that default was the exact 2026-08-08 bug this whole fix closes).
         setUp();
         ProjectEntity project = project();
         var closeoutPr = pr(11, "Closeout: feature thread finished", "closeout-branch", Instant.now());
@@ -187,9 +253,8 @@ class BranchGarbageCollectorServiceTest {
 
         int cleaned = service.cleanOrphanedAndStagnatedPullRequests(project);
 
-        assertEquals(1, cleaned);
-        verify(gitHubPullRequestService).closeSinglePullRequest(project, closeoutPr,
-                "Branch GC: Orphaned closeout PR superseded by main");
+        assertEquals(0, cleaned);
+        verify(gitHubPullRequestService, never()).closeSinglePullRequest(any(), any(), anyString());
         verifyNoInteractions(julesSessionRepository);
     }
 

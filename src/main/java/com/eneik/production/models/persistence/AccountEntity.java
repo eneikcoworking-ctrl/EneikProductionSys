@@ -64,6 +64,18 @@ public class AccountEntity {
     @Column(name = "consecutive_api_block_count", nullable = false)
     private int consecutiveApiBlockCount = 0;
 
+    // Engineering invariant #15 (2026-08-08, live incident: jules.max-daily-sessions-per-account's
+    // hardcoded default of 15 throttled every account identically, well below at least one account's real
+    // Jules quota, while dispatch starved for hours). NULL = never falsified yet, capacity queries fall
+    // back to the global config default. AccountHealthService.reportDispatchOutcome is the sole writer:
+    // grows this (Popperian bold conjecture, BARCAN-TAG-06 philosopher #1) on a real SUCCESS that reaches
+    // the current ceiling, shrinks it ONLY on a real DAILY_LIMIT rejection from Jules (the one event that
+    // counts as falsification) - never adjusted from our own unverified belief, matching the Bayesian
+    // revision-by-evidence discipline already used by EvidenceCoherenceService's Bovens-Hartmann pillar
+    // (BARCAN-TAG-04 philosopher #8).
+    @Column(name = "estimated_daily_capacity")
+    private Integer estimatedDailyCapacity;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public ProjectEntity getProject() { return project; }
@@ -98,4 +110,6 @@ public class AccountEntity {
     public void setMaxConcurrentSessions(Integer maxConcurrentSessions) { this.maxConcurrentSessions = maxConcurrentSessions; }
     public int getConsecutiveApiBlockCount() { return consecutiveApiBlockCount; }
     public void setConsecutiveApiBlockCount(int consecutiveApiBlockCount) { this.consecutiveApiBlockCount = consecutiveApiBlockCount; }
+    public Integer getEstimatedDailyCapacity() { return estimatedDailyCapacity; }
+    public void setEstimatedDailyCapacity(Integer estimatedDailyCapacity) { this.estimatedDailyCapacity = estimatedDailyCapacity; }
 }

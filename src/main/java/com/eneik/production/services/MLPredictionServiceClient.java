@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -208,6 +209,127 @@ public class MLPredictionServiceClient {
             LOGGER.severe("ML service chat call failed: " + e.getMessage());
             aiHealthTracker.recordFailure("chat", e.getMessage());
             return "The assistant is temporarily unavailable. ML service connection error: " + e.getMessage();
+        }
+    }
+
+    // ---------------------------------------------------------------------------------------------------
+    // Phase 5 (2026-08-05): a real multi-round tool-use loop, replacing the single-shot text-in/text-out
+    // contract above for callers that need it (first caller: GeminiProjectObserverService). Java owns the
+    // loop deliberately (confirmed via investigation before building this): PredictionService.py's
+    // ask_gemini already owns useful, proven infrastructure (model-tier candidate fallback, transient-error
+    // retry, mock-response short-circuiting with no API key) that a second Python-side Gemini client would
+    // have forked; the Python endpoint here stays a thin one-round-per-call passthrough, this class owns
+    // round-to-round state and termination.
+    // ---------------------------------------------------------------------------------------------------
+
+    public record ToolDeclaration(String name, String description, Map<String, Object> parameters) {}
+
+    @FunctionalInterface
+    public interface ToolExecutor {
+        Map<String, Object> execute(String toolName, Map<String, Object> args);
+    }
+
+    /**
+     * Called after each tool round to decide whether the loop keeps going. This is deliberately NOT left to
+     * the model's own judgment alone - a pure "does the model feel it learned something new" signal is
+     * exactly the self-referential "isolation" failure mode coherentism is criticized for (an LLM can always
+     * generate a plausible-sounding "yes, one more look" even when nothing real changed - this system has
+     * lived incidents of exactly that: duplicate decomposition, the self-perpetuating falsification-refusal
+     * loop). The caller supplies a real, external signal instead (e.g. did this round's tool result contain
+     * any evidence id not already seen this cycle; has the objective coherence_runs.coherence_score
+     * stabilized).
+     */
+    @FunctionalInterface
+    public interface ToolLoopContinuation {
+        boolean shouldContinue(int roundNumber, String toolName, Map<String, Object> toolResult);
+    }
+
+    public record ToolLoopResult(String finalText, int roundsUsed, boolean hitRoundCap) {}
+
+    /**
+     * @param initialPrompt   the first-turn user message.
+     * @param systemInstruction static instruction (not cached here - a growing multi-turn conversation isn't
+     *                        the "static, repeated" shape context caching was built for).
+     * @param tools           the read-only functions the model may call this conversation.
+     * @param executor        dispatches an actual tool call to real backend data.
+     * @param continuation    the caller's own external termination signal (see doc above).
+     * @param maxRounds       hard backstop against a runaway loop - a safety cap, not a claim about how many
+     *                        rounds of "why" are correct.
+     */
+    public ToolLoopResult chatWithTools(String initialPrompt, String systemInstruction,
+                                         List<ToolDeclaration> tools, ToolExecutor executor,
+                                         ToolLoopContinuation continuation, int maxRounds) {
+        if (!geminiEnabled()) {
+            aiHealthTracker.recordFailure("chatWithTools", "gemini disabled by setting");
+            return new ToolLoopResult("The assistant is temporarily unavailable. Gemini disabled by incident-control setting.", 0, false);
+        }
+
+        List<Map<String, Object>> contents = new ArrayList<>();
+        contents.add(Map.of("role", "user", "parts", List.of(Map.of("text", initialPrompt))));
+
+        int round = 0;
+        while (round < maxRounds) {
+            round++;
+            Map<String, Object> response = callChatEndpoint(systemInstruction, tools, contents);
+            if (response == null) {
+                return new ToolLoopResult("The assistant is temporarily unavailable. ML service connection error.", round, false);
+            }
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> updatedContents = (List<Map<String, Object>>) response.get("contents");
+            contents = new ArrayList<>(updatedContents);
+
+            @SuppressWarnings("unchecked")
+            Map<String, Object> functionCall = (Map<String, Object>) response.get("functionCall");
+            if (functionCall == null) {
+                aiHealthTracker.recordSuccess("chatWithTools");
+                return new ToolLoopResult((String) response.getOrDefault("text", ""), round, false);
+            }
+
+            String toolName = (String) functionCall.get("name");
+            @SuppressWarnings("unchecked")
+            Map<String, Object> args = (Map<String, Object>) functionCall.getOrDefault("args", Map.of());
+            Map<String, Object> toolResult = executor.execute(toolName, args);
+            contents.add(Map.of("role", "user", "parts", List.of(
+                    Map.of("functionResponse", Map.of("name", toolName, "response", toolResult)))));
+
+            boolean keepGoing = continuation == null || continuation.shouldContinue(round, toolName, toolResult);
+            if (!keepGoing) {
+                // One final, tools-free round so the model can synthesize a real closing answer from
+                // everything gathered, instead of the loop just stopping mid-tool-call with no conclusion.
+                round++;
+                Map<String, Object> finalResponse = callChatEndpoint(systemInstruction, List.of(), contents);
+                aiHealthTracker.recordSuccess("chatWithTools");
+                String finalText = finalResponse == null ? "" : (String) finalResponse.getOrDefault("text", "");
+                return new ToolLoopResult(finalText, round, false);
+            }
+        }
+        aiHealthTracker.recordFailure("chatWithTools", "hit max rounds (" + maxRounds + ") without a final answer");
+        return new ToolLoopResult("", round, true);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> callChatEndpoint(String systemInstruction, List<ToolDeclaration> tools,
+                                                   List<Map<String, Object>> contents) {
+        String endpoint = mlServiceUrl + "/api/v1/assistant/chat";
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+
+            Map<String, Object> request = new HashMap<>();
+            request.put("systemInstruction", systemInstruction);
+            request.put("apiKey", getGeminiApiKey());
+            request.put("contents", contents);
+            List<Map<String, Object>> toolDtos = new ArrayList<>();
+            for (ToolDeclaration tool : tools) {
+                toolDtos.add(Map.of("name", tool.name(), "description", tool.description(), "parameters", tool.parameters()));
+            }
+            request.put("tools", toolDtos);
+
+            return restTemplate.postForObject(endpoint, new HttpEntity<>(request, headers), Map.class);
+        } catch (Exception e) {
+            LOGGER.severe("ML service tool-chat call failed: " + e.getMessage());
+            aiHealthTracker.recordFailure("chatWithTools", e.getMessage());
+            return null;
         }
     }
 

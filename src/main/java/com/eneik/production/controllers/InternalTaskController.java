@@ -101,6 +101,21 @@ public class InternalTaskController {
             String rawFeatureId = (String) updates.get("featureId");
             task.setFeatureId(rawFeatureId == null || rawFeatureId.isBlank() ? null : UUID.fromString(rawFeatureId));
         }
+        // 2026-08-08 (manual correction, same class as featureId above): OpsAuditorService.createTargetedRecoveryTask
+        // deliberately creates a recovery task with no sourceWishlistId (it is not itself a compiler-planned
+        // slice) - correct for dispatch (isDependencySatisfied matches by role/featureId/semantic key, not
+        // wishlist linkage), but it means a SUCCESSFUL recovery's real merge evidence can never be seen by
+        // ClientDeliverableReadinessService's per-planned-item fulfillment check, which only ever looks at
+        // tasks reachable via the original wishlist item's own sourceWishlistId. Confirmed live
+        // (test-forty-third): task 48707ded (a successful recovery, real merged PR) has no sourceWishlistId,
+        // so wishlist item d3ca9563's slot could never show fulfilled even though its real work shipped.
+        // Wiring the successful recovery back to the original item it fulfilled is the honest fix - not
+        // dismissing the item (which would falsely claim the scope was abandoned when it was actually
+        // delivered, just under a different task record).
+        if (updates.containsKey("sourceWishlistId")) {
+            String rawWishlistId = (String) updates.get("sourceWishlistId");
+            task.setSourceWishlistId(rawWishlistId == null || rawWishlistId.isBlank() ? null : UUID.fromString(rawWishlistId));
+        }
 
         taskRepository.save(task);
         return ResponseEntity.ok().build();

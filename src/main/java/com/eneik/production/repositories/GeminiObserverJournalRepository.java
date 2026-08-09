@@ -4,12 +4,18 @@ import com.eneik.production.models.persistence.GeminiObserverJournalEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 @Repository
 public interface GeminiObserverJournalRepository extends JpaRepository<GeminiObserverJournalEntity, UUID> {
+    // 2026-08-08: audit query, not used by the observer's own cycle logic - lets a real incident window
+    // (e.g. "what did she see/do around 11:00 UTC") be checked directly instead of only ever reading her
+    // last 5 entries.
+    List<GeminiObserverJournalEntity> findByProjectIdAndCreatedAtBetweenOrderByCreatedAtAsc(
+            UUID projectId, Instant from, Instant to);
     // Bounded continuity window (2026-07-25 redesign) - Gemini's own last few notes, not the whole
     // journal history, so continuity stays cheap regardless of how long the project has been observed.
     // Mixes real entries and skip markers (2026-07-30) - correct for stagnation-ratio and anomaly-

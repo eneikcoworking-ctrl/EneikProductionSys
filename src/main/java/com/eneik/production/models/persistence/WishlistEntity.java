@@ -24,6 +24,13 @@ public class WishlistEntity {
     @Column(nullable = false)
     private String content;
 
+    // 2026-08-07 (RequirementGroundingService): same text as `content`, with real established mathematical/
+    // philosophical patterns (idempotency, atomicity, etc.) attached wherever a genuine match exists -
+    // never a replacement for the client's own wording, computed lazily and cached on first compilation.
+    // Null until grounding has actually run (or for non-client wishlist sources, which skip grounding).
+    @Column(name = "grounded_content")
+    private String groundedContent;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private WishlistStatus status = WishlistStatus.pending;
@@ -78,6 +85,14 @@ public class WishlistEntity {
     @Column(name = "origin_feature_id")
     private UUID originFeatureId;
 
+    // 2026-08-07 (Gricean quantity-optimal grounding, ACP-101): immutable lineage back to the original
+    // client-authored wishlist this row was compiler-sliced from - null for the root wishlist itself (and
+    // for non-sliced sources). Lets TechnicalLeadCompiler.buildTaskDescription retrieve only the excerpt
+    // of the root brief relevant to THIS slice's own JTBD, instead of either duplicating the whole root
+    // brief into every slice's own content or truncating it at an arbitrary character count.
+    @Column(name = "origin_wishlist_id")
+    private UUID originWishlistId;
+
     public UUID getId() {
         return id;
     }
@@ -116,6 +131,14 @@ public class WishlistEntity {
 
     public void setContent(String content) {
         this.content = content;
+    }
+
+    public String getGroundedContent() {
+        return groundedContent;
+    }
+
+    public void setGroundedContent(String groundedContent) {
+        this.groundedContent = groundedContent;
     }
 
     public WishlistStatus getStatus() {
@@ -212,6 +235,14 @@ public class WishlistEntity {
 
     public void setOriginFeatureId(UUID originFeatureId) {
         this.originFeatureId = originFeatureId;
+    }
+
+    public UUID getOriginWishlistId() {
+        return originWishlistId;
+    }
+
+    public void setOriginWishlistId(UUID originWishlistId) {
+        this.originWishlistId = originWishlistId;
     }
 
     public TargetContext getTargetContext() {

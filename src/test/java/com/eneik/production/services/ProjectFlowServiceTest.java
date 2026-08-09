@@ -185,7 +185,7 @@ class ProjectFlowServiceTest {
     }
 
     private ProjectFlowService service() {
-        return new ProjectFlowService(
+        ProjectFlowService service = new ProjectFlowService(
                 projectRepository,
                 mock(WishlistRepository.class),
                 mock(AccountRepository.class),
@@ -215,6 +215,16 @@ class ProjectFlowServiceTest {
                 mock(PersistentWorkerSessionService.class),
                 mock(SelfFalsificationEpicMatcher.class),
                 mock(OperationalPolicyService.class),
-                projectFileClaimRepository);
+                projectFileClaimRepository,
+                mock(RequirementGroundingService.class),
+                mock(GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
+                mock(com.eneik.production.repositories.LinearIssueMetadataRepository.class),
+                mock(com.eneik.production.repositories.FeatureRepository.class),
+                mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                null);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
+        return service;
     }
 }

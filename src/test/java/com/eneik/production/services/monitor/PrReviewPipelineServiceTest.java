@@ -56,6 +56,7 @@ public class PrReviewPipelineServiceTest {
         assertNotNull(result);
         assertEquals(sessionId, result.getJulesSessionId());
         assertEquals(prUrl, result.getPrUrl());
+        assertEquals(1, result.getPrNumber(), "prNumber must be captured from the real PR URL, same fixed GitHub format the URL itself already carries");
         assertEquals("low", result.getRiskLevel());
         assertEquals(false, result.getTouchesCriticalPath());
 
@@ -84,8 +85,32 @@ public class PrReviewPipelineServiceTest {
 
         assertNotNull(result);
         assertTrue(result.getTouchesCriticalPath());
+        assertEquals(2, result.getPrNumber());
         assertEquals("high", result.getRiskLevel());
 
         verify(prReviewRepository).save(any(PrReviewEntity.class));
+    }
+
+    @Test
+    public void testOnPrOpenedWithMockUrlLeavesPrNumberNullInsteadOfGuessing() {
+        UUID sessionId = UUID.randomUUID();
+        String mockPrUrl = "https://github.com/mock-org/mock-repo/pull/mock-999";
+
+        PrDataDto prData = new PrDataDto();
+        prData.setLinesChanged(5);
+        prData.setFilesChanged(1);
+        prData.setHasTestChanges(false);
+        prData.setCiStatus("passing");
+        prData.setChangedFiles(Collections.emptyList());
+        prData.setDiffSummary("mock");
+
+        when(riskLevelCalculator.calculate(eq(5), eq(1), eq(false), eq("passing"), eq(false)))
+                .thenReturn("low");
+        when(prReviewRepository.save(any(PrReviewEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        PrReviewEntity result = pipelineService.onPrOpened(mockPrUrl, sessionId, prData);
+
+        assertNotNull(result);
+        assertEquals(null, result.getPrNumber(), "a non-numeric trailing segment must leave prNumber unset, never a wrong guess");
     }
 }

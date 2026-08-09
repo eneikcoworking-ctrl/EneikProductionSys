@@ -92,6 +92,12 @@ public class ProcessControlServiceTest {
         return f;
     }
 
+    private FeatureEntity epic(UUID id, ProjectEntity project, String sixSigmaMetric) {
+        FeatureEntity f = epic(id, project);
+        f.setSixSigmaMetric(sixSigmaMetric);
+        return f;
+    }
+
     private void stubCompletedEpic(UUID featureId, ProjectEntity project, Instant completedAt) {
         TaskEntity task = new TaskEntity();
         task.setProject(project);
@@ -142,6 +148,47 @@ public class ProcessControlServiceTest {
 
         // Loop-closing: no rootCausePatternId on record for f3 -> systemic defect, not a known pattern
         verify(kaizenService, times(1)).recordSystemicDefectProposal(eq(projectId), any(), any(), any());
+    }
+
+    // --- sixSigmaMetric closes the loop onto a real measured stream (2026-08-07, Kaizen audit follow-on) --
+
+    @Test
+    void epicsOwnSixSigmaMetricIsCarriedOntoItsSnapshotsAndIntoTheOutOfControlProposal() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        UUID f1 = UUID.randomUUID();
+        UUID f2 = UUID.randomUUID();
+        UUID f3 = UUID.randomUUID();
+        Instant t0 = Instant.now().minus(3, ChronoUnit.DAYS);
+
+        List<FeatureEntity> epics = List.of(
+                epic(f1, project, "100% integration test coverage for external API adapters"),
+                epic(f2, project, "100% integration test coverage for external API adapters"),
+                epic(f3, project, "Zero unauthorized document access incidents"));
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId)).thenReturn(epics);
+
+        stubCompletedEpic(f1, project, t0);
+        stubCompletedEpic(f2, project, t0.plus(1, ChronoUnit.DAYS));
+        stubCompletedEpic(f3, project, t0.plus(2, ChronoUnit.DAYS));
+
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f1))).thenReturn(new DefectOpportunityCount(1, 10));
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f2))).thenReturn(new DefectOpportunityCount(1, 10));
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), eq(f3))).thenReturn(new DefectOpportunityCount(8, 10));
+
+        List<ProcessControlSnapshotEntity> saved = service.recomputeForProject(projectId).stream()
+                .filter(s -> ProcessControlService.STREAM_QUALITY_GATE.equals(s.getStream()))
+                .sorted((a, b) -> Integer.compare(a.getSequenceIndex(), b.getSequenceIndex()))
+                .toList();
+
+        assertThat(saved.get(0).getSixSigmaMetricLabel()).isEqualTo("100% integration test coverage for external API adapters");
+        assertThat(saved.get(2).getSixSigmaMetricLabel()).isEqualTo("Zero unauthorized document access incidents");
+
+        // The out-of-control proposal for f3's excursion must surface f3's OWN metric text, not f1/f2's -
+        // a human reviewer needs to know what quality target was actually missed.
+        org.mockito.ArgumentCaptor<String> descriptionCaptor = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(kaizenService, times(1)).recordSystemicDefectProposal(eq(projectId), any(), any(), descriptionCaptor.capture());
+        assertThat(descriptionCaptor.getValue()).contains("Zero unauthorized document access incidents");
     }
 
     @Test

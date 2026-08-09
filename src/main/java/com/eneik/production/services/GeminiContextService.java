@@ -1,6 +1,7 @@
 package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ContextChunkEntity;
+import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.repositories.ContextChunkRepository;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.slf4j.Logger;
@@ -17,6 +18,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
@@ -246,10 +248,29 @@ public class GeminiContextService {
      * can always safely treat the result as "nothing extra to add", not an error.
      */
     public List<RetrievedChunk> retrieveRelevantContext(String query, int topK) {
+        return retrieveFiltered(query, topK, null);
+    }
+
+    /** Scoped to chunks whose sourceRef starts with the given prefix (e.g. a role tag - role charter and
+     * philosopher-pattern files share that filename prefix, so this covers both in one call). */
+    public List<RetrievedChunk> retrieveRelevantContext(String query, int topK, String sourceRefPrefix) {
+        return retrieveFiltered(query, topK,
+                sourceRefPrefix == null ? null : c -> c.getSourceRef() != null && c.getSourceRef().startsWith(sourceRefPrefix));
+    }
+
+    /** Scoped to chunks whose sourceType is one of the given values (role-independent standing knowledge). */
+    public List<RetrievedChunk> retrieveRelevantContextBySourceTypes(String query, int topK, List<String> sourceTypes) {
+        return retrieveFiltered(query, topK, c -> sourceTypes.contains(c.getSourceType()));
+    }
+
+    private List<RetrievedChunk> retrieveFiltered(String query, int topK, Predicate<ContextChunkEntity> filter) {
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
             return List.of();
         }
         List<ContextChunkEntity> corpus = repository.findAll();
+        if (filter != null) {
+            corpus = corpus.stream().filter(filter).toList();
+        }
         if (corpus.isEmpty()) {
             return List.of();
         }
@@ -269,6 +290,159 @@ public class GeminiContextService {
                 .filter(c -> c.similarity() >= floor)
                 .limit(topK)
                 .toList();
+    }
+
+    // Common corpus/type constants shared by buildRoleAndPatternContext below and reindexStandingKnowledge
+    // above - kept as a single list here so a future third common-knowledge file only needs to be added in
+    // one place.
+    private static final List<String> ROLE_INDEPENDENT_PATTERN_SOURCE_TYPES =
+            List.of("philosopher_pattern_common", "parallel_development_conflict_prevention");
+    private static final int RAW_FALLBACK_MAX_CHARS = 8000;
+
+    /**
+     * Single, universal entry point for "give this role its charter + philosopher-pattern context" -
+     * 2026-08-07 fix for a pattern that had been independently, inconsistently reimplemented as raw,
+     * unbounded file reads in at least 4 places (FalsificationCycleService's three prompt builders and
+     * JulesDispatchService's per-task dispatch prompt), none of them using this already-indexed corpus.
+     * Confirmed live: the code-defect falsification audit alone produced a ~1.5-2MB prompt from 13 roles'
+     * full raw charters + full philosopher-pattern files, which Jules rejected with HTTP 400 on every retry.
+     *
+     * Retrieves the role's own charter+philosopher-pattern chunks (scoped by sourceRef prefix - both share
+     * the role-tag filename prefix) plus the role-independent common-patterns/parallel-dev-conflict chunks,
+     * ranked by cosine similarity to query. Falls back to a size-capped raw read of just the role's own
+     * charter file (never the unbounded original, never the philosopher corpus) when RAG retrieval is
+     * unavailable (flag off, empty index, embedding failure) - a caller never gets nothing just because
+     * indexing hasn't run yet for this role.
+     */
+    public String buildRoleAndPatternContext(RoleEntity role, String query, int topKPerSource) {
+        return buildRoleScopedContext(role, query, topKPerSource) + buildCommonPatternContext(query, topKPerSource);
+    }
+
+    /**
+     * Just the role's own charter + philosopher-pattern chunks - split out from buildRoleAndPatternContext
+     * so a caller auditing many roles in one cycle (FalsificationCycleService, 13 active roles) can call
+     * this once per role and buildCommonPatternContext exactly once for the whole cycle, instead of
+     * re-retrieving the same role-independent common corpus on every role.
+     */
+    public String buildRoleScopedContext(RoleEntity role, String query, int topK) {
+        if (role == null) {
+            return "";
+        }
+        List<RetrievedChunk> roleChunks = retrieveRelevantContext(query, topK, role.getTag());
+        if (roleChunks.isEmpty()) {
+            return rawRoleContextFallback(role);
+        }
+        StringBuilder block = new StringBuilder();
+        block.append("\n\n=== ROLE ").append(role.getTag())
+                .append(" CHARTER & PHILOSOPHER PATTERNS (retrieved by relevance to the current task) ===\n");
+        for (RetrievedChunk c : roleChunks) {
+            block.append("[").append(c.sourceRef()).append("]\n").append(c.content()).append("\n\n");
+        }
+        return block.toString();
+    }
+
+    /**
+     * Just this role's philosopher-pattern chunks, excluding its charter - for a caller (JulesDispatchService's
+     * per-task dispatch) that already sends the role's full raw charter verbatim through a different,
+     * dedicated loader (RoleCapabilityLoader.loadRawCharter - deliberately NOT retrieval-scoped, since a
+     * single role's own charter is small enough to send whole and losing any of it would be a real
+     * regression, per that call site's own comment) and only needs the philosopher-pattern/common-pattern
+     * side of this corpus, without duplicating charter content a second time via retrieval.
+     */
+    public String buildPhilosopherPatternContext(RoleEntity role, String query, int topK) {
+        if (role == null) {
+            return "";
+        }
+        List<RetrievedChunk> chunks = retrieveFiltered(query, topK,
+                c -> "philosopher_pattern".equals(c.getSourceType())
+                        && c.getSourceRef() != null && c.getSourceRef().startsWith(role.getTag()));
+        if (chunks.isEmpty()) {
+            return rawPhilosopherPatternFallback(role);
+        }
+        StringBuilder block = new StringBuilder();
+        block.append("\n\n=== ROLE ").append(role.getTag())
+                .append(" PHILOSOPHER PATTERNS (retrieved by relevance to the current task) ===\n");
+        for (RetrievedChunk c : chunks) {
+            block.append("[").append(c.sourceRef()).append("]\n").append(c.content()).append("\n\n");
+        }
+        return block.toString();
+    }
+
+    /** Role-independent common-patterns/parallel-dev-conflict chunks - call once per audit cycle, not per role. */
+    public String buildCommonPatternContext(String query, int topK) {
+        List<RetrievedChunk> commonChunks = retrieveRelevantContextBySourceTypes(query, topK,
+                ROLE_INDEPENDENT_PATTERN_SOURCE_TYPES);
+        if (commonChunks.isEmpty()) {
+            return rawCommonPatternFallback();
+        }
+        StringBuilder block = new StringBuilder();
+        block.append("\n\n=== COMMON ANALYTIC PROGRAMMING PATTERNS (retrieved by relevance) ===\n");
+        for (RetrievedChunk c : commonChunks) {
+            block.append("[").append(c.sourceRef()).append("]\n").append(c.content()).append("\n\n");
+        }
+        return block.toString();
+    }
+
+    private String rawRoleContextFallback(RoleEntity role) {
+        if (role.getRulesPath() == null || role.getRulesPath().isBlank()) {
+            return "";
+        }
+        try {
+            Path path = Path.of(role.getRulesPath());
+            if (!Files.isRegularFile(path)) {
+                return "";
+            }
+            String raw = Files.readString(path);
+            String capped = raw.length() <= RAW_FALLBACK_MAX_CHARS
+                    ? raw
+                    : raw.substring(0, RAW_FALLBACK_MAX_CHARS) + "\n[...truncated, RAG retrieval unavailable...]";
+            return "\n\n=== ROLE " + role.getTag() + " CHARTER (raw fallback - RAG retrieval unavailable) ===\n" + capped;
+        } catch (IOException e) {
+            log.warn("GeminiContextService: raw fallback charter read failed for role {}: {}", role.getTag(), e.getMessage());
+            return "";
+        }
+    }
+
+    private String rawPhilosopherPatternFallback(RoleEntity role) {
+        java.nio.file.Path dir = Path.of("docs/philosopher-patterns/philosophers");
+        if (!Files.isDirectory(dir)) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder();
+        int remaining = RAW_FALLBACK_MAX_CHARS;
+        try (var stream = Files.newDirectoryStream(dir, role.getTag() + "*.md")) {
+            for (java.nio.file.Path philFile : stream) {
+                if (remaining <= 0) {
+                    break;
+                }
+                String raw = Files.readString(philFile);
+                String capped = raw.length() <= remaining ? raw : raw.substring(0, remaining);
+                block.append("\n\n=== ROLE ").append(role.getTag()).append(" PHILOSOPHER PATTERN (raw fallback - RAG retrieval unavailable): ")
+                        .append(philFile.getFileName()).append(" ===\n").append(capped);
+                remaining -= capped.length();
+            }
+        } catch (IOException e) {
+            log.warn("GeminiContextService: raw fallback philosopher-pattern read failed for role {}: {}", role.getTag(), e.getMessage());
+            return "";
+        }
+        return block.toString();
+    }
+
+    private String rawCommonPatternFallback() {
+        try {
+            Path path = Path.of("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md");
+            if (!Files.isRegularFile(path)) {
+                return "";
+            }
+            String raw = Files.readString(path);
+            String capped = raw.length() <= RAW_FALLBACK_MAX_CHARS
+                    ? raw
+                    : raw.substring(0, RAW_FALLBACK_MAX_CHARS) + "\n[...truncated, RAG retrieval unavailable...]";
+            return "\n\n=== COMMON ANALYTIC PROGRAMMING PATTERNS (raw fallback - RAG retrieval unavailable) ===\n" + capped;
+        } catch (IOException e) {
+            log.warn("GeminiContextService: raw fallback common-patterns read failed: {}", e.getMessage());
+            return "";
+        }
     }
 
     /** Convenience wrapper: retrieves with the default top-k and formats a ready-to-inject prompt block. */
@@ -322,20 +496,12 @@ public class GeminiContextService {
         return Math.min(MAX_SIMILARITY_FLOOR, Math.max(MIN_SIMILARITY_FLOOR, bestThreshold));
     }
 
+    // 2026-08-08: delegates to EmbeddingSimilarityUtil (extracted, ML-update patch Phase 2) so
+    // FlowSpineService's duplicate-content detector can reuse the same computation without depending on
+    // this RAG-indexing service. Kept as a thin static wrapper, not removed, so existing callers/tests in
+    // this package don't need to change.
     static double cosineSimilarity(float[] a, float[] b) {
-        if (a == null || b == null || a.length == 0 || a.length != b.length) {
-            return 0.0;
-        }
-        double dot = 0, normA = 0, normB = 0;
-        for (int i = 0; i < a.length; i++) {
-            dot += a[i] * b[i];
-            normA += a[i] * a[i];
-            normB += b[i] * b[i];
-        }
-        if (normA == 0 || normB == 0) {
-            return 0.0;
-        }
-        return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+        return EmbeddingSimilarityUtil.cosineSimilarity(a, b);
     }
 
     static String serializeEmbedding(float[] vector) {

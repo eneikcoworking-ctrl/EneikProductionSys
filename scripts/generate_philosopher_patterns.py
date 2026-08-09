@@ -14,7 +14,7 @@ OUT = ROOT / "docs" / "philosopher-patterns"
 PEOPLE_DIR = OUT / "philosophers"
 
 EXPECTED_BARCAN_FILES = 13
-EXPECTED_PHILOSOPHERS = 78
+EXPECTED_PHILOSOPHERS = 82
 MIN_PERSONAL_PATTERNS = 20
 COMMON_THRESHOLD_PHILOSOPHERS = 5
 
@@ -164,12 +164,15 @@ PUBLICATION_ANCHORS = {
     "Дэвид Веллеман": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
     "Шон Галлахер": "How the Body Shapes the Mind - embodied and prereflective experience",
     "Сюзан Hurley": "Consciousness in Action - dynamic perception-action feedback",
+    "Джуда Перл": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
     "Фрэнк Рамсей": "Truth and Probability - degrees of belief and betting interpretation",
     "Ричард Джеффри": "The Logic of Decision - Jeffrey conditionalization and decision theory",
     "Айзек Леви": "The Fixation of Belief and Its Undoing / Enterprise of Knowledge - doxastic commitment",
     "Бас ван Фраассен": "The Scientific Image - constructive empiricism",
     "Иэн Хакинг": "Representing and Intervening - experiment, measurement and intervention",
     "Эллиотт Собер": "Reconstructing the Past / Evidence and Evolution - parsimony and model selection",
+    "Питер Гэрденфорс": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+    "Бовенс и Хартманн": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
     "Дерек Парфит": "Reasons and Persons - psychological continuity and identity",
     "Дж. Л. Макки": "The Cement of the Universe - INUS conditions and causation",
     "Теодор Сайдер": "Four-Dimensionalism / Writing the Book of the World - persistence and structure",
@@ -201,6 +204,7 @@ PUBLICATION_ANCHORS = {
     "Дональд Дэвидсон": "Truth and Meaning / radical interpretation - interpretation and coherence",
     "Уилфрид Селларс": "Empiricism and the Philosophy of Mind - critique of the Myth of the Given",
     "Хиллари Патнэм": "Reason, Truth and History / The Meaning of 'Meaning' - internal realism and semantic externalism",
+    "Пол Тагард": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
     "Георг Хенрик фон Вригт": "Deontic Logic (1951) - formal obligation, permission and prohibition",
     "Герберт Харт": "The Concept of Law - rules of recognition and legal positivism",
     "Джозеф Раз": "Practical Reason and Norms / The Authority of Law - authority and exclusionary reasons",
@@ -248,7 +252,15 @@ TAG_AXES = {
     "BARCAN-TAG-00_CODE-GUARDIAN": {"language", "review", "meaning", "integration", "evidence", "conflict"},
     "BARCAN-TAG-01_ACTUALIST-OBJECT": {"ontology", "identity", "boundary", "composition", "types", "domain"},
     "BARCAN-TAG-02_RIGID-DESIGNATOR": {"reference", "identity", "api", "naming", "compatibility", "context"},
-    "BARCAN-TAG-03_BELIEF-INTENSION": {"cognitive", "ux", "agency", "perception", "feedback", "context"},
+    # 2026-08-05: "causal" added (was cognitive/ux/agency/perception/feedback/context only) - the operator's
+    # explicit synthesis is that BDI's "Intention" is only genuinely deep, not just correlational, when it is
+    # grounded in a real traced causal chain (Pearl's do-calculus / ladder of causation). Without this axis,
+    # a Pearl entry added to this tag would still be scored almost entirely against UX/cognitive slots (the
+    # 3x tag-axis term dominates the model - see score_slot below), his own causal-inference distinctiveness
+    # showing up only faintly via the 2x anchor term. This is a role-level expansion (applies to every
+    # philosopher already in this tag, not just the new one) precisely because the operator's request was to
+    # deepen the ROLE's own reasoning capacity, not merely file one more name under an unchanged axis set.
+    "BARCAN-TAG-03_BELIEF-INTENSION": {"cognitive", "ux", "agency", "perception", "feedback", "context", "causal"},
     "BARCAN-TAG-04_MODAL-QUANTIFIER": {"uncertainty", "evidence", "model", "probability", "causal", "prediction"},
     "BARCAN-TAG-05_NECESSARY-IDENTITY": {"identity", "causal", "runtime", "history", "replay", "composition"},
     "BARCAN-TAG-06_DEONTIC-CONSISTENCY": {"logic", "truth", "testing", "counterexample", "verification", "status"},

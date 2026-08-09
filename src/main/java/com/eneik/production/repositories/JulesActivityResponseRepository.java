@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface JulesActivityResponseRepository extends JpaRepository<JulesActivityResponseEntity, UUID> {
     Optional<JulesActivityResponseEntity> findByJulesSessionIdAndActivityHash(UUID julesSessionId, String activityHash);
     List<JulesActivityResponseEntity> findByJulesSessionIdOrderByCreatedAtDesc(UUID julesSessionId);
+    List<JulesActivityResponseEntity> findByJulesSessionIdIn(List<UUID> julesSessionIds);
 }

@@ -1001,6 +1001,22 @@ public class GitHubPullRequestService {
         return new PullRequestChecks(true, true, "success", "All GitHub check-runs completed successfully");
     }
 
+    // Engineering invariant #14 (2026-08-08, docs/ENGINEERING_INVARIANTS_CHARTER.md, Kripke rigid
+    // designation): a task's real merge-evidence PR, once established, must not be silently redesignated
+    // by a structurally different event that happens to reuse the same branch/session token. AutoMergeService's
+    // own closeout mechanism (progressCloseout) deliberately opens its PR FROM the same continuation branch
+    // a task's real implementer session used - by construction that branch name still carries the original
+    // session's token, so matchesSessionToken alone cannot distinguish "this task's own implementation PR"
+    // from "the unrelated event of folding this feature's accumulated branch into main". Confirmed live
+    // incident, test-forty-third: a Closeout PR, empty because the real work had already merged directly,
+    // got matched by token and overwrote a task's correct hasCode=true evidence with hasCode=false. This is
+    // the single, canonical definition every branch-token match against a TASK's own evidence must exclude
+    // - not a per-call-site guess, so the exclusion can never again silently miss one of the several places
+    // this matching happens (BranchGarbageCollectorService's own inline check now delegates here too).
+    public static boolean isCloseoutPr(GitHubPullRequest pullRequest) {
+        return pullRequest != null && pullRequest.title() != null && pullRequest.title().startsWith("Closeout");
+    }
+
     public static boolean matchesSessionToken(GitHubPullRequest pullRequest, String externalSessionId) {
         if (pullRequest == null || pullRequest.headRef() == null || externalSessionId == null
                 || externalSessionId.isBlank() || "skipped".equals(externalSessionId)) {
@@ -1052,33 +1068,65 @@ public class GitHubPullRequestService {
         }
     }
 
+    // Pagination (2026-08-08, engineering invariant #14 follow-up): GitHub's default sort for this endpoint
+    // is created-desc, so a single page=1/per_page=100 call only ever sees the 100 MOST RECENTLY CREATED
+    // PRs. Confirmed live, test-forty-third: task 010af204's real merge evidence (PR#11, created 08:45 UTC)
+    // silently aged off page 1 once the project passed ~100 PRs, so reconcileMergedGitHubPullRequests's
+    // branch-token fallback could never find it - not the Closeout-PR corruption bug fixed alongside this,
+    // a separate, structural blind spot in "closed" state affecting every long-running project. Walks pages
+    // until GitHub returns a short page (< 100 = last page). If the budget guard denies a later page mid-walk,
+    // returns what was already fetched instead of discarding it - losing page 1's data over a budget cap on
+    // page 3 would be a worse regression than the flat truncation this replaces.
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
-        String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state=" + encode(state) + "&per_page=100";
-        HttpRequest request = baseRequest(path, token).GET().build();
-        HttpResponse<String> response = sendGitHub(request);
-        if (response.statusCode() != 200) {
-            log.warn("GitHub PR lookup failed for {}/{} state={}: status={} body={}", repoRef.owner(), repoRef.repo(), state, response.statusCode(), preview(response.body()));
-            throw new IllegalStateException("GitHub returned HTTP " + response.statusCode() + " for pull request list");
-        }
-
-        JsonNode prs = objectMapper.readTree(response.body());
-        if (!prs.isArray()) {
-            return java.util.List.of();
-        }
-
         java.util.List<GitHubPullRequest> result = new java.util.ArrayList<>();
-        for (JsonNode pr : prs) {
-            result.add(new GitHubPullRequest(
-                    pr.path("html_url").asText(""),
-                    pr.path("number").asInt(),
-                    pr.path("title").asText(""),
-                    pr.path("head").path("ref").asText(""),
-                    pr.path("user").path("login").asText(""),
-                    pr.hasNonNull("merged_at"),
-                    pr.path("base").path("ref").asText(""),
-                    "closed".equals(pr.path("state").asText("")),
-                    parsePrCreatedAt(pr)
-            ));
+        int page = 1;
+        int maxPages = 10;
+        while (page <= maxPages) {
+            String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state="
+                    + encode(state) + "&per_page=100&page=" + page;
+            HttpRequest request = baseRequest(path, token).GET().build();
+            HttpResponse<String> response;
+            try {
+                response = sendGitHub(request);
+            } catch (IllegalStateException budgetDenied) {
+                if (page == 1) {
+                    throw budgetDenied;
+                }
+                log.warn("GitHub PR pagination stopped early for {}/{} state={} page={}: {}",
+                        repoRef.owner(), repoRef.repo(), state, page, budgetDenied.getMessage());
+                break;
+            }
+            if (response.statusCode() != 200) {
+                log.warn("GitHub PR lookup failed for {}/{} state={} page={}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), state, page, response.statusCode(), preview(response.body()));
+                if (page == 1) {
+                    throw new IllegalStateException("GitHub returned HTTP " + response.statusCode() + " for pull request list");
+                }
+                break;
+            }
+
+            JsonNode prs = objectMapper.readTree(response.body());
+            if (!prs.isArray() || prs.isEmpty()) {
+                break;
+            }
+
+            for (JsonNode pr : prs) {
+                result.add(new GitHubPullRequest(
+                        pr.path("html_url").asText(""),
+                        pr.path("number").asInt(),
+                        pr.path("title").asText(""),
+                        pr.path("head").path("ref").asText(""),
+                        pr.path("user").path("login").asText(""),
+                        pr.hasNonNull("merged_at"),
+                        pr.path("base").path("ref").asText(""),
+                        "closed".equals(pr.path("state").asText("")),
+                        parsePrCreatedAt(pr)
+                ));
+            }
+            if (prs.size() < 100) {
+                break;
+            }
+            page++;
         }
         return result;
     }

@@ -12,4 +12,5 @@ import java.util.UUID;
 public interface FeatureThreadRepository extends JpaRepository<FeatureThreadEntity, UUID> {
     Optional<FeatureThreadEntity> findByProjectIdAndFeatureId(UUID projectId, UUID featureId);
     List<FeatureThreadEntity> findByProjectIdAndMergedToMainAtIsNullAndAbandonedAtIsNull(UUID projectId);
+    List<FeatureThreadEntity> findByProjectId(UUID projectId);
 }

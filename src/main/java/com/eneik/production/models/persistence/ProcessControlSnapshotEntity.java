@@ -60,6 +60,16 @@ public class ProcessControlSnapshotEntity {
     @Column(name = "computed_at", nullable = false)
     private Instant computedAt = Instant.now();
 
+    // 2026-08-07 (Kaizen audit follow-on): the epic's own sixSigmaMetric text (FeatureEntity.sixSigmaMetric,
+    // an operator/compiler-authored "operational definition" of what quality means for this epic) - purely
+    // descriptive, never read by any u-chart math here. Closes the loop the audit found broken: the text was
+    // computed and shown in prompts/dashboards but never attached to a real measured stream.
+    @Column(name = "six_sigma_metric_label", columnDefinition = "TEXT")
+    private String sixSigmaMetricLabel;
+
+    public String getSixSigmaMetricLabel() { return sixSigmaMetricLabel; }
+    public void setSixSigmaMetricLabel(String sixSigmaMetricLabel) { this.sixSigmaMetricLabel = sixSigmaMetricLabel; }
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 

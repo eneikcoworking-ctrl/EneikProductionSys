@@ -1,5 +1,5 @@
 {
-  "generated_on": "2026-07-29",
+  "generated_on": "2026-08-05",
   "source": "BARCAN-TAG-*.md",
   "assignment_model": {
     "minimum_personal_patterns": 20,
@@ -10,8 +10,8 @@
   },
   "counts": {
     "barcan_files": 13,
-    "philosophers": 78,
-    "personal_patterns": 1560,
+    "philosophers": 82,
+    "personal_patterns": 1640,
     "minimum_personal_patterns": 20,
     "common_patterns": 100,
     "conflict_prevention_rules": 12,
@@ -116,6 +116,7 @@
     ],
     "BARCAN-TAG-03_BELIEF-INTENSION": [
       "agency",
+      "causal",
       "cognitive",
       "context",
       "feedback",
@@ -795,6 +796,12 @@
       "name": "Canary Invariant Monitor",
       "technique": "Bind rollout progression to live invariant checks",
       "why_defect_preventing": "Prevents a canary from advancing after hidden correctness drift."
+    },
+    {
+      "id": "ACP-101",
+      "name": "Gricean Quantity-Optimal Grounding",
+      "technique": "Retrieve only the source-text units whose relevance to the current task's own JTBD clears the similarity floor, ranked by relevance-per-token (Grice's Maxim of Quantity, formalized by Sperber & Wilson's Relevance Theory as cognitive effect over processing effort), instead of either a fixed-length truncation or the full undifferentiated source",
+      "why_defect_preventing": "Prevents both under-informative grounding (terse synthesized summary with the source detail silently dropped) and over-informative grounding (the entire raw document dumped into every consumer regardless of relevance), either of which lets a downstream agent act on the wrong or missing detail."
     }
   ],
   "conflict_prevention_rules": [
@@ -5477,7 +5484,7 @@
       "principle": "Принцип расширенного разума",
       "role_application": "Интерфейс разгружает рабочую память. Элементы управления проектируются согласно **Закону Фиттса**: размер и дистанция цели определяют скорость и точность взаимодействия",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:01:endi-klark",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_01_endi-klark.md",
       "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
@@ -5580,7 +5587,19 @@
         },
         {
           "n": "9",
-          "id": "ENDI_KLARK_09_WORLD_VERSION_MAP",
+          "id": "ENDI_KLARK_09_CAUSAL_PROCESS_TRACE",
+          "name": "Энди Кларк: Cognition Extended Into Artifacts - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000762",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "ENDI_KLARK_10_WORLD_VERSION_MAP",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - World Version Map",
           "slot_key": "world-version-map",
           "axes": "compatibility, context, history, ontology",
@@ -5591,8 +5610,8 @@
           "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "10",
-          "id": "ENDI_KLARK_10_LEVEL_OF_ABSTRACTION_LOCK",
+          "n": "11",
+          "id": "ENDI_KLARK_11_LEVEL_OF_ABSTRACTION_LOCK",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Level Of Abstraction Lock",
           "slot_key": "level-of-abstraction-lock",
           "axes": "context, data, information, ontology",
@@ -5603,8 +5622,8 @@
           "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "ENDI_KLARK_11_RAG_GROUNDING_CAPSULE",
+          "n": "12",
+          "id": "ENDI_KLARK_12_RAG_GROUNDING_CAPSULE",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - RAG Grounding Capsule",
           "slot_key": "rag-grounding-capsule",
           "axes": "context, evidence, information, review",
@@ -5615,8 +5634,20 @@
           "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "ENDI_KLARK_12_SENSE_REFERENCE_SPLIT",
+          "n": "13",
+          "id": "ENDI_KLARK_13_INUS_FACTOR_CHECK",
+          "name": "Энди Кларк: Cognition Extended Into Artifacts - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000196",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "ENDI_KLARK_14_SENSE_REFERENCE_SPLIT",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -5627,8 +5658,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "ENDI_KLARK_13_CONVERSATION_MAXIM",
+          "n": "15",
+          "id": "ENDI_KLARK_15_CONVERSATION_MAXIM",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Conversation Maxim Check",
           "slot_key": "conversation-maxim",
           "axes": "evidence, language, review, ux",
@@ -5639,8 +5670,8 @@
           "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "ENDI_KLARK_14_LAMBDA_CORE_REDUCTION",
+          "n": "16",
+          "id": "ENDI_KLARK_16_LAMBDA_CORE_REDUCTION",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Lambda Core Reduction",
           "slot_key": "lambda-core-reduction",
           "axes": "computation, logic, types, verification",
@@ -5651,8 +5682,8 @@
           "agent_rule": "Reduce complex behavior to a small pure core before adding effects, adapters or orchestration. Proof obligation: Show the pure decision function and tests independent from IO. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "15",
-          "id": "ENDI_KLARK_15_PLANNING_CONSISTENCY",
+          "n": "17",
+          "id": "ENDI_KLARK_17_PLANNING_CONSISTENCY",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Planning Consistency",
           "slot_key": "planning-consistency",
           "axes": "commitment, coordination, parallel, planning",
@@ -5663,8 +5694,8 @@
           "agent_rule": "Ensure task plans, PRs, branches and agent claims form one consistent plan state. Proof obligation: Show dashboard, GitHub and runtime state agreeing on the next action. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "ENDI_KLARK_16_PERFORMATIVE_COMMIT",
+          "n": "18",
+          "id": "ENDI_KLARK_18_PERFORMATIVE_COMMIT",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Performative Commit",
           "slot_key": "performative-commit",
           "axes": "commitment, contract, coordination, language",
@@ -5675,8 +5706,8 @@
           "agent_rule": "When code declares a status, event or approval, require the matching operational consequence to exist. Proof obligation: Trace the declaration to the database transition, emitted event or review gate it performs. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "17",
-          "id": "ENDI_KLARK_17_PROHIBITION_AS_CODE",
+          "n": "19",
+          "id": "ENDI_KLARK_19_PROHIBITION_AS_CODE",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Prohibition As Code",
           "slot_key": "prohibition-as-code",
           "axes": "law, normative, permission, policy",
@@ -5687,8 +5718,8 @@
           "agent_rule": "Turn every forbidden action into an executable denial path with an explainable reason. Proof obligation: Show the policy rule, denial test and user-visible or agent-visible explanation. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "18",
-          "id": "ENDI_KLARK_18_ANTI_MIRROR_TELEMETRY",
+          "n": "20",
+          "id": "ENDI_KLARK_20_ANTI_MIRROR_TELEMETRY",
           "name": "Энди Кларк: Cognition Extended Into Artifacts - Anti Mirror Telemetry",
           "slot_key": "anti-mirror-telemetry",
           "axes": "evidence, interpretation, pragmatic, runtime",
@@ -5697,30 +5728,6 @@
           "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding.",
           "agent_rule": "Prefer operational telemetry over the agent's internal story about what the system is doing. Proof obligation: Cite logs, metrics, health checks or dashboard state for the actual runtime. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "19",
-          "id": "ENDI_KLARK_19_PARACONSISTENT_QUARANTINE",
-          "name": "Энди Кларк: Cognition Extended Into Artifacts - Paraconsistent Quarantine",
-          "slot_key": "paraconsistent-quarantine",
-          "axes": "conflict, logic, status, truth",
-          "fit_score": "0.000793",
-          "defect_class": "D012 Policy contradiction",
-          "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding.",
-          "agent_rule": "If evidence conflicts, isolate the contradiction and keep safe operations moving around it. Proof obligation: Show the quarantined claim, blocked action and allowed independent action. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "20",
-          "id": "ENDI_KLARK_20_ANCHOR_BOUND_NAME",
-          "name": "Энди Кларк: Cognition Extended Into Artifacts - Anchor-Bound Name",
-          "slot_key": "anchor-bound-name",
-          "axes": "api, language, naming, reference",
-          "fit_score": "0.000784",
-          "defect_class": "D001 Semantic drift",
-          "publication_anchor": "The Extended Mind / Supersizing the Mind - cognition extended into artifacts",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип расширенного разума' while coding.",
-          "agent_rule": "Treat every exported name as a promise bound to the philosopher's source principle and publication anchor. Proof obligation: Show that renamed or newly introduced symbols preserve the same referent across caller contexts. Apply it only as a Энди Кларк-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -5733,7 +5740,7 @@
       "principle": "Принцип энактивизма",
       "role_application": "Восприятие через действие. Состояния элементов (hover, active, focus) обеспечивают проприоцептивную связь с цифровой средой и немедленный отклик",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:02:alva-noe",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_02_alva-noe.md",
       "publication_anchor": "Action in Perception - enactive perception",
@@ -5848,7 +5855,19 @@
         },
         {
           "n": "10",
-          "id": "ALVA_NOE_10_LEVEL_OF_ABSTRACTION_LOCK",
+          "id": "ALVA_NOE_10_INUS_FACTOR_CHECK",
+          "name": "Альва Ноэ: Enactive Perception - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000604",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Action in Perception - enactive perception",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип энактивизма' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "ALVA_NOE_11_LEVEL_OF_ABSTRACTION_LOCK",
           "name": "Альва Ноэ: Enactive Perception - Level Of Abstraction Lock",
           "slot_key": "level-of-abstraction-lock",
           "axes": "context, data, information, ontology",
@@ -5859,8 +5878,20 @@
           "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "ALVA_NOE_11_SENSE_REFERENCE_SPLIT",
+          "n": "12",
+          "id": "ALVA_NOE_12_CAUSAL_PROCESS_TRACE",
+          "name": "Альва Ноэ: Enactive Perception - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000312",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Action in Perception - enactive perception",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип энактивизма' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "13",
+          "id": "ALVA_NOE_13_SENSE_REFERENCE_SPLIT",
           "name": "Альва Ноэ: Enactive Perception - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -5871,8 +5902,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "ALVA_NOE_12_INTENSION_COMPATIBILITY",
+          "n": "14",
+          "id": "ALVA_NOE_14_INTENSION_COMPATIBILITY",
           "name": "Альва Ноэ: Enactive Perception - Intension Compatibility Split",
           "slot_key": "intension-compatibility",
           "axes": "compatibility, context, modality, reference",
@@ -5883,8 +5914,8 @@
           "agent_rule": "Separate what a feature means to existing clients from what it means in the new implementation context. Proof obligation: Show compatibility tests for the old interpretation and targeted tests for the new one. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "ALVA_NOE_13_CONVERSATION_MAXIM",
+          "n": "15",
+          "id": "ALVA_NOE_15_CONVERSATION_MAXIM",
           "name": "Альва Ноэ: Enactive Perception - Conversation Maxim Check",
           "slot_key": "conversation-maxim",
           "axes": "evidence, language, review, ux",
@@ -5895,8 +5926,8 @@
           "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "ALVA_NOE_14_PERSISTENCE_SNAPSHOT",
+          "n": "16",
+          "id": "ALVA_NOE_16_PERSISTENCE_SNAPSHOT",
           "name": "Альва Ноэ: Enactive Perception - Persistence Snapshot",
           "slot_key": "persistence-snapshot",
           "axes": "history, identity, replay, runtime",
@@ -5907,8 +5938,8 @@
           "agent_rule": "For long-lived entities, preserve identity across snapshots, migrations and incident reconstruction. Proof obligation: Show stable identifiers and replay evidence across time points. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "15",
-          "id": "ALVA_NOE_15_HOLISM_IMPACT_MAP",
+          "n": "17",
+          "id": "ALVA_NOE_17_HOLISM_IMPACT_MAP",
           "name": "Альва Ноэ: Enactive Perception - Holism Impact Map",
           "slot_key": "holism-impact-map",
           "axes": "coherence, cost, integration, pragmatic",
@@ -5919,8 +5950,8 @@
           "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "ALVA_NOE_16_ACTUAL_OBJECT_REGISTER",
+          "n": "18",
+          "id": "ALVA_NOE_18_ACTUAL_OBJECT_REGISTER",
           "name": "Альва Ноэ: Enactive Perception - Actual Object Register",
           "slot_key": "actual-object-register",
           "axes": "domain, identity, ontology, types",
@@ -5931,8 +5962,8 @@
           "agent_rule": "Create code only for actual domain objects with owner, identity, lifecycle and deletion semantics. Proof obligation: Link the object to its aggregate, repository boundary or canonical registry entry. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "17",
-          "id": "ALVA_NOE_17_JOINT_COMMITMENT_LOCK",
+          "n": "19",
+          "id": "ALVA_NOE_19_JOINT_COMMITMENT_LOCK",
           "name": "Альва Ноэ: Enactive Perception - Joint Commitment Lock",
           "slot_key": "joint-commitment-lock",
           "axes": "commitment, coordination, institution, parallel",
@@ -5943,8 +5974,8 @@
           "agent_rule": "Once agents share a contract, no agent may silently reinterpret its obligations. Proof obligation: Show the shared contract, claimant, touched paths and review evidence. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "18",
-          "id": "ALVA_NOE_18_ANCHOR_BOUND_NAME",
+          "n": "20",
+          "id": "ALVA_NOE_20_ANCHOR_BOUND_NAME",
           "name": "Альва Ноэ: Enactive Perception - Anchor-Bound Name",
           "slot_key": "anchor-bound-name",
           "axes": "api, language, naming, reference",
@@ -5953,30 +5984,6 @@
           "publication_anchor": "Action in Perception - enactive perception",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип энактивизма' while coding.",
           "agent_rule": "Treat every exported name as a promise bound to the philosopher's source principle and publication anchor. Proof obligation: Show that renamed or newly introduced symbols preserve the same referent across caller contexts. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "19",
-          "id": "ALVA_NOE_19_SUBSTITUTION_ORACLE",
-          "name": "Альва Ноэ: Enactive Perception - Substitution Oracle",
-          "slot_key": "substitution-oracle",
-          "axes": "data, logic, substitution, types",
-          "fit_score": "0.000887",
-          "defect_class": "D009 Substitution failure",
-          "publication_anchor": "Action in Perception - enactive perception",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип энактивизма' while coding.",
-          "agent_rule": "Before replacing code, dependency, model or schema, prove preservation under the relevant observations. Proof obligation: Run equivalence, contract or golden-master evidence for the replacement. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "20",
-          "id": "ALVA_NOE_20_RELIABILITY_CHAIN",
-          "name": "Альва Ноэ: Enactive Perception - Reliability Chain",
-          "slot_key": "reliability-chain",
-          "axes": "epistemic, evidence, information, validation",
-          "fit_score": "0.000885",
-          "defect_class": "D010 Data lineage loss",
-          "publication_anchor": "Action in Perception - enactive perception",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип энактивизма' while coding.",
-          "agent_rule": "Trust data only when its acquisition process is reliable for this defect class. Proof obligation: Show source, timestamp, freshness rule and validation path. Apply it only as a Альва Ноэ-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -5989,7 +5996,7 @@
       "principle": "Принцип феноменального туннеля",
       "role_application": "Ограничение информационной плотности согласно **Закону Миллера** (7±2 элемента). Лишние объекты создают когнитивный шум, разрушающий фокус",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:03:tomas-mettsinger",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_03_tomas-mettsinger.md",
       "publication_anchor": "Being No One - self-model and phenomenal tunnel",
@@ -6104,7 +6111,19 @@
         },
         {
           "n": "10",
-          "id": "TOMAS_METTSINGER_10_SENSE_REFERENCE_SPLIT",
+          "id": "TOMAS_METTSINGER_10_INUS_FACTOR_CHECK",
+          "name": "Томас Метцингер: Self Model And Phenomenal - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000903",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Being No One - self-model and phenomenal tunnel",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип феноменального туннеля' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "TOMAS_METTSINGER_11_SENSE_REFERENCE_SPLIT",
           "name": "Томас Метцингер: Self Model And Phenomenal - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -6115,8 +6134,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "TOMAS_METTSINGER_11_INTENSION_COMPATIBILITY",
+          "n": "12",
+          "id": "TOMAS_METTSINGER_12_INTENSION_COMPATIBILITY",
           "name": "Томас Метцингер: Self Model And Phenomenal - Intension Compatibility Split",
           "slot_key": "intension-compatibility",
           "axes": "compatibility, context, modality, reference",
@@ -6127,8 +6146,8 @@
           "agent_rule": "Separate what a feature means to existing clients from what it means in the new implementation context. Proof obligation: Show compatibility tests for the old interpretation and targeted tests for the new one. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "TOMAS_METTSINGER_12_CONVERSATION_MAXIM",
+          "n": "13",
+          "id": "TOMAS_METTSINGER_13_CONVERSATION_MAXIM",
           "name": "Томас Метцингер: Self Model And Phenomenal - Conversation Maxim Check",
           "slot_key": "conversation-maxim",
           "axes": "evidence, language, review, ux",
@@ -6139,8 +6158,8 @@
           "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "TOMAS_METTSINGER_13_RAG_GROUNDING_CAPSULE",
+          "n": "14",
+          "id": "TOMAS_METTSINGER_14_RAG_GROUNDING_CAPSULE",
           "name": "Томас Метцингер: Self Model And Phenomenal - RAG Grounding Capsule",
           "slot_key": "rag-grounding-capsule",
           "axes": "context, evidence, information, review",
@@ -6151,8 +6170,20 @@
           "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "TOMAS_METTSINGER_14_BOUNDARY_TOPOLOGY",
+          "n": "15",
+          "id": "TOMAS_METTSINGER_15_CAUSAL_PROCESS_TRACE",
+          "name": "Томас Метцингер: Self Model And Phenomenal - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000007",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Being No One - self-model and phenomenal tunnel",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип феноменального туннеля' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "16",
+          "id": "TOMAS_METTSINGER_16_BOUNDARY_TOPOLOGY",
           "name": "Томас Метцингер: Self Model And Phenomenal - Boundary Topology",
           "slot_key": "boundary-topology",
           "axes": "api, boundary, domain, ontology",
@@ -6163,8 +6194,8 @@
           "agent_rule": "Define the exact boundary where validation, authorization, persistence or ownership changes hands. Proof obligation: Add a boundary test or diagram-backed code reference for the handoff. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "15",
-          "id": "TOMAS_METTSINGER_15_ESSENCE_BEFORE_OPTION",
+          "n": "17",
+          "id": "TOMAS_METTSINGER_17_ESSENCE_BEFORE_OPTION",
           "name": "Томас Метцингер: Self Model And Phenomenal - Essence Before Option",
           "slot_key": "essence-before-option",
           "axes": "identity, modality, ontology, types",
@@ -6175,8 +6206,8 @@
           "agent_rule": "Before adding a configurable option, state the invariant that must remain true in every permitted mode. Proof obligation: Show that configuration branches preserve the invariant or fail closed. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "TOMAS_METTSINGER_16_PART_WHOLE_OWNERSHIP",
+          "n": "18",
+          "id": "TOMAS_METTSINGER_18_PART_WHOLE_OWNERSHIP",
           "name": "Томас Метцингер: Self Model And Phenomenal - Part Whole Ownership",
           "slot_key": "part-whole-ownership",
           "axes": "boundary, composition, ontology, ownership",
@@ -6187,8 +6218,8 @@
           "agent_rule": "Make part ownership and whole invariants explicit before splitting modules, tables or services. Proof obligation: Show which aggregate or service is allowed to mutate each part. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "17",
-          "id": "TOMAS_METTSINGER_17_CATEGORY_ERROR_SCAN",
+          "n": "19",
+          "id": "TOMAS_METTSINGER_19_CATEGORY_ERROR_SCAN",
           "name": "Томас Метцингер: Self Model And Phenomenal - Category Error Scan",
           "slot_key": "category-error-scan",
           "axes": "language, ontology, review, types",
@@ -6199,8 +6230,8 @@
           "agent_rule": "Reject code that treats a process as an object, an observation as authority or a policy as data without an adapter. Proof obligation: Point to the type, schema or adapter that preserves the category boundary. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "18",
-          "id": "TOMAS_METTSINGER_18_ACTUAL_OBJECT_REGISTER",
+          "n": "20",
+          "id": "TOMAS_METTSINGER_20_ACTUAL_OBJECT_REGISTER",
           "name": "Томас Метцингер: Self Model And Phenomenal - Actual Object Register",
           "slot_key": "actual-object-register",
           "axes": "domain, identity, ontology, types",
@@ -6209,30 +6240,6 @@
           "publication_anchor": "Being No One - self-model and phenomenal tunnel",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип феноменального туннеля' while coding.",
           "agent_rule": "Create code only for actual domain objects with owner, identity, lifecycle and deletion semantics. Proof obligation: Link the object to its aggregate, repository boundary or canonical registry entry. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "19",
-          "id": "TOMAS_METTSINGER_19_BELIEF_UPDATE_LEDGER",
-          "name": "Томас Метцингер: Self Model And Phenomenal - Belief Update Ledger",
-          "slot_key": "belief-update-ledger",
-          "axes": "epistemic, evidence, model, uncertainty",
-          "fit_score": "0.000948",
-          "defect_class": "D007 Evidence gap",
-          "publication_anchor": "Being No One - self-model and phenomenal tunnel",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип феноменального туннеля' while coding.",
-          "agent_rule": "Record what evidence changed the agent's belief and what uncertainty remains. Proof obligation: Attach before/after confidence, source evidence and unresolved hypotheses. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "20",
-          "id": "TOMAS_METTSINGER_20_PRINCIPLED_INTEGRITY",
-          "name": "Томас Метцингер: Self Model And Phenomenal - Principled Integrity Check",
-          "slot_key": "principled-integrity",
-          "axes": "coherence, normative, policy, review",
-          "fit_score": "0.000930",
-          "defect_class": "D012 Policy contradiction",
-          "publication_anchor": "Being No One - self-model and phenomenal tunnel",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип феноменального туннеля' while coding.",
-          "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Томас Метцингер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -6245,7 +6252,7 @@
       "principle": "Принцип направляющей интенции",
       "role_application": "Визуальная иерархия строится на **Гештальт-принципах (близость, схожесть, непрерывность)**, обеспечивая интуитивный путь взгляда без инструкций",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:04:devid-velleman",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_04_devid-velleman.md",
       "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
@@ -6336,7 +6343,31 @@
         },
         {
           "n": "8",
-          "id": "DEVID_VELLEMAN_08_LEVEL_OF_ABSTRACTION_LOCK",
+          "id": "DEVID_VELLEMAN_08_INUS_FACTOR_CHECK",
+          "name": "Дэвид Веллеман: Intention And Agency - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000820",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип направляющей интенции' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "DEVID_VELLEMAN_09_CAUSAL_PROCESS_TRACE",
+          "name": "Дэвид Веллеман: Intention And Agency - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000808",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип направляющей интенции' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "DEVID_VELLEMAN_10_LEVEL_OF_ABSTRACTION_LOCK",
           "name": "Дэвид Веллеман: Intention And Agency - Level Of Abstraction Lock",
           "slot_key": "level-of-abstraction-lock",
           "axes": "context, data, information, ontology",
@@ -6347,8 +6378,8 @@
           "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "9",
-          "id": "DEVID_VELLEMAN_09_INTENSION_COMPATIBILITY",
+          "n": "11",
+          "id": "DEVID_VELLEMAN_11_INTENSION_COMPATIBILITY",
           "name": "Дэвид Веллеман: Intention And Agency - Intension Compatibility Split",
           "slot_key": "intension-compatibility",
           "axes": "compatibility, context, modality, reference",
@@ -6359,8 +6390,8 @@
           "agent_rule": "Separate what a feature means to existing clients from what it means in the new implementation context. Proof obligation: Show compatibility tests for the old interpretation and targeted tests for the new one. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "10",
-          "id": "DEVID_VELLEMAN_10_SUPERVENIENCE_WATCH",
+          "n": "12",
+          "id": "DEVID_VELLEMAN_12_SUPERVENIENCE_WATCH",
           "name": "Дэвид Веллеман: Intention And Agency - Supervenience Watch",
           "slot_key": "supervenience-watch",
           "axes": "cognitive, identity, information, runtime",
@@ -6371,8 +6402,8 @@
           "agent_rule": "If visible state changes, require a corresponding lower-level state change that explains it. Proof obligation: Trace UI, API, database and event state for the same entity. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "DEVID_VELLEMAN_11_SENSE_REFERENCE_SPLIT",
+          "n": "13",
+          "id": "DEVID_VELLEMAN_13_SENSE_REFERENCE_SPLIT",
           "name": "Дэвид Веллеман: Intention And Agency - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -6383,8 +6414,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "DEVID_VELLEMAN_12_RAG_GROUNDING_CAPSULE",
+          "n": "14",
+          "id": "DEVID_VELLEMAN_14_RAG_GROUNDING_CAPSULE",
           "name": "Дэвид Веллеман: Intention And Agency - RAG Grounding Capsule",
           "slot_key": "rag-grounding-capsule",
           "axes": "context, evidence, information, review",
@@ -6395,8 +6426,8 @@
           "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "DEVID_VELLEMAN_13_WORLD_VERSION_MAP",
+          "n": "15",
+          "id": "DEVID_VELLEMAN_15_WORLD_VERSION_MAP",
           "name": "Дэвид Веллеман: Intention And Agency - World Version Map",
           "slot_key": "world-version-map",
           "axes": "compatibility, context, history, ontology",
@@ -6407,8 +6438,8 @@
           "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "DEVID_VELLEMAN_14_HOLISM_IMPACT_MAP",
+          "n": "16",
+          "id": "DEVID_VELLEMAN_16_HOLISM_IMPACT_MAP",
           "name": "Дэвид Веллеман: Intention And Agency - Holism Impact Map",
           "slot_key": "holism-impact-map",
           "axes": "coherence, cost, integration, pragmatic",
@@ -6419,8 +6450,8 @@
           "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "15",
-          "id": "DEVID_VELLEMAN_15_JOINT_COMMITMENT_LOCK",
+          "n": "17",
+          "id": "DEVID_VELLEMAN_17_JOINT_COMMITMENT_LOCK",
           "name": "Дэвид Веллеман: Intention And Agency - Joint Commitment Lock",
           "slot_key": "joint-commitment-lock",
           "axes": "commitment, coordination, institution, parallel",
@@ -6431,8 +6462,8 @@
           "agent_rule": "Once agents share a contract, no agent may silently reinterpret its obligations. Proof obligation: Show the shared contract, claimant, touched paths and review evidence. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "DEVID_VELLEMAN_16_DECISION_EXPECTED_LOSS",
+          "n": "18",
+          "id": "DEVID_VELLEMAN_18_DECISION_EXPECTED_LOSS",
           "name": "Дэвид Веллеман: Intention And Agency - Expected Loss Gate",
           "slot_key": "decision-expected-loss",
           "axes": "prediction, probability, uncertainty, value",
@@ -6443,8 +6474,8 @@
           "agent_rule": "Choose a repair or merge action by minimizing expected defect cost, not by local convenience. Proof obligation: State failure probability, blast radius and rollback cost for the selected action. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "17",
-          "id": "DEVID_VELLEMAN_17_RIGHTS_DUTIES_MATRIX",
+          "n": "19",
+          "id": "DEVID_VELLEMAN_19_RIGHTS_DUTIES_MATRIX",
           "name": "Дэвид Веллеман: Intention And Agency - Rights Duties Matrix",
           "slot_key": "rights-duties-matrix",
           "axes": "authority, contract, normative, permission",
@@ -6455,8 +6486,8 @@
           "agent_rule": "Map every actor's claim right, duty, privilege and power before implementing permissions. Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "18",
-          "id": "DEVID_VELLEMAN_18_PRINCIPLED_INTEGRITY",
+          "n": "20",
+          "id": "DEVID_VELLEMAN_20_PRINCIPLED_INTEGRITY",
           "name": "Дэвид Веллеман: Intention And Agency - Principled Integrity Check",
           "slot_key": "principled-integrity",
           "axes": "coherence, normative, policy, review",
@@ -6465,30 +6496,6 @@
           "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип направляющей интенции' while coding.",
           "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "19",
-          "id": "DEVID_VELLEMAN_19_INUS_FACTOR_CHECK",
-          "name": "Дэвид Веллеман: Intention And Agency - INUS Factor Check",
-          "slot_key": "inus-factor-check",
-          "axes": "causal, evidence, history, logic",
-          "fit_score": "0.000820",
-          "defect_class": "D007 Evidence gap",
-          "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип направляющей интенции' while coding.",
-          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "20",
-          "id": "DEVID_VELLEMAN_20_CAUSAL_PROCESS_TRACE",
-          "name": "Дэвид Веллеман: Intention And Agency - Causal Process Trace",
-          "slot_key": "causal-process-trace",
-          "axes": "causal, evidence, history, runtime",
-          "fit_score": "0.000808",
-          "defect_class": "D013 Runtime drift",
-          "publication_anchor": "Practical Reflection / The Possibility of Practical Reason - intention and agency",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип направляющей интенции' while coding.",
-          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Дэвид Веллеман-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -6501,7 +6508,7 @@
       "principle": "Принцип дорефлексивного опыта",
       "role_application": "Использование устоявшихся ментальных моделей и паттернов снижает нагрузку на префронтальную кору, переводя действия в режим мышечной памяти",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:05:shon-gallaher",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_05_shon-gallaher.md",
       "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
@@ -6592,7 +6599,19 @@
         },
         {
           "n": "8",
-          "id": "SHON_GALLAHER_08_LEVEL_OF_ABSTRACTION_LOCK",
+          "id": "SHON_GALLAHER_08_INUS_FACTOR_CHECK",
+          "name": "Шон Галлахер: Embodied And Prereflective Experience - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000802",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "SHON_GALLAHER_09_LEVEL_OF_ABSTRACTION_LOCK",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Level Of Abstraction Lock",
           "slot_key": "level-of-abstraction-lock",
           "axes": "context, data, information, ontology",
@@ -6603,8 +6622,8 @@
           "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "9",
-          "id": "SHON_GALLAHER_09_WORLD_VERSION_MAP",
+          "n": "10",
+          "id": "SHON_GALLAHER_10_WORLD_VERSION_MAP",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - World Version Map",
           "slot_key": "world-version-map",
           "axes": "compatibility, context, history, ontology",
@@ -6615,8 +6634,8 @@
           "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "10",
-          "id": "SHON_GALLAHER_10_CONVERSATION_MAXIM",
+          "n": "11",
+          "id": "SHON_GALLAHER_11_CONVERSATION_MAXIM",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Conversation Maxim Check",
           "slot_key": "conversation-maxim",
           "axes": "evidence, language, review, ux",
@@ -6627,8 +6646,8 @@
           "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "SHON_GALLAHER_11_INTENSION_COMPATIBILITY",
+          "n": "12",
+          "id": "SHON_GALLAHER_12_INTENSION_COMPATIBILITY",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Intension Compatibility Split",
           "slot_key": "intension-compatibility",
           "axes": "compatibility, context, modality, reference",
@@ -6639,8 +6658,20 @@
           "agent_rule": "Separate what a feature means to existing clients from what it means in the new implementation context. Proof obligation: Show compatibility tests for the old interpretation and targeted tests for the new one. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "SHON_GALLAHER_12_RAG_GROUNDING_CAPSULE",
+          "n": "13",
+          "id": "SHON_GALLAHER_13_CAUSAL_PROCESS_TRACE",
+          "name": "Шон Галлахер: Embodied And Prereflective Experience - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000230",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "SHON_GALLAHER_14_RAG_GROUNDING_CAPSULE",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - RAG Grounding Capsule",
           "slot_key": "rag-grounding-capsule",
           "axes": "context, evidence, information, review",
@@ -6651,8 +6682,8 @@
           "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "SHON_GALLAHER_13_SENSE_REFERENCE_SPLIT",
+          "n": "15",
+          "id": "SHON_GALLAHER_15_SENSE_REFERENCE_SPLIT",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -6663,8 +6694,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "SHON_GALLAHER_14_JOINT_COMMITMENT_LOCK",
+          "n": "16",
+          "id": "SHON_GALLAHER_16_JOINT_COMMITMENT_LOCK",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Joint Commitment Lock",
           "slot_key": "joint-commitment-lock",
           "axes": "commitment, coordination, institution, parallel",
@@ -6675,8 +6706,8 @@
           "agent_rule": "Once agents share a contract, no agent may silently reinterpret its obligations. Proof obligation: Show the shared contract, claimant, touched paths and review evidence. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "15",
-          "id": "SHON_GALLAHER_15_BOUNDARY_TOPOLOGY",
+          "n": "17",
+          "id": "SHON_GALLAHER_17_BOUNDARY_TOPOLOGY",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Boundary Topology",
           "slot_key": "boundary-topology",
           "axes": "api, boundary, domain, ontology",
@@ -6687,8 +6718,8 @@
           "agent_rule": "Define the exact boundary where validation, authorization, persistence or ownership changes hands. Proof obligation: Add a boundary test or diagram-backed code reference for the handoff. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "SHON_GALLAHER_16_LAMBDA_CORE_REDUCTION",
+          "n": "18",
+          "id": "SHON_GALLAHER_18_LAMBDA_CORE_REDUCTION",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Lambda Core Reduction",
           "slot_key": "lambda-core-reduction",
           "axes": "computation, logic, types, verification",
@@ -6699,8 +6730,8 @@
           "agent_rule": "Reduce complex behavior to a small pure core before adding effects, adapters or orchestration. Proof obligation: Show the pure decision function and tests independent from IO. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "17",
-          "id": "SHON_GALLAHER_17_RELIABILITY_CHAIN",
+          "n": "19",
+          "id": "SHON_GALLAHER_19_RELIABILITY_CHAIN",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Reliability Chain",
           "slot_key": "reliability-chain",
           "axes": "epistemic, evidence, information, validation",
@@ -6711,8 +6742,8 @@
           "agent_rule": "Trust data only when its acquisition process is reliable for this defect class. Proof obligation: Show source, timestamp, freshness rule and validation path. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "18",
-          "id": "SHON_GALLAHER_18_PRINCIPLED_INTEGRITY",
+          "n": "20",
+          "id": "SHON_GALLAHER_20_PRINCIPLED_INTEGRITY",
           "name": "Шон Галлахер: Embodied And Prereflective Experience - Principled Integrity Check",
           "slot_key": "principled-integrity",
           "axes": "coherence, normative, policy, review",
@@ -6721,30 +6752,6 @@
           "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding.",
           "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "19",
-          "id": "SHON_GALLAHER_19_RIGHTS_DUTIES_MATRIX",
-          "name": "Шон Галлахер: Embodied And Prereflective Experience - Rights Duties Matrix",
-          "slot_key": "rights-duties-matrix",
-          "axes": "authority, contract, normative, permission",
-          "fit_score": "0.000948",
-          "defect_class": "D006 Authorization ambiguity",
-          "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding.",
-          "agent_rule": "Map every actor's claim right, duty, privilege and power before implementing permissions. Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "20",
-          "id": "SHON_GALLAHER_20_ANTI_MIRROR_TELEMETRY",
-          "name": "Шон Галлахер: Embodied And Prereflective Experience - Anti Mirror Telemetry",
-          "slot_key": "anti-mirror-telemetry",
-          "axes": "evidence, interpretation, pragmatic, runtime",
-          "fit_score": "0.000884",
-          "defect_class": "D013 Runtime drift",
-          "publication_anchor": "How the Body Shapes the Mind - embodied and prereflective experience",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип дорефлексивного опыта' while coding.",
-          "agent_rule": "Prefer operational telemetry over the agent's internal story about what the system is doing. Proof obligation: Cite logs, metrics, health checks or dashboard state for the actual runtime. Apply it only as a Шон Галлахер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -6757,7 +6764,7 @@
       "principle": "Принцип динамической обратной связи",
       "role_application": "Цикл «действие-реакция» должен быть немедленным для поддержания чувства агентности пользователя и уверенности в совершённом акте",
       "role": "UI/UX Designer / Product Designer",
-      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
       "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:06:syuzan-hurley",
       "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_06_syuzan-hurley.md",
       "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
@@ -6872,7 +6879,31 @@
         },
         {
           "n": "10",
-          "id": "SYUZAN_HURLEY_10_CONVERSATION_MAXIM",
+          "id": "SYUZAN_HURLEY_10_INUS_FACTOR_CHECK",
+          "name": "Сюзан Hurley: Dynamic Perception Action Feedback - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "3.000896",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "SYUZAN_HURLEY_11_CAUSAL_PROCESS_TRACE",
+          "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "3.000846",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "12",
+          "id": "SYUZAN_HURLEY_12_CONVERSATION_MAXIM",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Conversation Maxim Check",
           "slot_key": "conversation-maxim",
           "axes": "evidence, language, review, ux",
@@ -6883,8 +6914,8 @@
           "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "11",
-          "id": "SYUZAN_HURLEY_11_WORLD_VERSION_MAP",
+          "n": "13",
+          "id": "SYUZAN_HURLEY_13_WORLD_VERSION_MAP",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - World Version Map",
           "slot_key": "world-version-map",
           "axes": "compatibility, context, history, ontology",
@@ -6895,8 +6926,8 @@
           "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "12",
-          "id": "SYUZAN_HURLEY_12_RAG_GROUNDING_CAPSULE",
+          "n": "14",
+          "id": "SYUZAN_HURLEY_14_RAG_GROUNDING_CAPSULE",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - RAG Grounding Capsule",
           "slot_key": "rag-grounding-capsule",
           "axes": "context, evidence, information, review",
@@ -6907,8 +6938,8 @@
           "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "13",
-          "id": "SYUZAN_HURLEY_13_SENSE_REFERENCE_SPLIT",
+          "n": "15",
+          "id": "SYUZAN_HURLEY_15_SENSE_REFERENCE_SPLIT",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Sense Reference Split",
           "slot_key": "sense-reference-split",
           "axes": "context, language, reference",
@@ -6919,20 +6950,8 @@
           "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "14",
-          "id": "SYUZAN_HURLEY_14_INUS_FACTOR_CHECK",
-          "name": "Сюзан Hurley: Dynamic Perception Action Feedback - INUS Factor Check",
-          "slot_key": "inus-factor-check",
-          "axes": "causal, evidence, history, logic",
-          "fit_score": "0.000896",
-          "defect_class": "D007 Evidence gap",
-          "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
-          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "15",
-          "id": "SYUZAN_HURLEY_15_LAMBDA_CORE_REDUCTION",
+          "n": "16",
+          "id": "SYUZAN_HURLEY_16_LAMBDA_CORE_REDUCTION",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Lambda Core Reduction",
           "slot_key": "lambda-core-reduction",
           "axes": "computation, logic, types, verification",
@@ -6943,8 +6962,8 @@
           "agent_rule": "Reduce complex behavior to a small pure core before adding effects, adapters or orchestration. Proof obligation: Show the pure decision function and tests independent from IO. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
-          "n": "16",
-          "id": "SYUZAN_HURLEY_16_HOLISM_IMPACT_MAP",
+          "n": "17",
+          "id": "SYUZAN_HURLEY_17_HOLISM_IMPACT_MAP",
           "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Holism Impact Map",
           "slot_key": "holism-impact-map",
           "axes": "coherence, cost, integration, pragmatic",
@@ -6953,18 +6972,6 @@
           "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
           "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
-        },
-        {
-          "n": "17",
-          "id": "SYUZAN_HURLEY_17_CAUSAL_PROCESS_TRACE",
-          "name": "Сюзан Hurley: Dynamic Perception Action Feedback - Causal Process Trace",
-          "slot_key": "causal-process-trace",
-          "axes": "causal, evidence, history, runtime",
-          "fit_score": "0.000846",
-          "defect_class": "D013 Runtime drift",
-          "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
-          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
-          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         },
         {
           "n": "18",
@@ -7001,6 +7008,262 @@
           "publication_anchor": "Consciousness in Action - dynamic perception-action feedback",
           "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип динамической обратной связи' while coding.",
           "agent_rule": "Reject code that treats a process as an object, an observation as authority or a policy as data without an adapter. Proof obligation: Point to the type, schema or adapter that preserves the category boundary. Apply it only as a Сюзан Hurley-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        }
+      ]
+    },
+    {
+      "tag": "BARCAN-TAG-03_BELIEF-INTENSION",
+      "tag_file": "BARCAN-TAG-03_BELIEF-INTENSION.md",
+      "source_line": 45,
+      "ordinal": 7,
+      "name_ru": "Джуда Перл",
+      "principle": "Принцип причинной лестницы (do-calculus)",
+      "role_application": "Обоснование дизайн-решения обязано пройти уровень вмешательства ($do(x)$), а не только уровень ассоциации: «пользователи чаще нажимают на зелёную кнопку» — это корреляция; «изменение цвета на зелёный увеличивает конверсию» — проверяемое причинное утверждение. Намерение (intention) агента валидно только когда прослежен реальный механизм, а не совпадение по времени",
+      "role": "UI/UX Designer / Product Designer",
+      "focus": "Проектирование UI/UX, макеты в Figma, дизайн-системы, визуальная эргономика, причинная глубина намерения (BDI, do-calculus)",
+      "philosopher_id": "BARCAN-TAG-03_BELIEF-INTENSION:07:dzhuda-perl",
+      "file": "philosophers/BARCAN-TAG-03_BELIEF-INTENSION_07_dzhuda-perl.md",
+      "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+      "patterns": [
+        {
+          "n": "1",
+          "id": "DZHUDA_PERL_01_PERCEPTION_ACTION_LOOP",
+          "name": "Джуда Перл: The Ladder Of Causation - Perception Action Loop",
+          "slot_key": "perception-action-loop",
+          "axes": "agency, cognitive, feedback, perception",
+          "fit_score": "12.000838",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Every user or agent action must produce perceivable feedback that closes the loop. Proof obligation: Verify visible state, loading, success and failure transitions. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "2",
+          "id": "DZHUDA_PERL_02_TELEOSEMANTIC_FEEDBACK",
+          "name": "Джуда Перл: The Ladder Of Causation - Teleosemantic Feedback",
+          "slot_key": "teleosemantic-feedback",
+          "axes": "cognitive, feedback, information, ux",
+          "fit_score": "9.000227",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "A signal is valid only if it helps the user or agent perform the function it is meant to support. Proof obligation: Show how the signal changes the next action and prevents a mistaken action. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "3",
+          "id": "DZHUDA_PERL_03_EXTENDED_COGNITION_TOOL",
+          "name": "Джуда Перл: The Ladder Of Causation - Extended Cognition Tool",
+          "slot_key": "extended-cognition-tool",
+          "axes": "cognitive, feedback, information, ux",
+          "fit_score": "9.000062",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Treat the UI, dashboard or RAG chunk as part of the agent's thinking loop, not passive decoration. Proof obligation: Show that the tool exposes the state, uncertainty and next action needed for correct decisions. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "4",
+          "id": "DZHUDA_PERL_04_INDEXICAL_CONTEXT_LOCK",
+          "name": "Джуда Перл: The Ladder Of Causation - Indexical Context Lock",
+          "slot_key": "indexical-context-lock",
+          "axes": "context, identity, reference, ux",
+          "fit_score": "6.000792",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Never let terms like current, owner, user, latest or active float without an explicit context object. Proof obligation: Point to the context source and tests that prevent cross-user or stale-context leakage. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "5",
+          "id": "DZHUDA_PERL_05_CAPABILITY_FLOOR",
+          "name": "Джуда Перл: The Ladder Of Causation - Capability Floor",
+          "slot_key": "capability-floor",
+          "axes": "accessibility, cognitive, ux, value",
+          "fit_score": "6.000575",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Treat user capability loss as a correctness defect, not a cosmetic issue. Proof obligation: Show keyboard, screen-reader, error-recovery or low-resource evidence for the workflow. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "6",
+          "id": "DZHUDA_PERL_06_INUS_FACTOR_CHECK",
+          "name": "Джуда Перл: The Ladder Of Causation - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "5.000578",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "7",
+          "id": "DZHUDA_PERL_07_CAUSAL_PROCESS_TRACE",
+          "name": "Джуда Перл: The Ladder Of Causation - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "5.000388",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "8",
+          "id": "DZHUDA_PERL_08_CONVERSATION_MAXIM",
+          "name": "Джуда Перл: The Ladder Of Causation - Conversation Maxim Check",
+          "slot_key": "conversation-maxim",
+          "axes": "evidence, language, review, ux",
+          "fit_score": "3.000995",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "DZHUDA_PERL_09_SELF_MODEL_SANITY",
+          "name": "Джуда Перл: The Ladder Of Causation - Self Model Sanity Check",
+          "slot_key": "self-model-sanity",
+          "axes": "cognitive, evidence, identity, runtime",
+          "fit_score": "3.000981",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Make the system state it is acting from explicit before it makes an irreversible decision. Proof obligation: Capture project id, branch, commit, runtime SHA and task state in the decision record. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "DZHUDA_PERL_10_SUPERVENIENCE_WATCH",
+          "name": "Джуда Перл: The Ladder Of Causation - Supervenience Watch",
+          "slot_key": "supervenience-watch",
+          "axes": "cognitive, identity, information, runtime",
+          "fit_score": "3.000727",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "If visible state changes, require a corresponding lower-level state change that explains it. Proof obligation: Trace UI, API, database and event state for the same entity. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "DZHUDA_PERL_11_RAG_GROUNDING_CAPSULE",
+          "name": "Джуда Перл: The Ladder Of Causation - RAG Grounding Capsule",
+          "slot_key": "rag-grounding-capsule",
+          "axes": "context, evidence, information, review",
+          "fit_score": "3.000563",
+          "defect_class": "D014 RAG hallucination",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "12",
+          "id": "DZHUDA_PERL_12_LEVEL_OF_ABSTRACTION_LOCK",
+          "name": "Джуда Перл: The Ladder Of Causation - Level Of Abstraction Lock",
+          "slot_key": "level-of-abstraction-lock",
+          "axes": "context, data, information, ontology",
+          "fit_score": "3.000561",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "13",
+          "id": "DZHUDA_PERL_13_WORLD_VERSION_MAP",
+          "name": "Джуда Перл: The Ladder Of Causation - World Version Map",
+          "slot_key": "world-version-map",
+          "axes": "compatibility, context, history, ontology",
+          "fit_score": "3.000494",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "DZHUDA_PERL_14_INTENSION_COMPATIBILITY",
+          "name": "Джуда Перл: The Ladder Of Causation - Intension Compatibility Split",
+          "slot_key": "intension-compatibility",
+          "axes": "compatibility, context, modality, reference",
+          "fit_score": "3.000466",
+          "defect_class": "D001 Semantic drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Separate what a feature means to existing clients from what it means in the new implementation context. Proof obligation: Show compatibility tests for the old interpretation and targeted tests for the new one. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "15",
+          "id": "DZHUDA_PERL_15_SENSE_REFERENCE_SPLIT",
+          "name": "Джуда Перл: The Ladder Of Causation - Sense Reference Split",
+          "slot_key": "sense-reference-split",
+          "axes": "context, language, reference",
+          "fit_score": "3.000055",
+          "defect_class": "D009 Substitution failure",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Separate what a value is called, what it denotes and how clients are expected to understand it. Proof obligation: Add a contract or test proving display label, persisted identifier and API identity cannot be confused. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "16",
+          "id": "DZHUDA_PERL_16_CONVENTION_STABILITY",
+          "name": "Джуда Перл: The Ladder Of Causation - Convention Stability",
+          "slot_key": "convention-stability",
+          "axes": "compatibility, contract, coordination, parallel",
+          "fit_score": "0.000897",
+          "defect_class": "D004 Concurrency conflict",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Preserve shared conventions until all participants can switch together or compatibility is proven. Proof obligation: Show the migration path, owner approval and compatibility evidence. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "17",
+          "id": "DZHUDA_PERL_17_JOINT_COMMITMENT_LOCK",
+          "name": "Джуда Перл: The Ladder Of Causation - Joint Commitment Lock",
+          "slot_key": "joint-commitment-lock",
+          "axes": "commitment, coordination, institution, parallel",
+          "fit_score": "0.000886",
+          "defect_class": "D004 Concurrency conflict",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Once agents share a contract, no agent may silently reinterpret its obligations. Proof obligation: Show the shared contract, claimant, touched paths and review evidence. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "18",
+          "id": "DZHUDA_PERL_18_INSTITUTIONAL_FACT_REGISTER",
+          "name": "Джуда Перл: The Ladder Of Causation - Institutional Fact Register",
+          "slot_key": "institutional-fact-register",
+          "axes": "contract, coordination, institution, status",
+          "fit_score": "0.000880",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Treat statuses like approved, merged, blocked or done as institutional facts backed by rules. Proof obligation: Show the rule that creates the status and the audit event that records it. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "19",
+          "id": "DZHUDA_PERL_19_HOLISM_IMPACT_MAP",
+          "name": "Джуда Перл: The Ladder Of Causation - Holism Impact Map",
+          "slot_key": "holism-impact-map",
+          "axes": "coherence, cost, integration, pragmatic",
+          "fit_score": "0.000868",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "20",
+          "id": "DZHUDA_PERL_20_RIGID_API_REFERENT",
+          "name": "Джуда Перл: The Ladder Of Causation - Rigid API Referent",
+          "slot_key": "rigid-api-referent",
+          "axes": "api, compatibility, identity, reference",
+          "fit_score": "0.000745",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "The Book of Why / Causality: Models, Reasoning, and Inference - the ladder of causation (association, intervention, counterfactuals) and the do-calculus",
+          "defect_prevented": "cognitive overload and inaccessible UX; personal failure mode: losing 'Принцип причинной лестницы (do-calculus)' while coding.",
+          "agent_rule": "Keep public identifiers tied to the same behavior across versions unless a formal migration says otherwise. Proof obligation: Run or add consumer contract evidence for the old and new referent. Apply it only as a Джуда Перл-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -8537,6 +8800,518 @@
           "publication_anchor": "Reconstructing the Past / Evidence and Evolution - parsimony and model selection",
           "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип экономности объяснения (parsimony, AIC/BIC)' while coding.",
           "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Эллиотт Собер-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        }
+      ]
+    },
+    {
+      "tag": "BARCAN-TAG-04_MODAL-QUANTIFIER",
+      "tag_file": "BARCAN-TAG-04_MODAL-QUANTIFIER.md",
+      "source_line": 44,
+      "ordinal": 7,
+      "name_ru": "Питер Гэрденфорс",
+      "principle": "Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)",
+      "role_application": "Новое противоречащее свидетельство о модели не переворачивает её статус VERIFIED автоматически. Пересмотр происходит, только если укоренённость (число независимых источников, исторически подтвердивших текущий статус) нового свидетельства строго превышает укоренённость старого — иначе статус-кво сохраняется (`EvidenceCoherenceService.applyEntrenchmentRevision`)",
+      "role": "Data Scientist / ML Engineer",
+      "focus": "Архитектура ML-моделей, RAG-системы, LLM-пайплайны, Chain-of-Thought, валидация ИИ",
+      "philosopher_id": "BARCAN-TAG-04_MODAL-QUANTIFIER:07:piter-gerdenfors",
+      "file": "philosophers/BARCAN-TAG-04_MODAL-QUANTIFIER_07_piter-gerdenfors.md",
+      "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+      "patterns": [
+        {
+          "n": "1",
+          "id": "PITER_GERDENFORS_01_BELIEF_UPDATE_LEDGER",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Belief Update Ledger",
+          "slot_key": "belief-update-ledger",
+          "axes": "epistemic, evidence, model, uncertainty",
+          "fit_score": "13.000688",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Record what evidence changed the agent's belief and what uncertainty remains. Proof obligation: Attach before/after confidence, source evidence and unresolved hypotheses. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "2",
+          "id": "PITER_GERDENFORS_02_DECISION_EXPECTED_LOSS",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Expected Loss Gate",
+          "slot_key": "decision-expected-loss",
+          "axes": "prediction, probability, uncertainty, value",
+          "fit_score": "11.000942",
+          "defect_class": "D005 Partial distributed failure",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Choose a repair or merge action by minimizing expected defect cost, not by local convenience. Proof obligation: State failure probability, blast radius and rollback cost for the selected action. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "3",
+          "id": "PITER_GERDENFORS_03_CAUSAL_PROCESS_TRACE",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "6.000836",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "4",
+          "id": "PITER_GERDENFORS_04_INUS_FACTOR_CHECK",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "6.000653",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "5",
+          "id": "PITER_GERDENFORS_05_KNOWLEDGE_FIRST_GATE",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Knowledge First Gate",
+          "slot_key": "knowledge-first-gate",
+          "axes": "epistemic, evidence, security, validation",
+          "fit_score": "5.000821",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Do not authorize a risky action from belief or intention alone; require knowledge-grade evidence. Proof obligation: Attach the check, trace or permission source that makes the claim knowledge-grade. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "6",
+          "id": "PITER_GERDENFORS_06_RELIABILITY_CHAIN",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Reliability Chain",
+          "slot_key": "reliability-chain",
+          "axes": "epistemic, evidence, information, validation",
+          "fit_score": "5.000466",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Trust data only when its acquisition process is reliable for this defect class. Proof obligation: Show source, timestamp, freshness rule and validation path. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "7",
+          "id": "PITER_GERDENFORS_07_TRUTH_STATUS_TABLE",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Truth Status Table",
+          "slot_key": "truth-status-table",
+          "axes": "evidence, logic, status, truth",
+          "fit_score": "3.000874",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Represent true, false, unknown and inconsistent states explicitly in orchestration status. Proof obligation: Show how each state is displayed, stored and resolved. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "8",
+          "id": "PITER_GERDENFORS_08_ANTI_MIRROR_TELEMETRY",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Anti Mirror Telemetry",
+          "slot_key": "anti-mirror-telemetry",
+          "axes": "evidence, interpretation, pragmatic, runtime",
+          "fit_score": "3.000832",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Prefer operational telemetry over the agent's internal story about what the system is doing. Proof obligation: Cite logs, metrics, health checks or dashboard state for the actual runtime. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "PITER_GERDENFORS_09_RAG_GROUNDING_CAPSULE",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - RAG Grounding Capsule",
+          "slot_key": "rag-grounding-capsule",
+          "axes": "context, evidence, information, review",
+          "fit_score": "3.000721",
+          "defect_class": "D014 RAG hallucination",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "PITER_GERDENFORS_10_INFERENTIAL_SCOREBOARD",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Inferential Scoreboard",
+          "slot_key": "inferential-scoreboard",
+          "axes": "coherence, evidence, pragmatic, review",
+          "fit_score": "3.000668",
+          "defect_class": "D001 Semantic drift",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Track what each code claim commits the agent to and what would count against it. Proof obligation: Show commitments, entitlement evidence and incompatibility checks. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "PITER_GERDENFORS_11_DEFEASIBLE_EXCEPTION_LEDGER",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Defeasible Exception Ledger",
+          "slot_key": "defeasible-exception-ledger",
+          "axes": "evidence, exception, normative, policy",
+          "fit_score": "3.000554",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Allow exceptions only when the defeating reason is explicit, scoped and audited. Proof obligation: Show expiry, scope, approver and compensating check for the exception. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "12",
+          "id": "PITER_GERDENFORS_12_SELF_MODEL_SANITY",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Self Model Sanity Check",
+          "slot_key": "self-model-sanity",
+          "axes": "cognitive, evidence, identity, runtime",
+          "fit_score": "3.000278",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Make the system state it is acting from explicit before it makes an irreversible decision. Proof obligation: Capture project id, branch, commit, runtime SHA and task state in the decision record. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "13",
+          "id": "PITER_GERDENFORS_13_CONVERSATION_MAXIM",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Conversation Maxim Check",
+          "slot_key": "conversation-maxim",
+          "axes": "evidence, language, review, ux",
+          "fit_score": "3.000162",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "PITER_GERDENFORS_14_PERFORMATIVE_COMMIT",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Performative Commit",
+          "slot_key": "performative-commit",
+          "axes": "commitment, contract, coordination, language",
+          "fit_score": "0.000958",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "When code declares a status, event or approval, require the matching operational consequence to exist. Proof obligation: Trace the declaration to the database transition, emitted event or review gate it performs. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "15",
+          "id": "PITER_GERDENFORS_15_INSTITUTIONAL_FACT_REGISTER",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Institutional Fact Register",
+          "slot_key": "institutional-fact-register",
+          "axes": "contract, coordination, institution, status",
+          "fit_score": "0.000947",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Treat statuses like approved, merged, blocked or done as institutional facts backed by rules. Proof obligation: Show the rule that creates the status and the audit event that records it. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "16",
+          "id": "PITER_GERDENFORS_16_PRINCIPLED_INTEGRITY",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Principled Integrity Check",
+          "slot_key": "principled-integrity",
+          "axes": "coherence, normative, policy, review",
+          "fit_score": "0.000940",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "17",
+          "id": "PITER_GERDENFORS_17_PART_WHOLE_OWNERSHIP",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Part Whole Ownership",
+          "slot_key": "part-whole-ownership",
+          "axes": "boundary, composition, ontology, ownership",
+          "fit_score": "0.000846",
+          "defect_class": "D004 Concurrency conflict",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Make part ownership and whole invariants explicit before splitting modules, tables or services. Proof obligation: Show which aggregate or service is allowed to mutate each part. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "18",
+          "id": "PITER_GERDENFORS_18_RIGHTS_DUTIES_MATRIX",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Rights Duties Matrix",
+          "slot_key": "rights-duties-matrix",
+          "axes": "authority, contract, normative, permission",
+          "fit_score": "0.000832",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Map every actor's claim right, duty, privilege and power before implementing permissions. Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "19",
+          "id": "PITER_GERDENFORS_19_CONVENTION_STABILITY",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Convention Stability",
+          "slot_key": "convention-stability",
+          "axes": "compatibility, contract, coordination, parallel",
+          "fit_score": "0.000761",
+          "defect_class": "D004 Concurrency conflict",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "Preserve shared conventions until all participants can switch together or compatibility is proven. Proof obligation: Show the migration path, owner approval and compatibility evidence. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "20",
+          "id": "PITER_GERDENFORS_20_PERSISTENCE_SNAPSHOT",
+          "name": "Питер Гэрденфорс: Agm Belief Revision And - Persistence Snapshot",
+          "slot_key": "persistence-snapshot",
+          "axes": "history, identity, replay, runtime",
+          "fit_score": "0.000756",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "Knowledge in Flux: Modeling the Dynamics of Epistemic States (1988) - AGM belief revision and epistemic entrenchment",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип рационального пересмотра убеждений (AGM: revision, epistemic entrenchment)' while coding.",
+          "agent_rule": "For long-lived entities, preserve identity across snapshots, migrations and incident reconstruction. Proof obligation: Show stable identifiers and replay evidence across time points. Apply it only as a Питер Гэрденфорс-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        }
+      ]
+    },
+    {
+      "tag": "BARCAN-TAG-04_MODAL-QUANTIFIER",
+      "tag_file": "BARCAN-TAG-04_MODAL-QUANTIFIER.md",
+      "source_line": 45,
+      "ordinal": 8,
+      "name_ru": "Бовенс и Хартманн",
+      "principle": "Принцип байесовского согласования независимых свидетелей",
+      "role_application": "Несколько независимых сигналов (holdout-метрика, детектор дрейфа, результат A/B), согласно подтверждающих одно заключение, не считаются «более верными» просто по количеству — уверенность объединяется через log-odds с калибруемой надёжностью каждого источника (`EvidenceCoherenceService.sourceReliability`/`computeConfidences`), не наивным счётом голосов",
+      "role": "Data Scientist / ML Engineer",
+      "focus": "Архитектура ML-моделей, RAG-системы, LLM-пайплайны, Chain-of-Thought, валидация ИИ",
+      "philosopher_id": "BARCAN-TAG-04_MODAL-QUANTIFIER:08:bovens-i-hartmann",
+      "file": "philosophers/BARCAN-TAG-04_MODAL-QUANTIFIER_08_bovens-i-hartmann.md",
+      "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+      "patterns": [
+        {
+          "n": "1",
+          "id": "BOVENS_I_HARTMANN_01_BELIEF_UPDATE_LEDGER",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Belief Update Ledger",
+          "slot_key": "belief-update-ledger",
+          "axes": "epistemic, evidence, model, uncertainty",
+          "fit_score": "11.000131",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Record what evidence changed the agent's belief and what uncertainty remains. Proof obligation: Attach before/after confidence, source evidence and unresolved hypotheses. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "2",
+          "id": "BOVENS_I_HARTMANN_02_DECISION_EXPECTED_LOSS",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Expected Loss Gate",
+          "slot_key": "decision-expected-loss",
+          "axes": "prediction, probability, uncertainty, value",
+          "fit_score": "9.000961",
+          "defect_class": "D005 Partial distributed failure",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Choose a repair or merge action by minimizing expected defect cost, not by local convenience. Proof obligation: State failure probability, blast radius and rollback cost for the selected action. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "3",
+          "id": "BOVENS_I_HARTMANN_03_CAUSAL_PROCESS_TRACE",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Causal Process Trace",
+          "slot_key": "causal-process-trace",
+          "axes": "causal, evidence, history, runtime",
+          "fit_score": "6.000117",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Explain incidents through causal chains, not adjacent symptoms. Proof obligation: Trace trigger, mechanism, state change and observable effect. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "4",
+          "id": "BOVENS_I_HARTMANN_04_INUS_FACTOR_CHECK",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - INUS Factor Check",
+          "slot_key": "inus-factor-check",
+          "axes": "causal, evidence, history, logic",
+          "fit_score": "6.000114",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Treat a suspected cause as one factor in a sufficient package until alternatives are eliminated. Proof obligation: List required co-factors and the evidence that each was present or absent. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "5",
+          "id": "BOVENS_I_HARTMANN_05_INFERENTIAL_SCOREBOARD",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Inferential Scoreboard",
+          "slot_key": "inferential-scoreboard",
+          "axes": "coherence, evidence, pragmatic, review",
+          "fit_score": "5.000765",
+          "defect_class": "D001 Semantic drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Track what each code claim commits the agent to and what would count against it. Proof obligation: Show commitments, entitlement evidence and incompatibility checks. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "6",
+          "id": "BOVENS_I_HARTMANN_06_RELIABILITY_CHAIN",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Reliability Chain",
+          "slot_key": "reliability-chain",
+          "axes": "epistemic, evidence, information, validation",
+          "fit_score": "5.000577",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Trust data only when its acquisition process is reliable for this defect class. Proof obligation: Show source, timestamp, freshness rule and validation path. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "7",
+          "id": "BOVENS_I_HARTMANN_07_ANTI_MIRROR_TELEMETRY",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Anti Mirror Telemetry",
+          "slot_key": "anti-mirror-telemetry",
+          "axes": "evidence, interpretation, pragmatic, runtime",
+          "fit_score": "5.000305",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Prefer operational telemetry over the agent's internal story about what the system is doing. Proof obligation: Cite logs, metrics, health checks or dashboard state for the actual runtime. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "8",
+          "id": "BOVENS_I_HARTMANN_08_KNOWLEDGE_FIRST_GATE",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Knowledge First Gate",
+          "slot_key": "knowledge-first-gate",
+          "axes": "epistemic, evidence, security, validation",
+          "fit_score": "5.000056",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Do not authorize a risky action from belief or intention alone; require knowledge-grade evidence. Proof obligation: Attach the check, trace or permission source that makes the claim knowledge-grade. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "BOVENS_I_HARTMANN_09_CONVERSATION_MAXIM",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Conversation Maxim Check",
+          "slot_key": "conversation-maxim",
+          "axes": "evidence, language, review, ux",
+          "fit_score": "3.000927",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Make agent output sufficiently informative, true, relevant and non-ambiguous for the next worker. Proof obligation: Show the minimal status fields, evidence links and next-action fields consumed downstream. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "BOVENS_I_HARTMANN_10_RAG_GROUNDING_CAPSULE",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - RAG Grounding Capsule",
+          "slot_key": "rag-grounding-capsule",
+          "axes": "context, evidence, information, review",
+          "fit_score": "3.000529",
+          "defect_class": "D014 RAG hallucination",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class. Proof obligation: Cite the exact source row, publication anchor and selected defect taxonomy item. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "BOVENS_I_HARTMANN_11_TRUTH_STATUS_TABLE",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Truth Status Table",
+          "slot_key": "truth-status-table",
+          "axes": "evidence, logic, status, truth",
+          "fit_score": "3.000510",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Represent true, false, unknown and inconsistent states explicitly in orchestration status. Proof obligation: Show how each state is displayed, stored and resolved. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "12",
+          "id": "BOVENS_I_HARTMANN_12_DEFEASIBLE_EXCEPTION_LEDGER",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Defeasible Exception Ledger",
+          "slot_key": "defeasible-exception-ledger",
+          "axes": "evidence, exception, normative, policy",
+          "fit_score": "3.000427",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Allow exceptions only when the defeating reason is explicit, scoped and audited. Proof obligation: Show expiry, scope, approver and compensating check for the exception. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "13",
+          "id": "BOVENS_I_HARTMANN_13_SELF_MODEL_SANITY",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Self Model Sanity Check",
+          "slot_key": "self-model-sanity",
+          "axes": "cognitive, evidence, identity, runtime",
+          "fit_score": "3.000369",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Make the system state it is acting from explicit before it makes an irreversible decision. Proof obligation: Capture project id, branch, commit, runtime SHA and task state in the decision record. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "BOVENS_I_HARTMANN_14_HOLISM_IMPACT_MAP",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Holism Impact Map",
+          "slot_key": "holism-impact-map",
+          "axes": "coherence, cost, integration, pragmatic",
+          "fit_score": "2.000982",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "15",
+          "id": "BOVENS_I_HARTMANN_15_PERFORMATIVE_COMMIT",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Performative Commit",
+          "slot_key": "performative-commit",
+          "axes": "commitment, contract, coordination, language",
+          "fit_score": "0.000995",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "When code declares a status, event or approval, require the matching operational consequence to exist. Proof obligation: Trace the declaration to the database transition, emitted event or review gate it performs. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "16",
+          "id": "BOVENS_I_HARTMANN_16_INDEXICAL_CONTEXT_LOCK",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Indexical Context Lock",
+          "slot_key": "indexical-context-lock",
+          "axes": "context, identity, reference, ux",
+          "fit_score": "0.000976",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Never let terms like current, owner, user, latest or active float without an explicit context object. Proof obligation: Point to the context source and tests that prevent cross-user or stale-context leakage. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "17",
+          "id": "BOVENS_I_HARTMANN_17_PRINCIPLED_INTEGRITY",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Principled Integrity Check",
+          "slot_key": "principled-integrity",
+          "axes": "coherence, normative, policy, review",
+          "fit_score": "0.000963",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "18",
+          "id": "BOVENS_I_HARTMANN_18_SUBSTITUTION_ORACLE",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Substitution Oracle",
+          "slot_key": "substitution-oracle",
+          "axes": "data, logic, substitution, types",
+          "fit_score": "0.000932",
+          "defect_class": "D009 Substitution failure",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Before replacing code, dependency, model or schema, prove preservation under the relevant observations. Proof obligation: Run equivalence, contract or golden-master evidence for the replacement. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "19",
+          "id": "BOVENS_I_HARTMANN_19_WORLD_VERSION_MAP",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - World Version Map",
+          "slot_key": "world-version-map",
+          "axes": "compatibility, context, history, ontology",
+          "fit_score": "0.000931",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Represent competing runtime, schema or client worlds explicitly instead of pretending one world covers all clients. Proof obligation: Provide a version matrix or migration path covering each supported world. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "20",
+          "id": "BOVENS_I_HARTMANN_20_RIGHTS_DUTIES_MATRIX",
+          "name": "Бовенс и Хартманн: Bayesian Networks For Testimony - Rights Duties Matrix",
+          "slot_key": "rights-duties-matrix",
+          "axes": "authority, contract, normative, permission",
+          "fit_score": "0.000890",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Bayesian Epistemology (2003) - Bayesian networks for testimony, coherence and witness reliability",
+          "defect_prevented": "false certainty in predictions; personal failure mode: losing 'Принцип байесовского согласования независимых свидетелей' while coding.",
+          "agent_rule": "Map every actor's claim right, duty, privilege and power before implementing permissions. Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation. Apply it only as a Бовенс и Хартманн-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },
@@ -16217,6 +16992,262 @@
           "publication_anchor": "Reason, Truth and History / The Meaning of 'Meaning' - internal realism and semantic externalism",
           "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Прагматический реализм' while coding.",
           "agent_rule": "Represent successful completion as a value carrying the evidence needed by the next step. Proof obligation: Show the typed result or artifact that cannot exist without satisfying the preconditions. Apply it only as a Хиллари Патнэм-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        }
+      ]
+    },
+    {
+      "tag": "BARCAN-TAG-09_MORAL-DILEMMA",
+      "tag_file": "BARCAN-TAG-09_MORAL-DILEMMA.md",
+      "source_line": 30,
+      "ordinal": 7,
+      "name_ru": "Пол Тагард",
+      "principle": "Принцип объяснительной когерентности (ECHO)",
+      "role_application": "Ценность задачи не выносится по одному изолированному аргументу. Она — узел в сети взаимно подтверждающих и противоречащих свидетельств (`EvidenceCoherenceService`); итоговое решение определяется связностью всей сети, а не силой одного довода \"за\" или \"против\".",
+      "role": "Systems Analyst / Technical Product Manager / Technical Lead",
+      "focus": "Единственная линия защиты против самогенерации задач. Декомпозиция бизнес-требований, Lean-валидация, TOC-арбитраж.",
+      "philosopher_id": "BARCAN-TAG-09_MORAL-DILEMMA:07:pol-tagard",
+      "file": "philosophers/BARCAN-TAG-09_MORAL-DILEMMA_07_pol-tagard.md",
+      "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+      "patterns": [
+        {
+          "n": "1",
+          "id": "POL_TAGARD_01_HOLISM_IMPACT_MAP",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Holism Impact Map",
+          "slot_key": "holism-impact-map",
+          "axes": "coherence, cost, integration, pragmatic",
+          "fit_score": "11.000758",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Assess a local change by its effect on the surrounding web of tests, contracts and user workflows. Proof obligation: List the affected neighbors and evidence for each integration boundary. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "2",
+          "id": "POL_TAGARD_02_INFERENTIAL_SCOREBOARD",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Inferential Scoreboard",
+          "slot_key": "inferential-scoreboard",
+          "axes": "coherence, evidence, pragmatic, review",
+          "fit_score": "8.000936",
+          "defect_class": "D001 Semantic drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Track what each code claim commits the agent to and what would count against it. Proof obligation: Show commitments, entitlement evidence and incompatibility checks. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "3",
+          "id": "POL_TAGARD_03_ANTI_MIRROR_TELEMETRY",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Anti Mirror Telemetry",
+          "slot_key": "anti-mirror-telemetry",
+          "axes": "evidence, interpretation, pragmatic, runtime",
+          "fit_score": "8.000012",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Prefer operational telemetry over the agent's internal story about what the system is doing. Proof obligation: Cite logs, metrics, health checks or dashboard state for the actual runtime. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "4",
+          "id": "POL_TAGARD_04_DECISION_EXPECTED_LOSS",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Expected Loss Gate",
+          "slot_key": "decision-expected-loss",
+          "axes": "prediction, probability, uncertainty, value",
+          "fit_score": "3.000870",
+          "defect_class": "D005 Partial distributed failure",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Choose a repair or merge action by minimizing expected defect cost, not by local convenience. Proof obligation: State failure probability, blast radius and rollback cost for the selected action. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "5",
+          "id": "POL_TAGARD_05_CAPABILITY_FLOOR",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Capability Floor",
+          "slot_key": "capability-floor",
+          "axes": "accessibility, cognitive, ux, value",
+          "fit_score": "3.000736",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Treat user capability loss as a correctness defect, not a cosmetic issue. Proof obligation: Show keyboard, screen-reader, error-recovery or low-resource evidence for the workflow. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "6",
+          "id": "POL_TAGARD_06_PRINCIPLED_INTEGRITY",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Principled Integrity Check",
+          "slot_key": "principled-integrity",
+          "axes": "coherence, normative, policy, review",
+          "fit_score": "3.000475",
+          "defect_class": "D012 Policy contradiction",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Reject local fixes that satisfy a rule text while violating the system's declared principle. Proof obligation: Show the higher-level principle and the concrete behavior that preserves it. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "7",
+          "id": "POL_TAGARD_07_PERCEPTION_ACTION_LOOP",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Perception Action Loop",
+          "slot_key": "perception-action-loop",
+          "axes": "agency, cognitive, feedback, perception",
+          "fit_score": "2.000062",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Every user or agent action must produce perceivable feedback that closes the loop. Proof obligation: Verify visible state, loading, success and failure transitions. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "8",
+          "id": "POL_TAGARD_08_RIGHTS_DUTIES_MATRIX",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Rights Duties Matrix",
+          "slot_key": "rights-duties-matrix",
+          "axes": "authority, contract, normative, permission",
+          "fit_score": "0.000964",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Map every actor's claim right, duty, privilege and power before implementing permissions. Proof obligation: Show the matrix and tests for at least one allowed and one denied action per relation. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "9",
+          "id": "POL_TAGARD_09_CATEGORY_ERROR_SCAN",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Category Error Scan",
+          "slot_key": "category-error-scan",
+          "axes": "language, ontology, review, types",
+          "fit_score": "0.000963",
+          "defect_class": "D002 Invalid state",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Reject code that treats a process as an object, an observation as authority or a policy as data without an adapter. Proof obligation: Point to the type, schema or adapter that preserves the category boundary. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "10",
+          "id": "POL_TAGARD_10_KNOWLEDGE_FIRST_GATE",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Knowledge First Gate",
+          "slot_key": "knowledge-first-gate",
+          "axes": "epistemic, evidence, security, validation",
+          "fit_score": "0.000912",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Do not authorize a risky action from belief or intention alone; require knowledge-grade evidence. Proof obligation: Attach the check, trace or permission source that makes the claim knowledge-grade. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "11",
+          "id": "POL_TAGARD_11_SELF_MODEL_SANITY",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Self Model Sanity Check",
+          "slot_key": "self-model-sanity",
+          "axes": "cognitive, evidence, identity, runtime",
+          "fit_score": "0.000897",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Make the system state it is acting from explicit before it makes an irreversible decision. Proof obligation: Capture project id, branch, commit, runtime SHA and task state in the decision record. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "12",
+          "id": "POL_TAGARD_12_INSTITUTIONAL_FACT_REGISTER",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Institutional Fact Register",
+          "slot_key": "institutional-fact-register",
+          "axes": "contract, coordination, institution, status",
+          "fit_score": "0.000858",
+          "defect_class": "D007 Evidence gap",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Treat statuses like approved, merged, blocked or done as institutional facts backed by rules. Proof obligation: Show the rule that creates the status and the audit event that records it. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "13",
+          "id": "POL_TAGARD_13_EXTENDED_COGNITION_TOOL",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Extended Cognition Tool",
+          "slot_key": "extended-cognition-tool",
+          "axes": "cognitive, feedback, information, ux",
+          "fit_score": "0.000845",
+          "defect_class": "D011 Perception failure",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Treat the UI, dashboard or RAG chunk as part of the agent's thinking loop, not passive decoration. Proof obligation: Show that the tool exposes the state, uncertainty and next action needed for correct decisions. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "14",
+          "id": "POL_TAGARD_14_PROHIBITION_AS_CODE",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Prohibition As Code",
+          "slot_key": "prohibition-as-code",
+          "axes": "law, normative, permission, policy",
+          "fit_score": "0.000801",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Turn every forbidden action into an executable denial path with an explainable reason. Proof obligation: Show the policy rule, denial test and user-visible or agent-visible explanation. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "15",
+          "id": "POL_TAGARD_15_LEVEL_OF_ABSTRACTION_LOCK",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Level Of Abstraction Lock",
+          "slot_key": "level-of-abstraction-lock",
+          "axes": "context, data, information, ontology",
+          "fit_score": "0.000784",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Keep claims, metrics and identifiers at one declared abstraction level until an explicit transform changes level. Proof obligation: Show source and target abstraction levels plus the transformation contract. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "16",
+          "id": "POL_TAGARD_16_PART_WHOLE_OWNERSHIP",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Part Whole Ownership",
+          "slot_key": "part-whole-ownership",
+          "axes": "boundary, composition, ontology, ownership",
+          "fit_score": "0.000761",
+          "defect_class": "D004 Concurrency conflict",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Make part ownership and whole invariants explicit before splitting modules, tables or services. Proof obligation: Show which aggregate or service is allowed to mutate each part. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "17",
+          "id": "POL_TAGARD_17_PERSISTENCE_SNAPSHOT",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Persistence Snapshot",
+          "slot_key": "persistence-snapshot",
+          "axes": "history, identity, replay, runtime",
+          "fit_score": "0.000730",
+          "defect_class": "D010 Data lineage loss",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "For long-lived entities, preserve identity across snapshots, migrations and incident reconstruction. Proof obligation: Show stable identifiers and replay evidence across time points. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "18",
+          "id": "POL_TAGARD_18_BOUNDARY_TOPOLOGY",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Boundary Topology",
+          "slot_key": "boundary-topology",
+          "axes": "api, boundary, domain, ontology",
+          "fit_score": "0.000724",
+          "defect_class": "D006 Authorization ambiguity",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Define the exact boundary where validation, authorization, persistence or ownership changes hands. Proof obligation: Add a boundary test or diagram-backed code reference for the handoff. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "19",
+          "id": "POL_TAGARD_19_SUPERVENIENCE_WATCH",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Supervenience Watch",
+          "slot_key": "supervenience-watch",
+          "axes": "cognitive, identity, information, runtime",
+          "fit_score": "0.000641",
+          "defect_class": "D013 Runtime drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "If visible state changes, require a corresponding lower-level state change that explains it. Proof obligation: Trace UI, API, database and event state for the same entity. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
+        },
+        {
+          "n": "20",
+          "id": "POL_TAGARD_20_RIGID_API_REFERENT",
+          "name": "Пол Тагард: Echo Connectionist Explanatory Coherence - Rigid API Referent",
+          "slot_key": "rigid-api-referent",
+          "axes": "api, compatibility, identity, reference",
+          "fit_score": "0.000635",
+          "defect_class": "D003 Contract drift",
+          "publication_anchor": "Explanatory Coherence (1989) / Coherence in Thought and Action (2000) - ECHO, connectionist explanatory coherence",
+          "defect_prevented": "local optimization and wasteful scope; personal failure mode: losing 'Принцип объяснительной когерентности (ECHO)' while coding.",
+          "agent_rule": "Keep public identifiers tied to the same behavior across versions unless a formal migration says otherwise. Proof obligation: Run or add consumer contract evidence for the old and new referent. Apply it only as a Пол Тагард-specific micro-pattern selected by deterministic RAG score; use the common ACP file for the broad engineering practice."
         }
       ]
     },

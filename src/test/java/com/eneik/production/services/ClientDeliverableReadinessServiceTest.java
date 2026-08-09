@@ -28,10 +28,21 @@ class ClientDeliverableReadinessServiceTest {
             mock(com.eneik.production.repositories.FeatureThreadRepository.class);
     private final com.eneik.production.repositories.ProjectRepository projectRepository =
             mock(com.eneik.production.repositories.ProjectRepository.class);
+    private final com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService =
+            mock(com.eneik.production.services.operational.OperationalPolicyService.class);
 
     private final ClientDeliverableReadinessService service = new ClientDeliverableReadinessService(
             wishlistRepository, featureRepository, taskRepository, julesSessionRepository, prReviewRepository,
-            featureThreadRepository, projectRepository);
+            featureThreadRepository, projectRepository, operationalPolicyService);
+
+    ClientDeliverableReadinessServiceTest() {
+        // Default: dispatch is allowed, matching the steady-state every existing test in this file assumes.
+        // Tests that specifically exercise the project-wide-freeze guard override this per-case.
+        when(operationalPolicyService.authorize(any(UUID.class), eq(com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS)))
+                .thenReturn(new com.eneik.production.services.operational.OperationalPolicyService.OperationalDecision(
+                        null, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS,
+                        true, "ACTIVE", "authorized", "allowed", List.of(), null));
+    }
 
     @Test
     void oneMergedTaskDoesNotCompleteFourItemFeature() {
@@ -646,6 +657,73 @@ class ClientDeliverableReadinessServiceTest {
         verify(featureRepository, never()).deleteById(any());
         verify(featureRepository).save(feature);
         assertNotNull(feature.getDismissedAt());
+    }
+
+    @Test
+    void deleteValuelessEpicsSkipsCleanupEntirelyWhenDispatchIsBlockedProjectWide() {
+        // Live incident, 2026-08-07 (test-forty-third): this cron ran 5x during a project-wide dispatch
+        // freeze (BLOCKED_BY_DUPLICATE_CONTENT) and wrongly dismissed real epics whose tasks simply hadn't
+        // been allowed to dispatch yet - "zero code-producing items" is not real evidence of valuelessness
+        // while nothing can dispatch at all. Same fixture as the test above (which WOULD normally dismiss
+        // this epic), but with dispatch currently denied - cleanup must not touch it this cycle.
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        WishlistEntity dismissedItem = plannedItems(projectId, feature.getId(), 1).get(0);
+        dismissedItem.setStatus(WishlistStatus.dismissed);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
+        when(operationalPolicyService.authorize(eq(projectId), eq(com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS)))
+                .thenReturn(new com.eneik.production.services.operational.OperationalPolicyService.OperationalDecision(
+                        projectId, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS,
+                        false, "BLOCKED_BY_DUPLICATE_CONTENT", "authorized", "denied", List.of(), null));
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository, never()).findById(any());
+        verify(featureRepository, never()).save(any());
+        assertNull(feature.getDismissedAt());
+    }
+
+    @Test
+    void unDismissFeatureIfNeededClearsDismissedAtWhenRealWorkResumesUnderIt() {
+        // Self-healing counterpart, called from JulesDispatchService right when a task actually starts
+        // dispatching - proof the earlier "valueless" dismissal no longer holds.
+        FeatureEntity feature = feature(UUID.randomUUID(), UUID.randomUUID());
+        feature.setDismissedAt(java.time.Instant.now());
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
+
+        service.unDismissFeatureIfNeeded(feature.getId());
+
+        assertNull(feature.getDismissedAt());
+        verify(featureRepository).save(feature);
+    }
+
+    @Test
+    void unDismissFeatureIfNeededIsANoOpForAFeatureThatWasNeverDismissed() {
+        FeatureEntity feature = feature(UUID.randomUUID(), UUID.randomUUID());
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
+
+        service.unDismissFeatureIfNeeded(feature.getId());
+
+        assertNull(feature.getDismissedAt());
+        verify(featureRepository, never()).save(any());
+    }
+
+    @Test
+    void unDismissFeatureIfNeededIsANoOpForANullFeatureId() {
+        service.unDismissFeatureIfNeeded(null);
+
+        verify(featureRepository, never()).findById(any());
+        verify(featureRepository, never()).save(any());
     }
 
     @Test

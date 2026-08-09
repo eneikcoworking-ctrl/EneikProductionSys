@@ -31,6 +31,7 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.UUID;
 import java.util.Map;
 import java.util.Set;
 
@@ -70,8 +71,13 @@ public class GeminiProjectObserverService {
     // (11+ hours untouched, since minutes after project creation) but were invisible to her because only
     // blocked/queued counted as "stuck candidates". A task waiting on review with no forward motion for
     // hours is exactly the kind of thing she should be able to notice and act on.
+    // 2026-08-06 live incident: a task frozen at "claimed" (a Jules session stuck mid-flight, its status
+    // never advancing while a real GitHub PR sat open+mergeable for 90+ minutes) was structurally invisible
+    // here - this list existed since 2026-07-26 and simply never accounted for "claimed" as a stuck-capable
+    // state. AutoMergeService.reconcileOpenGitHubPullRequests now closes the underlying data gap directly,
+    // but this stays fixed independently as a real safety net, not redundant with that fix.
     private static final List<TaskStatus> STUCK_CANDIDATE_STATUSES =
-            List.of(TaskStatus.blocked, TaskStatus.queued, TaskStatus.review, TaskStatus.pending_review);
+            List.of(TaskStatus.blocked, TaskStatus.queued, TaskStatus.review, TaskStatus.pending_review, TaskStatus.claimed);
     // Lowered from 24h (2026-07-26, same directive): 24h meant NOTHING could ever qualify during a young
     // project's entire first day, no matter how long a task had genuinely been sitting untouched relative
     // to the project's own pace - confirmed live, a project ~11.5h old had tasks stuck ~11h+ with zero
@@ -109,7 +115,15 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
     private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
+    private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
+    private final com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository;
+    private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    // Phase 5 (2026-08-05): pure safety backstop against a runaway loop, not a claim about how many
+    // rounds of "why" are correct - see MLPredictionServiceClient.ToolLoopContinuation's own doc for why
+    // this must never be the PRIMARY stopping signal either.
+    private static final int MAX_TOOL_ROUNDS = 8;
 
     // 2026-08-03: loggers worth her forensic attention for defect root-causing - the same three services
     // involved in every incident traced by hand this session (session/PR lifecycle and reconciliation).
@@ -138,7 +152,10 @@ public class GeminiProjectObserverService {
                                          com.eneik.production.kaizen.service.KaizenService kaizenService,
                                          com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
                                          com.eneik.production.services.ProjectEventLogService projectEventLogService,
-                                         com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService) {
+                                         com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService,
+                                         com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
+                                         com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository,
+                                         com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -157,6 +174,9 @@ public class GeminiProjectObserverService {
         this.branchGarbageCollectorService = branchGarbageCollectorService;
         this.projectEventLogService = projectEventLogService;
         this.sixSigmaAuditService = sixSigmaAuditService;
+        this.evidenceNodeRepository = evidenceNodeRepository;
+        this.coherenceRunRepository = coherenceRunRepository;
+        this.operationalRealityFindingRepository = operationalRealityFindingRepository;
     }
 
     // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
@@ -256,10 +276,22 @@ public class GeminiProjectObserverService {
                 already obviously being handled: a task failing once and being retried normally is NOT a
                 finding; a task stuck the same way across many cycles, a real recurring failure pattern, or a
                 concerning anomaly IS. Be conservative - most cycles should find nothing new.
+                Before calling anything a "recurring pattern" or naming a cause in your evidence/reasoning:
+                temporal proximity is not causation. Two things co-occurring, or one following shortly after
+                another, is a hypothesis to state as such, not a finding to report as fact - say "X happened
+                right after Y, mechanism not yet confirmed" rather than "Y caused X" unless the snapshot
+                actually shows the mechanism (the same status/error recurring across multiple cycles for the
+                same underlying reason, not just two events near each other in time once). When you do name a
+                cause, prefer the deepest one the evidence actually supports over the first plausible-sounding
+                one - a task retried three times for what looks like three different surface errors sharing
+                one earlier root state is a different, more useful finding than "task keeps failing."
                 If the snapshot contains a "DUPLICATE TASK WARNING" section, treat it as a near-certain real
                 bug (a task-generation loop or a broken decomposition, not a coincidence) and raise it as a
                 finding with severity at least medium, unless your own prior journal entries show you already
-                reported this exact duplicate group.
+                reported this exact duplicate group. Also actually collapse it with collapseDuplicateTask
+                (see ACTIONS below) rather than only reporting it - if the project's Flow Core state is
+                BLOCKED_BY_DUPLICATE_CONTENT, this is the ONLY action that can ever clear that state, so
+                reporting alone leaves the project halted indefinitely.
                 If the snapshot contains a "STAGNATION WARNING", the project's real progress has not moved
                 across several consecutive visits of yours - this is exactly the kind of thing a report-only
                 observer would silently let sit. Prefer actually doing something about it (see ACTIONS below)
@@ -324,6 +356,14 @@ public class GeminiProjectObserverService {
                   below the required threshold, triggering this will just be gated and do nothing; only
                   propose it when the ratio has actually reached the threshold, or you have a genuine reason
                   to believe the gate itself is being evaluated incorrectly.
+                - triggerCodeDefectFalsificationRun: pull the REGULAR (code-defect) self_falsification cycle
+                  forward instead of waiting for its own daily 2am cron - targetId = the project id. This is
+                  the ONLY mechanism that creates replacement work for a task permanently retired without one
+                  (jules_dispatch_status mentioning "no child work created" or "no replacement task or
+                  wishlist was created" on a STUCK/BLOCKED TASK CANDIDATE, or a project stuck in
+                  SYSTEM_STALLED with idle capacity and queued work that never dispatches). Check the
+                  "Self-falsification (code-defect) readiness" line first - only propose it once that gate
+                  reads MET; if it's still below threshold this just gets gated and does nothing.
                 - reviveFailedTask: requeue a task listed under FAILED TASK candidates for a fresh attempt -
                   targetId = the task id. Only ever tried once per task (the backend enforces this, not you)
                   and only for a task whose failure came from its PR closing without merging on GitHub with
@@ -334,12 +374,47 @@ public class GeminiProjectObserverService {
                   the system will ever pick this back up on its own; targetId = the task id. Re-checked
                   against real current state before acting, so safe to try even if it already resolved
                   itself between when you were shown it and now.
+                - collapseDuplicateTask: block ONE task from a group listed under DUPLICATE TASK WARNING -
+                  targetId = one of the task ids listed for that group, NEVER the project id or a wishlist
+                  id. This is the ONLY action that can clear a BLOCKED_BY_DUPLICATE_CONTENT Flow Core state:
+                  that state denies task dispatch itself, so nothing in the stuck cluster can otherwise ever
+                  reach done/failed on its own - the project stays halted until enough duplicates in the
+                  group are collapsed to drop back under the threshold. Keep at least one task per group
+                  (the tool refuses to collapse the last remaining member - that would just delete real
+                  work); call it once per extra duplicate you want removed, picking different task ids from
+                  the same group across calls if more than one collapse is needed. Re-verified server-side
+                  against the live cluster size before acting.
+                - retryAbandonedCloseout: re-open a feature's closeout PR (thread -> main) after it was
+                  closed by something other than a real, exhausted 3-attempt conflict-resolution escalation
+                  - targetId = the FEATURE id (not the PR, not the task). A task showing STUCK/done with no
+                  evidence of ever reaching main, alongside a reality-revision finding mentioning a PR whose
+                  title starts with "Closeout", is the signature of this - the automated cleanup that should
+                  only close a truly superseded closeout PR closed a still-live one instead. Safe to try:
+                  refuses on its own (reports why, does nothing destructive) if the feature is already
+                  merged, was genuinely abandoned (branch deleted, unrecoverable), or its branch is gone.
+
+                TOOLS - you may call any of these, zero or more times, in any order, before your final
+                answer - this evidence is NOT pre-loaded into the snapshot above, because you decide what's
+                worth digging into, not a fixed template someone else wrote in advance:
+                - readRecentEvidenceNodes: the last 24h of evidence nodes from all 5 independent signal
+                  sources (statistical process control, code-integrity audit, Kaizen proposals, your own
+                  past findings, and operational-reality findings - real, detected disagreements between
+                  what a task/session/PR claimed locally and what GitHub actually showed, backfilled by the
+                  same reconciliation that also fixes them) for this project - use this when the snapshot
+                  above hints at something worth cross-checking against what the other sources independently
+                  observed, or when a stuck candidate needs its real GitHub-vs-local mismatch explained.
+                - readLastCoherenceRun: the most recent coherence-reconciliation result (accepted vs
+                  rejected evidence, overall coherence score) - use this to see whether the evidence sources
+                  actually agree with each other right now, not just what any single one claims alone.
+                - readKaizenProposals: this project's current Kaizen improvement proposals and their status.
+                Stop calling tools once you have what you need - repeating the same call with nothing new to
+                learn from it wastes a real round-trip, not a free action.
 
                 Return ONLY JSON: {"journalEntry": "one short paragraph, your own notes for your future self -
                 what you checked and concluded this cycle, even if nothing notable happened",
                 "findings": [{"summary": "one sentence", "evidence": "what in the snapshot shows this",
                 "severity": "low|medium|high", "scope": "product|platform"}],
-                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|reviveFailedTask|resolveOrphanedPr",
+                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|triggerCodeDefectFalsificationRun|reviveFailedTask|resolveOrphanedPr|collapseDuplicateTask|retryAbandonedCloseout",
                 "targetId": "an id copied exactly from the snapshot", "reason": "one sentence, why this is justified"}]}
                 Use empty arrays when nothing genuinely warrants them - still always write a journalEntry.
                 """;
@@ -350,13 +425,73 @@ public class GeminiProjectObserverService {
                 + "\n\nProject id: " + project.getId()
                 + "\nCurrent evidence snapshot for project \"" + project.getName() + "\":\n\n" + snapshot.text();
 
+        // Phase 5 (2026-08-05): a real multi-round tool-use loop, not a fixed pre-loaded snapshot alone -
+        // she decides whether and how much to dig into the 3 new coherence-related tools below. Termination
+        // is deliberately NOT her own self-report ("isolation problem" of pure coherentism - an LLM can
+        // always generate a plausible "yes, one more look" even when nothing real changed; this system has
+        // lived incidents of exactly that failure mode). Two real, external signals instead: (1) a tool
+        // round that returns no evidence-node id she hasn't already seen this cycle, (2) the SAME
+        // stagnation-detection idiom already used below for readiness-ratio drift (STAGNATION_MIN_MATCHING_
+        // CYCLES consecutive coherence-score observations within epsilon of each other), reapplied here to
+        // successive within-cycle tool results instead of successive multi-hour journal entries.
+        java.util.Set<String> seenEvidenceNodeIds = new java.util.HashSet<>();
+        List<Double> coherenceScoresSeenThisCycle = new ArrayList<>();
+        MLPredictionServiceClient.ToolLoopContinuation continuation = (round, toolName, toolResult) -> {
+            if ("readRecentEvidenceNodes".equals(toolName)) {
+                Object nodeIdsObj = toolResult.get("nodeIds");
+                boolean sawNewId = false;
+                if (nodeIdsObj instanceof List<?> ids) {
+                    for (Object id : ids) {
+                        if (seenEvidenceNodeIds.add(String.valueOf(id))) {
+                            sawNewId = true;
+                        }
+                    }
+                }
+                if (!sawNewId) {
+                    return false;
+                }
+            }
+            if ("readLastCoherenceRun".equals(toolName)) {
+                Object scoreObj = toolResult.get("coherenceScore");
+                if (scoreObj instanceof Number n) {
+                    coherenceScoresSeenThisCycle.add(n.doubleValue());
+                }
+                if (coherenceScoresSeenThisCycle.size() >= STAGNATION_MIN_MATCHING_CYCLES) {
+                    List<Double> lastN = coherenceScoresSeenThisCycle.subList(
+                            coherenceScoresSeenThisCycle.size() - STAGNATION_MIN_MATCHING_CYCLES,
+                            coherenceScoresSeenThisCycle.size());
+                    double max = lastN.stream().mapToDouble(Double::doubleValue).max().orElse(0);
+                    double min = lastN.stream().mapToDouble(Double::doubleValue).min().orElse(0);
+                    if (max - min < STAGNATION_EPSILON) {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        };
+
+        List<MLPredictionServiceClient.ToolDeclaration> tools = List.of(
+                new MLPredictionServiceClient.ToolDeclaration("readRecentEvidenceNodes",
+                        "The last 24h of evidence nodes from all independent signal sources for this project.",
+                        Map.of("type", "object", "properties", Map.of())),
+                new MLPredictionServiceClient.ToolDeclaration("readLastCoherenceRun",
+                        "The most recent coherence-reconciliation result for this project.",
+                        Map.of("type", "object", "properties", Map.of())),
+                new MLPredictionServiceClient.ToolDeclaration("readKaizenProposals",
+                        "This project's current Kaizen improvement proposals and their status.",
+                        Map.of("type", "object", "properties", Map.of())));
+
+        MLPredictionServiceClient.ToolExecutor executor = (toolName, args) -> executeObserverTool(project, toolName);
+
         // Flash tier, not chatCritical/pro (2026-07-25, operator directive: maximize token savings without
         // weakening reasoning quality). Unlike PR-review/merge-gating calls, this is a conservative,
         // structured-evidence-only noticing task - exactly the shape a cheaper model tier is suited for, and
-        // the system instruction already asks for restraint regardless of model tier. Explicit caching (same
-        // key every cycle) means the instruction above is billed at Gemini's reduced cached-token rate after
-        // the first call instead of resent in full every cycle for every active project.
-        String response = mlPredictionServiceClient.chat(prompt, systemInstruction, "gemini_project_observer_system_instruction");
+        // the system instruction already asks for restraint regardless of model tier.
+        MLPredictionServiceClient.ToolLoopResult toolResult = mlPredictionServiceClient.chatWithTools(
+                prompt, systemInstruction, tools, executor, continuation, MAX_TOOL_ROUNDS);
+        log.info("GeminiProjectObserverService: project {} - tool-use cycle used {} round(s){}",
+                project.getId(), toolResult.roundsUsed(), toolResult.hitRoundCap() ? " (hit max round cap)" : "");
+        String response = toolResult.finalText();
         ObserverResponse parsed = parseResponse(response);
         if (parsed == null) {
             // Response genuinely could not be parsed as her own words - do NOT write a Claude-authored
@@ -441,8 +576,11 @@ public class GeminiProjectObserverService {
                 case "abandonConflict" -> actionService.abandonConflict(project, action.targetId(), action.reason());
                 case "boostPriority" -> actionService.boostPriority(project, action.targetId(), action.reason());
                 case "triggerFalsificationRun" -> actionService.triggerFalsificationRun(project, action.targetId(), action.reason());
+                case "triggerCodeDefectFalsificationRun" -> actionService.triggerCodeDefectFalsificationRun(project, action.targetId(), action.reason());
                 case "reviveFailedTask" -> actionService.reviveFailedTask(project, action.targetId(), action.reason());
                 case "resolveOrphanedPr" -> actionService.resolveOrphanedPr(project, action.targetId(), action.reason());
+                case "collapseDuplicateTask" -> actionService.collapseDuplicateTask(project, action.targetId(), action.reason());
+                case "retryAbandonedCloseout" -> actionService.retryAbandonedCloseout(project, action.targetId(), action.reason());
                 default -> null;
             };
             if (outcome == null) {
@@ -476,6 +614,56 @@ public class GeminiProjectObserverService {
         if (created > 0 || actionsTaken > 0) {
             log.info("GeminiProjectObserverService: project {} - {} new finding(s), {} action(s) taken",
                     project.getName(), created, actionsTaken);
+        }
+    }
+
+    /**
+     * Phase 5 tool dispatch - pure reads, no operationalPolicyService authorization gate (unlike
+     * GeminiObserverActionService's mutating actions), nothing here can change any state. Each tool is
+     * implicitly scoped to the project this observer cycle is about - she never needs to (and cannot) ask
+     * about a different project's evidence.
+     */
+    private Map<String, Object> executeObserverTool(ProjectEntity project, String toolName) {
+        try {
+            return switch (toolName) {
+                case "readRecentEvidenceNodes" -> {
+                    List<com.eneik.production.models.persistence.EvidenceNodeEntity> nodes =
+                            evidenceNodeRepository.findByProjectIdAndCreatedAtAfter(project.getId(), Instant.now().minus(24, java.time.temporal.ChronoUnit.HOURS));
+                    yield Map.of(
+                            "nodeIds", nodes.stream().map(n -> n.getId().toString()).toList(),
+                            "nodes", nodes.stream().map(n -> Map.of(
+                                    "id", n.getId().toString(),
+                                    "polarity", n.getPolarity().name(),
+                                    "sourceType", n.sourceType(),
+                                    "summary", n.getSummaryText())).toList());
+                }
+                case "readLastCoherenceRun" -> {
+                    List<com.eneik.production.models.persistence.CoherenceRunEntity> runs =
+                            coherenceRunRepository.findByProjectIdOrderByRanAtDesc(project.getId());
+                    if (runs.isEmpty()) {
+                        yield Map.of("found", false);
+                    }
+                    var run = runs.get(0);
+                    yield Map.of(
+                            "found", true,
+                            "coherenceScore", run.getCoherenceScore(),
+                            "totalNodes", run.getTotalNodes(),
+                            "acceptedNodes", run.getAcceptedNodes(),
+                            "ranAt", run.getRanAt().toString());
+                }
+                case "readKaizenProposals" -> {
+                    var proposals = kaizenService.getProposalsForProject(project.getId());
+                    yield Map.of("proposals", proposals.stream().map(p -> Map.of(
+                            "id", p.getId(),
+                            "title", p.getTitle(),
+                            "category", p.getCategory().name(),
+                            "status", p.getStatus().name())).toList());
+                }
+                default -> Map.of("error", "unknown tool: " + toolName);
+            };
+        } catch (Exception e) {
+            log.warn("GeminiProjectObserverService: tool '{}' failed for project {}: {}", toolName, project.getId(), e.getMessage());
+            return Map.of("error", "tool execution failed: " + e.getMessage());
         }
     }
 
@@ -551,7 +739,7 @@ public class GeminiProjectObserverService {
                 .filter(t -> t.getUpdatedAt() != null && t.getUpdatedAt().isAfter(since))
                 .toList();
 
-        List<Map.Entry<String, Long>> duplicateDescriptionGroups = detectDuplicateDescriptions(tasks);
+        List<Map.Entry<String, List<TaskEntity>>> duplicateDescriptionGroups = detectDuplicateDescriptions(tasks);
 
         Instant now = Instant.now();
         List<TaskEntity> stuckTasks = tasks.stream()
@@ -559,6 +747,35 @@ public class GeminiProjectObserverService {
                 .filter(t -> t.getUpdatedAt() != null && t.getUpdatedAt().isBefore(now.minus(TASK_STUCK_THRESHOLD)))
                 .limit(MAX_STALE_CANDIDATES_LISTED)
                 .toList();
+        // Engineering invariant #14 (2026-08-08, docs/ENGINEERING_INVARIANTS_CHARTER.md, Gärdenfors AGM
+        // belief revision - see BARCAN-TAG-04's own philosopher #7): STUCK_CANDIDATE_STATUSES is a hand-
+        // maintained list of LOCAL statuses considered "possibly stuck" - it has already needed patching
+        // twice (missing `claimed`, 2026-08-06; missing any awareness that `done` doesn't prove a real
+        // GitHub merge, 2026-08-08) because it is a second, independent guess at the same question
+        // AutoMergeService's reconciliation loop already answers with real evidence. Rather than adding a
+        // third special case to this list, fold in every task AutoMergeService has recently had to revise
+        // its own belief about (a real disagreement between what the task claimed and what GitHub actually
+        // showed - see AutoMergeService.writeOperationalRealityFinding) - this closes the CLASS of gap
+        // (any future local-status shape that fails to track reality) rather than the one instance found so
+        // far, and needs no change here the next time a new blind spot in STUCK_CANDIDATE_STATUSES surfaces.
+        List<UUID> allTaskIds = tasks.stream().map(TaskEntity::getId).toList();
+        Set<UUID> alreadyListedStuckIds = stuckTasks.stream().map(TaskEntity::getId).collect(java.util.stream.Collectors.toSet());
+        if (!allTaskIds.isEmpty()) {
+            List<TaskEntity> realityRevisedTasks = operationalRealityFindingRepository
+                    .findByTaskIdInAndDetectedAtAfter(allTaskIds, now.minus(24, java.time.temporal.ChronoUnit.HOURS))
+                    .stream()
+                    .map(com.eneik.production.models.persistence.OperationalRealityFindingEntity::getTaskId)
+                    .distinct()
+                    .filter(id -> !alreadyListedStuckIds.contains(id))
+                    .flatMap(id -> tasks.stream().filter(t -> t.getId().equals(id)))
+                    .limit(MAX_STALE_CANDIDATES_LISTED)
+                    .toList();
+            if (!realityRevisedTasks.isEmpty()) {
+                stuckTasks = java.util.stream.Stream.concat(stuckTasks.stream(), realityRevisedTasks.stream())
+                        .limit(MAX_STALE_CANDIDATES_LISTED * 2)
+                        .toList();
+            }
+        }
         List<WishlistEntity> staleWishlists = wishlists.stream()
                 .filter(w -> w.getStatus() == WishlistStatus.pending)
                 .filter(w -> w.getCreatedAt() != null && w.getCreatedAt().isBefore(now.minus(WISHLIST_STALE_THRESHOLD)))
@@ -590,6 +807,16 @@ public class GeminiProjectObserverService {
                 .append("%, required ").append(Math.round(falsificationInfo.applicableThreshold() * 100))
                 .append("% (").append(falsificationInfo.hasRunBefore() ? "subsequent" : "first").append(" run) - ")
                 .append(readiness.ratio() >= falsificationInfo.applicableThreshold() ? "GATE MET" : "gate not met yet");
+        // 2026-08-06: the regular code-defect self_falsification cycle's OWN gate, separate from the
+        // philosophical one above - uses selfFalsificationReadyRatio (credits a permanently-failed task
+        // with no replacement as "terminal", not "still pending"), never ratio() itself. Without this line
+        // she has no way to see this gate exists at all, let alone whether triggerCodeDefectFalsificationRun
+        // would actually do anything right now.
+        double codeDefectThreshold = falsificationCycleService.codeDefectReadinessThreshold();
+        sb.append("\nSelf-falsification (code-defect) readiness: current ratio ")
+                .append(Math.round(readiness.selfFalsificationReadyRatio() * 100))
+                .append("%, required ").append(Math.round(codeDefectThreshold * 100)).append("% - ")
+                .append(readiness.selfFalsificationReadyRatio() >= codeDefectThreshold ? "GATE MET" : "gate not met yet");
         // 2026-08-01 addition: without this she could never distinguish "genuinely nothing to do" from
         // "orchestration is denying its own actions" - confirmed live, test-fortieth's SYSTEM_STALLED state
         // self-blocked the very actions that would have cleared it, invisible to every earlier snapshot
@@ -649,10 +876,16 @@ public class GeminiProjectObserverService {
         // reasons over it" contract intact rather than silently auto-acting on it.
         List<String> anomalies = new ArrayList<>();
         if (!duplicateDescriptionGroups.isEmpty()) {
-            sb.append("\nDUPLICATE TASK WARNING: ");
-            for (Map.Entry<String, Long> group : duplicateDescriptionGroups) {
-                sb.append("\n  - ").append(group.getValue()).append(" tasks share the exact same description: \"")
-                        .append(truncateForSnapshot(group.getKey(), 160)).append('"');
+            sb.append("\nDUPLICATE TASK WARNING (collapseDuplicateTask may apply - keep ONE, collapse the rest, never the last remaining one): ");
+            for (Map.Entry<String, List<TaskEntity>> group : duplicateDescriptionGroups) {
+                sb.append("\n  - ").append(group.getValue().size()).append(" tasks share the same content key: \"")
+                        .append(truncateForSnapshot(group.getKey(), 160)).append('"').append(" - task ids: ");
+                for (int i = 0; i < group.getValue().size(); i++) {
+                    if (i > 0) {
+                        sb.append(", ");
+                    }
+                    sb.append(group.getValue().get(i).getId());
+                }
             }
             anomalies.add("duplicate task generation (" + duplicateDescriptionGroups.size() + " group(s))");
         }
@@ -816,16 +1049,47 @@ public class GeminiProjectObserverService {
 
     private static final int DUPLICATE_DESCRIPTION_THRESHOLD = 3;
 
-    /** Groups NON-TERMINAL tasks by exact description text, returns groups at/above the threshold - a
-     * done/failed/spike_completed task duplicating an older one is history, not an active problem. */
-    private List<Map.Entry<String, Long>> detectDuplicateDescriptions(List<TaskEntity> tasks) {
-        Map<String, Long> counts = tasks.stream()
-                .filter(t -> t.getStatus() != TaskStatus.done && t.getStatus() != TaskStatus.failed
-                        && t.getStatus() != TaskStatus.spike_completed)
-                .filter(t -> t.getDescription() != null && !t.getDescription().isBlank())
-                .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getDescription, java.util.LinkedHashMap::new, java.util.stream.Collectors.counting()));
-        return counts.entrySet().stream()
-                .filter(e -> e.getValue() >= DUPLICATE_DESCRIPTION_THRESHOLD)
+    // 2026-08-07: same terminal-status exclusion AND same key convention (payload.slice_title, falling back
+    // to description) as FlowSpineService.duplicateContent/duplicateKey - this warning must describe
+    // exactly the condition that actually trips BLOCKED_BY_DUPLICATE_CONTENT, not a slightly different
+    // description-only grouping that could miss or over-report real clusters (e.g. two tasks sharing the
+    // same slice_title can legitimately carry different grounded-brief excerpts in their description now,
+    // see RequirementGroundingService/TechnicalLeadCompiler.buildGroundedOriginalBrief - grouping by raw
+    // description text alone would have silently stopped catching that exact shape of duplicate).
+    private static java.util.Set<TaskStatus> duplicateContentTerminalStatuses() {
+        return java.util.Set.of(TaskStatus.done, TaskStatus.failed, TaskStatus.blocked, TaskStatus.spike_completed);
+    }
+
+    private static String duplicateContentKey(TaskEntity task) {
+        if (task.getPayload() != null) {
+            String sliceTitle = task.getPayload().path("slice_title").asText("");
+            if (!sliceTitle.isBlank()) {
+                return sliceTitle;
+            }
+        }
+        return task.getDescription();
+    }
+
+    /** Groups NON-TERMINAL tasks by the same key FlowSpineService's hard-stop gate uses, returns groups
+     * at/above the threshold together with the actual tasks in each - exposing real task ids is what makes
+     * collapseDuplicateTask usable at all (2026-08-07: previously this only ever showed a count and a
+     * truncated text snippet, with no id Gemini could act on even though the tool now exists). */
+    private List<Map.Entry<String, List<TaskEntity>>> detectDuplicateDescriptions(List<TaskEntity> tasks) {
+        java.util.Set<TaskStatus> terminal = duplicateContentTerminalStatuses();
+        Map<String, List<TaskEntity>> groups = tasks.stream()
+                .filter(t -> !terminal.contains(t.getStatus()))
+                // 2026-08-07 (same-morning follow-on incident): a task carrying recoversFailedTaskId is a
+                // single, deliberate, audited replacement for one specific dead task (OpsAuditorService.
+                // createTargetedRecoveryTask deep-copies the dead task's payload, including slice_title, on
+                // purpose - see FlowSpineService.isDeliberateRecoveryTask for why title alone can't differ),
+                // not evidence of a generation loop - must not count toward this warning either, or Gemini
+                // gets told to "fix" a duplicate that was created specifically to fix a different one.
+                .filter(t -> t.getPayload() == null || !t.getPayload().has("recoversFailedTaskId"))
+                .filter(t -> duplicateContentKey(t) != null && !duplicateContentKey(t).isBlank())
+                .collect(java.util.stream.Collectors.groupingBy(
+                        GeminiProjectObserverService::duplicateContentKey, java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
+        return groups.entrySet().stream()
+                .filter(e -> e.getValue().size() >= DUPLICATE_DESCRIPTION_THRESHOLD)
                 .toList();
     }
 

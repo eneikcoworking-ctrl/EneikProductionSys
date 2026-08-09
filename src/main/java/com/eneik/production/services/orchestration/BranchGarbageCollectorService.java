@@ -1,5 +1,6 @@
 package com.eneik.production.services.orchestration;
 
+import com.eneik.production.models.persistence.FeatureThreadEntity;
 import com.eneik.production.models.persistence.JulesSessionEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.TaskConflictEntity;
@@ -18,6 +19,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Deterministic Branch Garbage Collector Service.
@@ -41,19 +43,22 @@ public class BranchGarbageCollectorService {
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
 
     public BranchGarbageCollectorService(GitHubPullRequestService gitHubPullRequestService,
                                          TaskRepository taskRepository,
                                          TaskConflictRepository taskConflictRepository,
                                          com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                          com.eneik.production.services.jules.SessionLifecycleService sessionLifecycleService,
-                                         com.eneik.production.services.ProjectFlowService projectFlowService) {
+                                         com.eneik.production.services.ProjectFlowService projectFlowService,
+                                         com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository) {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.sessionLifecycleService = sessionLifecycleService;
         this.projectFlowService = projectFlowService;
+        this.featureThreadRepository = featureThreadRepository;
     }
 
     /**
@@ -192,11 +197,36 @@ public class BranchGarbageCollectorService {
             int pullNumber = pr.number();
             log.info("[BRANCH-GC] Inspecting open PR #{} ('{}') headRef='{}'", pullNumber, title, headRef);
 
-            // Case A: Closeout PR where the feature has already been merged via another PR
-            if (title != null && title.startsWith("Closeout")) {
-                gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Orphaned closeout PR superseded by main");
-                log.info("[BRANCH-GC] Closed orphaned closeout PR #{} ('{}') on project {}", pullNumber, title, project.getName());
-                cleaned++;
+            // Case A: Closeout PR where the feature has already been merged via another PR.
+            //
+            // Engineering invariant #14 (2026-08-08, docs/ENGINEERING_INVARIANTS_CHARTER.md, AGM belief
+            // revision) - real, confirmed incident: this branch used to close ANY open PR whose title
+            // merely started with "Closeout", on every sweep of this method (runs on a ~1-2 minute cadence
+            // across every project), with zero check that the feature was actually already merged anywhere.
+            // A closeout PR opened by AutoMergeService.progressCloseout got destroyed by THIS method under
+            // two minutes after opening, before it ever had a chance to merge - real, never-yet-shipped work
+            // (feature 1ad15184, test-forty-third, PR#53) silently lost. "This PR's title says Closeout" is
+            // testimony, not evidence the feature is done - FeatureThreadEntity is the real belief-holder
+            // for that fact (mergedToMainAt set = genuinely done elsewhere; closeoutPrUrl pointing at a
+            // DIFFERENT PR = superseded by a newer closeout attempt). Only those two, confirmed against the
+            // thread's own record, count as "orphaned" - anything else is left alone for progressCloseout's
+            // normal cycle to finish handling.
+            if (GitHubPullRequestService.isCloseoutPr(pr)) {
+                UUID closeoutFeatureId = parseFeatureIdFromCloseoutTitle(title);
+                Optional<FeatureThreadEntity> thread = closeoutFeatureId != null
+                        ? featureThreadRepository.findByProjectIdAndFeatureId(project.getId(), closeoutFeatureId)
+                        : Optional.empty();
+                boolean confirmedSuperseded = thread.isPresent()
+                        && (thread.get().getMergedToMainAt() != null || !pr.url().equals(thread.get().getCloseoutPrUrl()));
+                if (confirmedSuperseded) {
+                    gitHubPullRequestService.closeSinglePullRequest(project, pr, "Branch GC: Orphaned closeout PR superseded by main");
+                    log.info("[BRANCH-GC] Closed orphaned closeout PR #{} ('{}') on project {} - feature thread confirms superseded",
+                            pullNumber, title, project.getName());
+                    cleaned++;
+                } else {
+                    log.info("[BRANCH-GC] Leaving closeout PR #{} ('{}') alone on project {} - feature thread record "
+                                    + "does not confirm it is actually superseded", pullNumber, title, project.getName());
+                }
                 continue;
             }
 
@@ -256,6 +286,24 @@ public class BranchGarbageCollectorService {
             cleaned++;
         }
         return cleaned;
+    }
+
+    // Title format is fixed at the one call site that creates it (AutoMergeService.progressCloseout):
+    // "Closeout: integrate feature " + featureId + " into main". Returns null (never throws) for any title
+    // that doesn't parse cleanly - callers treat that as "can't confirm supersession", not as "assume
+    // orphaned", which is the whole point of this fix.
+    private static UUID parseFeatureIdFromCloseoutTitle(String title) {
+        String prefix = "Closeout: integrate feature ";
+        String suffix = " into main";
+        if (title == null || !title.startsWith(prefix) || !title.endsWith(suffix)) {
+            return null;
+        }
+        String idPart = title.substring(prefix.length(), title.length() - suffix.length()).trim();
+        try {
+            return UUID.fromString(idPart);
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 
     /**

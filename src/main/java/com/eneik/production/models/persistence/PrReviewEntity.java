@@ -49,6 +49,12 @@ public class PrReviewEntity {
     @Column(name = "base_ref", length = 256)
     private String baseRef;
 
+    // The real GitHub PR number, captured at the same moment prUrl is set (never regexed from the URL
+    // string after the fact - see the setPrUrl call sites, the number is already a local value there).
+    // Nullable: predates this field, or a review was created before its PR number was ever known.
+    @Column(name = "pr_number")
+    private Integer prNumber;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getJulesSessionId() { return julesSessionId; }
@@ -79,4 +85,6 @@ public class PrReviewEntity {
     public void setHasCode(Boolean hasCode) { this.hasCode = hasCode; }
     public String getBaseRef() { return baseRef; }
     public void setBaseRef(String baseRef) { this.baseRef = baseRef; }
+    public Integer getPrNumber() { return prNumber; }
+    public void setPrNumber(Integer prNumber) { this.prNumber = prNumber; }
 }

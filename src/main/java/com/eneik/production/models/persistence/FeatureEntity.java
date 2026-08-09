@@ -61,6 +61,16 @@ public class FeatureEntity {
     @Column(name = "dismissed_at")
     private Instant dismissedAt;
 
+    // Union-find canonical-reference pointer (2026-08-07, engineering invariant #13: rigid designation +
+    // substitutivity salva veritate - see docs/ENGINEERING_INVARIANTS_CHARTER.md). NULL means this row is
+    // its own canonical representative. Set exactly once, by ClientDeliverableReadinessService.
+    // unionDuplicateFeature, when this row is recognized as a duplicate of another - and never re-pointed
+    // afterward, unlike originFeatureId (immutable lineage from creation) or the dismissedAt-driven
+    // deduplicateFeaturesByTitle tie-break this field replaces, which recomputed "the winner" fresh on
+    // every call and could silently disagree with itself between consumers.
+    @Column(name = "canonical_feature_id")
+    private UUID canonicalFeatureId;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -85,4 +95,6 @@ public class FeatureEntity {
     public void setOriginFeatureId(UUID originFeatureId) { this.originFeatureId = originFeatureId; }
     public Instant getDismissedAt() { return dismissedAt; }
     public void setDismissedAt(Instant dismissedAt) { this.dismissedAt = dismissedAt; }
+    public UUID getCanonicalFeatureId() { return canonicalFeatureId; }
+    public void setCanonicalFeatureId(UUID canonicalFeatureId) { this.canonicalFeatureId = canonicalFeatureId; }
 }

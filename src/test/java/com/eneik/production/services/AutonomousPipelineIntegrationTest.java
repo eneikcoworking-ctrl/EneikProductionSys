@@ -78,6 +78,9 @@ class AutonomousPipelineIntegrationTest {
     private FalsificationRunRepository falsificationRunRepository;
 
     @Autowired
+    private CodeIntegrityFindingRepository codeIntegrityFindingRepository;
+
+    @Autowired
     private SystemSettingsService settingsService;
 
     @BeforeEach
@@ -429,13 +432,18 @@ class AutonomousPipelineIntegrationTest {
         project = projectRepository.saveAndFlush(project);
 
         // Simulates JulesDispatchService.completeFalsificationAudit parsing a real eneikdru report PR:
-        // one refusal-criteria violation per active role (should be 13, since BARCAN-TAG-12 was added).
-        List<FalsificationCycleService.AuditViolation> violations = roleRepository.findAll().stream()
+        // one refusal-criteria violation per active role (should be 13, since BARCAN-TAG-12 was added),
+        // plus one stub finding with no cited PR number (2026-08-05 code-integrity instrumentation) - mixed
+        // types in one call, exercising the real Spring-wired JPA path end-to-end, not a mock.
+        List<FalsificationCycleService.AuditViolation> violations = new java.util.ArrayList<>(roleRepository.findAll().stream()
                 .filter(RoleEntity::isActive)
                 .map(role -> new FalsificationCycleService.AuditViolation(
                         role.getTag(), "refusal_criteria", "hardcoded hex color used.",
-                        "", "", "", "", "", ""))
-                .toList();
+                        "", "", "", "", "", "", null))
+                .toList());
+        violations.add(new FalsificationCycleService.AuditViolation(
+                "BARCAN-TAG-11", "stub", "fake handler returns hardcoded success",
+                "", "", "", "", "", "", null));
 
         falsificationCycleService.applyAuditViolations(project, violations, 42);
 
@@ -447,7 +455,15 @@ class AutonomousPipelineIntegrationTest {
 
         // 2. One audit creates one bounded, consolidated wishlist. Orchestrate later decomposes it.
         assertThat(run.getTasksCreatedCount()).isEqualTo(1);
-        assertThat(run.getViolationsFoundCount()).isEqualTo(13);
+        assertThat(run.getViolationsFoundCount()).isEqualTo(14);
+
+        // 3. The stub finding persisted as its own row, distinct from the 13 refusal_criteria violations,
+        // unattributed (no prNumber cited) rather than dropped.
+        List<CodeIntegrityFindingEntity> findings = codeIntegrityFindingRepository.findByProjectId(project.getId());
+        assertThat(findings).hasSize(1);
+        assertThat(findings.get(0).getFindingType()).isEqualTo("stub");
+        assertThat(findings.get(0).getFeatureId()).isNull();
+        assertThat(findings.get(0).getFalsificationRunId()).isEqualTo(run.getId());
 
         final UUID targetProjectId = project.getId();
         List<TaskEntity> tasks = taskRepository.findAll().stream()

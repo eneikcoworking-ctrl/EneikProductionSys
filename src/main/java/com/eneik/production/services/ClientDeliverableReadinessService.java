@@ -19,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -53,6 +54,12 @@ public class ClientDeliverableReadinessService {
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
+    // @Lazy: OperationalPolicyService -> OperationalFlowCoreService -> FlowSpineService ->
+    // ClientDeliverableReadinessService (readinessService.computeForProject) is a real cycle back to this
+    // class. Eager constructor injection here would fail Spring startup ("bean currently in creation");
+    // a lazy proxy defers resolution past both beans' construction, same as this codebase's established
+    // @Lazy self-injection pattern elsewhere.
+    private final com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService;
 
     public ClientDeliverableReadinessService(WishlistRepository wishlistRepository,
                                              FeatureRepository featureRepository,
@@ -60,7 +67,9 @@ public class ClientDeliverableReadinessService {
                                              JulesSessionRepository julesSessionRepository,
                                              PrReviewRepository prReviewRepository,
                                              com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
-                                             com.eneik.production.repositories.ProjectRepository projectRepository) {
+                                             com.eneik.production.repositories.ProjectRepository projectRepository,
+                                             @org.springframework.context.annotation.Lazy
+                                             com.eneik.production.services.operational.OperationalPolicyService operationalPolicyService) {
         this.wishlistRepository = wishlistRepository;
         this.featureRepository = featureRepository;
         this.taskRepository = taskRepository;
@@ -68,6 +77,7 @@ public class ClientDeliverableReadinessService {
         this.prReviewRepository = prReviewRepository;
         this.featureThreadRepository = featureThreadRepository;
         this.projectRepository = projectRepository;
+        this.operationalPolicyService = operationalPolicyService;
     }
 
     // Deliberately scoped to CLIENT-sourced work only, not computeForProject's full
@@ -83,6 +93,9 @@ public class ClientDeliverableReadinessService {
     // re-entering build phase and freezing the very follow-up work that caused the reading to change.
     // "Has the client's own brief shipped" must never be measured using a denominator the answer to that
     // exact question controls.
+    // Same transactional reasoning as computeForProject above - reaches the identical lazy dependsOn walk
+    // via computeForClientBriefOnly -> computeForSources.
+    @Transactional(readOnly = true)
     public boolean isBuildPhase(UUID projectId) {
         Readiness readiness = computeForClientBriefOnly(projectId);
         if (!readiness.decompositionComplete() || readiness.totalDeliverables() == 0) {
@@ -99,18 +112,56 @@ public class ClientDeliverableReadinessService {
             int totalDeliverables,
             int mergedDeliverables,
             double ratio,
-            boolean decompositionComplete
+            boolean decompositionComplete,
+            // Self-referential-deadlock fix (2026-08-06, live incident test-forty-second: task 5ac0b91b
+            // retired by iteration-admission poka-yoke with "no child work created", 2 dependents stuck
+            // queued forever - see isDependencySatisfied's own comment admitting a failed dependency with
+            // no replacement leaves a dependent "stuck in queued forever"). ratio()/completeFeatures() must
+            // stay strictly "actually merged" - FlowSpineService/OperationalTruthService derive the
+            // client-facing DELIVERED status from them, and already carry an invariant that warns if
+            // completeFeatures reaches totalFeatures without matching merge evidence. self_falsification is
+            // this codebase's OWN designated (and ONLY authorized - see "fix: enforce falsification-gated
+            // product iterations") mechanism for producing replacement work for a permanently-failed task,
+            // but its own readiness gate used ratio() too - a permanently-dead task can never itself count
+            // as "feature complete", which permanently held the ratio below threshold, which permanently
+            // blocked the one mechanism allowed to fix it. This field credits a work item toward
+            // FALSIFICATION READINESS ONLY (never toward ratio/DELIVERED) when it is fulfilled OR its task
+            // chain terminates in a real `failed` task - i.e. self_falsification has real, stable, terminal
+            // material to examine, not "some of this project is still legitimately in flight".
+            double selfFalsificationReadyRatio
     ) {
         // Compatibility for focused tests and callers that only need a ready/not-ready stub.
         public Readiness(int totalDeliverables, int mergedDeliverables, double ratio) {
-            this(0, 0, totalDeliverables, mergedDeliverables, ratio, true);
+            this(0, 0, totalDeliverables, mergedDeliverables, ratio, true, ratio);
+        }
+
+        // Compatibility for existing 6-arg call sites (production and tests) that don't yet know about
+        // selfFalsificationReadyRatio - defaults it to ratio itself, i.e. "no dead-end credit", exactly
+        // the old (bugged but at-least-not-silently-wrong) behavior for anything not explicitly computing
+        // the real value below.
+        public Readiness(int totalFeatures, int completeFeatures, int totalDeliverables, int mergedDeliverables,
+                double ratio, boolean decompositionComplete) {
+            this(totalFeatures, completeFeatures, totalDeliverables, mergedDeliverables, ratio,
+                    decompositionComplete, ratio);
         }
 
         public static Readiness none() {
-            return new Readiness(0, 0, 0, 0, 0.0, false);
+            return new Readiness(0, 0, 0, 0, 0.0, false, 0.0);
         }
     }
 
+    // 2026-08-07 (confirmed live incident, test-forty-third): computeForSources below walks
+    // TaskEntity.dependsOn, a @ManyToOne(fetch=LAZY) self-reference, via isTerminalOrAwaitingDeadDependency.
+    // Without an active transaction spanning the whole call, each repository fetch inside gets its own
+    // short-lived Hibernate session that closes before the lazy walk runs, so resolving a dependsOn proxy
+    // not already resident in that session's L1 cache throws LazyInitializationException ("no Session") -
+    // confirmed live from GeminiProjectObserverService.observeProject (itself uncransactional), which has no
+    // special exposure of its own; any of this method's 10 real callers could hit the exact same failure,
+    // it's just a matter of which task happens to need a fresh proxy resolution. @Transactional here (not on
+    // the private computeForSources - a private method can never be proxied, see the Spring self-invocation
+    // note throughout this codebase) closes the gap for every caller at once via REQUIRED propagation,
+    // joining an existing transaction harmlessly where one already exists.
+    @Transactional(readOnly = true)
     public Readiness computeForProject(UUID projectId) {
         return computeForProject(projectId, null);
     }
@@ -121,6 +172,7 @@ public class ClientDeliverableReadinessService {
      * merged", independent of everything else going on in the project (e.g. gating a coverage audit that
      * must run once per wishlist, not once for the whole project's aggregate progress).
      */
+    @Transactional(readOnly = true)
     public Readiness computeForProject(UUID projectId, UUID rootWishlistId) {
         return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
     }
@@ -206,7 +258,8 @@ public class ClientDeliverableReadinessService {
                             + "wishlist ever referencing them (project {}): {}",
                     orphanIds.size(), projectId, orphanIds);
         }
-        List<FeatureEntity> productFeatures = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist, projectId);
+        DedupResult dedup = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist);
+        List<FeatureEntity> productFeatures = dedup.winners();
         Set<UUID> productFeatureIds = productFeatures.stream()
                 .map(FeatureEntity::getId)
                 .collect(java.util.stream.Collectors.toSet());
@@ -234,7 +287,7 @@ public class ClientDeliverableReadinessService {
                 .filter(w -> w.getCompiledByRole() != null)
                 .filter(w -> w.getStatus() != WishlistStatus.dismissed)
                 .filter(w -> sources.contains(w.getSource()))
-                .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(w.getFeatureId()))
+                .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(dedup.canonicalOrSelf(w.getFeatureId())))
                 .toList();
         if (productFeatures.isEmpty() || plannedItems.isEmpty()) {
             return Readiness.none();
@@ -272,17 +325,44 @@ public class ClientDeliverableReadinessService {
         int completeFeatures = (int) productFeatures.stream()
                 .filter(feature -> {
                     List<WishlistEntity> featureItems = codeProducingItems.stream()
-                            .filter(w -> feature.getId().equals(w.getFeatureId()))
+                            .filter(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId())))
                             .toList();
                     return !featureItems.isEmpty() && featureItems.stream()
                             .allMatch(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())));
                 })
                 .count();
         boolean everyFeaturePlanned = productFeatures.stream().allMatch(feature -> plannedItems.stream()
-                .anyMatch(w -> feature.getId().equals(w.getFeatureId())));
+                .anyMatch(w -> feature.getId().equals(dedup.canonicalOrSelf(w.getFeatureId()))));
         boolean decompositionComplete = everyRootCompiled && everyFeaturePlanned;
         int total = codeProducingItems.size();
         int totalFeatures = productFeatures.size();
+
+        // See the Readiness.selfFalsificationReadyRatio javadoc: a work item counts toward THIS metric
+        // when it's fulfilled OR its task chain bottoms out at a real `failed` task with no replacement -
+        // self_falsification has real, terminal material to look at either way. Never reused for
+        // completeFeatures/ratio itself (those must stay "actually merged" for DELIVERED-status callers).
+        Map<UUID, Boolean> falsificationReadyByPlannedItem = new HashMap<>();
+        for (WishlistEntity plannedItem : codeProducingItems) {
+            if (Boolean.TRUE.equals(fulfilledByPlannedItem.get(plannedItem.getId()))) {
+                falsificationReadyByPlannedItem.put(plannedItem.getId(), true);
+                continue;
+            }
+            List<TaskEntity> itemTasks = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of());
+            boolean ready = !itemTasks.isEmpty() && itemTasks.stream()
+                    .allMatch(t -> isTerminalOrAwaitingDeadDependency(t, new java.util.HashSet<>()));
+            falsificationReadyByPlannedItem.put(plannedItem.getId(), ready);
+        }
+        int falsificationReadyFeatures = (int) productFeatures.stream()
+                .filter(feature -> {
+                    List<WishlistEntity> featureItems = codeProducingItems.stream()
+                            .filter(w -> feature.getId().equals(w.getFeatureId()))
+                            .toList();
+                    return !featureItems.isEmpty() && featureItems.stream()
+                            .allMatch(w -> Boolean.TRUE.equals(falsificationReadyByPlannedItem.get(w.getId())));
+                })
+                .count();
+        double selfFalsificationReadyRatio = totalFeatures == 0
+                ? 1.0 : (double) falsificationReadyFeatures / totalFeatures;
         // 2026-07-26 operator directive ("считать по фичам, а не по таскам!", repeated - this metric had
         // drifted to deliverable-granularity): ratio() now reflects completeFeatures/totalFeatures, not
         // mergedDeliverables/totalDeliverables. totalDeliverables/mergedDeliverables stay in the record as
@@ -295,77 +375,236 @@ public class ClientDeliverableReadinessService {
             // Every planned item for this scope is auxiliary (decision/spike/review work only) - there is
             // nothing this metric can measure, not "0% done". Report via decompositionComplete alone rather
             // than a misleading 0/0 ratio.
-            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete);
+            return new Readiness(totalFeatures, completeFeatures, 0, 0, 1.0, decompositionComplete, 1.0);
         }
-        return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete);
+        return new Readiness(totalFeatures, completeFeatures, total, mergedCount, ratio, decompositionComplete,
+                selfFalsificationReadyRatio);
     }
 
     /**
-     * Dedup fix (2026-07-24, live incident confirmed via the new /epics verification endpoint): the same
-     * PessimisticLockingFailureException retry storm that left orphaned FeatureEntity rows (see the filter
-     * above) ALSO left non-orphaned duplicates - 7 extra "Account and Session Management" rows, all sharing
-     * the same rootWishlistId, created one minute apart during the exact incident window, each with exactly
-     * one spurious wishlist item attached (so the orphan filter alone doesn't catch them - they DO have a
-     * wishlist reference, just a bogus one). Grouped by (rootWishlistId, title) - a real semantic-duplicate
-     * signal for this specific incident shape, not a general content-similarity matcher (that's
-     * SelfFalsificationEpicMatcher's job, used elsewhere for a different problem: deciding whether a NEW
-     * epic matches an EXISTING one at decomposition time, not cleaning up already-created duplicates).
-     * Within a group, keeps the row with the most real wishlist items attached (the retry storm's spurious
-     * duplicates only ever got exactly one), tie-broken by earliest createdAt - never deletes the losing
-     * rows, only excludes them from the count, same non-destructive pattern as the orphan filter.
+     * True when task is a genuinely terminal `failed` outcome, or is queued/blocked behind a
+     * {@code dependsOn} chain that (transitively) bottoms out at one, with no live replacement anywhere in
+     * the chain (isDependencySatisfied already searches for a same-semantic-key merged replacement at each
+     * hop). Visited-set guards a pathological depends_on cycle from recursing forever; a cycle is real data
+     * corruption, not a dead-end-credit signal, so it returns false (never silently grants readiness credit
+     * for something this check cannot actually prove terminal).
      */
-    private List<FeatureEntity> deduplicateFeaturesByTitle(List<FeatureEntity> features,
-            List<WishlistEntity> allWishlist, UUID projectId) {
-        // 2026-08-03 (confirmed live incident, test-forty-first): this tie-break was designed for a
-        // narrower, EARLIER incident shape (a lock-retry storm leaving spurious near-empty duplicates with
-        // exactly one bogus wishlist item each, vs. one real row with many) - "most wishlist items wins"
-        // was a fine heuristic there. It breaks completely for a genuine parallel-decomposition duplicate
-        // (see the duplicate-decomposition incident class), where EVERY duplicate gets a full, real-looking
-        // set of ~5-6 "Internal work item" wishlist rows attached, regardless of which one actually went on
-        // to produce merged code. Counting ALL wishlist rows (including dismissed/coverage_gap/non-product
-        // noise) let a duplicate with more incidental rows outrank the sibling that actually shipped -
-        // confirmed live: all 9 duplicate FeatureEntity rows for this project (including the "winners") were
-        // deleted by deleteValuelessEpicsForProject as valueless, despite real merged PRs existing, because
-        // the wishlist items evidencing that real work were attached to the LOSING sibling ID and excluded
-        // from the readiness computation entirely. Counting only real, still-in-scope planned work (compiled,
-        // not dismissed, product-sourced - same filter listEpicDiagnostics itself applies to plannedItems)
-        // makes the tie-break track actual product evidence instead of raw row count.
-        Map<UUID, Long> itemCountByFeatureId = allWishlist.stream()
+    private boolean isTerminalOrAwaitingDeadDependency(TaskEntity task, Set<UUID> visiting) {
+        if (task == null) {
+            return false;
+        }
+        if (task.getStatus() == TaskStatus.failed) {
+            return true;
+        }
+        if (task.getStatus() != TaskStatus.queued && task.getStatus() != TaskStatus.blocked) {
+            return false;
+        }
+        TaskEntity dependency = task.getDependsOn();
+        if (dependency == null || !visiting.add(task.getId())) {
+            return false;
+        }
+        if (isDependencySatisfied(dependency)) {
+            // A real, live replacement exists (or the dependency itself resolved) - this task is simply
+            // waiting its normal turn, not stuck behind a dead end.
+            return false;
+        }
+        return isTerminalOrAwaitingDeadDependency(dependency, visiting);
+    }
+
+    /**
+     * 2026-08-07 (OpsAuditorService orphaned-dependency-chain recovery): same walk and the same
+     * isDependencySatisfied checks as isTerminalOrAwaitingDeadDependency above, but returns the actual
+     * `failed` task at the bottom of the chain instead of a bare boolean - a caller that wants to create a
+     * real replacement (not just know one is needed) has to know exactly which task's role/featureId/
+     * semantic key to copy. Null whenever the chain is not actually dead-ended (a live replacement exists
+     * somewhere in it, or the dependency isn't in a terminal-or-waiting state).
+     *
+     * @Transactional here only protects the RECURSIVE dependsOn walk this method itself performs - if the
+     * caller already loaded {@code dependency} in a transaction that has since closed, the incoming
+     * argument is a detached entity whose own lazy fields are tied to that closed session regardless of any
+     * new transaction opened here (a proxy is bound to the session that created it, not to "whatever
+     * transaction happens to be active"). Every real caller must load its own starting `dependency` and
+     * call this method within the SAME transaction (see OpsAuditorService.gatherOrphanedDependencyChainEvidence).
+     */
+    @Transactional(readOnly = true)
+    public TaskEntity findDeadDependencyRoot(TaskEntity dependency, Set<UUID> visiting) {
+        if (dependency == null || !visiting.add(dependency.getId())) {
+            return null;
+        }
+        if (isDependencySatisfied(dependency)) {
+            return null;
+        }
+        if (dependency.getStatus() == TaskStatus.failed) {
+            return dependency;
+        }
+        if (dependency.getStatus() != TaskStatus.queued && dependency.getStatus() != TaskStatus.blocked) {
+            return null;
+        }
+        return findDeadDependencyRoot(dependency.getDependsOn(), visiting);
+    }
+
+    /**
+     * Union-find `find` (engineering invariant #13, Kripke rigid designation), READ-ONLY: follows
+     * canonicalFeatureId pointers to the root without writing anything back. Deliberately does not do
+     * write-side path compression here - this is called from readOnly=true call paths (computeForProject,
+     * isBuildPhase) where a write could silently no-op (Hibernate readOnly sessions may skip flushing) or,
+     * worse, be rejected outright depending on the JDBC driver's readOnly enforcement. Path compression
+     * (the actual write) happens once, deliberately, in reconcileDuplicateFeatureUnions's writable
+     * transaction instead - by construction every stored canonicalFeatureId already points directly at its
+     * root (see unionDuplicateFeature), so in practice this loop only ever takes 0 or 1 hops; the walk
+     * exists purely as a defensive fallback, not a hot path.
+     */
+    public UUID resolveCanonical(UUID featureId) {
+        if (featureId == null) {
+            return null;
+        }
+        Set<UUID> visiting = new HashSet<>();
+        UUID current = featureId;
+        while (visiting.add(current)) {
+            FeatureEntity node = featureRepository.findById(current).orElse(null);
+            if (node == null || node.getCanonicalFeatureId() == null) {
+                return current;
+            }
+            current = node.getCanonicalFeatureId();
+        }
+        return current; // cycle guard tripped (data corruption; union() never creates one) - stop, don't loop
+    }
+
+    /**
+     * Union-find `union` (engineering invariant #13). Persists that loserId's real work now attributes to
+     * winnerId's canonical id. Deliberately never touches the loser's wishlist rows or tasks - the loser's
+     * real merged work is preserved and rolled up under the canonical id by every read consumer (see
+     * DedupResult.canonicalOf below), never hidden the way the old ephemeral excludedIds list used to make
+     * it. Rigid once set: if loserId already has a canonicalFeatureId, this is a no-op - the first union
+     * decision for a given duplicate is permanent, never re-baptized by a later tie-break run. Callers must
+     * hold a real writable transaction (see reconcileDuplicateFeatureUnions, its only caller) - this method
+     * is intentionally NOT @Transactional itself, so it can never accidentally look like it opens its own
+     * write transaction when self-invoked (this codebase's established Spring self-invocation gotcha).
+     */
+    public void unionDuplicateFeature(UUID loserId, UUID winnerId) {
+        if (loserId == null || winnerId == null || loserId.equals(winnerId)) {
+            return;
+        }
+        FeatureEntity loser = featureRepository.findById(loserId).orElse(null);
+        if (loser == null || loser.getCanonicalFeatureId() != null) {
+            return;
+        }
+        UUID canonicalWinner = resolveCanonical(winnerId);
+        if (canonicalWinner.equals(loserId)) {
+            return; // winner already (transitively) points back at loser - leave the existing union rigid
+        }
+        loser.setCanonicalFeatureId(canonicalWinner);
+        featureRepository.save(loser);
+        log.info("ClientDeliverableReadinessService: unioned duplicate epic '{}' ({}) into canonical epic {} - "
+                        + "its real work now attributes to the canonical epic, never hidden",
+                loser.getTitle(), loserId, canonicalWinner);
+    }
+
+    /**
+     * Write-side reconciliation (engineering invariant #13): the one place a duplicate-epic group's winner
+     * gets DECIDED and PERSISTED via unionDuplicateFeature. Called from deleteValuelessEpicsForProject,
+     * which already runs inside deleteValuelessEpics's writable (non-readOnly) @Scheduled transaction - see
+     * resolveCanonical's javadoc for why this can never safely happen from a readOnly=true call path.
+     * Bounds the old "recomputed fresh on every call" flapping window to at most one epic-cleanup cron
+     * cycle: a brand-new duplicate pair reads as an ephemeral (unioned) tie-break via deduplicateFeaturesByTitle
+     * until this next runs, then becomes permanently rigid.
+     */
+    private void reconcileDuplicateFeatureUnions(List<FeatureEntity> features, List<WishlistEntity> allWishlist) {
+        Map<UUID, Long> itemCountByFeatureId = productItemCountByFeatureId(allWishlist);
+        for (List<FeatureEntity> group : groupByRootWishlistAndTitle(features).values()) {
+            if (group.size() < 2) {
+                continue;
+            }
+            FeatureEntity winner = pickWinner(group, itemCountByFeatureId);
+            for (FeatureEntity f : group) {
+                if (!f.getId().equals(winner.getId())) {
+                    unionDuplicateFeature(f.getId(), winner.getId());
+                }
+            }
+        }
+    }
+
+    private Map<UUID, Long> productItemCountByFeatureId(List<WishlistEntity> allWishlist) {
+        return allWishlist.stream()
                 .filter(w -> w.getFeatureId() != null)
                 .filter(w -> w.getCompiledByRole() != null)
                 .filter(w -> w.getStatus() != WishlistStatus.dismissed)
                 .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
-        Map<String, List<FeatureEntity>> byKey = features.stream()
+    }
+
+    private Map<String, List<FeatureEntity>> groupByRootWishlistAndTitle(List<FeatureEntity> features) {
+        return features.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
                         f -> f.getRootWishlistId() + "::" + f.getTitle(),
                         java.util.LinkedHashMap::new, java.util.stream.Collectors.toList()));
+    }
 
-        List<FeatureEntity> result = new java.util.ArrayList<>();
-        List<UUID> excludedIds = new java.util.ArrayList<>();
-        for (List<FeatureEntity> group : byKey.values()) {
+    // 2026-08-03 (confirmed live incident, test-forty-first): counts only real, still-in-scope planned work
+    // (compiled, not dismissed, product-sourced - same filter listEpicDiagnostics itself applies to
+    // plannedItems), not raw wishlist-row count - see productItemCountByFeatureId's own history for why.
+    private FeatureEntity pickWinner(List<FeatureEntity> group, Map<UUID, Long> itemCountByFeatureId) {
+        // Rigid designation: a row already carrying a canonicalFeatureId already lost a PERSISTED union
+        // decision - never reconsider it. Only still-canonical rows compete for the tie-break, so a
+        // brand-new third duplicate showing up later gets folded into the already-established winner
+        // instead of reopening a question that was already answered.
+        List<FeatureEntity> stillCanonical = group.stream().filter(f -> f.getCanonicalFeatureId() == null).toList();
+        List<FeatureEntity> candidates = stillCanonical.isEmpty() ? group : stillCanonical;
+        if (candidates.size() == 1) {
+            return candidates.get(0);
+        }
+        return candidates.stream()
+                .max(java.util.Comparator
+                        .<FeatureEntity>comparingLong(f -> itemCountByFeatureId.getOrDefault(f.getId(), 0L))
+                        .thenComparing(FeatureEntity::getCreatedAt, java.util.Comparator.reverseOrder()))
+                .orElseThrow();
+    }
+
+    /** @see #deduplicateFeaturesByTitle */
+    private record DedupResult(List<FeatureEntity> winners, Map<UUID, UUID> canonicalOf) {
+        UUID canonicalOrSelf(UUID featureId) {
+            return featureId == null ? null : canonicalOf.getOrDefault(featureId, featureId);
+        }
+    }
+
+    /**
+     * Dedup fix (2026-07-24, live incident confirmed via the new /epics verification endpoint), rebuilt
+     * around persisted union-find canonicalization (2026-08-07, engineering invariant #13) after a live
+     * follow-on incident showed the original ephemeral version was itself part of the same bug class: the
+     * same PessimisticLockingFailureException retry storm that left orphaned FeatureEntity rows (see the
+     * filter above) ALSO left non-orphaned duplicates. Grouped by (rootWishlistId, title) - a real
+     * semantic-duplicate signal for this specific incident shape, not a general content-similarity matcher
+     * (that's SelfFalsificationEpicMatcher's job: deciding whether a NEW epic matches an EXISTING one at
+     * decomposition time, not cleaning up already-created duplicates).
+     *
+     * READ-ONLY: honors any already-persisted canonicalFeatureId (set by reconcileDuplicateFeatureUnions)
+     * as rigid and never overrides it; for a group with no persisted decision yet, computes the same
+     * winner reconcileDuplicateFeatureUnions would, WITHOUT writing it (see resolveCanonical's javadoc for
+     * why a write here would be unsafe) - so a fresh duplicate still reads sensibly immediately, and
+     * becomes permanently rigid once the next cleanup cycle persists it. Returns both the winner list
+     * (`productFeatures`, unchanged contract for existing callers) and a canonicalOf map so a caller can
+     * roll a loser's real wishlist items/tasks up under the winner's id instead of losing them the way the
+     * old excludedIds-only version did (Frege substitutivity: querying "is this epic's work done" via
+     * either the winner's or a loser's id must agree).
+     */
+    private DedupResult deduplicateFeaturesByTitle(List<FeatureEntity> features, List<WishlistEntity> allWishlist) {
+        Map<UUID, Long> itemCountByFeatureId = productItemCountByFeatureId(allWishlist);
+        Map<UUID, UUID> canonicalOf = new HashMap<>();
+        List<FeatureEntity> winners = new java.util.ArrayList<>();
+        for (List<FeatureEntity> group : groupByRootWishlistAndTitle(features).values()) {
             if (group.size() == 1) {
-                result.add(group.get(0));
+                winners.add(group.get(0));
                 continue;
             }
-            FeatureEntity winner = group.stream()
-                    .max(java.util.Comparator
-                            .<FeatureEntity>comparingLong(f -> itemCountByFeatureId.getOrDefault(f.getId(), 0L))
-                            .thenComparing(FeatureEntity::getCreatedAt, java.util.Comparator.reverseOrder()))
-                    .orElseThrow();
-            result.add(winner);
+            FeatureEntity winner = pickWinner(group, itemCountByFeatureId);
+            winners.add(winner);
             for (FeatureEntity f : group) {
                 if (!f.getId().equals(winner.getId())) {
-                    excludedIds.add(f.getId());
+                    canonicalOf.put(f.getId(), winner.getId());
                 }
             }
         }
-        if (!excludedIds.isEmpty()) {
-            log.warn("ClientDeliverableReadinessService: excluded {} duplicate FeatureEntity row(s) sharing "
-                            + "(rootWishlistId, title) with a more-complete sibling row (project {}): {}",
-                    excludedIds.size(), projectId, excludedIds);
-        }
-        return result;
+        return new DedupResult(winners, canonicalOf);
     }
 
     public record EpicDiagnostic(UUID id, String title, UUID rootWishlistId, java.time.Instant createdAt,
@@ -401,7 +640,8 @@ public class ClientDeliverableReadinessService {
         List<FeatureEntity> nonOrphanFeatures = sourceMatchedFeatures.stream()
                 .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))
                 .toList();
-        List<FeatureEntity> productFeatures = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist, projectId);
+        DedupResult dedup = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist);
+        List<FeatureEntity> productFeatures = dedup.winners();
         Set<UUID> productFeatureIds = productFeatures.stream().map(FeatureEntity::getId)
                 .collect(java.util.stream.Collectors.toSet());
 
@@ -411,7 +651,7 @@ public class ClientDeliverableReadinessService {
                 .filter(w -> w.getCompiledByRole() != null)
                 .filter(w -> w.getStatus() != WishlistStatus.dismissed)
                 .filter(w -> PRODUCT_ITERATION_SOURCES.contains(w.getSource()))
-                .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(w.getFeatureId()))
+                .filter(w -> w.getFeatureId() != null && productFeatureIds.contains(dedup.canonicalOrSelf(w.getFeatureId())))
                 .toList();
         List<UUID> plannedItemIds = plannedItems.stream().map(WishlistEntity::getId).toList();
         List<TaskEntity> tasks = plannedItemIds.isEmpty() ? List.of() : taskRepository.findBySourceWishlistIdIn(plannedItemIds);
@@ -479,11 +719,26 @@ public class ClientDeliverableReadinessService {
         List<FeatureEntity> nonOrphanFeatures = sourceMatchedFeatures.stream()
                 .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))
                 .toList();
-        List<FeatureEntity> productFeatures = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist, projectId);
+        DedupResult dedup = deduplicateFeaturesByTitle(nonOrphanFeatures, allWishlist);
+        List<FeatureEntity> productFeatures = dedup.winners();
+
+        // Frege substitutivity (engineering invariant #13): TaskEntity.featureId is a one-time snapshot
+        // (never rewritten after task creation - see JulesDispatchService/TaskEntity history), so a task
+        // created while its epic was still a not-yet-unioned "losing" duplicate carries the LOSER's id
+        // forever, not the winner's. Querying tasks by feature.getId() alone would miss any such task's
+        // real merged UI code entirely. Roll every group member's tasks up under the winner here, the same
+        // way computeForSources rolls wishlist items up via dedup.canonicalOrSelf.
+        Map<UUID, List<UUID>> memberIdsByCanonical = new HashMap<>();
+        for (FeatureEntity f : nonOrphanFeatures) {
+            memberIdsByCanonical.computeIfAbsent(dedup.canonicalOrSelf(f.getId()), k -> new java.util.ArrayList<>())
+                    .add(f.getId());
+        }
 
         List<UiCodeEpic> result = new java.util.ArrayList<>();
         for (FeatureEntity feature : productFeatures) {
-            boolean hasMergedUiCode = taskRepository.findByFeatureId(feature.getId()).stream()
+            List<UUID> memberIds = memberIdsByCanonical.getOrDefault(feature.getId(), List.of(feature.getId()));
+            boolean hasMergedUiCode = memberIds.stream()
+                    .flatMap(id -> taskRepository.findByFeatureId(id).stream())
                     .filter(t -> t.getRole() != null
                             && com.eneik.production.services.gate.DesignExcellenceGate.UI_TAGS.contains(t.getRole().getTag()))
                     .filter(this::reachedMain)
@@ -531,11 +786,47 @@ public class ClientDeliverableReadinessService {
         }
     }
 
+    // Live incident, 2026-08-07 (test-forty-third): this cron fired 5x during a ~4.5h project-wide
+    // BLOCKED_BY_DUPLICATE_CONTENT freeze, when dispatch itself was denied for every task in the project.
+    // "Zero code-producing items yet" is meaningless evidence of valuelessness while nothing can dispatch
+    // at all - it dismissed real epics whose tasks simply hadn't been allowed to start. Once dispatch
+    // resumed, nothing re-validated those dismissals, so real work went on to complete under them anyway,
+    // permanently invisible to /epics, /tree, and productReadiness (dismissedAt-filtered everywhere). Skip
+    // this project's cleanup entirely for the cycle when dispatch is currently blocked project-wide -
+    // reuses the exact same gate real dispatch already obeys (ProjectFlowService.dispatchQueuedTasks),
+    // not a separate ad hoc condition that could drift out of sync with it.
     private void deleteValuelessEpicsForProject(UUID projectId) {
+        if (!operationalPolicyService.authorize(projectId, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS).allowed()) {
+            log.info("ClientDeliverableReadinessService: skipping valueless-epic cleanup for project {} - "
+                    + "dispatch is currently blocked project-wide, zero code-producing items is not real evidence right now",
+                    projectId);
+            return;
+        }
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, List<WishlistEntity>> wishlistByFeature = allWishlist.stream()
                 .filter(w -> w.getFeatureId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId));
+
+        // Engineering invariant #13 (rigid designation): the one place a duplicate-epic group's winner gets
+        // permanently decided and persisted - see reconcileDuplicateFeatureUnions's own javadoc for why it
+        // can only safely run here (a real writable transaction), not from any of the readOnly=true call
+        // paths that also compute a dedup winner ephemerally for that one read.
+        Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
+        for (WishlistEntity item : allWishlist) {
+            wishlistById.put(item.getId(), item);
+        }
+        Set<UUID> featureIdsWithWishlistWork = allWishlist.stream()
+                .map(WishlistEntity::getFeatureId)
+                .filter(id -> id != null)
+                .collect(java.util.stream.Collectors.toSet());
+        List<FeatureEntity> sourceMatchedForUnion = featureRepository.findByProjectIdAndDismissedAtIsNull(projectId).stream()
+                .filter(feature -> {
+                    WishlistEntity root = wishlistById.get(feature.getRootWishlistId());
+                    return root != null && PRODUCT_ITERATION_SOURCES.contains(root.getSource());
+                })
+                .filter(feature -> featureIdsWithWishlistWork.contains(feature.getId()))
+                .toList();
+        reconcileDuplicateFeatureUnions(sourceMatchedForUnion, allWishlist);
 
         java.time.Instant now = java.time.Instant.now();
         for (EpicDiagnostic diagnostic : listEpicDiagnostics(projectId)) {
@@ -567,6 +858,35 @@ public class ClientDeliverableReadinessService {
                             + "zero code-producing items, nothing left pending for it (soft-deleted, lineage preserved)",
                     diagnostic.title(), diagnostic.id(), projectId);
         }
+    }
+
+    /**
+     * Self-healing counterpart to {@link #deleteValuelessEpicsForProject}, called from
+     * {@code JulesDispatchService.dispatch} at the single choke point every dispatch path funnels through,
+     * right when a task is actually about to start real work. Live incident, 2026-08-07 (test-forty-third):
+     * the cleanup cron dismissed epics during a project-wide dispatch freeze, using a zero-code-producing-
+     * items snapshot that later proved wrong once dispatch resumed and real tasks under those same epics
+     * went on to complete - permanently invisible everywhere that filters on dismissedAt, since nothing
+     * ever re-checked. A task dispatching under a dismissed feature is itself the proof the earlier
+     * "valueless" judgment no longer holds (or never held) - reversing it here means the epic reappears the
+     * moment real work resumes, not only after everything eventually merges. This is a general safety net,
+     * independent of the specific freeze-window cause deleteValuelessEpicsForProject now also guards
+     * against directly - defense in depth against any other path that could produce the same false dismissal.
+     */
+    @Transactional
+    public void unDismissFeatureIfNeeded(UUID featureId) {
+        if (featureId == null) {
+            return;
+        }
+        featureRepository.findById(featureId).ifPresent(feature -> {
+            if (feature.getDismissedAt() != null) {
+                feature.setDismissedAt(null);
+                featureRepository.save(feature);
+                log.info("ClientDeliverableReadinessService: un-dismissed epic '{}' ({}) - real work is "
+                                + "dispatching under it now, so the earlier 'valueless' judgment no longer holds",
+                        feature.getTitle(), featureId);
+            }
+        });
     }
 
     /**
@@ -615,14 +935,24 @@ public class ClientDeliverableReadinessService {
     // Design's REAL completion signal now lives later, at the falsification stage, once real UI has
     // actually merged - see DesignSystemFalsificationService; this exemption only covers the build-time
     // draft, which was never meant to be the final acceptance moment.
-    private static final Set<String> HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-09", "BARCAN-TAG-03");
+    // BARCAN-TAG-03 stays a separate, explicit exemption (not folded into isSpecStage below) - its reason
+    // is genuinely different: a design mockup (image+HTML), not a reference document nobody merges code
+    // from. Every OTHER exemption (2026-08-08, confirmed live incident, test-forty-third: "LMS and
+    // Messenger Integrations" epic stuck at 3/5 despite every real planned item's PR being genuinely
+    // merged, root-caused to BARCAN-TAG-12/API Contract's PR containing only
+    // docs/contracts/Integrations.openapi.yaml - a spec document CodeChangeClassifier correctly never
+    // counts as code) now derives from EmsFlowStage.isSpecStage instead of a second, hand-maintained tag
+    // list that can silently drift from it - a role newly marked specOnly=true (ARCHITECTURE, COMPLIANCE
+    // already are; any future one) is exempted automatically, closing the whole class instead of the one
+    // instance found tonight.
+    private static final Set<String> HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-03");
 
     private boolean hasRequiredMergeEvidence(TaskEntity task) {
         if (!reachedMain(task)) {
             return false;
         }
         String roleTag = task.getRole() != null ? task.getRole().getTag() : "";
-        if (HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag)) {
+        if (HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag) || EmsFlowStage.isSpecStage(roleTag)) {
             return true;
         }
         boolean hasCode = mergedReviews(task.getId()).stream().anyMatch(review -> Boolean.TRUE.equals(review.getHasCode()));
