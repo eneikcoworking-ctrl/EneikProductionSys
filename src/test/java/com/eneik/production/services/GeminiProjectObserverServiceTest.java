@@ -66,6 +66,7 @@ class GeminiProjectObserverServiceTest {
     private com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
     private EvidenceNodeRepository evidenceNodeRepository;
     private CoherenceRunRepository coherenceRunRepository;
+    private com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository;
     private com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
     private GeminiProjectObserverService service;
 
@@ -90,6 +91,7 @@ class GeminiProjectObserverServiceTest {
         sixSigmaAuditService = mock(com.eneik.production.services.audit.SixSigmaAuditService.class);
         evidenceNodeRepository = mock(EvidenceNodeRepository.class);
         coherenceRunRepository = mock(CoherenceRunRepository.class);
+        coherenceRunNodeResultRepository = mock(com.eneik.production.repositories.CoherenceRunNodeResultRepository.class);
         operationalRealityFindingRepository = mock(com.eneik.production.repositories.OperationalRealityFindingRepository.class);
         when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         when(falsificationCycleService.philosophicalReadinessInfo(any()))
@@ -106,7 +108,7 @@ class GeminiProjectObserverServiceTest {
                 wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService,
                 gitHubApiBudgetService, operationalFlowCoreService, kaizenService, branchGarbageCollectorService,
                 projectEventLogService, sixSigmaAuditService, evidenceNodeRepository, coherenceRunRepository,
-                operationalRealityFindingRepository);
+                coherenceRunNodeResultRepository, operationalRealityFindingRepository);
     }
 
     private ProjectEntity project() {
@@ -726,6 +728,59 @@ class GeminiProjectObserverServiceTest {
         Map<String, Object> result = executor.execute("readRecentEvidenceNodes", Map.of());
 
         assertEquals(List.of(nodeId.toString()), result.get("nodeIds"));
+    }
+
+    @Test
+    void readRecentEvidenceNodesExcludesNodesRejectedByTheLatestCoherenceRun() {
+        // 2026-08-09 regression: live incident on test-forty-third - a self-contamination NEGATIVE_FINDING
+        // kept resurfacing in Gemini's journal for 7+ hours after the real incident was fixed and a fresh
+        // POSITIVE_CONFIRMATION had already made the coherence engine reject it, because this tool never
+        // consulted the coherence verdict at all - it just returned every node in the flat 24h window.
+        setUp();
+        when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
+        ProjectEntity project = project();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+
+        com.eneik.production.models.persistence.EvidenceNodeEntity staleRejected =
+                new com.eneik.production.models.persistence.EvidenceNodeEntity();
+        UUID staleId = UUID.randomUUID();
+        staleRejected.setId(staleId);
+        staleRejected.setPolarity(com.eneik.production.models.persistence.EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        staleRejected.setSummaryText("stale, already-superseded finding");
+        staleRejected.setKaizenProposalId("kz-stale");
+
+        com.eneik.production.models.persistence.EvidenceNodeEntity liveAccepted =
+                new com.eneik.production.models.persistence.EvidenceNodeEntity();
+        UUID liveId = UUID.randomUUID();
+        liveAccepted.setId(liveId);
+        liveAccepted.setPolarity(com.eneik.production.models.persistence.EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        liveAccepted.setSummaryText("still-live finding");
+        liveAccepted.setKaizenProposalId("kz-live");
+
+        when(evidenceNodeRepository.findByProjectIdAndCreatedAtAfter(eq(project.getId()), any()))
+                .thenReturn(List.of(staleRejected, liveAccepted));
+
+        com.eneik.production.models.persistence.CoherenceRunEntity latestRun =
+                new com.eneik.production.models.persistence.CoherenceRunEntity();
+        UUID runId = UUID.randomUUID();
+        latestRun.setId(runId);
+        when(coherenceRunRepository.findByProjectIdOrderByRanAtDesc(project.getId())).thenReturn(List.of(latestRun));
+
+        com.eneik.production.models.persistence.CoherenceRunNodeResultEntity rejectedResult =
+                new com.eneik.production.models.persistence.CoherenceRunNodeResultEntity();
+        rejectedResult.setEvidenceNodeId(staleId);
+        rejectedResult.setAccepted(false);
+        com.eneik.production.models.persistence.CoherenceRunNodeResultEntity acceptedResult =
+                new com.eneik.production.models.persistence.CoherenceRunNodeResultEntity();
+        acceptedResult.setEvidenceNodeId(liveId);
+        acceptedResult.setAccepted(true);
+        when(coherenceRunNodeResultRepository.findByCoherenceRunId(runId))
+                .thenReturn(List.of(rejectedResult, acceptedResult));
+
+        MLPredictionServiceClient.ToolExecutor executor = capturedExecutor(project);
+        Map<String, Object> result = executor.execute("readRecentEvidenceNodes", Map.of());
+
+        assertEquals(List.of(liveId.toString()), result.get("nodeIds"));
     }
 
     @Test

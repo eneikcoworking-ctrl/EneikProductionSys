@@ -117,6 +117,7 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
     private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
     private final com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository;
+    private final com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository;
     private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -155,6 +156,7 @@ public class GeminiProjectObserverService {
                                          com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService,
                                          com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
                                          com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository,
+                                         com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository,
                                          com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
@@ -176,6 +178,7 @@ public class GeminiProjectObserverService {
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.evidenceNodeRepository = evidenceNodeRepository;
         this.coherenceRunRepository = coherenceRunRepository;
+        this.coherenceRunNodeResultRepository = coherenceRunNodeResultRepository;
         this.operationalRealityFindingRepository = operationalRealityFindingRepository;
     }
 
@@ -629,9 +632,13 @@ public class GeminiProjectObserverService {
                 case "readRecentEvidenceNodes" -> {
                     List<com.eneik.production.models.persistence.EvidenceNodeEntity> nodes =
                             evidenceNodeRepository.findByProjectIdAndCreatedAtAfter(project.getId(), Instant.now().minus(24, java.time.temporal.ChronoUnit.HOURS));
+                    Set<UUID> rejected = latestCoherenceRunRejectedNodeIds(project.getId());
+                    List<com.eneik.production.models.persistence.EvidenceNodeEntity> live = nodes.stream()
+                            .filter(n -> !rejected.contains(n.getId()))
+                            .toList();
                     yield Map.of(
-                            "nodeIds", nodes.stream().map(n -> n.getId().toString()).toList(),
-                            "nodes", nodes.stream().map(n -> Map.of(
+                            "nodeIds", live.stream().map(n -> n.getId().toString()).toList(),
+                            "nodes", live.stream().map(n -> Map.of(
                                     "id", n.getId().toString(),
                                     "polarity", n.getPolarity().name(),
                                     "sourceType", n.sourceType(),
@@ -665,6 +672,30 @@ public class GeminiProjectObserverService {
             log.warn("GeminiProjectObserverService: tool '{}' failed for project {}: {}", toolName, project.getId(), e.getMessage());
             return Map.of("error", "tool execution failed: " + e.getMessage());
         }
+    }
+
+    /**
+     * 2026-08-09: readRecentEvidenceNodes used to return every node in its flat 24h window regardless of
+     * whether {@link com.eneik.production.services.coherence.EvidenceCoherenceService} (Thagard/ECHO +
+     * Gärdenfors/AGM, on its own independent 2h cycle) had since rejected it against fresher, contradicting
+     * evidence - confirmed live on test-forty-third: a self-contamination NEGATIVE_FINDING kept resurfacing
+     * in her journal for 7+ hours after the real incident was fixed, because nothing here ever consulted the
+     * coherence verdict that already exists for exactly this purpose (see CoherenceRunEntity's own doc
+     * comment - "the real, objective anchor... instead of trusting an LLM's own self-reported sense"). Only
+     * the MOST RECENT run's verdict is consulted (a node's credibility can flip as fresher evidence arrives);
+     * a node with no verdict yet (created since the last coherence cycle) is never filtered - absence of a
+     * verdict is not evidence of rejection.
+     */
+    private Set<UUID> latestCoherenceRunRejectedNodeIds(UUID projectId) {
+        List<com.eneik.production.models.persistence.CoherenceRunEntity> runs =
+                coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId);
+        if (runs.isEmpty()) {
+            return Set.of();
+        }
+        return coherenceRunNodeResultRepository.findByCoherenceRunId(runs.get(0).getId()).stream()
+                .filter(r -> !r.isAccepted())
+                .map(com.eneik.production.models.persistence.CoherenceRunNodeResultEntity::getEvidenceNodeId)
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     /**
