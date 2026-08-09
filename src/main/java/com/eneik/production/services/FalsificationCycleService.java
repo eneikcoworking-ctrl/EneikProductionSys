@@ -19,6 +19,17 @@ public class FalsificationCycleService {
 
     private static final int MAX_MERGED_PRS_PER_AUDIT = 5;
     private static final int MAX_DIFF_CHARS_PER_PR = 6000;
+    // Live incident, 2026-08-05 (test-forty-first): buildAuditPrompt's client-brief section had no size
+    // bound at all, unlike the diff-fetching logic right above it (properly capped via MAX_DIFF_CHARS_PER_PR
+    // * MAX_MERGED_PRS_PER_AUDIT). A project that accumulates many client-sourced wishlist rows over time
+    // (confirmed: 43 for this project) got every one of them concatenated in full, unbounded, into a single
+    // audit prompt - measured live at 2,680,368 characters for one dispatch. Jules's API correctly rejected
+    // it (HTTP 400 INVALID_ARGUMENT: "Request contains an invalid argument"), and the account-health logic
+    // then misread that single oversized-payload rejection as "the whole account is blocked", disabling
+    // dispatch for the account's other 14 legitimate concurrent slots too. Capped the same way diffs
+    // already are - same size class as MAX_DIFF_CHARS_PER_PR, this is prose text not code, no reason for a
+    // different order of magnitude.
+    private static final int MAX_CLIENT_BRIEF_CHARS_TOTAL = 20000;
 
     // Philosophical falsification track (2026-07-25, operator directive): the formal track above answers
     // "does the shipped code contradict its own charters?" - this answers "is the shipped PRODUCT genuinely
@@ -36,6 +47,13 @@ public class FalsificationCycleService {
     private static final int MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN = 8;
     private static final int MAX_PENDING_PHILOSOPHICAL_WISHLISTS = 10;
 
+    // 2026-08-07 fix (RAG role-context unification): replaces raw, unbounded per-role charter/philosopher-
+    // pattern file reads (readRawRules + inline directory globs, now removed) with GeminiContextService's
+    // already-indexed corpus. Code-defect audit covers all ~13 active roles in one request, so its per-role
+    // budget is tighter; the philosophical track batches only a few roles per turn, so it can afford more.
+    private static final int CODE_DEFECT_AUDIT_ROLE_CONTEXT_TOP_K = 4;
+    private static final int PHILOSOPHICAL_AUDIT_ROLE_CONTEXT_TOP_K = 6;
+
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
     private final RoleCapabilityLoader roleCapabilityLoader;
@@ -50,6 +68,9 @@ public class FalsificationCycleService {
     private final TaskRepository taskRepository;
     private final JulesSessionRepository julesSessionRepository;
     private final PersistentWorkerSessionService persistentWorkerSessionService;
+    private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
+    private final com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository;
+    private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
@@ -80,7 +101,10 @@ public class FalsificationCycleService {
                                      GeminiContextService geminiContextService,
                                      TaskRepository taskRepository,
                                      JulesSessionRepository julesSessionRepository,
-                                     PersistentWorkerSessionService persistentWorkerSessionService) {
+                                     PersistentWorkerSessionService persistentWorkerSessionService,
+                                     com.eneik.production.repositories.PrReviewRepository prReviewRepository,
+                                     com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository,
+                                     com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -95,6 +119,9 @@ public class FalsificationCycleService {
         this.taskRepository = taskRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.persistentWorkerSessionService = persistentWorkerSessionService;
+        this.prReviewRepository = prReviewRepository;
+        this.codeIntegrityFindingRepository = codeIntegrityFindingRepository;
+        this.evidenceNodeRepository = evidenceNodeRepository;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -123,6 +150,78 @@ public class FalsificationCycleService {
     // since readiness kept getting reset by coverage-audit re-triggers between Sundays). 03:00 still
     // deliberately never collides with the formal cron's hour, since both dispatch through the same reserved
     // eneikdru compiler-account capacity (dispatchCompilerTask).
+    /**
+     * 2026-08-09 (live incident, operator-flagged: a genuinely in-progress multi-turn discussion sat idle
+     * for 4.5+ hours between turns): "how often should a brand-new 13-role discussion be allowed to start"
+     * (a deliberate operator choice, 2026-07-25/26, "раз в 2 дня") and "how often should an ALREADY-STARTED
+     * discussion be allowed to advance by one more role-batch" got conflated into the same entry point once
+     * the 2026-08-03 persistent-multi-turn-worker rewrite landed - an integration oversight between two
+     * decisions made on different days, not a deliberate throttle. continuePhilosophicalDiscussion is
+     * already safe to call often on its own terms (dispatchToPhilosophicalAuditPersistentWorker no-ops if
+     * the worker is still mid-turn, and follow-up turns are deliberately NOT re-gated by readiness/pending
+     * thresholds - see continuePhilosophicalDiscussion's own comment). This runs far more often than the
+     * "start a new discussion" cron below and ONLY ever continues a worker that already exists - it never
+     * starts a new 13-role sweep, so the operator's original every-2-days intent for THAT decision is
+     * untouched.
+     *
+     * 2026-08-09 addendum, found live within minutes of this cron's own first deploy (operator: "не сломай,
+     * это ядро"): Jules's raw self-reported status can still read "pr_opened" (stale, unchanged) for a real
+     * few seconds immediately after we just sent it a brand-new follow-up message - pollStatus's edge
+     * detector (oldStatus="revising" from sendFollowUpMessage -> mappedStatus="pr_opened" from that stale
+     * read) cannot tell that apart from Jules genuinely having finished the new batch already, and fires
+     * completePersistentWorkerCycle for real - which unconditionally clears the "batch in flight" marker
+     * (PersistentWorkerSessionService.consumeCurrentBatch), making the worker look idle-and-fresh again
+     * within seconds. Confirmed live: a "turn complete, 9 of 13 covered" log line appeared 9 seconds after
+     * dispatch, while the real GitHub PR still showed zero new commits since 03:08 - the covered-role
+     * bookkeeping (appendCoveredPhilosophicalAuditRoles, written at DISPATCH time per its own javadoc) had
+     * raced ahead of Jules's real work. Left unguarded, this fast cron could re-fire every 15 minutes
+     * against the same false-idle signal, inflating the covered-role count to 13/13 before Jules genuinely
+     * wrote most of the real critique content, triggering a premature close/synthesis on an incomplete
+     * report. MIN_MINUTES_BETWEEN_PHILOSOPHICAL_TURNS is a deliberately simple, targeted guard (only on this
+     * new code path, not the shared PersistentWorkerSessionService.isIdleAndFresh used by the other two
+     * persistent-worker purposes, which are driven by their own separate cadences and aren't known to have
+     * this exposure) - gives Jules a realistic minimum window to actually respond before the next follow-up
+     * can be sent, regardless of how early a stale-status edge makes the worker look idle again. Does not fix
+     * the underlying stale-poll race itself (a deeper, riskier change to pollStatus's edge detection, not
+     * attempted here under time pressure) - only bounds its worst consequence.
+     */
+    private static final int MIN_MINUTES_BETWEEN_PHILOSOPHICAL_TURNS = 20;
+
+    @Scheduled(cron = "${philosophical-falsification-continuation.cron:0 */15 * * * ?}")
+    public void advanceInProgressPhilosophicalDiscussions() {
+        if (!settingsService.effectiveBoolean("philosophical_falsification_enabled")) {
+            return;
+        }
+        List<RoleEntity> activeRoles = roleRepository.findAll().stream()
+                .filter(RoleEntity::isActive)
+                .toList();
+        if (activeRoles.isEmpty()) {
+            return;
+        }
+        List<ProjectEntity> projects = projectRepository.findAll().stream()
+                .filter(p -> p.getStatus() == ProjectStatus.active)
+                .toList();
+        for (ProjectEntity project : projects) {
+            try {
+                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT)
+                        .ifPresent(worker -> {
+                            if (worker.getLastMessageSentAt() != null
+                                    && worker.getLastMessageSentAt().isAfter(
+                                            Instant.now().minus(java.time.Duration.ofMinutes(MIN_MINUTES_BETWEEN_PHILOSOPHICAL_TURNS)))) {
+                                log.info("FalsificationCycleService: Philosophical-audit worker {} last messaged too recently "
+                                                + "({}); giving Jules more real time before the next follow-up",
+                                        worker.getId(), worker.getLastMessageSentAt());
+                                return;
+                            }
+                            continuePhilosophicalDiscussion(project, worker, activeRoles);
+                        });
+            } catch (Exception e) {
+                log.error("FalsificationCycleService: Failed to advance in-progress philosophical discussion for project {}: {}",
+                        project.getId(), e.getMessage(), e);
+            }
+        }
+    }
+
     @Scheduled(cron = "${philosophical-falsification.cron:0 0 3 */2 * ?}")
     public void runWeeklyPhilosophicalFalsificationCycle() {
         // Feature-flag check lives inside executePhilosophicalCycleForProject (not here), so the manual
@@ -165,6 +264,18 @@ public class FalsificationCycleService {
                 ? philosophicalSubsequentRunReadinessThreshold
                 : philosophicalFirstRunReadinessThreshold;
         return new PhilosophicalReadinessInfo(applicableThreshold, hasRunBefore);
+    }
+
+    /**
+     * The regular (code-defect) self_falsification cycle's own readiness threshold - exposed for the same
+     * reason as philosophicalReadinessInfo above, so GeminiProjectObserverService can show her this gate's
+     * real state instead of it being invisible to her (2026-08-06: she had no way to see or trigger this
+     * cycle at all before - only the philosophical track had a Gemini-callable tool, so a project stuck
+     * behind THIS gate - see Readiness.selfFalsificationReadyRatio's own javadoc - had no path to recovery
+     * except a human noticing and waiting for the daily cron).
+     */
+    public double codeDefectReadinessThreshold() {
+        return readinessThreshold;
     }
 
     /**
@@ -224,10 +335,13 @@ public class FalsificationCycleService {
             double applicableThreshold = readinessInfo.applicableThreshold();
 
             ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-            if (!readiness.decompositionComplete() || readiness.ratio() < applicableThreshold) {
+            // selfFalsificationReadyRatio, not ratio(): a permanently-failed task with no replacement must
+            // not keep this gate below threshold forever (see the field's own javadoc - the exact same
+            // self-referential deadlock class applies to the philosophical track's own readiness check).
+            if (!readiness.decompositionComplete() || readiness.selfFalsificationReadyRatio() < applicableThreshold) {
                 log.info("FalsificationCycleService: Project {} not ready for philosophical falsification yet "
                                 + "({}% < {}% threshold, {} run); skipping",
-                        project.getName(), Math.round(readiness.ratio() * 100), Math.round(applicableThreshold * 100),
+                        project.getName(), Math.round(readiness.selfFalsificationReadyRatio() * 100), Math.round(applicableThreshold * 100),
                         hasRunBefore ? "subsequent" : "first");
                 return;
             }
@@ -274,10 +388,20 @@ public class FalsificationCycleService {
             return;
         }
 
-        List<String> covered = projectFlowService.coveredPhilosophicalAuditRoles(carrierTask);
-        List<RoleEntity> remainingRoles = activeRoles.stream().filter(r -> !covered.contains(r.getTag())).toList();
+        // 2026-08-09 (live incident: BARCAN-TAG-12 was asked about at 09:00:14 and the discussion was closed/
+        // merged by 09:00:23 - 9 seconds later, with the final archived report never containing a single
+        // critique for that role tag). Root cause: "covered" used to be an append-only marker written the
+        // moment a role batch was SENT (ProjectFlowService.appendCoveredPhilosophicalAuditRoles, now removed),
+        // not when Jules's answer was actually verified to contain it - a fast-enough poll (or the stale-status
+        // race MIN_MINUTES_BETWEEN_PHILOSOPHICAL_TURNS only bounds, doesn't fix) could treat a role as spoken
+        // before Jules had written one word. Covered is now derived exclusively from what the report file on
+        // the branch actually contains right now - no separate bookkeeping to drift out of sync with reality.
         String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
         List<PhilosophicalCritique> priorCritiques = fetchInProgressReportCritiques(project, worker, reportPath);
+        java.util.Set<String> covered = priorCritiques.stream()
+                .map(PhilosophicalCritique::roleTag)
+                .collect(java.util.stream.Collectors.toSet());
+        List<RoleEntity> remainingRoles = activeRoles.stream().filter(r -> !covered.contains(r.getTag())).toList();
 
         String message;
         List<String> nextRoleTags;
@@ -379,31 +503,13 @@ public class FalsificationCycleService {
     }
 
     private String buildPhilosophicalFollowUpPrompt(List<RoleEntity> roleBatch, List<PhilosophicalCritique> priorCritiques, String reportPath) {
+        String digest = renderCritiqueDigest(priorCritiques);
+        String retrievalQuery = "philosophical product falsification discussion turn - roles: "
+                + roleBatch.stream().map(RoleEntity::getTag).reduce("", (a, b) -> a.isEmpty() ? b : a + ", " + b);
         StringBuilder charters = new StringBuilder();
         for (RoleEntity role : roleBatch) {
-            String rawRules = readRawRules(role);
-            if (rawRules == null || rawRules.isBlank()) {
-                continue;
-            }
-            charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
+            charters.append(geminiContextService.buildRoleScopedContext(role, retrievalQuery, PHILOSOPHICAL_AUDIT_ROLE_CONTEXT_TOP_K));
         }
-        try {
-            java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
-            if (java.nio.file.Files.isDirectory(philosophersDir)) {
-                for (RoleEntity role : roleBatch) {
-                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, role.getTag() + "*.md")) {
-                        for (java.nio.file.Path philFile : stream) {
-                            charters.append("\n\n=== PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append(" ===\n")
-                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("FalsificationCycleService: failed to attach philosopher pattern files for follow-up turn: {}", e.getMessage());
-        }
-
-        String digest = renderCritiqueDigest(priorCritiques);
 
         return """
                 This is the next turn of the SAME ongoing philosophical product falsification discussion, not
@@ -463,36 +569,12 @@ public class FalsificationCycleService {
 
     private String buildPhilosophicalAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, int totalActiveRoleCount,
             String reportPath, String screenshotDir) {
+        String retrievalQuery = "philosophical product falsification of " + project.getName();
         StringBuilder charters = new StringBuilder();
         for (RoleEntity role : activeRoles) {
-            String rawRules = readRawRules(role);
-            if (rawRules == null || rawRules.isBlank()) {
-                continue;
-            }
-            charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
+            charters.append(geminiContextService.buildRoleScopedContext(role, retrievalQuery, PHILOSOPHICAL_AUDIT_ROLE_CONTEXT_TOP_K));
         }
-
-        // Direct Grounding: attach common patterns and per-role philosopher patterns
-        try {
-            java.nio.file.Path commonFile = java.nio.file.Paths.get("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md");
-            if (java.nio.file.Files.exists(commonFile)) {
-                charters.append("\n\n=== COMMON ANALYTIC PROGRAMMING PATTERNS ===\n")
-                        .append(java.nio.file.Files.readString(commonFile)).append("\n");
-            }
-            java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
-            if (java.nio.file.Files.isDirectory(philosophersDir)) {
-                for (RoleEntity role : activeRoles) {
-                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, role.getTag() + "*.md")) {
-                        for (java.nio.file.Path philFile : stream) {
-                            charters.append("\n\n=== PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append(" ===\n")
-                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("FalsificationCycleService: failed to attach philosopher pattern files: {}", e.getMessage());
-        }
+        charters.append(geminiContextService.buildCommonPatternContext(retrievalQuery, PHILOSOPHICAL_AUDIT_ROLE_CONTEXT_TOP_K));
 
         // RAG augmentation (2026-07-25, operator directive): surface relevant standing knowledge (prior
         // incidents, known architecture gaps, engineering invariants) the auditing session should know
@@ -826,7 +908,13 @@ public class FalsificationCycleService {
     // product-implementation dispatch.
     public void executeCycleForProject(ProjectEntity project) {
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        if (!readiness.decompositionComplete() || readiness.ratio() < readinessThreshold) {
+        // selfFalsificationReadyRatio, not ratio(): this cycle is the ONLY mechanism authorized to create
+        // replacement work for a task the iteration-admission poka-yoke retired without one (see
+        // ProjectFlowService.createRecoveryWishlistForOrphanedBlockedTasks and the field's own javadoc) -
+        // gating it on strict ratio() made that exact recovery permanently unreachable (live incident,
+        // test-forty-second, 2026-08-06: task 5ac0b91b retired with "no child work created", 2 dependents
+        // stuck queued forever, SYSTEM_STALLED for 280+ minutes).
+        if (!readiness.decompositionComplete() || readiness.selfFalsificationReadyRatio() < readinessThreshold) {
             // Auditing before there's a real object to audit just spends a reserved eneikdru session on
             // whatever process/design artifacts happen to be in main yet (confirmed live in
             // test-twenty-eighth: the first cycle ran against zero merged product code and found only
@@ -834,11 +922,11 @@ public class FalsificationCycleService {
             // really shipped (merged, not just review-approved - see ClientDeliverableReadinessService)
             // before spending capacity looking for violations in it.
             log.info("FalsificationCycleService: Project {} not ready for falsification yet ({}/{} planned task(s) merged, "
-                            + "{}/{} feature(s) complete, decompositionComplete={}, {}% < {}% threshold); "
+                            + "{}/{} feature(s) complete, decompositionComplete={}, {}% (falsification-ready) < {}% threshold); "
                             + "skipping this cycle instead of auditing an incomplete product iteration",
                     project.getName(), readiness.mergedDeliverables(), readiness.totalDeliverables(),
                     readiness.completeFeatures(), readiness.totalFeatures(), readiness.decompositionComplete(),
-                    Math.round(readiness.ratio() * 100), Math.round(readinessThreshold * 100));
+                    Math.round(readiness.selfFalsificationReadyRatio() * 100), Math.round(readinessThreshold * 100));
             return;
         }
 
@@ -868,36 +956,73 @@ public class FalsificationCycleService {
         String reportPath = ".eneik/records/falsification-report-" + java.util.UUID.randomUUID() + ".json";
         String prompt = buildAuditPrompt(project, activeRoles, recentChanges.text(), reportPath);
 
-        UUID taskId = projectFlowService.dispatchFalsificationAudit(project, prompt, recentChanges.highestPrNumber(), reportPath);
-        if (taskId == null) {
+        ProjectFlowService.AuditDispatchResult result =
+                projectFlowService.dispatchFalsificationAudit(project, prompt, recentChanges.highestPrNumber(), reportPath);
+        if (result.taskId() == null) {
             log.warn("FalsificationCycleService: Could not dispatch falsification audit for project {}", project.getName());
             return;
         }
-        log.info("FalsificationCycleService: Dispatched falsification audit task {} for project {} covering {} active role(s)",
-                taskId, project.getName(), activeRoles.size());
+        // 2026-08-07 fix: only claim "Dispatched" when the Jules call actually succeeded this cycle - the
+        // old code logged this unconditionally right after dispatchFalsificationAudit's own Jules call had
+        // just failed with HTTP 400, a real testimony-vs-evidence gap. dispatchedToJules=false is not an
+        // error: the task is real and queued, and retries automatically on the next compiler-dispatch cycle.
+        if (result.dispatchedToJules()) {
+            log.info("FalsificationCycleService: Dispatched falsification audit task {} for project {} covering {} active role(s)",
+                    result.taskId(), project.getName(), activeRoles.size());
+        } else {
+            log.info("FalsificationCycleService: Falsification audit task {} created and queued for project {} covering {} "
+                            + "active role(s); Jules dispatch not yet confirmed this cycle - will retry automatically",
+                    result.taskId(), project.getName(), activeRoles.size());
+        }
     }
 
     private String buildAuditPrompt(ProjectEntity project, List<RoleEntity> activeRoles, String latestDiff, String reportPath) {
         StringBuilder briefSection = new StringBuilder();
+        // Live incident, 2026-08-05 (test-forty-first): source==client alone is NOT "this is genuine client
+        // input" - confirmed live, this project's wishlist table held exactly 1 real root brief
+        // (sourceRoleTag blank) plus 42 rows titled "Internal [UI] work item N (ROLE) from wishlist
+        // <rootId>: ..." - internal per-role decomposition artifacts that inherited source=client from their
+        // parent but each embed the ENTIRE parent brief's text again inside their own content (the actual
+        // repeated-decomposition duplication bug class already fixed once at the task level in 2026-07-20 -
+        // this is the same root behavior surfacing at the wishlist-item level instead, uncaught by that
+        // fix). sourceRoleTag is the field that actually discriminates "real client submission" (blank) from
+        // "derived internal artifact" (a role tag) - verified against every one of this project's 43 rows,
+        // not assumed. MAX_CLIENT_BRIEF_CHARS_TOTAL below stays as defense-in-depth even after this filter -
+        // a single genuinely oversized real brief should still never be sent unbounded.
         List<WishlistEntity> clientBriefs = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.client)
+                .filter(w -> w.getSourceRoleTag() == null || w.getSourceRoleTag().isBlank())
                 .toList();
         if (!clientBriefs.isEmpty()) {
             briefSection.append("\n\n=== ORIGINAL CLIENT SPECIFICATION & DECOMPOSITION COVERAGE ===\n");
+            int briefsIncluded = 0;
             for (WishlistEntity brief : clientBriefs) {
-                briefSection.append("Client Brief Content:\n").append(brief.getContent()).append("\n---\n");
+                if (briefSection.length() >= MAX_CLIENT_BRIEF_CHARS_TOTAL) {
+                    break;
+                }
+                briefSection.append("Client Brief Content:\n")
+                        .append(truncate(brief.getContent(), MAX_DIFF_CHARS_PER_PR))
+                        .append("\n---\n");
+                briefsIncluded++;
+            }
+            if (briefsIncluded < clientBriefs.size()) {
+                briefSection.append("[").append(clientBriefs.size() - briefsIncluded)
+                        .append(" older client brief(s) omitted - size budget reached]\n");
             }
             briefSection.append("Audit Objective: Compare the above client specification against all merged PRs and actual code implementation below. Verify whether any requirements were missed, incomplete, or deviated from.\n");
         }
 
+        // RAG role context (2026-08-07 fix, live incident: this used to concatenate every active role's
+        // FULL raw charter + FULL philosopher-pattern files, unbounded - measured ~1.5-2MB for 13 roles,
+        // which Jules rejected outright with HTTP 400 on every retry, forever. Scoped per-role retrieval
+        // against GeminiContextService's already-indexed corpus (see buildRoleScopedContext) instead - the
+        // diff itself is the retrieval query, so each role gets the charter/pattern passages actually
+        // relevant to what's being audited, not the whole document.
         StringBuilder charters = new StringBuilder();
         for (RoleEntity role : activeRoles) {
-            String rawRules = readRawRules(role);
-            if (rawRules == null || rawRules.isBlank()) {
-                continue;
-            }
-            charters.append("\n\n=== ROLE ").append(role.getTag()).append(" CHARTER ===\n").append(rawRules);
+            charters.append(geminiContextService.buildRoleScopedContext(role, latestDiff, CODE_DEFECT_AUDIT_ROLE_CONTEXT_TOP_K));
         }
+        charters.append(geminiContextService.buildCommonPatternContext(latestDiff, CODE_DEFECT_AUDIT_ROLE_CONTEXT_TOP_K));
 
         return """
                 You are the falsification auditor for this project (BARCAN-TAG-09 role). Audit the CURRENT
@@ -914,12 +1039,42 @@ public class FalsificationCycleService {
                 2. Methodological falsification: applying that charter's philosophical framing, is there a
                    confirmed systemic contradiction (not a stylistic nitpick)?
                 3. Specification & Coverage Audit: compare merged PRs and actual codebase against the client brief.
+                4. Stub code (role-independent - check this regardless of what any specific charter says):
+                   does any function, endpoint handler, or pipeline stage fake success without doing real
+                   work - a hardcoded/fixture response, a TODO-only body, a log line claiming completion with
+                   no underlying logic, a try/catch that swallows a real failure and returns a plausible-
+                   looking success? Report every instance you find, even if no charter explicitly names it.
+                5. Architectural layer violation (same role-independent class as #4): does a UI slice exist
+                   with nothing real behind it (calls an endpoint that doesn't exist, or a mocked one), or is
+                   a claimed integration between two layers actually unwired (e.g. a "connected" backend call
+                   that's never invoked, a described data flow that silently drops)?
+                6. Causal justification (Pearl's ladder of causation - association vs intervention vs
+                   counterfactual): where a PR's own description or commit message claims a fix addresses a
+                   root cause ("fixes the stall", "resolves the race"), does the diff actually change the
+                   mechanism that produces the symptom, or does it only correlate with the symptom going away
+                   (a retry added around a call whose real failure was never identified, a timeout raised
+                   without evidence the timeout was the actual constraint, a status reset with no change to
+                   whatever put it in that status repeatedly)? Report this as "causal_unjustified" only when
+                   the diff or its own stated rationale gives you concrete grounds to say the claimed cause
+                   was never actually traced - an honest "no PR made an unsupported causal claim this cycle"
+                   is correct far more often than not.
+
+                For findings in categories 4-6: set "roleTag" to whichever role charter's area of ownership
+                the stub/violation sits in (e.g. BARCAN-TAG-02 for a backend stub, BARCAN-TAG-11 for a
+                frontend one); if no single role clearly owns it, use "BARCAN-TAG-09" (this auditor's own
+                role) rather than skip the finding. Also set "prNumber" to the real PR number shown in the
+                "=== PR #N ..." section header above the code you found the issue in - cite the exact number
+                you were shown, never guess or invent one; omit the field entirely if the issue isn't tied to
+                any specific merged PR.
 
                 Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
                 (this EXACT path - it is unique to this task, do not use any other path), with EXACTLY
                 this shape and no other files changed:
                 {"violations": [
                   {"roleTag": "BARCAN-TAG-02", "type": "refusal_criteria", "reason": "concrete reason tied to the diff"},
+                  {"roleTag": "BARCAN-TAG-11", "type": "stub", "prNumber": 47, "reason": "concrete: which function/file, what it fakes, what real work is missing"},
+                  {"roleTag": "BARCAN-TAG-02", "type": "layer_violation", "prNumber": 47, "reason": "concrete: which two layers, what's unwired or missing"},
+                  {"roleTag": "BARCAN-TAG-05", "type": "causal_unjustified", "prNumber": 47, "reason": "concrete: what the PR claimed as the cause, what the diff actually changed, why that gap means the mechanism was never traced"},
                   {"roleTag": "BARCAN-TAG-07", "type": "methodological", "philosopher": "name", "thesis": "...",
                    "score": "3", "mustBe": "...", "performance": "...", "attractive": "..."}
                 ]}
@@ -945,7 +1100,11 @@ public class FalsificationCycleService {
             String score,
             String mustBe,
             String performance,
-            String attractive
+            String attractive,
+            // Real PR number cited by the auditor for "stub"/"layer_violation" findings, copied verbatim
+            // from the "=== PR #N ..." section header it was shown - null for other types, or when the
+            // finding isn't tied to a specific merged PR. Never derived by guessing/fuzzy-matching text.
+            Integer prNumber
     ) {
     }
 
@@ -1038,8 +1197,22 @@ public class FalsificationCycleService {
         Integer previousHighest = falsificationRunRepository.findTopByProjectIdOrderByRunAtDesc(project.getId())
                 .map(FalsificationRunEntity::getHighestPrNumberAudited)
                 .orElse(null);
-        Integer watermark = highestPrNumberAudited == null ? previousHighest
-                : (previousHighest == null ? highestPrNumberAudited : Math.max(previousHighest, highestPrNumberAudited));
+        // Deliberately if/else, not a chained ternary (2026-08-05, found live by a new test with no prior
+        // run history AND no cited PR number - both null simultaneously): a ternary whose two branches are
+        // one Integer and one int-producing expression (Math.max(...)) forces the WHOLE conditional
+        // expression's static type to int per JLS binary numeric promotion, which silently unboxes the
+        // Integer branch EVEN WHEN IT'S THE ONE TAKEN - `previousHighest == null ? previousHighest : ...`
+        // still calls previousHighest.intValue() on a null reference. A category error (conflating "an
+        // Integer reference" with "an int value" across a branch that was never supposed to unbox), not a
+        // missing-data gap - explicit branches sidestep the promotion entirely.
+        Integer watermark;
+        if (highestPrNumberAudited == null) {
+            watermark = previousHighest;
+        } else if (previousHighest == null) {
+            watermark = highestPrNumberAudited;
+        } else {
+            watermark = Math.max(previousHighest, highestPrNumberAudited);
+        }
 
         FalsificationRunEntity run = new FalsificationRunEntity();
         run.setProjectId(project.getId());
@@ -1048,10 +1221,113 @@ public class FalsificationCycleService {
         run.setViolationsFoundCount(violationsFoundCount);
         run.setTasksCreatedCount(followUpsCreatedCount);
         run.setHighestPrNumberAudited(watermark);
-        falsificationRunRepository.save(run);
+        run = falsificationRunRepository.save(run);
+
+        // Product-layer Six Sigma instrumentation (2026-08-05): persist one row per stub/layer_violation
+        // finding, independent of the consolidated-wishlist dedup above (that logic only ever creates ONE
+        // wishlist per call and skips every violation after the first - this must not inherit that
+        // short-circuit, every real finding needs its own row for accurate per-feature counting). Additive
+        // only - does not replace or interact with the existing self_falsification wishlist/task path.
+        for (AuditViolation violation : validViolations) {
+            // 2026-08-05: "causal_unjustified" (Pearl's ladder of causation category, added the same night as
+            // the philosopher corpus work) was missing here - the audit prompt asked for it and the JSON
+            // shape example showed it, but this persistence filter was never updated, so every such finding
+            // was silently dropped from code-integrity stats even though it was a real, valid violation type.
+            if (!"stub".equalsIgnoreCase(violation.type())
+                    && !"layer_violation".equalsIgnoreCase(violation.type())
+                    && !"causal_unjustified".equalsIgnoreCase(violation.type())) {
+                continue;
+            }
+            CodeIntegrityFindingEntity finding = new CodeIntegrityFindingEntity();
+            finding.setProjectId(project.getId());
+            finding.setFalsificationRunId(run.getId());
+            finding.setFindingType(violation.type().toLowerCase(java.util.Locale.ROOT));
+            finding.setPrNumber(violation.prNumber());
+            finding.setReason(violation.reason());
+            java.util.Optional<TaskEntity> offendingTask = resolveTaskForPrNumber(project.getId(), violation.prNumber());
+            finding.setFeatureId(offendingTask.map(TaskEntity::getFeatureId).orElse(null));
+            codeIntegrityFindingRepository.save(finding);
+            offendingTask.ifPresent(this::boostImpactedSiblingTasks);
+
+            // Additive write to the shared evidence graph (EvidenceCoherenceService/Thagard) - every
+            // code-integrity finding is inherently a negative signal (a real violation was confirmed), same
+            // structural-polarity rule as the other two producers.
+            EvidenceNodeEntity node = new EvidenceNodeEntity();
+            node.setProjectId(project.getId());
+            node.setFeatureId(finding.getFeatureId());
+            node.setPrNumber(violation.prNumber());
+            node.setPolarity(EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+            node.setSummaryText(finding.getFindingType() + " (" + violation.roleTag() + "): " + violation.reason());
+            node.setCodeIntegrityFindingId(finding.getId());
+            evidenceNodeRepository.save(node);
+        }
 
         log.info("FalsificationCycleService: Completed audit for project {}. Checked roles: {}, Violations: {}, Follow-up wishlist items created: {}",
                 project.getName(), rolesCheckedCount, violationsFoundCount, followUpsCreatedCount);
+    }
+
+    // Resolves a code-integrity finding's PR citation to the real task it belongs to, via
+    // PrReviewEntity -> JulesSessionEntity.taskId -> TaskEntity chain SixSigmaAuditService's own
+    // computePrConflictCounts already uses for a different purpose - exact attribution from data the system
+    // already computes, never a fuzzy/guessed match. Empty (unattributed, not dropped) when no prNumber was
+    // cited, or the cited number doesn't resolve to any review owned by this project.
+    private java.util.Optional<TaskEntity> resolveTaskForPrNumber(UUID projectId, Integer prNumber) {
+        if (prNumber == null) {
+            return java.util.Optional.empty();
+        }
+        return prReviewRepository.findAll().stream()
+                .filter(review -> prNumber.equals(review.getPrNumber()))
+                .filter(review -> review.getJulesSessionId() != null)
+                .map(review -> julesSessionRepository.findById(review.getJulesSessionId()))
+                .filter(java.util.Optional::isPresent)
+                .map(java.util.Optional::get)
+                .map(session -> taskRepository.findById(session.getTaskId()))
+                .filter(java.util.Optional::isPresent)
+                .map(java.util.Optional::get)
+                .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
+                .findFirst();
+    }
+
+    private static final double IMPACT_BOOST_COEFFICIENT_THRESHOLD = 0.8;
+    // Same priority floor GeminiObserverActionService.boostPriority already uses for "bump this above
+    // normal dispatch order" - one shared semantic, not a second invented number.
+    private static final int IMPACT_BOOST_PRIORITY = 100;
+
+    // 2026-08-07 (Kaizen/Jidoka wiring): impact_coefficients is a full role-to-role blast-radius matrix
+    // already computed for every task at compile time (TechnicalLeadCompiler.createImpactMatrix) and,
+    // before this, read back exactly once - for a dashboard "role doctrine readiness" score, never to
+    // change what the system actually does (confirmed live audit, 2026-08-07). A confirmed code-integrity
+    // finding (this method's caller) is real evidence that the offending task's OWN role just shipped a
+    // real defect - Toyota-style Jidoka says an abnormality should trigger inspection of what else is
+    // exposed to it, not just a local fix. Boosts queued/claimed sibling tasks in the SAME feature whose
+    // role has a high (>=0.8, the matrix's own "affected role" tier - see createImpactMatrix) coefficient
+    // from the offending role, so they get picked up and re-verified sooner instead of silently building on
+    // top of a role that was just caught with a real defect.
+    private void boostImpactedSiblingTasks(TaskEntity offendingTask) {
+        if (offendingTask.getFeatureId() == null || offendingTask.getRole() == null
+                || offendingTask.getPayload() == null || offendingTask.getProject() == null) {
+            return;
+        }
+        com.fasterxml.jackson.databind.JsonNode coefficients = offendingTask.getPayload().path("impact_coefficients");
+        if (!coefficients.isObject()) {
+            return;
+        }
+        String offendingRoleTag = offendingTask.getRole().getTag();
+        List<TaskEntity> siblings = taskRepository.findByProjectIdOrderByCreatedAtDesc(offendingTask.getProject().getId()).stream()
+                .filter(t -> offendingTask.getFeatureId().equals(t.getFeatureId()))
+                .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed)
+                .filter(t -> t.getRole() != null && !t.getRole().getTag().equals(offendingRoleTag))
+                .toList();
+        for (TaskEntity sibling : siblings) {
+            double coefficient = coefficients.path(sibling.getRole().getTag()).asDouble(0.0);
+            if (coefficient >= IMPACT_BOOST_COEFFICIENT_THRESHOLD && sibling.getPriority() < IMPACT_BOOST_PRIORITY) {
+                sibling.setPriority(IMPACT_BOOST_PRIORITY);
+                taskRepository.save(sibling);
+                log.info("FalsificationCycleService: boosted task {} (role {}) to priority {} - confirmed code-integrity "
+                                + "finding on role {} (impact coefficient {}) means this task's work is exposed to that defect",
+                        sibling.getId(), sibling.getRole().getTag(), IMPACT_BOOST_PRIORITY, offendingRoleTag, coefficient);
+            }
+        }
     }
 
     private String consolidatedViolationContent(List<AuditViolation> violations) {
@@ -1071,21 +1347,6 @@ public class FalsificationCycleService {
             }
         }
         return content.toString();
-    }
-
-    private String readRawRules(RoleEntity role) {
-        if (role.getRulesPath() == null || role.getRulesPath().isBlank()) {
-            return "";
-        }
-        try {
-            java.nio.file.Path path = java.nio.file.Paths.get(role.getRulesPath());
-            if (java.nio.file.Files.exists(path)) {
-                return java.nio.file.Files.readString(path);
-            }
-        } catch (Exception e) {
-            log.warn("FalsificationCycleService: Failed to read raw rules for role {}: {}", role.getTag(), e.getMessage());
-        }
-        return "";
     }
 
     /**
@@ -1179,14 +1440,23 @@ public class FalsificationCycleService {
             return RecentChanges.empty();
         }
 
-        java.util.List<String> recentActivity = com.eneik.production.services.logging.LogScopeBuffer.recent(project.getId(), 60);
-        if (!recentActivity.isEmpty()) {
-            changes.append("\n\n--- RECENT PROJECT OPERATIONAL ACTIVITY (last ").append(recentActivity.size()).append(" scoped log lines) ---\n");
-            for (String line : recentActivity) {
-                changes.append(line).append("\n");
-            }
-        }
-
+        // 2026-08-09 (live incident, test-forty-third, ~38h of compounding contamination traced to its
+        // exact origin): this used to also append LogScopeBuffer.recent(project.getId(), 60) here, under
+        // the label "RECENT PROJECT OPERATIONAL ACTIVITY". LogScopeBuffer is correctly scoped (per its own
+        // javadoc) to only ever hold PROJECT:{id}-tagged log lines, never SYSTEM-wide noise - but every
+        // PROJECT-scoped line that exists is itself a record of EneikProductionSys's OWN orchestration
+        // mechanics acting on this project (dispatch, PR reconciliation, branch GC, claim/session
+        // bookkeeping - literally ScopedBufferAppender.append copying event.getLoggerName() +
+        // event.getFormattedMessage() verbatim), never the delivered product's own runtime - Eneik has no
+        // visibility into that at all. Labelling this "your project's recent activity" and handing it to a
+        // Jules session whose only write access is the CLIENT repo was a category error: Jules read real
+        // sentences about JulesApiClient, PipelineTelemetryService, Flow Core, and PR/task reconciliation,
+        // and - having nowhere else to put a "fix" for what it was reading - fabricated matching classes
+        // inside test-forty-third's own repo. Confirmed as the exact entry point: this is the ONLY place in
+        // the codebase that ever hands LogScopeBuffer content to a project-scoped Jules prompt (the other
+        // caller, ProjectController's debug endpoint, is human-facing only). Removed outright rather than
+        // filtered/relabelled - there is no version of "here is Eneik's own orchestration log" that belongs
+        // in a brief for a session that can only write to the client's product code.
         return new RecentChanges(changes.toString(), highestPrNumberThisBatch);
     }
 

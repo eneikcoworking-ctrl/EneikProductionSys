@@ -69,7 +69,7 @@ public class OperationalPolicyService {
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
-            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE -> activeProject
+            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY, OBSERVE_CLIENT_RUNTIME -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             // Deliberately narrower than hardBlocked (2026-07-31, same shape as DISPATCH_QUEUED_TASKS
@@ -97,6 +97,20 @@ public class OperationalPolicyService {
             // already-dead-ended task's orphaned PR carries no dependency on an unrelated task/review/stall
             // elsewhere in the project - only genuinely global conditions should stop it.
             case RESOLVE_ORPHANED_PR -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+            // Deliberately excludes BLOCKED_BY_DUPLICATE_CONTENT from its own exclusion set (2026-08-07,
+            // unlike every other action above): this IS the recovery action for that exact state - nothing
+            // else can reach a terminal task status while dispatch itself is what BLOCKED_BY_DUPLICATE_CONTENT
+            // denies, so gating this action the same way as the others would make the hard-stop permanent
+            // (confirmed live, test-forty-third: stuck for 3+ hours with no autonomous recovery path).
+            case COLLAPSE_DUPLICATE_TASK -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED").contains(snapshot.currentState());
+            // Same narrowing reasoning as REVIVE_FAILED_TASK/RESOLVE_ORPHANED_PR (2026-08-08): retrying one
+            // specific feature's closeout carries no dependency on an unrelated task/review/stall elsewhere
+            // in the project - only genuinely global conditions should stop it.
+            case RETRY_FEATURE_CLOSEOUT -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
         };

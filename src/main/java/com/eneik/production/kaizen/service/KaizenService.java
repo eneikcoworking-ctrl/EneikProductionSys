@@ -2,8 +2,15 @@ package com.eneik.production.kaizen.service;
 
 import com.eneik.production.kaizen.model.DefectJournalEntity;
 import com.eneik.production.kaizen.model.KaizenProposal;
+import com.eneik.production.kaizen.model.KaizenProposalEntity;
+import com.eneik.production.kaizen.repository.KaizenProposalRepository;
+import com.eneik.production.models.persistence.EvidenceNodeEntity;
+import com.eneik.production.repositories.EvidenceNodeRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.audit.SixSigmaAuditService;
+import com.eneik.production.services.lever.LeverAgreement;
+import com.eneik.production.services.lever.LeverPromotionService;
+import com.eneik.production.services.lever.LeverStage;
 import com.eneik.production.services.toc.ConstraintIdentificationService;
 import com.eneik.production.toc.service.TocSentinelService;
 import org.slf4j.Logger;
@@ -14,13 +21,18 @@ import org.springframework.stereotype.Service;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Kaizen Service - 2-Hour Window Aggregated Micro-Improvement Engine.
  * High-frequency telemetry (anomalies, stalls, DPMO spikes) is recorded silently into the under-the-hood
  * Defect Journal database table. Once every 2 hours, defects are mathematically aggregated, de-duplicated,
  * and presented as human-understandable, action-oriented micro-improvements on the user interface without spam.
+ *
+ * 2026-08-05: proposals moved off an in-memory ConcurrentHashMap onto {@link KaizenProposalRepository} - the
+ * map was wiped on every backend restart (confirmed live: ~10 restarts in one night erased every
+ * accumulated proposal with no trace beyond a log line). The public API (KaizenController,
+ * ProjectTreeService) still works with the plain {@link KaizenProposal} domain object; conversion to/from
+ * {@link KaizenProposalEntity} happens only inside this class.
  */
 @Service
 public class KaizenService {
@@ -32,21 +44,70 @@ public class KaizenService {
     private final TaskRepository taskRepository;
     private final DefectJournalService defectJournalService;
     private final ConstraintIdentificationService constraintIdentificationService;
+    private final KaizenProposalRepository kaizenProposalRepository;
+    private final EvidenceNodeRepository evidenceNodeRepository;
+    private final LeverPromotionService leverPromotionService;
 
-    // In-memory deduplicated proposals store (max 1 active proposal per category & target component per 2-hour window)
-    private final Map<String, KaizenProposal> proposals = new ConcurrentHashMap<>();
+    public static final String F1_KAIZEN_CTQ_TARGETING = "F1_KAIZEN_CTQ_TARGETING";
 
     public KaizenService(TocSentinelService tocSentinelService,
                           SixSigmaAuditService sixSigmaAuditService,
                           TaskRepository taskRepository,
                           DefectJournalService defectJournalService,
-                          ConstraintIdentificationService constraintIdentificationService) {
+                          ConstraintIdentificationService constraintIdentificationService,
+                          KaizenProposalRepository kaizenProposalRepository,
+                          EvidenceNodeRepository evidenceNodeRepository,
+                          LeverPromotionService leverPromotionService) {
         this.tocSentinelService = tocSentinelService;
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.taskRepository = taskRepository;
         this.defectJournalService = defectJournalService;
         this.constraintIdentificationService = constraintIdentificationService;
+        this.kaizenProposalRepository = kaizenProposalRepository;
+        this.evidenceNodeRepository = evidenceNodeRepository;
+        this.leverPromotionService = leverPromotionService;
         log.info("[KAIZEN-INIT] 2-Hour Aggregated Kaizen Micro-Improvement Service initialized.");
+    }
+
+    // ---- Persistence helpers (replace the old ConcurrentHashMap's role) ----
+
+    private List<KaizenProposal> allProposals() {
+        return kaizenProposalRepository.findAll().stream().map(KaizenProposalEntity::toDomain).toList();
+    }
+
+    private void saveProposal(KaizenProposal p) {
+        kaizenProposalRepository.save(KaizenProposalEntity.fromDomain(p));
+    }
+
+    private Optional<KaizenProposal> findProposal(String id) {
+        return kaizenProposalRepository.findById(id).map(KaizenProposalEntity::toDomain);
+    }
+
+    private void deleteMatching(KaizenProposal.KaizenCategory category, String targetComponent, String excludeId) {
+        kaizenProposalRepository.findAll().stream()
+                .filter(e -> category.name().equals(e.getCategory())
+                        && Objects.equals(e.getTargetComponent(), targetComponent)
+                        && !e.getId().equals(excludeId))
+                .forEach(e -> kaizenProposalRepository.deleteById(e.getId()));
+    }
+
+    /**
+     * Additive write to the shared evidence graph feeding EvidenceCoherenceService (Thagard/ECHO) - never
+     * replaces the KaizenProposal write it accompanies. Polarity for SYSTEMIC_DEFECT/KNOWN_PATTERN_VIOLATION
+     * is always NEGATIVE_FINDING regardless of status - these categories never go through automatic
+     * applyMicroStep/evaluateAndStandardize (review-only, expectedGainPercent=0), so a status-based rule
+     * would leave them permanently NEUTRAL even though they represent a confirmed problem by definition.
+     * Other categories are asserted as evidence only once evaluateAndStandardize resolves them
+     * (STANDARDIZED -> POSITIVE_CONFIRMATION, REVERTED -> NEGATIVE_FINDING) - a still-PROPOSED/APPLIED
+     * micro-tuning proposal is speculative, not yet real evidence.
+     */
+    private void writeEvidenceNode(KaizenProposal p, EvidenceNodeEntity.Polarity polarity) {
+        EvidenceNodeEntity node = new EvidenceNodeEntity();
+        node.setProjectId(p.getProjectId());
+        node.setPolarity(polarity);
+        node.setSummaryText(p.getTitle() + ": " + p.getActionDescription());
+        node.setKaizenProposalId(p.getId());
+        evidenceNodeRepository.save(node);
     }
 
     /**
@@ -98,12 +159,42 @@ public class KaizenService {
                     targetProjectId,
                     "HIGH",
                     "DEFECT_ELIMINATION",
-                    "QualityGate",
+                    resolveQualityGateComponent(targetProjectId),
                     "HIGH_DPMO_DEFECT",
                     String.format("DPMO spike detected: %.2f", sixSigma.dpmo()),
                     sixSigma.dpmo()
             );
         }
+    }
+
+    /**
+     * 2026-08-08 (ML-update patch, Phase 1): incumbent is the old hardcoded "QualityGate" bucket - real
+     * defects concentrate overwhelmingly in a small number of specific checks (Sober's parsimony/AIC-BIC,
+     * BARCAN-TAG-04 philosopher 6), so the candidate targets the single dominant checkName instead. Records
+     * one lever observation per cycle: ground truth here is self-contained (does the top check actually
+     * account for a dominant share of this cycle's real defects, Mackie's INUS conditions, BARCAN-TAG-05
+     * philosopher 2) rather than waiting on a full proposal-resolution round-trip, since DEFECT_ELIMINATION
+     * proposals share one stable id per project and can't otherwise supply a fresh ground-truth sample every
+     * cycle. Below soft_gate, returns the unchanged incumbent value - zero live behavior change.
+     */
+    private String resolveQualityGateComponent(UUID targetProjectId) {
+        List<SixSigmaAuditService.CtqEntry> breakdown = sixSigmaAuditService.computeCtqBreakdown(targetProjectId);
+        String incumbent = "QualityGate";
+        if (breakdown.isEmpty()) {
+            return incumbent;
+        }
+        SixSigmaAuditService.CtqEntry top = breakdown.get(0);
+        long totalDefects = breakdown.stream().mapToLong(SixSigmaAuditService.CtqEntry::defects).sum();
+        String candidate = top.checkName();
+
+        LeverAgreement agreement = totalDefects > 0 && top.defects() / (double) totalDefects >= 0.5
+                ? LeverAgreement.TRUE : LeverAgreement.FALSE;
+        String subjectId = targetProjectId != null ? targetProjectId.toString() : "GLOBAL";
+        leverPromotionService.recordObservation(F1_KAIZEN_CTQ_TARGETING, subjectId, incumbent, candidate,
+                agreement, agreement == LeverAgreement.TRUE ? "dominant_ctq" : "no_dominant_ctq");
+
+        boolean promoted = leverPromotionService.currentStage(F1_KAIZEN_CTQ_TARGETING).atLeast(LeverStage.SOFT_GATE);
+        return promoted ? candidate : incumbent;
     }
 
     /**
@@ -133,6 +224,7 @@ public class KaizenService {
 
         final String finalProjectName = projectName;
         List<KaizenProposal> newProposals = new ArrayList<>();
+        List<KaizenProposal> current = allProposals();
 
         // Group recent defects by category and component
         Map<String, List<DefectJournalEntity>> groupedDefects = new HashMap<>();
@@ -143,7 +235,7 @@ public class KaizenService {
 
         // Deduplication helper check for active proposal
         java.util.function.BiFunction<KaizenProposal.KaizenCategory, String, Boolean> hasActiveProposal = (cat, comp) ->
-                proposals.values().stream().anyMatch(p ->
+                current.stream().anyMatch(p ->
                         Objects.equals(p.getProjectId(), targetProjectId) &&
                         p.getCategory() == cat &&
                         Objects.equals(p.getTargetComponent(), comp) &&
@@ -168,8 +260,8 @@ public class KaizenService {
                     finalProjectName
             );
             p.setBaselineMetric(avgStale);
-            proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
-            proposals.put(propId, p);
+            deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+            saveProposal(p);
             newProposals.add(p);
         }
 
@@ -194,34 +286,62 @@ public class KaizenService {
                             finalProjectName
                     );
                     p.setBaselineMetric(avgBuf);
-                    proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
-                    proposals.put(propId, p);
+                    deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+                    saveProposal(p);
                     newProposals.add(p);
                 }
             }
         }
 
-        // Process Defect Elimination Group (QualityGate)
-        List<DefectJournalEntity> defectGroup = groupedDefects.get("DEFECT_ELIMINATION:QualityGate");
-        if (defectGroup != null && !defectGroup.isEmpty() && !hasActiveProposal.apply(KaizenProposal.KaizenCategory.DEFECT_ELIMINATION, "QualityGate")) {
-            double avgDpmo = defectGroup.stream().mapToDouble(d -> d.getMetricValue() != null ? d.getMetricValue() : 1000.0).average().orElse(1000.0);
-            String propId = "kz-2h-sixsigma-" + targetProjectId;
+        // Process Defect Elimination Group (QualityGate). 2026-08-08 (ML-update patch, Phase 1): grouped by
+        // CATEGORY alone, not "DEFECT_ELIMINATION:QualityGate" - resolveQualityGateComponent's candidate
+        // path writes a specific checkName as sourceComponent once F1_KAIZEN_CTQ_TARGETING is promoted past
+        // soft_gate, so an exact "QualityGate" key match would silently stop finding these entries the
+        // moment that happens.
+        List<DefectJournalEntity> defectGroup = recentDefects.stream()
+                .filter(d -> "DEFECT_ELIMINATION".equals(d.getCategory()))
+                .toList();
+        if (!defectGroup.isEmpty()) {
+            String resolvedComponent = defectGroup.get(defectGroup.size() - 1).getSourceComponent();
+            if (!hasActiveProposal.apply(KaizenProposal.KaizenCategory.DEFECT_ELIMINATION, resolvedComponent)) {
+                double avgDpmo = defectGroup.stream().mapToDouble(d -> d.getMetricValue() != null ? d.getMetricValue() : 1000.0).average().orElse(1000.0);
+                String propId = "kz-2h-sixsigma-" + targetProjectId;
+                boolean targeted = !"QualityGate".equals(resolvedComponent);
 
-            KaizenProposal p = new KaizenProposal(
-                    propId,
-                    "Снижение уровня дефектов Quality Gate (Six Sigma)",
-                    KaizenProposal.KaizenCategory.DEFECT_ELIMINATION,
-                    "QualityGate",
-                    String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Предложение: усиление автоматической зачистки транзиторных ошибок проверки качества.",
-                            avgDpmo, defectGroup.size()),
-                    12.0,
-                    targetProjectId,
-                    finalProjectName
-            );
-            p.setBaselineMetric(avgDpmo);
-            proposals.values().removeIf(existing -> existing.getCategory() == p.getCategory() && Objects.equals(existing.getTargetComponent(), p.getTargetComponent()));
-            proposals.put(propId, p);
-            newProposals.add(p);
+                KaizenProposal p = new KaizenProposal(
+                        propId,
+                        targeted ? "Снижение уровня дефектов проверки '" + resolvedComponent + "' (Six Sigma)"
+                                : "Снижение уровня дефектов Quality Gate (Six Sigma)",
+                        KaizenProposal.KaizenCategory.DEFECT_ELIMINATION,
+                        resolvedComponent,
+                        targeted
+                                ? String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Доминирующая проверка: '%s'. Предложение: точечное устранение причины именно этой проверки.",
+                                        avgDpmo, defectGroup.size(), resolvedComponent)
+                                : String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Предложение: усиление автоматической зачистки транзиторных ошибок проверки качества.",
+                                        avgDpmo, defectGroup.size()),
+                        12.0,
+                        targetProjectId,
+                        finalProjectName
+                );
+                p.setBaselineMetric(avgDpmo);
+                deleteMatching(p.getCategory(), p.getTargetComponent(), propId);
+                saveProposal(p);
+                newProposals.add(p);
+            }
+        }
+
+        // Process Role Quality Drift Group (2026-08-07, DMAIC Control-phase wiring) - scoped to one real
+        // project's own history (targetProjectId != null), unlike the 3 groups above which can aggregate
+        // globally from DefectJournalEntity: a role's inherent difficulty varies by domain, so drift is
+        // only meaningful against that SAME project's own past, not a cross-project average.
+        if (targetProjectId != null) {
+            for (var drift : sixSigmaAuditService.detectRoleDefectWeightDrift(targetProjectId)) {
+                String component = drift.roleTag();
+                if (hasActiveProposal.apply(KaizenProposal.KaizenCategory.ROLE_QUALITY_DRIFT, component)) {
+                    continue;
+                }
+                newProposals.add(recordRoleQualityDriftProposal(targetProjectId, finalProjectName, drift));
+            }
         }
 
         log.info("[KAIZEN-PDCA][PLAN-2H] 2-Hour window analysis completed for {}. Generated {} clean deduplicated proposal(s).", finalProjectName, newProposals.size());
@@ -251,8 +371,46 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        proposals.put(propId, proposal);
+        saveProposal(proposal);
+        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         log.info("[KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal '{}' from project {}: {}",
+                propId, projectId, title);
+        return proposal;
+    }
+
+    /**
+     * Phase 3 of docs/reports/PLAN_client_runtime_observability_2026-08-09.md - the direct entry point
+     * for a RuntimeHealthShiftDetector-confirmed real shift in the active product's own runtime
+     * behavior. Deliberately parallel to, not merged with, recordSystemicDefectProposal above: that one
+     * is about THIS codebase's own defects, this one is about the delivered PRODUCT's - see
+     * KaizenProposal.KaizenCategory.PRODUCT_RUNTIME_DEFECT's own javadoc for why they must stay visibly
+     * separate. Same safety shape: expectedGainPercent fixed at 0.0, review-only, never auto-applied.
+     */
+    public KaizenProposal recordProductRuntimeDefectProposal(java.util.UUID projectId, String projectName,
+                                                               String title, String actionDescription) {
+        // Idempotency guard: an ongoing anomaly (still PROPOSED, not yet reviewed) must not spawn a fresh
+        // duplicate proposal every time a later observation confirms it's still shifted - same class of
+        // fix as the philosophical-audit/formal-audit dedup guards elsewhere in this codebase tonight.
+        boolean alreadyOpen = kaizenProposalRepository.findByProjectId(projectId).stream()
+                .anyMatch(p -> "PRODUCT_RUNTIME_DEFECT".equals(p.getCategory()) && "PROPOSED".equals(p.getStatus()));
+        if (alreadyOpen) {
+            log.info("[KAIZEN-PRODUCT-RUNTIME] Project {} already has an open product runtime defect proposal; not duplicating", projectId);
+            return null;
+        }
+        String propId = "kz-product-runtime-" + java.util.UUID.randomUUID();
+        KaizenProposal proposal = new KaizenProposal(
+                propId,
+                title,
+                KaizenProposal.KaizenCategory.PRODUCT_RUNTIME_DEFECT,
+                projectName == null ? "active product" : projectName,
+                actionDescription,
+                0.0,
+                projectId,
+                projectName == null ? "Global" : projectName
+        );
+        saveProposal(proposal);
+        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        log.info("[KAIZEN-PRODUCT-RUNTIME] Recorded review-only product runtime defect proposal '{}' from project {}: {}",
                 propId, projectId, title);
         return proposal;
     }
@@ -280,9 +438,45 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        proposals.put(propId, proposal);
+        saveProposal(proposal);
+        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         log.info("[KAIZEN-KNOWN-PATTERN] Recorded review-only known-pattern-violation proposal '{}' from project {}: charter #{} ({})",
                 propId, projectId, rootCausePatternId, patternName);
+        return proposal;
+    }
+
+    /**
+     * External entry point (2026-08-07, DMAIC Control-phase wiring) for a role's own ems_defect_weight
+     * trending upward within one project's history (SixSigmaAuditService.detectRoleDefectWeightDrift) -
+     * review-only, same boundary as recordSystemicDefectProposal/recordKnownPatternViolationProposal
+     * (expectedGainPercent fixed at 0, never auto-applied): a real quality trend needs human/Claude
+     * judgment on cause, not an automatic runtime-parameter tweak.
+     */
+    public KaizenProposal recordRoleQualityDriftProposal(UUID projectId, String projectName,
+                                                            com.eneik.production.services.audit.SixSigmaAuditService.RoleQualityDrift drift) {
+        String propId = "kz-drift-" + projectId + "-" + drift.roleTag();
+        String description = String.format(
+                "Role %s's own defect-weight average rose from %.2f (%d earlier task%s) to %.2f (%d recent task%s) "
+                        + "within this project's own history - a %.0f%% increase, not a one-off failure. "
+                        + "Worth checking whether something about how this role is being briefed/executed has degraded.",
+                drift.roleTag(), drift.historicalAverage(), drift.historicalSampleSize(),
+                drift.historicalSampleSize() == 1 ? "" : "s", drift.recentAverage(), drift.recentSampleSize(),
+                drift.recentSampleSize() == 1 ? "" : "s",
+                (drift.recentAverage() / drift.historicalAverage() - 1.0) * 100.0);
+        KaizenProposal proposal = new KaizenProposal(
+                propId,
+                "Role quality drift: " + drift.roleTag(),
+                KaizenProposal.KaizenCategory.ROLE_QUALITY_DRIFT,
+                drift.roleTag(),
+                description,
+                0.0,
+                projectId,
+                projectName == null ? "Global" : projectName
+        );
+        saveProposal(proposal);
+        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        log.info("[KAIZEN-ROLE-DRIFT] Recorded review-only role-quality-drift proposal '{}' for project {}: role {} {} -> {}",
+                propId, projectId, drift.roleTag(), drift.historicalAverage(), drift.recentAverage());
         return proposal;
     }
 
@@ -290,7 +484,7 @@ public class KaizenService {
      * Do Phase: Executes a single, safe micro-improvement step.
      */
     public boolean applyMicroStep(String proposalId) {
-        KaizenProposal proposal = proposals.get(proposalId);
+        KaizenProposal proposal = findProposal(proposalId).orElse(null);
         if (proposal == null || proposal.getStatus() != KaizenProposal.ProposalStatus.PROPOSED) {
             return false;
         }
@@ -334,6 +528,7 @@ public class KaizenService {
 
         proposal.setStatus(KaizenProposal.ProposalStatus.APPLIED);
         proposal.setAppliedAt(Instant.now());
+        saveProposal(proposal);
         return true;
     }
 
@@ -341,7 +536,7 @@ public class KaizenService {
      * Check & Act Phase: Evaluates metric impact after execution and standardizes or reverts.
      */
     public KaizenProposal evaluateAndStandardize(String proposalId) {
-        KaizenProposal proposal = proposals.get(proposalId);
+        KaizenProposal proposal = findProposal(proposalId).orElse(null);
         if (proposal == null || proposal.getStatus() != KaizenProposal.ProposalStatus.APPLIED) {
             return proposal;
         }
@@ -365,13 +560,15 @@ public class KaizenService {
 
         if (improved) {
             proposal.setStatus(KaizenProposal.ProposalStatus.STANDARDIZED);
-            proposals.values().removeIf(other -> other != proposal
-                    && other.getCategory() == proposal.getCategory()
-                    && Objects.equals(other.getTargetComponent(), proposal.getTargetComponent()));
-            log.info("[KAIZEN-PDCA][ACT] Standardized micro-improvement '{}'! Post-metric: %.2f (Baseline: %.2f).",
+            saveProposal(proposal);
+            deleteMatching(proposal.getCategory(), proposal.getTargetComponent(), proposal.getId());
+            writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.POSITIVE_CONFIRMATION);
+            log.info("[KAIZEN-PDCA][ACT] Standardized micro-improvement '{}'! Post-metric: {} (Baseline: {}).",
                     proposal.getTitle(), postMetric, proposal.getBaselineMetric() != null ? proposal.getBaselineMetric() : 0.0);
         } else {
             proposal.setStatus(KaizenProposal.ProposalStatus.REVERTED);
+            saveProposal(proposal);
+            writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
             log.warn("[KAIZEN-PDCA][ACT] Reverted micro-improvement '{}' due to insufficient gain.", proposal.getTitle());
         }
 
@@ -397,7 +594,7 @@ public class KaizenService {
     }
 
     public Collection<KaizenProposal> getAllProposals() {
-        return getDeduplicatedProposals(proposals.values());
+        return getDeduplicatedProposals(allProposals());
     }
 
     public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
@@ -406,8 +603,8 @@ public class KaizenService {
         }
         final UUID targetPid = projectId;
         Collection<KaizenProposal> projectProposals = (targetPid == null)
-                ? proposals.values()
-                : proposals.values().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
+                ? allProposals()
+                : allProposals().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
         return getDeduplicatedProposals(projectProposals);
     }
 
@@ -430,6 +627,6 @@ public class KaizenService {
     }
 
     public KaizenProposal getProposal(String id) {
-        return proposals.get(id);
+        return findProposal(id).orElse(null);
     }
 }

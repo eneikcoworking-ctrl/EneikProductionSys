@@ -53,6 +53,10 @@ public class ContinuousOrchestrationService {
     // moved entirely to AccountHealthService - this class only triggers it on schedule now, matching the
     // "single choke point for a shared invariant" fix for the same class of bug found live today.
     private final com.eneik.production.services.accounts.AccountHealthService accountHealthService;
+    // 2026-08-09 (Phase 0, client runtime observability plan) - see ProductLaunchabilityService's own
+    // javadoc. Deliberately called from this existing per-project tick, not a new @Scheduled cron.
+    private final com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService;
+    private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -69,7 +73,9 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
                                          com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
                                          OperationalPolicyService operationalPolicyService,
-                                         com.eneik.production.services.accounts.AccountHealthService accountHealthService) {
+                                         com.eneik.production.services.accounts.AccountHealthService accountHealthService,
+                                         com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService,
+                                         com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -86,6 +92,8 @@ public class ContinuousOrchestrationService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.operationalPolicyService = operationalPolicyService;
         this.accountHealthService = accountHealthService;
+        this.productLaunchabilityService = productLaunchabilityService;
+        this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -121,6 +129,21 @@ public class ContinuousOrchestrationService {
                     branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
                 }
                 checkForDuplicateTaskContent(project);
+
+                if (isAllowed(project, OperationalAction.CHECK_LAUNCHABILITY)) {
+                    try {
+                        productLaunchabilityService.checkOnce(project);
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: launchability check failed for project {}", project.getId(), e);
+                    }
+                }
+                if (isAllowed(project, OperationalAction.OBSERVE_CLIENT_RUNTIME)) {
+                    try {
+                        clientRuntimeObservabilityService.maybeObserve(project);
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: runtime observability failed for project {}", project.getId(), e);
+                    }
+                }
 
                 if (isAllowed(project, OperationalAction.RECOVER_FAILED_FRONTIER)) {
                     int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);

@@ -74,7 +74,9 @@ class ContinuousOrchestrationServiceTest {
                 mock(BranchGarbageCollectorService.class),
                 mock(GitHubPullRequestService.class),
                 mock(OperationalPolicyService.class),
-                mock(com.eneik.production.services.accounts.AccountHealthService.class)
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class)
         );
 
         ContinuousOrchestrationService.SystemWorkSnapshot snapshot = service.systemWorkSnapshot();
@@ -112,7 +114,9 @@ class ContinuousOrchestrationServiceTest {
                 mock(BranchGarbageCollectorService.class),
                 mock(GitHubPullRequestService.class),
                 mock(OperationalPolicyService.class),
-                accountHealthService
+                accountHealthService,
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class)
         );
 
         service.recoverStaleBlockedAccounts();
@@ -150,7 +154,9 @@ class ContinuousOrchestrationServiceTest {
                 taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
                 mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
                 mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
-                mock(com.eneik.production.services.accounts.AccountHealthService.class));
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
 
@@ -176,7 +182,9 @@ class ContinuousOrchestrationServiceTest {
                 taskRepository, new SystemProgressTracker(), mock(SystemSettingsService.class),
                 mock(PlannedWorkRecoveryService.class), mock(BranchGarbageCollectorService.class),
                 mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
-                mock(com.eneik.production.services.accounts.AccountHealthService.class));
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
 

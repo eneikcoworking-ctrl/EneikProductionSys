@@ -50,6 +50,9 @@ class JulesDispatchServiceTest {
     private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private com.eneik.production.services.GeminiContextService geminiContextService;
     private com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository;
+    private com.eneik.production.repositories.RoleRepository roleRepository;
+    private com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
+    private com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private JulesDispatchService julesDispatchService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
@@ -65,7 +68,7 @@ class JulesDispatchServiceTest {
         roleCapabilityLoader = mock(com.eneik.production.services.RoleCapabilityLoader.class);
         com.eneik.production.services.monitor.PrReviewPipelineService prReviewPipelineService = mock(com.eneik.production.services.monitor.PrReviewPipelineService.class);
         mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
-        com.eneik.production.repositories.RoleRepository roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
+        roleRepository = mock(com.eneik.production.repositories.RoleRepository.class);
         com.eneik.production.repositories.TaskConflictRepository taskConflictRepository = mock(com.eneik.production.repositories.TaskConflictRepository.class);
         gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
         com.eneik.production.repositories.PrReviewRepository prReviewRepository = mock(com.eneik.production.repositories.PrReviewRepository.class);
@@ -74,15 +77,17 @@ class JulesDispatchServiceTest {
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         geminiContextService = mock(com.eneik.production.services.GeminiContextService.class);
         reviewConcernRepository = mock(com.eneik.production.repositories.ReviewConcernRepository.class);
+        persistentWorkerSessionService = mock(com.eneik.production.services.PersistentWorkerSessionService.class);
+        falsificationCycleService = mock(com.eneik.production.services.FalsificationCycleService.class);
         julesDispatchService = new JulesDispatchService(
             julesApiClient, julesSessionRepository, julesActivityResponseRepository, wishlistRepository, accountRepository, taskRepository, taskConflictRepository, claimService, roleCapabilityLoader,
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
             projectFlowService,
             mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
-            mock(com.eneik.production.services.FalsificationCycleService.class),
+            falsificationCycleService,
             featureThreadRepository, readinessService,
-            mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+            persistentWorkerSessionService,
             mock(com.eneik.production.repositories.ProjectRepository.class),
             mock(com.eneik.production.services.WishlistContentSimilarityMatcher.class),
             mock(com.eneik.production.services.settings.SystemSettingsService.class),
@@ -95,8 +100,10 @@ class JulesDispatchServiceTest {
             // class already uses, so it observably behaves the same way production wiring does - a mock
             // here would silently no-op the mutation these tests assert on.
             new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, mock(JulesApiClient.class)),
-            "prefix/"
+            "prefix/",
+            null
         );
+        ReflectionTestUtils.setField(julesDispatchService, "self", julesDispatchService);
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "stuckCloseThresholdMinutes", 120);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -818,6 +825,77 @@ class JulesDispatchServiceTest {
     }
 
     @Test
+    void successfulDispatchUnDismissesTheTasksFeatureInCaseAnEarlierCleanupWronglyDismissedIt() {
+        // Live incident, 2026-08-07 (test-forty-third): the epic-cleanup cron dismissed real epics during a
+        // project-wide dispatch freeze, then real work went on to complete under them once dispatch resumed
+        // - permanently invisible everywhere that filters on dismissedAt. A task actually dispatching under
+        // a feature is itself proof any dismissal no longer holds, so every successful dispatch must call
+        // the self-healing un-dismiss - see ClientDeliverableReadinessService.unDismissFeatureIfNeeded.
+        UUID taskId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("test-fortieth");
+        project.setRepositoryUrl("https://github.com/eneikdru/test-fortieth");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+        role.setDescription("Backend Engineer");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setTitle("API Slice");
+        task.setDescription("Implement the smallest backend change for this slice.");
+        task.setFeatureId(featureId);
+
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of());
+        when(julesApiClient.createSessionDetailed(anyString(), anyString(), anyString(), isNull(), eq("API Slice"), eq("main")))
+                .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+        verify(readinessService).unDismissFeatureIfNeeded(featureId);
+    }
+
+    @Test
+    void skippingAnAlreadyDispatchedTaskDoesNotTouchFeatureDismissal() {
+        // The early "already dispatched, skipping duplicate" path never reaches real dispatch - it must not
+        // call the self-healing un-dismiss, since no new work is actually starting.
+        UUID taskId = UUID.randomUUID();
+        UUID featureId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+
+        RoleEntity role = new RoleEntity();
+        role.setTag("BARCAN-TAG-02");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setRole(role);
+        task.setFeatureId(featureId);
+
+        JulesSessionEntity existing = new JulesSessionEntity();
+        existing.setTaskId(taskId);
+        existing.setExternalSessionId("sessions/already-running");
+        existing.setStatus("running");
+        when(julesSessionRepository.findByTaskId(taskId)).thenReturn(List.of(existing));
+
+        JulesDispatchResult result = julesDispatchService.dispatch(task);
+
+        assertTrue(result.dispatched());
+        assertEquals("already dispatched, skipping duplicate", result.reason());
+        verify(readinessService, never()).unDismissFeatureIfNeeded(any());
+    }
+
+    @Test
     void adHocDispatchUsesActualProjectRepositoryOwnerForJulesSource() {
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
@@ -1283,7 +1361,9 @@ class JulesDispatchServiceTest {
         TaskEntity compilerTask = new TaskEntity();
         compilerTask.setId(taskId);
         compilerTask.setProject(project);
-        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+        var compilerTaskPayload = objectMapper.createObjectNode();
+        compilerTaskPayload.putArray("compilesWishlistIds").add(wishlistId.toString());
+        compilerTask.setPayload(compilerTaskPayload);
 
         JulesSessionEntity session = new JulesSessionEntity();
         session.setId(sessionId);
@@ -1708,6 +1788,50 @@ class JulesDispatchServiceTest {
     }
 
     @Test
+    void pollStatusNeverResurrectsALocallyStuckSessionOnJulesOwnUnreliableSelfReport() {
+        // Live incident, 2026-08-09 (test-forty-third, session 381fc207): ClaimService.detectStuckSessions
+        // marked a session "stuck" (real evidence - lastProgressAt stale 60+ min), but the very next poll
+        // saw Jules's raw API still self-report "RUNNING" (unchanged, no real evidence) and treated the mere
+        // local label flip stuck->running as "genuine forward progress", resetting lastProgressAt to now().
+        // That reset the 60-minute stuck-detection clock every cycle FOREVER, so the session never once
+        // stayed "stuck" long enough for closeOverdueStuckSessions' 120-minute close threshold to ever see
+        // it - a real 3+ hour project-wide stall (SYSTEM STALLED) traced directly to this.
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID accountId = UUID.randomUUID();
+
+        Instant staleProgress = Instant.now().minus(90, ChronoUnit.MINUTES);
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setAccountId(accountId);
+        session.setExternalSessionId("sessions/stuck-resurrection");
+        session.setStatus("stuck");
+        session.setLastProgressAt(staleProgress);
+
+        AccountEntity account = new AccountEntity();
+        account.setId(accountId);
+        account.setApiKey("jules-key");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.claimed);
+
+        when(julesSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(accountRepository.findById(accountId)).thenReturn(Optional.of(account));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesApiClient.getSessionStatus("sessions/stuck-resurrection", "jules-key")).thenReturn("RUNNING");
+
+        JulesSessionEntity result = julesDispatchService.pollStatus(sessionId);
+
+        assertEquals("stuck", result.getStatus(),
+                "Jules's own unreliable self-report of RUNNING must never overwrite a locally-confirmed stuck status");
+        assertEquals(staleProgress, result.getLastProgressAt(),
+                "lastProgressAt must NOT be reset just because the local label flipped - that was the exact mechanism that prevented the 120-minute close threshold from ever being reached");
+    }
+
+    @Test
     void nonChaoticPrOpenedDefersToPendingReviewInsteadOfReviewingInline() {
         UUID sessionId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
@@ -2028,7 +2152,9 @@ class JulesDispatchServiceTest {
         TaskEntity compilerTask = new TaskEntity();
         compilerTask.setId(taskId);
         compilerTask.setProject(project);
-        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+        var compilerTaskPayload = objectMapper.createObjectNode();
+        compilerTaskPayload.putArray("compilesWishlistIds").add(wishlistId.toString());
+        compilerTask.setPayload(compilerTaskPayload);
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setId(wishlistId);
@@ -2073,7 +2199,9 @@ class JulesDispatchServiceTest {
         TaskEntity compilerTask = new TaskEntity();
         compilerTask.setId(taskId);
         compilerTask.setProject(project);
-        compilerTask.setPayload(objectMapper.createObjectNode().put("compilesWishlistId", wishlistId.toString()));
+        var compilerTaskPayload = objectMapper.createObjectNode();
+        compilerTaskPayload.putArray("compilesWishlistIds").add(wishlistId.toString());
+        compilerTask.setPayload(compilerTaskPayload);
 
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setId(wishlistId);
@@ -2089,6 +2217,9 @@ class JulesDispatchServiceTest {
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(compilerTask));
         when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
         when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.compiling,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing)).thenReturn(1);
         when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), eq("sessions/first-completion")))
                 .thenReturn(Optional.empty());
 
@@ -2096,6 +2227,54 @@ class JulesDispatchServiceTest {
 
         verify(gitHubPullRequestService, never()).mergeRecordPullRequest(
                 any(), any(), eq("duplicate wishlist compiler run discarded (wishlist already compiled)"));
+        // The claim must have been won (PROCEED, not IN_PROGRESS_ELSEWHERE) - confirmed by the invalid-plan
+        // path releasing it back to `compiling` rather than leaving it stuck in `finalizing`.
+        verify(wishlistRepository).compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.compiling);
+    }
+
+    @Test
+    void secondConcurrentCompletionForTheSameWishlistIsExcludedByTheCompareAndSwapClaim() {
+        // Regression guard for a same-night bug: the first version of admitWishlistCompilationCompletion
+        // only READ wishlist status and released its lock before the real converted_to_task/dismissed WRITE
+        // (which happens later, inside buildTaskGraphFromSlices) - leaving a real window where a replayed
+        // completion (reconcileStrandedPrOpenedWorkflows's ~60s poll, or a duplicate webhook) would see
+        // "still not converted" a second time and independently rebuild the same task graph. Confirmed live,
+        // test-forty-third: one wishlist decomposed 3 times in ~70s. The fix is an atomic compare-and-swap
+        // claim (compiling -> finalizing); this test proves a second concurrent call is excluded by it.
+        UUID projectId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(taskId);
+        compilerTask.setProject(project);
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setProjectId(projectId);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.compiling);
+
+        when(wishlistRepository.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+        // First call wins the compare-and-swap (1 row affected); a second, concurrent call for the exact
+        // same wishlist loses it (0 rows affected, since the real row is no longer `compiling`).
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.compiling,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing))
+                .thenReturn(1, 0);
+
+        JulesDispatchService.CompilerCompletionAdmission firstAdmission =
+                julesDispatchService.admitWishlistCompilationCompletion(compilerTask, List.of(wishlistId));
+        JulesDispatchService.CompilerCompletionAdmission secondAdmission =
+                julesDispatchService.admitWishlistCompilationCompletion(compilerTask, List.of(wishlistId));
+
+        assertEquals(JulesDispatchService.CompilationAdmissionOutcome.PROCEED, firstAdmission.outcome());
+        assertEquals(JulesDispatchService.CompilationAdmissionOutcome.IN_PROGRESS_ELSEWHERE, secondAdmission.outcome());
+        assertTrue(secondAdmission.claimedIds().isEmpty());
     }
 
     @Test
@@ -2392,5 +2571,144 @@ class JulesDispatchServiceTest {
 
         assertTrue(answer.contains("Git hygiene issue only"));
         verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    // 2026-08-09 (live incident, operator-flagged: "проверь что все философы высказались"): BARCAN-TAG-12
+    // was sent a follow-up at 09:00:14 and the whole 13-role philosophical discussion was merged/closed by
+    // 09:00:23 - 9 seconds later - with the archived report never containing a single critique for that
+    // role. Root cause: "covered" used to be an append-only marker on the carrier task's payload, written
+    // the moment a role batch was SENT, not once Jules's answer actually existed. Fix: completePersistent-
+    // PhilosophicalAuditCycle now derives "covered" by parsing the report file's real current content -
+    // these two tests pin that behavior down directly.
+
+    private TaskEntity philosophicalCarrierTask(UUID taskId, ProjectEntity project) {
+        TaskEntity carrierTask = new TaskEntity();
+        carrierTask.setId(taskId);
+        carrierTask.setProject(project);
+        return carrierTask;
+    }
+
+    private RoleEntity activeRole(String tag) {
+        RoleEntity role = new RoleEntity();
+        role.setTag(tag);
+        role.setActive(true);
+        return role;
+    }
+
+    @Test
+    void philosophicalAuditNeverClosesWhenTheJustRequestedRoleHasNoRealCritiqueYet() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        TaskEntity carrierTask = philosophicalCarrierTask(taskId, project);
+
+        com.eneik.production.models.persistence.PersistentWorkerSessionEntity worker =
+                new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        worker.setId(UUID.randomUUID());
+        worker.setCarrierTaskId(taskId);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/live-discussion");
+        session.setPrUrl("https://github.com/org/repo/pull/193");
+        session.setStatus("pr_opened");
+
+        com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest openPr =
+                new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/193", 193, "Philosophical Product Falsification",
+                "task-falsification-live", "eneikdru", false, "main", false, Instant.now());
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(carrierTask));
+        when(projectFlowService.isPersistentWorkerCarrierTask(carrierTask)).thenReturn(true);
+        when(projectFlowService.isPhilosophicalAuditTask(carrierTask)).thenReturn(true);
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+        when(persistentWorkerSessionService.consumeCurrentBatch(worker)).thenReturn(List.of(UUID.randomUUID()));
+        when(projectFlowService.philosophicalAuditReportPath(carrierTask))
+                .thenReturn(".eneik/records/philosophical-falsification-x.json");
+        // Only BARCAN-TAG-11 has a real critique on the branch - BARCAN-TAG-12 (just asked about) does not,
+        // exactly like the live incident.
+        when(roleRepository.findAll()).thenReturn(List.of(activeRole("BARCAN-TAG-11"), activeRole("BARCAN-TAG-12")));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/live-discussion"))
+                .thenReturn(Optional.of(openPr));
+        when(gitHubPullRequestService.fetchFileContent(project, "task-falsification-live",
+                ".eneik/records/philosophical-falsification-x.json"))
+                .thenReturn(Optional.of("""
+                        {"critiques":[{"roleTag":"BARCAN-TAG-11","philosopher":"Test Philosopher",
+                        "worldview":"w","critique":"c","proposal":"p","dislike":"d","kanoClass":"must-be",
+                        "confidence":"high","evidence":"e","screenshotFile":""}]}
+                        """));
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(falsificationCycleService, never()).applyPhilosophicalCritiques(any(), any(), any());
+        verify(gitHubPullRequestService, never()).mergeRecordPullRequest(any(), any(), any());
+        verify(persistentWorkerSessionService, never()).retire(any(), any());
+        verify(claimService, never()).complete(any());
+    }
+
+    @Test
+    void philosophicalAuditClosesOnlyOnceEveryActiveRoleHasAGenuineCritiqueInTheRealReport() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setRepositoryName("repo");
+
+        TaskEntity carrierTask = philosophicalCarrierTask(taskId, project);
+
+        com.eneik.production.models.persistence.PersistentWorkerSessionEntity worker =
+                new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        worker.setId(UUID.randomUUID());
+        worker.setCarrierTaskId(taskId);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/live-discussion-done");
+        session.setPrUrl("https://github.com/org/repo/pull/200");
+        session.setStatus("pr_opened");
+
+        com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest openPr =
+                new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/200", 200, "Philosophical Product Falsification",
+                "task-falsification-done", "eneikdru", false, "main", false, Instant.now());
+
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(carrierTask));
+        when(projectFlowService.isPersistentWorkerCarrierTask(carrierTask)).thenReturn(true);
+        when(projectFlowService.isPhilosophicalAuditTask(carrierTask)).thenReturn(true);
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+        when(persistentWorkerSessionService.consumeCurrentBatch(worker)).thenReturn(List.of(UUID.randomUUID()));
+        when(claimService.hasActiveClaim(taskId)).thenReturn(true);
+        when(projectFlowService.philosophicalAuditReportPath(carrierTask))
+                .thenReturn(".eneik/records/philosophical-falsification-y.json");
+        when(roleRepository.findAll()).thenReturn(List.of(activeRole("BARCAN-TAG-11"), activeRole("BARCAN-TAG-12")));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(project, "sessions/live-discussion-done"))
+                .thenReturn(Optional.of(openPr));
+        when(gitHubPullRequestService.fetchFileContent(project, "task-falsification-done",
+                ".eneik/records/philosophical-falsification-y.json"))
+                .thenReturn(Optional.of("""
+                        {"critiques":[
+                        {"roleTag":"BARCAN-TAG-11","philosopher":"A","worldview":"w","critique":"c","proposal":"p",
+                        "dislike":"d","kanoClass":"must-be","confidence":"high","evidence":"e","screenshotFile":""},
+                        {"roleTag":"BARCAN-TAG-12","philosopher":"B","worldview":"w","critique":"c","proposal":"p",
+                        "dislike":"d","kanoClass":"attractive","confidence":"high","evidence":"e","screenshotFile":""}
+                        ]}
+                        """));
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verify(falsificationCycleService).applyPhilosophicalCritiques(eq(project), argThat(critiques ->
+                critiques.size() == 2), any());
+        verify(gitHubPullRequestService).mergeRecordPullRequest(eq(project), eq(openPr), any());
+        verify(persistentWorkerSessionService).retire(eq(worker), any());
+        verify(claimService).complete(taskId);
     }
 }

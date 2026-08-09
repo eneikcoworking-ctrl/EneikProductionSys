@@ -24,7 +24,22 @@ public class KaizenProposal {
         // docs/ENGINEERING_INVARIANTS_CHARTER.md - a KNOWN fix shape, cited by number. Review-only, same
         // boundary as SYSTEMIC_DEFECT (expectedGainPercent=0, never auto-applied) - the specific code fix
         // still needs human/Claude judgment, but the diagnosis itself is no longer free-text guesswork.
-        KNOWN_PATTERN_VIOLATION
+        KNOWN_PATTERN_VIOLATION,
+        // 2026-08-07: a role's own historical ems_defect_weight (computed per-task at compile time,
+        // TechnicalLeadCompiler.criticalityScore, previously persisted into every task's payload and never
+        // read back - confirmed live audit) trending meaningfully upward across a project's own history -
+        // a leading indicator of a systemic quality problem in how that role is being executed, not a
+        // one-off task failure. Review-only, same boundary as SYSTEMIC_DEFECT/KNOWN_PATTERN_VIOLATION
+        // (expectedGainPercent=0, never auto-applied) - a real trend needs human/Claude judgment on cause.
+        ROLE_QUALITY_DRIFT,
+        // 2026-08-09 (Phase 3 of docs/reports/PLAN_client_runtime_observability_2026-08-09.md): a
+        // RuntimeHealthShiftDetector-confirmed statistical shift in the ACTIVE PRODUCT's own real launch/
+        // health-check behavior (not the factory's construction quality, not this codebase's own defects -
+        // SYSTEMIC_DEFECT already owns that). Deliberately its own category, never folded into
+        // SYSTEMIC_DEFECT, so the two streams stay visibly separate on the same dashboard (operator's own
+        // requirement: "явно помечена как улучшение продукта, не смешивается с заводским списком").
+        // Review-only, same boundary as every category above (expectedGainPercent=0, never auto-applied).
+        PRODUCT_RUNTIME_DEFECT
     }
 
     public enum ProposalStatus {
@@ -67,6 +82,26 @@ public class KaizenProposal {
     public KaizenProposal(String id, String title, KaizenCategory category, String targetComponent,
                           String actionDescription, double expectedGainPercent) {
         this(id, title, category, targetComponent, actionDescription, expectedGainPercent, null, "Global");
+    }
+
+    /**
+     * Reconstruction from persistence (KaizenProposalEntity.toDomain()) - the other constructors always
+     * stamp createdAt=now(), which would silently fabricate a fresh timestamp for every proposal read back
+     * from the database instead of its real original creation time.
+     */
+    public KaizenProposal(String id, String title, KaizenCategory category, String targetComponent,
+                          String actionDescription, double expectedGainPercent,
+                          java.util.UUID projectId, String projectName, Instant createdAt) {
+        this.id = id;
+        this.title = title;
+        this.category = category;
+        this.targetComponent = targetComponent;
+        this.actionDescription = actionDescription;
+        this.expectedGainPercent = expectedGainPercent;
+        this.projectId = projectId;
+        this.projectName = projectName;
+        this.createdAt = createdAt;
+        this.status = ProposalStatus.PROPOSED;
     }
 
     public String getId() { return id; }

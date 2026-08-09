@@ -169,6 +169,12 @@ public class SystemSettingsService {
         // real philosopher, Kano-classified) is a separate generative track from the formal/corrective one
         // and must be toggleable on its own (operator directive, 2026-07-25).
         definitions.put("philosophical_falsification_enabled", flag("philosophical_falsification_enabled", "PHILOSOPHICAL_FALSIFICATION_ENABLED", "philosophical-falsification.enabled"));
+        // Off by default (2026-08-09, Phase 1 of docs/reports/PLAN_client_runtime_observability_2026-08-09.md):
+        // the only feature in this codebase that spins up the active project's own delivered product via
+        // the runtime-launcher sidecar. Deliberately observe_only in effect even once turned on - nothing
+        // downstream yet reads client_runtime_observations to change any autonomous behavior (that starts
+        // in Phase 2/3).
+        definitions.put("client_runtime_observability_enabled", flag("client_runtime_observability_enabled", "CLIENT_RUNTIME_OBSERVABILITY_ENABLED", "client-runtime-observability.enabled"));
         // Off by default (2026-07-25, testimony-vs-evidence Phase 2): periodic sweep that can WRITE task
         // status (marks a task failed when its PR was closed without merge on GitHub with no active claim
         // left to complete it normally) - a real write action, unlike Phase 1's read-only evidence checks,

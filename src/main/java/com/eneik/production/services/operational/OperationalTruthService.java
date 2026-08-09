@@ -59,6 +59,7 @@ public class OperationalTruthService {
     private final DefectJournalRepository defectJournalRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final SystemStatusService systemStatusService;
+    private final com.eneik.production.services.ProjectFlowService projectFlowService;
 
     public OperationalTruthService(ProjectRepository projectRepository,
                                    TaskRepository taskRepository,
@@ -67,7 +68,8 @@ public class OperationalTruthService {
                                    PrReviewRepository prReviewRepository,
                                    DefectJournalRepository defectJournalRepository,
                                    ClientDeliverableReadinessService readinessService,
-                                   SystemStatusService systemStatusService) {
+                                   SystemStatusService systemStatusService,
+                                   com.eneik.production.services.ProjectFlowService projectFlowService) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.wishlistRepository = wishlistRepository;
@@ -76,6 +78,7 @@ public class OperationalTruthService {
         this.defectJournalRepository = defectJournalRepository;
         this.readinessService = readinessService;
         this.systemStatusService = systemStatusService;
+        this.projectFlowService = projectFlowService;
     }
 
     @Transactional(readOnly = true)
@@ -340,8 +343,30 @@ public class OperationalTruthService {
                     "blocked_task", "medium", task.getId().toString(), TaskTitleBuilder.displayTitle(task),
                     truncate(task.getJulesDispatchStatus() == null ? task.getDescription() : task.getJulesDispatchStatus(), 180)));
         }
+        // 2026-08-09 (operator-flagged, test-forty-third: 5 "done" tasks permanently flagged
+        // done_without_delivery_evidence despite real merged fixes landing - "точность подсчётов должна
+        // быть 100% истинной"). Root-caused: 3 of 5 were the wishlist-compiler's own decomposition-planning
+        // carrier tasks (each adds exactly one .eneik/records/task-plan-*.json record file, merged via
+        // AutoMergeService.mergeRecordPullRequest's "classified as no-code" path, which never creates a
+        // PrReviewEntity at all - there is nothing to review for a record file). taskHasMergedReview
+        // structurally can never be true for these, by design, forever - they are not missing evidence,
+        // they are not the kind of task delivery evidence applies to. Same exemption family as
+        // ClientDeliverableReadinessService.hasRequiredMergeEvidence's spec-stage exemption, but keyed on
+        // TASK TYPE here rather than role tag: these carrier tasks reuse ORCHESTRATOR_ROLE (BARCAN-TAG-09),
+        // the same tag real BARCAN-TAG-09 philosophical work uses, so a role-tag exemption would wrongly
+        // exempt real work too - isPersistentWorkerCarrierTask/isWishlistCompilerTask/isFalsificationAuditTask
+        // identify the task by its actual payload marker, never by role.
+        //
+        // NOT covered by this fix (confirmed still open, not guessed away): a 5th flagged task whose real
+        // evidence lived on a separate feature-closeout PR (FeatureThreadEntity.closeoutPrUrl is tracked at
+        // the feature-thread level, not per-task) - reconciling that needs its own investigation, not
+        // bundled in here without being sure it's correct.
         long doneWithoutMergeEvidence = tasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.done)
+                .filter(task -> !projectFlowService.isPersistentWorkerCarrierTask(task)
+                        && !projectFlowService.isWishlistCompilerTask(task)
+                        && !projectFlowService.isFalsificationAuditTask(task)
+                        && !projectFlowService.isPhilosophicalAuditTask(task))
                 .filter(task -> !taskHasMergedReview(task, sessionsByTask, reviewsBySession))
                 .count();
         if (doneWithoutMergeEvidence > 0) {

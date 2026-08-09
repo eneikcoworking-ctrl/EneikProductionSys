@@ -84,7 +84,8 @@ class OperationalTruthServiceTest {
         var readiness = mock(ClientDeliverableReadinessService.class);
         var systemStatus = mock(SystemStatusService.class);
         OperationalTruthService service = new OperationalTruthService(
-                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus);
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus,
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
@@ -141,7 +142,8 @@ class OperationalTruthServiceTest {
         var readiness = mock(ClientDeliverableReadinessService.class);
         var systemStatus = mock(SystemStatusService.class);
         OperationalTruthService service = new OperationalTruthService(
-                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus);
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus,
+                mock(com.eneik.production.services.ProjectFlowService.class));
 
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
@@ -180,5 +182,99 @@ class OperationalTruthServiceTest {
         assertEquals(0, dto.evidence().failingReviews());
         assertTrue(dto.blockedValue().blockers().stream()
                 .noneMatch(b -> "review_not_mergeable".equals(b.type())));
+    }
+
+    // 2026-08-09 (operator-flagged, test-forty-third: 5 "done" tasks permanently flagged
+    // done_without_delivery_evidence despite real fixes landing - "точность подсчётов должна быть 100%
+    // истинной"). 3 of 5 were the wishlist-compiler's own decomposition-planning carrier tasks, which
+    // structurally never get a PrReviewEntity (they merge via AutoMergeService's no-code record path -
+    // there is nothing to review for a task-plan JSON file). These two tests pin the fix down: a carrier
+    // task must never count against this blocker, but a genuine done task with no review evidence still
+    // must - the exemption is scoped to task TYPE, not a blanket relaxation.
+
+    @Test
+    void aDoneWishlistCompilerCarrierTaskWithNoReviewNeverCountsAsMissingDeliveryEvidence() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID carrierTaskId = UUID.randomUUID();
+        TaskEntity carrierTask = new TaskEntity();
+        carrierTask.setId(carrierTaskId);
+        carrierTask.setStatus(TaskStatus.done);
+        carrierTask.setDescription("Decompose wishlist into task plan");
+        when(flow.isWishlistCompilerTask(carrierTask)).thenReturn(true);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(carrierTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(carrierTaskId))).thenReturn(List.of());
+        when(reviews.findAll()).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        assertTrue(dto.blockedValue().blockers().stream()
+                .noneMatch(b -> "done_without_delivery_evidence".equals(b.type())));
+    }
+
+    @Test
+    void aDoneRealTaskWithNoReviewStillCountsAsMissingDeliveryEvidence() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID realTaskId = UUID.randomUUID();
+        TaskEntity realTask = new TaskEntity();
+        realTask.setId(realTaskId);
+        realTask.setStatus(TaskStatus.done);
+        realTask.setDescription("Implement document search filters");
+        // flow's predicates all default to false (unstubbed mock) - a genuine implementation task.
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(realTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(realTaskId))).thenReturn(List.of());
+        when(reviews.findAll()).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        OperationalTruthDto dto = service.build(projectId);
+
+        assertTrue(dto.blockedValue().blockers().stream()
+                .anyMatch(b -> "done_without_delivery_evidence".equals(b.type())));
     }
 }

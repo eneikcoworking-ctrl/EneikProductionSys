@@ -56,6 +56,13 @@ public class ProjectEntity {
     @Column(name = "factory_report", columnDefinition = "TEXT")
     private String factoryReport;
 
+    // 2026-08-09 (Phase 0, client runtime observability plan): set once ProductLaunchabilityService has
+    // checked whether this project has a documented way to run itself locally, so the check happens
+    // exactly once per project (on the first Continuous Orchestration tick after it reaches "delivered"),
+    // never re-fetched from GitHub on every tick forever.
+    @Column(name = "launchability_checked_at")
+    private java.time.Instant launchabilityCheckedAt;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProjectStatus status = ProjectStatus.active;
@@ -102,6 +109,9 @@ public class ProjectEntity {
     public void setWorkspacePath(String workspacePath) { this.workspacePath = workspacePath; }
     public String getFactoryStatus() { return factoryStatus; }
     public void setFactoryStatus(String factoryStatus) { this.factoryStatus = factoryStatus; }
+
+    public java.time.Instant getLaunchabilityCheckedAt() { return launchabilityCheckedAt; }
+    public void setLaunchabilityCheckedAt(java.time.Instant launchabilityCheckedAt) { this.launchabilityCheckedAt = launchabilityCheckedAt; }
     public String getFactoryReport() { return factoryReport; }
     public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
     public ProjectStatus getStatus() { return status; }

@@ -30,6 +30,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
@@ -60,6 +61,9 @@ public class JulesDispatchService {
     // baked into the brief, bounded to this many attempts so a blocker that never actually gets fixed
     // externally can't churn Jules sessions forever.
     private static final int REASONED_BLOCKER_MAX_RETRIES = 2;
+    // 2026-08-07 fix (RAG role-context unification): per-task dispatch only ever needs ONE role's own
+    // pattern content (unlike FalsificationCycleService's 13-role audits), so this budget can be generous.
+    private static final int JULES_TASK_PATTERN_CONTEXT_TOP_K = 8;
     // A design-review "approved, but here are some concerns" verdict is by definition non-blocking - it
     // must never gate the design-review-loop.dispatch on its own findings, only ever add backlog. But an
     // unconditional "one concern in, one wishlist item out" mapping with no stopping condition means a
@@ -393,6 +397,15 @@ public class JulesDispatchService {
     @Value("${jules.max-activity-pages-per-cycle:20}")
     private int maxActivityPagesPerCycle;
 
+    // Self-injected proxy reference (2026-08-07, same pattern/reason as ProjectFlowService.self and
+    // OpsAuditorService.self): a plain `this.admitWishlistCompilationCompletion(...)` call bypasses the
+    // Spring AOP proxy entirely, so @Transactional(REQUIRES_NEW) on that method would silently never
+    // activate - it would just run as a normal method call inside whatever transaction (if any) is already
+    // open on the calling thread, defeating the whole point of REQUIRES_NEW here (see that method's
+    // javadoc for why it specifically needs a genuinely separate transaction, not just any @Transactional).
+    // @Lazy breaks the constructor circular dependency this would otherwise create.
+    private final JulesDispatchService self;
+
     public JulesDispatchService(JulesApiClient julesApiClient,
                                 JulesSessionRepository julesSessionRepository,
                                 JulesActivityResponseRepository julesActivityResponseRepository,
@@ -421,7 +434,8 @@ public class JulesDispatchService {
                                 com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository,
                                 com.eneik.production.services.accounts.AccountHealthService accountHealthService,
                                 SessionLifecycleService sessionLifecycleService,
-                                @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix) {
+                                @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix,
+                                @org.springframework.context.annotation.Lazy JulesDispatchService self) {
         this.julesApiClient = julesApiClient;
         this.julesSessionRepository = julesSessionRepository;
         this.julesActivityResponseRepository = julesActivityResponseRepository;
@@ -451,6 +465,7 @@ public class JulesDispatchService {
         this.accountHealthService = accountHealthService;
         this.sessionLifecycleService = sessionLifecycleService;
         this.sourcePrefix = sourcePrefix;
+        this.self = self;
     }
 
     @Transactional
@@ -504,6 +519,10 @@ public class JulesDispatchService {
         } else {
             reason = "Dispatched to Jules";
             systemProgressTracker.recordProgress();
+            // Real work starting under this task's feature is itself proof any earlier "valueless epic"
+            // dismissal was wrong (or has since become wrong) - see readinessService.unDismissFeatureIfNeeded
+            // javadoc for the live incident this closes (test-forty-third, 2026-08-07).
+            readinessService.unDismissFeatureIfNeeded(task.getFeatureId());
         }
         return new JulesDispatchResult(
                 dispatched,
@@ -636,25 +655,17 @@ public class JulesDispatchService {
                         .append(rawCharter).append("\n");
             }
 
-            try {
-                java.nio.file.Path commonFile = java.nio.file.Paths.get("docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md");
-                if (java.nio.file.Files.exists(commonFile)) {
-                    roleContextBuilder.append("\n## COMMON ANALYTIC PROGRAMMING PATTERNS\n")
-                            .append(java.nio.file.Files.readString(commonFile)).append("\n");
-                }
-                java.nio.file.Path philosophersDir = java.nio.file.Paths.get("docs/philosopher-patterns/philosophers");
-                if (java.nio.file.Files.isDirectory(philosophersDir)) {
-                    String roleTag = task.getRole().getTag();
-                    try (var stream = java.nio.file.Files.newDirectoryStream(philosophersDir, roleTag + "*.md")) {
-                        for (java.nio.file.Path philFile : stream) {
-                            roleContextBuilder.append("\n## PHILOSOPHER PATTERN: ").append(philFile.getFileName()).append("\n")
-                                    .append(java.nio.file.Files.readString(philFile)).append("\n");
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                log.warn("JulesDispatchService: failed to attach philosopher patterns for role {}: {}", task.getRole().getTag(), e.getMessage());
-            }
+            // 2026-08-07 fix (RAG role-context unification): was a raw, unbounded read of the whole common-
+            // patterns file plus every one of this role's philosopher-pattern files on EVERY task dispatch,
+            // independently reimplemented from the same-shaped logic in FalsificationCycleService (which hit
+            // its own oversized-prompt HTTP 400 doing this at 13x scale). Charter itself stays raw/verbatim
+            // above (loadRawCharter) - only the pattern corpus (already indexed for exactly this) moves to
+            // scoped retrieval, keyed by this task's own brief so the surfaced patterns are the ones actually
+            // relevant to what Jules is about to do.
+            roleContextBuilder.append(geminiContextService.buildPhilosopherPatternContext(
+                    task.getRole(), task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
+            roleContextBuilder.append(geminiContextService.buildCommonPatternContext(
+                    task.getDescription(), JULES_TASK_PATTERN_CONTEXT_TOP_K));
 
             RoleRules rules = roleCapabilityLoader.loadRules(task.getRole().getTag());
             if (rules != null && rules.reviewRequiredBy() != null && !rules.reviewRequiredBy().isBlank()) {
@@ -743,16 +754,17 @@ public class JulesDispatchService {
                     + (createResult.statusCode() > 0 ? ": HTTP " + createResult.statusCode() : "")
                     + (createResult.compactError().isBlank() ? "" : " " + createResult.compactError()));
             UUID dispatchProjectId = task.getProject() != null ? task.getProject().getId() : null;
+            String dispatchRoleTag = task.getRole() != null ? task.getRole().getTag() : null;
             if (accountId != null && createResult.dailyLimitOrQuota()) {
                 accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
                         com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.DAILY_LIMIT,
-                        createResult.compactError());
+                        createResult.compactError(), dispatchRoleTag);
                 session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
                         + session.getClosureReason());
             } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
                 accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
                         com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_BLOCKED,
-                        createResult.compactError());
+                        createResult.compactError(), dispatchRoleTag);
                 session.setClosureReason("jules_api_blocked: Jules refused session creation because of API precondition, authorization, or request setup. "
                         + "This is not a daily limit. " + session.getClosureReason());
             }
@@ -761,8 +773,9 @@ public class JulesDispatchService {
             session.setStatus("running");
             if (accountId != null) {
                 UUID successProjectId = task.getProject() != null ? task.getProject().getId() : null;
+                String successRoleTag = task.getRole() != null ? task.getRole().getTag() : null;
                 accountHealthService.reportDispatchOutcome(accountId, successProjectId,
-                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.SUCCESS, null);
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.SUCCESS, null, successRoleTag);
             }
         }
 
@@ -961,6 +974,22 @@ public class JulesDispatchService {
                     && List.of("queued", "running", "revising", "stuck").contains(mappedStatus);
             if (wouldDowngradeConfirmedPr) {
                 mappedStatus = "pr_opened";
+            }
+
+            // 2026-08-09 (live incident, test-forty-third, session 381fc207): "stuck" is a LOCALLY-detected
+            // fact (ClaimService.detectStuckSessions, based on lastProgressAt staleness) - Jules's raw API
+            // still self-reporting "running"/"revising"/"queued" is not independent evidence anything
+            // actually changed, same distrust already applied to wouldDowngradeConfirmedPr above. Without
+            // this guard, the comment below ("stuck->running... is genuine forward progress") is simply
+            // wrong for this specific transition: it treated the mere LOCAL label flip as real progress and
+            // reset lastProgressAt to now() every time, which kept a real 3+ hour stall from EVER reaching
+            // closeOverdueStuckSessions' 120-minute close threshold - detectStuckSessions re-marked the same
+            // session "stuck" every ~61 minutes forever, and the very next poll silently resurrected it
+            // before the close-threshold sweep ever saw it in "stuck" state long enough to act.
+            boolean wouldResurrectStuckWithoutRealEvidence = "stuck".equals(oldStatus)
+                    && List.of("queued", "running", "revising").contains(mappedStatus);
+            if (wouldResurrectStuckWithoutRealEvidence) {
+                mappedStatus = "stuck";
             }
 
             if (!mappedStatus.equals(oldStatus)) {
@@ -2106,6 +2135,103 @@ public class JulesDispatchService {
                 .anyMatch(r -> r.getPrUrl() != null && !r.getPrUrl().isBlank() && !Boolean.TRUE.equals(r.getMerged()));
     }
 
+    // Package-private, not private (2026-08-07): JulesDispatchServiceTest exercises
+    // admitWishlistCompilationCompletion directly to prove the compare-and-swap claim actually excludes a
+    // concurrent second call - the novel, risk-bearing logic of tonight's regression fix.
+    enum CompilationAdmissionOutcome { NO_WISHLISTS_LEFT, ALREADY_COMPILED, IN_PROGRESS_ELSEWHERE, PROCEED }
+
+    record CompilerCompletionAdmission(CompilationAdmissionOutcome outcome, List<WishlistEntity> wishlists,
+                                                 java.util.Set<UUID> claimedIds) {
+    }
+
+    // 2026-08-07 (confirmed live incident, test-forty-third - 4th instance of this exact bug class found in
+    // one deliberate sweep, see ProjectFlowService.dispatchFalsificationAudit/
+    // dispatchToPhilosophicalAuditPersistentWorker/checkAndDispatchCoverageAudits for the other 3): unlike
+    // those three, this method is invoked from handlePrOpenedWorkflow, which is ALREADY @Transactional -
+    // simply extracting a plain @Transactional admit-step and calling it via self would just join that
+    // already-open outer transaction instead of opening a new one, so the project row lock would still be
+    // held for the outer transaction's whole lifetime (i.e. across every network call below). REQUIRES_NEW
+    // forces a genuinely separate transaction that commits - and releases the row lock - the moment this
+    // call returns, before any GitHub/Jules network call runs.
+    //
+    // 2026-08-07 SAME-NIGHT REGRESSION, FOUND AND FIXED LIVE: the first version of this method only READ
+    // wishlist status here and compared it to converted_to_task/dismissed - but the actual WRITE of that
+    // status happens much later, inside buildTaskGraphFromSlices, in the OUTER (still-open,
+    // not-yet-committed) transaction, AFTER all the slow GitHub/parse work below. That reopened the exact
+    // race this method exists to close: releasing the lock the instant the read-only decision was made,
+    // before the real protective write ever happened, let reconcileStrandedPrOpenedWorkflows's ~60s replay
+    // (or a duplicate webhook) see "still not converted" a second and third time and independently rebuild
+    // the same task graph - confirmed live: one wishlist decomposed 3 times in ~70 seconds, producing
+    // duplicate tasks that tripped BLOCKED_BY_DUPLICATE_CONTENT and halted the whole project for hours.
+    // Fix: an atomic compare-and-swap claim (compiling -> finalizing) per wishlist, INSIDE this short lock,
+    // using the same primitive WishlistRepository.compareAndSetStatus already proven for dispatch-time
+    // admission. A concurrent completion's CAS attempt on an already-`finalizing` row affects 0 rows and is
+    // excluded, with no window between "decided" and "protected" for anything to race into.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public CompilerCompletionAdmission admitWishlistCompilationCompletion(TaskEntity compilerTask, List<UUID> wishlistIds) {
+        // 2026-08-03 (confirmed live incident, test-forty-first): serializes concurrent completions for the
+        // same project so a second one correctly re-reads current wishlist status after the first commits,
+        // instead of both racing past the check - same lockProjectForUpdate primitive used for this exact
+        // race class elsewhere (checkAndDispatchCoverageAudits, dispatchFalsificationAudit).
+        if (compilerTask.getProject() != null) {
+            projectRepository.lockProjectForUpdate(compilerTask.getProject().getId());
+        }
+        List<WishlistEntity> wishlists = new java.util.ArrayList<>();
+        for (UUID id : wishlistIds) {
+            wishlistRepository.findById(id).ifPresent(wishlists::add);
+        }
+        if (wishlists.isEmpty()) {
+            return new CompilerCompletionAdmission(CompilationAdmissionOutcome.NO_WISHLISTS_LEFT, wishlists, java.util.Set.of());
+        }
+
+        // A batch where EVERY wishlist has already been finished by another session is a full no-op that
+        // just closes its own PR/session cleanly - checked BEFORE attempting any claim, using the fresh
+        // read above. Must check specifically for converted_to_task/dismissed, NOT "!= pending":
+        // dispatchWishlistCompiler flips each wishlist to `compiling` at DISPATCH time, before any session
+        // has actually completed - a "!= pending" check would therefore reject every completion, including
+        // the legitimate first one (caught live: it stuck a wishlist in an infinite
+        // compile->discard->blocked->recover->compile loop that never produced real work).
+        boolean allAlreadyResolved = wishlists.stream()
+                .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task || w.getStatus() == WishlistStatus.dismissed);
+        if (allAlreadyResolved) {
+            return new CompilerCompletionAdmission(CompilationAdmissionOutcome.ALREADY_COMPILED, wishlists, java.util.Set.of());
+        }
+
+        // Idempotency guard, now atomic: more than one compiler task/completion can end up targeting the
+        // same wishlist (e.g. the generic blocked-task recovery flow re-dispatching a compiler task without
+        // knowing it's a compiler task, racing an already-in-flight one, or this exact session's own
+        // completion being replayed). Whichever completion wins the compare-and-swap for a given wishlist
+        // owns it; a batch where only SOME wishlists are claimable still proceeds for those specific ones -
+        // completeWishlistCompilation gives buildTaskGraphFromSlices a view where un-claimed positions are
+        // already marked as "skip", so it never touches a wishlist this invocation doesn't own.
+        java.util.Set<UUID> claimedIds = new java.util.HashSet<>();
+        for (WishlistEntity w : wishlists) {
+            if (w.getStatus() == WishlistStatus.converted_to_task || w.getStatus() == WishlistStatus.dismissed) {
+                continue;
+            }
+            if (wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.compiling, WishlistStatus.finalizing) == 1) {
+                claimedIds.add(w.getId());
+            }
+        }
+        if (claimedIds.isEmpty()) {
+            // Every remaining wishlist is already `finalizing` under a genuinely concurrent completion right
+            // now - not ours to touch, and not a "duplicate to discard" either (the owning completion still
+            // needs its PR/session intact to finish). Quietly no-op.
+            return new CompilerCompletionAdmission(CompilationAdmissionOutcome.IN_PROGRESS_ELSEWHERE, wishlists, claimedIds);
+        }
+        return new CompilerCompletionAdmission(CompilationAdmissionOutcome.PROCEED, wishlists, claimedIds);
+    }
+
+    // Reverts a claim back to `compiling` so a later legitimate attempt (Jules retry, or a fresh recovery
+    // dispatch) can still compare-and-swap it again - used whenever a PROCEED admission doesn't end in a
+    // real converted_to_task/dismissed write (invalid plan, retry, or an exception during graph building),
+    // so a wishlist can never get stranded in `finalizing` forever.
+    private void releaseUnfinishedClaims(java.util.Set<UUID> claimedIds) {
+        for (UUID id : claimedIds) {
+            wishlistRepository.compareAndSetStatus(id, WishlistStatus.finalizing, WishlistStatus.compiling);
+        }
+    }
+
     /**
      * A wishlist-compiler session reached pr_opened: its PR should carry exactly one JSON plan file
      * (see ProjectFlowService.wishlistCompilerPrompt), never product code. Parses and validates that
@@ -2115,29 +2241,16 @@ public class JulesDispatchService {
      * NeedsHumanReviewEntity.
      */
     private void completeWishlistCompilation(JulesSessionEntity session, TaskEntity compilerTask) {
-        // 2026-08-03 (confirmed live incident, test-forty-first): the idempotency guard below is a
-        // classic check-then-act race without this lock - handlePrOpenedWorkflow can be invoked
-        // concurrently for the same session/PR (a direct webhook racing reconcileStrandedPrOpenedWorkflows's
-        // ~60s poll replay), and without serialization both invocations read the wishlist as "not yet
-        // converted" before either commits, so both proceed to independently call buildTaskGraphFromSlices -
-        // the same brief gets fully decomposed and dispatched multiple times despite the guard existing.
-        // Same lockProjectForUpdate primitive already used for this exact race class elsewhere
-        // (checkAndDispatchCoverageAudits, dispatchFalsificationAudit) - serializes concurrent completions
-        // for the same project so the second one correctly re-reads "already compiled" after the first
-        // commits, instead of both racing past the check.
-        if (compilerTask.getProject() != null) {
-            projectRepository.lockProjectForUpdate(compilerTask.getProject().getId());
-        }
         List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
         if (wishlistIds.isEmpty()) {
             log.error("Compiler task {} has no compilesWishlistIds payload marker; cannot complete compilation", compilerTask.getId());
             return;
         }
-        List<WishlistEntity> wishlists = new java.util.ArrayList<>();
-        for (UUID id : wishlistIds) {
-            wishlistRepository.findById(id).ifPresent(wishlists::add);
-        }
-        if (wishlists.isEmpty()) {
+
+        CompilerCompletionAdmission admission = self.admitWishlistCompilationCompletion(compilerTask, wishlistIds);
+        List<WishlistEntity> wishlists = admission.wishlists();
+
+        if (admission.outcome() == CompilationAdmissionOutcome.NO_WISHLISTS_LEFT) {
             log.warn("Compiler task {}: none of its {} wishlist(s) exist anymore, discarding", compilerTask.getId(), wishlistIds.size());
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
@@ -2146,25 +2259,7 @@ public class JulesDispatchService {
             return;
         }
 
-        // Idempotency guard: more than one compiler task can end up targeting the same wishlist (e.g. the
-        // generic blocked-task recovery flow re-dispatching a compiler task without knowing it's a compiler
-        // task, racing an already-in-flight one) - without this check, every one of them independently calls
-        // buildTaskGraphFromSlices below and the same brief gets fully decomposed and dispatched multiple
-        // times. Whichever compiler session reaches this point first "wins" for a given wishlist; a batch
-        // where EVERY wishlist has already been finished by another session is a full no-op that just closes
-        // its own PR/session cleanly. A batch where only SOME are already finished still proceeds -
-        // buildTaskGraphFromSlices skips those specific ones internally per-source.
-        //
-        // Must check specifically for converted_to_task/dismissed, NOT "!= pending": dispatchWishlistCompiler
-        // flips each wishlist to `compiling` at DISPATCH time, before any session has actually completed - a
-        // "!= pending" check would therefore reject every completion, including the legitimate first one,
-        // since by the time ANY session gets here the status has already left `pending`. This was caught
-        // live: it stuck a wishlist in an infinite compile->discard->blocked->recover->compile loop that
-        // never produced real work. converted_to_task/dismissed are the only states that mean "someone
-        // already finished this" - `compiling` just means "in flight", which includes the winning attempt.
-        boolean anyStillOpen = wishlists.stream()
-                .anyMatch(w -> w.getStatus() != WishlistStatus.converted_to_task && w.getStatus() != WishlistStatus.dismissed);
-        if (!anyStillOpen) {
+        if (admission.outcome() == CompilationAdmissionOutcome.ALREADY_COMPILED) {
             log.warn("Compiler task {}: all {} wishlist(s) in this batch are already compiled by another session - discarding this duplicate compilation instead of re-decomposing the same brief(s).",
                     compilerTask.getId(), wishlists.size());
             Optional<GitHubPullRequestService.GitHubPullRequest> duplicatePrOpt =
@@ -2180,6 +2275,30 @@ public class JulesDispatchService {
             }
             return;
         }
+
+        if (admission.outcome() == CompilationAdmissionOutcome.IN_PROGRESS_ELSEWHERE) {
+            log.info("Compiler task {}: another completion is already finalizing this exact batch right now; skipping without touching its PR/session.", compilerTask.getId());
+            return;
+        }
+
+        // buildTaskGraphFromSlices below is a shared method (also called from ingestPlanFromContent's manual
+        // recovery path, which never claims anything) whose per-wishlist skip check only recognizes
+        // converted_to_task/dismissed as "not mine". A position this invocation did NOT win the claim for
+        // (owned by a genuinely concurrent completion, or already resolved) must still occupy the same
+        // index - epicPlan.sourceIndex() is positional, matching the numbering the original compiler prompt
+        // sent - so it's represented by a throwaway entity carrying real id but a `dismissed` sentinel
+        // status. That sentinel is NEVER persisted: a skipped position is `continue`'d without any save.
+        List<WishlistEntity> wishlistsForGraphBuild = wishlists.stream()
+                .map(w -> {
+                    if (admission.claimedIds().contains(w.getId())) {
+                        return w;
+                    }
+                    WishlistEntity notMine = new WishlistEntity();
+                    notMine.setId(w.getId());
+                    notMine.setStatus(WishlistStatus.dismissed);
+                    return notMine;
+                })
+                .toList();
 
         String planPath = projectFlowService.compilerPlanPath(compilerTask);
         Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
@@ -2200,7 +2319,14 @@ public class JulesDispatchService {
         // covers every wishlist in the batch regardless of whether one of them was independently finished
         // by another session in the meantime.
         if (isValidCompilerPlan(epics, wishlists.size())) {
-            projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlists, epics);
+            try {
+                projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlistsForGraphBuild, epics);
+            } catch (RuntimeException e) {
+                // Claimed wishlists that never reached a real converted_to_task/dismissed write must not be
+                // stranded in `finalizing` forever - release them so a later retry can claim them again.
+                releaseUnfinishedClaims(admission.claimedIds());
+                throw e;
+            }
             prOpt.ifPresent(pr -> {
                 gitHubPullRequestService.mergeRecordPullRequest(
                         compilerTask.getProject(), pr, "wishlist compiler plan parsed into real tasks");
@@ -2217,6 +2343,11 @@ public class JulesDispatchService {
                     epics.stream().mapToInt(e -> e.slices().size()).sum());
             return;
         }
+
+        // Plan was invalid - this attempt claimed the wishlists but is not going to build anything from
+        // them, so release the claim now (before deciding retry vs. escalate) instead of leaving them
+        // stuck in `finalizing`, which would make every future admission's compare-and-swap fail forever.
+        releaseUnfinishedClaims(admission.claimedIds());
 
         int attempts = compilerTask.getRetryCount();
         if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
@@ -2534,31 +2665,46 @@ public class JulesDispatchService {
      * the worker row (the other two persistent purposes are deliberately left open forever; this one is
      * not - see PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT's javadoc).
      */
+    /**
+     * 2026-08-09 (live incident, operator-flagged: "проверь что все философы высказались"): BARCAN-TAG-12
+     * was sent a follow-up at 09:00:14 and this method merged/closed the whole discussion by 09:00:23 - 9
+     * seconds later - with the final archived report never containing a single critique for that role tag.
+     * Root cause: "covered" used to come from ProjectFlowService.coveredPhilosophicalAuditRoles, an
+     * append-only marker written the moment a role batch was SENT (now removed), not once Jules's answer was
+     * actually verified to exist. A stale-status poll edge arriving before Jules had written a word could
+     * still see "covered" already at 13/13 and declare the discussion finished on incomplete data. Covered is
+     * now derived exclusively from parsing the report file on the branch right now - the exact same source
+     * of truth applyPhilosophicalCritiques itself consumes below - so "all roles covered" and "what critiques
+     * get applied" can never disagree with each other.
+     */
     private void completePersistentPhilosophicalAuditCycle(JulesSessionEntity session, TaskEntity carrierTask) {
-        List<String> covered = projectFlowService.coveredPhilosophicalAuditRoles(carrierTask);
         List<String> activeRoleTags = roleRepository.findAll().stream()
                 .filter(com.eneik.production.models.persistence.RoleEntity::isActive)
                 .map(com.eneik.production.models.persistence.RoleEntity::getTag)
                 .toList();
+        String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
+
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
+        List<com.eneik.production.services.FalsificationCycleService.PhilosophicalCritique> critiques = reportPath != null
+                ? prOpt.map(pr -> parsePhilosophicalReport(carrierTask.getProject(), pr.headRef(), reportPath)).orElseGet(List::of)
+                : List.of();
+        java.util.Set<String> covered = critiques.stream()
+                .map(com.eneik.production.services.FalsificationCycleService.PhilosophicalCritique::roleTag)
+                .collect(java.util.stream.Collectors.toSet());
         boolean allRolesCovered = !activeRoleTags.isEmpty() && covered.containsAll(activeRoleTags);
 
         if (!allRolesCovered) {
             log.info("Persistent philosophical-audit worker (carrier task {}): turn complete, {} of {} active role(s) "
-                            + "covered so far; staying parked at pr_opened for the next turn",
+                            + "covered so far (verified against the report file's real content); staying parked at "
+                            + "pr_opened for the next turn",
                     carrierTask.getId(), covered.size(), activeRoleTags.size());
             return;
         }
 
         boolean firstCompletion = claimService.hasActiveClaim(carrierTask.getId());
-        String reportPath = projectFlowService.philosophicalAuditReportPath(carrierTask);
         String screenshotDir = reportPath == null ? null
                 : reportPath.replaceFirst("\\.json$", "") + "-screenshots/";
-
-        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
-                gitHubPullRequestService.findOpenPullRequestBySession(carrierTask.getProject(), session.getExternalSessionId());
-        List<com.eneik.production.services.FalsificationCycleService.PhilosophicalCritique> critiques = firstCompletion && reportPath != null
-                ? prOpt.map(pr -> parsePhilosophicalReport(carrierTask.getProject(), pr.headRef(), reportPath)).orElseGet(List::of)
-                : List.of();
 
         if (firstCompletion) {
             falsificationCycleService.applyPhilosophicalCritiques(carrierTask.getProject(), critiques, screenshotDir);
@@ -2760,7 +2906,8 @@ public class JulesDispatchService {
                         v.path("score").asText(""),
                         v.path("mustBe").asText(""),
                         v.path("performance").asText(""),
-                        v.path("attractive").asText("")
+                        v.path("attractive").asText(""),
+                        v.hasNonNull("prNumber") ? v.path("prNumber").asInt() : null
                 ));
             }
             return result;
@@ -4010,12 +4157,19 @@ public class JulesDispatchService {
         List<JulesSessionEntity> candidates = julesSessionRepository.findByStatusIn(ACTIVE_SESSION_STATUSES);
         for (JulesSessionEntity session : candidates) {
             taskRepository.findById(session.getTaskId())
-                    .filter(this::isTerminalTask)
+                    .filter(JulesDispatchService::isTerminalTask)
                     .ifPresent(task -> closeSessionForTerminalTask(session, task));
         }
     }
 
-    private boolean isTerminalTask(TaskEntity task) {
+    // 2026-08-09 (live incident, test-forty-third: session for task c48e1f7e oscillated every ~1 minute for
+    // 13+ minutes between this method closing it (task is terminal/failed) and AutoMergeService.
+    // repairSessionForConfirmedOpenPr re-opening it (a real open PR exists) - two independently-maintained
+    // beliefs about the same session's status, one undoing the other forever, same root shape as the
+    // reconcileTerminalGithubStateForReviews churn fixed earlier tonight. Made public static (pure function
+    // of TaskEntity, no instance state) so AutoMergeService can defer to this SAME definition of "terminal"
+    // instead of repairing a session whose task has already concluded through a different path.
+    public static boolean isTerminalTask(TaskEntity task) {
         return task.getStatus() == TaskStatus.done
                 || task.getStatus() == TaskStatus.failed
                 // A blocked task may be recovered later by a fresh session, but the session that caused

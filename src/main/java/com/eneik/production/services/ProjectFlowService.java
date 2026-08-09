@@ -83,6 +83,11 @@ public class ProjectFlowService {
     private final SelfFalsificationEpicMatcher selfFalsificationEpicMatcher;
     private final OperationalPolicyService operationalPolicyService;
     private final com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
+    private final com.eneik.production.repositories.TaskConflictRepository taskConflictRepository;
+    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
+    private final com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository;
+    private final com.eneik.production.repositories.FeatureRepository featureRepository;
+    private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
 
     @Value("${jules.max-concurrent-sessions-per-account:3}")
     private int maxConcurrentJulesSessionsPerAccount;
@@ -134,6 +139,15 @@ public class ProjectFlowService {
     @Value("${falsification.readiness-threshold:0.9}")
     private double falsificationReadinessThreshold;
 
+    private final RequirementGroundingService requirementGroundingService;
+    private final GeminiContextService geminiContextService;
+
+    // Self-injected proxy reference (2026-08-07, same pattern/reason as ProcessControlService.self): a
+    // plain `this.admitFalsificationAuditTask(...)` self-invocation bypasses the Spring AOP proxy entirely,
+    // so @Transactional on that method would silently never activate. Routing the call through `self`
+    // instead goes through the real proxy. @Lazy breaks the constructor circular dependency this would
+    // otherwise create.
+    private final ProjectFlowService self;
 
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -165,7 +179,15 @@ public class ProjectFlowService {
                               PersistentWorkerSessionService persistentWorkerSessionService,
                               SelfFalsificationEpicMatcher selfFalsificationEpicMatcher,
                               OperationalPolicyService operationalPolicyService,
-                              ProjectFileClaimRepository projectFileClaimRepository) {
+                              ProjectFileClaimRepository projectFileClaimRepository,
+                              RequirementGroundingService requirementGroundingService,
+                              GeminiContextService geminiContextService,
+                              com.eneik.production.repositories.TaskConflictRepository taskConflictRepository,
+                              com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
+                              com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository,
+                              com.eneik.production.repositories.FeatureRepository featureRepository,
+                              com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                              @org.springframework.context.annotation.Lazy ProjectFlowService self) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.accountRepository = accountRepository;
@@ -196,6 +218,14 @@ public class ProjectFlowService {
         this.selfFalsificationEpicMatcher = selfFalsificationEpicMatcher;
         this.operationalPolicyService = operationalPolicyService;
         this.projectFileClaimRepository = projectFileClaimRepository;
+        this.requirementGroundingService = requirementGroundingService;
+        this.geminiContextService = geminiContextService;
+        this.taskConflictRepository = taskConflictRepository;
+        this.needsHumanReviewRepository = needsHumanReviewRepository;
+        this.linearIssueMetadataRepository = linearIssueMetadataRepository;
+        this.featureRepository = featureRepository;
+        this.featureThreadRepository = featureThreadRepository;
+        this.self = self;
     }
 
     @Transactional
@@ -348,6 +378,100 @@ public class ProjectFlowService {
         }
         freezeProjectAndCancelWork(project, "Project paused by operator");
         return toProjectDto(project);
+    }
+
+    // 2026-08-07 (operator directive: "надо будет удалить там результаты первой декомпозиции и полностью
+    // с самого начала провести новую"): deletes every task/wishlist/feature produced by a project's first
+    // decomposition attempt and re-submits the same brief as a fresh client wishlist, so the SAME
+    // project/repo/GitHub collaborators (already provisioned, no need to redo that) get a clean second
+    // decomposition run through the now-fixed grounding pipeline. Requires the project to already be
+    // frozen (see pauseProject) - refuses to reset a project that might still have live orchestration
+    // touching it, since this is a real, non-reversible delete, not a soft archive.
+    //
+    // Deletion order below follows the actual FK constraints in the schema (checked against the migration
+    // files, not assumed): tasks.depends_on is a self-referencing FK with no cascade, so it must be nulled
+    // out before any task in a dependency chain can be deleted; jules_sessions/claims/task_conflicts/
+    // needs_human_review/linear_issue_metadata all reference tasks.id with no cascade, so each must be
+    // deleted before the task itself; jules_activity_responses references jules_sessions.id with no
+    // cascade and must go first; pr_reviews cascades automatically from jules_sessions (ON DELETE CASCADE,
+    // V37) so it needs no manual delete. wishlist.source_wishlist_id and *.feature_id are all ON DELETE SET
+    // NULL, so wishlist and features can be deleted without first touching tasks for those columns
+    // specifically. feature_threads.feature_id is the one exception - V45 tightened it to NOT NULL after
+    // V44 originally declared it ON DELETE SET NULL, so that cascade action can never actually fire; those
+    // rows must be deleted before their feature. The whole thing runs in one transaction - if the order is
+    // wrong anywhere, the real DB constraint throws and nothing is left half-deleted, rather than silently
+    // corrupting state.
+    @Transactional
+    public ProjectDto resetProjectForRedecomposition(UUID projectId, String freshWishlistContent) {
+        if (freshWishlistContent == null || freshWishlistContent.isBlank()) {
+            throw new IllegalArgumentException("freshWishlistContent is required to redecompose a project");
+        }
+        ProjectEntity project = requireProject(projectId);
+        if (project.getStatus() != ProjectStatus.frozen) {
+            throw new IllegalStateException("Project must be paused/frozen before it can be reset for redecomposition (was: " + project.getStatus() + ")");
+        }
+
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        List<UUID> taskIds = tasks.stream().map(TaskEntity::getId).toList();
+
+        if (!taskIds.isEmpty()) {
+            boolean anyDependsOn = false;
+            for (TaskEntity t : tasks) {
+                if (t.getDependsOn() != null) {
+                    t.setDependsOn(null);
+                    anyDependsOn = true;
+                }
+            }
+            if (anyDependsOn) {
+                taskRepository.saveAll(tasks);
+            }
+
+            claimRepository.deleteAll(claimRepository.findByTaskIdIn(taskIds));
+            taskConflictRepository.deleteAll(taskConflictRepository.findByTaskIdIn(taskIds));
+            needsHumanReviewRepository.deleteAll(needsHumanReviewRepository.findByTaskIdIn(taskIds));
+            linearIssueMetadataRepository.deleteAllById(taskIds);
+
+            List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskIdIn(taskIds);
+            List<UUID> sessionIds = sessions.stream().map(JulesSessionEntity::getId).toList();
+            if (!sessionIds.isEmpty()) {
+                julesActivityResponseRepository.deleteAll(julesActivityResponseRepository.findByJulesSessionIdIn(sessionIds));
+            }
+            julesSessionRepository.deleteAll(sessions);
+
+            taskRepository.deleteAll(tasks);
+        }
+
+        List<WishlistEntity> wishlists = wishlistRepository.findByProjectId(projectId);
+        // Drop the RAG index built for any root client brief this project already had (see
+        // wishlistCompilerPromptBatch) - indexDocument(..., null) is the same delete-by-sourceRef path
+        // reindexStandingKnowledge uses, no separate repository access needed here.
+        for (WishlistEntity w : wishlists) {
+            if (w.getSource() == WishlistSource.client && w.getOriginWishlistId() == null) {
+                geminiContextService.indexDocument("client_brief_requirement", "client_brief:" + w.getId(), null);
+            }
+        }
+        wishlistRepository.deleteAll(wishlists);
+        // feature_threads.feature_id is NOT NULL (V45 tightened the original ON DELETE SET NULL column to
+        // NOT NULL) - a real live constraint violation confirmed on the first run of this method
+        // (H2: "NULL not allowed for column FEATURE_ID" while deleting a feature that still had a thread
+        // row), so these must be deleted before the features they reference.
+        featureThreadRepository.deleteAll(featureThreadRepository.findByProjectId(projectId));
+        featureRepository.deleteAll(featureRepository.findByProjectId(projectId));
+
+        project.setStatus(ProjectStatus.active);
+        ProjectEntity saved = projectRepository.save(project);
+
+        WishlistEntity freshWishlist = new WishlistEntity();
+        freshWishlist.setProjectId(saved.getId());
+        freshWishlist.setContent(freshWishlistContent.trim());
+        freshWishlist.setSource(WishlistSource.client);
+        freshWishlist.setStatus(WishlistStatus.pending);
+        wishlistRepository.save(freshWishlist);
+
+        log.warn("Project {} reset for redecomposition: deleted {} task(s), {} wishlist(s), started fresh with a new client brief ({} chars)",
+                projectId, taskIds.size(), wishlists.size(), freshWishlistContent.trim().length());
+
+        return toProjectDto(saved);
     }
 
     private void cancelAllActiveWorkForProject(ProjectEntity project, String reason) {
@@ -1919,6 +2043,12 @@ public class ProjectFlowService {
                 String ownerRole = targetRoleForSlice(wishlist, slice);
                 sliceWishlist.setSourceRoleTag(ownerRole);
                 sliceWishlist.setContent(internalSliceContent(wishlist, slice, index));
+                // Immutable lineage back to the original client brief (root wishlist), same "stamp once,
+                // inherit if already stamped" rule as originFeatureId just below - lets buildTaskDescription
+                // retrieve the relevant excerpt of the ROOT brief even if this slice's own parent is itself
+                // already a slice (a compiler pass over a follow-up wishlist that was itself sliced).
+                sliceWishlist.setOriginWishlistId(
+                        wishlist.getOriginWishlistId() != null ? wishlist.getOriginWishlistId() : wishlist.getId());
                 sliceWishlist.setStatus(WishlistStatus.pending);
                 sliceWishlist.setFeatureId(featureId);
                 // A feature's own originFeatureId always equals its own id by construction
@@ -2219,22 +2349,20 @@ public class ProjectFlowService {
         return "BARCAN-TAG-02";
     }
 
-    // The short wrapper line stays for human traceability (which parent wishlist, which role, which
-    // index), but the parent's real full content is appended below it, unmodified - this is what
-    // ultimately reaches TechnicalLeadCompiler.buildTaskDescription's "Original Brief" section via
-    // wishlist.getContent() on this child wishlist. Previously this method replaced the real content
-    // with just the (now honest-but-still-truncated) slice title, so even a correctly non-fabricated
-    // title never carried the actual client text through to what Jules reads.
+    // 2026-08-07 (Gricean quantity-optimal grounding, ACP-101): this used to append the parent's full raw
+    // brief verbatim after the wrapper line, so every slice of one brief duplicated the entire document in
+    // its own content column - and since TechnicalLeadCompiler.buildTaskDescription then truncated that at
+    // a fixed 4000-character budget, every slice's "Original Brief" section silently cut off at the same
+    // point in the document regardless of which part that specific slice actually needed (confirmed live,
+    // test-forty-third: neither the financial-module slices nor the design-system slices ever received
+    // their own relevant section of a 30,963-char multi-domain brief). The wrapper line alone is enough
+    // here now - buildTaskDescription retrieves the relevant excerpt of the ROOT brief itself via
+    // originWishlistId + GeminiContextService instead of reading it off this row's own content.
     private String internalSliceContent(WishlistEntity parent, MLPredictionServiceClient.TaskSliceMetadata slice, int index) {
         String uiMarker = (slice.hasUi()
                 || looksLikeUi(slice.title() + " " + slice.jtbd() + " " + slice.acceptanceCriteria())) ? "UI " : "";
-        String wrapper = "Internal " + uiMarker + "work item " + index + " (" + targetRoleForSlice(parent, slice) + ") from wishlist " + parent.getId()
+        return "Internal " + uiMarker + "work item " + index + " (" + targetRoleForSlice(parent, slice) + ") from wishlist " + parent.getId()
                 + ": " + safeSliceTitle(slice.title());
-        String parentContent = parent.getContent();
-        if (parentContent == null || parentContent.isBlank()) {
-            return wrapper;
-        }
-        return wrapper + "\n\n" + parentContent;
     }
 
     private String safeSliceTitle(String title) {
@@ -2383,18 +2511,27 @@ public class ProjectFlowService {
         return wishlist.getSource() == WishlistSource.role && "BARCAN-TAG-03".equals(wishlist.getSourceRoleTag());
     }
 
-    private void dispatchCompilerTask(TaskEntity compilerTask) {
-        Optional<AccountEntity> accountOpt = accountRepository.lockAccountByNameWithCapacity(
-                taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount);
+    /**
+     * @return true only when this attempt actually put the task in front of Jules (fresh dispatch or a
+     * confirmed already-dispatched duplicate) - false for every other outcome (no capacity, blocked, Jules
+     * rejected the request, an exception). Callers that report dispatch status (2026-08-07 fix, live
+     * incident: FalsificationCycleService used to log "Dispatched" unconditionally right after this
+     * returned void, even when the Jules call itself had just failed with HTTP 400) must use this, not just
+     * assume success because a TaskEntity got created - the task legitimately stays `queued` on false and
+     * will retry on the next compiler-dispatch cycle, which is real, not a bug in itself.
+     */
+    private boolean dispatchCompilerTask(TaskEntity compilerTask) {
+        Optional<AccountEntity> accountOpt = self.claimAccountForTask(compilerTask.getId(), () ->
+                accountRepository.lockAccountByNameWithCapacity(
+                        taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount));
         if (accountOpt.isEmpty()) {
             log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
                     taskCompilerAccountName(), compilerTask.getId());
-            return;
+            return false;
         }
 
         AccountEntity account = accountOpt.get();
         try {
-            claimService.claimSpecificTask(compilerTask.getId(), account.getId());
             TaskEntity savedTask = taskRepository.findById(compilerTask.getId()).orElse(compilerTask);
             JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
             savedTask.setJulesSessionName(dispatch.sessionName());
@@ -2405,12 +2542,12 @@ public class ProjectFlowService {
                     claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
                     log.warn("Blocked wishlist compiler task {} because Jules cannot see the repository source: {}",
                             savedTask.getId(), dispatch.reason());
-                    return;
+                    return false;
                 }
                 claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                 log.warn("Failed to dispatch wishlist compiler task {} to account {}: {}",
                         savedTask.getId(), account.getName(), dispatch.reason());
-                return;
+                return false;
             }
             // JulesDispatchService.dispatch() reports dispatched=true both for a genuinely fresh dispatch
             // and for the "already dispatched, skip duplicate" no-op - logging both as "Dispatched compiler
@@ -2420,9 +2557,11 @@ public class ProjectFlowService {
             } else {
                 log.info("Dispatched compiler task {} to account {}", savedTask.getId(), account.getName());
             }
+            return true;
         } catch (Exception e) {
             log.error("Failed to claim/dispatch compiler task {} to account {}: {}",
                     compilerTask.getId(), account.getName(), e.getMessage(), e);
+            return false;
         }
     }
 
@@ -2454,14 +2593,16 @@ public class ProjectFlowService {
         String excludedNamesCsv = excludedAccountNames.isEmpty() ? null : String.join(",", excludedAccountNames);
         String failedAccountName = null;
         for (int attempt = 0; attempt < 3; attempt++) {
-            Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
-                    task.getProject().getId(),
-                    task.getRole().getTag(),
-                    maxConcurrentJulesSessionsPerAccount,
-                    failedAccountName,
-                    maxDailySessionsPerAccount,
-                    excludedNamesCsv
-            );
+            String excludedForThisAttempt = failedAccountName;
+            Optional<AccountEntity> accountOpt = self.claimAccountForTask(task.getId(), () ->
+                    accountRepository.lockNextJulesAccountWithCapacity(
+                            task.getProject().getId(),
+                            task.getRole().getTag(),
+                            maxConcurrentJulesSessionsPerAccount,
+                            excludedForThisAttempt,
+                            maxDailySessionsPerAccount,
+                            excludedNamesCsv
+                    ));
             if (accountOpt.isEmpty()) {
                 log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
                 return;
@@ -2469,7 +2610,6 @@ public class ProjectFlowService {
 
             AccountEntity account = accountOpt.get();
             try {
-                claimService.claimSpecificTask(task.getId(), account.getId());
                 TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
                 JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
                 savedTask.setJulesSessionName(dispatch.sessionName());
@@ -2584,7 +2724,35 @@ public class ProjectFlowService {
                         .append(" ONE work item that patches the existing code directly, unless this literally")
                         .append(" cannot be done without a new layer.]");
             }
-            briefsSection.append("\n").append(defaultText(w.getContent(), "(empty brief)")).append("\n\n");
+            // Precision-grounding (2026-08-07): only for genuinely client-authored text - a short brief and
+            // a huge spec go through the exact same mechanism, just different volume. Other sources
+            // (self_falsification, role follow-ups, philosophical_falsification) are already
+            // system-generated text, not a client's own words, so grounding doesn't apply to them.
+            // Computed lazily on first compilation and cached on the wishlist itself so a retry/second
+            // compiler pass never re-pays the pattern-lookup cost.
+            String briefText = w.getContent();
+            if (w.getSource() == WishlistSource.client) {
+                if (w.getGroundedContent() == null || w.getGroundedContent().isBlank()) {
+                    String grounded = requirementGroundingService.ground(w.getContent());
+                    w.setGroundedContent(grounded);
+                    wishlistRepository.save(w);
+                    // Gricean quantity-optimal grounding (ACP-101): index the grounded brief once, here,
+                    // so each compiler-generated slice's task description can later retrieve only the
+                    // excerpt relevant to its own JTBD (TechnicalLeadCompiler.buildTaskDescription) instead
+                    // of every slice duplicating the whole brief and being truncated at a fixed length.
+                    // Same opt-in gate as every other GeminiContextService caller (GeminiContextService's own
+                    // class javadoc: "an operator who hasn't opted in gets byte-for-byte the old prompt
+                    // behavior and pays zero extra Gemini cost") - indexDocument itself doesn't gate, so an
+                    // ungated call here would embed every client brief even with the feature flag off.
+                    if (settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
+                        geminiContextService.indexDocument("client_brief_requirement", "client_brief:" + w.getId(), grounded);
+                    }
+                }
+                if (w.getGroundedContent() != null && !w.getGroundedContent().isBlank()) {
+                    briefText = w.getGroundedContent();
+                }
+            }
+            briefsSection.append("\n").append(defaultText(briefText, "(empty brief)")).append("\n\n");
         }
 
         UUID projectId = wishlists.get(0).getProjectId();
@@ -2639,6 +2807,14 @@ public class ProjectFlowService {
                   pure backend epic with no UI has no E2E layer). Do not create a separate BARCAN-TAG-00
                   integration/merge-hygiene slice unless the brief explicitly asks to verify existing
                   code, fix merge hygiene, or review an already implemented slice.
+                  EXCEPTION (Gricean floor, not a loophole): when the epic's own cynefinDomain is "clear"
+                  AND the epic has at most 2 requirements total, you MAY fold this QA coverage into the
+                  implementation slice's own acceptanceCriteria/DoD instead of a separate BARCAN-TAG-06
+                  slice - a genuinely trivial epic does not need a whole separate task/PR/Jules session
+                  just to assert what the implementation slice's own tests already cover. Any epic with
+                  more requirements, or a cynefinDomain of complicated/complex/chaotic, keeps the
+                  mandatory separate slice - this exception narrows the floor, it never removes it for
+                  real work.
                 - For complex or ambiguous work, create a short BARCAN-TAG-09 or BARCAN-TAG-01
                   spike/decision slice instead of guessing at implementation.
                 - Some layers are structurally required even if the brief's narrative never explicitly
@@ -2657,6 +2833,13 @@ public class ProjectFlowService {
                   BARCAN-TAG-12 slice that defines the shared API contract (endpoints, request/response
                   shape, DTOs) they both build against - sequence it before the parallel implementation
                   slices, not alongside them.
+                  EXCEPTION (Gricean floor, not a loophole): when the epic's own cynefinDomain is "clear"
+                  AND the shared surface is a single endpoint with no more than 2 fields each way, you MAY
+                  have the backend slice state the tiny contract directly in its own acceptanceCriteria
+                  instead of a separate BARCAN-TAG-12 slice - a one-endpoint, two-field contract does not
+                  need its own task/PR/Jules session ahead of the implementation that already defines it.
+                  Any wider or less certain contract, or a cynefinDomain of complicated/complex/chaotic,
+                  keeps the mandatory separate slice.
                 - Epic-level "jtbd" is customer-facing: "When [the end customer]..., I want..., so
                   that...". Task-level "jtbd" is scoped to the EPIC, not the customer: "When implementing
                   [X] for this epic, I want [Y], so that [the epic's outcome/Z] is achieved" - never repeat
@@ -2732,17 +2915,50 @@ public class ProjectFlowService {
     public static final String FALSIFICATION_AUDIT_HIGHEST_PR_KEY = "highestPrNumberAudited";
     public static final String FALSIFICATION_AUDIT_REPORT_PATH_KEY = "auditsReportPath";
 
+    /**
+     * @param taskId null only when admission itself refused (duplicate audit already active, or the
+     *               compiler role is missing) - a genuine "nothing was created", not a dispatch failure.
+     * @param dispatchedToJules true only when this attempt actually reached Jules this cycle. False does
+     *               NOT mean failure of the whole mechanism: the task is real and stays `queued`, and the
+     *               normal periodic compiler-dispatch cycle will retry it - see dispatchCompilerTask's own
+     *               contract.
+     */
+    public record AuditDispatchResult(UUID taskId, boolean dispatchedToJules) {
+        public static final AuditDispatchResult NOT_ADMITTED = new AuditDispatchResult(null, false);
+    }
+
+    /**
+     * 2026-08-07 fix, live incident: this used to be one @Transactional method holding the project-row lock
+     * across dispatchCompilerTask's own network call to Jules (a multi-second HTTP round trip) - confirmed
+     * live as the direct cause of a real H2 "Timeout trying to lock table PROJECTS" failure (HikariPool
+     * connection marked broken) once the falsification-audit prompt started retrying every ~77s after
+     * hitting Jules's own HTTP 400 on an oversized prompt (separately fixed - see GeminiContextService).
+     * Split: admitFalsificationAuditTask keeps the short @Transactional span (the check-then-INSERT
+     * admission mutex genuinely needs it - see that method's own comment for why), dispatchCompilerTask now
+     * runs after that transaction has already committed and released the lock. Also fixes a second, related
+     * bug: the old code returned auditTask.getId() unconditionally, so a caller had no way to tell "reached
+     * Jules" apart from "created and queued, Jules call itself failed" - FalsificationCycleService was
+     * logging "Dispatched" on both. dispatchedToJules is real, checked evidence, not testimony.
+     */
+    public AuditDispatchResult dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber, String reportPath) {
+        TaskEntity auditTask = self.admitFalsificationAuditTask(project, prompt, highestPrNumber, reportPath);
+        if (auditTask == null) {
+            return AuditDispatchResult.NOT_ADMITTED;
+        }
+        boolean dispatched = dispatchCompilerTask(auditTask);
+        return new AuditDispatchResult(auditTask.getId(), dispatched);
+    }
+
     // @Transactional so the project-row lock below is held for the whole check-then-create span, not just
     // for the single lockProjectForUpdate query - a check-then-INSERT race (this method's ID uniqueness
     // depends on no OTHER concurrent call also passing the auditAlreadyActive check before either commits)
     // cannot be closed by a per-row compare-and-swap the way a status UPDATE can, since the row being
     // raced over doesn't exist yet at check time. A second concurrent caller now blocks on the lock and
     // correctly observes "already active" once the first commits, instead of both creating a duplicate
-    // audit task. Falsification-audit dispatch is rare (at most a handful of times per project lifecycle),
-    // so holding the lock across the dispatchCompilerTask() network call below is an acceptable, honest
-    // trade for a hard duplication guarantee rather than a latency-sensitive one.
+    // audit task. Public + called via `self` (not `this`) so this actually goes through the Spring proxy -
+    // see the `self` field's own comment.
     @Transactional
-    public UUID dispatchFalsificationAudit(ProjectEntity project, String prompt, Integer highestPrNumber, String reportPath) {
+    public TaskEntity admitFalsificationAuditTask(ProjectEntity project, String prompt, Integer highestPrNumber, String reportPath) {
         operationalPolicyService.requireAllowed(project.getId(), OperationalAction.RUN_PROJECT_AUDIT_PIPELINE);
         projectRepository.lockProjectForUpdate(project.getId());
         boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
@@ -2785,9 +3001,7 @@ public class ProjectFlowService {
         }
         auditTask.setPayload(payload);
 
-        auditTask = taskRepository.save(auditTask);
-        dispatchCompilerTask(auditTask);
-        return auditTask.getId();
+        return taskRepository.save(auditTask);
     }
 
     public boolean isFalsificationAuditTask(TaskEntity task) {
@@ -2811,8 +3025,29 @@ public class ProjectFlowService {
     public static final String PHILOSOPHICAL_AUDIT_TASK_TYPE = "philosophical_audit";
     public static final String PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY = "philosophicalAuditReportPath";
 
-    @Transactional
+    // 2026-08-08 fix (live dispute-driven audit): this was the fifth confirmed instance of the same
+    // bug already fixed for the formal falsification track (see admitFalsificationAuditTask's own comment,
+    // 2026-08-07 - "held the project-row lock across dispatchCompilerTask's own network call to Jules...
+    // confirmed live as the direct cause of a real H2 'Timeout trying to lock table PROJECTS' failure").
+    // The philosophical track is a near-identical twin method that never received the same split. Same
+    // fix: admitPhilosophicalFalsificationAuditTask keeps the short @Transactional span (the project lock
+    // + check-then-INSERT admission mutex), dispatchCompilerTask now runs after that transaction has
+    // already committed and released the lock.
     public UUID dispatchPhilosophicalAudit(ProjectEntity project, String prompt, String reportPath) {
+        TaskEntity auditTask = self.admitPhilosophicalFalsificationAuditTask(project, prompt, reportPath);
+        if (auditTask == null) {
+            return null;
+        }
+        dispatchCompilerTask(auditTask);
+        return auditTask.getId();
+    }
+
+    // @Transactional so the project-row lock below is held for the whole check-then-create span - same
+    // check-then-INSERT race reasoning as admitFalsificationAuditTask's own comment. Public + called via
+    // `self` (not `this`) so this actually goes through the Spring proxy - see the `self` field's own
+    // comment.
+    @Transactional
+    public TaskEntity admitPhilosophicalFalsificationAuditTask(ProjectEntity project, String prompt, String reportPath) {
         projectRepository.lockProjectForUpdate(project.getId());
         boolean auditAlreadyActive = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .filter(this::isPhilosophicalAuditTask)
@@ -2849,9 +3084,7 @@ public class ProjectFlowService {
         }
         auditTask.setPayload(payload);
 
-        auditTask = taskRepository.save(auditTask);
-        dispatchCompilerTask(auditTask);
-        return auditTask.getId();
+        return taskRepository.save(auditTask);
     }
 
     public boolean isPhilosophicalAuditTask(TaskEntity task) {
@@ -2879,35 +3112,20 @@ public class ProjectFlowService {
     // 2026-08-03: multi-turn philosophical audit (see FalsificationCycleService.
     // executePhilosophicalCycleForProject's class javadoc for the live incident this replaces - 13
     // fully isolated one-role sessions with no discussion between them). One continuous Jules session
-    // per project, one role-batch (3 roles) per follow-up turn - the covered-role-tags list lives on
-    // the carrier task's own payload (not PersistentWorkerSessionEntity.currentBatchIds, which stays a
-    // generic UUID array unrelated to role tags) so completion-time code can derive "was this the last
-    // batch" by comparing against the current active-role set, with no separate flag to keep in sync.
-    public static final String PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY = "philosophicalAuditCoveredRoles";
-
-    public java.util.List<String> coveredPhilosophicalAuditRoles(TaskEntity carrierTask) {
-        if (carrierTask.getPayload() == null) {
-            return java.util.List.of();
-        }
-        JsonNode arr = carrierTask.getPayload().path(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
-        if (!arr.isArray()) {
-            return java.util.List.of();
-        }
-        java.util.List<String> roles = new java.util.ArrayList<>();
-        arr.forEach(n -> roles.add(n.asText()));
-        return roles;
-    }
-
-    private void appendCoveredPhilosophicalAuditRoles(TaskEntity carrierTask, java.util.List<String> roleBatch) {
-        ObjectNode payload = carrierTask.getPayload() != null
-                ? carrierTask.getPayload().deepCopy() : objectMapper.createObjectNode();
-        java.util.List<String> merged = new java.util.ArrayList<>(coveredPhilosophicalAuditRoles(carrierTask));
-        merged.addAll(roleBatch);
-        ArrayNode arr = payload.putArray(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
-        merged.forEach(arr::add);
-        carrierTask.setPayload(payload);
-        taskRepository.save(carrierTask);
-    }
+    // per project, one role-batch (3 roles) per follow-up turn.
+    //
+    // 2026-08-09 (live incident, operator-flagged - "проверь что все философы высказались"): this used to
+    // track "covered" role tags as an append-only marker on the carrier task's payload, written the moment a
+    // batch was SENT (see PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY, removed) - not once Jules's answer was
+    // actually verified to exist. Confirmed live: BARCAN-TAG-12 was asked about at 09:00:14 and this
+    // bookkeeping already called it "covered" in the same call, before Jules had any real chance to answer; a
+    // stale-status poll edge 9 seconds later found the marker already at 13/13 and closed the whole
+    // discussion, merging a report that never actually contained a BARCAN-TAG-12 critique. There is no
+    // separate bookkeeping anymore - FalsificationCycleService.continuePhilosophicalDiscussion and
+    // JulesDispatchService.completePersistentPhilosophicalAuditCycle both derive "covered" directly by
+    // parsing the report file's real current content (the same file, the same parse shape) - a role only
+    // counts as covered once its critique genuinely exists on the branch, which by construction can never
+    // race ahead of the truth.
 
     /**
      * Persistent-worker equivalent of dispatchPhilosophicalAudit: reuses an existing idle worker's
@@ -2925,49 +3143,80 @@ public class ProjectFlowService {
      * @param reportPath used only when creating a fresh worker (first turn)
      * @return true if the turn was sent/dispatched, false if skipped (busy) or failed
      */
-    @Transactional
+    private record PhilosophicalWorkerDispatchDecision(String action, PersistentWorkerSessionEntity worker,
+                                                        JulesSessionEntity session) {
+        private static final String MESSAGE_EXISTING = "MESSAGE_EXISTING";
+        private static final String DEFER = "DEFER";
+        private static final String CREATE_NEW = "CREATE_NEW";
+    }
+
+    /**
+     * 2026-08-07 fix, found during a deliberate sweep for the SAME bug class already fixed this morning
+     * (dispatchFalsificationAudit/admitFalsificationAuditTask): this method used to be one @Transactional
+     * block holding the project-row lock across TWO real network calls to Jules - sendFollowUpMessage and
+     * (via createPhilosophicalAuditPersistentWorker) dispatchCompilerTask. This is the philosophical
+     * falsification track specifically, which fires on every discussion turn (far more often than the
+     * code-defect track), so this was very plausibly a bigger real contributor to lock contention than the
+     * instance already fixed. Same split: admitPhilosophicalAuditWorkerDispatch keeps the short
+     * @Transactional span (lock + read + the rotation-retire write, no network calls), this outer method
+     * makes the actual network call only after that transaction has already committed and released the lock.
+     */
     public boolean dispatchToPhilosophicalAuditPersistentWorker(ProjectEntity project,
             java.util.List<String> roleBatch, String message, String reportPath) {
-        projectRepository.lockProjectForUpdate(project.getId());
-
-        Optional<PersistentWorkerSessionEntity> existingOpt =
-                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT);
-
-        if (existingOpt.isPresent()) {
-            PersistentWorkerSessionEntity worker = existingOpt.get();
-            if (persistentWorkerSessionService.needsRotation(worker)) {
-                // A philosophical-audit cycle has a real finite end (see completePersistentPhilosophicalAuditCycle) -
-                // reaching the generic rotation cap without finishing is unexpected but handled the same
-                // defensive way the other two purposes handle it: retire and start clean.
-                persistentWorkerSessionService.retire(worker, "cycle/age cap reached before discussion finished");
-            } else if (persistentWorkerSessionService.isIdleAndFresh(worker)) {
-                JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
-                        ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
-                        : null;
-                if (session != null && julesDispatchService.sendFollowUpMessage(session, message)) {
+        PhilosophicalWorkerDispatchDecision decision = self.admitPhilosophicalAuditWorkerDispatch(project);
+        switch (decision.action()) {
+            case PhilosophicalWorkerDispatchDecision.MESSAGE_EXISTING -> {
+                PersistentWorkerSessionEntity worker = decision.worker();
+                if (decision.session() != null && julesDispatchService.sendFollowUpMessage(decision.session(), message)) {
                     // currentBatchIds only needs to be non-empty to mark "in flight" for isIdleAndFresh's
-                    // generic busy check - the real role-batch content lives on the carrier task's payload,
-                    // updated below, since role tags aren't UUIDs.
+                    // generic busy check - which roles are actually covered is derived by parsing the report
+                    // file's real content (see this class's own comment above), never bookkept here at send
+                    // time - a role only counts once Jules has genuinely answered it.
                     persistentWorkerSessionService.recordBatchSent(worker, java.util.List.of(UUID.randomUUID()));
-                    TaskEntity carrierTask = worker.getCarrierTaskId() != null
-                            ? taskRepository.findById(worker.getCarrierTaskId()).orElse(null) : null;
-                    if (carrierTask != null) {
-                        appendCoveredPhilosophicalAuditRoles(carrierTask, roleBatch);
-                    }
                     log.info("Sent philosophical-audit follow-up turn (roles {}) to persistent worker {} (cycle {})",
                             roleBatch, worker.getId(), worker.getCycleCount());
                     return true;
                 }
                 log.warn("Persistent philosophical-audit worker {} exists but could not be messaged this cycle", worker.getId());
                 return false;
-            } else {
+            }
+            case PhilosophicalWorkerDispatchDecision.DEFER -> {
                 log.info("Persistent philosophical-audit worker {} is still busy; role batch {} deferred to next cycle",
-                        worker.getId(), roleBatch);
+                        decision.worker().getId(), roleBatch);
                 return false;
             }
+            default -> {
+                return createPhilosophicalAuditPersistentWorker(project, roleBatch, message, reportPath);
+            }
         }
+    }
 
-        return createPhilosophicalAuditPersistentWorker(project, roleBatch, message, reportPath);
+    // Public + called via `self` (not `this`) so this actually goes through the Spring proxy - see the
+    // `self` field's own comment. No network calls in here, deliberately - only the lock-requiring
+    // read-and-decide span, including the rotation-retire write (a plain DB update, safe under the lock).
+    @Transactional
+    public PhilosophicalWorkerDispatchDecision admitPhilosophicalAuditWorkerDispatch(ProjectEntity project) {
+        projectRepository.lockProjectForUpdate(project.getId());
+        Optional<PersistentWorkerSessionEntity> existingOpt =
+                persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT);
+        if (existingOpt.isEmpty()) {
+            return new PhilosophicalWorkerDispatchDecision(PhilosophicalWorkerDispatchDecision.CREATE_NEW, null, null);
+        }
+        PersistentWorkerSessionEntity worker = existingOpt.get();
+        if (persistentWorkerSessionService.needsRotation(worker)) {
+            // A philosophical-audit cycle has a real finite end (see completePersistentPhilosophicalAuditCycle) -
+            // reaching the generic rotation cap without finishing is unexpected but handled the same
+            // defensive way the other two purposes handle it: retire and start clean.
+            persistentWorkerSessionService.retire(worker, "cycle/age cap reached before discussion finished");
+            return new PhilosophicalWorkerDispatchDecision(PhilosophicalWorkerDispatchDecision.CREATE_NEW, null, null);
+        }
+        if (persistentWorkerSessionService.isIdleAndFresh(worker)) {
+            JulesSessionEntity session = worker.getCurrentJulesSessionId() != null
+                    ? julesSessionRepository.findById(worker.getCurrentJulesSessionId()).orElse(null)
+                    : null;
+            return new PhilosophicalWorkerDispatchDecision(PhilosophicalWorkerDispatchDecision.MESSAGE_EXISTING, worker, session);
+        }
+        return new PhilosophicalWorkerDispatchDecision(PhilosophicalWorkerDispatchDecision.DEFER, worker, null);
     }
 
     private boolean createPhilosophicalAuditPersistentWorker(ProjectEntity project,
@@ -2992,8 +3241,6 @@ public class ProjectFlowService {
         if (reportPath != null && !reportPath.isBlank()) {
             payload.put(PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY, reportPath);
         }
-        ArrayNode rolesArray = payload.putArray(PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY);
-        roleBatch.forEach(rolesArray::add);
         carrierTask.setPayload(payload);
         carrierTask = taskRepository.save(carrierTask);
 
@@ -3110,14 +3357,34 @@ public class ProjectFlowService {
     // dependent's still-active Jules session gets an FYI to reconcile against the finalized artifact.
     public static final String EARLY_UNBLOCK_SPEC_KEY = "earlyUnblockedSpecTask";
 
+    private record DueCoverageAudit(ProjectEntity project, WishlistEntity wishlist, int highestMergedPrNumber) {}
+
+    /**
+     * 2026-08-07 fix, found during a deliberate sweep for the SAME bug class already fixed this morning
+     * (dispatchFalsificationAudit/admitFalsificationAuditTask): this used to hold the project-row lock for
+     * the whole method, including dispatchCoverageAuditForCompletedWishlist's real network call to Jules -
+     * for potentially every due wishlist in the loop, one lock span covering N network round trips. Split:
+     * admitDueCoverageAudits (below) keeps the short @Transactional span (the check-then-INSERT admission
+     * mutex genuinely needs it - see its own comment for why), this outer method dispatches each due
+     * wishlist only after that transaction has already committed and released the lock.
+     */
+    public void checkAndDispatchCoverageAudits(UUID projectId) {
+        List<DueCoverageAudit> due = self.admitDueCoverageAudits(projectId);
+        for (DueCoverageAudit d : due) {
+            dispatchCoverageAuditForCompletedWishlist(d.project(), d.wishlist(), d.highestMergedPrNumber());
+        }
+    }
+
     // Same admission-mutex reasoning as dispatchFalsificationAudit: hasActiveAudit (below, per wishlist) is
     // a check-then-INSERT race across CONCURRENT invocations of this method for the same project (e.g. two
     // overlapping orchestration ticks) - a per-row CAS cannot guard a row that doesn't exist yet at check
-    // time. Locking the project row for the whole method serializes concurrent calls so the second one
-    // correctly re-reads "already active" after the first commits, instead of both dispatching a duplicate
-    // audit for the same wishlist (the exact PR#56/#57 duplicate-implementation incident class, 2026-07-24).
+    // time. Locking the project row for the whole read-and-decide span serializes concurrent calls so the
+    // second one correctly re-reads "already active" after the first commits, instead of both dispatching a
+    // duplicate audit for the same wishlist (the exact PR#56/#57 duplicate-implementation incident class,
+    // 2026-07-24). Public + called via `self` (not `this`) so this actually goes through the Spring proxy -
+    // see the `self` field's own comment. No network calls in here, deliberately.
     @Transactional
-    public void checkAndDispatchCoverageAudits(UUID projectId) {
+    public List<DueCoverageAudit> admitDueCoverageAudits(UUID projectId) {
         operationalPolicyService.requireAllowed(projectId, OperationalAction.CHECK_COVERAGE_AUDITS);
         projectRepository.lockProjectForUpdate(projectId);
         List<WishlistEntity> clientWishlists = wishlistRepository.findByProjectId(projectId).stream()
@@ -3126,13 +3393,14 @@ public class ProjectFlowService {
                 .filter(w -> w.getStatus() == WishlistStatus.converted_to_task)
                 .toList();
         if (clientWishlists.isEmpty()) {
-            return;
+            return List.of();
         }
         List<TaskEntity> existingAuditTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(this::isCoverageAuditTask)
                 .toList();
 
         ProjectEntity project = requireProject(projectId);
+        List<DueCoverageAudit> due = new java.util.ArrayList<>();
 
         for (WishlistEntity wishlist : clientWishlists) {
             // 2026-07-26 operator directive ("привязать к целому вишлисту"): scoped to THIS wishlist's own
@@ -3197,8 +3465,9 @@ public class ProjectFlowService {
             if (currentHighestMergedPr == null) {
                 currentHighestMergedPr = 0;
             }
-            dispatchCoverageAuditForCompletedWishlist(project, wishlist, currentHighestMergedPr);
+            due.add(new DueCoverageAudit(project, wishlist, currentHighestMergedPr));
         }
+        return due;
     }
 
     /**
@@ -3773,7 +4042,35 @@ public class ProjectFlowService {
                 """.formatted(draftPath, draftPath, verdictPath, brief, charter);
     }
 
+    // Engineering invariant #11 follow-up (2026-08-08, live dispute-driven audit of test-forty-third's
+    // dispatch starvation): a FOR UPDATE SKIP LOCKED row lock's held duration must match its causal
+    // purpose - proving "this account is free, and is now claimed" is an atomic, instantaneous fact about
+    // database state, and must never extend across a temporally-extended, non-deterministic external
+    // process (a Jules API round trip). This is the single canonical "lock the account, claim the task,
+    // nothing else" primitive - the caller supplies HOW to find the candidate account (the different
+    // capacity queries need different parameters), this method guarantees the lock and the claim happen in
+    // the SAME short transaction, and returns before any network call ever begins. Confirmed live:
+    // dispatchQueuedTasks's own inline block, dispatchCompilerTask, and dispatchToGeneralPool all held this
+    // exact anti-pattern independently (accounts read as `idle` with 0/3 concurrent sessions, yet
+    // lockNextJulesAccountWithCapacity still returned empty - real capacity was never the cause; the row
+    // was FOR-UPDATE-locked by an earlier iteration of the SAME still-open transaction, blocking dispatch
+    // for hours even though nothing was actually running). Public + called via `self` (not `this`) so this
+    // actually goes through the Spring proxy - see the `self` field's own comment.
     @Transactional
+    public Optional<AccountEntity> claimAccountForTask(UUID taskId, java.util.function.Supplier<Optional<AccountEntity>> accountLookup) {
+        Optional<AccountEntity> accountOpt = accountLookup.get();
+        accountOpt.ifPresent(account -> claimService.claimSpecificTask(taskId, account.getId()));
+        return accountOpt;
+    }
+
+    // No longer @Transactional (2026-08-08 fix, see claimAccountForTask above for the invariant): this
+    // loop can process many queued tasks in one tick, each ending in a real Jules network call. Wrapping
+    // the whole method in one transaction meant every account row examined by ANY earlier task in the loop
+    // stayed FOR-UPDATE-locked until the entire method returned - genuinely starving concurrent dispatch
+    // attempts for hours even when accounts were truly idle, and risked a rollback silently orphaning an
+    // already-created (irreversible) Jules session if a later iteration threw. Each task's lock-and-claim
+    // now happens in its own short transaction (claimAccountForTask); the network call below runs with no
+    // transaction open at all.
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
@@ -3846,7 +4143,20 @@ public class ProjectFlowService {
             // Ф4/Д3: isDependencySatisfied also recognizes a merged REPLACEMENT task when the literal
             // dependency was abandoned (escalated/force-unblocked) - otherwise a dependsOn edge pointing at
             // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
-            TaskEntity dependency = task.getDependsOn();
+            // Live regression (2026-08-08, found during monitoring, same day as the fix that caused it):
+            // task.getDependsOn() is a lazy @ManyToOne proxy - reading it beyond .getId() (which Hibernate
+            // resolves from the already-known FK column without a session) requires the Hibernate Session
+            // that loaded the enclosing `task` to still be open. Removing @Transactional from this method
+            // (the transaction-scope fix earlier today) meant the initial query's session closes as soon as
+            // that repository call returns, well before this loop reaches a later task - every subsequent
+            // dependency.getStatus() call threw LazyInitializationException ("no Session"), confirmed live
+            // (every ~60s cycle, ContinuousOrchestrationService: Failed for project ...). Re-fetching by id
+            // gets a fresh, fully-initialized entity via its own short auto-committing repository call - no
+            // enclosing transaction needed, so this does not reintroduce the account-lock-across-network-call
+            // bug the @Transactional removal was fixing in the first place.
+            TaskEntity rawDependency = task.getDependsOn();
+            TaskEntity dependency = rawDependency != null
+                    ? taskRepository.findById(rawDependency.getId()).orElse(null) : null;
             if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
                 // Lean-waste fix (2026-07-23, generalized 2026-07-24): a dependency on a spec-stage task
                 // (decision/architecture/api-contract/compliance) is only ever a small reference document,
@@ -3926,19 +4236,18 @@ public class ProjectFlowService {
             // Complex/chaotic/retried/defect-work tasks used to bypass Jules for a separate autonomous
             // worker; Jules now has universal role capability across every BARCAN-TAG role, so all tasks
             // flow through the same dispatch path below regardless of cynefin domain or retry count.
-            Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
-                    project.getId(),
-                    roleTag,
-                    maxConcurrentJulesSessionsPerAccount,
-                    null,
-                    maxDailySessionsPerAccount,
-                    null
-            );
+            Optional<AccountEntity> accountOpt = self.claimAccountForTask(task.getId(), () ->
+                    accountRepository.lockNextJulesAccountWithCapacity(
+                            project.getId(),
+                            roleTag,
+                            maxConcurrentJulesSessionsPerAccount,
+                            null,
+                            maxDailySessionsPerAccount,
+                            null
+                    ));
             if (accountOpt.isPresent()) {
                 AccountEntity account = accountOpt.get();
                 try {
-                    claimService.claimSpecificTask(task.getId(), account.getId());
-
                     // Refresh task state after claim
                     TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
 
@@ -4006,7 +4315,14 @@ public class ProjectFlowService {
                 .findFirst();
     }
 
-    @Transactional
+    // No longer @Transactional (2026-08-08 fix, same audit as dispatchQueuedTasks/claimAccountForTask
+    // above): this loop's own lockNextJulesAccountWithCapacity call was held open across
+    // julesDispatchService.dispatch's network round trip for every task in the review queue, one
+    // enclosing transaction at a time - same starvation mechanism, different dispatcher. No separate
+    // claimSpecificTask call happens in this method (the REVIEWER-mode dispatch overload handles that
+    // itself), so removing the outer transaction is sufficient here - the lock query already executes as
+    // its own short, auto-committing unit via the repository proxy, with no claim step to keep atomic
+    // alongside it.
     public void dispatchReviewTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_REVIEW_TASKS);

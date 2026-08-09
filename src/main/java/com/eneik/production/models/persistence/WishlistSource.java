@@ -7,6 +7,12 @@ public enum WishlistSource {
     // codebase (confirmed by grep across backend, ml service, and frontend before removal) - so this is a
     // permanent guard against ever wiring it up later, not a behavior change.
     client, role, role_mismatch_followup, chaotic_debt, self_falsification, onboarding_finding, coverage_gap, closeout_abandoned, philosophical_falsification, gemini_observer,
+    // 2026-08-09 (Phase 0, client runtime observability plan): the ONLY structural, one-shot finding this
+    // source ever produces - "this delivered project has no documented way to run itself locally"
+    // (ProductLaunchabilityService). Deliberately distinct from the removed idle_generation: bounded to
+    // exactly one dedup-guarded item per project, triggered only by a concrete verifiable fact (missing
+    // docker-compose.yml), never an invented "improvement."
+    runtime_observability_gap,
     // 2026-08-04 (Phase B, design/QA acceptance redesign): audit-trail record for
     // DesignSystemFalsificationService - NOT a compiler input, records that a Stitch design-system pass
     // was applied to an epic's already-shipped real UI. See WishlistRepository.existsByFeatureIdAndSource

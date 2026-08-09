@@ -31,5 +31,25 @@ public enum OperationalAction {
     // that did real, successful work got collaterally cancelled by an unrelated cleanup and its PR sat
     // orphaned, invisible to every status-filtered sweep, until an operator noticed and Claude traced it by
     // hand.
-    RESOLVE_ORPHANED_PR
+    RESOLVE_ORPHANED_PR,
+    // 2026-08-07: collapses a confirmed-duplicate QUEUED task (same payload.slice_title as an earlier,
+    // still-live task) by moving it to `blocked` - the one action that can actually clear
+    // BLOCKED_BY_DUPLICATE_CONTENT, since nothing in that hard-stop state can otherwise reach a terminal
+    // status (dispatch itself is what's denied). Confirmed live gap (test-forty-third): the observer could
+    // already SEE and report a "DUPLICATE TASK WARNING", but had no tool that could act on it, so the
+    // project sat fully halted for hours with no autonomous recovery path.
+    COLLAPSE_DUPLICATE_TASK,
+    // 2026-08-08: re-opens a feature thread's closeout PR after it was closed by something other than the
+    // real, bounded 3-attempt conflict-resolution escalation (see BranchGarbageCollectorService's Case A
+    // fix, same incident) - confirmed live gap, test-forty-third: real, never-yet-merged work sat
+    // permanently stuck with no autonomous recovery path once its closeout PR was wrongly closed.
+    RETRY_FEATURE_CLOSEOUT,
+    // 2026-08-09 (Phase 0, client runtime observability plan): one-shot check, only meaningful once a
+    // project first reaches DELIVERED - reuses the exact same gate as CHECK_COVERAGE_AUDITS/
+    // RUN_PROJECT_AUDIT_PIPELINE (deliberately not excluded from the DELIVERED state itself, unlike
+    // ORCHESTRATE).
+    CHECK_LAUNCHABILITY,
+    // 2026-08-09 (Phase 1, client runtime observability plan): the recurring (adaptive-cadence, never
+    // schedule-hardcoded) observation step, distinct from the one-shot CHECK_LAUNCHABILITY above.
+    OBSERVE_CLIENT_RUNTIME
 }

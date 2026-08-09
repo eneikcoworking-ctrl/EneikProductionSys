@@ -22,6 +22,22 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # 2026-08-09 (Phase 1, client runtime observability plan) - the ONLY component in the whole factory
+  # that holds the host docker socket. Operator's own architecture decision: contain this privilege to
+  # the smallest possible, separately-reviewable surface (runtime-launcher/launcher.py, ~150 lines) -
+  # never mount the socket into the much larger main backend. Not started/used until the backend's own
+  # client_runtime_observability_enabled flag is turned on (stays observe_only via LeverPromotionService
+  # even then) - safe to leave built and idle.
+  runtime-launcher:
+    build:
+      context: ./runtime-launcher
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./runtime-launcher-workspace:/workspace
+    ports:
+      - "8091:8091"
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -31,7 +47,9 @@ services:
         ENEIK_BUILD_GIT_DIRTY: ${ENEIK_BUILD_GIT_DIRTY:-unknown}
         ENEIK_BUILD_TIME: ${ENEIK_BUILD_TIME:-unknown}
     environment:
+      JAVA_OPTS: "-Xmx512m -Xms256m -XX:+UseG1GC"
       ML_SERVICE_URL: http://ml:8000
+      RUNTIME_LAUNCHER_URL: ${RUNTIME_LAUNCHER_URL:-http://runtime-launcher:8091}
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
       ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system
