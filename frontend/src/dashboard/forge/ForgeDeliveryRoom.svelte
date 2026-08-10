@@ -48,19 +48,27 @@
   let sigmaTone: 'healthy' | 'attention' | 'critical';
   $: sigmaTone = !sixSigma ? 'healthy' : sixSigma.sigmaLevel >= 4 ? 'healthy' : sixSigma.sigmaLevel >= 2 ? 'attention' : 'critical';
 
-  // Deterministic scatter position per node (same hashSeed idiom as ProductTree) - stable across polls,
-  // driven only by the node's own id, never random-per-render.
-  function hashSeed(id: string): number {
+  // Deterministic scatter position per node - stable across polls, driven only by the node's own id.
+  // 2026-08-10: the previous "fix" (prefixing 'x'/'y' onto the same rolling hash) was still broken -
+  // real node ids are UUIDs, which are ALL the same length (36 chars), so the 'x' vs 'y' seed
+  // (charCodes 120 vs 121, differing by exactly 1) produces the SAME constant multiplicative offset
+  // (31^36 mod 2^32) for every single node - x and y stayed an affine function of each other for any
+  // fixed-length id, just a differently-shaped correlation than the original suffix bug. Confirmed
+  // live: real coherence-graph screenshot still showed a near-perfect diagonal. The actual fix is two
+  // STRUCTURALLY different hash recurrences (different multiplier/mixing, not just a different seed
+  // string), so no constant id-length-dependent relationship can exist between the two axes.
+  function hashSeedX(id: string): number {
     let h = 0;
     for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) | 0;
     return (((h % 1000) + 1000) % 1000) / 1000;
   }
-  // Prefixed (not suffixed) axis salt: appending 'x'/'y' as the LAST character only changes the
-  // rolling hash by a tiny constant (the two characters' codes differ by ~1), so x and y come out
-  // almost perfectly correlated - a diagonal line, not a scatter. Prefixing puts the differentiator
-  // through the full 31^n multiplicative accumulation, which decorrelates the two axes properly.
+  function hashSeedY(id: string): number {
+    let h = 0;
+    for (let i = 0; i < id.length; i++) h = (h * 131 + id.charCodeAt(i) * 7 + 13) | 0;
+    return (((h % 1000) + 1000) % 1000) / 1000;
+  }
   function nodePos(id: string) {
-    return { x: 20 + hashSeed('x' + id) * 260, y: 20 + hashSeed('y' + id) * 160 };
+    return { x: 20 + hashSeedX(id) * 260, y: 20 + hashSeedY(id) * 160 };
   }
   // Capped to the most recent 80 for legibility/performance - a real backlog (355 nodes seen live)
   // should read as a tidy recent constellation, not a solid smear; the panel's own coherenceScore/
