@@ -23,6 +23,9 @@ public class ProjectController {
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private final com.eneik.production.services.tree.ProjectTreeService projectTreeService;
+    private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
+    private final com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService;
+    private final com.eneik.production.repositories.GeminiObserverJournalRepository geminiObserverJournalRepository;
 
     public ProjectController(ProjectFlowService projectFlowService,
                              ClaimService claimService,
@@ -30,7 +33,10 @@ public class ProjectController {
                              com.eneik.production.services.onboarding.OnboardingAuditService onboardingAuditService,
                              com.eneik.production.services.ClientDeliverableReadinessService readinessService,
                              com.eneik.production.services.FalsificationCycleService falsificationCycleService,
-                             com.eneik.production.services.tree.ProjectTreeService projectTreeService) {
+                             com.eneik.production.services.tree.ProjectTreeService projectTreeService,
+                             com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                             com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService,
+                             com.eneik.production.repositories.GeminiObserverJournalRepository geminiObserverJournalRepository) {
         this.projectFlowService = projectFlowService;
         this.claimService = claimService;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
@@ -38,6 +44,9 @@ public class ProjectController {
         this.readinessService = readinessService;
         this.falsificationCycleService = falsificationCycleService;
         this.projectTreeService = projectTreeService;
+        this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
+        this.evidenceCoherenceService = evidenceCoherenceService;
+        this.geminiObserverJournalRepository = geminiObserverJournalRepository;
     }
 
     @GetMapping
@@ -171,6 +180,29 @@ public class ProjectController {
     @GetMapping("/{projectId}/tree")
     public com.eneik.production.dto.tree.ProjectTreeDto tree(@PathVariable UUID projectId) {
         return projectTreeService.getTree(projectId);
+    }
+
+    // Read-only projection (2026-08-10, Роща canopy glow + Кузница/Product room) - reuses
+    // ClientRuntimeObservabilityService's own posterior math, nothing recomputed differently here.
+    @GetMapping("/{projectId}/runtime-health")
+    public com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth(@PathVariable UUID projectId) {
+        return clientRuntimeObservabilityService.summarize(projectId);
+    }
+
+    // Read-only projection (2026-08-10, Кузница/Delivery room) - the evidence-coherence graph
+    // (Thagard ECHO + Gärdenfors AGM) was previously only reachable via the localhost-only
+    // /internal/gemini-observer/* surface; this is the same data, safe for the browser.
+    @GetMapping("/{projectId}/coherence-graph")
+    public com.eneik.production.services.coherence.EvidenceCoherenceService.GraphSnapshot coherenceGraph(@PathVariable UUID projectId) {
+        return evidenceCoherenceService.graphSnapshot(projectId);
+    }
+
+    // Read-only projection (2026-08-10, Кузница/Delivery room) - Gemini's own real observation cycles
+    // (never skip markers - same real-only query her own continuity logic uses), previously only
+    // reachable via /internal/gemini-observer/journal (localhost-only).
+    @GetMapping("/{projectId}/observer-journal")
+    public List<com.eneik.production.models.persistence.GeminiObserverJournalEntity> observerJournal(@PathVariable UUID projectId) {
+        return geminiObserverJournalRepository.findTop5ByProjectIdAndGeminiCalledTrueOrderByCreatedAtDesc(projectId);
     }
 
 

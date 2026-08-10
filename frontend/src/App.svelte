@@ -5,8 +5,10 @@
   import MetricsView from './dashboard/MetricsView.svelte';
   import AdminDashboard from './dashboard/AdminDashboard.svelte';
   import AiResourcesDashboard from './dashboard/AiResourcesDashboard.svelte';
-  import TocSentinelView from './dashboard/TocSentinelView.svelte';
-  import SixSigmaKaizenPanel from './dashboard/SixSigmaKaizenPanel.svelte';
+  // 2026-08-10: TocSentinelView/SixSigmaKaizenPanel retired in favor of EngineForge (Кузница) - same
+  // real data, three strictly isolated rooms (Factory/Delivery/Product) instead of two flat jargon
+  // tables. See frontend/src/dashboard/forge/ for the room components.
+  import EngineForge from './dashboard/forge/EngineForge.svelte';
   import ToastContainer from './components/ToastContainer.svelte';
   import { API_BASE } from './lib/api';
 
@@ -19,7 +21,7 @@
   // 'dashboard' is the primary living-tree view (default). The other five are internal diagnostics,
   // gated behind the engineering-mode toggle - not co-equal primary navigation (2026-08-02 redesign:
   // the operator does not want internal plumbing competing for attention with real product progress).
-  let activeView: 'dashboard' | 'toc' | 'kaizen' | 'metrics' | 'resources' | 'admin' = 'dashboard';
+  let activeView: 'dashboard' | 'forge' | 'metrics' | 'resources' | 'admin' = 'dashboard';
   let engineeringOpen = false;
   let showOnboardPrompt = false;
   let conflictingProjectName = '';
@@ -166,8 +168,7 @@
   {#if engineeringOpen}
     <section class="engineering-bar">
       <div class="nav-links secondary" role="tablist" aria-label="Engineering Navigation">
-        <button role="tab" aria-selected={activeView === 'toc'} onclick={() => activeView = 'toc'} class:active={activeView === 'toc'}>TOC Sentinel</button>
-        <button role="tab" aria-selected={activeView === 'kaizen'} onclick={() => activeView = 'kaizen'} class:active={activeView === 'kaizen'}>Six Sigma &amp; Kaizen</button>
+        <button role="tab" aria-selected={activeView === 'forge'} onclick={() => activeView = 'forge'} class:active={activeView === 'forge'}>The Forge</button>
         <button role="tab" aria-selected={activeView === 'metrics'} onclick={() => activeView = 'metrics'} class:active={activeView === 'metrics'}>Metrics</button>
         <button role="tab" aria-selected={activeView === 'resources'} onclick={() => activeView = 'resources'} class:active={activeView === 'resources'}>Resources &amp; Tokens</button>
         <button role="tab" aria-selected={activeView === 'admin'} onclick={() => activeView = 'admin'} class:active={activeView === 'admin'}>System</button>
@@ -180,10 +181,8 @@
     <AdminDashboard />
   {:else if activeView === 'resources'}
     <AiResourcesDashboard />
-  {:else if activeView === 'toc'}
-    <TocSentinelView />
-  {:else if activeView === 'kaizen'}
-    <SixSigmaKaizenPanel />
+  {:else if activeView === 'forge' && dashboard}
+    <EngineForge projectId={dashboard.project.id} />
   {:else if activeView === 'metrics' && dashboard}
     <MetricsView projectId={dashboard.project.id} />
   {:else if dashboard}

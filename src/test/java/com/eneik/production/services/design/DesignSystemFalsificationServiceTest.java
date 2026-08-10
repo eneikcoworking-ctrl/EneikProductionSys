@@ -79,14 +79,14 @@ class DesignSystemFalsificationServiceTest {
         when(wishlistRepository.existsByFeatureIdAndSource(featureId, WishlistSource.design_system_falsification))
                 .thenReturn(false);
 
-        when(stitchClient.createDesignSystem(eq(project.getId().toString()), anyString()))
+        when(stitchClient.createDesignSystem(eq(project.getId().toString()), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new StitchClient.DesignSystemResult(true, "ok", "ds-42", "Created Stitch design system."));
         when(stitchClient.applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any()))
                 .thenReturn(new StitchClient.ApplyDesignSystemResult(true, "ok", "Applied design system."));
 
         service.applyDesignSystemsToShippedEpics();
 
-        verify(stitchClient, times(1)).createDesignSystem(eq(project.getId().toString()), anyString());
+        verify(stitchClient, times(1)).createDesignSystem(eq(project.getId().toString()), anyString(), anyString(), anyString(), anyString(), anyString());
         verify(stitchClient, times(1)).applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any());
         ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
         verify(wishlistRepository).save(captor.capture());
@@ -110,7 +110,7 @@ class DesignSystemFalsificationServiceTest {
 
         service.applyDesignSystemsToShippedEpics();
 
-        verify(stitchClient, never()).createDesignSystem(any(), any());
+        verify(stitchClient, never()).createDesignSystem(any(), any(), any(), any(), any(), any());
         verify(wishlistRepository, never()).save(any());
     }
 
@@ -127,7 +127,7 @@ class DesignSystemFalsificationServiceTest {
         when(readinessService.listEpicsWithMergedUiCode(project.getId())).thenReturn(List.of(epic));
         when(wishlistRepository.existsByFeatureIdAndSource(featureId, WishlistSource.design_system_falsification))
                 .thenReturn(false);
-        when(stitchClient.createDesignSystem(any(), any()))
+        when(stitchClient.createDesignSystem(any(), any(), any(), any(), any(), any()))
                 .thenReturn(StitchClient.DesignSystemResult.unavailable("failed"));
 
         service.applyDesignSystemsToShippedEpics();

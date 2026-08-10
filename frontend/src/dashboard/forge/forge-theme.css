@@ -1,0 +1,87 @@
+/* "Verdant Flow" instrument-cabinet variant (2026-08-10) - same real palette as ProductTree's
+   .product-tree tokens (not approximated, copied from the same live component), applied here to
+   precision brass/chrome instruments instead of organic branches. Scoped via .forge-room, imported by
+   EngineForge and each room component - never the global Electric Cobalt system app.css defines. */
+.forge-room {
+  --forge-bg: #fbf9f1;
+  --forge-surface: #ffffff;
+  --forge-line: #7d8570;
+  --forge-line-soft: #ded9c4;
+  --forge-ink: #2a2a22;
+  --forge-ink-muted: #6b6a5c;
+  --forge-healthy: #3f7d32;
+  --forge-attention: #d97b29;
+  --forge-critical: #e0342f;
+  --forge-gold: #c99a2e;
+  --forge-gold-soft: #f1e4c9;
+
+  background: var(--forge-bg);
+  color: var(--forge-ink);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.forge-panel {
+  background: var(--forge-surface);
+  border: 1px solid var(--forge-line-soft);
+  border-radius: var(--radius-lg);
+  padding: var(--space-6);
+}
+
+.forge-panel h3 {
+  font-family: var(--font-display);
+  font-size: 18px;
+  margin: 0 0 var(--space-3);
+}
+
+.forge-eyebrow {
+  color: var(--forge-gold);
+  display: block;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+}
+
+.forge-ledger {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.forge-ledger-row {
+  background: var(--forge-bg);
+  border: 1px solid var(--forge-line-soft);
+  border-left: 3px solid var(--forge-gold);
+  border-radius: 6px;
+  padding: 10px 14px;
+}
+
+.forge-ledger-row .row-title {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.forge-ledger-row .row-detail {
+  color: var(--forge-ink-muted);
+  font-size: 12.5px;
+  line-height: 1.5;
+  margin-top: 3px;
+}
+
+.forge-empty {
+  color: var(--forge-ink-muted);
+  font-size: 13px;
+  font-style: italic;
+  padding: var(--space-3) 0;
+}
+
+.forge-loading, .forge-error {
+  color: var(--forge-ink-muted);
+  font-size: 13px;
+  padding: var(--space-4);
+  text-align: center;
+}

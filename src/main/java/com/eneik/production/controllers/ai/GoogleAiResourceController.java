@@ -5,6 +5,7 @@ import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.design.DesignAssetService;
 import com.eneik.production.services.dashboard.ProjectOperationalContextService;
 import com.eneik.production.services.googleai.GoogleAiResourceService;
+import com.eneik.production.services.stitch.StitchClient;
 import com.eneik.production.services.video.VideoAssetService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,17 +32,36 @@ public class GoogleAiResourceController {
     private final VideoAssetService videoAssetService;
     private final ProjectOperationalContextService contextService;
     private final ProjectRepository projectRepository;
+    private final StitchClient stitchClient;
 
     public GoogleAiResourceController(GoogleAiResourceService googleAiResourceService,
                                       DesignAssetService designAssetService,
                                       VideoAssetService videoAssetService,
                                       ProjectOperationalContextService contextService,
-                                      ProjectRepository projectRepository) {
+                                      ProjectRepository projectRepository,
+                                      StitchClient stitchClient) {
         this.googleAiResourceService = googleAiResourceService;
         this.designAssetService = designAssetService;
         this.videoAssetService = videoAssetService;
         this.contextService = contextService;
         this.projectRepository = projectRepository;
+        this.stitchClient = stitchClient;
+    }
+
+    /** Temporary diagnostic: raw Stitch MCP tools/list, to confirm exact tool names/params (e.g. reference-image support). */
+    @GetMapping("/stitch-tools-debug")
+    public ResponseEntity<String> stitchToolsDebug() {
+        return ResponseEntity.ok(stitchClient.listToolsRaw());
+    }
+
+    /** Temporary cleanup: removes rejected design/draft/{basename} folders from the repo's main branch. */
+    @PostMapping("/design-drafts-cleanup")
+    public ResponseEntity<?> designDraftsCleanup(@RequestParam UUID projectId, @RequestBody List<String> basenames) {
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        if (project == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(designAssetService.deleteDraftFolders(project, basenames));
     }
 
     @GetMapping
@@ -71,8 +91,20 @@ public class GoogleAiResourceController {
                 request == null ? "" : request.brief(),
                 request == null ? "asset" : request.assetType(),
                 request == null ? "fast" : request.quality(),
-                request != null && request.useGoogleSearch()
+                request != null && request.useGoogleSearch(),
+                request == null ? null : request.designSystemId()
         );
+        return ResponseEntity.ok(result);
+    }
+
+    public record CreateDesignSystemRequest(String displayName, String headlineFont, String bodyFont,
+                                             String primaryColorHex, String secondaryColorHex) {}
+
+    /** Temporary: creates a global Stitch design system (structured fields) and returns its id for reuse across screens. */
+    @PostMapping("/stitch-design-system")
+    public ResponseEntity<?> createStitchDesignSystem(@RequestBody CreateDesignSystemRequest request) {
+        var result = stitchClient.createDesignSystem(null, request.displayName(), request.headlineFont(),
+                request.bodyFont(), request.primaryColorHex(), request.secondaryColorHex());
         return ResponseEntity.ok(result);
     }
 
@@ -121,7 +153,8 @@ public class GoogleAiResourceController {
             String brief,
             String assetType,
             String quality,
-            boolean useGoogleSearch
+            boolean useGoogleSearch,
+            String designSystemId
     ) {
     }
 

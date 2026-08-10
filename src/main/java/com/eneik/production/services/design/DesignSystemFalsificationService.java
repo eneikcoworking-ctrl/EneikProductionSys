@@ -90,8 +90,14 @@ public class DesignSystemFalsificationService {
                 continue; // already processed this epic - see WishlistRepository.existsByFeatureIdAndSource
             }
 
-            String prompt = "Derive a design system from the real, already-shipped UI for epic: " + epic.title();
-            StitchClient.DesignSystemResult created = stitchClient.createDesignSystem(project.getId().toString(), prompt);
+            // 2026-08-10: create_design_system's real MCP schema is structural (displayName + theme
+            // fields), not a free-text derivation prompt - confirmed live against tools/list. There is
+            // no API-level way to have Stitch "derive" a theme from a text description of shipped UI;
+            // the epic title becomes the display name and the project's standard Verdant Flow tokens
+            // are used as the theme, same tokens as ProductTree.svelte.
+            StitchClient.DesignSystemResult created = stitchClient.createDesignSystem(
+                    project.getId().toString(), epic.title(), "LIBRE_CASLON_TEXT", "IBM_PLEX_SANS",
+                    "#7d8570", "#c99a2e");
             if (!created.available()) {
                 log.warn("DesignSystemFalsificationService: could not create a Stitch design system for epic {} ({}): {}",
                         epic.featureId(), epic.title(), created.message());

@@ -54,9 +54,9 @@ class DesignAssetServiceTest {
         when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
         when(stitchClient.hasStitchKey()).thenReturn(true);
         when(stitchClient.createProject(anyString())).thenReturn("123456");
-        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString()))
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), isNull()))
                 .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
-                        "https://example.com/html", "https://example.com/shot.png", "Generated screen via Stitch."));
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
         when(stitchClient.download("https://example.com/html")).thenReturn("<html></html>".getBytes());
         when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
 
@@ -82,9 +82,9 @@ class DesignAssetServiceTest {
         when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
         when(stitchClient.hasStitchKey()).thenReturn(true);
         when(stitchClient.createProject(anyString())).thenReturn("123456");
-        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString()))
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), isNull()))
                 .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
-                        "https://example.com/html", "https://example.com/shot.png", "Generated screen via Stitch."));
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
         when(stitchClient.download("https://example.com/html")).thenReturn("<html></html>".getBytes());
         when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
         // GitHub disabled/unreachable - commitFile fails for every call.
@@ -125,7 +125,7 @@ class DesignAssetServiceTest {
         when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
         when(stitchClient.hasStitchKey()).thenReturn(true);
         when(stitchClient.createProject(anyString())).thenReturn("123456");
-        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString()))
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), isNull()))
                 .thenReturn(StitchClient.GeneratedScreen.unavailable("Stitch call failed."));
         when(settingsService.effectiveBoolean("nano_banana_enabled")).thenReturn(true);
         when(googleAiResourceService.hasGoogleAiKey()).thenReturn(true);

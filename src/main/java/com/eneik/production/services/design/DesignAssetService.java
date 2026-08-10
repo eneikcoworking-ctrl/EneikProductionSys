@@ -63,6 +63,28 @@ public class DesignAssetService {
      * confirmed live in the test-twenty-fifth experiment. Best-effort: returns "" (not an error) if GitHub
      * isn't configured, since local generation still succeeded and the caller can fall back to that.
      */
+    /**
+     * Removes rejected draft folders from design/draft/ on the repo's main branch - a plain forward
+     * commit per file (never a history rewrite). Each basename maps to the same
+     * design/draft/{basename}/ layout commitDraftToGitHub writes: mockup.html (if present) and
+     * mockup.png or mockup.jpg. Tries all known extensions per basename since the caller does not
+     * track which one was actually generated; deleteFile treats a missing file as success.
+     */
+    public java.util.Map<String, Boolean> deleteDraftFolders(ProjectEntity project, List<String> basenames) {
+        java.util.Map<String, Boolean> results = new java.util.LinkedHashMap<>();
+        for (String basename : basenames) {
+            String dir = DESIGN_DRAFT_ROOT + "/" + basename;
+            boolean htmlOk = gitHubPullRequestService.deleteFile(project, dir + "/mockup.html",
+                    "Remove rejected design draft: " + basename);
+            boolean pngOk = gitHubPullRequestService.deleteFile(project, dir + "/mockup.png",
+                    "Remove rejected design draft: " + basename);
+            boolean jpgOk = gitHubPullRequestService.deleteFile(project, dir + "/mockup.jpg",
+                    "Remove rejected design draft: " + basename);
+            results.put(basename, htmlOk && pngOk && jpgOk);
+        }
+        return results;
+    }
+
     private String commitDraftToGitHub(ProjectEntity project, String basename, byte[] htmlBytes, byte[] imageBytes, String imageExtension) {
         if (project == null) {
             return "";
@@ -86,6 +108,17 @@ public class DesignAssetService {
                                            String assetType,
                                            String quality,
                                            boolean useGoogleSearch) {
+        return generateAsset(project, context, brief, assetType, quality, useGoogleSearch, null);
+    }
+
+    /** Same as {@link #generateAsset}, reusing an existing Stitch design system id for cross-screen consistency. */
+    public DesignAssetResult generateAsset(ProjectEntity project,
+                                           ProjectOperationalContext context,
+                                           String brief,
+                                           String assetType,
+                                           String quality,
+                                           boolean useGoogleSearch,
+                                           String designSystemId) {
         if (!settingsService.effectiveBoolean("design_service_enabled")) {
             log.info("DesignAssetService: design service is disabled; skipping mockup generation for project {}",
                     project == null ? "unknown" : project.getId());
@@ -97,7 +130,7 @@ public class DesignAssetService {
         // preferred here when configured - it keeps working even when the nano-banana/Gemini image
         // path is blocked by a depleted prepay balance.
         if (settingsService.effectiveBoolean("stitch_enabled") && stitchClient.hasStitchKey()) {
-            DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType);
+            DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType, designSystemId);
             if (stitchResult.available()) {
                 return stitchResult;
             }
@@ -193,7 +226,7 @@ public class DesignAssetService {
         }
     }
 
-    private DesignAssetResult generateViaStitch(ProjectEntity project, String brief, String assetType) {
+    private DesignAssetResult generateViaStitch(ProjectEntity project, String brief, String assetType, String designSystemId) {
         String title = project == null ? "Eneik design" : firstNonBlank(project.getName(), project.getSlug(), "Eneik design");
         String stitchProjectId = stitchClient.createProject(title);
         if (stitchProjectId == null) {
@@ -204,9 +237,33 @@ public class DesignAssetService {
         String prompt = brief == null || brief.isBlank()
                 ? "Create a UI screen for: " + firstNonBlank(assetType, "the current project feature")
                 : brief;
-        StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH");
+        StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH", designSystemId);
         if (!screen.available()) {
             return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "");
+        }
+        // 2026-08-10: the immediate generate response reliably carries the screenshot before the full
+        // HTML/CSS code synthesis has finished - confirmed live (5/5 real design calls came back
+        // htmlCode-empty on the first response) and against Stitch's own documented get_screen flow.
+        // Poll the same screen a bounded number of times instead of accepting "image only" as final.
+        log.info("DesignAssetService: generate_screen_from_text returned screenId='{}' htmlUrl-blank={} screenshotUrl-blank={}",
+                screen.screenId(), screen.htmlDownloadUrl().isBlank(), screen.screenshotDownloadUrl().isBlank());
+        if (screen.htmlDownloadUrl().isBlank() && !screen.screenId().isBlank()) {
+            // 2026-08-10 diagnostic run (operator's explicit request for a genuinely patient, thorough
+            // test before concluding anything): 20 attempts x 15s = up to 5 real minutes, not 1.
+            for (int attempt = 0; attempt < 20 && screen.htmlDownloadUrl().isBlank(); attempt++) {
+                try {
+                    Thread.sleep(15_000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+                StitchClient.GeneratedScreen polled = stitchClient.getScreen(stitchProjectId, screen.screenId());
+                log.info("DesignAssetService: get_screen poll attempt {} -> available={} htmlUrl-blank={} status={} message={}",
+                        attempt, polled.available(), polled.htmlDownloadUrl().isBlank(), polled.status(), polled.message());
+                if (polled.available() && !polled.htmlDownloadUrl().isBlank()) {
+                    screen = polled;
+                }
+            }
         }
 
         try {

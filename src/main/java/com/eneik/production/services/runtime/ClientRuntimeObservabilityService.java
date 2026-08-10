@@ -157,6 +157,24 @@ public class ClientRuntimeObservabilityService {
         return status != null && status >= 200 && status < 300;
     }
 
+    /**
+     * Read-only summary for the frontend (Кузница/Product room + Роща canopy glow) - a pure projection
+     * of already-computed evidence, reuses the exact same posterior/health math as the real observation
+     * cycle above so the two can never silently disagree.
+     */
+    public record RuntimeHealthSummary(int observationCount, double posteriorMean, double credibleIntervalWidth,
+                                        Boolean lastObservationHealthy, Instant lastObservedAt,
+                                        List<ClientRuntimeObservationEntity> recentObservations) {}
+
+    public RuntimeHealthSummary summarize(java.util.UUID projectId) {
+        List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(projectId);
+        BetaPosterior posterior = posteriorFrom(history);
+        Boolean lastHealthy = history.isEmpty() ? null : isHealthy(history.get(0));
+        Instant lastAt = history.isEmpty() ? null : history.get(0).getObservedAt();
+        return new RuntimeHealthSummary(history.size(), posterior.mean(), posterior.credibleIntervalWidth(),
+                lastHealthy, lastAt, history);
+    }
+
     private BetaPosterior posteriorFrom(List<ClientRuntimeObservationEntity> history) {
         BetaPosterior posterior = BetaPosterior.UNINFORMATIVE_PRIOR;
         // Oldest-first replay so the posterior reflects the real chronological update sequence.

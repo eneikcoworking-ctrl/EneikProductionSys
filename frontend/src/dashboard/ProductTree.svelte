@@ -18,10 +18,17 @@
   import { API_BASE } from '../lib/api';
   import SeedPlanter from './tree/SeedPlanter.svelte';
   import BranchAnnotation from './tree/BranchAnnotation.svelte';
-  // Purely decorative backdrop (the operator's own Stitch illustration, "Verdant Flow - Ex Machina
-  // Tree") - sits low-opacity behind the real, live, data-driven branches below. Never the source of
-  // any real information itself - just atmosphere, the same way the ambient glow gradient is.
-  import treeBackdrop from '../assets/tree-backdrop.png';
+  // 2026-08-10 (Роща): two additive ambient bands around the same trunk/branches - roots reflect the
+  // factory-wide TOC constraint (shared infrastructure, never project-specific), the canopy glow
+  // reflects whether the DELIVERED product is actually alive right now (ClientRuntimeObservability's
+  // Beta-posterior), never build/merge status. Neither band touches branch/leaf/pulse logic above.
+  import type { TocDbrStatus, RuntimeHealthSummary } from '../lib/types';
+  // Purely decorative backdrop (2026-08-10: Art Nouveau tree, generated via the project's own Stitch
+  // design system - Libre Caslon Text/IBM Plex Sans/#7d8570/#c99a2e, the same tokens as this file's own
+  // CSS below) - sits low-opacity behind the real, live, data-driven branches below. Never the source
+  // of any real information itself - just atmosphere, the same way the ambient glow gradient is.
+  // Clean isolated illustration (no baked-in chrome/nav to crop out, unlike the earlier reference).
+  import treeBackdrop from '../assets/grove-tree-artnouveau.jpg';
 
   export let projectId: string;
 
@@ -91,6 +98,12 @@
   let loading = true;
   let error: string | null = null;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let ambientPollTimer: ReturnType<typeof setInterval> | undefined;
+  // Роща ambient bands - fetched alongside the tree, on the same poll cycle, never blocking it:
+  // both are best-effort (a factory TOC hiccup or a not-yet-observed product must never break the
+  // tree itself, which is why fetchAmbient swallows its own errors below).
+  let tocStatus: TocDbrStatus | null = null;
+  let runtimeHealth: RuntimeHealthSummary | null = null;
   let openBranchId: string | null = null;
   let showTrunkLog = false;
   let hoveredBranch: FeatureBranchDto | null = null;
@@ -111,24 +124,15 @@
   const CANOPY_SPREAD_DEG = 168;
   const MAX_VISIBLE_SEEDS = 18;
 
-  // Decorative backdrop crop: the source screenshot (512x410) is the operator's own Stitch mockup
-  // page, not an isolated tree asset - this crops out the sidebar nav, "The Neural Ecosystem"
-  // header, and legend text baked into it, keeping only the tree illustration itself.
-  const BACKDROP_SRC_W = 512;
-  const BACKDROP_SRC_H = 410;
-  const BACKDROP_CROP_X = 95;
-  const BACKDROP_CROP_Y = 105;
-  const BACKDROP_CROP_W = 340;
-  const BACKDROP_CROP_H = 220;
-  const BACKDROP_TARGET_X = VIEW_W / 2 - 280;
-  const BACKDROP_TARGET_Y = TRUNK_TOP_Y - 255;
-  const BACKDROP_TARGET_W = 560;
-  const BACKDROP_TARGET_H = (BACKDROP_TARGET_W * BACKDROP_CROP_H) / BACKDROP_CROP_W;
-  const BACKDROP_SCALE = BACKDROP_TARGET_W / BACKDROP_CROP_W;
-  const BACKDROP_IMG_W = BACKDROP_SRC_W * BACKDROP_SCALE;
-  const BACKDROP_IMG_H = BACKDROP_SRC_H * BACKDROP_SCALE;
-  const BACKDROP_IMG_X = BACKDROP_TARGET_X - BACKDROP_CROP_X * BACKDROP_SCALE;
-  const BACKDROP_IMG_Y = BACKDROP_TARGET_Y - BACKDROP_CROP_Y * BACKDROP_SCALE;
+  // Decorative backdrop placement: a clean, isolated 512x512 illustration (no chrome to crop out),
+  // centered so its own trunk/root falls roughly where the live SVG trunk (TRUNK_TOP_Y..TRUNK_BASE_Y)
+  // sits, so the atmosphere and the real data-driven branches read as one tree, not two layers.
+  const BACKDROP_TARGET_W = 460;
+  const BACKDROP_TARGET_H = 460;
+  const BACKDROP_IMG_X = VIEW_W / 2 - BACKDROP_TARGET_W / 2;
+  const BACKDROP_IMG_Y = TRUNK_BASE_Y - BACKDROP_TARGET_H + 40;
+  const BACKDROP_TARGET_X = BACKDROP_IMG_X;
+  const BACKDROP_TARGET_Y = BACKDROP_IMG_Y;
 
   async function fetchTree() {
     try {
@@ -143,13 +147,39 @@
     }
   }
 
+  // Best-effort, silent on failure - these two ambient signals decorate the tree, they never gate it.
+  async function fetchAmbient() {
+    try {
+      const res = await fetch(`${API_BASE}/api/toc/status`);
+      if (res.ok) tocStatus = await res.json();
+    } catch { /* roots stay calm/undecorated - not a tree-view failure */ }
+    try {
+      const res = await fetch(`${API_BASE}/api/projects/${projectId}/runtime-health`);
+      if (res.ok) runtimeHealth = await res.json();
+    } catch { /* canopy stays undecorated - not a tree-view failure */ }
+  }
+
   onMount(() => {
     fetchTree();
+    fetchAmbient();
     pollTimer = setInterval(fetchTree, 10000);
+    ambientPollTimer = setInterval(fetchAmbient, 30000);
   });
   onDestroy(() => {
     if (pollTimer) clearInterval(pollTimer);
+    if (ambientPollTimer) clearInterval(ambientPollTimer);
   });
+
+  // Roots tint: calm sage by default. Amber when the factory's own rope is actively throttling
+  // admissions (a real, deliberate protective state, not a fault) - never invents urgency from
+  // absence of data (tocStatus null -> stays calm).
+  $: rootsStrained = tocStatus?.ropeThrottlingActive === true;
+
+  // Canopy pulse: only rendered once there is at least one real observation (Phase 0/1 must have
+  // actually run) - absence of data means no glow at all, never a fabricated "everything's fine".
+  $: hasProductSignal = (runtimeHealth?.observationCount ?? 0) > 0;
+  $: productHealthy = runtimeHealth?.lastObservationHealthy === true;
+  $: productGlowOpacity = hasProductSignal ? 0.28 + (runtimeHealth?.posteriorMean ?? 0) * 0.32 : 0;
 
   // Chronological order is the layout's only real signal - no fabricated dependency edges.
   $: sortedBranches = (tree?.branches ?? [])
@@ -334,6 +364,13 @@
             <stop offset="0%" stop-color="var(--tree-healthy)" stop-opacity="0.14" />
             <stop offset="100%" stop-color="var(--tree-healthy)" stop-opacity="0" />
           </radialGradient>
+          <!-- Product-alive glow (2026-08-10) - a second, independent canopy layer: whether the
+               DELIVERED product is actually running right now (ClientRuntimeObservability), never
+               build/merge status which canopy-glow above already reflects via branch health. -->
+          <radialGradient id="product-pulse-glow" cx="50%" cy="18%" r="30%">
+            <stop offset="0%" stop-color={productHealthy ? 'var(--tree-gold)' : 'var(--tree-attention)'} stop-opacity="0.55" />
+            <stop offset="100%" stop-color={productHealthy ? 'var(--tree-gold)' : 'var(--tree-attention)'} stop-opacity="0" />
+          </radialGradient>
           <!-- Soft radial mask instead of a hard rectangle - the crop from the original mockup
                screenshot fades out at its own edges rather than reading as a pasted photo frame,
                which also further suppresses the leftover header/legend text right at those edges. -->
@@ -359,12 +396,24 @@
             href={treeBackdrop}
             x={BACKDROP_IMG_X} y={BACKDROP_IMG_Y}
             width={BACKDROP_IMG_W} height={BACKDROP_IMG_H}
-            opacity="0.3"
+            opacity="0.6"
           />
         </g>
 
         <!-- Ambient canopy glow - depth without a WebGL shader -->
         <ellipse cx={VIEW_W / 2} cy={TRUNK_TOP_Y} rx={VIEW_W * 0.48} ry={VIEW_H * 0.4} fill="url(#canopy-glow)" />
+
+        <!-- Product-alive glow (2026-08-10) - only appears once Phase 0/1 has produced at least one
+             real observation; a flicker (not a hard error color) when the most recent check failed,
+             since one failed check is evidence, not yet a confirmed shift (RuntimeHealthShiftDetector
+             owns that judgment, not this view). -->
+        {#if hasProductSignal}
+          <ellipse
+            cx={VIEW_W / 2} cy={TRUNK_TOP_Y} rx="170" ry="130"
+            fill="url(#product-pulse-glow)" opacity={productGlowOpacity}
+            class:canopy-flicker={!productHealthy}
+          />
+        {/if}
 
         <!-- Trunk: a single thin sway, matching the branches' own delicate line weight -->
         <path
@@ -383,6 +432,22 @@
              Q {TRUNK_BASE_X + 32} {TRUNK_BASE_Y + 12} {TRUNK_BASE_X + 50} {TRUNK_BASE_Y + 1}"
           fill="none" stroke="var(--tree-line)" stroke-width="1.5" stroke-linecap="round" opacity="0.45"
         />
+
+        <!-- Shared-factory root network (2026-08-10, Роща) - two deeper tendrils with a glowing tip
+             each, representing the same infrastructure every project's tree grows from (TOC's own
+             drum-buffer-rope). Calm sage by default; ambient tint shifts warm only while the factory
+             is genuinely, deliberately throttling admissions - never a fabricated urgency. -->
+        <path
+          d="M {TRUNK_BASE_X - 54} {TRUNK_BASE_Y - 2} Q {TRUNK_BASE_X - 70} {TRUNK_BASE_Y + 26} {TRUNK_BASE_X - 66} {TRUNK_BASE_Y + 44}
+             M {TRUNK_BASE_X + 50} {TRUNK_BASE_Y + 1} Q {TRUNK_BASE_X + 68} {TRUNK_BASE_Y + 28} {TRUNK_BASE_X + 64} {TRUNK_BASE_Y + 46}"
+          fill="none" stroke={rootsStrained ? 'var(--tree-attention)' : 'var(--tree-line)'} stroke-width="1.6" stroke-linecap="round" opacity="0.75"
+        />
+        <circle cx={TRUNK_BASE_X - 66} cy={TRUNK_BASE_Y + 44} r="3.6" fill={rootsStrained ? 'var(--tree-attention)' : 'var(--tree-gold)'} filter="url(#node-glow)" class:root-pulse={rootsStrained}>
+          <title>{rootsStrained ? 'The shared workshop is deliberately pacing itself right now' : 'The shared workshop, quietly running'}</title>
+        </circle>
+        <circle cx={TRUNK_BASE_X + 64} cy={TRUNK_BASE_Y + 46} r="3.6" fill={rootsStrained ? 'var(--tree-attention)' : 'var(--tree-gold)'} filter="url(#node-glow)" class:root-pulse={rootsStrained}>
+          <title>{rootsStrained ? 'The shared workshop is deliberately pacing itself right now' : 'The shared workshop, quietly running'}</title>
+        </circle>
 
         <!-- Seeds at the base - a scattered leaf cluster (capped so a large real backlog reads as a
              tidy pile, not a solid block), never a grid of unexplained dots. -->
@@ -684,6 +749,20 @@
     .branch-group.pulse .branch-leaf {
       animation: none;
     }
+  }
+
+  /* Роща ambient bands (2026-08-10) - same slow-breathe idiom as the rest of the tree, never a sharp
+     blink; a genuine shift in product health is Kaizen's job to raise loudly, not this glow's. */
+  .canopy-flicker {
+    animation: breathe 3.2s ease-in-out infinite;
+  }
+
+  .root-pulse {
+    animation: breathe 2.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .canopy-flicker, .root-pulse { animation: none; }
   }
 
   .hover-card {

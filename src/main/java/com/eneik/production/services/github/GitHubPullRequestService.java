@@ -1240,6 +1240,58 @@ public class GitHubPullRequestService {
         return false;
     }
 
+    /**
+     * Deletes a single file at `path` from the repo's default branch (main), if it exists. Reads the
+     * current blob sha first (GitHub's contents-delete API requires it), then deletes. A 404 on the
+     * initial read (file already gone) is treated as success. Used to clean up rejected design draft
+     * commits - a plain forward commit, never a history rewrite.
+     */
+    public boolean deleteFile(ProjectEntity project, String path, String commitMessage) {
+        if (project == null || path == null || path.isBlank()) {
+            return false;
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/" + encodePath(path);
+            HttpRequest getRequest = baseRequest(urlPath, token).GET().build();
+            HttpResponse<String> getResponse = sendGitHub(getRequest);
+            if (getResponse.statusCode() == 404) {
+                return true;
+            }
+            if (getResponse.statusCode() != 200) {
+                log.warn("GitHub delete-file: could not read sha for {}/{} path={}: status={} body={}",
+                        repoRef.owner(), repoRef.repo(), path, getResponse.statusCode(), preview(getResponse.body()));
+                return false;
+            }
+            String sha = objectMapper.readTree(getResponse.body()).path("sha").asText("");
+            if (sha.isBlank()) {
+                return false;
+            }
+            var body = objectMapper.createObjectNode();
+            body.put("message", commitMessage);
+            body.put("sha", sha);
+            HttpRequest deleteRequest = baseRequest(urlPath, token)
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> deleteResponse = sendGitHub(deleteRequest);
+            if (deleteResponse.statusCode() == 200 || deleteResponse.statusCode() == 201) {
+                return true;
+            }
+            log.warn("GitHub delete-file failed for {}/{} path={}: status={} body={}",
+                    repoRef.owner(), repoRef.repo(), path, deleteResponse.statusCode(), preview(deleteResponse.body()));
+        } catch (Exception e) {
+            log.warn("Could not delete file {} for project {}: {}", path, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
     private HttpRequest.Builder baseRequest(String path, String token) {
         return HttpRequest.newBuilder(URI.create(githubConfig.getApiBaseUrl().replaceAll("/+$", "") + path))
                 .header("Authorization", "Bearer " + token)

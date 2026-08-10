@@ -119,6 +119,55 @@ public class EvidenceCoherenceService {
 
     enum EdgeRelation { COOPERATE, COMPETE, NONE }
 
+    /**
+     * Read-only projection for the frontend (Кузница/Delivery room) - reads the same
+     * {@link EvidenceNodeEntity} rows and the project's most recent {@link CoherenceRunEntity} verdict
+     * that {@link com.eneik.production.services.GeminiProjectObserverService#latestCoherenceRunRejectedNodeIds}
+     * already relies on, so the graph the frontend shows an engineer can never disagree with what Gemini
+     * herself is told. Node clustering (shared featureId/prNumber) is exposed as-is rather than
+     * re-deriving {@link #buildWeightMatrix}'s edge weights - the raw cluster keys are enough for a
+     * legible graph without duplicating the ECHO relaxation itself.
+     */
+    public record GraphNode(java.util.UUID id, String polarity, String sourceType, String summaryText,
+                             java.util.UUID featureId, Integer prNumber, java.time.Instant createdAt,
+                             boolean accepted, Double confidence) {}
+
+    public record GraphSnapshot(java.util.UUID projectId, java.util.List<GraphNode> nodes,
+                                 boolean hasCoherenceRun, java.time.Instant lastRunAt,
+                                 double coherenceScore, int totalNodes, int acceptedNodes) {}
+
+    public GraphSnapshot graphSnapshot(java.util.UUID projectId) {
+        Instant windowStart = Instant.now().minus(reconciliationWindowHours, ChronoUnit.HOURS);
+        List<EvidenceNodeEntity> nodes = evidenceNodeRepository.findByProjectIdAndCreatedAtAfter(projectId, windowStart);
+
+        List<CoherenceRunEntity> runs = coherenceRunRepository.findByProjectIdOrderByRanAtDesc(projectId);
+        java.util.Map<UUID, CoherenceRunNodeResultEntity> latestResults = java.util.Map.of();
+        CoherenceRunEntity latestRun = null;
+        if (!runs.isEmpty()) {
+            latestRun = runs.get(0);
+            latestResults = coherenceRunNodeResultRepository.findByCoherenceRunId(latestRun.getId()).stream()
+                    .collect(java.util.stream.Collectors.toMap(CoherenceRunNodeResultEntity::getEvidenceNodeId, r -> r));
+        }
+
+        List<GraphNode> graphNodes = new ArrayList<>();
+        for (EvidenceNodeEntity node : nodes) {
+            CoherenceRunNodeResultEntity result = latestResults.get(node.getId());
+            // No verdict yet (created since the last 2h cycle) - shown as accepted/live by default,
+            // same "absence of a verdict is not evidence of rejection" rule as the Gemini-facing tool.
+            boolean accepted = result == null || result.isAccepted();
+            Double confidence = result == null ? null : result.getConfidence();
+            graphNodes.add(new GraphNode(node.getId(), node.getPolarity().name(), node.sourceType(),
+                    node.getSummaryText(), node.getFeatureId(), node.getPrNumber(), node.getCreatedAt(),
+                    accepted, confidence));
+        }
+
+        return new GraphSnapshot(projectId, graphNodes, latestRun != null,
+                latestRun == null ? null : latestRun.getRanAt(),
+                latestRun == null ? 0.0 : latestRun.getCoherenceScore(),
+                latestRun == null ? 0 : latestRun.getTotalNodes(),
+                latestRun == null ? 0 : latestRun.getAcceptedNodes());
+    }
+
     /** Same 2h cadence as KaizenService's own periodic cycle - not a coincidence, both reconcile the same
      * evidence window. */
     @Scheduled(fixedRate = 7200000, initialDelay = 120000)

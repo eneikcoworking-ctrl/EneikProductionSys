@@ -369,10 +369,16 @@ export type SixSigmaAuditReport = {
   auditedAt: string;
 };
 
+// Corrected 2026-08-10 to match the real backend enum (KaizenProposal.Category) - the previous
+// version had a nonexistent SPEED_OPTIMIZATION and was missing the 3 categories that actually route
+// proposals into the Кузница rooms (SYSTEMIC_DEFECT/ROLE_QUALITY_DRIFT -> Factory room,
+// PRODUCT_RUNTIME_DEFECT -> Product room; WASTE_REDUCTION/DEFECT_ELIMINATION/BUFFER_TUNING -> Delivery
+// room).
 export type KaizenProposalDto = {
   id: string;
   title: string;
-  category: 'WASTE_REDUCTION' | 'SPEED_OPTIMIZATION' | 'DEFECT_ELIMINATION' | 'BUFFER_TUNING';
+  category: 'WASTE_REDUCTION' | 'DEFECT_ELIMINATION' | 'BUFFER_TUNING' | 'SYSTEMIC_DEFECT'
+    | 'ROLE_QUALITY_DRIFT' | 'PRODUCT_RUNTIME_DEFECT';
   targetComponent: string;
   actionDescription: string;
   expectedGainPercent: number;
@@ -383,5 +389,62 @@ export type KaizenProposalDto = {
   baselineMetric?: number;
   postMetric?: number;
   appliedAt?: string;
+};
+
+// GET /api/projects/{id}/runtime-health (2026-08-10) - Роща canopy glow + Кузница/Product room.
+export type RuntimeObservationDto = {
+  id: string;
+  projectId: string;
+  observedAt: string;
+  launchSuccess: boolean;
+  launchDurationMs?: number;
+  healthStatusCode?: number;
+  healthLatencyMs?: number;
+  errorText?: string;
+};
+
+export type RuntimeHealthSummary = {
+  observationCount: number;
+  posteriorMean: number;
+  credibleIntervalWidth: number;
+  lastObservationHealthy: boolean | null;
+  lastObservedAt: string | null;
+  recentObservations: RuntimeObservationDto[];
+};
+
+// GET /api/projects/{id}/coherence-graph (2026-08-10) - Кузница/Delivery room, Thagard ECHO +
+// Gärdenfors AGM evidence graph, previously only reachable via the localhost-only gemini-observer API.
+export type CoherenceGraphNode = {
+  id: string;
+  polarity: 'NEGATIVE_FINDING' | 'POSITIVE_CONFIRMATION' | 'NEUTRAL_OBSERVATION';
+  sourceType: string;
+  summaryText: string;
+  featureId?: string;
+  prNumber?: number;
+  createdAt: string;
+  accepted: boolean;
+  confidence?: number;
+};
+
+// GET /api/projects/{id}/observer-journal (2026-08-10) - Кузница/Delivery room, real cycles only
+// (geminiCalled=true entries, same filter Gemini's own continuity logic uses).
+export type GeminiObserverJournalEntry = {
+  id: string;
+  projectId: string;
+  createdAt: string;
+  entry: string;
+  findingsCount: number;
+  readinessRatio: number;
+  geminiCalled: boolean;
+};
+
+export type CoherenceGraphSnapshot = {
+  projectId: string;
+  nodes: CoherenceGraphNode[];
+  hasCoherenceRun: boolean;
+  lastRunAt?: string;
+  coherenceScore: number;
+  totalNodes: number;
+  acceptedNodes: number;
 };
 

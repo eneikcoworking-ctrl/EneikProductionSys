@@ -74,18 +74,35 @@ public class StitchClient {
     }
 
     public record GeneratedScreen(boolean available, String status, String htmlDownloadUrl,
-                                  String screenshotDownloadUrl, String message) {
+                                  String screenshotDownloadUrl, String screenId, String message) {
         public static GeneratedScreen unavailable(String message) {
-            return new GeneratedScreen(false, "unavailable", "", "", message);
+            return new GeneratedScreen(false, "unavailable", "", "", "", message);
         }
     }
 
+    /**
+     * 2026-08-09/10 root-caused live (confirmed against the real Stitch MCP docs, not guessed): the
+     * immediate generate_screen_from_text response reliably carries the screenshot but the full HTML/CSS
+     * code synthesis lags behind it - htmlCode.downloadUrl is routinely still blank at this point even
+     * though the screen itself generated successfully. The bare screen id ("name", same
+     * "projects/{p}/screens/{s}" resource-name convention as create_project) is captured here so the
+     * caller can follow up with {@link #getScreen} once code synthesis has had time to finish, instead of
+     * silently accepting "image only" as the final answer.
+     */
     public GeneratedScreen generateScreenFromText(String projectId, String prompt, String modelId) {
-        JsonNode result = callTool("generate_screen_from_text", java.util.Map.of(
-                "projectId", projectId,
-                "prompt", prompt == null ? "" : prompt,
-                "modelId", modelId == null || modelId.isBlank() ? "GEMINI_3_FLASH" : modelId
-        ));
+        return generateScreenFromText(projectId, prompt, modelId, null);
+    }
+
+    /** Same as {@link #generateScreenFromText(String, String, String)}, reusing an existing design system id for consistency across screens. */
+    public GeneratedScreen generateScreenFromText(String projectId, String prompt, String modelId, String designSystemId) {
+        java.util.Map<String, Object> arguments = new java.util.HashMap<>();
+        arguments.put("projectId", projectId);
+        arguments.put("prompt", prompt == null ? "" : prompt);
+        arguments.put("modelId", modelId == null || modelId.isBlank() ? "GEMINI_3_FLASH" : modelId);
+        if (designSystemId != null && !designSystemId.isBlank()) {
+            arguments.put("designSystem", designSystemId);
+        }
+        JsonNode result = callTool("generate_screen_from_text", arguments);
         if (result == null) {
             return GeneratedScreen.unavailable("Stitch generate_screen_from_text call failed.");
         }
@@ -96,21 +113,47 @@ public class StitchClient {
                 JsonNode screen = screens.get(0);
                 String htmlUrl = screen.path("htmlCode").path("downloadUrl").asText("");
                 String screenshotUrl = screen.path("screenshot").path("downloadUrl").asText("");
+                String name = screen.path("name").asText("");
+                int slash = name.lastIndexOf('/');
+                String screenId = slash >= 0 ? name.substring(slash + 1) : name;
+                // 2026-08-10 diagnostic (temporary, operator asked to look for a status/state field we
+                // might be ignoring instead of guessing readiness from URL presence alone) - log the
+                // COMPLETE screen object, not just the two fields we parse.
+                log.info("StitchClient: generate_screen_from_text raw screen object: {}", screen.toString());
                 if (!htmlUrl.isBlank() || !screenshotUrl.isBlank()) {
-                    return new GeneratedScreen(true, "ok", htmlUrl, screenshotUrl, "Generated screen via Stitch.");
+                    return new GeneratedScreen(true, "ok", htmlUrl, screenshotUrl, screenId, "Generated screen via Stitch.");
                 }
             }
         }
         return GeneratedScreen.unavailable("Stitch response contained no generated screen.");
     }
 
-    // 2026-08-04 (Phase B, design/QA acceptance redesign): unlike generateScreenFromText's response shape
-    // (proven live against the real Stitch API), the field names below (name/designSystems) are a
-    // best-effort mirror of the same create_project/generate_screen_from_text convention - NOT yet
-    // confirmed against a real create_design_system/apply_design_system/list_design_systems call. Verify
-    // against a live Stitch response before relying on this in production; callTool's own null-on-failure
-    // contract means a wrong field name degrades to "unavailable", not a crash, so this is safe to ship
-    // and correct once confirmed.
+    /**
+     * Fetches the complete, current state of an already-generated screen - the follow-up call
+     * generateScreenFromText's own response cannot substitute for (see its doc comment). Same
+     * name/slash-stripping convention as createProject.
+     */
+    public GeneratedScreen getScreen(String projectId, String screenId) {
+        JsonNode result = callTool("get_screen", java.util.Map.of(
+                "projectId", projectId,
+                "screenId", screenId == null ? "" : screenId
+        ));
+        if (result == null) {
+            return GeneratedScreen.unavailable("Stitch get_screen call failed.");
+        }
+        log.info("StitchClient: get_screen raw response: {}", result.toString());
+        String htmlUrl = result.path("htmlCode").path("downloadUrl").asText("");
+        String screenshotUrl = result.path("screenshot").path("downloadUrl").asText("");
+        if (htmlUrl.isBlank() && screenshotUrl.isBlank()) {
+            return GeneratedScreen.unavailable("Stitch get_screen response had no code or screenshot yet.");
+        }
+        return new GeneratedScreen(true, "ok", htmlUrl, screenshotUrl, screenId, "Fetched screen via Stitch.");
+    }
+
+    // 2026-08-10: field shape confirmed live against the real Stitch MCP tools/list schema.
+    // create_design_system takes a structured `designSystem: {displayName, theme: {...}}` object, not
+    // a free-text prompt - theme.headlineFont/bodyFont/labelFont must be one of the real font enum
+    // values (e.g. LIBRE_CASLON_TEXT, IBM_PLEX_SANS), colorMode is LIGHT/DARK, colors are hex strings.
 
     public record DesignSystemResult(boolean available, String status, String designSystemId, String message) {
         public static DesignSystemResult unavailable(String message) {
@@ -118,11 +161,29 @@ public class StitchClient {
         }
     }
 
-    /** Creates a Stitch design system for a project from a text prompt and returns its bare ID. */
-    public DesignSystemResult createDesignSystem(String projectId, String prompt) {
-        JsonNode result = callTool("create_design_system", java.util.Map.of(
-                "projectId", projectId,
-                "prompt", prompt == null ? "" : prompt));
+    /** Creates a Stitch design system from structured theme fields (real MCP schema, not free text). */
+    public DesignSystemResult createDesignSystem(String projectId, String displayName, String headlineFont,
+                                                  String bodyFont, String primaryColorHex, String secondaryColorHex) {
+        ObjectNode theme = objectMapper.createObjectNode();
+        theme.put("colorMode", "LIGHT");
+        theme.put("headlineFont", headlineFont);
+        theme.put("bodyFont", bodyFont);
+        theme.put("roundness", "ROUND_EIGHT");
+        theme.put("customColor", primaryColorHex);
+        theme.put("overridePrimaryColor", primaryColorHex);
+        if (secondaryColorHex != null && !secondaryColorHex.isBlank()) {
+            theme.put("overrideSecondaryColor", secondaryColorHex);
+        }
+        ObjectNode designSystem = objectMapper.createObjectNode();
+        designSystem.put("displayName", displayName == null ? "Eneik design" : displayName);
+        designSystem.set("theme", theme);
+
+        java.util.Map<String, Object> arguments = new java.util.HashMap<>();
+        arguments.put("designSystem", objectMapper.convertValue(designSystem, java.util.Map.class));
+        if (projectId != null && !projectId.isBlank()) {
+            arguments.put("projectId", projectId);
+        }
+        JsonNode result = callTool("create_design_system", arguments);
         if (result == null) {
             return DesignSystemResult.unavailable("Stitch create_design_system call failed.");
         }
@@ -164,6 +225,32 @@ public class StitchClient {
             }
         }
         return ids;
+    }
+
+    /** Raw MCP tools/list call - returns each tool's name, description and full inputSchema as JSON text. */
+    public String listToolsRaw() {
+        String apiKey = stitchApiKey();
+        if (apiKey.isBlank()) {
+            return "{\"error\":\"no api key configured\"}";
+        }
+        try {
+            ObjectNode body = objectMapper.createObjectNode();
+            body.put("jsonrpc", "2.0");
+            body.put("id", requestId.getAndIncrement());
+            body.put("method", "tools/list");
+            body.set("params", objectMapper.createObjectNode());
+
+            HttpRequest request = HttpRequest.newBuilder(URI.create(mcpUrl))
+                    .timeout(Duration.ofSeconds(requestTimeoutSeconds))
+                    .header("Content-Type", "application/json")
+                    .header("X-Goog-Api-Key", apiKey)
+                    .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            return response.body();
+        } catch (Exception e) {
+            return "{\"error\":\"" + e.getMessage() + "\"}";
+        }
     }
 
     /** Downloads a Stitch file (screenshot image or HTML) using the same API key as authentication. */
