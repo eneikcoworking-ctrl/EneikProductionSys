@@ -37,6 +37,7 @@ public class DesignAssetService {
     private final SystemSettingsService settingsService;
     private final ObjectMapper objectMapper;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final DesignConsistencyAuditService consistencyAuditService;
     private final Path assetRoot;
 
     public DesignAssetService(GoogleAiResourceService googleAiResourceService,
@@ -44,12 +45,14 @@ public class DesignAssetService {
                               SystemSettingsService settingsService,
                               ObjectMapper objectMapper,
                               com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                              DesignConsistencyAuditService consistencyAuditService,
                               @Value("${design-service.asset-root:./data/design-assets}") String assetRoot) {
         this.googleAiResourceService = googleAiResourceService;
         this.stitchClient = stitchClient;
         this.settingsService = settingsService;
         this.objectMapper = objectMapper;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.consistencyAuditService = consistencyAuditService;
         this.assetRoot = Paths.get(assetRoot == null || assetRoot.isBlank() ? "./data/design-assets" : assetRoot)
                 .toAbsolutePath()
                 .normalize();
@@ -70,6 +73,41 @@ public class DesignAssetService {
      * mockup.png or mockup.jpg. Tries all known extensions per basename since the caller does not
      * track which one was actually generated; deleteFile treats a missing file as success.
      */
+    /**
+     * Manually re-runs the E(f)/E*(F) consistency audit on already-generated local drafts (local disk
+     * basename.html under data/design-assets/{slug}/, not the GitHub-committed copy) against a
+     * declared token set, and pairwise against each other. Useful for auditing history or a batch
+     * that predates this gate existing.
+     */
+    public java.util.Map<String, DesignConsistencyAuditService.ConsistencyReport> auditExistingDrafts(
+            ProjectEntity project, List<String> basenames, List<String> declaredColors, List<String> declaredFonts) {
+        String projectSlug = slug(project == null ? "unknown-project" : firstNonBlank(project.getSlug(), project.getName(), project.getId().toString()));
+        Path directory = assetRoot.resolve(projectSlug).normalize();
+        var declaredTokens = DesignConsistencyAuditService.TokenSet.of(declaredColors, declaredFonts);
+
+        java.util.Map<String, String> htmlByBasename = new java.util.LinkedHashMap<>();
+        for (String basename : basenames) {
+            try {
+                Path htmlFile = directory.resolve(basename + ".html").normalize();
+                if (Files.isRegularFile(htmlFile)) {
+                    htmlByBasename.put(basename, Files.readString(htmlFile, StandardCharsets.UTF_8));
+                }
+            } catch (Exception e) {
+                log.debug("DesignAssetService: could not read draft {} for audit: {}", basename, e.getMessage());
+            }
+        }
+
+        java.util.Map<String, DesignConsistencyAuditService.ConsistencyReport> results = new java.util.LinkedHashMap<>();
+        for (var entry : htmlByBasename.entrySet()) {
+            List<String> siblings = htmlByBasename.entrySet().stream()
+                    .filter(other -> !other.getKey().equals(entry.getKey()))
+                    .map(java.util.Map.Entry::getValue)
+                    .toList();
+            results.put(entry.getKey(), consistencyAuditService.audit(entry.getValue(), declaredTokens, siblings));
+        }
+        return results;
+    }
+
     public java.util.Map<String, Boolean> deleteDraftFolders(ProjectEntity project, List<String> basenames) {
         java.util.Map<String, Boolean> results = new java.util.LinkedHashMap<>();
         for (String basename : basenames) {
@@ -83,6 +121,40 @@ public class DesignAssetService {
             results.put(basename, htmlOk && pngOk && jpgOk);
         }
         return results;
+    }
+
+    /**
+     * Finds the HTML content of other, already-generated screens in this project's asset directory
+     * that share the same designSystemId (read back from each sibling's own .json metadata) - the
+     * corpus E*(F) needs to compare against, since one call to generateViaStitch only ever sees one
+     * screen at a time. Best-effort: unreadable or malformed siblings are silently skipped, never
+     * fail the audit itself.
+     */
+    private List<String> loadSiblingHtmlForDesignSystem(Path directory, String designSystemId) {
+        if (designSystemId == null || designSystemId.isBlank() || !Files.isDirectory(directory)) {
+            return List.of();
+        }
+        List<String> siblings = new java.util.ArrayList<>();
+        try (var stream = Files.list(directory)) {
+            for (Path jsonPath : stream.filter(p -> p.toString().endsWith(".json")).toList()) {
+                try {
+                    var node = objectMapper.readTree(Files.readString(jsonPath, StandardCharsets.UTF_8));
+                    String siblingDesignSystemId = node.path("designSystemId").asText("");
+                    String siblingHtmlPath = node.path("htmlPath").asText("");
+                    if (designSystemId.equals(siblingDesignSystemId) && !siblingHtmlPath.isBlank()) {
+                        Path htmlFile = Paths.get(siblingHtmlPath);
+                        if (Files.isRegularFile(htmlFile)) {
+                            siblings.add(Files.readString(htmlFile, StandardCharsets.UTF_8));
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("DesignAssetService: skipping unreadable sibling metadata {}: {}", jsonPath, e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("DesignAssetService: could not scan {} for sibling design-system drafts: {}", directory, e.getMessage());
+        }
+        return siblings;
     }
 
     private String commitDraftToGitHub(ProjectEntity project, String basename, byte[] htmlBytes, byte[] imageBytes, String imageExtension) {
@@ -108,7 +180,7 @@ public class DesignAssetService {
                                            String assetType,
                                            String quality,
                                            boolean useGoogleSearch) {
-        return generateAsset(project, context, brief, assetType, quality, useGoogleSearch, null);
+        return generateAsset(project, context, brief, assetType, quality, useGoogleSearch, null, null, null);
     }
 
     /** Same as {@link #generateAsset}, reusing an existing Stitch design system id for cross-screen consistency. */
@@ -119,6 +191,25 @@ public class DesignAssetService {
                                            String quality,
                                            boolean useGoogleSearch,
                                            String designSystemId) {
+        return generateAsset(project, context, brief, assetType, quality, useGoogleSearch, designSystemId, null, null);
+    }
+
+    /**
+     * Same as {@link #generateAsset}, additionally passing the design system's own declared hex
+     * colors/fonts so the generated screen can be audited against them (BARCAN-TAG-11's E(f)
+     * predicate) before it is committed to the project's repo. Null/empty tokens skip the audit -
+     * callers that only have a designSystemId but not its declared tokens degrade to the old,
+     * un-audited behavior rather than failing.
+     */
+    public DesignAssetResult generateAsset(ProjectEntity project,
+                                           ProjectOperationalContext context,
+                                           String brief,
+                                           String assetType,
+                                           String quality,
+                                           boolean useGoogleSearch,
+                                           String designSystemId,
+                                           List<String> designSystemColors,
+                                           List<String> designSystemFonts) {
         if (!settingsService.effectiveBoolean("design_service_enabled")) {
             log.info("DesignAssetService: design service is disabled; skipping mockup generation for project {}",
                     project == null ? "unknown" : project.getId());
@@ -130,7 +221,8 @@ public class DesignAssetService {
         // preferred here when configured - it keeps working even when the nano-banana/Gemini image
         // path is blocked by a depleted prepay balance.
         if (settingsService.effectiveBoolean("stitch_enabled") && stitchClient.hasStitchKey()) {
-            DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType, designSystemId);
+            DesignAssetResult stitchResult = generateViaStitch(project, brief, assetType, designSystemId,
+                    designSystemColors, designSystemFonts);
             if (stitchResult.available()) {
                 return stitchResult;
             }
@@ -226,7 +318,8 @@ public class DesignAssetService {
         }
     }
 
-    private DesignAssetResult generateViaStitch(ProjectEntity project, String brief, String assetType, String designSystemId) {
+    private DesignAssetResult generateViaStitch(ProjectEntity project, String brief, String assetType, String designSystemId,
+                                                 List<String> designSystemColors, List<String> designSystemFonts) {
         String title = project == null ? "Eneik design" : firstNonBlank(project.getName(), project.getSlug(), "Eneik design");
         String stitchProjectId = stitchClient.createProject(title);
         if (stitchProjectId == null) {
@@ -300,6 +393,30 @@ public class DesignAssetService {
                         "Stitch generated a screen but its files could not be downloaded.", "");
             }
 
+            // BARCAN-TAG-11 E(f)/E*(F) gate (2026-08-10): confirmed live that passing designSystemId
+            // alone does not guarantee visual consistency - three Forge screens generated under the
+            // same id came back in three incompatible color registers. When the caller supplies the
+            // design system's own declared tokens, audit the generated HTML against them and reject
+            // (never commit to the project's repo) drifted screens before an operator ever sees them.
+            DesignConsistencyAuditService.ConsistencyReport consistencyReport = null;
+            if (htmlFileBytes != null && designSystemColors != null && !designSystemColors.isEmpty()) {
+                String htmlText = new String(htmlFileBytes, StandardCharsets.UTF_8);
+                var declaredTokens = DesignConsistencyAuditService.TokenSet.of(
+                        designSystemColors, designSystemFonts == null ? List.of() : designSystemFonts);
+                List<String> siblingHtml = loadSiblingHtmlForDesignSystem(directory, designSystemId);
+                consistencyReport = consistencyAuditService.audit(htmlText, declaredTokens, siblingHtml);
+                log.info("DesignAssetService: consistency audit traceRatio={} crossScreenJaccard={} offTokens={}",
+                        consistencyReport.traceRatio(), consistencyReport.avgCrossScreenJaccard(), consistencyReport.offTokenValues());
+                if (!consistencyReport.traceAccepted()) {
+                    return new DesignAssetResult(false, "aesthetic_drift", "stitch", htmlPath, "", "text/html",
+                            String.format(Locale.ROOT,
+                                    "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s",
+                                    consistencyReport.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
+                                    consistencyReport.offTokenValues()),
+                            "");
+                }
+            }
+
             Path metadataPath = directory.resolve(basename + ".json").normalize();
             ObjectNode metadata = objectMapper.createObjectNode();
             metadata.put("projectId", project == null ? "" : String.valueOf(project.getId()));
@@ -310,6 +427,11 @@ public class DesignAssetService {
             metadata.put("createdAt", Instant.now().toString());
             metadata.put("brief", brief == null ? "" : brief);
             metadata.put("htmlPath", htmlPath);
+            metadata.put("designSystemId", designSystemId == null ? "" : designSystemId);
+            if (consistencyReport != null) {
+                metadata.put("tokenTraceRatio", consistencyReport.traceRatio());
+                metadata.put("crossScreenJaccard", consistencyReport.avgCrossScreenJaccard());
+            }
             Files.writeString(metadataPath, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(metadata), StandardCharsets.UTF_8);
 
             String repoDraftPath = commitDraftToGitHub(project, basename, htmlFileBytes, screenshotBytes, ".png");

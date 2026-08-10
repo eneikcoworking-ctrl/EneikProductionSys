@@ -92,9 +92,27 @@ public class GoogleAiResourceController {
                 request == null ? "asset" : request.assetType(),
                 request == null ? "fast" : request.quality(),
                 request != null && request.useGoogleSearch(),
-                request == null ? null : request.designSystemId()
+                request == null ? null : request.designSystemId(),
+                request == null ? null : request.designSystemColors(),
+                request == null ? null : request.designSystemFonts()
         );
         return ResponseEntity.ok(result);
+    }
+
+    /** Manually re-runs the E(f)/E*(F) consistency audit on already-generated drafts (BARCAN-TAG-11). */
+    @GetMapping("/design-consistency-audit")
+    public ResponseEntity<?> designConsistencyAudit(@RequestParam UUID projectId,
+                                                     @RequestParam String basenames,
+                                                     @RequestParam(required = false) List<String> declaredColors,
+                                                     @RequestParam(required = false) List<String> declaredFonts) {
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        if (project == null) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.ok(designAssetService.auditExistingDrafts(project,
+                List.of(basenames.split(",")),
+                declaredColors == null ? List.of() : declaredColors,
+                declaredFonts == null ? List.of() : declaredFonts));
     }
 
     public record CreateDesignSystemRequest(String displayName, String headlineFont, String bodyFont,
@@ -154,7 +172,9 @@ public class GoogleAiResourceController {
             String assetType,
             String quality,
             boolean useGoogleSearch,
-            String designSystemId
+            String designSystemId,
+            List<String> designSystemColors,
+            List<String> designSystemFonts
     ) {
     }
 

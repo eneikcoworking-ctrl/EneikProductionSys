@@ -14,7 +14,7 @@ OUT = ROOT / "docs" / "philosopher-patterns"
 PEOPLE_DIR = OUT / "philosophers"
 
 EXPECTED_BARCAN_FILES = 13
-EXPECTED_PHILOSOPHERS = 82
+EXPECTED_PHILOSOPHERS = 86
 MIN_PERSONAL_PATTERNS = 20
 COMMON_THRESHOLD_PHILOSOPHERS = 5
 
@@ -228,6 +228,12 @@ PUBLICATION_ANCHORS = {
     "Маргарет Гилберт": "On Social Facts / Joint Commitment - plural subjects and joint commitment",
     "Майкл Братман": "Intention, Plans, and Practical Reason / Shared Agency - planning and shared intention",
     "Элизабет Энском": "Intention - intentional action under a description",
+    # 2026-08-10: neuroaesthetics quartet, added alongside the "aesthetic" tag axis - grounds
+    # BARCAN-TAG-11's new E(f)/E*(F) consistency predicates in measurable, not merely declared, taste.
+    "Пол Черчланд": "Matter and Consciousness / A Neurocomputational Perspective - eliminative materialism, folk-psychological categories reduce to formal/neural properties",
+    "В.С. Рамачандран": "The Science of Art (1999) - eight laws of neuroaesthetics: symmetry, grouping, contrast, peak shift, isolation",
+    "Семир Зеки": "Inner Vision: An Exploration of Art and the Brain (1999) - neuroaesthetics of visual composition",
+    "Анджан Чаттерджи": "The Aesthetic Brain (2014) - sensory-motor, emotion-valuation and knowledge-meaning systems in aesthetic experience",
 }
 
 
@@ -268,7 +274,13 @@ TAG_AXES = {
     "BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE": {"logic", "types", "substitution", "data", "lineage", "computation"},
     "BARCAN-TAG-09_MORAL-DILEMMA": {"pragmatic", "value", "tradeoff", "coherence", "interpretation", "cost"},
     "BARCAN-TAG-10_DEONTIC-PROHIBITION": {"normative", "policy", "law", "authority", "exception", "permission"},
-    "BARCAN-TAG-11_CLIENT-PERCEPTION": {"cognitive", "perception", "ux", "information", "identity", "accessibility"},
+    # 2026-08-10: "aesthetic" added - the operator's explicit request to ground "beautiful/ugly,
+    # understandable/not" in checkable formal properties (token-trace ratio, cross-screen Jaccard
+    # similarity, symmetry, grouping), following a real live incident where three screens generated
+    # under one design-system id came back in three incompatible color registers. This is a
+    # role-level expansion (applies to every philosopher already in this tag, not just the 4 new
+    # ones) - same precedent as the "causal" axis added for Pearl above.
+    "BARCAN-TAG-11_CLIENT-PERCEPTION": {"cognitive", "perception", "ux", "information", "identity", "accessibility", "aesthetic"},
     "BARCAN-TAG-12_SOCIAL-CONTRACT": {"coordination", "commitment", "institution", "planning", "contract", "parallel"},
 }
 
@@ -289,6 +301,7 @@ AXIS_KEYWORDS = [
     (("action", "intention", "agency", "plan", "practical"), "agency"),
     (("social", "contract", "convention", "joint", "institution", "shared"), "coordination"),
     (("pragmatism", "value", "capabilities", "reasons", "coherence"), "pragmatic"),
+    (("aesthetic", "beauty", "symmetry", "composition", "neuroaesthetics", "form", "grouping", "contrast", "art"), "aesthetic"),
 ]
 
 
@@ -307,6 +320,7 @@ DEFECT_TAXONOMY = [
     ("D012", "Policy contradiction", "Two rules can require incompatible actions."),
     ("D013", "Runtime drift", "The deployed runtime no longer corresponds to the trusted repository state."),
     ("D014", "RAG hallucination", "The agent applies doctrine without exact retrieved grounding."),
+    ("D015", "Aesthetic drift", "Visual language (color, type, symmetry, spacing) fails to trace to the declared design system, or diverges across screens generated under the same design-system id."),
 ]
 
 
@@ -670,6 +684,74 @@ PERSONAL_SLOT_POOL = [
         "rule": "Store the philosopher-specific rule as a small retrievable chunk with source, score and defect class.",
         "proof": "Cite the exact source row, publication anchor and selected defect taxonomy item.",
         "defect": "D014",
+    },
+    # 2026-08-10: eight neuroaesthetics/formal-aesthetics slots, added alongside the "aesthetic" tag
+    # axis and the four new BARCAN-TAG-11 philosophers - grounds "beautiful/ugly, clear/confusing" in
+    # checkable formal properties instead of leaving it as an unexplained taste call, following a real
+    # live incident (three screens under one design-system id came back in three color registers).
+    {
+        "key": "token-trace-unity",
+        "title": "Token Trace Unity",
+        "axes": {"aesthetic", "ux", "identity", "review"},
+        "rule": "Every color and font value rendered on screen must trace back to the project's declared design-system token set.",
+        "proof": "Show TraceRatio = |Used ∩ Tokens| / |Used| >= 0.9 computed against the design system's own tokens.",
+        "defect": "D015",
+    },
+    {
+        "key": "cross-screen-jaccard-gate",
+        "title": "Cross Screen Jaccard Gate",
+        "axes": {"aesthetic", "coordination", "compatibility", "review"},
+        "rule": "All screens generated under one design-system id must share a high-overlap color/font vocabulary with each other.",
+        "proof": "Show pairwise Jaccard similarity of used tokens >= 0.5 across the screen set, not just against the declared system alone.",
+        "defect": "D015",
+    },
+    {
+        "key": "symmetry-preference-check",
+        "title": "Symmetry Preference Check",
+        "axes": {"aesthetic", "perception", "cognitive", "review"},
+        "rule": "A composition described or intended as symmetric must be verifiably symmetric, not merely asserted to be.",
+        "proof": "Show measured left/right or radial positional deviation under a stated tolerance for the relevant elements.",
+        "defect": "D011",
+    },
+    {
+        "key": "grouping-proximity-gate",
+        "title": "Grouping Proximity Gate",
+        "axes": {"aesthetic", "perception", "cognitive", "ux"},
+        "rule": "Related elements must sit spatially closer to each other than to unrelated elements (Gestalt proximity).",
+        "proof": "Show spacing ratios between related-element clusters versus distance to the nearest unrelated element.",
+        "defect": "D011",
+    },
+    {
+        "key": "peak-shift-emphasis",
+        "title": "Peak Shift Emphasis",
+        "axes": {"aesthetic", "perception", "cognitive", "value"},
+        "rule": "The single most important number or state on a screen should be the most visually exaggerated element, not one among visual equals.",
+        "proof": "Show one dominant visual anchor per screen and its size/contrast delta relative to its neighbors.",
+        "defect": "D011",
+    },
+    {
+        "key": "category-consistency-walton",
+        "title": "Category Consistency Walton",
+        "axes": {"aesthetic", "context", "ontology", "review"},
+        "rule": "A design blending two categories (e.g. decorative art and functional dashboard) must satisfy the standard norms of both declared categories, not silently default to one.",
+        "proof": "State both declared categories explicitly and show at least one satisfied norm from each.",
+        "defect": "D001",
+    },
+    {
+        "key": "decorative-information-ratio",
+        "title": "Decorative Information Ratio",
+        "axes": {"aesthetic", "value", "cognitive", "cost"},
+        "rule": "Keep the ratio of purely decorative elements to information-bearing elements within a stated, reviewed band.",
+        "proof": "Count decorative versus functional DOM/SVG elements and report the ratio; flag as an estimate, not a hard proof, per Sibley's caution against fully rule-derived aesthetic judgment.",
+        "defect": "D015",
+    },
+    {
+        "key": "formal-supervenience-audit",
+        "title": "Formal Supervenience Audit",
+        "axes": {"aesthetic", "identity", "review", "ontology"},
+        "rule": "Any 'looks off' judgment must be restated as a concrete formal property difference (color, spacing, contrast, size) before being accepted as a defect.",
+        "proof": "Name the specific measurable property and its expected versus actual value.",
+        "defect": "D015",
     },
 ]
 

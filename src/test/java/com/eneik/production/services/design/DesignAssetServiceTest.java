@@ -40,7 +40,7 @@ class DesignAssetServiceTest {
 
         designAssetService = new DesignAssetService(
                 googleAiResourceService, stitchClient, settingsService, new ObjectMapper(),
-                gitHubPullRequestService, tempDir.toString()
+                gitHubPullRequestService, new DesignConsistencyAuditService(), tempDir.toString()
         );
 
         project = new ProjectEntity();
@@ -141,6 +141,52 @@ class DesignAssetServiceTest {
 
         assertThat(result.available()).isTrue();
         assertThat(result.model()).isEqualTo("gemini-3.1-flash-image");
+    }
+
+    @Test
+    void rejectsAndDoesNotCommitAnOffTokenScreenWhenDeclaredTokensAreProvided() {
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), eq("ds-42")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        // real off-token colors, same as tonight's forge-factory-v2.html regression case
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#090f13;color:#161c21;}</style>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
+                project, null, "A login screen", "mockup", "fast", false, "ds-42",
+                java.util.List.of("#fbf9f1", "#7d8570", "#c99a2e"), java.util.List.of("IBM Plex Sans")
+        );
+
+        // generateAsset falls through to nano-banana (disabled in this test) after Stitch is
+        // rejected, so the final public status is "unavailable" - the invariant that actually
+        // matters is proven directly: the off-token screen is never committed to the repo.
+        assertThat(result.available()).isFalse();
+        verify(gitHubPullRequestService, never()).commitFile(any(), anyString(), any(), anyString());
+    }
+
+    @Test
+    void acceptsAndCommitsAnOnTokenScreenWhenDeclaredTokensAreProvided() {
+        when(settingsService.effectiveBoolean("stitch_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        when(stitchClient.createProject(anyString())).thenReturn("123456");
+        when(stitchClient.generateScreenFromText(eq("123456"), anyString(), anyString(), eq("ds-42")))
+                .thenReturn(new StitchClient.GeneratedScreen(true, "ok",
+                        "https://example.com/html", "https://example.com/shot.png", "screen-1", "Generated screen via Stitch."));
+        when(stitchClient.download("https://example.com/html"))
+                .thenReturn("<style>body{background:#fbf9f1;color:#7d8570;}</style>".getBytes());
+        when(stitchClient.download("https://example.com/shot.png")).thenReturn(new byte[]{1, 2, 3});
+
+        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
+                project, null, "A login screen", "mockup", "fast", false, "ds-42",
+                java.util.List.of("#fbf9f1", "#7d8570", "#c99a2e"), java.util.List.of("IBM Plex Sans")
+        );
+
+        assertThat(result.available()).isTrue();
+        verify(gitHubPullRequestService).commitFile(eq(project), contains("mockup.html"), any(), anyString());
     }
 
     private String base64Png() {

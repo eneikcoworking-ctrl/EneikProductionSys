@@ -4,7 +4,7 @@ This file defines the reproducible assignment rule for the philosopher-pattern c
 
 ## Sets
 
-- `F`: philosopher rows extracted from `BARCAN-TAG-*.md`; expected cardinality is `82`.
+- `F`: philosopher rows extracted from `BARCAN-TAG-*.md`; expected cardinality is `86`.
 - `C`: common analytic programming patterns, stored in `00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
 - `S`: parameterized philosopher-specific micro-pattern slots in the generator.
 - `D`: defect taxonomy used as the target prevention space.
@@ -42,7 +42,7 @@ For each philosopher, sort `S` by descending `score(f, s)` and then by slot key.
 ## QA Invariants
 
 - Exactly `13` source BARCAN files.
-- Exactly `82` philosopher source rows and generated philosopher files.
+- Exactly `86` philosopher source rows and generated philosopher files.
 - At least `20` personal patterns per philosopher.
 - Personal pattern IDs are globally unique.
 - Personal pattern names are globally unique.
@@ -63,7 +63,7 @@ For each philosopher, sort `S` by descending `score(f, s)` and then by slot key.
 | `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE` | computation, data, lineage, logic, substitution, types |
 | `BARCAN-TAG-09_MORAL-DILEMMA` | coherence, cost, interpretation, pragmatic, tradeoff, value |
 | `BARCAN-TAG-10_DEONTIC-PROHIBITION` | authority, exception, law, normative, permission, policy |
-| `BARCAN-TAG-11_CLIENT-PERCEPTION` | accessibility, cognitive, identity, information, perception, ux |
+| `BARCAN-TAG-11_CLIENT-PERCEPTION` | accessibility, aesthetic, cognitive, identity, information, perception, ux |
 | `BARCAN-TAG-12_SOCIAL-CONTRACT` | commitment, contract, coordination, institution, parallel, planning |
 
 ## Defect Taxonomy
@@ -84,3 +84,4 @@ For each philosopher, sort `S` by descending `score(f, s)` and then by slot key.
 | `D012` | Policy contradiction | Two rules can require incompatible actions. |
 | `D013` | Runtime drift | The deployed runtime no longer corresponds to the trusted repository state. |
 | `D014` | RAG hallucination | The agent applies doctrine without exact retrieved grounding. |
+| `D015` | Aesthetic drift | Visual language (color, type, symmetry, spacing) fails to trace to the declared design system, or diverges across screens generated under the same design-system id. |

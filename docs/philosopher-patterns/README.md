@@ -1,6 +1,6 @@
 # Philosopher Patterns RAG Corpus
 
-Generated from `BARCAN-TAG-*.md`: 13 role files, 82 philosophers, at least 20 unique personal programming patterns per philosopher.
+Generated from `BARCAN-TAG-*.md`: 13 role files, 86 philosophers, at least 20 unique personal programming patterns per philosopher.
 
 ## Files
 
