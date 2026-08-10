@@ -36,6 +36,9 @@ public class RuntimeLauncherClient {
     public record HealthCheckResult(Integer statusCode, long latencyMs, String error) {
     }
 
+    public record FetchResult(Integer statusCode, String body, long latencyMs, String error) {
+    }
+
     public LaunchResult launch(String repoUrl, String ref, String projectSlug) {
         try {
             Map<String, Object> body = Map.of("repo_url", repoUrl, "ref", ref, "project_slug", projectSlug);
@@ -66,6 +69,26 @@ public class RuntimeLauncherClient {
                     (String) response.get("error"));
         } catch (RestClientException e) {
             return new HealthCheckResult(null, 0, "runtime-launcher unreachable: " + e.getMessage());
+        }
+    }
+
+    /** Same reachability path as {@link #healthcheck}, but returns the body too - the design shop's
+     * Stage 4 live-drift check needs the real served HTML/CSS, not just a status code. */
+    public FetchResult fetchHtml(String url) {
+        try {
+            Map<String, Object> body = Map.of("url", url);
+            var response = restTemplate.postForObject(baseUrl + "/fetch", body, Map.class);
+            if (response == null) {
+                return new FetchResult(null, null, 0, "empty response from runtime-launcher");
+            }
+            Object statusCode = response.get("status_code");
+            return new FetchResult(
+                    statusCode == null ? null : ((Number) statusCode).intValue(),
+                    (String) response.get("body"),
+                    ((Number) response.getOrDefault("latency_ms", 0)).longValue(),
+                    (String) response.get("error"));
+        } catch (RestClientException e) {
+            return new FetchResult(null, null, 0, "runtime-launcher unreachable: " + e.getMessage());
         }
     }
 

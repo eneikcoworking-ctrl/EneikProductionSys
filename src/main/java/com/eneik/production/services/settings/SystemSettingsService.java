@@ -164,6 +164,12 @@ public class SystemSettingsService {
         // check could even short-circuit - the whole falsification pass never ran, not once, silently.
         definitions.put("design_system_falsification_enabled", flag("design_system_falsification_enabled",
                 "DESIGN_SYSTEM_FALSIFICATION_ENABLED", "design-system-falsification.enabled"));
+        // Off by default: the parallel "design shop" cycle (DesignShopOrchestrationService) - fires a
+        // Stitch mockup + autonomous design review + BARCAN-TAG-11 implementation task each time a
+        // project's readiness ratio rises to 1.0 (see ClientDeliverableReadinessService), reusing the
+        // same generateAsset/dispatchDesignReview building blocks already live in production.
+        definitions.put("design_shop_enabled", flag("design_shop_enabled",
+                "DESIGN_SHOP_ENABLED", "design-shop.enabled"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         // Independent of falsification_cycle_enabled above - the philosophical track (product-critique per
         // real philosopher, Kano-classified) is a separate generative track from the formal/corrective one

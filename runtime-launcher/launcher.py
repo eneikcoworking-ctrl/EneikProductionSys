@@ -9,11 +9,15 @@ Stateless between calls except for one in-memory "what's currently running" poin
 own architecture decision (2026-08-09) is that the factory ever observes exactly ONE active project at
 a time, so there is deliberately no multi-tenant tracking here.
 
-Three endpoints, matching the plan exactly:
+Four endpoints, matching the plan exactly (plus /fetch, added 2026-08-10 for the design shop's Stage 4
+live-drift check - same "GET a caller-given URL, no assumptions about the target's shape" contract as
+/healthcheck, just returning the body too):
   POST /launch      - clone/pull the given repo+ref, `docker compose up --build -d` it under a fixed
                        project name so a stale run is always addressable for teardown.
   POST /healthcheck  - GET a caller-given URL, report status code + latency. No assumptions about the
                        target's shape - the backend decides what URL/convention to check.
+  POST /fetch        - GET a caller-given URL, report status code + latency + body (truncated). Reuses
+                       the same reachability path already proven live by /healthcheck.
   POST /teardown     - `docker compose down -v --remove-orphans` the current run, always safe to call
                        even if nothing is running.
 """
@@ -58,9 +62,24 @@ class HealthCheckResponse(BaseModel):
     error: Optional[str] = None
 
 
+class FetchRequest(BaseModel):
+    url: str
+    timeout_seconds: float = 10.0
+
+
+class FetchResponse(BaseModel):
+    status_code: Optional[int]
+    body: Optional[str] = None
+    latency_ms: int
+    error: Optional[str] = None
+
+
 class TeardownResponse(BaseModel):
     success: bool
     error: Optional[str] = None
+
+
+MAX_FETCH_BODY_CHARS = 200_000
 
 
 def _run(args: list[str], cwd: Optional[Path] = None, timeout_seconds: int = 600) -> subprocess.CompletedProcess:
@@ -112,6 +131,17 @@ def healthcheck(req: HealthCheckRequest) -> HealthCheckResponse:
         return HealthCheckResponse(status_code=response.status_code, latency_ms=_elapsed_ms(started))
     except requests.RequestException as e:
         return HealthCheckResponse(status_code=None, latency_ms=_elapsed_ms(started), error=str(e))
+
+
+@app.post("/fetch", response_model=FetchResponse)
+def fetch(req: FetchRequest) -> FetchResponse:
+    started = time.monotonic()
+    try:
+        response = requests.get(req.url, timeout=req.timeout_seconds)
+        return FetchResponse(status_code=response.status_code, body=response.text[:MAX_FETCH_BODY_CHARS],
+                              latency_ms=_elapsed_ms(started))
+    except requests.RequestException as e:
+        return FetchResponse(status_code=None, latency_ms=_elapsed_ms(started), error=str(e))
 
 
 @app.post("/teardown", response_model=TeardownResponse)

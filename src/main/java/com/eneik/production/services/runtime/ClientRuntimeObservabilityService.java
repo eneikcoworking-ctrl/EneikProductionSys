@@ -4,6 +4,7 @@ import com.eneik.production.kaizen.service.KaizenService;
 import com.eneik.production.models.persistence.ClientRuntimeObservationEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.ClientRuntimeObservationRepository;
+import com.eneik.production.services.design.DesignDriftMonitorService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,6 +39,7 @@ public class ClientRuntimeObservabilityService {
     private final RuntimeLauncherClient launcherClient;
     private final SystemSettingsService settingsService;
     private final KaizenService kaizenService;
+    private final DesignDriftMonitorService designDriftMonitorService;
 
     @Value("${client-runtime-observability.base-delay-hours:24}")
     private long baseDelayHours;
@@ -54,11 +56,13 @@ public class ClientRuntimeObservabilityService {
     public ClientRuntimeObservabilityService(ClientRuntimeObservationRepository observationRepository,
                                               RuntimeLauncherClient launcherClient,
                                               SystemSettingsService settingsService,
-                                              KaizenService kaizenService) {
+                                              KaizenService kaizenService,
+                                              DesignDriftMonitorService designDriftMonitorService) {
         this.observationRepository = observationRepository;
         this.launcherClient = launcherClient;
         this.settingsService = settingsService;
         this.kaizenService = kaizenService;
+        this.designDriftMonitorService = designDriftMonitorService;
     }
 
     @Transactional
@@ -109,6 +113,19 @@ public class ClientRuntimeObservabilityService {
             observation.setHealthLatencyMs(health.latencyMs());
             if (health.error() != null) {
                 observation.setErrorText(health.error());
+            }
+
+            // Design shop Stage 4 (additive, DesignDriftMonitorService): piggyback on this same
+            // still-open live-instance window rather than opening a second one - only while the health
+            // check itself looks genuinely alive, same "2xx" bar isHealthy() uses below.
+            if (health.statusCode() != null && health.statusCode() >= 200 && health.statusCode() < 300) {
+                String rootUrl = "http://localhost:" + healthCheckPort + "/";
+                try {
+                    designDriftMonitorService.checkLiveInstance(project, rootUrl);
+                } catch (Exception e) {
+                    log.warn("ClientRuntimeObservabilityService: design drift check failed for project {}: {}",
+                            project.getId(), e.getMessage(), e);
+                }
             }
         }
 

@@ -43,7 +43,7 @@ class ClientRuntimeObservabilityServiceTest {
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         when(settings.effectiveBoolean("client_runtime_observability_enabled")).thenReturn(false);
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
 
         service.maybeObserve(project(true));
 
@@ -57,7 +57,7 @@ class ClientRuntimeObservabilityServiceTest {
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         when(settings.effectiveBoolean("client_runtime_observability_enabled")).thenReturn(true);
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
 
         service.maybeObserve(project(false));
 
@@ -74,7 +74,7 @@ class ClientRuntimeObservabilityServiceTest {
         when(observations.findByProjectIdOrderByObservedAtDesc(proj.getId())).thenReturn(List.of());
         when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(true, 5000, null));
         when(launcher.healthcheck(any())).thenReturn(new RuntimeLauncherClient.HealthCheckResult(200, 50, null));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
         ReflectionTestUtils.setField(service, "baseDelayHours", 24L);
         ReflectionTestUtils.setField(service, "minimumDelayHours", 1L);
 
@@ -100,7 +100,7 @@ class ClientRuntimeObservabilityServiceTest {
         recent.setObservedAt(Instant.now().minusSeconds(300));
         recent.setLaunchSuccess(true);
         when(observations.findByProjectIdOrderByObservedAtDesc(proj.getId())).thenReturn(List.of(recent));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
         ReflectionTestUtils.setField(service, "baseDelayHours", 24L);
         ReflectionTestUtils.setField(service, "minimumDelayHours", 1L);
 
@@ -125,7 +125,7 @@ class ClientRuntimeObservabilityServiceTest {
         when(observations.findByProjectIdOrderByObservedAtDesc(proj.getId())).thenReturn(List.of(old));
         when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(true, 5000, null));
         when(launcher.healthcheck(any())).thenReturn(new RuntimeLauncherClient.HealthCheckResult(200, 50, null));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
         ReflectionTestUtils.setField(service, "baseDelayHours", 24L);
         ReflectionTestUtils.setField(service, "minimumDelayHours", 1L);
 
@@ -143,7 +143,7 @@ class ClientRuntimeObservabilityServiceTest {
         ProjectEntity proj = project(true);
         when(observations.findByProjectIdOrderByObservedAtDesc(proj.getId())).thenReturn(List.of());
         when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(false, 1200, "docker compose up failed"));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, mock(com.eneik.production.kaizen.service.KaizenService.class), mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
 
         service.maybeObserve(proj);
 
@@ -187,7 +187,7 @@ class ClientRuntimeObservabilityServiceTest {
                 .thenReturn(newestFirst);
         when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(true, 5000, null));
         when(launcher.healthcheck(any())).thenReturn(new RuntimeLauncherClient.HealthCheckResult(500, 50, null));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, kaizen);
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, kaizen, mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
 
         service.maybeObserve(proj);
 
@@ -218,7 +218,7 @@ class ClientRuntimeObservabilityServiceTest {
                 .thenReturn(newestFirst);
         when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(true, 5000, null));
         when(launcher.healthcheck(any())).thenReturn(new RuntimeLauncherClient.HealthCheckResult(200, 50, null));
-        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, kaizen);
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, kaizen, mock(com.eneik.production.services.design.DesignDriftMonitorService.class));
 
         service.maybeObserve(proj);
 

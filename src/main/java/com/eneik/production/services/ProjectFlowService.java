@@ -3982,6 +3982,34 @@ public class ProjectFlowService {
         return raw == null || raw.isBlank() ? DESIGN_REVIEW_VERDICT_PATH : raw;
     }
 
+    // Design shop Stage 3 (DesignShopOrchestrationService): once a mockup has cleared the review above
+    // and been promoted to design/approved/, the pixel-perfect implementation itself is a normal
+    // BARCAN-TAG-11 task dispatched through the same general-pool capacity-claiming logic as every other
+    // task - deliberately NOT a bespoke dispatch path, so it gets the same account fairness/retry
+    // behaviour as everything else without duplicating dispatchToGeneralPool's private locking logic.
+    private static final String DESIGN_IMPLEMENTATION_ROLE = "BARCAN-TAG-11";
+
+    public void dispatchDesignImplementation(ProjectEntity project, String approvedDesignPath, String jtbd) {
+        RoleEntity designerRole = roleRepository.findById(DESIGN_IMPLEMENTATION_ROLE).orElse(null);
+        if (designerRole == null) {
+            log.error("Cannot dispatch design implementation for project {}: role {} not found", project.getId(), DESIGN_IMPLEMENTATION_ROLE);
+            return;
+        }
+        TaskEntity implementationTask = new TaskEntity();
+        implementationTask.setProject(project);
+        implementationTask.setRole(designerRole);
+        implementationTask.setTitle("Design implementation (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
+        implementationTask.setDescription("Implement the following pixel-perfect against the already-approved design reference. " + jtbd
+                + "\n\nDESIGN_MOCKUP_ASSET (already approved - implement directly against it, no new mockup or design review needed): "
+                + approvedDesignPath + "/mockup.html");
+        implementationTask.setStatus(TaskStatus.queued);
+
+        implementationTask = taskRepository.save(implementationTask);
+        dispatchToGeneralPool(implementationTask);
+        log.info("Dispatched design implementation task {} for approved design {} in project {}",
+                implementationTask.getId(), approvedDesignPath, project.getName());
+    }
+
     private static final java.time.format.DateTimeFormatter FILE_TIME_SUFFIX =
             java.time.format.DateTimeFormatter.ofPattern("HHmmssSSS").withZone(java.time.ZoneOffset.UTC);
 
