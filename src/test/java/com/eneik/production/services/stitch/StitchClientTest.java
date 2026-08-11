@@ -157,6 +157,70 @@ class StitchClientTest {
     }
 
     @Test
+    void editScreensSendsCorrectArgumentsAndParsesEditedScreen() throws Exception {
+        // 2026-08-11 (design shop Stage 2.5, concern-triage self-falsification loop): edit_screens is
+        // confirmed live against the real MCP tools/list schema - destructiveHint=true (mutates the
+        // screen in place, does not fork a variant). Response shape is identical to
+        // generate_screen_from_text's (outputComponents[].design.screens[]) per the real outputSchema.
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        java.util.concurrent.atomic.AtomicReference<String> requestBody = new java.util.concurrent.atomic.AtomicReference<>();
+        server.createContext("/", exchange -> {
+            requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            String inner = "{\"outputComponents\":[{\"design\":{\"screens\":[{"
+                    + "\"name\":\"projects/p1/screens/scr-99\","
+                    + "\"htmlCode\":{\"downloadUrl\":\"https://example.com/edited.html\"},"
+                    + "\"screenshot\":{\"downloadUrl\":\"https://example.com/edited.png\"}"
+                    + "}]}}]}";
+            String envelope = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"text\":"
+                    + new ObjectMapper().writeValueAsString(inner) + "}]}}";
+            byte[] body = envelope.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            StitchClient client = clientFor(server);
+            StitchClient.GeneratedScreen edited = client.editScreens("p1", "scr-99", "Increase button touch target to 44x44px");
+
+            assertThat(edited.available()).isTrue();
+            assertThat(edited.screenId()).isEqualTo("scr-99");
+            assertThat(edited.htmlDownloadUrl()).isEqualTo("https://example.com/edited.html");
+            assertThat(edited.screenshotDownloadUrl()).isEqualTo("https://example.com/edited.png");
+
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode sent = objectMapper.readTree(requestBody.get());
+            assertThat(sent.path("params").path("name").asText()).isEqualTo("edit_screens");
+            assertThat(sent.path("params").path("arguments").path("projectId").asText()).isEqualTo("p1");
+            assertThat(sent.path("params").path("arguments").path("selectedScreenIds")).hasSize(1);
+            assertThat(sent.path("params").path("arguments").path("selectedScreenIds").get(0).asText()).isEqualTo("scr-99");
+            assertThat(sent.path("params").path("arguments").path("prompt").asText()).isEqualTo("Increase button touch target to 44x44px");
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    void editScreensIsUnavailableWhenResponseHasNoScreens() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/", exchange -> {
+            String envelope = "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"content\":[{\"text\":\"{\\\"outputComponents\\\":[]}\"}]}}";
+            byte[] body = envelope.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            StitchClient client = clientFor(server);
+            StitchClient.GeneratedScreen edited = client.editScreens("p1", "scr-99", "fix contrast");
+            assertThat(edited.available()).isFalse();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     void getScreenParsesHtmlAndScreenshotDownloadUrls() throws Exception {
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
         java.util.concurrent.atomic.AtomicReference<String> requestBody = new java.util.concurrent.atomic.AtomicReference<>();

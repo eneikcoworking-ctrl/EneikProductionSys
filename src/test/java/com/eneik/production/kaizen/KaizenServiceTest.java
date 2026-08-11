@@ -21,6 +21,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,6 +40,7 @@ public class KaizenServiceTest {
     private EvidenceNodeRepository evidenceNodeRepository;
     private com.eneik.production.services.lever.LeverPromotionService leverPromotionService;
     private DefectJournalService defectJournalService;
+    private com.eneik.production.repositories.WishlistRepository wishlistRepository;
 
     private KaizenService kaizenService;
 
@@ -91,8 +93,11 @@ public class KaizenServiceTest {
         leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
         when(leverPromotionService.currentStage(any())).thenReturn(com.eneik.production.services.lever.LeverStage.OBSERVE_ONLY);
 
+        wishlistRepository = mock(com.eneik.production.repositories.WishlistRepository.class);
+
         kaizenService = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository, defectJournalService,
-                constraintIdentificationService, kaizenProposalRepository, evidenceNodeRepository, leverPromotionService);
+                constraintIdentificationService, kaizenProposalRepository, evidenceNodeRepository, leverPromotionService,
+                wishlistRepository);
     }
 
     @Test
@@ -108,7 +113,8 @@ public class KaizenServiceTest {
         KaizenService restarted = new KaizenService(tocSentinelService, sixSigmaAuditService, taskRepository,
                 mock(DefectJournalService.class),
                 mock(com.eneik.production.services.toc.ConstraintIdentificationService.class),
-                kaizenProposalRepository, evidenceNodeRepository, leverPromotionService);
+                kaizenProposalRepository, evidenceNodeRepository, leverPromotionService,
+                mock(com.eneik.production.repositories.WishlistRepository.class));
 
         assertThat(restarted.getAllProposals()).hasSize(1);
     }
@@ -128,6 +134,41 @@ public class KaizenServiceTest {
         assertThat(saved.get()).isNotNull();
         assertThat(saved.get().getPolarity()).isEqualTo(EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         assertThat(saved.get().getKaizenProposalId()).isNotBlank();
+    }
+
+    @Test
+    void applyMicroStepEscalatesAReviewConcernsSystemicDefectToARealWishlistAutonomously() {
+        // 2026-08-11 (design shop Stage 2.5): the reviewConcerns u-chart stream is the ONE
+        // SYSTEMIC_DEFECT source with a real, bounded autonomous next step - closing the loop that
+        // used to dead-end at "marked applied by explicit human/operator action" for every source.
+        UUID projectId = UUID.randomUUID();
+        KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "Test Project",
+                "u-chart out of control: reviewConcerns (эпик abc-123)",
+                "Stream 'reviewConcerns' u=0.9000 outside [0.1000, 0.5000] (centerline 0.3000)");
+
+        boolean applied = kaizenService.applyMicroStep(proposal.getId());
+
+        assertThat(applied).isTrue();
+        org.mockito.ArgumentCaptor<com.eneik.production.models.persistence.WishlistEntity> captor =
+                org.mockito.ArgumentCaptor.forClass(com.eneik.production.models.persistence.WishlistEntity.class);
+        org.mockito.Mockito.verify(wishlistRepository).save(captor.capture());
+        assertThat(captor.getValue().getProjectId()).isEqualTo(projectId);
+        assertThat(captor.getValue().getSource())
+                .isEqualTo(com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
+        assertThat(captor.getValue().getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.pending);
+    }
+
+    @Test
+    void applyMicroStepLeavesAnUnrelatedSystemicDefectRequiringHumanAction() {
+        UUID projectId = UUID.randomUUID();
+        KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "Test Project",
+                "u-chart out of control: qualityGate (эпик abc-123)",
+                "Stream 'qualityGate' u=0.9000 outside [0.1000, 0.5000] (centerline 0.3000)");
+
+        boolean applied = kaizenService.applyMicroStep(proposal.getId());
+
+        assertThat(applied).isTrue();
+        org.mockito.Mockito.verifyNoInteractions(wishlistRepository);
     }
 
     @Test

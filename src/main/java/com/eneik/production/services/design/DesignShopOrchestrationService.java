@@ -17,6 +17,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -56,6 +57,7 @@ public class DesignShopOrchestrationService {
     private final ProjectOperationalContextService contextService;
     private final GitHubPullRequestService gitHubPullRequestService;
     private final SystemSettingsService settingsService;
+    private final DesignConsistencyAuditService consistencyAuditService;
 
     public DesignShopOrchestrationService(ProjectRepository projectRepository,
                                            DesignShopCycleRepository designShopCycleRepository,
@@ -64,7 +66,8 @@ public class DesignShopOrchestrationService {
                                            ProjectFlowService projectFlowService,
                                            ProjectOperationalContextService contextService,
                                            GitHubPullRequestService gitHubPullRequestService,
-                                           SystemSettingsService settingsService) {
+                                           SystemSettingsService settingsService,
+                                           DesignConsistencyAuditService consistencyAuditService) {
         this.projectRepository = projectRepository;
         this.designShopCycleRepository = designShopCycleRepository;
         this.readinessService = readinessService;
@@ -73,6 +76,7 @@ public class DesignShopOrchestrationService {
         this.contextService = contextService;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.settingsService = settingsService;
+        this.consistencyAuditService = consistencyAuditService;
     }
 
     @Scheduled(cron = "${design-shop.cron:0 */5 * * * ?}")
@@ -125,13 +129,17 @@ public class DesignShopOrchestrationService {
         String brief = "Full-product design refresh for " + project.getName() + " - round complete ("
                 + readiness.completeFeatures() + "/" + readiness.totalFeatures() + " features delivered).";
         var context = contextService.build(project.getId(), project.getName());
-        // No designSystemColors/Fonts declared: this codebase has no established per-project canonical
-        // palette to audit against (confirmed live 2026-08-10, test-forty-third - the factory's own
-        // "Verdant Flow" tokens were wrongly used here for one dispatch, causing a correct client screen
-        // to be falsely rejected as off-brand). generateAsset degrades to its documented un-audited path
-        // rather than comparing against a palette that belongs to a different product.
-        DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
-                project, context, brief, "mockup", "fast", false);
+
+        // Baseline bootstrap (2026-08-11): the FIRST generation for a project has no established
+        // canonical palette to compare against (confirmed live 2026-08-10 - the factory's own "Verdant
+        // Flow" tokens were wrongly used as a stand-in, false-rejecting a correct client screen), so it
+        // stays un-audited, same as before. Every LATER generation reuses the real tokens captured from
+        // that first screen instead - E(f) then checks against this project's own actual brand.
+        boolean hasBaseline = cycle.getDeclaredColors() != null && !cycle.getDeclaredColors().isBlank();
+        DesignAssetService.DesignAssetResult result = hasBaseline
+                ? designAssetService.generateAsset(project, context, brief, "mockup", "fast", false,
+                        null, cycle.declaredColorsList(), cycle.declaredFontsList())
+                : designAssetService.generateAsset(project, context, brief, "mockup", "fast", false);
 
         // Stitch-only for this stage (operator directive 2026-08-10): the nano-banana fallback produces a
         // raw image with no HTML/CSS a Jules session could implement pixel-perfect against, and no
@@ -148,15 +156,37 @@ public class DesignShopOrchestrationService {
             return;
         }
 
+        if (!hasBaseline) {
+            captureBaseline(project, cycle, result);
+        }
+
         projectFlowService.dispatchDesignReview(project, result.repoDraftPath(), brief);
 
         cycle.setLastWasReady(true);
         cycle.setStage(DesignShopCycleEntity.STAGE_AWAITING_REVIEW);
         cycle.setDraftPath(result.repoDraftPath());
+        cycle.setEditIterationCount(0);
         cycle.setUpdatedAt(Instant.now());
         designShopCycleRepository.save(cycle);
         log.info("DesignShopOrchestrationService: started design cycle for project {} (draft {})",
                 project.getId(), result.repoDraftPath());
+    }
+
+    /** Fixes this project's canonical Tokens(f) domain from what Stitch actually produced on its first
+     * screen - a fact, not an invention (see BARCAN-TAG-11's E(f): TraceRatio needs Tokens(f) to exist).
+     * Best-effort: if the committed HTML can't be re-fetched, the baseline simply stays unset and the
+     * next cycle tries again un-audited rather than ever failing the cycle over this. */
+    private void captureBaseline(ProjectEntity project, DesignShopCycleEntity cycle, DesignAssetService.DesignAssetResult result) {
+        cycle.setStitchProjectId(result.stitchProjectId());
+        cycle.setStitchScreenId(result.stitchScreenId());
+        gitHubPullRequestService.fetchFileBytes(project, project.getDefaultBranch(), result.repoDraftPath() + "/mockup.html")
+                .ifPresent(bytes -> {
+                    var used = consistencyAuditService.extractUsedTokens(new String(bytes, StandardCharsets.UTF_8));
+                    cycle.setDeclaredColors(String.join(",", used.colors()));
+                    cycle.setDeclaredFonts(String.join(",", used.fonts()));
+                    log.info("DesignShopOrchestrationService: captured design baseline for project {} - colors={} fonts={}",
+                            project.getId(), used.colors(), used.fonts());
+                });
     }
 
     private void advanceAwaitingReview(ProjectEntity project, DesignShopCycleEntity cycle) {

@@ -33,6 +33,28 @@ public class DesignShopCycleEntity {
     @Column(name = "draft_path", length = 512)
     private String draftPath;
 
+    // Bootstrap baseline (2026-08-11, closing the design shop's E(f) gap): captured from this
+    // project's FIRST Stitch generation, never invented - see DesignShopOrchestrationService.startCycle.
+    // Once set, every later generation for this project passes them back to generateAsset so the E(f)
+    // audit compares against this project's own real brand, not a stand-in.
+    @Column(name = "stitch_project_id", length = 64)
+    private String stitchProjectId;
+
+    @Column(name = "stitch_screen_id", length = 64)
+    private String stitchScreenId;
+
+    @Column(name = "declared_colors", length = 1024)
+    private String declaredColors;
+
+    @Column(name = "declared_fonts", length = 512)
+    private String declaredFonts;
+
+    // Concern-triage self-falsification loop (edit_screens) bound - never unlimited, see the
+    // idle_generation removal precedent (WishlistSource's own comment: a system that keeps inventing
+    // its own follow-up work without bound was judged dangerous by the operator).
+    @Column(name = "edit_iteration_count", nullable = false)
+    private int editIterationCount;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -53,6 +75,29 @@ public class DesignShopCycleEntity {
 
     public String getDraftPath() { return draftPath; }
     public void setDraftPath(String draftPath) { this.draftPath = draftPath; }
+
+    public String getStitchProjectId() { return stitchProjectId; }
+    public void setStitchProjectId(String stitchProjectId) { this.stitchProjectId = stitchProjectId; }
+
+    public String getStitchScreenId() { return stitchScreenId; }
+    public void setStitchScreenId(String stitchScreenId) { this.stitchScreenId = stitchScreenId; }
+
+    public String getDeclaredColors() { return declaredColors; }
+    public void setDeclaredColors(String declaredColors) { this.declaredColors = declaredColors; }
+
+    public String getDeclaredFonts() { return declaredFonts; }
+    public void setDeclaredFonts(String declaredFonts) { this.declaredFonts = declaredFonts; }
+
+    public java.util.List<String> declaredColorsList() {
+        return declaredColors == null || declaredColors.isBlank() ? java.util.List.of() : java.util.List.of(declaredColors.split(","));
+    }
+
+    public java.util.List<String> declaredFontsList() {
+        return declaredFonts == null || declaredFonts.isBlank() ? java.util.List.of() : java.util.List.of(declaredFonts.split(","));
+    }
+
+    public int getEditIterationCount() { return editIterationCount; }
+    public void setEditIterationCount(int editIterationCount) { this.editIterationCount = editIterationCount; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }

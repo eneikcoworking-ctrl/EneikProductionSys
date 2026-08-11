@@ -129,6 +129,44 @@ public class StitchClient {
     }
 
     /**
+     * Edits an existing screen in place using a text prompt (real MCP tool `edit_screens`, confirmed
+     * live 2026-08-11 against the real tools/list schema - destructiveHint=true, i.e. it mutates the
+     * screen rather than forking a variant). Built for the design shop's concern-triage
+     * self-falsification loop: refine the SAME mockup file instead of a parallel patch that drifts from
+     * it. Response shape (outputComponents[].design.screens[]) is identical to
+     * generateScreenFromText's, confirmed against the real schema - same parsing.
+     */
+    public GeneratedScreen editScreens(String projectId, String screenId, String prompt) {
+        java.util.Map<String, Object> arguments = java.util.Map.of(
+                "projectId", projectId,
+                "selectedScreenIds", java.util.List.of(screenId == null ? "" : screenId),
+                "prompt", prompt == null ? "" : prompt
+        );
+        JsonNode result = callTool("edit_screens", arguments);
+        if (result == null) {
+            return GeneratedScreen.unavailable("Stitch edit_screens call failed.");
+        }
+        for (JsonNode component : result.path("outputComponents")) {
+            JsonNode design = component.path("design");
+            JsonNode screens = design.path("screens");
+            if (screens.isArray() && !screens.isEmpty()) {
+                JsonNode screen = screens.get(0);
+                String htmlUrl = screen.path("htmlCode").path("downloadUrl").asText("");
+                String screenshotUrl = screen.path("screenshot").path("downloadUrl").asText("");
+                String name = screen.path("name").asText("");
+                int slash = name.lastIndexOf('/');
+                String returnedScreenId = slash >= 0 ? name.substring(slash + 1) : name;
+                log.info("StitchClient: edit_screens raw screen object: {}", screen.toString());
+                if (!htmlUrl.isBlank() || !screenshotUrl.isBlank()) {
+                    return new GeneratedScreen(true, "ok", htmlUrl, screenshotUrl,
+                            returnedScreenId.isBlank() ? screenId : returnedScreenId, "Edited screen via Stitch.");
+                }
+            }
+        }
+        return GeneratedScreen.unavailable("Stitch edit_screens response contained no edited screen.");
+    }
+
+    /**
      * Fetches the complete, current state of an already-generated screen - the follow-up call
      * generateScreenFromText's own response cannot substitute for (see its doc comment). Same
      * name/slash-stripping convention as createProject.

@@ -4010,6 +4010,103 @@ public class ProjectFlowService {
                 implementationTask.getId(), approvedDesignPath, project.getName());
     }
 
+    // Design shop Stage 2.5 (2026-08-11, operator directive): raw review concerns must never just sit
+    // in a log - they get triaged by a SECOND, independent BARCAN-TAG-11 pass into a structured spec
+    // (JTBD/acceptance-criteria/edit-instruction, classified by Cynefin/Kano/Lean - the same frameworks
+    // TechnicalLeadCompiler already uses everywhere else, not a new vocabulary) - both for reporting
+    // (a real task, visible in the dashboard, not a vanished log line) and so JulesDispatchService can
+    // mechanically decide what to do with the result (edit the still-open mockup, or open a real
+    // wishlist if the design already shipped).
+    public static final String DESIGN_CONCERN_TRIAGE_TASK_TYPE = "design_concern_triage";
+    public static final String DESIGN_CONCERN_TRIAGE_MOCKUP_PATH_KEY = "designConcernMockupPath";
+    public static final String DESIGN_CONCERN_TRIAGE_RECORD_PATH_KEY = "designConcernRecordPath";
+    private static final String DESIGN_CONCERN_TRIAGE_RECORD_LABEL = "design-concern-triage";
+
+    public void dispatchDesignConcernTriage(ProjectEntity project, String mockupPath, String rawConcernsText) {
+        RoleEntity triageRole = roleRepository.findById(DESIGN_IMPLEMENTATION_ROLE).orElse(null);
+        if (triageRole == null) {
+            log.error("Cannot dispatch design concern triage for project {}: role {} not found", project.getId(), DESIGN_IMPLEMENTATION_ROLE);
+            return;
+        }
+        String charter = readRawRoleRules(DESIGN_IMPLEMENTATION_ROLE);
+        String recordPath = ".eneik/records/" + DESIGN_CONCERN_TRIAGE_RECORD_LABEL + "-" + UUID.randomUUID() + ".json";
+
+        TaskEntity triageTask = new TaskEntity();
+        triageTask.setProject(project);
+        triageTask.setRole(triageRole);
+        triageTask.setTitle("Design concern triage (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
+        triageTask.setDescription(designConcernTriagePrompt(mockupPath, rawConcernsText, charter, recordPath));
+        triageTask.setStatus(TaskStatus.queued);
+
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, DESIGN_CONCERN_TRIAGE_TASK_TYPE);
+        payload.put(DESIGN_CONCERN_TRIAGE_MOCKUP_PATH_KEY, mockupPath);
+        payload.put(DESIGN_CONCERN_TRIAGE_RECORD_PATH_KEY, recordPath);
+        triageTask.setPayload(payload);
+
+        triageTask = taskRepository.save(triageTask);
+        dispatchToGeneralPool(triageTask);
+        log.info("Dispatched design concern triage task {} for mockup {} in project {}",
+                triageTask.getId(), mockupPath, project.getName());
+    }
+
+    public boolean isDesignConcernTriageTask(TaskEntity task) {
+        return task.getPayload() != null
+                && DESIGN_CONCERN_TRIAGE_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+    }
+
+    public String designConcernTriageMockupPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(DESIGN_CONCERN_TRIAGE_MOCKUP_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? null : raw;
+    }
+
+    public String designConcernTriageRecordPath(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        String raw = task.getPayload().path(DESIGN_CONCERN_TRIAGE_RECORD_PATH_KEY).asText(null);
+        return raw == null || raw.isBlank() ? null : raw;
+    }
+
+    private String designConcernTriagePrompt(String mockupPath, String rawConcernsText, String charter, String recordPath) {
+        return """
+                You are Eneik's BARCAN-TAG-11 (Frontend Engineer / Client-Perception) role, acting as an
+                independent design-concern triage specialist - a SECOND, independent pass after a design
+                review already raised these concerns, not the same reviewer re-confirming itself. Do NOT
+                implement, fix, or change any product code, and do not run builds or tests; this task
+                only produces a structured triage record.
+
+                MOCKUP UNDER REVIEW: `%s/mockup.html` (and `%s/mockup.png` if present) - read it
+                directly from your checkout.
+
+                RAW REVIEWER CONCERNS (unstructured, verbatim from the design review):
+                %s
+
+                YOUR ROLE CHARTER:
+                %s
+
+                For EACH concern above, produce one structured entry with these exact fields:
+                  - "concern": the original concern text, verbatim
+                  - "jtbd": "When ..., I want ..., so that ..." - the real underlying need
+                  - "acceptanceCriteria": "Given/When/Then" - how to verify it's actually fixed
+                  - "editInstruction": a concrete, self-contained instruction that could be sent
+                    directly to an AI design tool to fix ONLY this concern on the existing mockup - not
+                    a rewrite of the whole screen
+                  - "kanoClass": one of must_be | performance | attractive | indifferent
+                  - "cynefinDomain": one of clear | complicated | complex | chaotic
+                  - "leanValue": one of essential | valuable | waste - be honest, not every concern is
+                    essential; a genuinely low-value nitpick should be marked "waste"
+
+                Deliverable: create a new branch and open a PR that contains ONLY one file, `%s`
+                (this EXACT path - it is unique to this task, do not use any other path), containing a
+                JSON array of these objects and nothing else - no markdown fences, no other text.
+                Do not write, modify, or delete any other file.
+                """.formatted(mockupPath, mockupPath, rawConcernsText, charter, recordPath);
+    }
+
     private static final java.time.format.DateTimeFormatter FILE_TIME_SUFFIX =
             java.time.format.DateTimeFormatter.ofPattern("HHmmssSSS").withZone(java.time.ZoneOffset.UTC);
 

@@ -256,7 +256,7 @@ public class DesignAssetService {
         if (!interaction.available()) {
             log.warn("DesignAssetService: mockup generation via model {} failed (status={}): {}",
                     model, interaction.status(), interaction.outputText());
-            return new DesignAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText(), "");
+            return new DesignAssetResult(false, interaction.status(), model, "", "", "", interaction.outputText(), "", "", "");
         }
         if (interaction.outputImageBase64().isBlank()) {
             log.warn("DesignAssetService: model {} returned no image block for project {}",
@@ -270,6 +270,8 @@ public class DesignAssetService {
                     "",
                     "The image model returned no image block. Text output: " + interaction.outputText()
                             + "\nRaw preview: " + interaction.rawPreview(),
+                    "",
+                    "",
                     ""
             );
         }
@@ -310,11 +312,13 @@ public class DesignAssetService {
                     metadataPath.toString(),
                     interaction.outputImageMimeType(),
                     "Generated design asset and metadata.",
-                    repoDraftPath
+                    repoDraftPath,
+                    "",
+                    ""
             );
         } catch (Exception e) {
             log.warn("DesignAssetService: failed to write generated mockup to disk: {}", e.getMessage());
-            return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage(), "");
+            return new DesignAssetResult(false, "write_error", model, "", "", "", e.getMessage(), "", "", "");
         }
     }
 
@@ -324,7 +328,7 @@ public class DesignAssetService {
         String stitchProjectId = stitchClient.createProject(title);
         if (stitchProjectId == null) {
             return new DesignAssetResult(false, "stitch_project_error", "stitch", "", "", "",
-                    "Stitch did not return a project ID for create_project.", "");
+                    "Stitch did not return a project ID for create_project.", "", "", "");
         }
 
         String prompt = brief == null || brief.isBlank()
@@ -332,7 +336,7 @@ public class DesignAssetService {
                 : brief;
         StitchClient.GeneratedScreen screen = stitchClient.generateScreenFromText(stitchProjectId, prompt, "GEMINI_3_FLASH", designSystemId);
         if (!screen.available()) {
-            return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "");
+            return new DesignAssetResult(false, screen.status(), "stitch", "", "", "", screen.message(), "", "", "");
         }
         // 2026-08-10: the immediate generate response reliably carries the screenshot before the full
         // HTML/CSS code synthesis has finished - confirmed live (5/5 real design calls came back
@@ -390,7 +394,7 @@ public class DesignAssetService {
 
             if (imagePath.isBlank() && htmlPath.isBlank()) {
                 return new DesignAssetResult(false, "stitch_download_error", "stitch", "", "", "",
-                        "Stitch generated a screen but its files could not be downloaded.", "");
+                        "Stitch generated a screen but its files could not be downloaded.", "", "", "");
             }
 
             // BARCAN-TAG-11 E(f)/E*(F) gate (2026-08-10): confirmed live that passing designSystemId
@@ -413,7 +417,7 @@ public class DesignAssetService {
                                     "Screen rejected: token_trace_ratio=%.3f below required %.2f. Off-token values: %s",
                                     consistencyReport.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
                                     consistencyReport.offTokenValues()),
-                            "");
+                            "", "", "");
                 }
             }
 
@@ -444,11 +448,13 @@ public class DesignAssetService {
                     metadataPath.toString(),
                     imagePath.isBlank() ? "text/html" : "image/png",
                     "Generated design asset via Stitch.",
-                    repoDraftPath
+                    repoDraftPath,
+                    stitchProjectId,
+                    screen.screenId()
             );
         } catch (Exception e) {
             log.warn("DesignAssetService: failed to write Stitch-generated asset to disk: {}", e.getMessage());
-            return new DesignAssetResult(false, "write_error", "stitch", "", "", "", e.getMessage(), "");
+            return new DesignAssetResult(false, "write_error", "stitch", "", "", "", e.getMessage(), "", "", "");
         }
     }
 
@@ -536,10 +542,15 @@ public class DesignAssetService {
             String metadataPath,
             String mimeType,
             String message,
-            String repoDraftPath
+            String repoDraftPath,
+            // Only ever populated for a real Stitch-sourced result - needed to later call
+            // StitchClient.editScreens against the exact same screen instance (design shop concern
+            // triage self-falsification loop). Blank for nano-banana results.
+            String stitchProjectId,
+            String stitchScreenId
     ) {
         static DesignAssetResult unavailable(String reason) {
-            return new DesignAssetResult(false, "unavailable", "", "", "", "", reason, "");
+            return new DesignAssetResult(false, "unavailable", "", "", "", "", reason, "", "", "");
         }
     }
 }

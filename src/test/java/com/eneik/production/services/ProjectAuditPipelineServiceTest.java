@@ -92,7 +92,7 @@ class ProjectAuditPipelineServiceTest {
                 eq(List.of(WishlistStatus.pending, WishlistStatus.compiling))))
                 .thenReturn(List.of(selfFalsificationFinding));
         when(designAssetService.generateAsset(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenReturn(new DesignAssetService.DesignAssetResult(true, "ok", "model", "/img.png", "", "image/png", "", ""));
+                .thenReturn(new DesignAssetService.DesignAssetResult(true, "ok", "model", "/img.png", "", "image/png", "", "", "", ""));
 
         // Tick 1: COVERAGE_AUDIT -> STITCH_DESIGN. Tick 2: executes STITCH_DESIGN -> COMPLETED.
         service.executeSequentialAuditPipeline(project.getId());
@@ -115,7 +115,7 @@ class ProjectAuditPipelineServiceTest {
                 eq(project.getId()), eq(WishlistSource.self_falsification), any()))
                 .thenReturn(List.of(finding));
         when(designAssetService.generateAsset(any(), any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyBoolean()))
-                .thenReturn(new DesignAssetService.DesignAssetResult(false, "api_error", "", "", "", "", "Stitch call failed", ""));
+                .thenReturn(new DesignAssetService.DesignAssetResult(false, "api_error", "", "", "", "", "Stitch call failed", "", "", ""));
 
         service.executeSequentialAuditPipeline(project.getId());
         service.executeSequentialAuditPipeline(project.getId());

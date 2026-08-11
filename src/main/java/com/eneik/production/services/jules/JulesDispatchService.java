@@ -11,6 +11,9 @@ import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
+import com.eneik.production.models.persistence.LeanValue;
+import com.eneik.production.models.persistence.DesignShopCycleEntity;
+import com.eneik.production.services.stitch.StitchClient;
 import com.eneik.production.repositories.JulesActivityResponseRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -122,6 +125,8 @@ public class JulesDispatchService {
     private final com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository;
     private final com.eneik.production.services.accounts.AccountHealthService accountHealthService;
     private final SessionLifecycleService sessionLifecycleService;
+    private final com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository;
+    private final com.eneik.production.services.stitch.StitchClient stitchClient;
     private final String sourcePrefix;
 
     private static final int WISHLIST_COMPILER_MAX_RETRIES = 2;
@@ -434,6 +439,8 @@ public class JulesDispatchService {
                                 com.eneik.production.repositories.ReviewConcernRepository reviewConcernRepository,
                                 com.eneik.production.services.accounts.AccountHealthService accountHealthService,
                                 SessionLifecycleService sessionLifecycleService,
+                                com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository,
+                                com.eneik.production.services.stitch.StitchClient stitchClient,
                                 @Value("${jules.source-prefix:sources/github/${github.org}/}") String sourcePrefix,
                                 @org.springframework.context.annotation.Lazy JulesDispatchService self) {
         this.julesApiClient = julesApiClient;
@@ -464,6 +471,8 @@ public class JulesDispatchService {
         this.reviewConcernRepository = reviewConcernRepository;
         this.accountHealthService = accountHealthService;
         this.sessionLifecycleService = sessionLifecycleService;
+        this.designShopCycleRepository = designShopCycleRepository;
+        this.stitchClient = stitchClient;
         this.sourcePrefix = sourcePrefix;
         this.self = self;
     }
@@ -1931,6 +1940,10 @@ public class JulesDispatchService {
             }
             if (projectFlowService.isDesignReviewTask(task)) {
                 completeDesignReview(session, task);
+                return;
+            }
+            if (projectFlowService.isDesignConcernTriageTask(task)) {
+                completeDesignConcernTriage(session, task);
                 return;
             }
             if (projectFlowService.isCoverageAuditTask(task)) {
@@ -3779,14 +3792,205 @@ public class JulesDispatchService {
             log.warn("Design review: draft {} approved but promotion to {} failed (no files copied)", draftPath, approvedDir);
         }
 
+        List<String> concernTexts = new java.util.ArrayList<>();
         for (ConcernEntry concern : verdict.concerns()) {
             if (concern.text() == null || concern.text().isBlank()) {
                 continue;
             }
-            log.info("Poka-yoke: recorded non-blocking design concern for {} without creating wishlist work: {}",
-                    approvedDir, concern.text());
+            log.info("Poka-yoke: recorded non-blocking design concern for {}: {}", approvedDir, concern.text());
             persistReviewConcern(reviewTask, concern);
+            concernTexts.add("- (" + (concern.severity() == null || concern.severity().isBlank() ? "low" : concern.severity())
+                    + ") " + concern.text());
         }
+        // Stage 2.5 (2026-08-11): the concerns above still feed the existing Six Sigma u-chart via
+        // persistReviewConcern - kept as-is. Additionally, dispatch a structured triage pass so these
+        // concerns don't just sit as a log/statistic - see ProjectFlowService.dispatchDesignConcernTriage.
+        if (!concernTexts.isEmpty()) {
+            projectFlowService.dispatchDesignConcernTriage(reviewTask.getProject(), approvedDir, String.join("\n", concernTexts));
+        }
+    }
+
+    private record TriageEntry(String concern, String jtbd, String acceptanceCriteria, String editInstruction,
+                                String kanoClass, String cynefinDomain, String leanValue) {
+    }
+
+    private List<TriageEntry> parseTriageEntries(ProjectEntity project, String headRef, String recordPath) {
+        Optional<String> content = gitHubPullRequestService.fetchFileContent(project, headRef, recordPath);
+        if (content.isEmpty()) {
+            return List.of();
+        }
+        try {
+            com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+            JsonNode root = mapper.readTree(content.get());
+            List<TriageEntry> entries = new java.util.ArrayList<>();
+            if (root.isArray()) {
+                for (JsonNode node : root) {
+                    entries.add(new TriageEntry(
+                            node.path("concern").asText(""),
+                            node.path("jtbd").asText(""),
+                            node.path("acceptanceCriteria").asText(""),
+                            node.path("editInstruction").asText(""),
+                            node.path("kanoClass").asText(""),
+                            node.path("cynefinDomain").asText(""),
+                            node.path("leanValue").asText("")));
+                }
+            }
+            return entries;
+        } catch (Exception e) {
+            log.warn("Failed to parse design concern triage record for project {}: {}", project.getId(), e.getMessage());
+            return List.of();
+        }
+    }
+
+    private static final int MAX_DESIGN_EDIT_ITERATIONS = 3;
+
+    /**
+     * Design shop Stage 2.5 completion: a triage task (dispatched from completeDesignReview) reached
+     * pr_opened with a structured JSON array of {@link TriageEntry}. Same PR-discard/merge-record
+     * shape as completeDesignReview - the PR carries only the record file, never product code.
+     *
+     * Branches on whether this project's design cycle is still {@code AWAITING_REVIEW} (Stage 3 -
+     * BARCAN-TAG-11 implementation - has not fired yet):
+     *   - Still open: apply the actionable (non-"waste") edit instructions to the SAME Stitch screen via
+     *     {@link StitchClient#editScreens} (destructive, in-place - one source of truth, no drifting
+     *     patch), overwrite the already-promoted mockup with the refined version, bounded by
+     *     {@link #MAX_DESIGN_EDIT_ITERATIONS} so this can never loop forever (same discipline as the
+     *     removed WishlistSource.idle_generation - an unbounded self-revision loop was judged dangerous).
+     *   - Already closed (Stage 3 fired, real code shipped): a mockup edit can no longer fix anything -
+     *     each actionable entry becomes a real WishlistEntity(design_review_concern_pattern), with the
+     *     triage's own jtbd/acceptanceCriteria/cynefinDomain/leanValue carried through directly (not a
+     *     re-aggregation of raw text), so it compiles into real, properly classified follow-up work
+     *     through the existing TechnicalLeadCompiler pipeline, unmodified.
+     */
+    private void completeDesignConcernTriage(JulesSessionEntity session, TaskEntity triageTask) {
+        String mockupPath = projectFlowService.designConcernTriageMockupPath(triageTask);
+        String recordPath = projectFlowService.designConcernTriageRecordPath(triageTask);
+
+        boolean firstCompletion = claimService.hasActiveClaim(triageTask.getId());
+        Optional<GitHubPullRequestService.GitHubPullRequest> prOpt =
+                gitHubPullRequestService.findOpenPullRequestBySession(triageTask.getProject(), session.getExternalSessionId());
+        List<TriageEntry> entries = firstCompletion
+                ? prOpt.map(pr -> parseTriageEntries(triageTask.getProject(), pr.headRef(), recordPath)).orElse(List.of())
+                : List.of();
+
+        String mergeReason = firstCompletion ? "design concern triage record parsed" : "duplicate triage session discarded";
+        prOpt.ifPresent(pr -> {
+            gitHubPullRequestService.mergeRecordPullRequest(triageTask.getProject(), pr, mergeReason);
+            archiveRecordFile(triageTask.getProject(), recordPath, "design-concern-triage");
+            closeSessionAsNoCode(session, "Design concern triage record merged (process/metadata only by design); branch deleted.");
+        });
+
+        if (!firstCompletion) {
+            log.warn("Design concern triage task {}: session {} completion discarded - another session already processed this record.",
+                    triageTask.getId(), session.getId());
+            return;
+        }
+        claimService.complete(triageTask.getId());
+        markSystemTaskDone(triageTask);
+
+        if (mockupPath == null || entries.isEmpty()) {
+            log.warn("Design concern triage task {}: no usable triage entries found; concerns remain only in the review-concern log/u-chart",
+                    triageTask.getId());
+            return;
+        }
+
+        List<TriageEntry> actionable = entries.stream()
+                .filter(e -> !"waste".equalsIgnoreCase(e.leanValue()))
+                .toList();
+        if (actionable.isEmpty()) {
+            log.info("Design concern triage task {}: all {} concern(s) triaged as waste; nothing to action",
+                    triageTask.getId(), entries.size());
+            return;
+        }
+
+        DesignShopCycleEntity cycle = designShopCycleRepository.findByProjectId(triageTask.getProject().getId()).orElse(null);
+        boolean mockupStillOpen = cycle != null && DesignShopCycleEntity.STAGE_AWAITING_REVIEW.equals(cycle.getStage());
+
+        if (mockupStillOpen) {
+            applyDesignConcernEdits(triageTask.getProject(), cycle, mockupPath, actionable);
+        } else {
+            escalateDesignConcernsToWishlist(triageTask.getProject(), actionable);
+        }
+    }
+
+    private void applyDesignConcernEdits(ProjectEntity project, DesignShopCycleEntity cycle, String mockupPath, List<TriageEntry> actionable) {
+        if (cycle.getEditIterationCount() >= MAX_DESIGN_EDIT_ITERATIONS) {
+            log.info("Design concern triage: edit-iteration cap ({}) reached for project {}; leaving mockup {} as-is "
+                            + "(soft philosophy - a design opinion never blocks work indefinitely)",
+                    MAX_DESIGN_EDIT_ITERATIONS, project.getId(), mockupPath);
+            return;
+        }
+        if (cycle.getStitchProjectId() == null || cycle.getStitchScreenId() == null) {
+            log.warn("Design concern triage: no stitchProjectId/stitchScreenId recorded for project {}; cannot call edit_screens", project.getId());
+            return;
+        }
+        String editPrompt = actionable.stream()
+                .map(TriageEntry::editInstruction)
+                .filter(s -> s != null && !s.isBlank())
+                .collect(java.util.stream.Collectors.joining("\n"));
+        if (editPrompt.isBlank()) {
+            return;
+        }
+        StitchClient.GeneratedScreen edited = stitchClient.editScreens(cycle.getStitchProjectId(), cycle.getStitchScreenId(), editPrompt);
+        if (!edited.available()) {
+            log.warn("Design concern triage: edit_screens failed for project {}: {}", project.getId(), edited.message());
+            return;
+        }
+        boolean anyCommitted = false;
+        if (!edited.htmlDownloadUrl().isBlank()) {
+            byte[] htmlBytes = stitchClient.download(edited.htmlDownloadUrl());
+            if (htmlBytes != null) {
+                anyCommitted |= gitHubPullRequestService.commitFile(project, mockupPath + "/mockup.html", htmlBytes,
+                        "Apply " + actionable.size() + " triaged design concern(s) to approved mockup");
+            }
+        }
+        if (!edited.screenshotDownloadUrl().isBlank()) {
+            byte[] pngBytes = stitchClient.download(edited.screenshotDownloadUrl());
+            if (pngBytes != null) {
+                anyCommitted |= gitHubPullRequestService.commitFile(project, mockupPath + "/mockup.png", pngBytes,
+                        "Apply " + actionable.size() + " triaged design concern(s) to approved mockup screenshot");
+            }
+        }
+        if (anyCommitted) {
+            cycle.setEditIterationCount(cycle.getEditIterationCount() + 1);
+            cycle.setUpdatedAt(Instant.now());
+            designShopCycleRepository.save(cycle);
+            log.info("Design concern triage: applied {} actionable concern(s) to mockup {} for project {} (iteration {}/{})",
+                    actionable.size(), mockupPath, project.getId(), cycle.getEditIterationCount(), MAX_DESIGN_EDIT_ITERATIONS);
+        }
+    }
+
+    private void escalateDesignConcernsToWishlist(ProjectEntity project, List<TriageEntry> actionable) {
+        for (TriageEntry entry : actionable) {
+            WishlistEntity wishlist = new WishlistEntity();
+            wishlist.setProjectId(project.getId());
+            wishlist.setSource(WishlistSource.design_review_concern_pattern);
+            wishlist.setStatus(WishlistStatus.pending);
+            wishlist.setLeanValue(parseLeanValue(entry.leanValue()));
+            wishlist.setContent("Design review concern (Kano: " + defaultText(entry.kanoClass(), "unclassified")
+                    + "): " + entry.concern());
+            wishlist.setJtbd(defaultText(entry.jtbd(), entry.concern()));
+            wishlist.setAcceptanceCriteria(defaultText(entry.acceptanceCriteria(), ""));
+            wishlist.setDod(defaultText(entry.acceptanceCriteria(), ""));
+            wishlist.setCynefinDomain(defaultText(entry.cynefinDomain(), ""));
+            // Traces this item back to the real, already-computed Six Sigma signal that made this
+            // review-concern pattern worth escalating in the first place - see ProcessControlService.
+            wishlist.setSixSigmaMetric(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS);
+            wishlistRepository.save(wishlist);
+            log.info("Design concern triage: escalated post-merge concern to wishlist for project {}: {}", project.getId(), entry.concern());
+        }
+    }
+
+    private static LeanValue parseLeanValue(String raw) {
+        try {
+            return LeanValue.valueOf(raw == null ? "" : raw.toLowerCase(java.util.Locale.ROOT));
+        } catch (IllegalArgumentException e) {
+            return LeanValue.valuable;
+        }
+    }
+
+    private static String defaultText(String value, String fallback) {
+        return value == null || value.isBlank() ? fallback : value;
     }
 
     private List<UUID> compilerTaskWishlistIds(TaskEntity task) {
@@ -4317,6 +4521,7 @@ public class JulesDispatchService {
                     || projectFlowService.isFalsificationAuditTask(task)
                     || projectFlowService.isReviewFallbackTask(task)
                     || projectFlowService.isDesignReviewTask(task)
+                    || projectFlowService.isDesignConcernTriageTask(task)
                     || projectFlowService.isCoverageAuditTask(task)
                     || projectFlowService.isPhilosophicalAuditTask(task);
             if (honorDavidsonProgressEvidence(session, task, lastProgress)) {

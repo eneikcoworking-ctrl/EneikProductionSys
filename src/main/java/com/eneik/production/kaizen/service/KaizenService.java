@@ -47,6 +47,7 @@ public class KaizenService {
     private final KaizenProposalRepository kaizenProposalRepository;
     private final EvidenceNodeRepository evidenceNodeRepository;
     private final LeverPromotionService leverPromotionService;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
 
     public static final String F1_KAIZEN_CTQ_TARGETING = "F1_KAIZEN_CTQ_TARGETING";
 
@@ -57,7 +58,8 @@ public class KaizenService {
                           ConstraintIdentificationService constraintIdentificationService,
                           KaizenProposalRepository kaizenProposalRepository,
                           EvidenceNodeRepository evidenceNodeRepository,
-                          LeverPromotionService leverPromotionService) {
+                          LeverPromotionService leverPromotionService,
+                          com.eneik.production.repositories.WishlistRepository wishlistRepository) {
         this.tocSentinelService = tocSentinelService;
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.taskRepository = taskRepository;
@@ -66,6 +68,7 @@ public class KaizenService {
         this.kaizenProposalRepository = kaizenProposalRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
         this.leverPromotionService = leverPromotionService;
+        this.wishlistRepository = wishlistRepository;
         log.info("[KAIZEN-INIT] 2-Hour Aggregated Kaizen Micro-Improvement Service initialized.");
     }
 
@@ -520,8 +523,37 @@ public class KaizenService {
             case SPEED_OPTIMIZATION -> {
                 log.info("[KAIZEN-ACTION] Micro-tuned dynamic timeout sensitivity.");
             }
-            case SYSTEMIC_DEFECT -> log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' marked applied by "
-                    + "explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
+            // 2026-08-11 (design shop Stage 2.5): the reviewConcerns u-chart stream is the ONE
+            // SYSTEMIC_DEFECT source with a real, bounded, autonomous next step already built - see
+            // ProjectFlowService.dispatchDesignConcernTriage. A statistically confirmed pattern of design
+            // review concerns becomes real backlog work, same as any other already-verified fact in this
+            // codebase (runtime_observability_gap's own precedent). Every OTHER SYSTEMIC_DEFECT source
+            // still has no autonomous action - deliberately not widening this beyond the one gate that
+            // actually has a real, tested consumer for its output.
+            case SYSTEMIC_DEFECT -> {
+                if (proposal.getTitle() != null
+                        && proposal.getTitle().contains(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS)
+                        && proposal.getProjectId() != null) {
+                    com.eneik.production.models.persistence.WishlistEntity wishlist =
+                            new com.eneik.production.models.persistence.WishlistEntity();
+                    wishlist.setProjectId(proposal.getProjectId());
+                    wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
+                    wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+                    wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.valuable);
+                    wishlist.setContent("Statistically confirmed pattern of design review concerns (Six Sigma "
+                            + "u-chart out of control): " + proposal.getActionDescription());
+                    wishlist.setJtbd("When design review concerns keep recurring beyond normal variance for "
+                            + proposal.getProjectName() + ", I want the underlying pattern addressed, so that "
+                            + "future reviews stop flagging the same class of issue");
+                    wishlist.setSixSigmaMetric(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS);
+                    wishlistRepository.save(wishlist);
+                    log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' (reviewConcerns) escalated to a real "
+                            + "wishlist item for project {} - no human action required.", proposal.getId(), proposal.getProjectId());
+                } else {
+                    log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' marked applied by "
+                            + "explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
+                }
+            }
             case KNOWN_PATTERN_VIOLATION -> log.info("[KAIZEN-ACTION] Known-pattern-violation proposal '{}' marked "
                     + "applied by explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
         }
@@ -588,8 +620,29 @@ public class KaizenService {
                     evaluateAndStandardize(p.getId());
                 }
             }
+            applyAutonomouslyActionableSystemicDefects();
         } catch (Exception e) {
             log.error("[KAIZEN-ERROR] Kaizen 2-hour periodic cycle encountered error: ", e);
+        }
+    }
+
+    // 2026-08-11 (design shop Stage 2.5): SYSTEMIC_DEFECT proposals are created with
+    // expectedGainPercent=0.0 (review-only by default, see recordSystemicDefectProposal's own doc) so
+    // they never accidentally enter the >=5.0 auto-apply loop above - deliberately, since most
+    // SYSTEMIC_DEFECT sources genuinely have no automatic action. scanForOpportunities also only ever
+    // returns FRESHLY-scanned defect-journal proposals, never these (created independently by
+    // ProcessControlService), so they would never otherwise reach applyMicroStep at all. This is the
+    // one narrow, separate path for the one SYSTEMIC_DEFECT source (reviewConcerns) that DOES have a
+    // real, bounded, autonomous next step - see the SYSTEMIC_DEFECT case in applyMicroStep.
+    private void applyAutonomouslyActionableSystemicDefects() {
+        for (KaizenProposal p : allProposals()) {
+            if (p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED
+                    && p.getCategory() == KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT
+                    && p.getTitle() != null
+                    && p.getTitle().contains(com.eneik.production.services.quality.ProcessControlService.STREAM_REVIEW_CONCERNS)
+                    && p.getProjectId() != null) {
+                applyMicroStep(p.getId());
+            }
         }
     }
 

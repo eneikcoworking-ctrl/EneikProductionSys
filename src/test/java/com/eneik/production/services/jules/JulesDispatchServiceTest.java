@@ -100,6 +100,8 @@ class JulesDispatchServiceTest {
             // class already uses, so it observably behaves the same way production wiring does - a mock
             // here would silently no-op the mutation these tests assert on.
             new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, mock(JulesApiClient.class)),
+            mock(com.eneik.production.repositories.DesignShopCycleRepository.class),
+            mock(com.eneik.production.services.stitch.StitchClient.class),
             "prefix/",
             null
         );

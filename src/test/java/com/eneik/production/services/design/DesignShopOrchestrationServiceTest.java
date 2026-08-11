@@ -32,6 +32,7 @@ class DesignShopOrchestrationServiceTest {
     private ProjectOperationalContextService contextService;
     private GitHubPullRequestService gitHubPullRequestService;
     private SystemSettingsService settingsService;
+    private DesignConsistencyAuditService consistencyAuditService;
     private DesignShopOrchestrationService service;
     private ProjectEntity project;
 
@@ -45,10 +46,11 @@ class DesignShopOrchestrationServiceTest {
         contextService = mock(ProjectOperationalContextService.class);
         gitHubPullRequestService = mock(GitHubPullRequestService.class);
         settingsService = mock(SystemSettingsService.class);
+        consistencyAuditService = new DesignConsistencyAuditService();
 
         service = new DesignShopOrchestrationService(projectRepository, designShopCycleRepository,
                 readinessService, designAssetService, projectFlowService, contextService,
-                gitHubPullRequestService, settingsService);
+                gitHubPullRequestService, settingsService, consistencyAuditService);
 
         project = new ProjectEntity();
         project.setId(UUID.randomUUID());
@@ -69,14 +71,16 @@ class DesignShopOrchestrationServiceTest {
     }
 
     @Test
-    void startsACycleOnTheRisingEdgeOfReadiness() {
+    void startsACycleOnTheRisingEdgeOfReadinessAndCapturesTheDesignBaselineOnFirstGeneration() {
         when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
         when(readinessService.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
         DesignAssetService.DesignAssetResult result = new DesignAssetService.DesignAssetResult(
-                true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-1");
+                true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-1", "stitch-proj-1", "screen-1");
         when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
                 .thenReturn(result);
+        when(gitHubPullRequestService.fetchFileBytes(eq(project), any(), eq("design/draft/round-1/mockup.html")))
+                .thenReturn(Optional.of("<style>body{background:#2e3a8c;font-family:'Hanken Grotesk';}</style>".getBytes()));
 
         service.tick();
 
@@ -86,6 +90,40 @@ class DesignShopOrchestrationServiceTest {
         assertThat(saved.getValue().isLastWasReady()).isTrue();
         assertThat(saved.getValue().getStage()).isEqualTo(DesignShopCycleEntity.STAGE_AWAITING_REVIEW);
         assertThat(saved.getValue().getDraftPath()).isEqualTo("design/draft/round-1");
+        // Bootstrap baseline (2026-08-11): the project's first real Stitch draft fixes its own canonical
+        // Tokens(f) domain - captured from what Stitch actually produced, not invented.
+        assertThat(saved.getValue().getStitchProjectId()).isEqualTo("stitch-proj-1");
+        assertThat(saved.getValue().getStitchScreenId()).isEqualTo("screen-1");
+        assertThat(saved.getValue().getDeclaredColors()).contains("#2e3a8c");
+        assertThat(saved.getValue().getDeclaredFonts()).contains("hanken grotesk");
+    }
+
+    @Test
+    void reusesTheStoredBaselineOnASubsequentGeneration() {
+        DesignShopCycleEntity cycle = new DesignShopCycleEntity();
+        cycle.setProjectId(project.getId());
+        cycle.setLastWasReady(false);
+        cycle.setStage(DesignShopCycleEntity.STAGE_DONE);
+        cycle.setStitchProjectId("stitch-proj-1");
+        cycle.setStitchScreenId("screen-1");
+        cycle.setDeclaredColors("#2e3a8c,#14b8a6");
+        cycle.setDeclaredFonts("hanken grotesk");
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.of(cycle));
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
+        DesignAssetService.DesignAssetResult result = new DesignAssetService.DesignAssetResult(
+                true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-2", "stitch-proj-1", "screen-2");
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
+                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk"))))
+                .thenReturn(result);
+
+        service.tick();
+
+        verify(designAssetService).generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
+                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk")));
+        verify(projectFlowService).dispatchDesignReview(eq(project), eq("design/draft/round-2"), anyString());
+        // The already-established baseline must not be re-fetched/re-captured on a later cycle.
+        verify(gitHubPullRequestService, never()).fetchFileBytes(eq(project), any(), eq("design/draft/round-2/mockup.html"));
     }
 
     @Test
@@ -144,7 +182,7 @@ class DesignShopOrchestrationServiceTest {
         when(readinessService.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
         DesignAssetService.DesignAssetResult nanoBananaResult = new DesignAssetService.DesignAssetResult(
-                true, "ok", "gemini-3.1-flash-image", "/tmp/x.png", "", "image/png", "", "design/draft/round-1");
+                true, "ok", "gemini-3.1-flash-image", "/tmp/x.png", "", "image/png", "", "design/draft/round-1", "", "");
         when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
                 .thenReturn(nanoBananaResult);
 

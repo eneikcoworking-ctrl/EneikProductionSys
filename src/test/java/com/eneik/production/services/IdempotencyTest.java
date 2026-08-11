@@ -103,6 +103,8 @@ class IdempotencyTest {
             mock(com.eneik.production.repositories.ReviewConcernRepository.class),
             mock(com.eneik.production.services.accounts.AccountHealthService.class),
             mock(com.eneik.production.services.jules.SessionLifecycleService.class),
+            mock(com.eneik.production.repositories.DesignShopCycleRepository.class),
+            mock(com.eneik.production.services.stitch.StitchClient.class),
             "prefix/",
             null
         );
