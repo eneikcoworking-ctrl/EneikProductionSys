@@ -34,5 +34,11 @@ public enum WishlistSource {
     // 2026-08-11 (same plan): a delivered project has a frontend/ directory but its Dockerfile never
     // references it - the deployable image is backend-only, so a real user has nothing to look at even
     // once the product launches successfully. Same bounded, one-shot, dedup-guarded discipline.
-    frontend_not_deployed
+    frontend_not_deployed,
+    // 2026-08-11 (reliability-strengthening plan, TOC subordination): the product does not currently
+    // launch at all (last ClientRuntimeObservationEntity has launchSuccess=false) - a philosophical
+    // audit reasoning about a product that can't even start would be reasoning about nothing real. TOC:
+    // launchability is the constraint; everything else (including philosophical review) subordinates to
+    // it until it's cleared. Kano Must-Be by construction - not a taste judgment, a precondition.
+    product_not_launchable
 }

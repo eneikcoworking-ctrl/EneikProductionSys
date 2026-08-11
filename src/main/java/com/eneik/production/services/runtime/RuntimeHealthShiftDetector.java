@@ -27,6 +27,8 @@ public final class RuntimeHealthShiftDetector {
     public static final int DEFAULT_RECENT_WINDOW = 5;
     public static final int DEFAULT_MINIMUM_BASELINE_SAMPLES = 10;
     public static final double DEFAULT_SIGNIFICANCE_THRESHOLD = 0.001;
+    public static final double DEFAULT_EXPECTED_SUCCESS_RATE = 0.9;
+    public static final double DEFAULT_ABSOLUTE_SIGNIFICANCE_THRESHOLD = 0.01;
 
     private RuntimeHealthShiftDetector() {
     }
@@ -83,5 +85,47 @@ public final class RuntimeHealthShiftDetector {
 
     public static ShiftVerdict detect(List<Boolean> chronologicalOutcomes) {
         return detect(chronologicalOutcomes, DEFAULT_RECENT_WINDOW, DEFAULT_MINIMUM_BASELINE_SAMPLES, DEFAULT_SIGNIFICANCE_THRESHOLD);
+    }
+
+    public record AbsoluteVerdict(
+            boolean shiftDetected,
+            int successes,
+            int total,
+            double expectedSuccessRate,
+            double pValue
+    ) {
+    }
+
+    /**
+     * Complementary to {@link #detect}, not a replacement: that test is RELATIVE (has this project's
+     * own rate moved from its own history) and needs minimumBaselineSamples of "before" data before it
+     * can say anything - structurally blind to a project whose rate was never good in the first place
+     * (e.g. 0/3 successes starting from the very first observation, live-confirmed on test-forty-third
+     * 2026-08-09..11 - a real 100% failure run that the relative test above could never flag, since
+     * there was no working baseline to shift away from). Same statistical family (exact binomial),
+     * applied against a pre-registered acceptable rate instead of the project's own empirical history -
+     * works from the very first observation, no minimum sample count required.
+     *
+     * Deliberately one-sided: only "worse than the expected rate" is actionable here. An observed rate
+     * significantly BETTER than expected is not a defect worth escalating (unlike detect()'s two-sided
+     * test, where an unexpected IMPROVEMENT is itself informative about the relative baseline).
+     */
+    public static AbsoluteVerdict detectBelowExpectedRate(List<Boolean> chronologicalOutcomes,
+                                                           double expectedSuccessRate,
+                                                           double significanceThreshold) {
+        int total = chronologicalOutcomes.size();
+        if (total == 0) {
+            return new AbsoluteVerdict(false, 0, 0, expectedSuccessRate, 1.0);
+        }
+        int successes = (int) chronologicalOutcomes.stream().filter(Boolean::booleanValue).count();
+        double p = Math.min(Math.max(expectedSuccessRate, 1e-9), 1 - 1e-9);
+        BinomialDistribution distribution = new BinomialDistribution(total, p);
+        double pValue = distribution.cumulativeProbability(successes); // P(X <= observed successes)
+        boolean shift = pValue < significanceThreshold;
+        return new AbsoluteVerdict(shift, successes, total, expectedSuccessRate, pValue);
+    }
+
+    public static AbsoluteVerdict detectBelowExpectedRate(List<Boolean> chronologicalOutcomes) {
+        return detectBelowExpectedRate(chronologicalOutcomes, DEFAULT_EXPECTED_SUCCESS_RATE, DEFAULT_ABSOLUTE_SIGNIFICANCE_THRESHOLD);
     }
 }

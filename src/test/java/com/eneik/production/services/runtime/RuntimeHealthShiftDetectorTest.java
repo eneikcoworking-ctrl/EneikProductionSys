@@ -89,4 +89,49 @@ class RuntimeHealthShiftDetectorTest {
         assertTrue(verdict.hasEnoughData());
         assertFalse(verdict.shiftDetected());
     }
+
+    // 2026-08-11 (live incident, test-forty-third): the relative detect() test above is structurally
+    // blind to a project that was never in control from observation #1 - it needs
+    // minimumBaselineSamples of "before" history to compare against, and a 100%-failure project never
+    // accumulates a "good" baseline to shift away from. detectBelowExpectedRate() closes that gap.
+
+    @Test
+    void threeConsecutiveFailuresFromTheVeryFirstObservationIsSignificantAgainstA90PercentExpectedRate() {
+        // Real numbers from the live incident: 0/3 successes. P(X<=0 | Binomial(3, 0.9)) = 0.1^3 = 0.001,
+        // independently hand-computed - well under the 0.01 threshold, and works with only 3 samples,
+        // something the relative test above can never do (it demands 10+ baseline samples alone).
+        List<Boolean> neverWorked = outcomes(0, 3);
+        var verdict = RuntimeHealthShiftDetector.detectBelowExpectedRate(neverWorked);
+
+        assertEquals(0, verdict.successes());
+        assertEquals(3, verdict.total());
+        assertTrue(verdict.shiftDetected(), "p=" + verdict.pValue() + " should be well under 0.01");
+        assertEquals(0.001, verdict.pValue(), 0.0001);
+    }
+
+    @Test
+    void aSingleSuccessDoesNotFalselyFlag() {
+        var verdict = RuntimeHealthShiftDetector.detectBelowExpectedRate(outcomes(1, 0));
+
+        assertFalse(verdict.shiftDetected());
+    }
+
+    @Test
+    void eightOfTenAgainstA90PercentExpectedRateIsNormalVariationNotASignal() {
+        // Hand-computed: P(X<=8 | Binomial(10, 0.9)) = 1 - P(X=9) - P(X=10) ~= 0.2639 - well above 0.01,
+        // an 80% observed rate against a 90% target with only 10 samples is unremarkable noise, not a
+        // real defect - the test must not cry wolf on ordinary variation.
+        var verdict = RuntimeHealthShiftDetector.detectBelowExpectedRate(outcomes(8, 2));
+
+        assertFalse(verdict.shiftDetected(), "p=" + verdict.pValue() + " should not be below 0.01");
+        assertEquals(0.2639, verdict.pValue(), 0.001);
+    }
+
+    @Test
+    void noObservationsYetNeverFlags() {
+        var verdict = RuntimeHealthShiftDetector.detectBelowExpectedRate(List.of());
+
+        assertFalse(verdict.shiftDetected());
+        assertEquals(0, verdict.total());
+    }
 }

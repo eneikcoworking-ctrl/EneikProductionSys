@@ -365,6 +365,23 @@ public class FalsificationCycleService {
             return;
         }
 
+        // TOC subordination (2026-08-11, reliability-strengthening plan): launchability is the real
+        // constraint on this whole pipeline (see ProductLaunchabilityService's own javadoc - "everything
+        // else is meaningless if the product can't even be started"). A philosophical review of a
+        // product that isn't currently launching/healthy would be reasoning about nothing real - only
+        // ever gates STARTING a new discussion (never interrupts one already in flight, same discipline
+        // as the readiness/pending-count gates above). Reuses the exact same signal Phase 5's
+        // liveEvidenceBlock already draws on - never a second, independently-derived source of truth.
+        var runtimeHealth = clientRuntimeObservabilityService.summarize(project.getId());
+        if (runtimeHealth != null && Boolean.FALSE.equals(runtimeHealth.lastObservationHealthy())) {
+            ensureProductNotLaunchableWishlist(project);
+            log.info("FalsificationCycleService: Project {} is not currently launchable/healthy - "
+                            + "subordinating philosophical review to that constraint (TOC) instead of "
+                            + "auditing a broken product this cycle",
+                    project.getName());
+            return;
+        }
+
         List<RoleEntity> firstBatch = activeRoles.subList(0, Math.min(PHILOSOPHICAL_AUDIT_ROLE_BATCH_SIZE, activeRoles.size()));
         String runId = UUID.randomUUID().toString();
         String reportPath = ".eneik/records/philosophical-falsification-" + runId + ".json";
@@ -674,6 +691,37 @@ public class FalsificationCycleService {
                 %s
                 """.formatted(screenshotDir, liveEvidenceBlock(project), activeRoles.size(), totalActiveRoleCount,
                         reportPath, screenshotDir, charters, knownContext);
+    }
+
+    /**
+     * 2026-08-11 (reliability-strengthening plan, TOC subordination): one dedup-guarded, Must-Be-by-
+     * construction wishlist per project - same bounded, one-shot-per-issue discipline as
+     * ProductLaunchabilityService's dockerfile_missing_build_stage/frontend_not_deployed (never a second
+     * one while the first is still unresolved, never invented scope - only a concrete, already-observed
+     * fact: the last real observation failed).
+     */
+    private void ensureProductNotLaunchableWishlist(ProjectEntity project) {
+        if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable)) {
+            return;
+        }
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.product_not_launchable);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        wishlist.setCynefinDomain("clear");
+        wishlist.setContent("The delivered product's most recent runtime observation was not healthy "
+                + "(launch failed, or launched but its health check failed). Fix this before any further "
+                + "philosophical review - reviewing a product that doesn't actually run produces no real "
+                + "evidence, only guesses.");
+        wishlist.setJtbd("When the product doesn't currently launch or respond healthily, I want that "
+                + "fixed before anything else, so all other evaluation (philosophical, design, feature "
+                + "work) is grounded in a real, working product");
+        wishlist.setAcceptanceCriteria("Given the project's runtime observation history, When the next "
+                + "observation cycle runs, Then launchSuccess=true and the health check returns 2xx");
+        wishlist.setDod("The product launches successfully and its health check passes");
+        wishlistRepository.save(wishlist);
+        log.info("FalsificationCycleService: created product_not_launchable wishlist for project {}", project.getId());
     }
 
     /**

@@ -255,6 +255,46 @@ class ClientRuntimeObservabilityServiceTest {
                 any(), any());
     }
 
+    /**
+     * 2026-08-11 (live incident, test-forty-third): the exact real scenario - 3 total observations,
+     * ALL launch failures, from the very first one. RuntimeHealthShiftDetector.detect() (relative) never
+     * fires here (needs 10+ baseline samples); the new absolute test must catch it instead.
+     */
+    @Test
+    void threeConsecutiveLaunchFailuresFromTheStartTriggersTheAbsoluteTestPath() {
+        var observations = mock(ClientRuntimeObservationRepository.class);
+        var launcher = mock(RuntimeLauncherClient.class);
+        var settings = mock(SystemSettingsService.class);
+        var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
+        var kaizen = mock(com.eneik.production.kaizen.service.KaizenService.class);
+        when(settings.effectiveBoolean("client_runtime_observability_enabled")).thenReturn(true);
+        ProjectEntity proj = project(true);
+        proj.setName("test-forty-third");
+
+        List<ClientRuntimeObservationEntity> failedHistory = new java.util.ArrayList<>();
+        Instant t0 = Instant.now().minusSeconds(3600);
+        for (int i = 0; i < 3; i++) {
+            ClientRuntimeObservationEntity o = new ClientRuntimeObservationEntity();
+            o.setObservedAt(t0.plusSeconds(i * 60L));
+            o.setLaunchSuccess(false);
+            failedHistory.add(o);
+        }
+        List<ClientRuntimeObservationEntity> newestFirst = new java.util.ArrayList<>(failedHistory);
+        java.util.Collections.reverse(newestFirst);
+
+        when(observations.findByProjectIdOrderByObservedAtDesc(proj.getId()))
+                .thenReturn(List.of())
+                .thenReturn(newestFirst);
+        when(launcher.launch(any(), any(), any())).thenReturn(new RuntimeLauncherClient.LaunchResult(false, 1000, "docker: not found", null));
+        var service = new ClientRuntimeObservabilityService(observations, launcher, settings, kaizen, mock(com.eneik.production.services.design.DesignDriftMonitorService.class), projects);
+
+        service.maybeObserve(proj);
+
+        verify(kaizen, times(1)).recordProductRuntimeDefectProposal(
+                org.mockito.ArgumentMatchers.eq(proj.getId()), org.mockito.ArgumentMatchers.eq("test-forty-third"),
+                any(), any());
+    }
+
     @Test
     void aStableHistoryAfterTheNewObservationNeverCreatesAKaizenProposal() {
         var observations = mock(ClientRuntimeObservationRepository.class);

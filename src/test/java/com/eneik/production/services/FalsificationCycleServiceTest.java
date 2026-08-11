@@ -853,6 +853,101 @@ class FalsificationCycleServiceTest {
         verify(flow, never()).dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any());
     }
 
+    /**
+     * 2026-08-11 (reliability-strengthening plan, TOC subordination): a philosophical review of a
+     * product that isn't currently launching/healthy would be reasoning about nothing real - the cycle
+     * must short-circuit to a Must-Be-by-construction product_not_launchable wishlist instead of
+     * dispatching a full audit. Constructs the service directly (not via newPhilosophicalService) so the
+     * ClientRuntimeObservabilityService/WishlistRepository mocks are controllable here.
+     */
+    @Test
+    void philosophicalCycleSubordinatesToLaunchabilityWhenTheProductIsNotHealthy() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var clientRuntimeObservabilityService = mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class);
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("not-launchable-project");
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+        when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
+                new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
+                        3, 0.1, 0.5, false, Instant.now(), List.of(), null));
+        when(wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable))
+                .thenReturn(false);
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                clientRuntimeObservabilityService,
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+
+        service.executePhilosophicalCycleForProject(project);
+
+        verify(flow, never()).dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any());
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository, times(1)).save(captor.capture());
+        assertEquals(WishlistSource.product_not_launchable, captor.getValue().getSource());
+    }
+
+    @Test
+    void philosophicalCycleSubordinationIsDedupGuardedAgainstAnAlreadyExistingWishlist() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var clientRuntimeObservabilityService = mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class);
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("already-flagged-project");
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+        when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
+                new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
+                        3, 0.1, 0.5, false, Instant.now(), List.of(), null));
+        when(wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable))
+                .thenReturn(true);
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                clientRuntimeObservabilityService,
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+
+        service.executePhilosophicalCycleForProject(project);
+
+        verify(flow, never()).dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any());
+        verify(wishlistRepository, never()).save(any());
+    }
+
     @Test
     void philosophicalCyclePromptInstructsGenuineReasoningForcedKanoAndCleanCommits() {
         RoleRepository roles = mock(RoleRepository.class);

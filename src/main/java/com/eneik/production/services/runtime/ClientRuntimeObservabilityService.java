@@ -202,20 +202,36 @@ public class ClientRuntimeObservabilityService {
                 .map(this::isHealthy)
                 .collect(Collectors.toList());
 
-        RuntimeHealthShiftDetector.ShiftVerdict verdict = RuntimeHealthShiftDetector.detect(chronological);
-        if (!verdict.hasEnoughData() || !verdict.shiftDetected()) {
+        RuntimeHealthShiftDetector.ShiftVerdict shiftVerdict = RuntimeHealthShiftDetector.detect(chronological);
+        if (shiftVerdict.hasEnoughData() && shiftVerdict.shiftDetected()) {
+            String title = "Real runtime health shift detected for " + (project.getName() != null ? project.getName() : project.getId());
+            String description = String.format(
+                    "RuntimeHealthShiftDetector: %d of the last %d observations failed (launch+health-check), "
+                            + "against a historical baseline failure rate of %.1f%%. Two-sided exact binomial p-value = %.6f "
+                            + "(threshold %.3f) - not noise, a real statistical shift.",
+                    shiftVerdict.recentFailures(), shiftVerdict.recentWindowSize(), shiftVerdict.baselineFailureRate() * 100,
+                    shiftVerdict.pValue(), RuntimeHealthShiftDetector.DEFAULT_SIGNIFICANCE_THRESHOLD);
+            kaizenService.recordProductRuntimeDefectProposal(project.getId(), project.getName(), title, description);
             return;
         }
 
-        String title = "Real runtime health shift detected for " + (project.getName() != null ? project.getName() : project.getId());
-        String description = String.format(
-                "RuntimeHealthShiftDetector: %d of the last %d observations failed (launch+health-check), "
-                        + "against a historical baseline failure rate of %.1f%%. Two-sided exact binomial p-value = %.6f "
-                        + "(threshold %.3f) - not noise, a real statistical shift.",
-                verdict.recentFailures(), verdict.recentWindowSize(), verdict.baselineFailureRate() * 100,
-                verdict.pValue(), RuntimeHealthShiftDetector.DEFAULT_SIGNIFICANCE_THRESHOLD);
-
-        kaizenService.recordProductRuntimeDefectProposal(project.getId(), project.getName(), title, description);
+        // 2026-08-11 (live incident, test-forty-third): complementary ABSOLUTE test - catches a project
+        // that was never in statistical control from its very first observation, which the relative
+        // shift test above is structurally blind to (it needs minimumBaselineSamples of "before" history
+        // to compare against; a project with 3/3 failures from observation #1 has no "before" to shift
+        // away from). Same exact-binomial math family, applied against a pre-registered expected rate.
+        RuntimeHealthShiftDetector.AbsoluteVerdict absoluteVerdict = RuntimeHealthShiftDetector.detectBelowExpectedRate(chronological);
+        if (absoluteVerdict.shiftDetected()) {
+            String title = "Runtime health never reached the expected rate for " + (project.getName() != null ? project.getName() : project.getId());
+            String description = String.format(
+                    "RuntimeHealthShiftDetector (absolute): only %d of %d observations succeeded (launch+health-check), "
+                            + "against an expected minimum success rate of %.0f%%. One-sided exact binomial p-value = %.6f "
+                            + "(threshold %.3f) - this project has never demonstrated it can reliably launch, not a drift "
+                            + "from a working baseline.",
+                    absoluteVerdict.successes(), absoluteVerdict.total(), absoluteVerdict.expectedSuccessRate() * 100,
+                    absoluteVerdict.pValue(), RuntimeHealthShiftDetector.DEFAULT_ABSOLUTE_SIGNIFICANCE_THRESHOLD);
+            kaizenService.recordProductRuntimeDefectProposal(project.getId(), project.getName(), title, description);
+        }
     }
 
     private boolean isHealthy(ClientRuntimeObservationEntity observation) {
