@@ -30,7 +30,7 @@ public class RuntimeLauncherClient {
         this.baseUrl = baseUrl;
     }
 
-    public record LaunchResult(boolean success, long durationMs, String error) {
+    public record LaunchResult(boolean success, long durationMs, String error, Integer externalPort) {
     }
 
     public record HealthCheckResult(Integer statusCode, long latencyMs, String error) {
@@ -44,14 +44,16 @@ public class RuntimeLauncherClient {
             Map<String, Object> body = Map.of("repo_url", repoUrl, "ref", ref, "project_slug", projectSlug);
             var response = restTemplate.postForObject(baseUrl + "/launch", body, Map.class);
             if (response == null) {
-                return new LaunchResult(false, 0, "empty response from runtime-launcher");
+                return new LaunchResult(false, 0, "empty response from runtime-launcher", null);
             }
+            Object externalPort = response.get("external_port");
             return new LaunchResult(
                     Boolean.TRUE.equals(response.get("success")),
                     ((Number) response.getOrDefault("duration_ms", 0)).longValue(),
-                    (String) response.get("error"));
+                    (String) response.get("error"),
+                    externalPort == null ? null : ((Number) externalPort).intValue());
         } catch (RestClientException e) {
-            return new LaunchResult(false, 0, "runtime-launcher unreachable: " + e.getMessage());
+            return new LaunchResult(false, 0, "runtime-launcher unreachable: " + e.getMessage(), null);
         }
     }
 

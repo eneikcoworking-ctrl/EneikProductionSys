@@ -13,7 +13,9 @@ Four endpoints, matching the plan exactly (plus /fetch, added 2026-08-10 for the
 live-drift check - same "GET a caller-given URL, no assumptions about the target's shape" contract as
 /healthcheck, just returning the body too):
   POST /launch      - clone/pull the given repo+ref, `docker compose up --build -d` it under a fixed
-                       project name so a stale run is always addressable for teardown.
+                       project name so a stale run is always addressable for teardown. Every published
+                       host port gets remapped (see EXTERNAL_PORT_BASE) so the client project's own port
+                       choice never collides with this factory's own services.
   POST /healthcheck  - GET a caller-given URL, report status code + latency. No assumptions about the
                        target's shape - the backend decides what URL/convention to check.
   POST /fetch        - GET a caller-given URL, report status code + latency + body (truncated). Reuses
@@ -28,6 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 import requests
+import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel
 
@@ -35,6 +38,15 @@ app = FastAPI()
 
 WORKSPACE_ROOT = Path("/workspace")
 COMPOSE_PROJECT_NAME = "runtime-observe"
+PORT_OVERRIDE_FILENAME = "runtime-launcher-port-override.yml"
+
+# 2026-08-11 (client runtime observability plan, port collision found live): a client project's own
+# docker-compose.yml very commonly publishes 8080 (test-forty-third does) - the SAME host port this
+# factory's own backend already publishes permanently. Every launch remaps every published host port to
+# a fixed range starting here instead, via a generated compose override - never requires the client
+# project's own compose file to change, and stays deterministic (exactly one project is ever launched
+# at a time, per the operator's own architecture decision - see module docstring).
+EXTERNAL_PORT_BASE = 18080
 
 _current_project_slug: Optional[str] = None
 
@@ -49,6 +61,9 @@ class LaunchResponse(BaseModel):
     success: bool
     duration_ms: int
     error: Optional[str] = None
+    # The host port the backend/dashboard should actually reach the launched product on, after the
+    # port-collision remap below. None only when the compose file declared no published ports at all.
+    external_port: Optional[int] = None
 
 
 class HealthCheckRequest(BaseModel):
@@ -88,6 +103,43 @@ def _run(args: list[str], cwd: Optional[Path] = None, timeout_seconds: int = 600
     )
 
 
+def _generate_port_override(compose_file: Path) -> tuple[Optional[Path], dict[str, int]]:
+    """Rewrite every published host port in the compose file to a fixed range starting at
+    EXTERNAL_PORT_BASE, so a client project's own port choice never has to change or collide with this
+    factory's own services. Returns (override file path, {service_name: external_port}) - the path is
+    None and the map empty when the compose file declares no published ports (nothing to remap)."""
+    try:
+        spec = yaml.safe_load(compose_file.read_text()) or {}
+    except Exception:
+        return None, {}
+
+    services = spec.get("services") or {}
+    override_services: dict[str, dict] = {}
+    port_map: dict[str, int] = {}
+    next_port = EXTERNAL_PORT_BASE
+
+    for name, service in services.items():
+        if not isinstance(service, dict):
+            continue
+        ports = service.get("ports")
+        if not ports:
+            continue
+        new_ports = []
+        for entry in ports:
+            container_port = str(entry).split(":")[-1]
+            new_ports.append(f"{next_port}:{container_port}")
+            port_map[name] = next_port
+            next_port += 1
+        override_services[name] = {"ports": new_ports}
+
+    if not override_services:
+        return None, {}
+
+    override_path = compose_file.parent / PORT_OVERRIDE_FILENAME
+    override_path.write_text(yaml.safe_dump({"services": override_services}))
+    return override_path, port_map
+
+
 @app.post("/launch", response_model=LaunchResponse)
 def launch(req: LaunchRequest) -> LaunchResponse:
     global _current_project_slug
@@ -108,15 +160,21 @@ def launch(req: LaunchRequest) -> LaunchResponse:
             return LaunchResponse(success=False, duration_ms=_elapsed_ms(started),
                                    error="docker-compose.yml not found at repo root after clone")
 
+        override_path, port_map = _generate_port_override(compose_file)
+        compose_args = ["-f", str(compose_file)]
+        if override_path is not None:
+            compose_args += ["-f", str(override_path)]
+
         up = _run(
-            ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "-f", str(compose_file), "up", "-d", "--build"],
+            ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, *compose_args, "up", "-d", "--build"],
             cwd=workdir, timeout_seconds=600,
         )
         if up.returncode != 0:
             return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=f"docker compose up failed: {up.stderr[-2000:]}")
 
         _current_project_slug = req.project_slug
-        return LaunchResponse(success=True, duration_ms=_elapsed_ms(started))
+        primary_port = next(iter(port_map.values()), None)
+        return LaunchResponse(success=True, duration_ms=_elapsed_ms(started), external_port=primary_port)
     except subprocess.TimeoutExpired as e:
         return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=f"timed out: {e}")
     except Exception as e:  # noqa: BLE001 - report every failure back as real observation evidence, never crash the sidecar
@@ -153,8 +211,12 @@ def teardown() -> TeardownResponse:
     compose_file = workdir / "docker-compose.yml"
     try:
         if compose_file.exists():
+            compose_args = ["-f", str(compose_file)]
+            override_path = workdir / PORT_OVERRIDE_FILENAME
+            if override_path.exists():
+                compose_args += ["-f", str(override_path)]
             down = _run(
-                ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "-f", str(compose_file), "down", "-v", "--remove-orphans"],
+                ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, *compose_args, "down", "-v", "--remove-orphans"],
                 cwd=workdir, timeout_seconds=120,
             )
             if down.returncode != 0:

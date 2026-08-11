@@ -63,6 +63,20 @@ public class ProjectEntity {
     @Column(name = "launchability_checked_at")
     private java.time.Instant launchabilityCheckedAt;
 
+    // 2026-08-11 (client runtime observability plan, bounded live-preview window): the periodic Stage 4
+    // launch+health-check cycle used to tear the client stack down immediately after checking it - a real
+    // dashboard link or a philosophical audit's live-fetch would always find it already dead. Instead of
+    // tearing down instantly, ClientRuntimeObservabilityService now leaves a successful launch running and
+    // records when/where here; anything still within the configured idle window (see
+    // client-runtime-observability.live-preview-idle-minutes) can treat it as genuinely live. The NEXT
+    // tick's reaper (same existing per-project tick, never a new cron) tears it down once the window
+    // expires - never left running indefinitely.
+    @Column(name = "last_runtime_preview_launched_at")
+    private java.time.Instant lastRuntimePreviewLaunchedAt;
+
+    @Column(name = "last_runtime_preview_port")
+    private Integer lastRuntimePreviewPort;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private ProjectStatus status = ProjectStatus.active;
@@ -112,6 +126,10 @@ public class ProjectEntity {
 
     public java.time.Instant getLaunchabilityCheckedAt() { return launchabilityCheckedAt; }
     public void setLaunchabilityCheckedAt(java.time.Instant launchabilityCheckedAt) { this.launchabilityCheckedAt = launchabilityCheckedAt; }
+    public java.time.Instant getLastRuntimePreviewLaunchedAt() { return lastRuntimePreviewLaunchedAt; }
+    public void setLastRuntimePreviewLaunchedAt(java.time.Instant lastRuntimePreviewLaunchedAt) { this.lastRuntimePreviewLaunchedAt = lastRuntimePreviewLaunchedAt; }
+    public Integer getLastRuntimePreviewPort() { return lastRuntimePreviewPort; }
+    public void setLastRuntimePreviewPort(Integer lastRuntimePreviewPort) { this.lastRuntimePreviewPort = lastRuntimePreviewPort; }
     public String getFactoryReport() { return factoryReport; }
     public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
     public ProjectStatus getStatus() { return status; }

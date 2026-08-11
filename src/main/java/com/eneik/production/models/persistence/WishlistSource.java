@@ -24,5 +24,15 @@ public enum WishlistSource {
     // enough - real code already exists and needs a real Jules judgment call to update. Same bounded-
     // fact discipline as runtime_observability_gap: created only from a structured triage record a Jules
     // session already produced (JulesDispatchService.completeDesignConcernTriage), never invented scope.
-    design_review_concern_pattern
+    design_review_concern_pattern,
+    // 2026-08-11 (client runtime observability plan, extending Phase 0's launchability check): a
+    // delivered project's own Dockerfile does a bare `COPY target/*.jar` (or equivalent) with no
+    // preceding build stage - confirmed live on test-forty-third, `docker compose up --build` on a
+    // fresh clone fails because target/ is gitignored and nothing ever builds the artifact. Same
+    // bounded, one-shot, dedup-guarded discipline as runtime_observability_gap.
+    dockerfile_missing_build_stage,
+    // 2026-08-11 (same plan): a delivered project has a frontend/ directory but its Dockerfile never
+    // references it - the deployable image is backend-only, so a real user has nothing to look at even
+    // once the product launches successfully. Same bounded, one-shot, dedup-guarded discipline.
+    frontend_not_deployed
 }

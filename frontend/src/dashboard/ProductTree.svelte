@@ -527,6 +527,16 @@
       {/if}
     </div>
 
+    <!-- 2026-08-11 (bounded live-preview window): appears only while ClientRuntimeObservabilityService's
+         last launch is still within its idle window (client-runtime-observability.live-preview-idle-
+         minutes) - a real, currently-reachable instance, never a stale link to something already torn
+         down. Gradually appears/disappears on its own as observation cycles come and go, by design. -->
+    {#if runtimeHealth?.liveUrl}
+      <a class="live-preview-link" href={runtimeHealth.liveUrl} target="_blank" rel="noopener noreferrer">
+        🌿 Open the live product
+      </a>
+    {/if}
+
     <div class="tree-legend">
       <span class="legend-item"><span class="legend-dot healthy"></span>Healthy</span>
       <span class="legend-item"><span class="legend-dot attention"></span>Needs attention</span>
@@ -693,6 +703,26 @@
     animation: ring-expand 1.6s ease-out infinite;
     stroke: var(--tree-healthy);
     stroke-width: 1.4;
+  }
+
+  .live-preview-link {
+    align-items: center;
+    background: var(--tree-healthy);
+    border-radius: 999px;
+    color: var(--neutral-0, #fff);
+    display: inline-flex;
+    font-size: 13px;
+    font-weight: 600;
+    gap: 6px;
+    margin: 4px 4px 0;
+    padding: 6px 14px;
+    text-decoration: none;
+    transition: opacity 0.15s ease;
+    width: fit-content;
+  }
+
+  .live-preview-link:hover {
+    opacity: 0.85;
   }
 
   .tree-legend {

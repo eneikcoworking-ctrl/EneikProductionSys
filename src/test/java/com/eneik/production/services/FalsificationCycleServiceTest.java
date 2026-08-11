@@ -67,7 +67,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class)
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class)
         );
     }
 
@@ -220,7 +220,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("still-decomposing");
@@ -254,7 +254,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.JulesSessionRepository.class),
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
-                codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("bounded-cycle");
@@ -342,7 +342,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.GeminiContextService.class),
                 taskRepository, julesSessionRepository,
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         List<FalsificationCycleService.AuditViolation> violations = List.of(
                 new FalsificationCycleService.AuditViolation(
@@ -452,7 +452,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.GeminiContextService.class),
                 taskRepository, julesSessionRepository,
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         List<FalsificationCycleService.AuditViolation> violations = List.of(
                 new FalsificationCycleService.AuditViolation(
@@ -501,7 +501,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.TaskRepository.class),
                 mock(com.eneik.production.repositories.JulesSessionRepository.class),
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("unattributed-project");
@@ -587,7 +587,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
     }
 
     @Test
@@ -694,7 +694,7 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -749,7 +749,7 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -789,7 +789,7 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -816,7 +816,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -924,7 +924,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("clustering-project");
@@ -1002,7 +1002,7 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("watermark-independence-project");

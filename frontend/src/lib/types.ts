@@ -410,6 +410,10 @@ export type RuntimeHealthSummary = {
   lastObservationHealthy: boolean | null;
   lastObservedAt: string | null;
   recentObservations: RuntimeObservationDto[];
+  // 2026-08-11 (bounded live-preview window): null unless a launched instance is still within its idle
+  // window (client-runtime-observability.live-preview-idle-minutes, default 15) - null most of the time
+  // by design, appears only right after a real successful launch, never a stale/dead link.
+  liveUrl: string | null;
 };
 
 // GET /api/projects/{id}/coherence-graph (2026-08-10) - Кузница/Delivery room, Thagard ECHO +

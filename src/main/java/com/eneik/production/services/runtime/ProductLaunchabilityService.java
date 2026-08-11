@@ -38,6 +38,8 @@ import java.time.Instant;
 public class ProductLaunchabilityService {
     private static final Logger log = LoggerFactory.getLogger(ProductLaunchabilityService.class);
     private static final String COMPOSE_FILE_PATH = "docker-compose.yml";
+    private static final String DOCKERFILE_PATH = "Dockerfile";
+    private static final String FRONTEND_MARKER_PATH = "frontend/package.json";
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -93,9 +95,102 @@ public class ProductLaunchabilityService {
                     project.getId(), COMPOSE_FILE_PATH);
         } else if (hasComposeFile) {
             log.info("ProductLaunchabilityService: project {} already has {} - launchable", project.getId(), COMPOSE_FILE_PATH);
+            checkDockerfileIsSelfBuildable(project);
+            checkFrontendIsDeployed(project);
         }
 
         project.setLaunchabilityCheckedAt(Instant.now());
         projectRepository.save(project);
+    }
+
+    /**
+     * Confirmed live gap (test-forty-third, 2026-08-11): a Dockerfile doing `COPY target/*.jar app.jar`
+     * with no build stage looks fine at review time (the repo compiles, tests pass) but fails the moment
+     * anyone actually runs `docker compose up --build` on a fresh clone, because target/ is gitignored.
+     * A crude but reliable signal: any `COPY` line referencing a `target/` path, with no earlier `FROM
+     * ... AS` build-stage line in the same file - a real multi-stage build (see this system's own
+     * Dockerfile.backend) always has one.
+     */
+    private void checkDockerfileIsSelfBuildable(ProjectEntity project) {
+        if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.dockerfile_missing_build_stage)) {
+            return;
+        }
+        String dockerfile = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), DOCKERFILE_PATH)
+                .orElse(null);
+        if (dockerfile == null) {
+            return;
+        }
+        boolean copiesPrebuiltArtifact = dockerfile.lines()
+                .anyMatch(line -> line.stripLeading().startsWith("COPY") && line.contains("target/"));
+        boolean hasBuildStage = dockerfile.lines()
+                .anyMatch(line -> line.stripLeading().toUpperCase(java.util.Locale.ROOT).startsWith("FROM")
+                        && line.toUpperCase(java.util.Locale.ROOT).contains(" AS "));
+        if (!copiesPrebuiltArtifact || hasBuildStage) {
+            return;
+        }
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.dockerfile_missing_build_stage);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.valuable);
+        wishlist.setContent("This project's " + DOCKERFILE_PATH + " copies a pre-built artifact from a "
+                + "target/ path with no preceding build stage, so `docker compose up --build` fails on a "
+                + "fresh clone (target/ is gitignored, nothing ever builds it). Rewrite it as a multi-stage "
+                + "build - a Maven build stage that produces the jar, then a slim runtime stage that copies "
+                + "it - the same pattern this factory's own Dockerfile.backend already uses.");
+        wishlist.setJtbd("When someone clones this repository fresh and runs `docker compose up --build`, "
+                + "I want the image to build successfully without any manual pre-build step, so the product "
+                + "can actually be launched and observed for real");
+        wishlist.setAcceptanceCriteria("Given a fresh clone of the repository at its default branch, When "
+                + "`docker compose up --build` is run, Then the image builds successfully with no pre-existing "
+                + "target/ artifact required");
+        wishlist.setDod(DOCKERFILE_PATH + " uses a multi-stage build that compiles the artifact itself");
+        wishlistRepository.save(wishlist);
+        log.info("ProductLaunchabilityService: project {} Dockerfile copies a pre-built target/ artifact with "
+                + "no build stage - created dockerfile_missing_build_stage wishlist", project.getId());
+    }
+
+    /**
+     * Confirmed live gap (test-forty-third, 2026-08-11): a real frontend/ directory exists but the
+     * Dockerfile never references it, so the deployable image is backend-only - a real user opening the
+     * launched product sees a bare API, not the actual UI.
+     */
+    private void checkFrontendIsDeployed(ProjectEntity project) {
+        if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.frontend_not_deployed)) {
+            return;
+        }
+        boolean hasFrontend = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), FRONTEND_MARKER_PATH)
+                .isPresent();
+        if (!hasFrontend) {
+            return;
+        }
+        String dockerfile = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), DOCKERFILE_PATH)
+                .orElse(null);
+        if (dockerfile == null || dockerfile.toLowerCase(java.util.Locale.ROOT).contains("frontend")) {
+            return;
+        }
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.frontend_not_deployed);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.valuable);
+        wishlist.setContent("This project has a real frontend/ directory, but " + DOCKERFILE_PATH
+                + " never builds or serves it - the deployable image is backend-only. Build the frontend "
+                + "(npm ci && npm run build) as part of the image build and have the backend serve the "
+                + "built static output, so a real user opening the launched product sees the actual UI, not "
+                + "a bare API.");
+        wishlist.setJtbd("When the product is launched, I want to see the real frontend, not just the "
+                + "backend API, so the delivered product is actually usable");
+        wishlist.setAcceptanceCriteria("Given the launched product, When its root URL is opened in a "
+                + "browser, Then the real frontend UI is served, not a bare API response");
+        wishlist.setDod(DOCKERFILE_PATH + " builds the frontend and the running product serves it");
+        wishlistRepository.save(wishlist);
+        log.info("ProductLaunchabilityService: project {} has frontend/ but Dockerfile never references it - "
+                + "created frontend_not_deployed wishlist", project.getId());
     }
 }

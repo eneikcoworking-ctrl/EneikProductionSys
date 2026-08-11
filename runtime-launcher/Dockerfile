@@ -5,8 +5,12 @@ WORKDIR /app
 # docker socket (docs/reports/PLAN_client_runtime_observability_2026-08-09.md, Phase 1 - operator
 # explicitly chose the sidecar architecture over mounting the socket into the main backend, to keep
 # this exact privilege contained to the smallest possible surface).
+# 2026-08-11 (live incident): docker.io on Debian trixie only ships the daemon (dockerd, docker-proxy,
+# docker-init) - the actual `docker` CLI client is a SEPARATE package, docker-cli. Every /launch call
+# failed with "docker: not found" until this was added; confirmed via `dpkg -L docker.io` inside the
+# built image never listing /usr/bin/docker.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends docker.io git ca-certificates curl \
+    && apt-get install -y --no-install-recommends docker.io docker-cli git ca-certificates curl \
     && rm -rf /var/lib/apt/lists/*
 
 # docker-compose-v2 is not a real apt package name on every base image's Debian release (confirmed:

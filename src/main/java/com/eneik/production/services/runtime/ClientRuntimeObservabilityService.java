@@ -4,6 +4,7 @@ import com.eneik.production.kaizen.service.KaizenService;
 import com.eneik.production.models.persistence.ClientRuntimeObservationEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.ClientRuntimeObservationRepository;
+import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.design.DesignDriftMonitorService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.slf4j.Logger;
@@ -40,6 +41,7 @@ public class ClientRuntimeObservabilityService {
     private final SystemSettingsService settingsService;
     private final KaizenService kaizenService;
     private final DesignDriftMonitorService designDriftMonitorService;
+    private final ProjectRepository projectRepository;
 
     @Value("${client-runtime-observability.base-delay-hours:24}")
     private long baseDelayHours;
@@ -47,22 +49,39 @@ public class ClientRuntimeObservabilityService {
     @Value("${client-runtime-observability.minimum-delay-hours:1}")
     private long minimumDelayHours;
 
-    @Value("${client-runtime-observability.health-check-path:/actuator/health}")
+    // 2026-08-11 (live incident, test-forty-third): the old defaults (/actuator/health on 8090) never
+    // matched a single real generated project - no client project depends on spring-boot-actuator, and
+    // none exposes a separate management port. The client's own Dockerfile HEALTHCHECK directive already
+    // declares the real, working convention (plain /health on the app's own port) - use that as the
+    // default instead of a guess that has a 100% historical failure rate. Still fully operator-
+    // configurable per deployment via these same properties.
+    @Value("${client-runtime-observability.health-check-path:/health}")
     private String healthCheckPath;
 
+    // Fallback only, used when runtime-launcher's /launch didn't report a remapped external port (e.g.
+    // the compose file declared no published ports at all) - see RuntimeLauncherClient.LaunchResult.
     @Value("${client-runtime-observability.health-check-port:8090}")
     private int healthCheckPort;
+
+    // 2026-08-11 (bounded live-preview window): a successful launch used to be torn down immediately
+    // after its health check, so nothing was ever actually reachable by the time a human (dashboard link)
+    // or a philosophical audit's live-fetch went looking for it. Leave it running for this long instead;
+    // the next tick's reaper (see reapIdlePreviewIfExpired) tears it down once expired - never a new cron.
+    @Value("${client-runtime-observability.live-preview-idle-minutes:15}")
+    private long livePreviewIdleMinutes;
 
     public ClientRuntimeObservabilityService(ClientRuntimeObservationRepository observationRepository,
                                               RuntimeLauncherClient launcherClient,
                                               SystemSettingsService settingsService,
                                               KaizenService kaizenService,
-                                              DesignDriftMonitorService designDriftMonitorService) {
+                                              DesignDriftMonitorService designDriftMonitorService,
+                                              ProjectRepository projectRepository) {
         this.observationRepository = observationRepository;
         this.launcherClient = launcherClient;
         this.settingsService = settingsService;
         this.kaizenService = kaizenService;
         this.designDriftMonitorService = designDriftMonitorService;
+        this.projectRepository = projectRepository;
     }
 
     @Transactional
@@ -74,6 +93,11 @@ public class ClientRuntimeObservabilityService {
         if (project.getLaunchabilityCheckedAt() == null) {
             return;
         }
+
+        // Runs every tick regardless of whether a new observation is due below - this IS the reaper for
+        // the bounded live-preview window, piggybacked on the same existing per-project tick rather than
+        // a dedicated cron.
+        reapIdlePreviewIfExpired(project);
 
         List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
         BetaPosterior posterior = posteriorFrom(history);
@@ -88,6 +112,23 @@ public class ClientRuntimeObservabilityService {
         }
 
         observeOnce(project);
+    }
+
+    /** Tears down a lingering live-preview instance once its bounded window has expired - see the
+     * livePreviewIdleMinutes javadoc above. A no-op when nothing is currently tracked as live. */
+    private void reapIdlePreviewIfExpired(ProjectEntity project) {
+        Instant launchedAt = project.getLastRuntimePreviewLaunchedAt();
+        if (launchedAt == null) {
+            return;
+        }
+        if (Duration.between(launchedAt, Instant.now()).compareTo(Duration.ofMinutes(livePreviewIdleMinutes)) < 0) {
+            return; // still within the window - leave it running for the dashboard link / a live-fetch
+        }
+        launcherClient.teardown();
+        project.setLastRuntimePreviewLaunchedAt(null);
+        project.setLastRuntimePreviewPort(null);
+        projectRepository.save(project);
+        log.info("ClientRuntimeObservabilityService: project {} live-preview window expired, torn down", project.getId());
     }
 
     private void observeOnce(ProjectEntity project) {
@@ -107,7 +148,8 @@ public class ClientRuntimeObservabilityService {
         observation.setErrorText(launch.error());
 
         if (launch.success()) {
-            String healthUrl = "http://localhost:" + healthCheckPort + healthCheckPath;
+            int port = launch.externalPort() != null ? launch.externalPort() : healthCheckPort;
+            String healthUrl = "http://localhost:" + port + healthCheckPath;
             RuntimeLauncherClient.HealthCheckResult health = launcherClient.healthcheck(healthUrl);
             observation.setHealthStatusCode(health.statusCode());
             observation.setHealthLatencyMs(health.latencyMs());
@@ -119,7 +161,7 @@ public class ClientRuntimeObservabilityService {
             // still-open live-instance window rather than opening a second one - only while the health
             // check itself looks genuinely alive, same "2xx" bar isHealthy() uses below.
             if (health.statusCode() != null && health.statusCode() >= 200 && health.statusCode() < 300) {
-                String rootUrl = "http://localhost:" + healthCheckPort + "/";
+                String rootUrl = "http://localhost:" + port + "/";
                 try {
                     designDriftMonitorService.checkLiveInstance(project, rootUrl);
                 } catch (Exception e) {
@@ -127,9 +169,19 @@ public class ClientRuntimeObservabilityService {
                             project.getId(), e.getMessage(), e);
                 }
             }
+
+            // Bounded live-preview window (2026-08-11): leave it running instead of tearing down right
+            // away, so the dashboard link and a philosophical audit's live-fetch have something real to
+            // reach. reapIdlePreviewIfExpired (this same tick, next time) tears it down once the window
+            // expires - never left running indefinitely.
+            project.setLastRuntimePreviewLaunchedAt(Instant.now());
+            project.setLastRuntimePreviewPort(port);
+            projectRepository.save(project);
+        } else {
+            // Never leak a partial stack from a failed `docker compose up --build`.
+            launcherClient.teardown();
         }
 
-        launcherClient.teardown();
         observationRepository.save(observation);
         log.info("ClientRuntimeObservabilityService: project {} observed - launchSuccess={} healthStatus={}",
                 project.getId(), observation.isLaunchSuccess(), observation.getHealthStatusCode());
@@ -181,15 +233,37 @@ public class ClientRuntimeObservabilityService {
      */
     public record RuntimeHealthSummary(int observationCount, double posteriorMean, double credibleIntervalWidth,
                                         Boolean lastObservationHealthy, Instant lastObservedAt,
-                                        List<ClientRuntimeObservationEntity> recentObservations) {}
+                                        List<ClientRuntimeObservationEntity> recentObservations,
+                                        String liveUrl) {}
 
     public RuntimeHealthSummary summarize(java.util.UUID projectId) {
         List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(projectId);
         BetaPosterior posterior = posteriorFrom(history);
         Boolean lastHealthy = history.isEmpty() ? null : isHealthy(history.get(0));
         Instant lastAt = history.isEmpty() ? null : history.get(0).getObservedAt();
+        String liveUrl = currentLiveUrl(projectId).orElse(null);
         return new RuntimeHealthSummary(history.size(), posterior.mean(), posterior.credibleIntervalWidth(),
-                lastHealthy, lastAt, history);
+                lastHealthy, lastAt, history, liveUrl);
+    }
+
+    /** Empty unless a live-preview instance was launched within the last livePreviewIdleMinutes - a link
+     * (or a philosophical audit's live-fetch) pointing at an already-expired window would just fail.
+     * Public so FalsificationCycleService can splice real live evidence into a philosophical audit
+     * without re-deriving this same window logic. */
+    public java.util.Optional<String> currentLiveUrl(java.util.UUID projectId) {
+        return projectRepository.findById(projectId).map(this::liveUrlIfWithinWindow);
+    }
+
+    private String liveUrlIfWithinWindow(ProjectEntity project) {
+        Instant launchedAt = project.getLastRuntimePreviewLaunchedAt();
+        Integer port = project.getLastRuntimePreviewPort();
+        if (launchedAt == null || port == null) {
+            return null;
+        }
+        if (Duration.between(launchedAt, Instant.now()).compareTo(Duration.ofMinutes(livePreviewIdleMinutes)) >= 0) {
+            return null;
+        }
+        return "http://localhost:" + port + "/";
     }
 
     private BetaPosterior posteriorFrom(List<ClientRuntimeObservationEntity> history) {

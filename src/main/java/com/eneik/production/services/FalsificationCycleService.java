@@ -53,6 +53,10 @@ public class FalsificationCycleService {
     // budget is tighter; the philosophical track batches only a few roles per turn, so it can afford more.
     private static final int CODE_DEFECT_AUDIT_ROLE_CONTEXT_TOP_K = 4;
     private static final int PHILOSOPHICAL_AUDIT_ROLE_CONTEXT_TOP_K = 6;
+    // 2026-08-11 (client runtime observability plan, Phase 5): caps how much of a live-fetched page gets
+    // spliced into the audit prompt - same order of magnitude as MAX_DIFF_CHARS_PER_PR above, a real page
+    // body can be arbitrarily large and this is meant as grounding evidence, not the whole document.
+    private static final int LIVE_EVIDENCE_MAX_CHARS = 6000;
 
     private final ProjectRepository projectRepository;
     private final RoleRepository roleRepository;
@@ -71,6 +75,8 @@ public class FalsificationCycleService {
     private final com.eneik.production.repositories.PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository;
     private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
+    private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
+    private final com.eneik.production.services.runtime.RuntimeLauncherClient runtimeLauncherClient;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
@@ -104,7 +110,9 @@ public class FalsificationCycleService {
                                      PersistentWorkerSessionService persistentWorkerSessionService,
                                      com.eneik.production.repositories.PrReviewRepository prReviewRepository,
                                      com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository,
-                                     com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository) {
+                                     com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
+                                     com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                                     com.eneik.production.services.runtime.RuntimeLauncherClient runtimeLauncherClient) {
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -122,6 +130,8 @@ public class FalsificationCycleService {
         this.prReviewRepository = prReviewRepository;
         this.codeIntegrityFindingRepository = codeIntegrityFindingRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
+        this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
+        this.runtimeLauncherClient = runtimeLauncherClient;
     }
 
     @Scheduled(cron = "${falsification-cycle.cron:0 0 2 * * ?}")
@@ -611,6 +621,12 @@ public class FalsificationCycleService {
                   (code you read, or the parts that did run), and never invent or assume behavior you did not
                   observe. If NOTHING at all is examinable, return "critiques": [].
 
+                LIVE EVIDENCE - already fetched from the factory's own currently-running instance of this
+                product (a separate, independent launch from the one you attempt in STEP 1 above - use this
+                as ADDITIONAL grounding alongside your own attempt, never as a replacement for it, since it
+                may be unavailable or may not reach every screen/endpoint your own attempt can):
+                %s
+
                 STEP 2 - the 6-voice pass for each role below. This is turn 1 of an ongoing SINGLE conversation
                 covering %d of this project's %d active roles; the remaining roles will join in follow-up
                 messages later in this SAME conversation and will be able to see everything you report here -
@@ -656,7 +672,33 @@ public class FalsificationCycleService {
                 %s
 
                 %s
-                """.formatted(screenshotDir, activeRoles.size(), totalActiveRoleCount, reportPath, screenshotDir, charters, knownContext);
+                """.formatted(screenshotDir, liveEvidenceBlock(project), activeRoles.size(), totalActiveRoleCount,
+                        reportPath, screenshotDir, charters, knownContext);
+    }
+
+    /**
+     * 2026-08-11 (client runtime observability plan, Phase 5): reuses the SAME bounded live-preview
+     * window ClientRuntimeObservabilityService already maintains for the dashboard link
+     * (currentLiveUrl) - never opens its own separate launch, never blocks the audit if nothing is
+     * currently live (most of the time, by design - the window is short and this cycle runs on its own
+     * schedule). Same "backend gathers evidence, the role reasons over it" discipline as the Gemini
+     * observer's evidence snapshot - never a live network call the role itself has to make blind.
+     */
+    private String liveEvidenceBlock(ProjectEntity project) {
+        var liveUrl = clientRuntimeObservabilityService.currentLiveUrl(project.getId());
+        if (liveUrl.isEmpty()) {
+            return "No live running instance is currently available this cycle - proceed with STEP 1's own attempt only.";
+        }
+        var fetch = runtimeLauncherClient.fetchHtml(liveUrl.get());
+        if (fetch.error() != null || fetch.statusCode() == null) {
+            return "Attempted to fetch " + liveUrl.get() + " but it was not reachable ("
+                    + (fetch.error() != null ? fetch.error() : "no response") + ") - proceed with STEP 1's own attempt only.";
+        }
+        String body = fetch.body() != null ? fetch.body() : "";
+        if (body.length() > LIVE_EVIDENCE_MAX_CHARS) {
+            body = body.substring(0, LIVE_EVIDENCE_MAX_CHARS) + "... (truncated)";
+        }
+        return "Fetched " + liveUrl.get() + " (HTTP " + fetch.statusCode() + "):\n" + body;
     }
 
     public record PhilosophicalCritique(
