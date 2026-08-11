@@ -113,6 +113,13 @@ public class OperationalPolicyService {
             case RETRY_FEATURE_CLOSEOUT -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+            // Same narrowing reasoning as REVIVE_FAILED_TASK/RESOLVE_ORPHANED_PR/RETRY_FEATURE_CLOSEOUT
+            // (2026-08-11): retiring one specific carrier task's wedged persistent worker carries no
+            // dependency on an unrelated task/review/stall elsewhere in the project - only genuinely global
+            // conditions should stop it.
+            case RETIRE_STUCK_WORKER -> activeProject
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
         };
 
         String reason = allowed

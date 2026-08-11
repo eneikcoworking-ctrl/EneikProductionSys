@@ -68,6 +68,7 @@ class GeminiProjectObserverServiceTest {
     private CoherenceRunRepository coherenceRunRepository;
     private com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository;
     private com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
+    private PersistentWorkerSessionService persistentWorkerSessionService;
     private GeminiProjectObserverService service;
 
     private void setUp() {
@@ -93,6 +94,7 @@ class GeminiProjectObserverServiceTest {
         coherenceRunRepository = mock(CoherenceRunRepository.class);
         coherenceRunNodeResultRepository = mock(com.eneik.production.repositories.CoherenceRunNodeResultRepository.class);
         operationalRealityFindingRepository = mock(com.eneik.production.repositories.OperationalRealityFindingRepository.class);
+        persistentWorkerSessionService = mock(PersistentWorkerSessionService.class);
         when(actionRepository.findTop5ByProjectIdOrderByCreatedAtDesc(any())).thenReturn(List.of());
         when(falsificationCycleService.philosophicalReadinessInfo(any()))
                 .thenReturn(new FalsificationCycleService.PhilosophicalReadinessInfo(0.9, false));
@@ -108,7 +110,7 @@ class GeminiProjectObserverServiceTest {
                 wishlistContentSimilarityMatcher, actionService, falsificationCycleService, settingsService,
                 gitHubApiBudgetService, operationalFlowCoreService, kaizenService, branchGarbageCollectorService,
                 projectEventLogService, sixSigmaAuditService, evidenceNodeRepository, coherenceRunRepository,
-                coherenceRunNodeResultRepository, operationalRealityFindingRepository);
+                coherenceRunNodeResultRepository, operationalRealityFindingRepository, persistentWorkerSessionService);
     }
 
     private ProjectEntity project() {

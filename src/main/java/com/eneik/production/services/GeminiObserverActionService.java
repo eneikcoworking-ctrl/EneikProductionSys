@@ -50,6 +50,7 @@ public class GeminiObserverActionService {
     private final com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
 
     public GeminiObserverActionService(WishlistRepository wishlistRepository,
                                         TaskRepository taskRepository,
@@ -61,7 +62,8 @@ public class GeminiObserverActionService {
                                         PlannedWorkRecoveryService plannedWorkRecoveryService,
                                         com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService,
                                         com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
-                                        com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService) {
+                                        com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService,
+                                        com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService) {
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
         this.taskConflictRepository = taskConflictRepository;
@@ -73,6 +75,7 @@ public class GeminiObserverActionService {
         this.branchGarbageCollectorService = branchGarbageCollectorService;
         this.featureThreadRepository = featureThreadRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.persistentWorkerSessionService = persistentWorkerSessionService;
     }
 
     /** Cancel a dead/duplicate/stale wishlist item instead of letting it wait in the queue forever. */
@@ -97,6 +100,38 @@ public class GeminiObserverActionService {
     public String nudgeStuckSession(ProjectEntity project, String targetId, String reason) {
         return execute("nudgeStuckSession", OperationalAction.NUDGE_SESSION, project, targetId, reason, () -> {
             requireTaskWithLiveSession(project, targetId);
+            return null;
+        });
+    }
+
+    /**
+     * Retire a wedged PersistentWorkerSessionEntity by hand (2026-08-11, operator directive: "дай этот
+     * инструмент джемини тоже" after a confirmed live incident - worker 924b2c9f stayed batch-in-flight for
+     * 14+ hours after its carrier session died, because isIdleAndFresh's isBatchInFlight() check
+     * short-circuits before the age/cycle-count rotation safety net is ever reached). targetId is the
+     * CARRIER TASK id (same convention as nudgeStuckSession), not the worker row id - she never sees the
+     * worker table directly. JulesDispatchService.closeSessionForTerminalTask now does this automatically
+     * the instant a carrier task goes terminal, so this tool is deliberately a narrower backstop: for any
+     * OTHER shape of the same desync (e.g. a carrier session that never reaches a terminal task status but
+     * has clearly gone dark) that the code-level fix doesn't cover, so she can act without waiting for a
+     * human to notice and intervene by hand again.
+     */
+    public String retireStuckWorker(ProjectEntity project, String targetId, String reason) {
+        return execute("retireStuckWorker", OperationalAction.RETIRE_STUCK_WORKER, project, targetId, reason, () -> {
+            UUID id = parseUuid(targetId);
+            if (id == null) return "invalid id";
+            TaskEntity task = taskRepository.findById(id).orElse(null);
+            if (task == null || task.getProject() == null || !project.getId().equals(task.getProject().getId())) {
+                return "not found in this project";
+            }
+            var worker = persistentWorkerSessionService.findByCarrierTaskId(id).orElse(null);
+            if (worker == null) {
+                return "no persistent worker registered for this carrier task";
+            }
+            if (worker.getRetiredAt() != null) {
+                return "already retired, nothing to do";
+            }
+            persistentWorkerSessionService.retire(worker, "Gemini observer: " + reason);
             return null;
         });
     }

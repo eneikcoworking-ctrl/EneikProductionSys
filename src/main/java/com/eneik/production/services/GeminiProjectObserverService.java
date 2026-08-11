@@ -119,6 +119,7 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository;
     private final com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository;
     private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
+    private final PersistentWorkerSessionService persistentWorkerSessionService;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // Phase 5 (2026-08-05): pure safety backstop against a runaway loop, not a claim about how many
@@ -157,7 +158,8 @@ public class GeminiProjectObserverService {
                                          com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
                                          com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository,
                                          com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository,
-                                         com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository) {
+                                         com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository,
+                                         PersistentWorkerSessionService persistentWorkerSessionService) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.taskRepository = taskRepository;
@@ -180,6 +182,7 @@ public class GeminiProjectObserverService {
         this.coherenceRunRepository = coherenceRunRepository;
         this.coherenceRunNodeResultRepository = coherenceRunNodeResultRepository;
         this.operationalRealityFindingRepository = operationalRealityFindingRepository;
+        this.persistentWorkerSessionService = persistentWorkerSessionService;
     }
 
     // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
@@ -395,6 +398,12 @@ public class GeminiProjectObserverService {
                   only close a truly superseded closeout PR closed a still-live one instead. Safe to try:
                   refuses on its own (reports why, does nothing destructive) if the feature is already
                   merged, was genuinely abandoned (branch deleted, unrecoverable), or its branch is gone.
+                - retireStuckWorker: retire a wedged persistent worker (a long-lived Jules session reused
+                  across many cycles for one purpose, e.g. philosophical audit) whose carrier task is listed
+                  under STUCK PERSISTENT WORKER CANDIDATES - targetId = the carrier task id. Frees it to
+                  register a fresh worker on the next cycle instead of staying wedged pointing at a dead
+                  session forever. Safe to try even if it turns out already retired between when you were
+                  shown it and now.
 
                 TOOLS - you may call any of these, zero or more times, in any order, before your final
                 answer - this evidence is NOT pre-loaded into the snapshot above, because you decide what's
@@ -417,7 +426,7 @@ public class GeminiProjectObserverService {
                 what you checked and concluded this cycle, even if nothing notable happened",
                 "findings": [{"summary": "one sentence", "evidence": "what in the snapshot shows this",
                 "severity": "low|medium|high", "scope": "product|platform"}],
-                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|triggerCodeDefectFalsificationRun|reviveFailedTask|resolveOrphanedPr|collapseDuplicateTask|retryAbandonedCloseout",
+                "actions": [{"tool": "dismissWishlist|nudgeStuckSession|abandonConflict|boostPriority|triggerFalsificationRun|triggerCodeDefectFalsificationRun|reviveFailedTask|resolveOrphanedPr|collapseDuplicateTask|retryAbandonedCloseout|retireStuckWorker",
                 "targetId": "an id copied exactly from the snapshot", "reason": "one sentence, why this is justified"}]}
                 Use empty arrays when nothing genuinely warrants them - still always write a journalEntry.
                 """;
@@ -584,6 +593,7 @@ public class GeminiProjectObserverService {
                 case "resolveOrphanedPr" -> actionService.resolveOrphanedPr(project, action.targetId(), action.reason());
                 case "collapseDuplicateTask" -> actionService.collapseDuplicateTask(project, action.targetId(), action.reason());
                 case "retryAbandonedCloseout" -> actionService.retryAbandonedCloseout(project, action.targetId(), action.reason());
+                case "retireStuckWorker" -> actionService.retireStuckWorker(project, action.targetId(), action.reason());
                 default -> null;
             };
             if (outcome == null) {
@@ -935,6 +945,25 @@ public class GeminiProjectObserverService {
             sb.append("\nSTUCK/BLOCKED TASK CANDIDATES (idle > ").append(TASK_STUCK_THRESHOLD.toHours()).append("h): ");
             for (TaskEntity task : stuckTasks) {
                 sb.append("\n  - taskId=").append(task.getId()).append(" [").append(task.getStatus()).append("] ")
+                        .append(truncateForSnapshot(task.getTitle() != null ? task.getTitle() : task.getDescription(), 120));
+            }
+        }
+        // 2026-08-11 addition (confirmed live incident: worker 924b2c9f stayed batch-in-flight for 14+
+        // hours after its carrier session died - isIdleAndFresh's isBatchInFlight() check short-circuits
+        // before the age/cycle-count rotation safety net is ever reached). closeSessionForTerminalTask now
+        // retires the worker automatically the moment its carrier task goes terminal, so this only ever
+        // lists a task that is ALREADY a STUCK/BLOCKED candidate above AND still has an un-retired,
+        // batch-in-flight persistent worker attached - i.e. the one shape that fix doesn't reach (the
+        // carrier task itself hasn't gone terminal, just gone dark).
+        List<TaskEntity> stuckWorkerCarrierTasks = stuckTasks.stream()
+                .filter(t -> persistentWorkerSessionService.findByCarrierTaskId(t.getId())
+                        .filter(w -> w.getRetiredAt() == null && w.isBatchInFlight())
+                        .isPresent())
+                .toList();
+        if (!stuckWorkerCarrierTasks.isEmpty()) {
+            sb.append("\nSTUCK PERSISTENT WORKER CANDIDATES (retireStuckWorker may apply): ");
+            for (TaskEntity task : stuckWorkerCarrierTasks) {
+                sb.append("\n  - taskId=").append(task.getId()).append(" ")
                         .append(truncateForSnapshot(task.getTitle() != null ? task.getTitle() : task.getDescription(), 120));
             }
         }

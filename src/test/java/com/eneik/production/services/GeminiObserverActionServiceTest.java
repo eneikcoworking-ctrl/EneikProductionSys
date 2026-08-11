@@ -43,6 +43,7 @@ class GeminiObserverActionServiceTest {
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     private com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
     private com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private PersistentWorkerSessionService persistentWorkerSessionService;
     private GeminiObserverActionService service;
 
     private void setUp() {
@@ -57,10 +58,11 @@ class GeminiObserverActionServiceTest {
         branchGarbageCollectorService = mock(com.eneik.production.services.orchestration.BranchGarbageCollectorService.class);
         featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
         gitHubPullRequestService = mock(com.eneik.production.services.github.GitHubPullRequestService.class);
+        persistentWorkerSessionService = mock(PersistentWorkerSessionService.class);
         service = new GeminiObserverActionService(wishlistRepository, taskRepository, taskConflictRepository,
                 julesDispatchService, falsificationCycleService, actionRepository, operationalPolicyService,
                 plannedWorkRecoveryService, branchGarbageCollectorService, featureThreadRepository,
-                gitHubPullRequestService);
+                gitHubPullRequestService, persistentWorkerSessionService);
     }
 
     private ProjectEntity project() {
@@ -375,5 +377,51 @@ class GeminiObserverActionServiceTest {
 
         assertTrue(outcome.startsWith("skipped"));
         verify(featureThreadRepository, never()).save(any());
+    }
+
+    /**
+     * 2026-08-11 (live incident: worker 924b2c9f stayed batch-in-flight 14+ hours after its carrier session
+     * died). retireStuckWorker must re-verify against the real worker row at execution time, not just trust
+     * the target id she was given, and must be a no-op if it already got retired between snapshot and act.
+     */
+    @Test
+    void retireStuckWorkerRetiresAnUnretiredWorkerFoundForTheCarrierTask() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETIRE_STUCK_WORKER))
+                .thenReturn(decision(project, OperationalAction.RETIRE_STUCK_WORKER, true, "allowed"));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        var worker = new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+
+        String outcome = service.retireStuckWorker(project, taskId.toString(), "batch-in-flight for 14+ hours, carrier session dead");
+
+        assertEquals("success", outcome);
+        verify(persistentWorkerSessionService).retire(eq(worker), anyString());
+    }
+
+    @Test
+    void retireStuckWorkerSkipsWhenAlreadyRetired() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETIRE_STUCK_WORKER))
+                .thenReturn(decision(project, OperationalAction.RETIRE_STUCK_WORKER, true, "allowed"));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        var worker = new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        worker.setRetiredAt(java.time.Instant.now());
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+
+        String outcome = service.retireStuckWorker(project, taskId.toString(), "trying anyway");
+
+        assertTrue(outcome.startsWith("skipped"));
+        verify(persistentWorkerSessionService, never()).retire(any(), anyString());
     }
 }

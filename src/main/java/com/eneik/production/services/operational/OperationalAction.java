@@ -51,5 +51,12 @@ public enum OperationalAction {
     CHECK_LAUNCHABILITY,
     // 2026-08-09 (Phase 1, client runtime observability plan): the recurring (adaptive-cadence, never
     // schedule-hardcoded) observation step, distinct from the one-shot CHECK_LAUNCHABILITY above.
-    OBSERVE_CLIENT_RUNTIME
+    OBSERVE_CLIENT_RUNTIME,
+    // 2026-08-11: retires a wedged PersistentWorkerSessionEntity by hand - confirmed live incident, worker
+    // 924b2c9f stayed batch-in-flight for 14+ hours after its carrier session died, because isIdleAndFresh's
+    // isBatchInFlight() check short-circuits before the age/cycle-count rotation safety net is ever reached.
+    // closeSessionForTerminalTask now retires the worker automatically the moment its carrier task goes
+    // terminal, but that only covers ONE way a worker can get wedged; this gives the observer the same
+    // power for any other shape of the same underlying desync she independently notices.
+    RETIRE_STUCK_WORKER
 }

@@ -4390,6 +4390,19 @@ public class JulesDispatchService {
                 + "); no polling, unblock, or follow-up is allowed.");
         julesSessionRepository.save(session);
         claimService.releaseTerminalClaim(task.getId());
+        // 2026-08-11 (live incident: philosophical worker 924b2c9f stayed wedged 14+ hours after its
+        // carrier task went blocked, because this - the fastest, most common terminal-closure path - never
+        // told PersistentWorkerSessionService the carrier died. isIdleAndFresh's isBatchInFlight() check
+        // short-circuits before needsRotation's age/cycle-count safety net is ever reached, so a dead
+        // carrier's worker row was otherwise unretirable until the 24h age cap - and unreachable even then.
+        // forceUnblockOverflowedSessions already retires the worker for its own (much slower, multi-nudge)
+        // closure path; mirroring that same call here closes the gap at the point where it actually fires
+        // first, for every persistent-worker purpose, not just philosophical audit.
+        if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
+            persistentWorkerSessionService.findByCarrierTaskId(task.getId())
+                    .ifPresent(worker -> persistentWorkerSessionService.retire(worker,
+                            "carrier task became terminal (" + task.getStatus() + ")"));
+        }
         log.info("Session {} closed locally because task {} is already terminal ({})",
                 session.getExternalSessionId(), task.getId(), task.getStatus());
     }

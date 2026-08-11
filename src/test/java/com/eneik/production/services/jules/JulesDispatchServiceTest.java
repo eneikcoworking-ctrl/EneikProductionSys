@@ -1734,6 +1734,69 @@ class JulesDispatchServiceTest {
         verify(claimService, never()).closeTaskAsBlocked(any(), anyString());
     }
 
+    /**
+     * 2026-08-11 (live incident: worker 924b2c9f stayed batch-in-flight for 14+ hours after its carrier
+     * session died via exactly this path - closeSessionForTerminalTask closed the session but nothing ever
+     * told PersistentWorkerSessionService the carrier died, so isIdleAndFresh's isBatchInFlight() check
+     * short-circuited forever). This is the root-cause fix: retire the worker at the exact moment its
+     * carrier task is first recognized as terminal, for any persistent-worker purpose.
+     */
+    @Test
+    void closingSessionForTerminalCarrierTaskAlsoRetiresItsPersistentWorker() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/carrier-died");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+
+        var worker = new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(projectFlowService.isPersistentWorkerCarrierTask(task)).thenReturn(true);
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+
+        julesDispatchService.closeSessionsForTerminalTasks();
+
+        assertEquals("closed_terminal_task", session.getStatus());
+        verify(persistentWorkerSessionService).retire(eq(worker), anyString());
+    }
+
+    @Test
+    void closingSessionForTerminalNonCarrierTaskNeverTouchesPersistentWorkerService() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/ordinary-task");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.done);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(projectFlowService.isPersistentWorkerCarrierTask(task)).thenReturn(false);
+
+        julesDispatchService.closeSessionsForTerminalTasks();
+
+        assertEquals("closed_terminal_task", session.getStatus());
+        verify(persistentWorkerSessionService, never()).findByCarrierTaskId(any());
+        verify(persistentWorkerSessionService, never()).retire(any(), anyString());
+    }
+
     @Test
     void closesStaleActiveSessionForBlockedTaskWithoutReopeningTask() {
         UUID sessionId = UUID.randomUUID();
