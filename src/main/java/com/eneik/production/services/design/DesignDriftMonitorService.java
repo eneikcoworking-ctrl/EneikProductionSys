@@ -18,16 +18,19 @@ import java.util.List;
  *
  * Reuses DesignConsistencyAuditService's E(f) predicate (already live for Stitch generation) against
  * the real served HTML/CSS instead of a generated mockup - "is it still on-brand alive", not just
- * "is it alive". Same canonical Verdant Flow tokens already used by DesignSystemFalsificationService
- * and DesignShopOrchestrationService.
+ * "is it alive".
+ *
+ * Confirmed live 2026-08-10 (test-forty-third): there is no established per-project canonical palette
+ * anywhere in this codebase to audit against - the factory's own "Verdant Flow" tokens were wrongly used
+ * here (and in DesignShopOrchestrationService, since fixed) as a stand-in, which false-flagged a
+ * perfectly on-brand client screen as 100% off-token. Until a real per-project design-system baseline
+ * exists (e.g. captured once from a project's first Stitch generation), this only confirms the live page
+ * is genuinely reachable and does not attempt the token comparison at all - a wrong comparison is worse
+ * than no comparison, see the E(f) predicate's own point.
  */
 @Service
 public class DesignDriftMonitorService {
     private static final Logger log = LoggerFactory.getLogger(DesignDriftMonitorService.class);
-
-    private static final List<String> DESIGN_TOKEN_COLORS = List.of(
-            "#fbf9f1", "#7d8570", "#3f7d32", "#d97b29", "#e0342f", "#c99a2e");
-    private static final List<String> DESIGN_TOKEN_FONTS = List.of("Libre Caslon Text", "IBM Plex Sans");
 
     private final RuntimeLauncherClient launcherClient;
     private final DesignConsistencyAuditService auditService;
@@ -56,23 +59,11 @@ public class DesignDriftMonitorService {
                     rootUrl, project.getId(), fetched.error());
             return;
         }
-
-        DesignConsistencyAuditService.TokenSet declared =
-                DesignConsistencyAuditService.TokenSet.of(DESIGN_TOKEN_COLORS, DESIGN_TOKEN_FONTS);
-        DesignConsistencyAuditService.ConsistencyReport report = auditService.audit(fetched.body(), declared, List.of());
-        if (report.traceAccepted()) {
-            return;
-        }
-
-        String title = "Design drift on the live running product for "
-                + (project.getName() != null ? project.getName() : project.getId());
-        String description = String.format(
-                "DesignConsistencyAuditService E(f): live-served page trace ratio %.2f (threshold %.2f), "
-                        + "%d off-token value(s): %s",
-                report.traceRatio(), DesignConsistencyAuditService.MIN_TRACE_RATIO,
-                report.offTokenValues().size(), report.offTokenValues());
-        kaizenService.recordProductRuntimeDefectProposal(project.getId(), project.getName(), title, description);
-        log.info("DesignDriftMonitorService: recorded design drift finding for project {} (traceRatio={})",
-                project.getId(), report.traceRatio());
+        // No per-project canonical palette to audit against yet (see class javadoc) - the fetch above
+        // already proves the live page is reachable and serving real content; the token-drift comparison
+        // itself is intentionally not run until a real per-project baseline exists.
+        log.info("DesignDriftMonitorService: fetched live page for project {} ({} chars) - drift comparison "
+                        + "skipped, no established per-project design-system baseline yet",
+                project.getId(), fetched.body().length());
     }
 }

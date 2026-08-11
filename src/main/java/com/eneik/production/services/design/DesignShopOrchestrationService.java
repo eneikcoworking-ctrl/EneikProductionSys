@@ -42,13 +42,6 @@ import java.util.List;
 public class DesignShopOrchestrationService {
     private static final Logger log = LoggerFactory.getLogger(DesignShopOrchestrationService.class);
 
-    // The project's real, established design tokens (Verdant Flow) - same literals already used live
-    // by DesignSystemFalsificationService.applyDesignSystemsForProject and the DesignConsistencyAuditService
-    // regression fixtures, reused here rather than invented anew.
-    private static final List<String> DESIGN_TOKEN_COLORS = List.of(
-            "#fbf9f1", "#7d8570", "#3f7d32", "#d97b29", "#e0342f", "#c99a2e");
-    private static final List<String> DESIGN_TOKEN_FONTS = List.of("Libre Caslon Text", "IBM Plex Sans");
-
     // If a dispatched design review is neither approved nor abandoned within this window, the cycle is
     // closed out unpromoted rather than left wedged forever - same soft philosophy as completeDesignReview
     // itself ("a design opinion never stalls work"): the next readiness edge (a later falsification round)
@@ -132,16 +125,26 @@ public class DesignShopOrchestrationService {
         String brief = "Full-product design refresh for " + project.getName() + " - round complete ("
                 + readiness.completeFeatures() + "/" + readiness.totalFeatures() + " features delivered).";
         var context = contextService.build(project.getId(), project.getName());
+        // No designSystemColors/Fonts declared: this codebase has no established per-project canonical
+        // palette to audit against (confirmed live 2026-08-10, test-forty-third - the factory's own
+        // "Verdant Flow" tokens were wrongly used here for one dispatch, causing a correct client screen
+        // to be falsely rejected as off-brand). generateAsset degrades to its documented un-audited path
+        // rather than comparing against a palette that belongs to a different product.
         DesignAssetService.DesignAssetResult result = designAssetService.generateAsset(
-                project, context, brief, "mockup", "fast", false,
-                null, DESIGN_TOKEN_COLORS, DESIGN_TOKEN_FONTS);
+                project, context, brief, "mockup", "fast", false);
 
-        if (!result.available() || result.repoDraftPath() == null || result.repoDraftPath().isBlank()) {
+        // Stitch-only for this stage (operator directive 2026-08-10): the nano-banana fallback produces a
+        // raw image with no HTML/CSS a Jules session could implement pixel-perfect against, and no
+        // mockup.html for JulesDispatchService.completeDesignReview's promotion step to find - it exists
+        // for future content-asset generation, not the design shop's mockup pipeline.
+        if (!result.available() || !"stitch".equals(result.model())
+                || result.repoDraftPath() == null || result.repoDraftPath().isBlank()) {
             // Left lastWasReady=false so the next tick retries while readiness is still true, instead of
             // silently losing this round - generation failures (rate limits, transient Stitch errors,
-            // aesthetic_drift rejection) are exactly the kind of thing that resolves itself on retry.
-            log.warn("DesignShopOrchestrationService: design generation unavailable for project {} ({}); will retry next tick",
-                    project.getId(), result.message());
+            // a nano-banana fallback we don't want) are exactly the kind of thing that resolves itself on
+            // retry.
+            log.warn("DesignShopOrchestrationService: no usable Stitch draft for project {} (model={}, message={}); will retry next tick",
+                    project.getId(), result.model(), result.message());
             return;
         }
 

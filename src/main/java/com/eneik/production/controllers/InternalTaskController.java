@@ -50,6 +50,22 @@ public class InternalTaskController {
         return taskRepository.findAll();
     }
 
+    /** Lightweight, project-scoped status counts - COUNT queries only, no task bodies serialized.
+     * Built 2026-08-11 after a real incident: repeatedly polling the unscoped {@link #getAllTasks()}
+     * (a 60MB, ~1100-row dump across every project) for status-check purposes contributed to an H2
+     * OutOfMemoryError that crashed the database. Use this for any repeated/monitoring status check. */
+    @GetMapping("/status-counts")
+    public Map<String, Long> statusCounts(@RequestParam UUID projectId) {
+        Map<String, Long> counts = new java.util.LinkedHashMap<>();
+        for (TaskStatus status : TaskStatus.values()) {
+            long count = taskRepository.countByProjectIdAndStatus(projectId, status);
+            if (count > 0) {
+                counts.put(status.name(), count);
+            }
+        }
+        return counts;
+    }
+
     @PatchMapping("/{id}")
     public ResponseEntity<Void> updateTask(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
         TaskEntity task = taskRepository.findById(id).orElse(null);

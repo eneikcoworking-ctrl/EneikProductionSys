@@ -75,8 +75,8 @@ class DesignShopOrchestrationServiceTest {
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
         DesignAssetService.DesignAssetResult result = new DesignAssetService.DesignAssetResult(
                 true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-1");
-        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
-                isNull(), anyList(), anyList())).thenReturn(result);
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+                .thenReturn(result);
 
         service.tick();
 
@@ -126,8 +126,27 @@ class DesignShopOrchestrationServiceTest {
         when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
         when(readinessService.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
-        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
-                isNull(), anyList(), anyList())).thenReturn(DesignAssetService.DesignAssetResult.unavailable("drift"));
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+                .thenReturn(DesignAssetService.DesignAssetResult.unavailable("drift"));
+
+        service.tick();
+
+        verify(projectFlowService, never()).dispatchDesignReview(any(), any(), any());
+        verify(designShopCycleRepository, never()).save(any());
+    }
+
+    @Test
+    void rejectsANanoBananaFallbackResultEvenWhenAvailable() {
+        // Confirmed live 2026-08-10 (test-forty-third): the design shop must only ever accept a real
+        // Stitch draft - nano-banana produces a raw image with no HTML/CSS to review or implement
+        // against, and no mockup.html for the promotion step to find later.
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
+        DesignAssetService.DesignAssetResult nanoBananaResult = new DesignAssetService.DesignAssetResult(
+                true, "ok", "gemini-3.1-flash-image", "/tmp/x.png", "", "image/png", "", "design/draft/round-1");
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+                .thenReturn(nanoBananaResult);
 
         service.tick();
 

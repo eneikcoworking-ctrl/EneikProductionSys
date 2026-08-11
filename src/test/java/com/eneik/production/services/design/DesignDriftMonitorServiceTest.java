@@ -56,23 +56,17 @@ class DesignDriftMonitorServiceTest {
     }
 
     @Test
-    void recordsAKaizenFindingWhenTheLiveServedPageIsOffToken() {
+    void neverRecordsAFindingSinceThereIsNoEstablishedPerProjectPaletteToAuditAgainstYet() {
+        // Confirmed live 2026-08-10 (test-forty-third): comparing against the factory's own "Verdant
+        // Flow" tokens false-flagged a perfectly on-brand client screen, so the token comparison itself
+        // is intentionally not run until a real per-project baseline exists - see class javadoc. Any
+        // fetched body, on-brand-looking or not, must never produce a Kaizen finding right now.
         when(launcherClient.fetchHtml(anyString())).thenReturn(new RuntimeLauncherClient.FetchResult(
                 200, "<style>body{background:#090f13;color:#161c21;}</style>", 40, null));
 
         service.checkLiveInstance(project, "http://localhost:8090/");
 
-        verify(kaizenService).recordProductRuntimeDefectProposal(eq(project.getId()), eq(project.getName()),
-                anyString(), anyString());
-    }
-
-    @Test
-    void doesNotRecordAFindingWhenTheLiveServedPageIsOnToken() {
-        when(launcherClient.fetchHtml(anyString())).thenReturn(new RuntimeLauncherClient.FetchResult(
-                200, "<style>body{background:#fbf9f1;color:#7d8570;}</style>", 40, null));
-
-        service.checkLiveInstance(project, "http://localhost:8090/");
-
+        verify(launcherClient).fetchHtml("http://localhost:8090/");
         verifyNoInteractions(kaizenService);
     }
 }
