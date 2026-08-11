@@ -38,14 +38,13 @@ app = FastAPI()
 
 WORKSPACE_ROOT = Path("/workspace")
 COMPOSE_PROJECT_NAME = "runtime-observe"
-PORT_OVERRIDE_FILENAME = "runtime-launcher-port-override.yml"
 
 # 2026-08-11 (client runtime observability plan, port collision found live): a client project's own
 # docker-compose.yml very commonly publishes 8080 (test-forty-third does) - the SAME host port this
 # factory's own backend already publishes permanently. Every launch remaps every published host port to
-# a fixed range starting here instead, via a generated compose override - never requires the client
-# project's own compose file to change, and stays deterministic (exactly one project is ever launched
-# at a time, per the operator's own architecture decision - see module docstring).
+# a fixed range starting here instead - never requires the client project's own compose file to change
+# in its repo, and stays deterministic (exactly one project is ever launched at a time, per the
+# operator's own architecture decision - see module docstring).
 EXTERNAL_PORT_BASE = 18080
 
 _current_project_slug: Optional[str] = None
@@ -103,20 +102,23 @@ def _run(args: list[str], cwd: Optional[Path] = None, timeout_seconds: int = 600
     )
 
 
-def _generate_port_override(compose_file: Path) -> tuple[Optional[Path], dict[str, int]]:
-    """Rewrite every published host port in the compose file to a fixed range starting at
-    EXTERNAL_PORT_BASE, so a client project's own port choice never has to change or collide with this
-    factory's own services. Returns (override file path, {service_name: external_port}) - the path is
-    None and the map empty when the compose file declares no published ports (nothing to remap)."""
+def _remap_ports(compose_file: Path) -> dict[str, int]:
+    """Rewrite every published host port in the compose file IN PLACE to a fixed range starting at
+    EXTERNAL_PORT_BASE. A separate override file passed via a second `-f` does NOT work for this: Docker
+    Compose concatenates `ports:` lists across merged files rather than replacing by target port (confirmed
+    live - `-f base.yml -f override.yml` left BOTH 8080 and 18080 in the resolved config, and the compose
+    file's own 8080 entry still failed to bind against this factory's own backend). Rewriting the compose
+    file itself, once, in the ephemeral clone (never the client's real repo) is the only way that actually
+    works. Returns {service_name: external_port}, empty if the compose file declares no published ports."""
     try:
         spec = yaml.safe_load(compose_file.read_text()) or {}
     except Exception:
-        return None, {}
+        return {}
 
     services = spec.get("services") or {}
-    override_services: dict[str, dict] = {}
     port_map: dict[str, int] = {}
     next_port = EXTERNAL_PORT_BASE
+    changed = False
 
     for name, service in services.items():
         if not isinstance(service, dict):
@@ -130,14 +132,12 @@ def _generate_port_override(compose_file: Path) -> tuple[Optional[Path], dict[st
             new_ports.append(f"{next_port}:{container_port}")
             port_map[name] = next_port
             next_port += 1
-        override_services[name] = {"ports": new_ports}
+        service["ports"] = new_ports
+        changed = True
 
-    if not override_services:
-        return None, {}
-
-    override_path = compose_file.parent / PORT_OVERRIDE_FILENAME
-    override_path.write_text(yaml.safe_dump({"services": override_services}))
-    return override_path, port_map
+    if changed:
+        compose_file.write_text(yaml.safe_dump(spec))
+    return port_map
 
 
 @app.post("/launch", response_model=LaunchResponse)
@@ -160,13 +160,10 @@ def launch(req: LaunchRequest) -> LaunchResponse:
             return LaunchResponse(success=False, duration_ms=_elapsed_ms(started),
                                    error="docker-compose.yml not found at repo root after clone")
 
-        override_path, port_map = _generate_port_override(compose_file)
-        compose_args = ["-f", str(compose_file)]
-        if override_path is not None:
-            compose_args += ["-f", str(override_path)]
+        port_map = _remap_ports(compose_file)
 
         up = _run(
-            ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, *compose_args, "up", "-d", "--build"],
+            ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "-f", str(compose_file), "up", "-d", "--build"],
             cwd=workdir, timeout_seconds=600,
         )
         if up.returncode != 0:
@@ -211,12 +208,8 @@ def teardown() -> TeardownResponse:
     compose_file = workdir / "docker-compose.yml"
     try:
         if compose_file.exists():
-            compose_args = ["-f", str(compose_file)]
-            override_path = workdir / PORT_OVERRIDE_FILENAME
-            if override_path.exists():
-                compose_args += ["-f", str(override_path)]
             down = _run(
-                ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, *compose_args, "down", "-v", "--remove-orphans"],
+                ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "-f", str(compose_file), "down", "-v", "--remove-orphans"],
                 cwd=workdir, timeout_seconds=120,
             )
             if down.returncode != 0:
