@@ -128,6 +128,27 @@ public class TechnicalLeadCompilerIntegrationTest {
         assertEquals(WishlistStatus.converted_to_task, wishlist.getStatus());
     }
 
+    /**
+     * 2026-08-13 (live incident: test-forty-fourth). generationStopped has exactly one writer -
+     * stopGeneration(), called only from acceptProject() - so if it's still true while the project's real
+     * status is active, that's an orphaned leftover from a past acceptance/status correction, not a
+     * legitimate block (there is no supported path back from accepted to active, so an active project can
+     * never legitimately have this flag set). Compilation must self-heal it instead of blocking forever
+     * with no way to clear it.
+     */
+    @Test
+    public void testCreateTaskFromWishlistSelfHealsOrphanedGenerationStoppedFlagOnActiveProject() {
+        compiler.stopGeneration(projectId);
+        assertTrue(stateRepository.findById(projectId).orElseThrow().isGenerationStopped());
+
+        compiler.compile(wishlistId, "BARCAN-TAG-09", "When a client submits a request, they want the platform to process it reliably so the result can be verified.",
+                         LeanValue.essential, "toc", "metric", "Completed according to BARCAN-TAG-02 refusal criteria", "Given something, When action, Then result");
+
+        TaskEntity task = compiler.createTaskFromWishlist(wishlistId);
+        assertNotNull(task);
+        assertFalse(stateRepository.findById(projectId).orElseThrow().isGenerationStopped());
+    }
+
     @Test
     public void testCreateTaskFromWishlistRejectionStep5() {
         // DoD without BARCAN-TAG reference

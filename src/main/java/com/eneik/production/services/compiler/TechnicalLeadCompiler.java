@@ -200,7 +200,21 @@ public class TechnicalLeadCompiler {
 
         ProjectGenerationStateEntity generationState = projectGenerationStateRepository.findById(project.getId()).orElse(null);
         if (generationState != null && generationState.isGenerationStopped()) {
-            throw new IllegalStateException("Generation is stopped for this project");
+            // generationStopped has exactly one writer in the whole codebase - stopGeneration(), called only
+            // from acceptProject() - so true here means "this project was accepted at some point." The status
+            // check 4 lines above already throws for any non-active project, so reaching this line at all
+            // means the project's real, current ProjectStatus is active - i.e. NOT accepted. There is no
+            // legitimate path back from accepted to active (activateProject refuses accepted projects by
+            // design), so an active project with this flag still set is provably an orphaned leftover from a
+            // status correction that happened outside the normal flow (2026-08-13 live incident,
+            // test-forty-fourth: a status desync left this flag stranded true after the project's status was
+            // corrected back to active) - self-heal against the real status, the actual source of truth,
+            // instead of permanently blocking every future compile on a stale flag with no way to clear it.
+            log.warn("Project {} has generationStopped=true but its real status is active - clearing stale "
+                    + "flag (orphaned from a past acceptance/status correction) instead of blocking compilation",
+                    project.getId());
+            generationState.setGenerationStopped(false);
+            projectGenerationStateRepository.save(generationState);
         }
 
         String ownerRole = targetRoleForWishlist(wishlist);
