@@ -609,11 +609,16 @@ public class TechnicalLeadCompiler {
         java.io.File workspaceDir = null;
         if (workspacePath != null && !workspacePath.trim().isEmpty()) {
             workspaceDir = new java.io.File(workspacePath);
+            if (!workspaceDir.exists()) {
+                workspaceDir = null;
+            }
         }
-        if (workspaceDir == null || !workspaceDir.exists()) {
-            workspaceDir = new java.io.File(".");
-        }
-
+        // 2026-08-14 (bug-hunt sweep): this used to fall back to new File(".") - the FACTORY's own process
+        // CWD, not this project's workspace - whenever workspacePath was unset/missing. A wish mentioning
+        // "chess...engine" then matched the factory's own frontend/src/dashboard/forge/EngineForge.svelte
+        // by coincidental keyword collision, preempting the intended predicted-path fallback below with an
+        // unrelated real file from a completely different project's UI. No workspace means no real files can
+        // safely be searched - skip straight to the predicted-path fallback instead of scanning ambient CWD.
         java.util.List<String> keywords = new java.util.ArrayList<>();
         String lowerWish = wishContent != null ? wishContent.toLowerCase(java.util.Locale.ROOT) : "";
         if (lowerWish.contains("chess") || lowerWish.contains("шахмат")) {
@@ -636,7 +641,7 @@ public class TechnicalLeadCompiler {
         }
 
         java.util.List<java.io.File> foundFiles = new java.util.ArrayList<>();
-        if (workspaceDir.exists()) {
+        if (workspaceDir != null && workspaceDir.exists()) {
             findFilesWithName(workspaceDir, keywords, foundFiles);
         }
 

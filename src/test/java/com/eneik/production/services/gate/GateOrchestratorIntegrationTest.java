@@ -90,13 +90,9 @@ class GateOrchestratorIntegrationTest {
 
     @Test
     void fullGateRunsDesignGateForUiTaskPastBuildPhase() {
-        ObjectNode payload = basePayload();
-        ArrayNode screenshots = payload.putArray("screenshotUrls");
-        screenshots.addObject().put("url", "desktop_1440.png").put("size", 3000);
-        screenshots.addObject().put("url", "mobile_375.png").put("size", 1800);
-
-        TaskEntity task = createTask("BARCAN-TAG-11", payload);
+        TaskEntity task = createTask("BARCAN-TAG-11", basePayload());
         markProjectPastBuildPhase(task.getProject());
+        stubDesignScreenshotsForTask(task);
 
         gateOrchestrator.runQualityGate(task);
 
@@ -241,6 +237,38 @@ class GateOrchestratorIntegrationTest {
         when(gitHubPullRequestService.parsePullNumber("https://github.com/example/repo/pull/99")).thenReturn(99);
         when(gitHubPullRequestService.fetchDiffText(any(), eq(99)))
                 .thenReturn(Optional.of("+++ b/" + changedFilePath + "\n"));
+    }
+
+    // 2026-08-14 (bug-hunt sweep): fullGateRunsDesignGateForUiTaskPastBuildPhase used to stub a now-dead
+    // payload.screenshotUrls field from before the 2026-08-03 DesignExcellenceGate rewrite (see that
+    // class's own doc comment) - with no PR/session stub at all, the gate deterministically failed with
+    // "no PR found to verify design screenshots against" and this test was silently exercising nothing.
+    // Mirrors stubRealDiffForTask's real-PR-diff pattern, plus the two real screenshot-file fetches
+    // DesignExcellenceGate.check actually performs.
+    private void stubDesignScreenshotsForTask(TaskEntity task) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setTaskId(task.getId());
+        session.setExternalSessionId("sessions/fixture-design-gate-" + task.getId());
+        session.setStatus("pr_opened");
+        session.setPrUrl("https://github.com/example/repo/pull/50");
+        julesSessionRepository.save(session);
+
+        String designCheckDir = DesignExcellenceGate.designCheckDir(task);
+        String desktopPath = designCheckDir + "desktop-1440.png";
+        String mobilePath = designCheckDir + "mobile-375.png";
+        String headRef = "feature/design-" + task.getId();
+
+        when(gitHubPullRequestService.parsePullNumber("https://github.com/example/repo/pull/50")).thenReturn(50);
+        when(gitHubPullRequestService.fetchDiffText(any(), eq(50)))
+                .thenReturn(Optional.of("+++ b/" + desktopPath + "\n+++ b/" + mobilePath + "\n"));
+        when(gitHubPullRequestService.fetchPullRequestByNumber(any(), eq(50)))
+                .thenReturn(Optional.of(new GitHubPullRequestService.GitHubPullRequest(
+                        "https://github.com/example/repo/pull/50", 50, "Design gate fixture PR", headRef,
+                        "fixture-author", false, "main", false, java.time.Instant.now())));
+        when(gitHubPullRequestService.fetchFileBytes(any(), eq(headRef), eq(desktopPath)))
+                .thenReturn(Optional.of(new byte[3000]));
+        when(gitHubPullRequestService.fetchFileBytes(any(), eq(headRef), eq(mobilePath)))
+                .thenReturn(Optional.of(new byte[1800]));
     }
 
     private ObjectNode basePayload() {

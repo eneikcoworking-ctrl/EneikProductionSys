@@ -122,13 +122,22 @@ public class ContinuousOrchestrationService {
             LogScope.project(project.getId());
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
-                if (gitHubPullRequestService != null && isAllowed(project, OperationalAction.SYNC_GITHUB)) {
-                    gitHubPullRequestService.syncCiWorkflow(project);
+                // 2026-08-14 (bug-hunt sweep): these 3 calls used to run unguarded, unlike every other step
+                // in this loop. An uncaught exception here would skip the rest of THIS project's steps below
+                // AND propagate out of the whole method, aborting every subsequent project in activeProjects
+                // for this cycle - the single-active-project invariant makes that low-impact today, but it's
+                // the same inconsistency the rest of this loop was already careful to avoid everywhere else.
+                try {
+                    if (gitHubPullRequestService != null && isAllowed(project, OperationalAction.SYNC_GITHUB)) {
+                        gitHubPullRequestService.syncCiWorkflow(project);
+                    }
+                    if (branchGarbageCollectorService != null) {
+                        branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
+                    }
+                    checkForDuplicateTaskContent(project);
+                } catch (Exception e) {
+                    log.error("Continuous Orchestration: CI sync/PR cleanup/duplicate-content check failed for project {}", project.getId(), e);
                 }
-                if (branchGarbageCollectorService != null) {
-                    branchGarbageCollectorService.cleanOrphanedAndStagnatedPullRequests(project);
-                }
-                checkForDuplicateTaskContent(project);
 
                 if (isAllowed(project, OperationalAction.CHECK_LAUNCHABILITY)) {
                     try {
