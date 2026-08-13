@@ -100,6 +100,38 @@ public class InternalGeminiObserverController {
     // status). DefectJournalEntity.accountName + rawReason is the actual recorded evidence
     // (AccountHealthService.reportDispatchOutcomeCore), scoped by account name, not the forbidden unscoped
     // dump.
+    // Pure diagnostic (2026-08-13, operator directive: "не начинать без полного понимания" - operator saw
+    // 20+ wishlist-compiler tasks directly in Jules's own UI, contradicting the 3-entry defect-journal
+    // picture). Lists every wishlist_compiler task for a project with its real session count and statuses,
+    // to check for genuine duplicate dispatch (multiple real Jules sessions created for overlapping
+    // wishlist batches) rather than the single precondition-failure story already found.
+    @GetMapping("/wishlist-compiler-tasks")
+    public List<java.util.Map<String, Object>> wishlistCompilerTasks(@RequestParam UUID projectId) {
+        List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
+        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
+            if (task.getPayload() == null || !"wishlist_compiler".equals(task.getPayload().path("taskType").asText(null))) {
+                continue;
+            }
+            java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+            m.put("taskId", task.getId());
+            m.put("status", task.getStatus());
+            m.put("createdAt", task.getCreatedAt());
+            m.put("compilesWishlistIds", task.getPayload().path("compilesWishlistIds"));
+            List<java.util.Map<String, Object>> sessions = new java.util.ArrayList<>();
+            for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
+                java.util.Map<String, Object> s = new java.util.LinkedHashMap<>();
+                s.put("sessionId", session.getId());
+                s.put("externalSessionId", session.getExternalSessionId());
+                s.put("status", session.getStatus());
+                s.put("createdAt", session.getCreatedAt());
+                sessions.add(s);
+            }
+            m.put("sessions", sessions);
+            result.add(m);
+        }
+        return result;
+    }
+
     @GetMapping("/account-defect-journal")
     public List<java.util.Map<String, Object>> accountDefectJournal(@RequestParam String accountName) {
         return jdbcTemplate.queryForList(
