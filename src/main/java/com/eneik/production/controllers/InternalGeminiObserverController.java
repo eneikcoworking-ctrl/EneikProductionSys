@@ -53,6 +53,8 @@ public class InternalGeminiObserverController {
     private final AccountRepository accountRepository;
     private final TaskRepository taskRepository;
     private final ContinuousOrchestrationService continuousOrchestrationService;
+    private final com.eneik.production.services.GeminiObserverActionService geminiObserverActionService;
+    private final com.eneik.production.repositories.ProjectRepository projectRepository;
 
     public InternalGeminiObserverController(GeminiObserverJournalRepository journalRepository,
                                              GeminiObserverActionRepository actionRepository,
@@ -63,7 +65,9 @@ public class InternalGeminiObserverController {
                                              PrReviewRepository prReviewRepository,
                                              AccountRepository accountRepository,
                                              TaskRepository taskRepository,
-                                             ContinuousOrchestrationService continuousOrchestrationService) {
+                                             ContinuousOrchestrationService continuousOrchestrationService,
+                                             com.eneik.production.services.GeminiObserverActionService geminiObserverActionService,
+                                             com.eneik.production.repositories.ProjectRepository projectRepository) {
         this.journalRepository = journalRepository;
         this.actionRepository = actionRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
@@ -74,6 +78,23 @@ public class InternalGeminiObserverController {
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.continuousOrchestrationService = continuousOrchestrationService;
+        this.geminiObserverActionService = geminiObserverActionService;
+        this.projectRepository = projectRepository;
+    }
+
+    // Manual trigger (2026-08-13, operator directive: "освободи те 3 finalizing вручную, не жди её цикл")
+    // for the exact same audited action Gemini's own observer cycle already calls - not a new/different
+    // release path, the identical GeminiObserverActionService.retireStuckWorker method, same
+    // OperationalPolicyService.authorize() gate, same GeminiObserverActionEntity audit trail. Exists because
+    // her tool choice each cycle is her own LLM judgment (see 2026-08-13 test-forty-fourth incident - she
+    // called triggerCodeDefectFalsificationRun instead of retireStuckWorker for several cycles running),
+    // not a guarantee she picks the one specific action needed right now.
+    @PostMapping("/retire-stuck-worker-now")
+    public String retireStuckWorkerNow(@RequestParam UUID projectId, @RequestParam UUID carrierTaskId,
+                                        @RequestParam(defaultValue = "manual operator trigger") String reason) {
+        var project = projectRepository.findById(projectId)
+                .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
+        return geminiObserverActionService.retireStuckWorker(project, carrierTaskId.toString(), reason);
     }
 
     // Manual trigger (2026-08-08, operator directive) for the exact same job the daily cron
