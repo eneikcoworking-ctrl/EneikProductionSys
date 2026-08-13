@@ -47,7 +47,11 @@ class SessionLifecycleServiceTest {
         accountRepository = mock(AccountRepository.class);
         taskRepository = mock(TaskRepository.class);
         julesApiClient = mock(JulesApiClient.class);
-        service = new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, julesApiClient);
+        service = new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, julesApiClient, null);
+        // 2026-08-14 (bug-hunt sweep): applyLocalCancelStatus/prepareRemoteDeleteContext/recordRemoteDeleted
+        // are called via self (REQUIRES_NEW proxy dispatch) - wired to the instance itself here, same as
+        // JulesDispatchServiceTest.self, since there's no real Spring proxy in a plain unit test.
+        ReflectionTestUtils.setField(service, "self", service);
         ReflectionTestUtils.setField(service, "cleanupBatchSize", 30);
         when(julesSessionRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
     }
@@ -147,6 +151,11 @@ class SessionLifecycleServiceTest {
         JulesSessionEntity s = session("closed_terminal_task", "sessions/done-task", accountId);
         s.setTaskId(taskId);
         when(julesSessionRepository.findByRemoteDeletedAtIsNullAndExternalSessionIdIsNotNull()).thenReturn(List.of(s));
+        // 2026-08-14 (bug-hunt sweep): deleteRemote now re-fetches the session by id inside its own
+        // short REQUIRES_NEW spans (see SessionLifecycleService's javadoc on retireSessionOnly), instead of
+        // reusing the entity instance this cleanup loop already holds - real DB, real find; this mock must
+        // answer the same lookup.
+        when(julesSessionRepository.findById(s.getId())).thenReturn(Optional.of(s));
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task(taskId, TaskStatus.done, project(ProjectStatus.active))));
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account(accountId, "k")));
         when(julesApiClient.deleteSession(any(), any())).thenReturn(new JulesApiClient.DeleteSessionResult(true, 200, "{}"));
@@ -164,6 +173,7 @@ class SessionLifecycleServiceTest {
         JulesSessionEntity s = session("cancelled", "sessions/closed-project", accountId);
         s.setTaskId(taskId);
         when(julesSessionRepository.findByRemoteDeletedAtIsNullAndExternalSessionIdIsNotNull()).thenReturn(List.of(s));
+        when(julesSessionRepository.findById(s.getId())).thenReturn(Optional.of(s));
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task(taskId, TaskStatus.queued, project(ProjectStatus.frozen))));
         when(accountRepository.findById(accountId)).thenReturn(Optional.of(account(accountId, "k")));
         when(julesApiClient.deleteSession(any(), any())).thenReturn(new JulesApiClient.DeleteSessionResult(true, 200, "{}"));
@@ -171,6 +181,7 @@ class SessionLifecycleServiceTest {
         int processed = service.cleanupEligibleSessions();
 
         assertEquals(1, processed);
+        verify(julesApiClient, times(1)).deleteSession(eq("sessions/closed-project"), eq("k"));
     }
 
     @Test
@@ -197,6 +208,7 @@ class SessionLifecycleServiceTest {
             JulesSessionEntity s = session("closed_terminal_task", "sessions/batch-" + i, accountId);
             s.setTaskId(taskId);
             candidates.add(s);
+            when(julesSessionRepository.findById(s.getId())).thenReturn(Optional.of(s));
             when(taskRepository.findById(taskId)).thenReturn(Optional.of(task(taskId, TaskStatus.done, project(ProjectStatus.active))));
             when(accountRepository.findById(accountId)).thenReturn(Optional.of(account(accountId, "k")));
         }

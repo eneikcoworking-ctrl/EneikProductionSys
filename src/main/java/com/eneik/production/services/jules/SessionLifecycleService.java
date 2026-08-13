@@ -47,17 +47,26 @@ public class SessionLifecycleService {
     private final TaskRepository taskRepository;
     private final JulesApiClient julesApiClient;
 
+    // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self and
+    // ProjectFlowService.self): a plain `this.xxx(...)` call bypasses the Spring AOP proxy entirely, so
+    // @Transactional(REQUIRES_NEW) on prepareRemoteDeleteContext/recordRemoteDeleted/applyLocalCancelStatus
+    // would silently never activate. @Lazy breaks the constructor circular dependency this would otherwise
+    // create.
+    private final SessionLifecycleService self;
+
     @Value("${jules.session-cleanup-batch-size:30}")
     private int cleanupBatchSize;
 
     public SessionLifecycleService(JulesSessionRepository julesSessionRepository,
                                     AccountRepository accountRepository,
                                     TaskRepository taskRepository,
-                                    JulesApiClient julesApiClient) {
+                                    JulesApiClient julesApiClient,
+                                    @org.springframework.context.annotation.Lazy SessionLifecycleService self) {
         this.julesSessionRepository = julesSessionRepository;
         this.accountRepository = accountRepository;
         this.taskRepository = taskRepository;
         this.julesApiClient = julesApiClient;
+        this.self = self;
     }
 
     /**
@@ -67,46 +76,75 @@ public class SessionLifecycleService {
      * consequences (cancelSession fails/releases the task; Branch GC re-queues it) - this only makes sure
      * the SESSION itself is consistently retired, locally and on Jules's side, however it got here.
      */
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep): this and deleteRemote used to run as one @Transactional method/call
+    // chain, holding a DB transaction open across the real julesApiClient.deleteSession HTTP call below.
+    // Same bug class as the 2026-08-07 lock-timeout incident. Split into: a short REQUIRES_NEW transaction
+    // for the local status write, a short REQUIRES_NEW transaction to gather what the network call needs,
+    // the real network call with NO transaction open, then a short REQUIRES_NEW transaction to record the
+    // result - no step holds a connection across the HTTP round trip.
     public void retireSessionOnly(UUID sessionId, String reason) {
+        self.applyLocalCancelStatus(sessionId, reason);
+        deleteRemote(sessionId);
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void applyLocalCancelStatus(UUID sessionId, String reason) {
+        JulesSessionEntity session = julesSessionRepository.findById(sessionId).orElse(null);
+        if (session == null || "cancelled".equals(session.getStatus())) {
+            return;
+        }
+        session.setStatus("cancelled");
+        session.setClosedAt(Instant.now());
+        session.setClosureReason(reason);
+        julesSessionRepository.save(session);
+    }
+
+    private record RemoteDeleteContext(String externalSessionId, String apiKey) {
+    }
+
+    private void deleteRemote(UUID sessionId) {
+        RemoteDeleteContext context = self.prepareRemoteDeleteContext(sessionId);
+        if (context == null) {
+            return;
+        }
+        var result = julesApiClient.deleteSession(context.externalSessionId(), context.apiKey());
+        // A 404 here means Jules already considers it gone (deleted earlier through some other path, or
+        // expired on its own) - equally good evidence of "really gone" as a fresh 200.
+        if (result.success() || result.statusCode() == 404) {
+            self.recordRemoteDeleted(sessionId);
+        } else {
+            log.warn("SessionLifecycleService: failed to delete Jules session {} remotely: status={} body={}",
+                    context.externalSessionId(), result.statusCode(), result.errorBody());
+        }
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public RemoteDeleteContext prepareRemoteDeleteContext(UUID sessionId) {
+        JulesSessionEntity session = julesSessionRepository.findById(sessionId).orElse(null);
+        if (session == null || session.getRemoteDeletedAt() != null) {
+            return null; // gone, or already confirmed gone
+        }
+        if (session.getExternalSessionId() == null || "skipped".equals(session.getExternalSessionId())) {
+            return null;
+        }
+        if (session.getAccountId() == null) {
+            return null;
+        }
+        AccountEntity account = accountRepository.findById(session.getAccountId()).orElse(null);
+        if (account == null || account.getApiKey() == null || account.getApiKey().isBlank()) {
+            return null;
+        }
+        return new RemoteDeleteContext(session.getExternalSessionId(), account.getApiKey());
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordRemoteDeleted(UUID sessionId) {
         JulesSessionEntity session = julesSessionRepository.findById(sessionId).orElse(null);
         if (session == null) {
             return;
         }
-        if (!"cancelled".equals(session.getStatus())) {
-            session.setStatus("cancelled");
-            session.setClosedAt(Instant.now());
-            session.setClosureReason(reason);
-            julesSessionRepository.save(session);
-        }
-        deleteRemote(session);
-    }
-
-    private void deleteRemote(JulesSessionEntity session) {
-        if (session.getRemoteDeletedAt() != null) {
-            return; // already confirmed gone
-        }
-        if (session.getExternalSessionId() == null || "skipped".equals(session.getExternalSessionId())) {
-            return;
-        }
-        if (session.getAccountId() == null) {
-            return;
-        }
-        AccountEntity account = accountRepository.findById(session.getAccountId()).orElse(null);
-        if (account == null || account.getApiKey() == null || account.getApiKey().isBlank()) {
-            return;
-        }
-
-        var result = julesApiClient.deleteSession(session.getExternalSessionId(), account.getApiKey());
-        // A 404 here means Jules already considers it gone (deleted earlier through some other path, or
-        // expired on its own) - equally good evidence of "really gone" as a fresh 200.
-        if (result.success() || result.statusCode() == 404) {
-            session.setRemoteDeletedAt(Instant.now());
-            julesSessionRepository.save(session);
-        } else {
-            log.warn("SessionLifecycleService: failed to delete Jules session {} remotely: status={} body={}",
-                    session.getExternalSessionId(), result.statusCode(), result.errorBody());
-        }
+        session.setRemoteDeletedAt(Instant.now());
+        julesSessionRepository.save(session);
     }
 
     /**
@@ -114,8 +152,13 @@ public class SessionLifecycleService {
      * project closed. Batched (not all at once) - Jules's real rate limits for this endpoint aren't
      * documented, so this stays conservative rather than assuming it's safe to hammer.
      */
+    // 2026-08-14 (bug-hunt sweep): no longer @Transactional at this level - it used to hold one DB
+    // transaction open across up to cleanupBatchSize sequential real julesApiClient.deleteSession HTTP
+    // calls. julesSessionRepository/taskRepository reads below are each independently transactional
+    // (Spring Data JPA default), and TaskEntity.project is an eager @ManyToOne so it's already loaded by
+    // the time findById returns - safe to read outside a transaction. deleteRemote's own short REQUIRES_NEW
+    // spans (via self) handle the actual writes.
     @Scheduled(fixedRateString = "${jules.session-cleanup-rate-ms:1800000}")
-    @Transactional
     public int cleanupEligibleSessions() {
         List<JulesSessionEntity> candidates = julesSessionRepository.findByRemoteDeletedAtIsNullAndExternalSessionIdIsNotNull();
         int processed = 0;
@@ -133,7 +176,7 @@ public class SessionLifecycleService {
             if (!taskTerminal && !projectClosed) {
                 continue;
             }
-            deleteRemote(session);
+            deleteRemote(session.getId());
             processed++;
         }
         if (processed > 0) {

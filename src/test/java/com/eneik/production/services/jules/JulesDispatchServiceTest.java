@@ -99,7 +99,7 @@ class JulesDispatchServiceTest {
             // Wired to the SAME julesSessionRepository/accountRepository/taskRepository mocks this test
             // class already uses, so it observably behaves the same way production wiring does - a mock
             // here would silently no-op the mutation these tests assert on.
-            new SessionLifecycleService(julesSessionRepository, accountRepository, taskRepository, mock(JulesApiClient.class)),
+            newSessionLifecycleServiceForTest(),
             mock(com.eneik.production.repositories.DesignShopCycleRepository.class),
             mock(com.eneik.production.services.stitch.StitchClient.class),
             "prefix/",
@@ -114,6 +114,17 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
         ReflectionTestUtils.setField(julesDispatchService, "activitiesPageSize", 20);
         ReflectionTestUtils.setField(julesDispatchService, "maxActivityPagesPerCycle", 20);
+    }
+
+    // 2026-08-14 (bug-hunt sweep): SessionLifecycleService now needs its own self-proxy field (same
+    // REQUIRES_NEW-via-self pattern as JulesDispatchService.self, for the same reason) - constructed with
+    // null then wired via ReflectionTestUtils, mirroring exactly how julesDispatchService's own self is
+    // set up above.
+    private SessionLifecycleService newSessionLifecycleServiceForTest() {
+        SessionLifecycleService service = new SessionLifecycleService(
+                julesSessionRepository, accountRepository, taskRepository, mock(JulesApiClient.class), null);
+        ReflectionTestUtils.setField(service, "self", service);
+        return service;
     }
 
     @Test
