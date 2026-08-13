@@ -57,6 +57,7 @@ public class InternalGeminiObserverController {
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
     private final com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository;
     private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
 
     public InternalGeminiObserverController(GeminiObserverJournalRepository journalRepository,
                                              GeminiObserverActionRepository actionRepository,
@@ -71,7 +72,8 @@ public class InternalGeminiObserverController {
                                              com.eneik.production.services.GeminiObserverActionService geminiObserverActionService,
                                              com.eneik.production.repositories.ProjectRepository projectRepository,
                                              com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository,
-                                             org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
+                                             org.springframework.jdbc.core.JdbcTemplate jdbcTemplate,
+                                             com.eneik.production.repositories.WishlistRepository wishlistRepository) {
         this.journalRepository = journalRepository;
         this.actionRepository = actionRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
@@ -86,6 +88,7 @@ public class InternalGeminiObserverController {
         this.projectRepository = projectRepository;
         this.persistentWorkerSessionRepository = persistentWorkerSessionRepository;
         this.jdbcTemplate = jdbcTemplate;
+        this.wishlistRepository = wishlistRepository;
     }
 
     // Pure diagnostic (2026-08-13, operator directive: "базу сжать, там мусор" - before running any real
@@ -148,6 +151,22 @@ public class InternalGeminiObserverController {
             }
         }
         return java.util.Map.of("found", false);
+    }
+
+    // Manual, one-off release for a wishlist whose owning compiler task is confirmed terminal (2026-08-13,
+    // operator directive after root-causing test-forty-fourth's 3 stuck wishlists to a transaction-rollback
+    // bug in releaseUnfinishedClaims, now fixed separately - this is the one-time manual recovery for the
+    // 3 that already got stuck under the old, buggy behavior, since the fix only prevents future occurrences).
+    // Same compareAndSetStatus(finalizing -> pending) already used for the worker-death case elsewhere - a
+    // wishlist whose compiler task is `done` has no live session/worker to retry it, so `pending` (not
+    // `compiling`) is correct, matching closeSessionForTerminalTask/retireStuckWorker's own choice.
+    @PostMapping("/release-finalizing-wishlist")
+    public String releaseFinalizingWishlist(@RequestParam UUID wishlistId) {
+        int released = wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+        return released == 1 ? "released " + wishlistId + " back to pending"
+                : "no-op: " + wishlistId + " was not in finalizing status";
     }
 
     @GetMapping("/persistent-workers")
