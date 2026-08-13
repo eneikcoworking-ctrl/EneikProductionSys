@@ -1131,6 +1131,52 @@ class AutonomousPipelineIntegrationTest {
         assertThat(compilingCount).isEqualTo(3);
     }
 
+    /**
+     * 2026-08-13 (live incident, test-forty-fourth): a wishlist bounced back to `pending` (manual claim
+     * release, a retry, a bug - any means) with nothing remembering it was just dispatched moments ago used
+     * to get a brand-new real Jules session opened for it on the very next cycle. Confirmed live: releasing
+     * the same 3-wishlist batch repeatedly while orchestration kept running opened several real duplicate
+     * "Compile 3 Wishlist" sessions against the daily Jules quota. This is the fix: a wishlist whose
+     * lastCompileDispatchedAt is inside the cooldown window must stay `pending` and skip this cycle, no
+     * matter how many times it was reset to pending in between.
+     */
+    @Test
+    void dispatchBatchedWishlistCompilerSkipsWishlistStillInsideDispatchCooldown() {
+        ProjectEntity project = new ProjectEntity();
+        project.setName("Dispatch Cooldown Project");
+        project.setSlug("dispatch-cooldown-project");
+        project.setStatus(ProjectStatus.active);
+        project.setFactoryStatus("ready_local");
+        project.setRepositoryName("dispatch-cooldown-repo");
+        project = projectRepository.saveAndFlush(project);
+
+        WishlistEntity recentlyDispatched = new WishlistEntity();
+        recentlyDispatched.setProjectId(project.getId());
+        recentlyDispatched.setSource(WishlistSource.client);
+        recentlyDispatched.setContent("Was just dispatched a moment ago; must not be re-dispatched yet.");
+        recentlyDispatched.setStatus(WishlistStatus.pending);
+        recentlyDispatched.setLastCompileDispatchedAt(java.time.Instant.now().minusSeconds(30));
+        recentlyDispatched = wishlistRepository.saveAndFlush(recentlyDispatched);
+
+        WishlistEntity neverDispatched = new WishlistEntity();
+        neverDispatched.setProjectId(project.getId());
+        neverDispatched.setSource(WishlistSource.client);
+        neverDispatched.setContent("Never dispatched before; must be admitted normally.");
+        neverDispatched.setStatus(WishlistStatus.pending);
+        neverDispatched = wishlistRepository.saveAndFlush(neverDispatched);
+
+        int admitted = projectFlowService.dispatchBatchedWishlistCompiler(
+                project, List.of(recentlyDispatched, neverDispatched));
+
+        assertThat(admitted).isEqualTo(1);
+        assertThat(wishlistRepository.findById(recentlyDispatched.getId()).orElseThrow().getStatus())
+                .as("still inside cooldown - must stay pending, not get a fresh real Jules dispatch")
+                .isEqualTo(WishlistStatus.pending);
+        assertThat(wishlistRepository.findById(neverDispatched.getId()).orElseThrow().getStatus())
+                .as("no prior dispatch - normal admission")
+                .isEqualTo(WishlistStatus.compiling);
+    }
+
     @Test
     void wishlistCompilerPromptBatchInjectsCorrectionInstructionOnlyForDesignConcerns() {
         WishlistEntity designConcern = new WishlistEntity();

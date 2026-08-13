@@ -93,6 +93,17 @@ public class WishlistEntity {
     @Column(name = "origin_wishlist_id")
     private UUID originWishlistId;
 
+    // 2026-08-13 (live incident, test-forty-fourth): a per-wishlist dispatch cooldown, same pattern as
+    // ProjectFlowService.recordOrchestrationStartOrThrow/ORCHESTRATION_COOLDOWN_SECONDS but scoped to this
+    // one wishlist instead of the whole project. Without it, a wishlist bounced back to `pending` by ANY
+    // means (manual claim release, a retry, a bug) gets a brand-new real Jules session opened for it on the
+    // very next orchestration cycle, with nothing remembering that the same content was just dispatched
+    // moments ago - confirmed live: releasing the same 3-wishlist batch repeatedly while orchestration kept
+    // running opened several real duplicate "Compile 3 Wishlist" sessions against the daily quota. Recorded
+    // at dispatch ATTEMPT time (not just success), so even a failed/blocked attempt still closes the window.
+    @Column(name = "last_compile_dispatched_at")
+    private Instant lastCompileDispatchedAt;
+
     public UUID getId() {
         return id;
     }
@@ -251,5 +262,13 @@ public class WishlistEntity {
 
     public void setTargetContext(TargetContext targetContext) {
         this.targetContext = targetContext;
+    }
+
+    public Instant getLastCompileDispatchedAt() {
+        return lastCompileDispatchedAt;
+    }
+
+    public void setLastCompileDispatchedAt(Instant lastCompileDispatchedAt) {
+        this.lastCompileDispatchedAt = lastCompileDispatchedAt;
     }
 }

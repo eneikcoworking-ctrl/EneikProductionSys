@@ -48,6 +48,14 @@ public class ProjectFlowService {
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
     private static final String ENVIRONMENT_BOOTSTRAP_TOC = "BOOTSTRAP-ENVIRONMENT-BOUNDARY";
     private static final long ORCHESTRATION_COOLDOWN_SECONDS = 300L;
+    // 2026-08-13 (live incident, test-forty-fourth): same cooldown idea as ORCHESTRATION_COOLDOWN_SECONDS
+    // above, but scoped to one wishlist instead of the whole project - see dispatchBatchedWishlistCompiler's
+    // admission loop. Nothing previously remembered "we just tried to compile this exact wishlist a moment
+    // ago", so a wishlist bounced back to `pending` by any means (manual claim release, a retry, a bug) got
+    // a brand-new real Jules session opened for it on the very next cycle - confirmed live: releasing the
+    // same 3-wishlist batch repeatedly while orchestration kept running opened several real duplicate
+    // "Compile 3 Wishlist" sessions against the daily Jules quota.
+    private static final long WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS = 900L;
     // Dashboard "blocked for N hours" visibility (2026-07-25, operator directive) - generous enough that a
     // task legitimately mid-review/mid-dispatch never falsely shows up, same reasoning as this codebase's
     // other safety-net thresholds (e.g. MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN).
@@ -1666,10 +1674,19 @@ public class ProjectFlowService {
                 .filter(w -> w.getFeatureId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
 
+        Instant compileCooldownFloor = Instant.now().minusSeconds(WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS);
         java.util.List<WishlistEntity> admitted = new java.util.ArrayList<>();
         for (WishlistEntity candidate : candidates) {
             if (admitted.size() >= projectBudget) {
                 break;
+            }
+            Instant lastDispatched = candidate.getLastCompileDispatchedAt();
+            if (lastDispatched != null && lastDispatched.isAfter(compileCooldownFloor)) {
+                log.info("ProjectFlowService: wishlist {} was already dispatched for compilation {} second(s) ago "
+                                + "(cooldown {}s); skipping this cycle to avoid opening a duplicate real Jules session",
+                        candidate.getId(), Duration.between(lastDispatched, Instant.now()).getSeconds(),
+                        WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS);
+                continue;
             }
             UUID featureId = candidate.getFeatureId();
             if (featureId != null) {
@@ -1734,6 +1751,15 @@ public class ProjectFlowService {
      * for the busy/rotation bookkeeping this relies on.
      */
     private void dispatchToCompilerPersistentWorker(ProjectEntity project, java.util.List<WishlistEntity> admitted) {
+        // Recorded once, up front, covering every exit path below (fresh message sent, worker busy/needs
+        // revert, new worker registered) - see WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS above. An attempt
+        // was made against this batch this cycle either way, which is what the cooldown needs to know.
+        Instant compileAttemptAt = Instant.now();
+        for (WishlistEntity w : admitted) {
+            w.setLastCompileDispatchedAt(compileAttemptAt);
+        }
+        wishlistRepository.saveAll(admitted);
+
         java.util.List<UUID> batchIds = admitted.stream().map(WishlistEntity::getId).toList();
         Optional<PersistentWorkerSessionEntity> existingOpt =
                 persistentWorkerSessionService.findActiveWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER);
@@ -2469,6 +2495,16 @@ public class ProjectFlowService {
             idsArray.add(w.getId().toString());
         }
         compilerTask.setPayload(payload);
+
+        // Recorded here, at dispatch ATTEMPT time (not just success) - see
+        // WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS above. Even a failed/blocked attempt still closes the
+        // cooldown window, so a wishlist that can't currently be dispatched doesn't get retried in a tight
+        // loop either.
+        Instant now = Instant.now();
+        for (WishlistEntity w : wishlists) {
+            w.setLastCompileDispatchedAt(now);
+        }
+        wishlistRepository.saveAll(wishlists);
 
         compilerTask = taskRepository.save(compilerTask);
         dispatchCompilerTask(compilerTask);
