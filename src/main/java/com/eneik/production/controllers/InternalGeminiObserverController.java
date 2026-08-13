@@ -94,6 +94,20 @@ public class InternalGeminiObserverController {
     // Pure diagnostic (2026-08-13, operator directive: "базу сжать, там мусор" - before running any real
     // compaction, see what's actually taking the space). H2's INFORMATION_SCHEMA.TABLES carries a row-count
     // estimate per table, no need to touch/lock the live .mv.db file to read it.
+    // Pure diagnostic (2026-08-13, operator directive: "разберись" - direct evidence of exactly when/why
+    // an account got blocked, instead of inferring from journal prose or capacity-check logs that only show
+    // the SYMPTOM (retries failing locally) not the CAUSE (the real Jules API rejection that set the
+    // status). DefectJournalEntity.accountName + rawReason is the actual recorded evidence
+    // (AccountHealthService.reportDispatchOutcomeCore), scoped by account name, not the forbidden unscoped
+    // dump.
+    @GetMapping("/account-defect-journal")
+    public List<java.util.Map<String, Object>> accountDefectJournal(@RequestParam String accountName) {
+        return jdbcTemplate.queryForList(
+                "SELECT CREATED_AT, PROJECT_ID, DEFECT_TYPE, SEVERITY, DESCRIPTION, METRIC_VALUE FROM DEFECT_JOURNAL "
+                        + "WHERE SOURCE_COMPONENT = ? ORDER BY CREATED_AT DESC LIMIT 30",
+                accountName);
+    }
+
     @GetMapping("/db-table-sizes")
     public List<java.util.Map<String, Object>> dbTableSizes() {
         return jdbcTemplate.queryForList(
