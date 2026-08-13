@@ -1770,6 +1770,50 @@ class JulesDispatchServiceTest {
         verify(persistentWorkerSessionService).retire(eq(worker), anyString());
     }
 
+    /**
+     * 2026-08-13 (live incident: test-forty-fourth) - retiring the worker row alone left its claimed
+     * wishlists permanently stranded in `finalizing`, since releaseUnfinishedClaims only fires on the
+     * SAME session's own completion path and registerFreshWorker only ever runs for `pending` wishlists.
+     * This verifies the fix: any wishlist ids the dying worker's batch was holding get compare-and-swapped
+     * back from finalizing to pending so the compiler can pick them up again under a fresh worker.
+     */
+    @Test
+    void closingSessionForTerminalCarrierTaskReleasesWorkersClaimedWishlistsBackToPending() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/carrier-died-with-claim");
+        session.setStatus("running");
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setStatus(TaskStatus.blocked);
+
+        var worker = new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(projectFlowService.isPersistentWorkerCarrierTask(task)).thenReturn(true);
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+        when(persistentWorkerSessionService.peekCurrentBatch(worker)).thenReturn(List.of(wishlistId));
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending)).thenReturn(1);
+
+        julesDispatchService.closeSessionsForTerminalTasks();
+
+        assertEquals("closed_terminal_task", session.getStatus());
+        verify(wishlistRepository).compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+        verify(persistentWorkerSessionService).retire(eq(worker), anyString());
+    }
+
     @Test
     void closingSessionForTerminalNonCarrierTaskNeverTouchesPersistentWorkerService() {
         UUID sessionId = UUID.randomUUID();

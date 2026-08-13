@@ -154,6 +154,17 @@ public class PersistentWorkerSessionService {
         return repository.findByCarrierTaskId(carrierTaskId);
     }
 
+    /**
+     * Read-only peek at the batch a worker was last processing, WITHOUT consuming/clearing it (unlike
+     * {@link #consumeCurrentBatch}, which is for the legitimate pr_opened completion edge). Used when a
+     * worker is being retired because its carrier died mid-cycle rather than completing normally - see
+     * JulesDispatchService.closeSessionForTerminalTask, which needs to know which wishlists this worker
+     * had claimed so it can release them, not just retire the worker row itself.
+     */
+    public List<UUID> peekCurrentBatch(PersistentWorkerSessionEntity worker) {
+        return parseBatchIds(worker);
+    }
+
     private List<UUID> parseBatchIds(PersistentWorkerSessionEntity worker) {
         if (!worker.isBatchInFlight()) {
             return List.of();

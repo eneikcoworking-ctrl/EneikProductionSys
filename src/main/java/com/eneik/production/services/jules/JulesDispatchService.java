@@ -4400,8 +4400,34 @@ public class JulesDispatchService {
         // first, for every persistent-worker purpose, not just philosophical audit.
         if (projectFlowService.isPersistentWorkerCarrierTask(task)) {
             persistentWorkerSessionService.findByCarrierTaskId(task.getId())
-                    .ifPresent(worker -> persistentWorkerSessionService.retire(worker,
-                            "carrier task became terminal (" + task.getStatus() + ")"));
+                    .ifPresent(worker -> {
+                        // 2026-08-13 (live incident, test-forty-fourth): retiring the worker row alone is
+                        // not enough. If its carrier died mid-cycle, any wishlist it had claimed into
+                        // `finalizing` (WishlistRepository's short-lived compile-claim lock, released
+                        // normally by completeWishlistCompilation's own releaseUnfinishedClaims) never
+                        // reaches that completion handler either - the exact same zombie-claim shape as
+                        // the worker row itself, one layer down. Confirmed live: Gemini correctly
+                        // diagnosed the stuck worker and retired it via retireStuckWorker (2026-08-11
+                        // fix) repeatedly, every cycle reporting "already retired, nothing to do" - but
+                        // nothing ever unstuck the project, because registerFreshWorker is ONLY ever
+                        // called from dispatchToCompilerPersistentWorker, which only runs for wishlists
+                        // in `pending` - a wishlist stranded in `finalizing` here silently blocks the
+                        // whole purpose from ever restarting, no matter how many times the worker row
+                        // itself gets retired. Released individually (never a blind project-wide reset)
+                        // so a genuinely still-in-flight compilation under a DIFFERENT worker is never
+                        // touched - same compare-and-swap discipline as releaseUnfinishedClaims itself.
+                        for (UUID wishlistId : persistentWorkerSessionService.peekCurrentBatch(worker)) {
+                            int released = wishlistRepository.compareAndSetStatus(
+                                    wishlistId, WishlistStatus.finalizing, WishlistStatus.pending);
+                            if (released == 1) {
+                                log.info("Released wishlist {} from finalizing back to pending - its "
+                                                + "persistent worker's carrier task {} died mid-cycle",
+                                        wishlistId, task.getId());
+                            }
+                        }
+                        persistentWorkerSessionService.retire(worker,
+                                "carrier task became terminal (" + task.getStatus() + ")");
+                    });
         }
         log.info("Session {} closed locally because task {} is already terminal ({})",
                 session.getExternalSessionId(), task.getId(), task.getStatus());
