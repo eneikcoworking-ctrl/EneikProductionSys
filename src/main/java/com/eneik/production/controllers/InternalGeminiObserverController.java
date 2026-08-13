@@ -56,6 +56,7 @@ public class InternalGeminiObserverController {
     private final com.eneik.production.services.GeminiObserverActionService geminiObserverActionService;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
     private final com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbcTemplate;
 
     public InternalGeminiObserverController(GeminiObserverJournalRepository journalRepository,
                                              GeminiObserverActionRepository actionRepository,
@@ -69,7 +70,8 @@ public class InternalGeminiObserverController {
                                              ContinuousOrchestrationService continuousOrchestrationService,
                                              com.eneik.production.services.GeminiObserverActionService geminiObserverActionService,
                                              com.eneik.production.repositories.ProjectRepository projectRepository,
-                                             com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository) {
+                                             com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository,
+                                             org.springframework.jdbc.core.JdbcTemplate jdbcTemplate) {
         this.journalRepository = journalRepository;
         this.actionRepository = actionRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
@@ -83,6 +85,17 @@ public class InternalGeminiObserverController {
         this.geminiObserverActionService = geminiObserverActionService;
         this.projectRepository = projectRepository;
         this.persistentWorkerSessionRepository = persistentWorkerSessionRepository;
+        this.jdbcTemplate = jdbcTemplate;
+    }
+
+    // Pure diagnostic (2026-08-13, operator directive: "базу сжать, там мусор" - before running any real
+    // compaction, see what's actually taking the space). H2's INFORMATION_SCHEMA.TABLES carries a row-count
+    // estimate per table, no need to touch/lock the live .mv.db file to read it.
+    @GetMapping("/db-table-sizes")
+    public List<java.util.Map<String, Object>> dbTableSizes() {
+        return jdbcTemplate.queryForList(
+                "SELECT TABLE_NAME, ROW_COUNT_ESTIMATE FROM INFORMATION_SCHEMA.TABLES "
+                        + "WHERE TABLE_SCHEMA = 'PUBLIC' ORDER BY ROW_COUNT_ESTIMATE DESC LIMIT 20");
     }
 
     // Manual trigger (2026-08-13, operator directive: "освободи те 3 finalizing вручную, не жди её цикл")
