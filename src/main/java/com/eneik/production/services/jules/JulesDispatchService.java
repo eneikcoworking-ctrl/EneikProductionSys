@@ -2955,20 +2955,19 @@ public class JulesDispatchService {
             return;
         }
         UUID projectId = items.get(0).task().getProject().getId();
-        // Admission-mutex lock (2026-07-24): this method is reachable from two different @Transactional
-        // entry points (handlePrOpenedWorkflow's chaotic-domain immediate path, and the regular
-        // processPendingReviewBatch sweep) that CAN genuinely run concurrently - spring.task.scheduling.
-        // pool.size=10, not the Spring default of 1. reviewFallbackTargetsEverAttempted below re-derives
-        // history from the DB at the start of each call - a check-then-INSERT race, same shape already
-        // fixed today for dispatchFalsificationAudit/checkAndDispatchCoverageAudits. Locking the project row
-        // for this whole method serializes concurrent callers so the second one correctly re-reads history
-        // after the first commits, instead of both dispatching a duplicate review-fallback batch.
-        projectRepository.lockProjectForUpdate(projectId);
-        Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
-        List<TaskEntity> tasks = new java.util.ArrayList<>();
-        List<String> prUrls = new java.util.ArrayList<>();
-        List<String> diffs = new java.util.ArrayList<>();
-        List<String> diffHashes = new java.util.ArrayList<>();
+
+        // 2026-08-14 (bug-hunt sweep, same class as the 2026-08-07 dispatchCompilerTask/H2 lock-timeout
+        // incident): the project row lock below used to be taken BEFORE this loop, holding it across up to
+        // N sequential real GitHub diff-fetch HTTP calls (one per PR in the batch) - the most variable,
+        // potentially slowest part of this whole method. Diff fetching itself needs no lock (it's a read
+        // from GitHub plus local isTerminalTask filtering, no DB write, no dedup decision yet) - moved
+        // ahead of the lock so it never holds it. The actual race this method protects against (two
+        // concurrent invocations both deciding the same target is new and both dispatching a duplicate) is
+        // still fully protected below, unchanged - only the network-heavy part moved earlier.
+        List<TaskEntity> fetchedTasks = new java.util.ArrayList<>();
+        List<String> fetchedPrUrls = new java.util.ArrayList<>();
+        List<String> fetchedDiffs = new java.util.ArrayList<>();
+        List<String> fetchedDiffHashes = new java.util.ArrayList<>();
         for (PendingFallbackReview item : items) {
             if (isTerminalTask(item.task())) {
                 log.info("PR review fallback: target task {} is already terminal; skipping obsolete review dispatch.",
@@ -2994,15 +2993,43 @@ public class JulesDispatchService {
             // live (test-thirty-fifth PR#10, 2026-07-23): 2 commits on the PR, second one never reviewed
             // because the old prUrl-only key still matched.
             String diffHash = Integer.toHexString(diff.get().hashCode());
-            String targetKey = item.task().getId() + "::" + item.prUrl() + "::" + diffHash;
+            fetchedTasks.add(item.task());
+            fetchedPrUrls.add(item.prUrl());
+            fetchedDiffs.add(diff.get());
+            fetchedDiffHashes.add(diffHash);
+        }
+        if (fetchedTasks.isEmpty()) {
+            return;
+        }
+
+        // Admission-mutex lock (2026-07-24): this method is reachable from two different @Transactional
+        // entry points (handlePrOpenedWorkflow's chaotic-domain immediate path, and the regular
+        // processPendingReviewBatch sweep) that CAN genuinely run concurrently - spring.task.scheduling.
+        // pool.size=10, not the Spring default of 1. reviewFallbackTargetsEverAttempted below re-derives
+        // history from the DB at the start of each call - a check-then-INSERT race, same shape already
+        // fixed today for dispatchFalsificationAudit/checkAndDispatchCoverageAudits. Locking the project row
+        // for this whole remaining span serializes concurrent callers so the second one correctly re-reads
+        // history after the first commits, instead of both dispatching a duplicate review-fallback batch.
+        // Taken here (after the diff fetches above, not before) so it no longer spans those network calls.
+        projectRepository.lockProjectForUpdate(projectId);
+        Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
+        List<TaskEntity> tasks = new java.util.ArrayList<>();
+        List<String> prUrls = new java.util.ArrayList<>();
+        List<String> diffs = new java.util.ArrayList<>();
+        List<String> diffHashes = new java.util.ArrayList<>();
+        for (int i = 0; i < fetchedTasks.size(); i++) {
+            TaskEntity task = fetchedTasks.get(i);
+            String prUrl = fetchedPrUrls.get(i);
+            String diffHash = fetchedDiffHashes.get(i);
+            String targetKey = task.getId() + "::" + prUrl + "::" + diffHash;
             if (!scheduledTargets.add(targetKey)) {
                 log.info("Poka-yoke: PR review fallback was already attempted for task {} PR {} at this content revision; automatic retry is disabled.",
-                        item.task().getId(), item.prUrl());
+                        task.getId(), prUrl);
                 continue;
             }
-            tasks.add(item.task());
-            prUrls.add(item.prUrl());
-            diffs.add(diff.get());
+            tasks.add(task);
+            prUrls.add(prUrl);
+            diffs.add(fetchedDiffs.get(i));
             diffHashes.add(diffHash);
         }
         if (tasks.isEmpty()) {
