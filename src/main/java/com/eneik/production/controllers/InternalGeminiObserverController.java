@@ -55,6 +55,7 @@ public class InternalGeminiObserverController {
     private final ContinuousOrchestrationService continuousOrchestrationService;
     private final com.eneik.production.services.GeminiObserverActionService geminiObserverActionService;
     private final com.eneik.production.repositories.ProjectRepository projectRepository;
+    private final com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository;
 
     public InternalGeminiObserverController(GeminiObserverJournalRepository journalRepository,
                                              GeminiObserverActionRepository actionRepository,
@@ -67,7 +68,8 @@ public class InternalGeminiObserverController {
                                              TaskRepository taskRepository,
                                              ContinuousOrchestrationService continuousOrchestrationService,
                                              com.eneik.production.services.GeminiObserverActionService geminiObserverActionService,
-                                             com.eneik.production.repositories.ProjectRepository projectRepository) {
+                                             com.eneik.production.repositories.ProjectRepository projectRepository,
+                                             com.eneik.production.repositories.PersistentWorkerSessionRepository persistentWorkerSessionRepository) {
         this.journalRepository = journalRepository;
         this.actionRepository = actionRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
@@ -80,6 +82,7 @@ public class InternalGeminiObserverController {
         this.continuousOrchestrationService = continuousOrchestrationService;
         this.geminiObserverActionService = geminiObserverActionService;
         this.projectRepository = projectRepository;
+        this.persistentWorkerSessionRepository = persistentWorkerSessionRepository;
     }
 
     // Manual trigger (2026-08-13, operator directive: "освободи те 3 finalizing вручную, не жди её цикл")
@@ -95,6 +98,30 @@ public class InternalGeminiObserverController {
         var project = projectRepository.findById(projectId)
                 .orElseThrow(() -> new IllegalArgumentException("Project not found: " + projectId));
         return geminiObserverActionService.retireStuckWorker(project, carrierTaskId.toString(), reason);
+    }
+
+    // Pure diagnostic (2026-08-13, live dispute continued): retireStuckWorkerNow against the carrier task
+    // id Gemini's own journal referenced (363cc677...) returned "already retired, nothing to do" with
+    // nothing released - meaning that specific worker row's currentBatchIds is empty, so it never held the
+    // 3 wishlists actually stuck in `finalizing`. WishlistEntity has no reverse pointer to whichever worker
+    // claimed it (only the worker's own JSON currentBatchIds says so) - lists every persistent worker row
+    // for a project (including retired ones, unlike findActiveWorker) so the real holder can be found by
+    // inspection instead of guessing from journal prose.
+    @GetMapping("/persistent-workers")
+    public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam UUID projectId) {
+        return persistentWorkerSessionRepository.findByProjectId(projectId).stream()
+                .map(w -> {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("id", w.getId());
+                    m.put("purpose", w.getPurpose());
+                    m.put("carrierTaskId", w.getCarrierTaskId());
+                    m.put("retiredAt", w.getRetiredAt());
+                    m.put("createdAt", w.getCreatedAt());
+                    m.put("cycleCount", w.getCycleCount());
+                    m.put("currentBatchIds", w.getCurrentBatchIds());
+                    return m;
+                })
+                .toList();
     }
 
     // Manual trigger (2026-08-08, operator directive) for the exact same job the daily cron

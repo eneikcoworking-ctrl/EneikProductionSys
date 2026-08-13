@@ -5,6 +5,7 @@ import com.eneik.production.models.persistence.PersistentWorkerSessionEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -13,4 +14,5 @@ public interface PersistentWorkerSessionRepository extends JpaRepository<Persist
     Optional<PersistentWorkerSessionEntity> findByProjectIdAndPurposeAndRetiredAtIsNull(
             UUID projectId, PersistentWorkerPurpose purpose);
     Optional<PersistentWorkerSessionEntity> findByCarrierTaskId(UUID carrierTaskId);
+    List<PersistentWorkerSessionEntity> findByProjectId(UUID projectId);
 }
