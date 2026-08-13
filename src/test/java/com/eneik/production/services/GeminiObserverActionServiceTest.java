@@ -424,4 +424,40 @@ class GeminiObserverActionServiceTest {
         assertTrue(outcome.startsWith("skipped"));
         verify(persistentWorkerSessionService, never()).retire(any(), anyString());
     }
+
+    /**
+     * 2026-08-13 (live incident: test-forty-fourth). retire() never clears currentBatchIds, so an
+     * already-retired worker can still be holding wishlist claims wedged in `finalizing` - exactly what
+     * happened here: Gemini called this tool repeatedly and always got "already retired, nothing to do"
+     * while the project stayed stuck, because nothing ever released the claim. The release must run even
+     * when the worker is already retired.
+     */
+    @Test
+    void retireStuckWorkerReleasesStrandedWishlistClaimsEvenWhenWorkerAlreadyRetired() {
+        setUp();
+        ProjectEntity project = project();
+        UUID taskId = UUID.randomUUID();
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        when(operationalPolicyService.authorize(project.getId(), OperationalAction.RETIRE_STUCK_WORKER))
+                .thenReturn(decision(project, OperationalAction.RETIRE_STUCK_WORKER, true, "allowed"));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        var worker = new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        worker.setRetiredAt(java.time.Instant.now());
+        when(persistentWorkerSessionService.findByCarrierTaskId(taskId)).thenReturn(Optional.of(worker));
+        when(persistentWorkerSessionService.peekCurrentBatch(worker)).thenReturn(java.util.List.of(wishlistId));
+        when(wishlistRepository.compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending)).thenReturn(1);
+
+        String outcome = service.retireStuckWorker(project, taskId.toString(), "trying anyway");
+
+        assertTrue(outcome.contains("released 1 stranded wishlist claim"));
+        verify(wishlistRepository).compareAndSetStatus(wishlistId,
+                com.eneik.production.models.persistence.WishlistStatus.finalizing,
+                com.eneik.production.models.persistence.WishlistStatus.pending);
+        verify(persistentWorkerSessionService, never()).retire(any(), anyString());
+    }
 }

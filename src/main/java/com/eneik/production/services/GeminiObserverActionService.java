@@ -115,6 +115,15 @@ public class GeminiObserverActionService {
      * OTHER shape of the same desync (e.g. a carrier session that never reaches a terminal task status but
      * has clearly gone dark) that the code-level fix doesn't cover, so she can act without waiting for a
      * human to notice and intervene by hand again.
+     *
+     * 2026-08-13 (live incident, test-forty-fourth): retiring the worker row alone left its claimed
+     * wishlists wedged in `finalizing` forever - Gemini's own journal shows her calling this tool
+     * repeatedly, correctly getting "already retired, nothing to do" every time, while the project stayed
+     * stuck, because retire() never clears currentBatchIds and nothing else ever released the claim (same
+     * root cause as closeSessionForTerminalTask's gap, fixed the same way there). The release now runs
+     * unconditionally, BEFORE the already-retired check - retire() only sets retiredAt, so an
+     * already-retired worker's currentBatchIds is still sitting there un-released, and this is precisely
+     * the shape that needs a manual unstick.
      */
     public String retireStuckWorker(ProjectEntity project, String targetId, String reason) {
         return execute("retireStuckWorker", OperationalAction.RETIRE_STUCK_WORKER, project, targetId, reason, () -> {
@@ -128,11 +137,18 @@ public class GeminiObserverActionService {
             if (worker == null) {
                 return "no persistent worker registered for this carrier task";
             }
+            int released = 0;
+            for (UUID wishlistId : persistentWorkerSessionService.peekCurrentBatch(worker)) {
+                if (wishlistRepository.compareAndSetStatus(wishlistId, WishlistStatus.finalizing, WishlistStatus.pending) == 1) {
+                    released++;
+                }
+            }
             if (worker.getRetiredAt() != null) {
-                return "already retired, nothing to do";
+                return released == 0 ? "already retired, nothing to do"
+                        : "already retired; released " + released + " stranded wishlist claim(s)";
             }
             persistentWorkerSessionService.retire(worker, "Gemini observer: " + reason);
-            return null;
+            return released == 0 ? null : "released " + released + " stranded wishlist claim(s)";
         });
     }
 
