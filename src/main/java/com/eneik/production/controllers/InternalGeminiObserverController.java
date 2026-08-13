@@ -107,6 +107,36 @@ public class InternalGeminiObserverController {
     // claimed it (only the worker's own JSON currentBatchIds says so) - lists every persistent worker row
     // for a project (including retired ones, unlike findActiveWorker) so the real holder can be found by
     // inspection instead of guessing from journal prose.
+    // Pure diagnostic (2026-08-13, continued): persistentWorkers below showed NEITHER of this project's two
+    // persistent workers held the 3 stuck wishlists - both were retired before the wishlists even existed.
+    // The real batch membership for a compiler completion isn't PersistentWorkerSessionEntity.currentBatchIds
+    // at all - it's a `compilesWishlistIds` JSON marker on the compiler TaskEntity's own payload (see
+    // JulesDispatchService.compilerTaskWishlistIds/completeWishlistCompilation). Scans this ONE project's
+    // tasks (not the forbidden unscoped /internal/tasks dump) for whichever compiler task's marker actually
+    // contains the given wishlist id.
+    @GetMapping("/wishlist-compiler-task")
+    public java.util.Map<String, Object> wishlistCompilerTask(@RequestParam UUID projectId, @RequestParam UUID wishlistId) {
+        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
+            if (task.getPayload() == null) {
+                continue;
+            }
+            var idsNode = task.getPayload().path("compilesWishlistIds");
+            if (!idsNode.isArray()) {
+                continue;
+            }
+            for (var idNode : idsNode) {
+                if (wishlistId.toString().equals(idNode.asText(""))) {
+                    java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+                    m.put("taskId", task.getId());
+                    m.put("status", task.getStatus());
+                    m.put("payload", task.getPayload());
+                    return m;
+                }
+            }
+        }
+        return java.util.Map.of("found", false);
+    }
+
     @GetMapping("/persistent-workers")
     public List<java.util.Map<String, Object>> persistentWorkers(@RequestParam UUID projectId) {
         return persistentWorkerSessionRepository.findByProjectId(projectId).stream()
