@@ -160,6 +160,7 @@ public class InternalGeminiObserverController {
     // Same compareAndSetStatus(finalizing -> pending) already used for the worker-death case elsewhere - a
     // wishlist whose compiler task is `done` has no live session/worker to retry it, so `pending` (not
     // `compiling`) is correct, matching closeSessionForTerminalTask/retireStuckWorker's own choice.
+    @org.springframework.transaction.annotation.Transactional
     @PostMapping("/release-finalizing-wishlist")
     public String releaseFinalizingWishlist(@RequestParam UUID wishlistId) {
         int released = wishlistRepository.compareAndSetStatus(wishlistId,
