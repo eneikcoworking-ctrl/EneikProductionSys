@@ -2239,7 +2239,18 @@ public class JulesDispatchService {
     // dispatch) can still compare-and-swap it again - used whenever a PROCEED admission doesn't end in a
     // real converted_to_task/dismissed write (invalid plan, retry, or an exception during graph building),
     // so a wishlist can never get stranded in `finalizing` forever.
-    private void releaseUnfinishedClaims(java.util.Set<UUID> claimedIds) {
+    //
+    // 2026-08-13 (live incident, test-forty-fourth): REQUIRES_NEW, same as admitWishlistCompilationCompletion
+    // and for the same reason - this runs from inside a catch block after buildTaskGraphFromSlices throws,
+    // but that call shares the caller's (handlePrOpenedWorkflow's) transaction. Spring marks that whole
+    // transaction rollback-only the instant the RuntimeException crosses any @Transactional boundary inside
+    // it, even though this method's own catch block "handles" it in Java - so this CAS write was being
+    // silently discarded at commit time (UnexpectedRollbackException, seen live in this exact pathway),
+    // leaving the wishlist permanently stuck in `finalizing` with no other recovery path. Must go through
+    // `self` (not a bare call) for the annotation to actually take effect - Spring's proxy only intercepts
+    // calls that go through it, not private-method self-invocation.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void releaseUnfinishedClaims(java.util.Set<UUID> claimedIds) {
         for (UUID id : claimedIds) {
             wishlistRepository.compareAndSetStatus(id, WishlistStatus.finalizing, WishlistStatus.compiling);
         }
@@ -2337,7 +2348,7 @@ public class JulesDispatchService {
             } catch (RuntimeException e) {
                 // Claimed wishlists that never reached a real converted_to_task/dismissed write must not be
                 // stranded in `finalizing` forever - release them so a later retry can claim them again.
-                releaseUnfinishedClaims(admission.claimedIds());
+                self.releaseUnfinishedClaims(admission.claimedIds());
                 throw e;
             }
             prOpt.ifPresent(pr -> {
@@ -2360,7 +2371,7 @@ public class JulesDispatchService {
         // Plan was invalid - this attempt claimed the wishlists but is not going to build anything from
         // them, so release the claim now (before deciding retry vs. escalate) instead of leaving them
         // stuck in `finalizing`, which would make every future admission's compare-and-swap fail forever.
-        releaseUnfinishedClaims(admission.claimedIds());
+        self.releaseUnfinishedClaims(admission.claimedIds());
 
         int attempts = compilerTask.getRetryCount();
         if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
