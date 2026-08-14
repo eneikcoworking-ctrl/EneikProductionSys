@@ -198,6 +198,7 @@ class ProjectFlowServiceTest {
                 mock(GitHubProjectFactoryClient.class),
                 mock(SystemSettingsService.class),
                 null,
+                null,
                 mock(TechnicalLeadCompiler.class),
                 mock(ClientDeliveryService.class),
                 mock(ProjectFinalReportRepository.class),

@@ -77,6 +77,9 @@ public class ProjectFlowService {
     // sites that build this service by hand keep working, and so a missing corpus degrades the compiler
     // prompt to its pre-corpus form instead of breaking decomposition.
     private final com.eneik.production.services.market.MarketCorpusService marketCorpusService;
+    // Checks a finished plan against the corpus - see reportUncoveredStatutoryRequirements. Nullable for
+    // the same reason as marketCorpusService: hand-built test instances and a missing corpus both stay working.
+    private final com.eneik.production.services.market.MarketComplianceGate marketComplianceGate;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
     private final ProjectFinalReportRepository projectFinalReportRepository;
@@ -175,6 +178,7 @@ public class ProjectFlowService {
                               GitHubProjectFactoryClient gitHubProjectFactoryClient,
                               SystemSettingsService settingsService,
                               com.eneik.production.services.market.MarketCorpusService marketCorpusService,
+                              com.eneik.production.services.market.MarketComplianceGate marketComplianceGate,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
                               ProjectFinalReportRepository projectFinalReportRepository,
@@ -214,6 +218,7 @@ public class ProjectFlowService {
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
         this.settingsService = settingsService;
         this.marketCorpusService = marketCorpusService;
+        this.marketComplianceGate = marketComplianceGate;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
         this.projectFinalReportRepository = projectFinalReportRepository;
@@ -1494,6 +1499,14 @@ public class ProjectFlowService {
             if (!rawEpics.isArray()) {
                 return java.util.List.of();
             }
+            // 2026-08-14: the prompt states the regulatory floor, but a prompt is a request, not a
+            // guarantee - a compiler that ignores it produces a plan that looks perfectly well-formed. This
+            // checks the finished plan against the corpus and reports statutory duties it shows no sign of
+            // covering. Reporting only, deliberately: coverage is judged by keyword evidence, which is an
+            // approximation, and blocking real work on an approximation trades a visible failure for an
+            // invisible one. The findings make the false-positive rate measurable; blocking can follow once
+            // it is known rather than assumed.
+            reportUncoveredStatutoryRequirements(root);
             java.util.List<MLPredictionServiceClient.EpicPlan> result = new java.util.ArrayList<>();
             for (com.fasterxml.jackson.databind.JsonNode epicNode : rawEpics) {
                 com.fasterxml.jackson.databind.JsonNode rawSlices = epicNode.path("slices");
@@ -2784,6 +2797,27 @@ public class ProjectFlowService {
      * intact and simply carries no itemised requirements - the flow degrades to its pre-corpus behaviour
      * instead of failing.
      */
+    /**
+     * Never throws: a compliance check that can break decomposition is worse than no check at all, since
+     * the failure mode becomes "no plans at all" instead of "a plan missing a legal duty".
+     */
+    private void reportUncoveredStatutoryRequirements(com.fasterxml.jackson.databind.JsonNode planRoot) {
+        if (marketComplianceGate == null) {
+            return;
+        }
+        try {
+            String planText = marketComplianceGate.flatten(planRoot);
+            var findings = marketComplianceGate.uncoveredStatutoryRequirements(
+                    planText, java.util.List.of("DE", "US"));
+            for (var finding : findings) {
+                log.warn("Compliance gap in decomposition plan: {} appears uncovered - {} (basis: {})",
+                        finding.capabilityId(), finding.requirement(), finding.source());
+            }
+        } catch (Exception e) {
+            log.warn("MarketComplianceGate check failed, continuing with the plan: {}", e.getMessage());
+        }
+    }
+
     private String regulatoryFloorFromCorpus() {
         if (marketCorpusService == null) {
             return "";

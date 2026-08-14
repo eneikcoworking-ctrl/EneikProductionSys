@@ -108,6 +108,29 @@ public class MarketCorpusService {
         return result;
     }
 
+    /**
+     * Words a decomposition plan would realistically contain if it covers this capability. Used by
+     * MarketComplianceGate to test coverage against evidence rather than by interpreting prose. An empty
+     * list means the capability cannot be checked this way - and the gate then says nothing about it,
+     * which is the honest outcome rather than a guess in either direction.
+     */
+    public List<String> detectionKeywords(String capabilityId) {
+        JsonNode root = readJson("capabilities.json");
+        if (root == null || capabilityId == null) {
+            return List.of();
+        }
+        for (JsonNode capability : root.path("capabilities")) {
+            if (capabilityId.equals(capability.path("id").asText(""))) {
+                List<String> keywords = new ArrayList<>();
+                for (JsonNode k : capability.path("detectionKeywords")) {
+                    keywords.add(k.asText());
+                }
+                return keywords;
+            }
+        }
+        return List.of();
+    }
+
     /** Value paths per profile, for the completeness check. Profiles themselves carry no authority yet. */
     public JsonNode profiles() {
         JsonNode root = readJson("profiles.json");

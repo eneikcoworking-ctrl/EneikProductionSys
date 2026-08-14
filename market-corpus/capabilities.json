@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "updatedAt": "2026-08-14",
-  "note": "Every entry MUST carry source and status. See README.md - only statutory, standard and observed entries may influence decisions; hypothesis entries are stored to be verified or refuted, never acted upon.",
+  "note": "Every entry MUST carry source and status. See README.md - only statutory, standard and observed entries may influence decisions; hypothesis entries are stored to be verified or refuted, never acted upon. detectionKeywords on a capability are the words a decomposition plan would realistically contain if it covers that capability - used by the compliance gate to test coverage by evidence rather than by guessing at prose.",
   "capabilities": [
     {
       "id": "accessibility",
@@ -15,11 +15,21 @@
         {
           "requirement": "WCAG 2.1 level AA: keyboard operability, visible focus, labelled form controls, 4.5:1 text contrast",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "statutory",
           "source": "European Accessibility Act (Directive 2019/882), applicable from 2025-06-28; harmonised standard EN 301 549 which adopts WCAG 2.1 AA; in the US enforced under ADA Title III case law",
           "note": "A property of every screen. Delivered as criteria inside each UI slice - never as one separate 'make it accessible' epic, which is how accessibility reliably fails to happen."
         }
+      ],
+      "detectionKeywords": [
+        "accessib",
+        "wcag",
+        "keyboard",
+        "contrast",
+        "screen reader",
+        "a11y"
       ]
     },
     {
@@ -34,10 +44,20 @@
         {
           "requirement": "Export of a data subject's own data on request, and erasure on request, within the statutory deadline",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "statutory",
           "source": "GDPR (Regulation 2016/679) Art. 15 (right of access) and Art. 17 (right to erasure); one month response deadline under Art. 12(3)"
         }
+      ],
+      "detectionKeywords": [
+        "gdpr",
+        "data subject",
+        "erasure",
+        "delete my data",
+        "export data",
+        "dsar"
       ]
     },
     {
@@ -51,18 +71,29 @@
         {
           "requirement": "Opt-in consent captured before any non-essential cookie or tracker loads; refusing must be as easy as accepting; the choice is recorded and revocable",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "statutory",
           "source": "GDPR Art. 6 and Art. 7 (conditions for consent); ePrivacy Directive 2002/58/EC Art. 5(3) on storing or accessing information on terminal equipment"
         },
         {
           "requirement": "Use an established consent platform rather than a hand-rolled banner",
           "kano": "performance",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "hypothesis",
           "source": "AI general knowledge, 2026-08-14 - unverified",
           "note": "Plausible but unmeasured. Must not influence anything until promoted to observed or supported by a citation."
         }
+      ],
+      "detectionKeywords": [
+        "consent",
+        "cookie",
+        "tracking",
+        "opt-in",
+        "eprivacy"
       ]
     },
     {
@@ -76,11 +107,19 @@
         {
           "requirement": "Regular backups AND a restore that has actually been performed and verified, not merely configured",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "statutory",
           "source": "GDPR Art. 32(1)(c) requires the ability to restore availability and access to personal data in a timely manner following an incident",
           "note": "An untested backup does not satisfy the requirement, so acceptance criteria must include a real restore."
         }
+      ],
+      "detectionKeywords": [
+        "backup",
+        "restore",
+        "recovery point",
+        "disaster"
       ]
     },
     {
@@ -94,7 +133,9 @@
         {
           "requirement": "A self-service recovery path for a locked-out account, including the owner account",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "hypothesis",
           "source": "AI general knowledge, 2026-08-14 - unverified",
           "note": "Universally expected in practice, but not measured here and not a statutory requirement. Pending market observation."
@@ -112,7 +153,9 @@
         {
           "requirement": "Imprint (Impressum) reachable from every page: legal entity, address, contact, register number and VAT ID where applicable",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "§5 Digitale-Dienste-Gesetz (DDG, successor to §5 TMG)",
@@ -121,7 +164,11 @@
         {
           "requirement": "Withdrawal rights: 14-day right of withdrawal with the statutory instruction text and a model withdrawal form, for consumer sales",
           "kano": "must-be",
-          "appliesToProfiles": ["shop", "marketplace", "subscription"],
+          "appliesToProfiles": [
+            "shop",
+            "marketplace",
+            "subscription"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "Directive 2011/83/EU on consumer rights, transposed in BGB §§312g, 355 and Art. 246a EGBGB"
@@ -129,7 +176,11 @@
         {
           "requirement": "Prices shown inclusive of VAT, with shipping costs stated and total shown before the order is binding; the order button must be labelled unambiguously (Button-Lösung)",
           "kano": "must-be",
-          "appliesToProfiles": ["shop", "marketplace", "subscription"],
+          "appliesToProfiles": [
+            "shop",
+            "marketplace",
+            "subscription"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "Preisangabenverordnung (PAngV); BGB §312j(3) requiring an order button labelled e.g. 'zahlungspflichtig bestellen'"
@@ -137,11 +188,23 @@
         {
           "requirement": "Consent for non-essential cookies and trackers under the German transposition, not only the GDPR baseline",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "§25 TDDDG (formerly TTDSG), transposing ePrivacy Art. 5(3)"
         }
+      ],
+      "detectionKeywords": [
+        "impressum",
+        "imprint",
+        "withdrawal",
+        "widerruf",
+        "vat",
+        "mwst",
+        "legal notice",
+        "terms"
       ]
     },
     {
@@ -156,7 +219,9 @@
         {
           "requirement": "Consumer privacy rights - access, deletion, and opt-out of sale/sharing - for residents of states that grant them",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "market": "US",
           "status": "statutory",
           "source": "CCPA as amended by CPRA (California); comparable acts in Virginia (VCDPA), Colorado (CPA), Connecticut (CTDPA), Utah (UCPA) and further states",
@@ -165,12 +230,24 @@
         {
           "requirement": "Sales tax calculated per destination jurisdiction, via an established tax service rather than hand-maintained rates",
           "kano": "must-be",
-          "appliesToProfiles": ["shop", "marketplace", "subscription"],
+          "appliesToProfiles": [
+            "shop",
+            "marketplace",
+            "subscription"
+          ],
           "market": "US",
           "status": "statutory",
           "source": "South Dakota v. Wayfair (2018) established economic nexus; roughly 11,000 taxing jurisdictions exist, so rates cannot be maintained by hand",
           "note": "Architectural, not cosmetic: retrofitting destination-based tax means rewriting order totals, so it belongs in the first decomposition."
         }
+      ],
+      "detectionKeywords": [
+        "ccpa",
+        "cpra",
+        "opt-out",
+        "sales tax",
+        "nexus",
+        "tax calculation"
       ]
     },
     {
@@ -184,7 +261,11 @@
         {
           "requirement": "Germany: offer SEPA direct debit, PayPal, and purchase-on-invoice alongside cards; card-only checkout underperforms in this market",
           "kano": "performance",
-          "appliesToProfiles": ["shop", "marketplace", "subscription"],
+          "appliesToProfiles": [
+            "shop",
+            "marketplace",
+            "subscription"
+          ],
           "market": "DE",
           "status": "hypothesis",
           "source": "AI general knowledge, 2026-08-14 - unverified. Pending market observation to become an observed share.",
@@ -193,11 +274,22 @@
         {
           "requirement": "Strong customer authentication on electronic payments in the EU",
           "kano": "must-be",
-          "appliesToProfiles": ["shop", "marketplace", "subscription"],
+          "appliesToProfiles": [
+            "shop",
+            "marketplace",
+            "subscription"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "PSD2 (Directive 2015/2366) Art. 97 and Commission Delegated Regulation 2018/389 on strong customer authentication"
         }
+      ],
+      "detectionKeywords": [
+        "payment",
+        "checkout",
+        "sca",
+        "3ds",
+        "strong customer authentication"
       ]
     },
     {
@@ -211,7 +303,9 @@
         {
           "requirement": "Metrics derived from the client's stated outcome via Goal-Question-Metric: the goal, the questions that would reveal whether it is being met, and only the metrics answering those questions",
           "kano": "must-be",
-          "appliesToProfiles": ["*"],
+          "appliesToProfiles": [
+            "*"
+          ],
           "status": "literature",
           "source": "Basili & Weiss, 'A Methodology for Collecting Valid Software Engineering Data', IEEE TSE 1984; GQM as used in the NASA Software Engineering Laboratory",
           "note": "The method is cited; the claim that every product needs it is this system's own position, adopted by operator decision 2026-08-14."
