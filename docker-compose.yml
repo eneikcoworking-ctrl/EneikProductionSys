@@ -96,6 +96,11 @@ services:
       ml:
         condition: service_healthy
     restart: unless-stopped
+    # 2026-08-14: docker's default 10s grace period was killing the JVM (exit 137) before H2 could close
+    # its file-mode store. MVStore only reclaims freed pages on a clean close, so every hard kill left the
+    # file bigger and never compacted it - measured: 96 MB of data in a 1678 MB file. Together with the
+    # raised spring.lifecycle.timeout-per-shutdown-phase this lets the store close and compact properly.
+    stop_grace_period: 90s
 
   frontend:
     build:
