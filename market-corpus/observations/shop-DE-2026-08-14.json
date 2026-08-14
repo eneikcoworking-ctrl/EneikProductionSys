@@ -1,0 +1,68 @@
+{
+  "profileId": "shop",
+  "market": "DE",
+  "observedAt": "2026-08-14",
+  "observedBy": "assistant-web-fetch",
+  "method": "Static fetch of each shop's landing or shop page, converted to text, then read for the presence of specific footer links and price wording. Products were selected as ordinary small owner-run German retailers (coffee roasters and independent booksellers) rather than flagship brands, because the question is what a normal client's competitor looks like. NO browser automation, NO JavaScript execution, and NO checkout was attempted.",
+  "methodLimitations": [
+    "JavaScript is not executed, so cookie/consent banners - which are almost always injected client-side - are effectively invisible to this method. The consent counts below are NOT evidence of absence and must not be read as a share.",
+    "Only the fetched page was read. A missing link means it was not on THAT page, not that the shop lacks it; several of these shops keep legal links on inner pages only.",
+    "Prices were only observable where the fetched page happened to list products. Category pages without products yield unknown, not absent.",
+    "Guest checkout, order confirmation, cancellation flow, notifications and mobile layout could not be observed at all without completing a real purchase and rendering the page - they are omitted rather than guessed.",
+    "boehnert.de returned negative for every single item, which is more consistent with a fetch/render failure than with a real shop lacking an Impressum; it is counted as unknown throughout rather than as a shop that violates German law."
+  ],
+  "productsExamined": [
+    "https://www.dinzler.de/shop/",
+    "https://shop.berliner-kaffeeroesterei.de/",
+    "https://www.kaffeefachwerk.de/",
+    "https://mueller-kaffee.com/online-shop/",
+    "https://shop.kaffeeroesterei-senftenberg.de/",
+    "https://www.kaffee-muenchen.de/shop/",
+    "https://www.boehnert.de/shop/",
+    "https://www.genialokal.de/"
+  ],
+  "counts": [
+    {
+      "capability": "imprint-reachable-from-footer",
+      "present": 6,
+      "absent": 1,
+      "unknown": 1,
+      "note": "Absent: shop.berliner-kaffeeroesterei.de on the fetched page. boehnert.de counted unknown per the limitation above."
+    },
+    {
+      "capability": "withdrawal-rights-page",
+      "present": 6,
+      "absent": 0,
+      "unknown": 2,
+      "note": "Named variously Widerrufsrecht, Widerrufsbelehrung, or 'Vertrag widerrufen' - all count as present."
+    },
+    {
+      "capability": "vat-inclusive-price-wording",
+      "present": 5,
+      "absent": 0,
+      "unknown": 3,
+      "note": "Unknown where the fetched page listed no products. Not one shop that showed prices showed them without VAT wording."
+    },
+    {
+      "capability": "terms-page",
+      "present": 6,
+      "absent": 0,
+      "unknown": 2
+    },
+    {
+      "capability": "human-contact-route",
+      "present": 5,
+      "absent": 1,
+      "unknown": 2,
+      "note": "Phone number or contact page reachable from the fetched page."
+    },
+    {
+      "capability": "consent-banner",
+      "present": 1,
+      "absent": 0,
+      "unknown": 7,
+      "note": "UNRELIABLE BY CONSTRUCTION - see methodLimitations. Banners are client-side rendered and this method does not run JavaScript. Recorded only so the gap is visible; must not be turned into a share."
+    }
+  ],
+  "notes": "First real measurement in this corpus. Sample of 8 is small and drawn from two niches, so these are directional, not authoritative. What it does establish, with real evidence: the statutory items the corpus already asserts for Germany - imprint, withdrawal rights, VAT-inclusive pricing, terms - are in fact near-universal among ordinary small German shops, which is what a Must-Be classification predicts. It does NOT yet establish anything about guest checkout, confirmations, reminders or recovery paths, which are the links the completeness floor cares about most and which need a method that can actually transact."
+}
