@@ -64,6 +64,18 @@ public class FalsificationCycleService {
     private final WishlistRepository wishlistRepository;
     private final FalsificationRunRepository falsificationRunRepository;
     private final SystemSettingsService settingsService;
+
+    // 2026-08-14: the market corpus reached decomposition but not the audit, so the flow could plan a
+    // legal duty and never check whether the built product actually has it. The audit is the better place
+    // to catch that, because it looks at the RUNNING product rather than at a plan - a missing Impressum
+    // is visible on the real page in a way it never is in a task description.
+    //
+    // Injected as an optional field rather than a constructor parameter on purpose: this class is built by
+    // hand in 15 places across its own test, and widening the constructor for an optional read-only
+    // dependency would mean touching all of them for no behavioural gain. Null when absent - the prompt
+    // then simply carries no regulatory section, exactly as before this existed.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.market.MarketCorpusService marketCorpusService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
     private final ClientDeliverableReadinessService readinessService;
@@ -662,6 +674,15 @@ public class FalsificationCycleService {
                 Must-Be and say plainly which link broke and what you observed. If the path is unbroken,
                 say that too - it is real evidence, not an absence of findings.
 
+                STEP 1c - check the obligations this product cannot legally ship without. These are not
+                opinions and are not subject to a philosopher's taste: they are duties for the German and
+                US markets this product is built for, and the client is not expected to have asked for
+                them. Look for each in the RUNNING product and in its code, and report every one you find
+                missing as a Must-Be critique with the act named as evidence. A missing legal disclosure is
+                not a style question - in Germany it is a standard target for paid cease-and-desist
+                letters, and the bill goes to the client.
+                %s
+
                 LIVE EVIDENCE - already fetched from the factory's own currently-running instance of this
                 product (a separate, independent launch from the one you attempt in STEP 1 above - use this
                 as ADDITIONAL grounding alongside your own attempt, never as a replacement for it, since it
@@ -723,7 +744,8 @@ public class FalsificationCycleService {
                 %s
 
                 %s
-                """.formatted(screenshotDir, liveEvidenceBlock(project), activeRoles.size(), totalActiveRoleCount,
+                """.formatted(screenshotDir, regulatoryChecklistFromCorpus(), liveEvidenceBlock(project),
+                        activeRoles.size(), totalActiveRoleCount,
                         reportPath, screenshotDir, charters, knownContext);
     }
 
@@ -811,6 +833,39 @@ public class FalsificationCycleService {
     // gate threshold - a wrongly-removed feature is invisible and unrecoverable, a wrongly-kept one is
     // visible and cheap.
     private static final List<String> KANO_ASSERTIVENESS_ORDER = List.of("Attractive", "Performance", "Must-Be", "Indifferent", "Reverse");
+
+    /**
+     * The statutory duties for the markets this factory builds for, rendered from the versioned corpus.
+     * Only statutory entries appear - MarketCorpusService.influentialExpectations enforces that, so the
+     * unverified guesses in the corpus can never be presented to an auditor as legal obligations.
+     * Empty string when no corpus is available, which leaves the audit exactly as it was before.
+     */
+    private String regulatoryChecklistFromCorpus() {
+        if (marketCorpusService == null) {
+            return "";
+        }
+        java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>();
+        for (String market : List.of("DE", "US")) {
+            for (var expectation : marketCorpusService.influentialExpectations(market)) {
+                if (!"statutory".equals(expectation.status())) {
+                    continue;
+                }
+                StringBuilder line = new StringBuilder("                  * ");
+                if (expectation.market() != null && !expectation.market().isBlank()) {
+                    line.append("[").append(expectation.market()).append("] ");
+                }
+                if (expectation.appliesWhen() != null && !expectation.appliesWhen().isBlank()) {
+                    line.append("if ").append(expectation.appliesWhen()).append(": ");
+                }
+                line.append(expectation.requirement());
+                if (expectation.source() != null && !expectation.source().isBlank()) {
+                    line.append(" (basis: ").append(expectation.source()).append(")");
+                }
+                lines.add(line.toString());
+            }
+        }
+        return String.join("\n", lines);
+    }
 
     private String normalizeKano(String raw) {
         for (String known : KANO_ASSERTIVENESS_ORDER) {
