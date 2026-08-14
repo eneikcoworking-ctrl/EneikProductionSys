@@ -547,23 +547,19 @@ public class ProjectFlowService {
         return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt(), item.getFeatureId());
     }
 
-    // 2026-08-14 (bug-hunt sweep, ATTEMPTED then REVERTED): removing @Transactional here looked safe by
-    // the same reasoning that worked for 5 other methods tonight (real network calls in a loop: GitHub
-    // fetch in tryCompileWishlistCheaply, real Jules dispatch in dispatchBatchedWishlistCompiler), but the
-    // full test suite caught a genuine regression this file's other fixes didn't have: dispatchBatched
-    // WishlistCompiler's wishlist admission relies on WishlistRepository.compareAndSetStatus, a custom
-    // @Modifying JPQL query - unlike simple repository save()/delete() calls (which Spring Data auto-wraps
-    // in their own transaction), a @Modifying query needs an ALREADY-ACTIVE writable transaction from its
-    // caller (confirmed live tonight for a different endpoint - see release-finalizing-wishlist's
-    // TransactionRequiredException fix). Without this method's own @Transactional, every orchestrate() call
-    // through the real controller failed with "No EntityManager with actual transaction available for
-    // current thread - cannot reliably process 'flush' call" (3 ProjectFlowIntegrationTest failures,
-    // 500s). Reverted to keep @Transactional here rather than ship a broken orchestration endpoint -
-    // properly fixing this one needs the same self+REQUIRES_NEW extraction already used for
-    // dispatchReviewerFallbackBatch/admitWishlistCompilationCompletion (isolate just the CAS-based
-    // admission into its own short transaction, keep the GitHub/Jules calls outside it), which is more
-    // surgery than a documented follow-up, not attempted in this pass.
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep, second attempt - first attempt reverted): used to be @Transactional,
+    // holding a DB transaction/connection open across a real GitHub HTTP call per pending wishlist in the
+    // loop below (tryCompileWishlistCheaply's raw HttpClient GET) plus a real Jules dispatch at the end of
+    // dispatchBatchedWishlistCompiler. A first attempt at simply removing this annotation (mirroring 5
+    // other methods fixed the same night) broke live dispatch: dispatchBatchedWishlistCompiler's wishlist
+    // admission depends on WishlistRepository.compareAndSetStatus, a custom @Modifying JPQL query with no
+    // @Transactional of its own - unlike plain save()/delete() (auto-wrapped by Spring Data), it needs an
+    // ALREADY-ACTIVE writable transaction from its caller, and without this method's wrapper there wasn't
+    // one (TransactionRequiredException, 3 ProjectFlowIntegrationTest failures caught by the full suite).
+    // Fixed properly this time: that CAS step is now its own short REQUIRES_NEW transaction
+    // (claimWishlistsForCompilation, via self) - see that method's javadoc - so it always has the real
+    // transaction it needs regardless of this method's own state, while the GitHub/Jules network calls
+    // below run with no transaction held open.
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
@@ -1726,15 +1722,24 @@ public class ProjectFlowService {
         // concurrent overlapping call (e.g. another admission cycle firing before this one's own DB write
         // committed) loses the race for any wishlist it also picked and correctly skips it here instead of
         // both callers independently dispatching a duplicate compiler session against the same content.
+        //
+        // 2026-08-14 (bug-hunt sweep): this CAS loop is now a separate REQUIRES_NEW call (via self) rather
+        // than inline here. orchestrate() (this method's only caller) no longer wraps itself in
+        // @Transactional - a first attempt at removing it broke live dispatch, because
+        // compareAndSetStatus is a custom @Modifying JPQL query with no @Transactional of its own
+        // (unlike plain save()/delete(), which Spring Data auto-wraps): it needs an ALREADY-ACTIVE writable
+        // transaction from its caller, and without orchestrate()'s wrapper there wasn't one -
+        // TransactionRequiredException on every real orchestrate() call (see the revert commit for detail).
+        // Isolating just this claim step in its own short transaction gives it the active transaction it
+        // genuinely needs, while dispatchWishlistCompiler/dispatchToCompilerPersistentWorker's real Jules
+        // dispatch call below still runs with no transaction open.
+        java.util.List<UUID> admittedIds = admitted.stream().map(WishlistEntity::getId).collect(java.util.stream.Collectors.toList());
+        java.util.Set<UUID> wonIds = new java.util.HashSet<>(self.claimWishlistsForCompilation(admittedIds));
         java.util.List<WishlistEntity> won = new java.util.ArrayList<>();
         for (WishlistEntity w : admitted) {
-            int updated = wishlistRepository.compareAndSetStatus(w.getId(), WishlistStatus.pending, WishlistStatus.compiling);
-            if (updated == 1) {
+            if (wonIds.contains(w.getId())) {
                 w.setStatus(WishlistStatus.compiling);
                 won.add(w);
-            } else {
-                log.info("ProjectFlowService: wishlist {} was concurrently claimed by another compile-admission "
-                        + "call; skipping here to avoid dispatching a duplicate compiler session", w.getId());
             }
         }
         if (won.isEmpty()) {
@@ -1746,6 +1751,32 @@ public class ProjectFlowService {
             dispatchWishlistCompiler(project, won);
         }
         return won.size();
+    }
+
+    // Extracted from dispatchBatchedWishlistCompiler (2026-08-14, bug-hunt sweep) so this specific
+    // @Modifying-query-dependent claim step always runs inside a genuinely active transaction, regardless
+    // of whether its caller (orchestrate()) has one open - see the comment at that call site for the live
+    // incident this closes. Deliberately plain @Transactional (REQUIRED), not REQUIRES_NEW: orchestrate(),
+    // this method's only real caller, has no ambient transaction of its own (removed for the same reason
+    // dispatchReviewerFallbackBatch's lock was), so REQUIRED opens a fresh one here exactly like
+    // REQUIRES_NEW would - but REQUIRED also correctly joins an already-open transaction when one exists
+    // (e.g. AutonomousPipelineIntegrationTest's class-level @Transactional test-rollback wrapper calling
+    // this method directly), rather than starting a genuinely separate transaction that can't see that
+    // caller's own saveAndFlush'd-but-uncommitted fixture rows. REQUIRES_NEW was tried first and broke
+    // exactly those tests (0 admitted instead of 1/3) for precisely this reason.
+    @Transactional
+    java.util.List<UUID> claimWishlistsForCompilation(java.util.List<UUID> candidateIds) {
+        java.util.List<UUID> wonIds = new java.util.ArrayList<>();
+        for (UUID id : candidateIds) {
+            int updated = wishlistRepository.compareAndSetStatus(id, WishlistStatus.pending, WishlistStatus.compiling);
+            if (updated == 1) {
+                wonIds.add(id);
+            } else {
+                log.info("ProjectFlowService: wishlist {} was concurrently claimed by another compile-admission "
+                        + "call; skipping here to avoid dispatching a duplicate compiler session", id);
+            }
+        }
+        return wonIds;
     }
 
     // Marks a carrier task (see PersistentWorkerSessionService) at creation time so completion routing
