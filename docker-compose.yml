@@ -53,6 +53,11 @@ services:
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
       ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system
+      # 2026-08-14: the market corpus lives in the repository (market-corpus/), which is mounted read-only
+      # at /app/eneik-system - not baked into the image. Pointing at the mount rather than copying it in
+      # means a corrected corpus takes effect on restart instead of requiring a rebuild, which matters
+      # because this file is meant to be edited by humans when a law or a measurement changes.
+      MARKETCORPUS_ROOT: /app/eneik-system/market-corpus
       ENEIK_OPERATOR_MEMORY_ROOT: /app/data/operator-memory
       ENEIK_OPERATOR_ALLOW_MUTATING_TOOLS: ${ENEIK_OPERATOR_ALLOW_MUTATING_TOOLS:-true}
       ENEIK_OPERATOR_DOCKER_COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-eneikproductionsys}
