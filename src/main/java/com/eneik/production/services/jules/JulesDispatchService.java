@@ -1922,7 +1922,22 @@ public class JulesDispatchService {
         return replayed;
     }
 
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep): dispatches to 8 completion handlers, 7 of which make direct real GitHub/
+    // Jules network calls (some several) with no REQUIRES_NEW protection of their own - only
+    // completeWishlistCompilation's wishlist-claim step is already isolated (admitWishlistCompilationCompletion/
+    // releaseUnfinishedClaims, both REQUIRES_NEW via self, 2026-08-07/13) - the REST of even that handler's
+    // own network calls (mergeRecordPullRequest, sendMessage) still ran inside this method's transaction.
+    // completePhilosophicalAudit even takes its own explicit projectRepository.lockProjectForUpdate, the
+    // same severe shape as dispatchReviewerFallbackBatch had before tonight's fix. Checked all call sites:
+    // the 2 internal self-invocations (pollStatus, honorDavidsonProgressEvidence) call this via a bare
+    // `this.`-style reference within the same class, which already bypassed this @Transactional entirely
+    // (same self-invocation pattern documented elsewhere in this file) - removing it changes nothing for
+    // those paths. The one call site that DID genuinely activate it - AutoMergeService's cross-class calls
+    // via the injected bean (real proxy interception) - is exactly the path this closes: those calls no
+    // longer hold a DB transaction open across any of the 8 handlers' network calls. Individually
+    // isolating each handler's network calls behind its own REQUIRES_NEW claim step (the way
+    // dispatchReviewerFallbackBatch and completeWishlistCompilation's wishlist claim already are) is a
+    // larger, handler-by-handler redesign left for a future pass, not attempted here.
     public void handlePrOpenedWorkflow(JulesSessionEntity session) {
         UUID taskId = session.getTaskId();
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
