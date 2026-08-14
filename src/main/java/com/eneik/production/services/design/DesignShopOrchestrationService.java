@@ -15,7 +15,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -79,8 +78,23 @@ public class DesignShopOrchestrationService {
         this.consistencyAuditService = consistencyAuditService;
     }
 
+    // 2026-08-14 (bug-hunt sweep): used to be @Transactional, holding a DB transaction open across the
+    // whole activeProjects loop AND, per project reaching a readiness edge, DesignAssetService.
+    // generateAsset's real Stitch generation call - which itself polls with up to 20x Thread.sleep(15_000)
+    // (DesignAssetService.generateViaStitch), i.e. up to 5 real minutes with a connection held open. Worst
+    // instance of this bug class found tonight. No longer @Transactional here: every DB read/write below
+    // flows through an explicit designShopCycleRepository.save(cycle) or taskRepository.save(...) call
+    // (never implicit dirty-checking against a still-open transaction), so each one safely gets its own
+    // short auto-transaction (Spring Data JPA default) with no transaction spanning the Stitch call.
+    //
+    // Separate, NOT fixed here (different bug, out of this pass's scope - flagging for a future pass):
+    // this method takes no row lock (no lockProjectForUpdate) and has no per-project dispatch cooldown
+    // (unlike ProjectFlowService.dispatchWishlistCompiler's WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS,
+    // 2026-08-13). If a tick() run takes long enough to still be processing a project when the next 5-
+    // minute cron fires - very plausible given the sleep-polling above - two concurrent invocations could
+    // both read the same DesignShopCycleEntity with lastWasReady=false and both call startCycle, dispatching
+    // two real design reviews for the same round.
     @Scheduled(cron = "${design-shop.cron:0 */5 * * * ?}")
-    @Transactional
     public void tick() {
         if (!settingsService.effectiveBoolean("design_shop_enabled")) {
             return;
