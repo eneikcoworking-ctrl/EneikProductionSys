@@ -477,12 +477,22 @@ public class JulesDispatchService {
         this.self = self;
     }
 
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep): these 4 dispatch(...) overloads all previously carried their own
+    // @Transactional, but all 4 ultimately self-invoke down to the real implementation (dispatch(TaskEntity,
+    // UUID, String)) via plain `this.`-style calls within this same class - which bypasses the Spring AOP
+    // proxy entirely (same self-invocation bug already documented elsewhere in this file, e.g.
+    // releaseUnfinishedClaims). So whichever overload an EXTERNAL caller actually invokes is the ONLY one
+    // whose @Transactional ever really took effect - the other 3 annotations were cosmetic. Removed from all
+    // 4 together: the real implementation calls julesApiClient.createSessionDetailed (one real Jules HTTP
+    // call) and was holding a DB transaction/connection open across it, root dispatch method for the whole
+    // system, called from 6+ places. The 3 helper services this delegates work to (ClaimService,
+    // AccountHealthService, ClientDeliverableReadinessService) each carry their own @Transactional and are
+    // called through their own injected proxies (not self-invocation), so removing the outer transaction
+    // here does not change their own atomicity.
     public JulesDispatchResult dispatch(TaskEntity task) {
         return dispatch(task, null);
     }
 
-    @Transactional
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId) {
         return dispatch(task, accountId, "IMPLEMENTER");
     }
@@ -502,7 +512,6 @@ public class JulesDispatchService {
                 .anyMatch(s -> ACTIVE_SESSION_STATUSES.contains(s.getStatus()));
     }
 
-    @Transactional
     public JulesDispatchResult dispatch(TaskEntity task, UUID accountId, String mode) {
         List<JulesSessionEntity> existing = julesSessionRepository.findByTaskId(task.getId());
         for (JulesSessionEntity s : existing) {
@@ -540,7 +549,6 @@ public class JulesDispatchService {
         );
     }
 
-    @Transactional
     public JulesSessionEntity dispatch(UUID taskId, UUID accountId) {
         TaskEntity task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new IllegalArgumentException("Task not found: " + taskId));
