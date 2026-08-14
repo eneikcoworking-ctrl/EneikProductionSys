@@ -1,50 +1,684 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "updatedAt": "2026-08-14",
-  "markets": ["DE", "US"],
-  "note": "A product is a MIX of profiles, never one label. Weights are evidence-derived from the brief and the repository, and low confidence must weaken every downstream decision instead of being rounded up to a guess. See README.md.",
+  "markets": [
+    "DE",
+    "US"
+  ],
+  "note": "A product is a MIX of profiles, never one label. Weights are evidence-derived from the brief and the repository, and low confidence must weaken every downstream decision instead of being rounded up to a guess. See README.md. detectionKeywords let the compliance gate tell WHICH kind of product a plan describes from the plan's own words, so that a duty scoped to one profile is not reported against every other one.",
+  "schemaChange": "v2 replaces the single valuePath with valuePaths, a list. A product can carry several value chains that break INDEPENDENTLY - a marketplace with a flawless buyer journey and no way to list an item is dead, and an ERP whose money ledger is perfect while its stock figures lie stops production. Since value multiplies along a chain, multiple chains multiply with each other too: one intact chain does not rescue a product whose second chain is broken. A single-path schema could not express that, so the completeness check could not look for it.",
   "profiles": [
     {
       "id": "shop",
       "title": "Online shop",
-      "coreCapabilities": ["payment-methods", "de-site-disclosures", "us-privacy-and-tax", "consent-management", "accessibility", "data-subject-rights", "backup-restore", "product-measurement"],
-      "valuePath": ["find product", "understand price and availability", "add to basket", "pay", "receive confirmation", "receive goods", "return goods"],
+      "coreCapabilities": [
+        "payment-methods",
+        "de-site-disclosures",
+        "us-privacy-and-tax",
+        "consent-management",
+        "accessibility",
+        "data-subject-rights",
+        "backup-restore",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "customer",
+          "path": [
+            "find product",
+            "understand price and availability",
+            "add to basket",
+            "pay",
+            "receive confirmation",
+            "receive goods",
+            "return goods"
+          ]
+        }
+      ],
       "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified. The path's structure is derivable from order state transitions; the claim that this is the typical shape for this profile is not yet measured."
+      "source": "AI general knowledge, 2026-08-14. Chain structure follows the order states an order actually passes through; the claim that this is the typical shape for the profile is unverified.",
+      "detectionKeywords": [
+        "shop",
+        "basket",
+        "cart",
+        "checkout",
+        "catalogue",
+        "catalog",
+        "storefront",
+        "order total"
+      ]
     },
     {
       "id": "booking",
       "title": "Appointment or resource booking",
-      "coreCapabilities": ["consent-management", "accessibility", "data-subject-rights", "backup-restore", "account-recovery", "product-measurement"],
-      "valuePath": ["find the service", "see genuinely free times", "book", "get a reminder", "attend", "pay", "reschedule or cancel"],
+      "coreCapabilities": [
+        "consent-management",
+        "accessibility",
+        "data-subject-rights",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "customer",
+          "path": [
+            "find the service",
+            "see genuinely free times",
+            "book",
+            "get a reminder",
+            "attend",
+            "pay",
+            "reschedule or cancel"
+          ]
+        },
+        {
+          "actor": "staff",
+          "path": [
+            "see today's schedule",
+            "block or free time",
+            "handle a no-show",
+            "record what happened"
+          ],
+          "note": "Breaks independently of the customer chain: a booking product nobody on staff can actually run gets abandoned even when customers can book perfectly."
+        }
+      ],
       "status": "hypothesis",
       "source": "AI general knowledge, 2026-08-14 - unverified.",
-      "note": "The reminder link is the one most often omitted and the one with the largest measured effect on outcomes; it must be verified with a real number before it may drive anything."
+      "note": "The reminder link is the one most often omitted and the one most often claimed to have a large effect on no-shows; it needs a real measured number before it may drive anything.",
+      "detectionKeywords": [
+        "booking",
+        "appointment",
+        "reservation",
+        "calendar",
+        "time slot",
+        "availability"
+      ]
+    },
+    {
+      "id": "crm",
+      "title": "Customer relationship management",
+      "coreCapabilities": [
+        "data-subject-rights",
+        "consent-management",
+        "accessibility",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "sales",
+          "path": [
+            "lead arrives",
+            "qualify it",
+            "work the conversation",
+            "win or lose it",
+            "keep the relationship alive"
+          ],
+          "note": "The object here is a RELATIONSHIP over time, not a task - which is why this is not the same profile as an internal operations tool. A lead lost between stages is money lost invisibly: nobody can see what did not happen."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "note": "Rarely commissioned whole on these markets - mature packaged CRMs exist and clients buy them. Real requests concentrate on integration with an ERP or accounting system, data migration off a legacy tool, and a pipeline shaped to a non-standard sales process. The full chain is recorded anyway, because a request for one fragment still has to fit the whole.",
+      "detectionKeywords": [
+        "crm",
+        "sales lead",
+        "lead capture",
+        "sales pipeline",
+        "deal stage",
+        "opportunity"
+      ]
+    },
+    {
+      "id": "inventory-operations",
+      "title": "Stock, purchasing and order handling (Warenwirtschaft)",
+      "coreCapabilities": [
+        "accessibility",
+        "backup-restore",
+        "account-recovery",
+        "data-subject-rights",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "goods",
+          "path": [
+            "order accepted",
+            "stock checked",
+            "replenished or produced",
+            "picked",
+            "shipped",
+            "stock written down"
+          ],
+          "note": "The material chain. When stock figures lie, work stops regardless of how correct the money is."
+        },
+        {
+          "actor": "money",
+          "path": [
+            "obligation recorded",
+            "cost known",
+            "invoice issued",
+            "payment received",
+            "books reconciled"
+          ],
+          "note": "The money chain runs in parallel and breaks independently. Both must hold: they are multiplied, not averaged."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge informed by a 2026-08-14 review of the German Warenwirtschaft market (SelectLine, Lexware, Softengine and similar packaged systems dominate the Mittelstand segment) - the chains themselves are unverified.",
+      "note": "In Germany this is the most established packaged-software category for mid-sized business, so a full custom build is unusual. Requests arrive as fragments: bills of materials and production steps for a small manufacturer, or a bridge between a shop and an existing Warenwirtschaft system.",
+      "detectionKeywords": [
+        "inventory",
+        "stock",
+        "warehouse",
+        "warenwirtschaft",
+        "purchase order",
+        "bill of materials",
+        "picking"
+      ]
+    },
+    {
+      "id": "marketplace",
+      "title": "Two-sided marketplace",
+      "coreCapabilities": [
+        "payment-methods",
+        "de-site-disclosures",
+        "us-privacy-and-tax",
+        "consent-management",
+        "accessibility",
+        "data-subject-rights",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "buyer",
+          "path": [
+            "find an offer",
+            "trust the counterparty",
+            "pay",
+            "receive",
+            "resolve a dispute"
+          ]
+        },
+        {
+          "actor": "seller",
+          "path": [
+            "list an offer",
+            "be found",
+            "receive an order",
+            "fulfil it",
+            "get paid out"
+          ],
+          "note": "The clearest case for multiple chains: a marketplace with a perfect buyer experience and no workable way to list an item is dead, and no amount of buyer polish compensates."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "marketplace",
+        "seller",
+        "vendor",
+        "listing",
+        "payout",
+        "commission"
+      ]
+    },
+    {
+      "id": "subscription",
+      "title": "Subscription product or service",
+      "coreCapabilities": [
+        "payment-methods",
+        "de-site-disclosures",
+        "us-privacy-and-tax",
+        "consent-management",
+        "accessibility",
+        "data-subject-rights",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "subscriber-start",
+          "path": [
+            "understand what is included",
+            "subscribe",
+            "pay first time",
+            "get access"
+          ]
+        },
+        {
+          "actor": "subscription-life",
+          "path": [
+            "renew",
+            "change plan",
+            "recover a failed payment",
+            "cancel without a fight"
+          ],
+          "note": "The chain that actually breaks. Signing up is usually built well; renewal failure handling and a cancellation that does not require contacting support are routinely missing, and in the EU an obstructed cancellation is also a legal problem."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "subscription",
+        "recurring",
+        "renewal",
+        "billing cycle",
+        "plan upgrade",
+        "cancel subscription"
+      ]
+    },
+    {
+      "id": "support-desk",
+      "title": "Customer support and ticketing",
+      "coreCapabilities": [
+        "accessibility",
+        "data-subject-rights",
+        "consent-management",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "customer",
+          "path": [
+            "report a problem",
+            "get an acknowledgement",
+            "be kept informed",
+            "have it resolved"
+          ],
+          "note": "The acknowledgement link is what separates support from a void: silence after reporting is indistinguishable from not being heard."
+        },
+        {
+          "actor": "agent",
+          "path": [
+            "see the queue",
+            "know the priority",
+            "have the context",
+            "respond",
+            "escalate what cannot be solved"
+          ]
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "ticket",
+        "helpdesk",
+        "support request",
+        "service level agreement",
+        "escalation"
+      ]
+    },
+    {
+      "id": "field-service",
+      "title": "Field and on-site work",
+      "coreCapabilities": [
+        "accessibility",
+        "backup-restore",
+        "account-recovery",
+        "data-subject-rights",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "office",
+          "path": [
+            "job requested",
+            "scheduled to someone",
+            "dispatched",
+            "confirmed done",
+            "invoiced"
+          ]
+        },
+        {
+          "actor": "technician",
+          "path": [
+            "see today's jobs",
+            "reach the site",
+            "record what was done",
+            "capture proof and signature",
+            "work with no signal"
+          ],
+          "note": "The offline link is decisive here and is nearly always forgotten: basements, plant rooms and rural sites have no connectivity, and a tool that needs a network is a tool that fails exactly where the work happens."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "field service",
+        "technician",
+        "work order",
+        "dispatch",
+        "on-site",
+        "offline mode"
+      ]
+    },
+    {
+      "id": "content-management",
+      "title": "Content management and publishing",
+      "coreCapabilities": [
+        "accessibility",
+        "consent-management",
+        "de-site-disclosures",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "editor",
+          "path": [
+            "draft",
+            "edit",
+            "have it approved",
+            "publish",
+            "update or unpublish"
+          ],
+          "note": "Reversibility is the defining property, not publishing: the cost of a mistake in public text is asymmetric, so unpublishing and rolling back matter more than the act of putting something live."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "note": "Rarely built from scratch - WordPress and similar dominate. Real requests are usually integration with an inventory or CRM system, or a workflow that packaged tools cannot express.",
+      "detectionKeywords": [
+        "cms",
+        "content management",
+        "editorial",
+        "publish",
+        "draft",
+        "article"
+      ]
+    },
+    {
+      "id": "document-flow",
+      "title": "Document approval and signing",
+      "coreCapabilities": [
+        "accessibility",
+        "data-subject-rights",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "originator",
+          "path": [
+            "create from a template",
+            "route for approval",
+            "get it signed",
+            "store it",
+            "find it again years later"
+          ],
+          "note": "Retrieval is the link that decides whether the product was worth building, and it is the one nobody demonstrates at handover."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "document approval",
+        "signature",
+        "sign-off",
+        "contract",
+        "template document"
+      ]
+    },
+    {
+      "id": "learning",
+      "title": "Training and courses",
+      "coreCapabilities": [
+        "accessibility",
+        "payment-methods",
+        "data-subject-rights",
+        "consent-management",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "learner",
+          "path": [
+            "find a course",
+            "enrol",
+            "study",
+            "be assessed",
+            "receive proof of completion"
+          ]
+        },
+        {
+          "actor": "instructor",
+          "path": [
+            "author material",
+            "publish a cohort",
+            "see who is stuck",
+            "mark work"
+          ]
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "course",
+        "lesson",
+        "learner",
+        "enrol",
+        "enroll",
+        "quiz",
+        "certificate"
+      ]
+    },
+    {
+      "id": "client-portal",
+      "title": "Client or dealer portal",
+      "coreCapabilities": [
+        "accessibility",
+        "data-subject-rights",
+        "consent-management",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "client",
+          "path": [
+            "sign in",
+            "see their own current state",
+            "act on it",
+            "get documents",
+            "reach a human when stuck"
+          ],
+          "note": "Strict data isolation between clients is the invariant here: one client seeing another's data is not a defect to prioritise, it is the end of the product."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "portal",
+        "customer account area",
+        "dealer",
+        "self-service area",
+        "tenant"
+      ]
+    },
+    {
+      "id": "game",
+      "title": "Computer or mobile game",
+      "coreCapabilities": [
+        "youth-protection",
+        "purchase-transparency",
+        "accessibility",
+        "data-subject-rights",
+        "consent-management",
+        "backup-restore",
+        "account-recovery",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "first session",
+          "path": [
+            "hear about it",
+            "install",
+            "understand what to do within minutes",
+            "have a first success",
+            "be given a reason to return"
+          ],
+          "note": "Nothing downstream exists if this chain breaks, and it breaks silently."
+        },
+        {
+          "actor": "core loop",
+          "path": [
+            "want something",
+            "attempt it",
+            "read the outcome immediately",
+            "get better",
+            "want the next thing"
+          ],
+          "note": "The one chain that cannot be compensated for. A game with excellent art, story, economy and infrastructure but a dull core loop is worth nothing, and every other chain multiplies against this one."
+        },
+        {
+          "actor": "monetisation",
+          "appliesWhen": "the game sells anything inside itself",
+          "path": [
+            "see what is on offer",
+            "understand the real cost",
+            "decide deliberately",
+            "receive what was bought",
+            "not regret it"
+          ],
+          "note": "The 'not regret it' link is where the enforcement actions land, and it is the link no brief ever asks for. See the purchase-transparency capability: both FTC cases turned on exactly this step."
+        },
+        {
+          "actor": "social",
+          "appliesWhen": "the game has chat, multiplayer or player-created content",
+          "path": [
+            "meet others",
+            "be safe while doing it",
+            "report what is wrong",
+            "see it acted on"
+          ],
+          "note": "Adding this chain has a legal price, not only an engineering one - under §24a JuSchG chat functions are a rating factor that can raise the game's age label and so shrink its lawful audience. It also brings platform duties around user content that need checking case by case; the corpus does not yet hold a verified citation for those, so they must be raised as an open question rather than assumed."
+        }
+      ],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14, except the legal duties in youth-protection and purchase-transparency, which are statutory and separately cited.",
+      "note": "TWO WAYS THIS PROFILE DIFFERS FROM EVERY OTHER ONE IN THIS FILE, both of which change how it must be decomposed. FIRST: there is no external need pushing the user forward. A buyer in a shop already wants the goods and will complain when a step is broken; a player owes the game nothing, so a broken link produces silent abandonment and no report. Outcome measurement is therefore not a nice-to-have epic here - it is the ONLY channel through which failure is observable at all. SECOND: capability completeness does not imply value. For a transactional product, a complete and working chain is most of the job. For a game it is a floor and nothing more - fun does not decompose into features, and a game can satisfy every requirement in this corpus and still be worthless. So the floors in the compiler prompt must be treated here as a minimum that says nothing about whether the product is good, and no completeness check may be read as evidence that it is.",
+      "detectionKeywords": [
+        "game",
+        "loot box",
+        "gacha",
+        "multiplayer",
+        "leaderboard",
+        "playable",
+        "respawn",
+        "matchmaking"
+      ]
     },
     {
       "id": "internal-operations",
       "title": "Internal operations tool replacing spreadsheets",
-      "coreCapabilities": ["accessibility", "backup-restore", "account-recovery", "data-subject-rights", "product-measurement"],
-      "valuePath": ["capture the work item", "assign it", "track its state", "complete it", "report on it"],
+      "coreCapabilities": [
+        "accessibility",
+        "backup-restore",
+        "account-recovery",
+        "data-subject-rights",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "team",
+          "path": [
+            "capture the work item",
+            "assign it",
+            "track its state",
+            "complete it",
+            "report on it"
+          ]
+        }
+      ],
       "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified."
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "internal tool",
+        "spreadsheet",
+        "back office",
+        "task tracker",
+        "workflow tool"
+      ]
     },
     {
       "id": "integration",
       "title": "Integration layer between existing systems",
-      "coreCapabilities": ["backup-restore", "product-measurement"],
-      "valuePath": ["read from source", "transform", "write to target", "confirm delivery", "recover from a failed run"],
+      "coreCapabilities": [
+        "backup-restore",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "data",
+          "path": [
+            "read from source",
+            "transform",
+            "write to target",
+            "confirm delivery",
+            "recover from a failed run"
+          ],
+          "note": "Recovery from a partial or failed run is what separates a working integration from one that silently loses data - and silent loss is discovered months later, by which point the source may no longer hold the truth either."
+        }
+      ],
       "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
-      "note": "Recovery from a partial or failed run is the link that distinguishes a working integration from one that silently loses data."
+      "source": "AI general knowledge informed by a 2026-08-14 market review: integration between existing systems, together with data migration off legacy tools, is reported as the dominant custom-software request on both target markets - unverified as a measured share.",
+      "note": "Likely the single most common real request, precisely because packaged CRM, ERP and CMS products already exist and need connecting.",
+      "detectionKeywords": [
+        "integration",
+        "sync",
+        "etl",
+        "webhook",
+        "api bridge",
+        "data migration"
+      ]
     },
     {
       "id": "site",
       "title": "Marketing site with enquiries",
-      "coreCapabilities": ["de-site-disclosures", "consent-management", "accessibility", "data-subject-rights", "product-measurement"],
-      "valuePath": ["arrive", "understand the offer", "trust the seller", "send an enquiry", "receive an answer"],
+      "coreCapabilities": [
+        "de-site-disclosures",
+        "consent-management",
+        "accessibility",
+        "data-subject-rights",
+        "product-measurement"
+      ],
+      "valuePaths": [
+        {
+          "actor": "visitor",
+          "path": [
+            "arrive",
+            "understand the offer",
+            "trust the seller",
+            "send an enquiry",
+            "receive an answer"
+          ],
+          "note": "The last link is outside the software as often as not - an enquiry nobody answers makes the site worth nothing, so it must be declared as a handover rather than left silent."
+        }
+      ],
       "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified."
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "detectionKeywords": [
+        "landing page",
+        "marketing site",
+        "contact form",
+        "enquiry",
+        "inquiry",
+        "brochure"
+      ]
     }
   ]
 }

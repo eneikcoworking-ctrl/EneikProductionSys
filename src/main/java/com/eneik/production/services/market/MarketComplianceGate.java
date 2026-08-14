@@ -57,10 +57,18 @@ public class MarketComplianceGate {
         }
         String haystack = planText.toLowerCase(Locale.ROOT);
 
+        // Most statutory duties are scoped to a kind of product, so the plan is first read for evidence of
+        // WHICH kind it describes. No evidence at all is not the same as evidence of none: in that case
+        // every duty is considered, because silently narrowing scope is how an obligation goes missing.
+        List<String> profiles = corpus.profilesInEvidence(planText);
+
         Set<String> seen = new LinkedHashSet<>();
         for (String market : markets) {
             for (MarketCorpusService.Expectation expectation : corpus.influentialExpectations(market)) {
                 if (!"statutory".equals(expectation.status())) {
+                    continue;
+                }
+                if (!appliesToAnyOf(expectation, profiles)) {
                     continue;
                 }
                 if (!seen.add(expectation.capabilityId() + "|" + expectation.requirement())) {
@@ -85,6 +93,22 @@ public class MarketComplianceGate {
                     findings.stream().map(Finding::capabilityId).toList());
         }
         return findings;
+    }
+
+    /**
+     * Universal duties always apply. A profile-scoped duty applies when the plan shows evidence of one of
+     * its profiles - or when the plan showed evidence of no profile whatsoever, since an unreadable plan
+     * must not be quietly exempted from the law.
+     */
+    private boolean appliesToAnyOf(MarketCorpusService.Expectation expectation, List<String> profilesInEvidence) {
+        List<String> scope = expectation.appliesToProfiles();
+        if (scope == null || scope.isEmpty() || scope.contains("*")) {
+            return true;
+        }
+        if (profilesInEvidence.isEmpty()) {
+            return true;
+        }
+        return scope.stream().anyMatch(profilesInEvidence::contains);
     }
 
     /** Flattens a parsed compiler plan into the text the check reads. */

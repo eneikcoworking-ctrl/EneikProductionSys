@@ -49,7 +49,8 @@ class MarketComplianceGateTest {
                 + "Epic: GDPR data subject export and erasure. "
                 + "Epic: nightly backup with verified restore. "
                 + "Accessibility: keyboard operability and 4.5:1 contrast on every screen, WCAG 2.1 AA. "
-                + "Checkout with strong customer authentication. Sales tax by destination, CCPA opt-out.";
+                + "Checkout with strong customer authentication. Sales tax by destination, CCPA opt-out. "
+                + "Epic: order review - an explicit confirmation step before any charge is taken.";
 
         List<MarketComplianceGate.Finding> findings =
                 gate.uncoveredStatutoryRequirements(plan, List.of("DE", "US"));
@@ -70,6 +71,47 @@ class MarketComplianceGateTest {
                         + "habits or account recovery must never surface as a compliance gap")
                 .extracting(MarketComplianceGate.Finding::capabilityId)
                 .doesNotContain("account-recovery");
+    }
+
+    @Test
+    void doesNotReportGameDutiesAgainstAShop() {
+        String plan = "Product catalogue with search, a basket and a checkout with card payment";
+
+        List<MarketComplianceGate.Finding> findings =
+                gate.uncoveredStatutoryRequirements(plan, List.of("DE", "US"));
+
+        assertThat(findings)
+                .as("a shop is not a game - reporting age ratings and loot box odds here is the kind of "
+                        + "obvious nonsense that gets the whole check ignored")
+                .extracting(MarketComplianceGate.Finding::capabilityId)
+                .doesNotContain("youth-protection");
+    }
+
+    @Test
+    void reportsGameDutiesAgainstAGame() {
+        String plan = "Epic: gameplay loop - the player completes a level and earns rewards. "
+                + "Epic: multiplayer lobby with a leaderboard.";
+
+        List<MarketComplianceGate.Finding> findings =
+                gate.uncoveredStatutoryRequirements(plan, List.of("DE", "US"));
+
+        assertThat(findings)
+                .as("a game plan silent on age rating and on the honesty of its purchases is missing "
+                        + "duties that decide whether it may be distributed at all")
+                .extracting(MarketComplianceGate.Finding::capabilityId)
+                .contains("youth-protection", "purchase-transparency");
+    }
+
+    @Test
+    void doesNotExemptAPlanItCannotClassify() {
+        // Absence of evidence about the kind of product is not evidence that no duty applies.
+        List<MarketComplianceGate.Finding> findings =
+                gate.uncoveredStatutoryRequirements("build the thing we discussed", List.of("DE"));
+
+        assertThat(findings)
+                .as("an unreadable plan must not be quietly exempted from profile-scoped law")
+                .extracting(MarketComplianceGate.Finding::capabilityId)
+                .contains("youth-protection");
     }
 
     @Test

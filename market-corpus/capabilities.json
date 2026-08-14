@@ -293,6 +293,110 @@
       ]
     },
     {
+      "id": "youth-protection",
+      "title": "Youth protection and age rating",
+      "appliesWhen": "the product is a game, or any product whose audience plausibly includes minors",
+      "jobs": [
+        "When my child uses this, I want to decide what they are exposed to and what they can spend, so that I stay the parent",
+        "When I publish a game in Germany, I want a valid age label, so that the platform may legally distribute it"
+      ],
+      "expectations": [
+        {
+          "requirement": "A valid age label (USK) shown clearly, including for purely digital and online distribution - not only physical media",
+          "kano": "must-be",
+          "appliesToProfiles": ["game"],
+          "market": "DE",
+          "status": "statutory",
+          "source": "§14a Jugendschutzgesetz (JuSchG) as amended by the 2021 reform, which extended the age-labelling duty to online game platforms",
+          "note": "Blocking, not cosmetic: without a label the game cannot be legally distributed on German platforms at all. Belongs in the first decomposition because the rating depends on mechanics that are decided early."
+        },
+        {
+          "requirement": "Structural precautions for online games: means to limit spending, disclosure of game mechanics and of the probabilities behind randomised rewards, restrictions on advertising aimed at minors, and usage-limiting options",
+          "kano": "must-be",
+          "appliesToProfiles": ["game"],
+          "market": "DE",
+          "status": "statutory",
+          "source": "§24a JuSchG (Vorsorgemaßnahmen) as amended 2021",
+          "note": "The 2021 reform makes loot boxes, chat and excessive-use mechanics into rating factors: the USK reports that roughly 30% of tested games with online functions received a HIGHER age rating because of such usage risks. So these mechanics do not merely add legal duties - they narrow the game's legal audience, which is a commercial decision disguised as a design one and must be surfaced during decomposition, not after."
+        },
+        {
+          "requirement": "Verifiable parental consent before collecting personal data from children under 13, with age screening that does not invite misreporting",
+          "kano": "must-be",
+          "appliesToProfiles": ["game"],
+          "market": "US",
+          "status": "statutory",
+          "source": "COPPA Rule, 16 CFR Part 312; FTC amendments finalised January 2025 with a compliance deadline of 2026-04-22, which expanded disclosure duties, tightened verifiable-consent standards and added biometric identifiers (fingerprint, voiceprint, iris, genetic data) to covered personal information",
+          "note": "Enforcement is real and expensive: the FTC's Epic Games settlement totalled $520M, of which $275M was the COPPA penalty. In FTC v. Cognosphere (Genshin Impact) the operator was held to be a child-directed service and required to obtain parental consent for under-16 loot box purchases. A game does not have to be aimed at children to be found child-directed."
+        },
+        {
+          "requirement": "Age assurance may collect data for the sole purpose of establishing age",
+          "kano": "performance",
+          "appliesToProfiles": ["game"],
+          "market": "US",
+          "status": "statutory",
+          "source": "FTC policy statement, February 2026: the Commission will not bring a COPPA Rule enforcement action against operators collecting, using and disclosing personal information solely to determine a user's age via age verification technologies",
+          "note": "Recorded because it removes the usual objection that age checking is itself a privacy violation - it is a safe harbour, so 'we cannot check age without breaking privacy law' is not a valid reason to omit age screening."
+        }
+      ],
+      "detectionKeywords": [
+        "age rating",
+        "usk",
+        "esrb",
+        "parental",
+        "coppa",
+        "jugendschutz",
+        "minor",
+        "under 13",
+        "age verification"
+      ]
+    },
+    {
+      "id": "purchase-transparency",
+      "title": "Honest purchase flows and randomised rewards",
+      "appliesWhen": "the product sells anything inside itself, especially randomised or virtual-currency purchases",
+      "jobs": [
+        "When I spend money, I want to have meant to spend it, so that I am not charged by accident",
+        "When I buy a chance at something, I want to know the actual odds, so that I am not deceived about what I am buying"
+      ],
+      "expectations": [
+        {
+          "requirement": "Disclose the real probabilities and the real cost of randomised rewards, in the currency the player actually paid",
+          "kano": "must-be",
+          "appliesToProfiles": ["game"],
+          "status": "statutory",
+          "source": "FTC Act §5 as applied in FTC v. Cognosphere (Genshin Impact), which charged misrepresentation of loot box odds and required clear disclosure of odds and costs; in Germany the same disclosure is required as a Vorsorgemaßnahme under §24a JuSchG",
+          "note": "Virtual-currency layers are treated as part of the deception when they obscure real cost, so a plan that prices items only in a made-up currency has not satisfied this."
+        },
+        {
+          "requirement": "Disclose the odds of each outcome of a randomised virtual item before purchase, as a condition of being distributed at all on the mobile stores",
+          "kano": "must-be",
+          "appliesToProfiles": ["game"],
+          "status": "standard",
+          "source": "Apple App Store Review Guidelines §3.1.1, which requires apps offering loot boxes or other randomised virtual items to disclose the odds of each item type prior to purchase; Google Play carries an equivalent disclosure requirement",
+          "note": "A second, independent source for the same duty, and the one that bites first. Store review blocks the release outright, months before any regulator would look - so on mobile this is not a legal risk to weigh but a shipping gate. Recorded as standard rather than statutory because it is platform policy, not law; it is nonetheless mandatory in practice for anything distributed through those stores."
+        },
+        {
+          "requirement": "No dark patterns in purchase flows: purchase confirmation must be deliberate, and controls must not be placed or timed so that an ordinary action triggers a charge",
+          "kano": "must-be",
+          "appliesToProfiles": ["game", "shop", "subscription", "marketplace"],
+          "status": "statutory",
+          "source": "FTC Act §5 as applied in FTC v. Epic Games (2023): $245M in refunds for dark patterns, where players were charged while the game woke from sleep, during loading screens, or by pressing a button adjacent to the purchase control, with button layouts differing between platforms",
+          "note": "The specific findings are recorded because they are concrete and testable design rules, not a vague call to be fair: no charge without a deliberate confirmation, no purchase control adjacent to a common non-purchase control, no purchase reachable from an inactive or loading state, consistent layout across platforms."
+        }
+      ],
+      "detectionKeywords": [
+        "loot box",
+        "gacha",
+        "odds",
+        "drop rate",
+        "in-app purchase",
+        "microtransaction",
+        "virtual currency",
+        "confirmation",
+        "dark pattern"
+      ]
+    },
+    {
       "id": "product-measurement",
       "title": "Outcome measurement",
       "appliesWhen": "always",

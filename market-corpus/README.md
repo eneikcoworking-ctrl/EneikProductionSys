@@ -32,6 +32,45 @@ corpus from guessing: an unverified belief is stored and labelled rather than ac
 - `profiles.json` - product types as weights over capabilities. A real product is rarely one type; it gets
   a mix, and an uncertain classification weakens every downstream decision instead of silently guessing.
 
+## A product has value chains, plural (schema v2)
+
+Value multiplies along the chain a product exists to complete, so the weakest link sets the worth of the
+whole thing and a broken link zeroes it. Schema v1 recorded one chain per profile. That was wrong for a
+whole class of products, and wrong in a way the completeness check could not see:
+
+- a **marketplace** has a buyer chain and a seller chain, and a flawless buyer journey with no workable way
+  to list an item is a dead product;
+- **stock and order handling** has a material chain and a money chain, and correct books do not keep the
+  line running when the stock figures lie;
+- a **subscription** has a purchase chain and a subscription-life chain, and it is nearly always the second
+  one - renewal failures, plan changes, cancelling without a fight - that is missing.
+
+Since each chain multiplies internally, the chains multiply with each other too: one intact chain does not
+rescue a product whose other chain is broken. `valuePaths` is therefore a list, each entry naming the actor
+or flow it belongs to, and some carry `appliesWhen` because they exist only under a condition (a game only
+has a monetisation chain if it sells something).
+
+## Profiles are detected from the plan's own words
+
+Most statutory duties are scoped to a kind of product. Each profile carries `detectionKeywords` so the
+compliance gate can tell which kind a plan describes from its own text, by the same evidential method it
+uses for coverage. Without this the gate reports a game's age-rating duty against every shop plan - and a
+check that reports obvious nonsense is one people stop reading, which costs more than the duty it catches.
+
+Finding no profile is **not** the same as finding that none applies: with no evidence either way, every
+duty is considered, because narrowing scope on absent evidence is exactly how an obligation goes missing.
+
+## Games are the exception to completeness
+
+Every other profile here is transactional: the user already wants the outcome and will complain when a step
+breaks, and a complete working chain is most of the job. A game is neither. Nobody owes it their attention,
+so a broken link produces silent abandonment rather than a report - which makes outcome measurement the only
+channel through which failure is observable at all. And fun does not decompose into features: a game can
+satisfy every requirement in this corpus and still be worthless.
+
+So for games the floors are a minimum that says nothing about whether the product is good, and no
+completeness check may be read as evidence that it is.
+
 ## Kano class belongs to a pair, not to a capability
 
 Stock control is Must-Be for a wholesaler and irrelevant for a landing page. So a Kano class is always

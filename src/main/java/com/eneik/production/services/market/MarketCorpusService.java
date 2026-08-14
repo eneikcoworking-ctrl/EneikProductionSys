@@ -131,6 +131,40 @@ public class MarketCorpusService {
         return List.of();
     }
 
+    /**
+     * Which product profiles a piece of plan text actually shows evidence of, judged by the profiles' own
+     * detectionKeywords - the same evidential method used for capability coverage, for the same reason.
+     *
+     * An empty result means "no evidence either way", NOT "no profile applies", and callers must treat the
+     * two differently: narrowing scope on the strength of absent evidence is precisely how an obligation
+     * goes missing. It exists because most statutory duties are scoped to a kind of product, and without
+     * this a game's age-rating duty would be reported against every shop plan and a shop's withdrawal-rights
+     * duty against every internal tool. A check that reports obvious nonsense is a check people stop reading,
+     * which costs more than the duty it was meant to catch.
+     */
+    public List<String> profilesInEvidence(String text) {
+        List<String> matched = new ArrayList<>();
+        if (text == null || text.isBlank()) {
+            return matched;
+        }
+        String haystack = text.toLowerCase(Locale.ROOT);
+        for (JsonNode profile : profiles()) {
+            for (JsonNode keyword : profile.path("detectionKeywords")) {
+                String needle = keyword.asText("").toLowerCase(Locale.ROOT);
+                // A blank keyword must never be tested: contains("") is true for every text, so a
+                // single empty entry in the corpus would match every profile against every plan.
+                if (needle.isBlank()) {
+                    continue;
+                }
+                if (haystack.contains(needle)) {
+                    matched.add(profile.path("id").asText(""));
+                    break;
+                }
+            }
+        }
+        return matched;
+    }
+
     /** Value paths per profile, for the completeness check. Profiles themselves carry no authority yet. */
     public JsonNode profiles() {
         JsonNode root = readJson("profiles.json");
