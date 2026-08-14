@@ -74,6 +74,13 @@ public class JulesSessionEntity {
     @Column(name = "activities_page_cursor", length = 128)
     private String activitiesPageCursor;
 
+    // 2026-08-14 (bug-hunt sweep): atomic mutual-exclusion claim for JulesDispatchService.
+    // handlePrOpenedWorkflow - see V97 migration for the live double-processing race this closes. NULL
+    // means available (including for legitimate crash-recovery retry); non-null means a concurrent
+    // invocation is (or, if stale, recently was) processing this session's pr_opened completion.
+    @Column(name = "pr_opened_workflow_claimed_at")
+    private Instant prOpenedWorkflowClaimedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -121,6 +128,9 @@ public class JulesSessionEntity {
 
     public String getActivitiesPageCursor() { return activitiesPageCursor; }
     public void setActivitiesPageCursor(String activitiesPageCursor) { this.activitiesPageCursor = activitiesPageCursor; }
+
+    public Instant getPrOpenedWorkflowClaimedAt() { return prOpenedWorkflowClaimedAt; }
+    public void setPrOpenedWorkflowClaimedAt(Instant prOpenedWorkflowClaimedAt) { this.prOpenedWorkflowClaimedAt = prOpenedWorkflowClaimedAt; }
 
     @PreUpdate
     public void preUpdate() {

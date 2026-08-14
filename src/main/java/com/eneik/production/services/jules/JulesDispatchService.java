@@ -1922,23 +1922,60 @@ public class JulesDispatchService {
         return replayed;
     }
 
-    // 2026-08-14 (bug-hunt sweep): dispatches to 8 completion handlers, 7 of which make direct real GitHub/
-    // Jules network calls (some several) with no REQUIRES_NEW protection of their own - only
-    // completeWishlistCompilation's wishlist-claim step is already isolated (admitWishlistCompilationCompletion/
-    // releaseUnfinishedClaims, both REQUIRES_NEW via self, 2026-08-07/13) - the REST of even that handler's
-    // own network calls (mergeRecordPullRequest, sendMessage) still ran inside this method's transaction.
-    // completePhilosophicalAudit even takes its own explicit projectRepository.lockProjectForUpdate, the
-    // same severe shape as dispatchReviewerFallbackBatch had before tonight's fix. Checked all call sites:
-    // the 2 internal self-invocations (pollStatus, honorDavidsonProgressEvidence) call this via a bare
-    // `this.`-style reference within the same class, which already bypassed this @Transactional entirely
-    // (same self-invocation pattern documented elsewhere in this file) - removing it changes nothing for
-    // those paths. The one call site that DID genuinely activate it - AutoMergeService's cross-class calls
-    // via the injected bean (real proxy interception) - is exactly the path this closes: those calls no
-    // longer hold a DB transaction open across any of the 8 handlers' network calls. Individually
-    // isolating each handler's network calls behind its own REQUIRES_NEW claim step (the way
-    // dispatchReviewerFallbackBatch and completeWishlistCompilation's wishlist claim already are) is a
-    // larger, handler-by-handler redesign left for a future pass, not attempted here.
+    // 2026-08-14 (bug-hunt sweep, part 1): used to be @Transactional, dispatching to 8 completion handlers
+    // that make direct real GitHub/Jules network calls with no isolation of their own - removed for the
+    // same reason as 5 other methods fixed the same night (a DB transaction was held open across those
+    // network calls whenever this was reached via AutoMergeService's cross-class calls, the one call site
+    // where the annotation genuinely activated - the 2 internal self-invocations, pollStatus and
+    // honorDavidsonProgressEvidence, already bypassed it entirely via plain same-class references). Full
+    // suite verified green with just that removal.
+    //
+    // 2026-08-14 (bug-hunt sweep, part 2 - separate bug, same file): removing the transaction wrapper
+    // surfaced a REAL, different problem underneath rather than fixing it - most of these 8 handlers guard
+    // their own idempotency with a plain read-then-later-write check (e.g. completePhilosophicalAudit's
+    // `firstCompletion = claimService.hasActiveClaim(...)`, read at the top, only actually enforced much
+    // later by claimService.complete() throwing IllegalStateException if the claim was already released).
+    // Two genuinely concurrent invocations of this method for the SAME session (AutoMergeService's
+    // reconciliation sweep racing pollStatus's own trigger for the same running/revising->pr_opened
+    // transition, or two reconciliation passes overlapping) can both read that guard as "first" and both
+    // apply the same critique/violation/merge-record work before either one's completion write lands -
+    // this was already possible before today's other fixes, just previously somewhat narrowed by the
+    // (accidental, not deliberate) serialization effect of one big transaction per call.
+    //
+    // Fixed with one atomic mutual-exclusion claim (JulesSessionEntity.prOpenedWorkflowClaimedAt, V97
+    // migration - a NULL/non-null flag orthogonal to session status, not reusing compareAndSetStatus so
+    // nothing else that reads session status is affected) taken as the very FIRST step, before any of the 8
+    // handlers run. Deliberately NOT a permanent lock: on any exception the claim is released (self.
+    // releasePrOpenedWorkflowClaim, plain @Transactional so it always gets a real transaction - see
+    // claimWishlistsForCompilation's javadoc for why REQUIRED not REQUIRES_NEW), so a genuine crash mid-
+    // processing still leaves the session retryable by reconcileStrandedPrOpenedWorkflows exactly as before -
+    // this closes the concurrent-duplicate race without turning a transient failure into a permanently
+    // stuck session.
     public void handlePrOpenedWorkflow(JulesSessionEntity session) {
+        if (self.claimPrOpenedWorkflow(session.getId()) == 0) {
+            log.info("handlePrOpenedWorkflow: session {} pr_opened completion is already claimed by a concurrent "
+                    + "invocation; skipping this one instead of risking duplicate work", session.getId());
+            return;
+        }
+        try {
+            handlePrOpenedWorkflowClaimed(session);
+        } catch (RuntimeException e) {
+            self.releasePrOpenedWorkflowClaim(session.getId());
+            throw e;
+        }
+    }
+
+    @Transactional
+    int claimPrOpenedWorkflow(UUID sessionId) {
+        return julesSessionRepository.claimPrOpenedWorkflow(sessionId, Instant.now());
+    }
+
+    @Transactional
+    void releasePrOpenedWorkflowClaim(UUID sessionId) {
+        julesSessionRepository.releasePrOpenedWorkflowClaim(sessionId);
+    }
+
+    private void handlePrOpenedWorkflowClaimed(JulesSessionEntity session) {
         UUID taskId = session.getTaskId();
         TaskEntity task = taskRepository.findById(taskId).orElse(null);
         if (task != null) {

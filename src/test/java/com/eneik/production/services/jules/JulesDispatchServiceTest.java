@@ -30,6 +30,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
@@ -106,6 +107,12 @@ class JulesDispatchServiceTest {
             null
         );
         ReflectionTestUtils.setField(julesDispatchService, "self", julesDispatchService);
+        // 2026-08-14 (bug-hunt sweep): handlePrOpenedWorkflow now claims a mutual-exclusion flag via
+        // julesSessionRepository.claimPrOpenedWorkflow before doing anything else - default this mock to
+        // "claim succeeds" (1) so every existing handlePrOpenedWorkflow test below still reaches its real
+        // handler logic; Mockito's own default for an unstubbed int-returning method is 0, which would
+        // silently skip all of them. A dedicated test overrides this to exercise the "already claimed" path.
+        when(julesSessionRepository.claimPrOpenedWorkflow(any(), any())).thenReturn(1);
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "stuckCloseThresholdMinutes", 120);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -1985,6 +1992,45 @@ class JulesDispatchServiceTest {
 
         assertEquals(com.eneik.production.models.persistence.TaskStatus.pending_review, task.getStatus());
         verifyNoInteractions(mlPredictionServiceClient);
+    }
+
+    // 2026-08-14 (bug-hunt sweep): the novel, risk-bearing logic of this fix - a genuinely concurrent
+    // second invocation for the same session must do NO work at all, not even read the task, since the
+    // whole point is closing the window where two callers both apply the same critique/merge-record work
+    // before either one's completion write lands.
+    @Test
+    void handlePrOpenedWorkflowSkipsAllWorkWhenClaimIsAlreadyHeldByAConcurrentInvocation() {
+        UUID sessionId = UUID.randomUUID();
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(UUID.randomUUID());
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any())).thenReturn(0);
+
+        julesDispatchService.handlePrOpenedWorkflow(session);
+
+        verifyNoInteractions(taskRepository);
+        verify(julesSessionRepository, never()).releasePrOpenedWorkflowClaim(any());
+    }
+
+    // A genuine crash mid-processing must not permanently strand the session - reconcileStrandedPrOpenedWorkflows'
+    // crash-recovery replay depends on the claim being released, not left set forever by a failed attempt.
+    @Test
+    void handlePrOpenedWorkflowReleasesClaimOnFailureSoRetryRemainsPossible() {
+        UUID sessionId = UUID.randomUUID();
+        UUID taskId = UUID.randomUUID();
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(sessionId);
+        session.setTaskId(taskId);
+        session.setStatus("pr_opened");
+
+        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any())).thenReturn(1);
+        when(taskRepository.findById(taskId)).thenThrow(new RuntimeException("simulated DB failure mid-processing"));
+
+        assertThrows(RuntimeException.class, () -> julesDispatchService.handlePrOpenedWorkflow(session));
+
+        verify(julesSessionRepository).releasePrOpenedWorkflowClaim(sessionId);
     }
 
     @Test
