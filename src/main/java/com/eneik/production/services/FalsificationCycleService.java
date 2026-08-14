@@ -648,6 +648,20 @@ public class FalsificationCycleService {
                   (code you read, or the parts that did run), and never invent or assume behavior you did not
                   observe. If NOTHING at all is examinable, return "critiques": [].
 
+                STEP 1b - walk the main path end to end, before any philosophy. Whatever this product is
+                for, its user follows one path from intention to outcome, and value along that path
+                MULTIPLIES: a shop that cannot take payment is not partly working, it is worth zero, no
+                matter how good the catalogue is. So walk that path yourself in the running product and
+                report where it breaks. Three things to look for, in this order of severity:
+                  * a dead end - the path simply cannot continue from here;
+                  * an action with no confirmation - you did something and the product never told you
+                    whether it worked; silence is indistinguishable from failure;
+                  * no way back when something fails - a rejected payment, a failed upload, a wrong value
+                    with no correction path.
+                A single genuine break here outweighs any number of refinements elsewhere, so report it as
+                Must-Be and say plainly which link broke and what you observed. If the path is unbroken,
+                say that too - it is real evidence, not an absence of findings.
+
                 LIVE EVIDENCE - already fetched from the factory's own currently-running instance of this
                 product (a separate, independent launch from the one you attempt in STEP 1 above - use this
                 as ADDITIONAL grounding alongside your own attempt, never as a replacement for it, since it

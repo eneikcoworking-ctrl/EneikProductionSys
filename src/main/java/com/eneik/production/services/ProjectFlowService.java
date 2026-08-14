@@ -2936,6 +2936,39 @@ public class ProjectFlowService {
                   [X] for this epic, I want [Y], so that [the epic's outcome/Z] is achieved" - never repeat
                   the customer-facing sentence verbatim at task level.
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
+                - COMPLETENESS FLOOR - the most important rule here, because value along a product's main
+                  path MULTIPLIES rather than adds. A shop where the customer can browse and cannot pay is
+                  not "80% done", it is worth zero; a booking system that takes bookings and never reminds
+                  anyone loses roughly a third of them to no-shows, which is a multiplier on everything
+                  else. So before writing epics, work out the ONE path the end user walks from intention to
+                  outcome for THIS brief, and name its links explicitly as epic requirements. Derive the
+                  path from what the client actually described - never from a template of what products of
+                  this kind usually have.
+                  Then check the path is unbroken, and cover every link you found. Three failure modes to
+                  look for specifically, because they are what actually breaks delivered products:
+                  * a missing link - the user reaches a point where the product simply cannot continue
+                    (chose goods, no way to pay; submitted a request, nobody is notified it arrived);
+                  * a link with no confirmation - the user acts and is left not knowing whether it worked;
+                    silence after an action is indistinguishable from failure, and the user repeats it or
+                    abandons;
+                  * no recovery when a link fails - payment declines, upload breaks, the address is wrong,
+                    and the product offers no way back. Every link that can fail needs its failure path
+                    covered somewhere, or the product only works when nothing goes wrong.
+                  If a link is genuinely outside this project's scope (the client handles it by hand, or
+                  another system does it), say so explicitly in the epic requirements instead of leaving a
+                  silent hole - a known handover is fine, an unnoticed gap is not. This rule exists to stop
+                  you FORGETTING, not to make you add: never invent a link the described path does not
+                  need.
+                - QUALITY FLOOR - what separates a product that technically works from one worth using.
+                  These are properties of the slices you already create, expressed in their own
+                  acceptanceCriteria, not extra epics:
+                  * usable on a phone - most real traffic is mobile, and a layout that only works on a
+                    desktop is broken for the majority of its users;
+                  * every action gets visible feedback - success, failure, or progress; nothing may leave
+                    the user guessing;
+                  * what the user typed survives - a failed submit, a lost connection or a validation error
+                    must not silently discard the data they entered;
+                  * destructive and expensive actions are reversible or confirmed before they happen.
                 - REGULATORY FLOOR (same kind of rule as the mandatory QA slice above: required whether or
                   not the brief mentions it, because the client is buying software for the EU/US market and
                   is not expected to know what that market legally requires). Each item below applies ONLY
