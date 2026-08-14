@@ -72,6 +72,11 @@ public class ProjectFlowService {
     private final ProjectFactoryService projectFactoryService;
     private final GitHubProjectFactoryClient gitHubProjectFactoryClient;
     private final SystemSettingsService settingsService;
+    // Versioned market knowledge (market-corpus/) - what products of a kind must contain, independent of
+    // what this particular client thought to ask for. Nullable by construction so the several test call
+    // sites that build this service by hand keep working, and so a missing corpus degrades the compiler
+    // prompt to its pre-corpus form instead of breaking decomposition.
+    private final com.eneik.production.services.market.MarketCorpusService marketCorpusService;
     private final TechnicalLeadCompiler technicalLeadCompiler;
     private final ClientDeliveryService clientDeliveryService;
     private final ProjectFinalReportRepository projectFinalReportRepository;
@@ -169,6 +174,7 @@ public class ProjectFlowService {
                               ProjectFactoryService projectFactoryService,
                               GitHubProjectFactoryClient gitHubProjectFactoryClient,
                               SystemSettingsService settingsService,
+                              com.eneik.production.services.market.MarketCorpusService marketCorpusService,
                               TechnicalLeadCompiler technicalLeadCompiler,
                               ClientDeliveryService clientDeliveryService,
                               ProjectFinalReportRepository projectFinalReportRepository,
@@ -207,6 +213,7 @@ public class ProjectFlowService {
         this.projectFactoryService = projectFactoryService;
         this.gitHubProjectFactoryClient = gitHubProjectFactoryClient;
         this.settingsService = settingsService;
+        this.marketCorpusService = marketCorpusService;
         this.technicalLeadCompiler = technicalLeadCompiler;
         this.clientDeliveryService = clientDeliveryService;
         this.projectFinalReportRepository = projectFinalReportRepository;
@@ -2763,6 +2770,53 @@ public class ProjectFlowService {
         return sb.toString();
     }
 
+    /**
+     * Renders the regulatory floor from the versioned market corpus (market-corpus/capabilities.json)
+     * rather than from text hard-coded in this prompt. Knowledge about what a market requires changes when
+     * laws change, not when this class is rebuilt - keeping it in files means it can be reviewed in a diff
+     * and corrected by a human without a deploy.
+     *
+     * Only statutory/standard/observed entries are rendered, enforced by
+     * MarketCorpusService.influentialExpectations - a "hypothesis" entry (including anything an AI wrote
+     * from general knowledge) is never allowed to shape what gets built.
+     *
+     * Returns an empty string when no corpus is available, which leaves the surrounding floor framing
+     * intact and simply carries no itemised requirements - the flow degrades to its pre-corpus behaviour
+     * instead of failing.
+     */
+    private String regulatoryFloorFromCorpus() {
+        if (marketCorpusService == null) {
+            return "";
+        }
+        java.util.List<com.eneik.production.services.market.MarketCorpusService.Expectation> all =
+                new java.util.ArrayList<>();
+        // Both target markets are rendered together, each tagged, because nothing in a wishlist tells us
+        // which market THIS project serves. Guessing it would be exactly the kind of silent assumption this
+        // corpus exists to avoid; the compiler sees both and decides from the brief's own content.
+        for (String market : java.util.List.of("DE", "US")) {
+            all.addAll(marketCorpusService.influentialExpectations(market));
+        }
+        if (all.isEmpty()) {
+            return "";
+        }
+        java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>();
+        for (var e : all) {
+            StringBuilder line = new StringBuilder("                  * ");
+            if (e.market() != null && !e.market().isBlank()) {
+                line.append("[").append(e.market()).append("] ");
+            }
+            line.append(e.requirement());
+            if (e.source() != null && !e.source().isBlank()) {
+                line.append(" (basis: ").append(e.source()).append(")");
+            }
+            if (e.note() != null && !e.note().isBlank()) {
+                line.append(" NOTE: ").append(e.note());
+            }
+            lines.add(line.toString());
+        }
+        return String.join("\n", lines);
+    }
+
     String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists, String planPath) {
         StringBuilder briefsSection = new StringBuilder();
         for (int i = 0; i < wishlists.size(); i++) {
@@ -2970,33 +3024,17 @@ public class ProjectFlowService {
                     must not silently discard the data they entered;
                   * destructive and expensive actions are reversible or confirmed before they happen.
                 - REGULATORY FLOOR (same kind of rule as the mandatory QA slice above: required whether or
-                  not the brief mentions it, because the client is buying software for the EU/US market and
-                  is not expected to know what that market legally requires). Each item below applies ONLY
-                  when its stated condition is true for this brief - never add one whose condition does not
-                  hold, that is scope inflation, not compliance:
-                  * IF the product has any browser/app interface: every UI slice (BARCAN-TAG-03,
-                    BARCAN-TAG-11) must carry accessibility in its own acceptanceCriteria - keyboard
-                    operability, visible focus, form labels, and 4.5:1 text contrast at minimum. This is
-                    WCAG 2.1 level AA, made binding by the European Accessibility Act (in force since
-                    2025-06-28, standard EN 301 549) and litigated in the US under ADA Title III. It is a
-                    property of every screen, so it belongs in each UI slice's criteria - never as one
-                    separate "make it accessible" epic bolted on at the end, which is how accessibility
-                    reliably fails to happen.
-                  * IF the product stores personal data of identifiable people: one epic covering the data
-                    subject's own rights - export of their data and deletion on request (GDPR Art. 15 and
-                    Art. 17). These are enforceable rights with statutory deadlines, not settings.
-                  * IF the product collects personal data or loads any third-party tracking/analytics:
-                    one epic for lawful-basis handling - explicit opt-in consent captured before any
-                    non-essential cookie or tracker loads, refusal as easy as acceptance, and the choice
-                    recorded (GDPR Art. 6-7, ePrivacy Directive).
-                  * IF the product holds data whose loss would harm the client's business: one epic for
-                    backup and verified restore. GDPR Art. 32(1)(c) requires the ability to restore
-                    availability and access in a timely manner - an untested backup does not satisfy it,
-                    so the acceptanceCriteria must include an actual restore being performed, not just a
-                    backup being produced.
-                  * IF the product has user accounts: account recovery must exist as part of the
-                    authentication epic - a product where a locked-out owner cannot get back in is not
-                    finished.
+                  not the brief mentions it, because the client is buying software for the German and US
+                  markets and is not expected to know what those markets legally require). Each item below
+                  applies ONLY when its stated condition is true for this brief - never add one whose
+                  condition does not hold, that is scope inflation, not compliance. Items marked [DE] apply
+                  to products serving Germany, [US] to products serving the United States; unmarked items
+                  apply to both. Deliver a requirement that is a property of every screen (accessibility)
+                  inside each UI slice's own acceptanceCriteria - never as one separate "make it accessible"
+                  epic bolted on at the end, which is how accessibility reliably fails to happen. Deliver a
+                  requirement that is a distinct capability (data subject rights, consent, backup) as its
+                  own epic.
+                %s
                   Classify every epic created under this floor as Must-Be, because that is what it is: its
                   absence is a defect, its presence delights nobody.
                 - MEASUREMENT FLOOR (unconditional - every product gets exactly one such epic, whatever it
@@ -3071,7 +3109,8 @@ public class ProjectFlowService {
                 understand each yourself, do not rely on it already being in English). Decompose each one
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
-                """.formatted(existingEpicsPromptContext(projectId), planPath, wishlists.size(), briefsSection.toString());
+                """.formatted(existingEpicsPromptContext(projectId), regulatoryFloorFromCorpus(), planPath,
+                        wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and
