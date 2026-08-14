@@ -547,19 +547,23 @@ public class ProjectFlowService {
         return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt(), item.getFeatureId());
     }
 
-    // 2026-08-14 (bug-hunt sweep): used to be @Transactional, holding a DB transaction/connection open
-    // across a real GitHub HTTP call per pending wishlist in the loop below (tryCompileWishlistCheaply's
-    // raw HttpClient GET of .eneik/task-plan.json) plus whatever real Jules dispatch
-    // dispatchBatchedWishlistCompiler makes at the end - lower-certainty finding than the others fixed
-    // tonight (no explicit lockProjectForUpdate here, unlike dispatchReviewerFallbackBatch/
-    // admitWishlistCompilationCompletion), but still a real transaction spanning real network calls in a
-    // loop. The actual dedup/admission logic downstream already uses the safe compare-and-swap primitive
-    // (WishlistRepository.compareAndSetStatus, dispatchBatchedWishlistCompiler) rather than relying on this
-    // method's transaction boundary for correctness, so removing it here doesn't weaken that protection.
-    // recordOrchestrationStartOrThrow's own cooldown check-then-write is a plain timestamp compare with no
-    // row lock of its own - it was never actually serialized against a genuinely concurrent second call
-    // even with this transaction wrapping it (no lockProjectForUpdate), so this change doesn't measurably
-    // widen that pre-existing gap.
+    // 2026-08-14 (bug-hunt sweep, ATTEMPTED then REVERTED): removing @Transactional here looked safe by
+    // the same reasoning that worked for 5 other methods tonight (real network calls in a loop: GitHub
+    // fetch in tryCompileWishlistCheaply, real Jules dispatch in dispatchBatchedWishlistCompiler), but the
+    // full test suite caught a genuine regression this file's other fixes didn't have: dispatchBatched
+    // WishlistCompiler's wishlist admission relies on WishlistRepository.compareAndSetStatus, a custom
+    // @Modifying JPQL query - unlike simple repository save()/delete() calls (which Spring Data auto-wraps
+    // in their own transaction), a @Modifying query needs an ALREADY-ACTIVE writable transaction from its
+    // caller (confirmed live tonight for a different endpoint - see release-finalizing-wishlist's
+    // TransactionRequiredException fix). Without this method's own @Transactional, every orchestrate() call
+    // through the real controller failed with "No EntityManager with actual transaction available for
+    // current thread - cannot reliably process 'flush' call" (3 ProjectFlowIntegrationTest failures,
+    // 500s). Reverted to keep @Transactional here rather than ship a broken orchestration endpoint -
+    // properly fixing this one needs the same self+REQUIRES_NEW extraction already used for
+    // dispatchReviewerFallbackBatch/admitWishlistCompilationCompletion (isolate just the CAS-based
+    // admission into its own short transaction, keep the GitHub/Jules calls outside it), which is more
+    // surgery than a documented follow-up, not attempted in this pass.
+    @Transactional
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
