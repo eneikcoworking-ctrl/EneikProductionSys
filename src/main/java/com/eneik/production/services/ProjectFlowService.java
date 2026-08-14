@@ -547,7 +547,19 @@ public class ProjectFlowService {
         return new com.eneik.production.dto.WishlistResponseDto(item.getId(), item.getProjectId(), item.getSource(), item.getSourceRoleTag(), item.getContent(), item.getStatus(), item.getCreatedAt(), item.getFeatureId());
     }
 
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep): used to be @Transactional, holding a DB transaction/connection open
+    // across a real GitHub HTTP call per pending wishlist in the loop below (tryCompileWishlistCheaply's
+    // raw HttpClient GET of .eneik/task-plan.json) plus whatever real Jules dispatch
+    // dispatchBatchedWishlistCompiler makes at the end - lower-certainty finding than the others fixed
+    // tonight (no explicit lockProjectForUpdate here, unlike dispatchReviewerFallbackBatch/
+    // admitWishlistCompilationCompletion), but still a real transaction spanning real network calls in a
+    // loop. The actual dedup/admission logic downstream already uses the safe compare-and-swap primitive
+    // (WishlistRepository.compareAndSetStatus, dispatchBatchedWishlistCompiler) rather than relying on this
+    // method's transaction boundary for correctness, so removing it here doesn't weaken that protection.
+    // recordOrchestrationStartOrThrow's own cooldown check-then-write is a plain timestamp compare with no
+    // row lock of its own - it was never actually serialized against a genuinely concurrent second call
+    // even with this transaction wrapping it (no lockProjectForUpdate), so this change doesn't measurably
+    // widen that pre-existing gap.
     public OrchestrationResultDto orchestrate(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.ORCHESTRATE);
