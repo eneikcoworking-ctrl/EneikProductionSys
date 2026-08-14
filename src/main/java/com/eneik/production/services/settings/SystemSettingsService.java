@@ -170,6 +170,15 @@ public class SystemSettingsService {
         // same generateAsset/dispatchDesignReview building blocks already live in production.
         definitions.put("design_shop_enabled", flag("design_shop_enabled",
                 "DESIGN_SHOP_ENABLED", "design-shop.enabled"));
+        // 2026-08-14: same class of failure as design_system_falsification_enabled above, found the same
+        // way - by being the first caller to actually exercise the path. JulesDispatchService.
+        // systemOrchestratorRepositoryName() reads this key and carries a fallback for when it is unset,
+        // but requireDefinition throws on an UNREGISTERED key before any fallback can apply. So every
+        // ORCHESTRATOR_SYSTEM dispatch - the mechanism for the factory to task itself against its own
+        // repository - failed with HTTP 400 the moment it was first used. The code path existed unused
+        // since it was written, which is exactly why nobody hit it.
+        definitions.put("system_orchestrator_repository_name", plain("system_orchestrator_repository_name",
+                "SYSTEM_ORCHESTRATOR_REPOSITORY_NAME", "system.orchestrator.repository-name"));
         definitions.put("falsification_cycle_enabled", flag("falsification_cycle_enabled", "FALSIFICATION_CYCLE_ENABLED", "falsification-cycle.enabled"));
         // Independent of falsification_cycle_enabled above - the philosophical track (product-critique per
         // real philosopher, Kano-classified) is a separate generative track from the formal/corrective one
