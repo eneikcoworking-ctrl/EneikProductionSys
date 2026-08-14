@@ -491,7 +491,14 @@ public class FalsificationCycleService {
             if (!rawCritiques.isArray()) {
                 return List.of();
             }
-            java.util.Set<String> validKano = java.util.Set.of("must-be", "performance", "attractive", "indifferent");
+            // 2026-08-14: "reverse" added - it was missing, and its absence was a real gap in what this
+            // system could even express. Kano's model has five categories, not four: reverse quality is
+            // the one where PRESENCE of a feature lowers satisfaction (a mobile app nobody installs, a
+            // chat widget nobody opens, forced registration before checkout). Without this word a
+            // philosopher could say "this doesn't matter" (indifferent) but had no way to say "this
+            // actively harms the product" - so the single most valuable critique a falsification round can
+            // produce was silently unrepresentable and got dropped by this very validator.
+            java.util.Set<String> validKano = java.util.Set.of("must-be", "performance", "attractive", "indifferent", "reverse");
             List<PhilosophicalCritique> result = new java.util.ArrayList<>();
             for (com.fasterxml.jackson.databind.JsonNode c : rawCritiques) {
                 String roleTag = c.path("roleTag").asText("");
@@ -554,7 +561,10 @@ public class FalsificationCycleService {
                 (not a narrow paraphrase of any "application" column); most or all may have nothing to say
                 about this product, which is the correct honest outcome, not a failure to find something;
                 every reported critique needs an explicit "kanoClass" chosen from exactly Must-Be,
-                Performance, Attractive, or Indifferent.
+                Performance, Attractive, Indifferent, or Reverse - where Reverse means a feature the
+                product is actively WORSE for having (not merely useless, which is Indifferent), and is
+                the most valuable verdict available here because it is the only one that tells the system
+                what to remove.
 
                 Role charters for this turn (each contains its own philosophy table):
                 %s
@@ -664,9 +674,19 @@ public class FalsificationCycleService {
                 have something to report.
 
                 STEP 3 - forced Kano classification. Every critique you report MUST carry an explicit
-                "kanoClass" chosen from exactly: "Must-Be", "Performance", "Attractive", "Indifferent". There
-                is no default - a critique without an explicit, deliberately-chosen class is invalid; drop it
-                yourself rather than omit the field or guess.
+                "kanoClass" chosen from exactly: "Must-Be", "Performance", "Attractive", "Indifferent",
+                "Reverse". There is no default - a critique without an explicit, deliberately-chosen class
+                is invalid; drop it yourself rather than omit the field or guess.
+
+                On "Reverse" specifically, because it is the one most often missed: it means a feature
+                whose PRESENCE lowers satisfaction - not one that is merely useless (that is Indifferent),
+                but one the product is actively worse for having. Real examples: a mobile app for a
+                business customers use twice a year, forced registration before checkout, an in-product
+                chat widget when customers already live in messaging apps, a recommendation engine trained
+                on a catalogue too small to learn anything, a settings screen so configurable nobody
+                completes setup. If you see something in THIS product that fits, classifying it Reverse is
+                among the most valuable things this audit can produce - it is the only way the system can
+                learn what to remove rather than what to add. Do not soften it to Indifferent.
 
                 Deliverable: create a new branch and open a PR containing ONLY the report file `%s` (this
                 EXACT path) plus, if you produced any, the screenshot PNGs under `%s` - no other files
@@ -767,7 +787,16 @@ public class FalsificationCycleService {
     // own - it tabulates many respondents' answers and takes the modal (most frequent) classification.
     // clusterKano below reproduces exactly that: majority vote across a cluster's members, tie-broken toward
     // the more assertive class (operator directive, 2026-07-25).
-    private static final List<String> KANO_ASSERTIVENESS_ORDER = List.of("Attractive", "Performance", "Must-Be", "Indifferent");
+    // 2026-08-14: "Reverse" added, and deliberately placed LAST. Without it here, normalizeKano below
+    // silently rewrote every Reverse critique into "Must-Be" (its fallback for unrecognised values) - so
+    // adding Reverse to the parser's validKano without adding it here would have inverted the meaning of
+    // the single most valuable verdict the audit can produce: "remove this" would have become "this is
+    // mandatory". Last position, not first, because this list is the tie-break order and Reverse is the
+    // only class whose action is destructive: at an even split it must lose, so removing something needs a
+    // real majority while adding something does not. That is the same asymmetry-of-cost reasoning as the
+    // gate threshold - a wrongly-removed feature is invisible and unrecoverable, a wrongly-kept one is
+    // visible and cheap.
+    private static final List<String> KANO_ASSERTIVENESS_ORDER = List.of("Attractive", "Performance", "Must-Be", "Indifferent", "Reverse");
 
     private String normalizeKano(String raw) {
         for (String known : KANO_ASSERTIVENESS_ORDER) {

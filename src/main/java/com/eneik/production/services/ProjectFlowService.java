@@ -1517,11 +1517,19 @@ public class ProjectFlowService {
                 String existingEpicId = epicNode.has("existingEpicId") && !epicNode.path("existingEpicId").isNull()
                         ? epicNode.path("existingEpicId").asText()
                         : null;
+                // 2026-08-14: kanoClass no longer silently defaults to "Must-Be" when the compiler omits
+                // it. That default quietly made every unclassified epic maximally important, which is both
+                // the least honest possible reading and the exact failure the philosophical-audit side
+                // already guards against by hard-dropping critiques with a missing class (see
+                // JulesDispatchService.parsePhilosophicalReport's javadoc: "silently defaulting here would
+                // be exactly the 'system re-infers Kano and gets Must-Be' failure mode"). The two sides of
+                // the flow now hold the same discipline: an absent classification is recorded as absent,
+                // not invented. Downstream consumers must treat blank as "unknown", never as Must-Be.
                 result.add(new MLPredictionServiceClient.EpicPlan(
                         existingEpicId,
                         epicNode.path("title").asText(""),
                         epicNode.path("jtbd").asText(""),
-                        epicNode.path("kanoClass").asText("Must-Be"),
+                        epicNode.path("kanoClass").asText(""),
                         epicNode.path("cynefinDomain").asText("clear"),
                         epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
                         epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
@@ -2928,8 +2936,15 @@ public class ProjectFlowService {
                   [X] for this epic, I want [Y], so that [the epic's outcome/Z] is achieved" - never repeat
                   the customer-facing sentence verbatim at task level.
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
-                - Classify Kano at the EPIC level ONLY (Must-Be, Performance, or Attractive) - do not
-                  repeat it per task slice.
+                - Classify Kano at the EPIC level ONLY (Must-Be, Performance, Attractive, or Reverse) - do
+                  not repeat it per task slice. "Reverse" means the client asked for something the product
+                  would be actively WORSE for having - not merely low-value, but harmful: a mobile app for
+                  a business its customers use twice a year, mandatory registration before checkout, an
+                  in-product chat widget when customers already live in messaging apps, a recommendation
+                  engine for a catalogue too small to learn from. You are expected to classify honestly
+                  even when the client explicitly asked for it: the client knows their business, not what
+                  software of this kind should contain. Still decompose it into slices as asked - marking
+                  it Reverse records the judgement without silently overriding the brief.
                 - Classify implementation-uncertainty Cynefin at BOTH levels (clear, complicated, complex,
                   or chaotic) - the epic's overall uncertainty and each task's own may differ.
                 - sixSigmaMetric and tocConstraintRef exist at BOTH levels: the epic's is an aggregate
@@ -2960,7 +2975,7 @@ public class ProjectFlowService {
                 `%s`, with EXACTLY this shape and no other files changed:
                 {"epics": [{"existingEpicId": null, "title": "short English epic title",
                 "jtbd": "When [customer]..., I want..., so that...",
-                "kanoClass": "Must-Be|Performance|Attractive",
+                "kanoClass": "Must-Be|Performance|Attractive|Reverse",
                 "cynefinDomain": "clear|complicated|complex|chaotic",
                 "sixSigmaMetric": "measurable epic-level business metric",
                 "tocConstraintRef": "epic-level bottleneck reference", "sourceIndex": 0,

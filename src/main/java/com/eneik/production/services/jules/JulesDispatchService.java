@@ -2928,7 +2928,10 @@ public class JulesDispatchService {
             if (!rawCritiques.isArray()) {
                 return List.of();
             }
-            java.util.Set<String> validKano = java.util.Set.of("must-be", "performance", "attractive", "indifferent");
+            // 2026-08-14: "reverse" added here for the same reason as in FalsificationCycleService's copy
+            // of this list (see that one's comment) - Kano has five categories, and the missing fifth was
+            // precisely the one that lets a critique say "this feature actively harms the product".
+            java.util.Set<String> validKano = java.util.Set.of("must-be", "performance", "attractive", "indifferent", "reverse");
             List<com.eneik.production.services.FalsificationCycleService.PhilosophicalCritique> result = new java.util.ArrayList<>();
             for (JsonNode c : rawCritiques) {
                 String roleTag = c.path("roleTag").asText("");
