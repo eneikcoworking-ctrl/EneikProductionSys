@@ -46,17 +46,30 @@ public class ProductLaunchabilityService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final ClientDeliverableReadinessService readinessService;
 
+    // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self): a plain
+    // `this.recordLaunchabilityResult(...)` call bypasses the Spring AOP proxy entirely, so
+    // @Transactional(REQUIRES_NEW) on it would silently never activate. @Lazy breaks the constructor
+    // circular dependency this would otherwise create.
+    private final ProductLaunchabilityService self;
+
     public ProductLaunchabilityService(ProjectRepository projectRepository,
                                         WishlistRepository wishlistRepository,
                                         GitHubPullRequestService gitHubPullRequestService,
-                                        ClientDeliverableReadinessService readinessService) {
+                                        ClientDeliverableReadinessService readinessService,
+                                        @org.springframework.context.annotation.Lazy ProductLaunchabilityService self) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.readinessService = readinessService;
+        this.self = self;
     }
 
-    @Transactional
+    // 2026-08-14 (bug-hunt sweep): used to be one @Transactional method holding a DB transaction open
+    // across up to 3 sequential real GitHub fetchFileContent calls (compose file, Dockerfile, frontend
+    // marker - the Dockerfile was even fetched twice, once per check). Same bug class as the 2026-08-07
+    // lock-timeout incident. Now: readiness check and all GitHub fetches happen with no transaction open,
+    // the Dockerfile is fetched once and reused, and only the final decision + wishlist/project writes run
+    // inside a short REQUIRES_NEW transaction.
     public void checkOnce(ProjectEntity project) {
         if (project.getLaunchabilityCheckedAt() != null) {
             return;
@@ -70,6 +83,28 @@ public class ProductLaunchabilityService {
         boolean hasComposeFile = gitHubPullRequestService
                 .fetchFileContent(project, project.getDefaultBranch(), COMPOSE_FILE_PATH)
                 .isPresent();
+
+        String dockerfile = null;
+        boolean hasFrontendMarker = false;
+        if (hasComposeFile) {
+            dockerfile = gitHubPullRequestService
+                    .fetchFileContent(project, project.getDefaultBranch(), DOCKERFILE_PATH)
+                    .orElse(null);
+            hasFrontendMarker = gitHubPullRequestService
+                    .fetchFileContent(project, project.getDefaultBranch(), FRONTEND_MARKER_PATH)
+                    .isPresent();
+        }
+
+        self.recordLaunchabilityResult(project.getId(), hasComposeFile, dockerfile, hasFrontendMarker);
+    }
+
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordLaunchabilityResult(java.util.UUID projectId, boolean hasComposeFile, String dockerfile,
+                                           boolean hasFrontendMarker) {
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        if (project == null) {
+            return;
+        }
 
         if (!hasComposeFile && !wishlistRepository.existsByProjectIdAndSource(
                 project.getId(), WishlistSource.runtime_observability_gap)) {
@@ -95,8 +130,8 @@ public class ProductLaunchabilityService {
                     project.getId(), COMPOSE_FILE_PATH);
         } else if (hasComposeFile) {
             log.info("ProductLaunchabilityService: project {} already has {} - launchable", project.getId(), COMPOSE_FILE_PATH);
-            checkDockerfileIsSelfBuildable(project);
-            checkFrontendIsDeployed(project);
+            checkDockerfileIsSelfBuildable(project, dockerfile);
+            checkFrontendIsDeployed(project, dockerfile, hasFrontendMarker);
         }
 
         project.setLaunchabilityCheckedAt(Instant.now());
@@ -111,13 +146,10 @@ public class ProductLaunchabilityService {
      * ... AS` build-stage line in the same file - a real multi-stage build (see this system's own
      * Dockerfile.backend) always has one.
      */
-    private void checkDockerfileIsSelfBuildable(ProjectEntity project) {
+    private void checkDockerfileIsSelfBuildable(ProjectEntity project, String dockerfile) {
         if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.dockerfile_missing_build_stage)) {
             return;
         }
-        String dockerfile = gitHubPullRequestService
-                .fetchFileContent(project, project.getDefaultBranch(), DOCKERFILE_PATH)
-                .orElse(null);
         if (dockerfile == null) {
             return;
         }
@@ -157,19 +189,13 @@ public class ProductLaunchabilityService {
      * Dockerfile never references it, so the deployable image is backend-only - a real user opening the
      * launched product sees a bare API, not the actual UI.
      */
-    private void checkFrontendIsDeployed(ProjectEntity project) {
+    private void checkFrontendIsDeployed(ProjectEntity project, String dockerfile, boolean hasFrontendMarker) {
         if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.frontend_not_deployed)) {
             return;
         }
-        boolean hasFrontend = gitHubPullRequestService
-                .fetchFileContent(project, project.getDefaultBranch(), FRONTEND_MARKER_PATH)
-                .isPresent();
-        if (!hasFrontend) {
+        if (!hasFrontendMarker) {
             return;
         }
-        String dockerfile = gitHubPullRequestService
-                .fetchFileContent(project, project.getDefaultBranch(), DOCKERFILE_PATH)
-                .orElse(null);
         if (dockerfile == null || dockerfile.toLowerCase(java.util.Locale.ROOT).contains("frontend")) {
             return;
         }

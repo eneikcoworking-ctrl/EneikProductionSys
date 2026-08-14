@@ -38,13 +38,25 @@ class ProductLaunchabilityServiceTest {
         return project;
     }
 
+    // 2026-08-14 (bug-hunt sweep): checkOnce now delegates the decision + writes to
+    // recordLaunchabilityResult via a self-proxy field (REQUIRES_NEW, same pattern as
+    // JulesDispatchService.self) - wired to the instance itself here since there's no real Spring proxy in
+    // a plain unit test.
+    private ProductLaunchabilityService newService(ProjectRepository projects, WishlistRepository wishlists,
+                                                     GitHubPullRequestService gitHub,
+                                                     ClientDeliverableReadinessService readiness) {
+        ProductLaunchabilityService service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness, null);
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
+        return service;
+    }
+
     @Test
     void neverChecksAProjectThatIsNotYetDelivered() {
         var projects = mock(ProjectRepository.class);
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -63,7 +75,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -72,6 +84,7 @@ class ProductLaunchabilityServiceTest {
                 .thenReturn(Optional.empty());
         when(wishlists.existsByProjectIdAndSource(project.getId(), WishlistSource.runtime_observability_gap))
                 .thenReturn(false);
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -86,7 +99,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -95,6 +108,7 @@ class ProductLaunchabilityServiceTest {
                 .thenReturn(Optional.empty());
         when(wishlists.existsByProjectIdAndSource(project.getId(), WishlistSource.runtime_observability_gap))
                 .thenReturn(true);
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -108,13 +122,14 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("docker-compose.yml")))
                 .thenReturn(Optional.of("services: {}"));
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -134,7 +149,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -143,6 +158,7 @@ class ProductLaunchabilityServiceTest {
                 .thenReturn(Optional.of("services: {}"));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("Dockerfile")))
                 .thenReturn(Optional.of("FROM eclipse-temurin:21-jre-alpine\nCOPY target/app.jar app.jar\n"));
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -155,7 +171,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -165,6 +181,7 @@ class ProductLaunchabilityServiceTest {
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("Dockerfile")))
                 .thenReturn(Optional.of("FROM maven:3.9-eclipse-temurin-17 AS build\nRUN mvn package\n"
                         + "FROM eclipse-temurin:21-jre-alpine\nCOPY --from=build /app/target/app.jar app.jar\n"));
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -177,19 +194,26 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("docker-compose.yml")))
                 .thenReturn(Optional.of("services: {}"));
+        when(gitHub.fetchFileContent(eq(project), eq("main"), eq("Dockerfile")))
+                .thenReturn(Optional.of("FROM eclipse-temurin:21-jre-alpine\nCOPY target/app.jar app.jar\n"));
         when(wishlists.existsByProjectIdAndSource(project.getId(), WishlistSource.dockerfile_missing_build_stage))
                 .thenReturn(true);
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
-        verify(gitHub, never()).fetchFileContent(eq(project), eq("main"), eq("Dockerfile"));
+        // 2026-08-14 (bug-hunt sweep): the Dockerfile fetch itself is no longer skippable when already
+        // deduped - all GitHub reads now happen up front, before the decision transaction, so the fetch
+        // isn't gated on this dedup check anymore (see checkOnce/recordLaunchabilityResult split). The
+        // real invariant this test protects - never a second wishlist for an already-flagged Dockerfile -
+        // still holds.
         verify(wishlists, never()).save(any());
     }
 
@@ -203,7 +227,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -215,6 +239,7 @@ class ProductLaunchabilityServiceTest {
                         + "FROM eclipse-temurin:21-jre-alpine\nCOPY --from=build /app/target/app.jar app.jar\n"));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("frontend/package.json")))
                 .thenReturn(Optional.of("{\"name\": \"frontend\"}"));
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -227,7 +252,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -240,6 +265,7 @@ class ProductLaunchabilityServiceTest {
                         + "FROM eclipse-temurin:21-jre-alpine\nCOPY --from=build /app/target/app.jar app.jar\n"));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("frontend/package.json")))
                 .thenReturn(Optional.of("{\"name\": \"frontend\"}"));
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -252,7 +278,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         when(readiness.computeForProject(project.getId()))
@@ -264,6 +290,7 @@ class ProductLaunchabilityServiceTest {
                         + "FROM eclipse-temurin:21-jre-alpine\nCOPY --from=build /app/target/app.jar app.jar\n"));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("frontend/package.json")))
                 .thenReturn(Optional.empty());
+        when(projects.findById(project.getId())).thenReturn(Optional.of(project));
 
         service.checkOnce(project);
 
@@ -276,7 +303,7 @@ class ProductLaunchabilityServiceTest {
         var wishlists = mock(WishlistRepository.class);
         var gitHub = mock(GitHubPullRequestService.class);
         var readiness = mock(ClientDeliverableReadinessService.class);
-        var service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness);
+        var service = newService(projects, wishlists, gitHub, readiness);
 
         ProjectEntity project = deliveredProject();
         project.setLaunchabilityCheckedAt(Instant.now());
