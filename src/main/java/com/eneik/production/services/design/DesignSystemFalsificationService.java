@@ -50,20 +50,35 @@ public class DesignSystemFalsificationService {
     private final WishlistRepository wishlistRepository;
     private final SystemSettingsService settingsService;
 
+    // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self): a plain
+    // `this.recordAuditTrail(...)` call bypasses the Spring AOP proxy entirely, so
+    // @Transactional(REQUIRES_NEW) on it would silently never activate. @Lazy breaks the constructor
+    // circular dependency this would otherwise create.
+    private final DesignSystemFalsificationService self;
+
     public DesignSystemFalsificationService(ProjectRepository projectRepository,
                                              ClientDeliverableReadinessService readinessService,
                                              StitchClient stitchClient,
                                              WishlistRepository wishlistRepository,
-                                             SystemSettingsService settingsService) {
+                                             SystemSettingsService settingsService,
+                                             @org.springframework.context.annotation.Lazy DesignSystemFalsificationService self) {
         this.projectRepository = projectRepository;
         this.readinessService = readinessService;
         this.stitchClient = stitchClient;
         this.wishlistRepository = wishlistRepository;
         this.settingsService = settingsService;
+        this.self = self;
     }
 
+    // 2026-08-14 (bug-hunt sweep): used to be @Transactional, holding a DB transaction open across the
+    // whole activeProjects loop AND, per eligible epic, two sequential real Stitch API calls
+    // (createDesignSystem, applyDesignSystem) - same bug class as the 2026-08-07 lock-timeout incident, but
+    // spanning every active project's every eligible epic in one transaction rather than a single call. No
+    // longer @Transactional here: the readiness/dedup reads below are each independently transactional
+    // (Spring Data JPA default / ClientDeliverableReadinessService has no transaction of its own to nest
+    // into), the Stitch calls now run with no transaction open, and only the final audit-trail write
+    // (recordAuditTrail) runs inside its own short REQUIRES_NEW transaction.
     @Scheduled(cron = "${design-system-falsification.cron:0 */30 * * * ?}")
-    @Transactional
     public void applyDesignSystemsToShippedEpics() {
         if (!settingsService.effectiveBoolean("design_system_falsification_enabled") || !stitchClient.hasStitchKey()) {
             return;
@@ -107,14 +122,15 @@ public class DesignSystemFalsificationService {
             StitchClient.ApplyDesignSystemResult applied =
                     stitchClient.applyDesignSystem(project.getId().toString(), created.designSystemId(), List.of());
 
-            recordAuditTrail(project.getId(), epic, created, applied);
+            self.recordAuditTrail(project.getId(), epic, created, applied);
         }
     }
 
     // Audit-trail record only, deliberately status=dismissed - never picked up as compiler input by
     // TechnicalLeadCompiler/ProjectFlowService.orchestrate (both only ever act on `pending` items), same
     // convention already used elsewhere for "exists, but nothing to compile" rows.
-    private void recordAuditTrail(java.util.UUID projectId, ClientDeliverableReadinessService.UiCodeEpic epic,
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
+    public void recordAuditTrail(java.util.UUID projectId, ClientDeliverableReadinessService.UiCodeEpic epic,
             StitchClient.DesignSystemResult created, StitchClient.ApplyDesignSystemResult applied) {
         WishlistEntity record = new WishlistEntity();
         record.setProjectId(projectId);

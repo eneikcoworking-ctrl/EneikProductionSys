@@ -36,7 +36,13 @@ class DesignSystemFalsificationServiceTest {
     private final SystemSettingsService settingsService = mock(SystemSettingsService.class);
 
     private final DesignSystemFalsificationService service = new DesignSystemFalsificationService(
-            projectRepository, readinessService, stitchClient, wishlistRepository, settingsService);
+            projectRepository, readinessService, stitchClient, wishlistRepository, settingsService, null);
+    // 2026-08-14 (bug-hunt sweep): recordAuditTrail is now called via a self-proxy field (REQUIRES_NEW,
+    // same pattern as JulesDispatchService.self) - wired to the instance itself here since there's no real
+    // Spring proxy in a plain unit test.
+    {
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
+    }
 
     private ProjectEntity activeProject() {
         ProjectEntity project = new ProjectEntity();
