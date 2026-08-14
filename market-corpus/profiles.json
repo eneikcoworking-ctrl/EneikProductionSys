@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-14",
+  "markets": ["DE", "US"],
+  "note": "A product is a MIX of profiles, never one label. Weights are evidence-derived from the brief and the repository, and low confidence must weaken every downstream decision instead of being rounded up to a guess. See README.md.",
+  "profiles": [
+    {
+      "id": "shop",
+      "title": "Online shop",
+      "coreCapabilities": ["payment-methods", "de-site-disclosures", "us-privacy-and-tax", "consent-management", "accessibility", "data-subject-rights", "backup-restore", "product-measurement"],
+      "valuePath": ["find product", "understand price and availability", "add to basket", "pay", "receive confirmation", "receive goods", "return goods"],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified. The path's structure is derivable from order state transitions; the claim that this is the typical shape for this profile is not yet measured."
+    },
+    {
+      "id": "booking",
+      "title": "Appointment or resource booking",
+      "coreCapabilities": ["consent-management", "accessibility", "data-subject-rights", "backup-restore", "account-recovery", "product-measurement"],
+      "valuePath": ["find the service", "see genuinely free times", "book", "get a reminder", "attend", "pay", "reschedule or cancel"],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "note": "The reminder link is the one most often omitted and the one with the largest measured effect on outcomes; it must be verified with a real number before it may drive anything."
+    },
+    {
+      "id": "internal-operations",
+      "title": "Internal operations tool replacing spreadsheets",
+      "coreCapabilities": ["accessibility", "backup-restore", "account-recovery", "data-subject-rights", "product-measurement"],
+      "valuePath": ["capture the work item", "assign it", "track its state", "complete it", "report on it"],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified."
+    },
+    {
+      "id": "integration",
+      "title": "Integration layer between existing systems",
+      "coreCapabilities": ["backup-restore", "product-measurement"],
+      "valuePath": ["read from source", "transform", "write to target", "confirm delivery", "recover from a failed run"],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "note": "Recovery from a partial or failed run is the link that distinguishes a working integration from one that silently loses data."
+    },
+    {
+      "id": "site",
+      "title": "Marketing site with enquiries",
+      "coreCapabilities": ["de-site-disclosures", "consent-management", "accessibility", "data-subject-rights", "product-measurement"],
+      "valuePath": ["arrive", "understand the offer", "trust the seller", "send an enquiry", "receive an answer"],
+      "status": "hypothesis",
+      "source": "AI general knowledge, 2026-08-14 - unverified."
+    }
+  ]
+}
