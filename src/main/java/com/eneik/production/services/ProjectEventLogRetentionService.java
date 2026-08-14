@@ -20,8 +20,8 @@ import java.util.List;
 /**
  * Keeps the durable per-project log bounded, by meaning rather than by age.
  *
- * The log exists because of an explicit operator requirement (2026-07-26: "лог проекта должен независеть
- * от деплоев!! ... полный лог от старта проекта до его принятия"), so the policy is written to honour that
+ * The log exists because of an explicit operator requirement (2026-07-26: the project log must not depend
+ * on deploys - the complete log from a project's start to its acceptance), so the policy honours that
  * sentence literally: nothing is removed from a project that has not been accepted yet, however old the
  * entries are. What the requirement does NOT ask for is keeping that log forever after the engagement
  * ended - and since nothing ever deleted a row, the table grew without bound by construction, reaching
