@@ -50,7 +50,11 @@ class DesignShopOrchestrationServiceTest {
 
         service = new DesignShopOrchestrationService(projectRepository, designShopCycleRepository,
                 readinessService, designAssetService, projectFlowService, contextService,
-                gitHubPullRequestService, settingsService, consistencyAuditService);
+                gitHubPullRequestService, settingsService, consistencyAuditService, null);
+        // 2026-08-14 (bug-hunt sweep): ensureCycleRow/claimStartCycle/releaseStartCycleClaim are called via
+        // a self-proxy field (REQUIRED transaction, same pattern as JulesDispatchService.self) - wired to
+        // the instance itself here since there's no real Spring proxy in a plain unit test.
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
 
         project = new ProjectEntity();
         project.setId(UUID.randomUUID());
@@ -59,6 +63,13 @@ class DesignShopOrchestrationServiceTest {
 
         when(settingsService.effectiveBoolean("design_shop_enabled")).thenReturn(true);
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        // Defaults so every pre-existing test below still reaches its real assertions: ensureCycleRow's
+        // save-fresh-row path just echoes back what it was given, and the start-cycle claim always
+        // succeeds by default - Mockito's own default for an unstubbed int-returning method is 0, which
+        // would silently skip startCycle for every test that doesn't explicitly stub this. A dedicated test
+        // overrides this to exercise the "already claimed" path.
+        when(designShopCycleRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
+        when(designShopCycleRepository.claimStartCycle(any(), any())).thenReturn(1);
     }
 
     @Test
@@ -68,6 +79,23 @@ class DesignShopOrchestrationServiceTest {
         service.tick();
 
         verifyNoInteractions(projectRepository, readinessService, designAssetService, projectFlowService);
+    }
+
+    // 2026-08-14 (bug-hunt sweep): the novel, risk-bearing logic of this fix - a genuinely concurrent
+    // second tick() for the same project's readiness edge must do NO Stitch/dispatch work at all, since the
+    // whole point is closing the window where two overlapping ticks both start a real design cycle for the
+    // same round.
+    @Test
+    void skipsStartCycleWhenTheClaimIsAlreadyHeldByAConcurrentTick() {
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
+        when(designShopCycleRepository.claimStartCycle(eq(project.getId()), any())).thenReturn(0);
+
+        service.tick();
+
+        verifyNoInteractions(designAssetService, projectFlowService);
+        verify(designShopCycleRepository, never()).releaseStartCycleClaim(any());
     }
 
     @Test
@@ -171,6 +199,10 @@ class DesignShopOrchestrationServiceTest {
 
         verify(projectFlowService, never()).dispatchDesignReview(any(), any(), any());
         verify(designShopCycleRepository, never()).save(any());
+        // 2026-08-14 (bug-hunt sweep): the claim taken before this generation attempt must be released on
+        // failure too, or the next tick's retry (the whole point of leaving lastWasReady=false) would be
+        // silently blocked by a claim from an attempt that never actually finished.
+        verify(designShopCycleRepository).releaseStartCycleClaim(project.getId());
     }
 
     @Test

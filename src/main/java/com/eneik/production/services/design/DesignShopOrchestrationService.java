@@ -15,11 +15,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * The "design shop": a parallel factory department, wired into the real autonomous pipeline without
@@ -58,6 +60,12 @@ public class DesignShopOrchestrationService {
     private final SystemSettingsService settingsService;
     private final DesignConsistencyAuditService consistencyAuditService;
 
+    // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self): a plain
+    // `this.claimStartCycle(...)` call bypasses the Spring AOP proxy entirely, so @Transactional on it
+    // would silently never activate. @Lazy breaks the constructor circular dependency this would otherwise
+    // create.
+    private final DesignShopOrchestrationService self;
+
     public DesignShopOrchestrationService(ProjectRepository projectRepository,
                                            DesignShopCycleRepository designShopCycleRepository,
                                            ClientDeliverableReadinessService readinessService,
@@ -66,7 +74,8 @@ public class DesignShopOrchestrationService {
                                            ProjectOperationalContextService contextService,
                                            GitHubPullRequestService gitHubPullRequestService,
                                            SystemSettingsService settingsService,
-                                           DesignConsistencyAuditService consistencyAuditService) {
+                                           DesignConsistencyAuditService consistencyAuditService,
+                                           @org.springframework.context.annotation.Lazy DesignShopOrchestrationService self) {
         this.projectRepository = projectRepository;
         this.designShopCycleRepository = designShopCycleRepository;
         this.readinessService = readinessService;
@@ -76,6 +85,7 @@ public class DesignShopOrchestrationService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.settingsService = settingsService;
         this.consistencyAuditService = consistencyAuditService;
+        this.self = self;
     }
 
     // 2026-08-14 (bug-hunt sweep): used to be @Transactional, holding a DB transaction open across the
@@ -87,13 +97,13 @@ public class DesignShopOrchestrationService {
     // (never implicit dirty-checking against a still-open transaction), so each one safely gets its own
     // short auto-transaction (Spring Data JPA default) with no transaction spanning the Stitch call.
     //
-    // Separate, NOT fixed here (different bug, out of this pass's scope - flagging for a future pass):
-    // this method takes no row lock (no lockProjectForUpdate) and has no per-project dispatch cooldown
-    // (unlike ProjectFlowService.dispatchWishlistCompiler's WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS,
-    // 2026-08-13). If a tick() run takes long enough to still be processing a project when the next 5-
-    // minute cron fires - very plausible given the sleep-polling above - two concurrent invocations could
-    // both read the same DesignShopCycleEntity with lastWasReady=false and both call startCycle, dispatching
-    // two real design reviews for the same round.
+    // 2026-08-14 (bug-hunt sweep, separate bug, follow-up pass): this method takes no row lock and (until
+    // now) had no per-project dispatch cooldown - if a tick() run took long enough to still be processing a
+    // project when the next 5-minute cron fired (very plausible given the sleep-polling above), two
+    // concurrent invocations could both read the same DesignShopCycleEntity with lastWasReady=false and
+    // both call startCycle, dispatching two real design reviews for the same round. Closed with an atomic
+    // compare-and-swap claim (DesignShopCycleEntity.startCycleClaimedAt, V98 migration) - see
+    // processProject/claimStartCycle/releaseStartCycleClaim.
     @Scheduled(cron = "${design-shop.cron:0 */5 * * * ?}")
     public void tick() {
         if (!settingsService.effectiveBoolean("design_shop_enabled")) {
@@ -114,12 +124,7 @@ public class DesignShopOrchestrationService {
     }
 
     private void processProject(ProjectEntity project) {
-        DesignShopCycleEntity cycle = designShopCycleRepository.findByProjectId(project.getId())
-                .orElseGet(() -> {
-                    DesignShopCycleEntity fresh = new DesignShopCycleEntity();
-                    fresh.setProjectId(project.getId());
-                    return fresh;
-                });
+        DesignShopCycleEntity cycle = self.ensureCycleRow(project.getId());
 
         if (DesignShopCycleEntity.STAGE_AWAITING_REVIEW.equals(cycle.getStage())) {
             advanceAwaitingReview(project, cycle);
@@ -130,12 +135,56 @@ public class DesignShopOrchestrationService {
         boolean isReady = readiness.decompositionComplete() && readiness.ratio() >= 1.0;
 
         if (isReady && !cycle.isLastWasReady()) {
-            startCycle(project, cycle, readiness);
+            // 2026-08-14 (bug-hunt sweep, V98 migration): atomic claim closing a genuine double-dispatch
+            // race - see this class's own tick() javadoc for the mechanism (overlapping tick() runs, up to
+            // 5 real minutes of Stitch sleep-polling per attempt). Only the winner proceeds to startCycle;
+            // the loser does nothing this tick (not even a log-worthy event - this is the routine, expected
+            // outcome of two ticks racing, not a failure).
+            if (self.claimStartCycle(project.getId()) == 0) {
+                return;
+            }
+            try {
+                startCycle(project, cycle, readiness);
+            } catch (RuntimeException e) {
+                // Matches the "no usable Stitch draft" branch inside startCycle: an unexpected exception
+                // must not permanently strand this project's claim either, or every later tick would keep
+                // seeing it as "in flight" forever even though nothing is actually running.
+                self.releaseStartCycleClaim(project.getId());
+                throw e;
+            }
         } else if (!isReady && cycle.isLastWasReady()) {
             cycle.setLastWasReady(false);
             cycle.setUpdatedAt(Instant.now());
             designShopCycleRepository.save(cycle);
         }
+    }
+
+    // Idempotent get-or-create for this project's one cycle row (project_id is UNIQUE - see V93
+    // migration). Two overlapping ticks racing to create the SAME brand-new project's first-ever row is
+    // the only case this needs to handle: the loser's insert violates the unique constraint, caught here
+    // and resolved by simply reading the winner's now-committed row instead.
+    @Transactional
+    DesignShopCycleEntity ensureCycleRow(UUID projectId) {
+        return designShopCycleRepository.findByProjectId(projectId).orElseGet(() -> {
+            DesignShopCycleEntity fresh = new DesignShopCycleEntity();
+            fresh.setProjectId(projectId);
+            try {
+                return designShopCycleRepository.saveAndFlush(fresh);
+            } catch (org.springframework.dao.DataIntegrityViolationException e) {
+                return designShopCycleRepository.findByProjectId(projectId)
+                        .orElseThrow(() -> e);
+            }
+        });
+    }
+
+    @Transactional
+    int claimStartCycle(UUID projectId) {
+        return designShopCycleRepository.claimStartCycle(projectId, Instant.now());
+    }
+
+    @Transactional
+    void releaseStartCycleClaim(UUID projectId) {
+        designShopCycleRepository.releaseStartCycleClaim(projectId);
     }
 
     private void startCycle(ProjectEntity project, DesignShopCycleEntity cycle,
@@ -164,7 +213,9 @@ public class DesignShopOrchestrationService {
             // Left lastWasReady=false so the next tick retries while readiness is still true, instead of
             // silently losing this round - generation failures (rate limits, transient Stitch errors,
             // a nano-banana fallback we don't want) are exactly the kind of thing that resolves itself on
-            // retry.
+            // retry. The start-cycle claim must be released too, or that retry would be silently blocked
+            // by an attempt that never actually finished.
+            self.releaseStartCycleClaim(project.getId());
             log.warn("DesignShopOrchestrationService: no usable Stitch draft for project {} (model={}, message={}); will retry next tick",
                     project.getId(), result.model(), result.message());
             return;

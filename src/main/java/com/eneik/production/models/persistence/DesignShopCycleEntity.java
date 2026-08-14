@@ -55,6 +55,13 @@ public class DesignShopCycleEntity {
     @Column(name = "edit_iteration_count", nullable = false)
     private int editIterationCount;
 
+    // 2026-08-14 (bug-hunt sweep, V98 migration): atomic mutual-exclusion claim for
+    // DesignShopOrchestrationService.startCycle - deliberately separate from lastWasReady itself, which is
+    // only set true AFTER a successful Stitch generation (so a failed attempt correctly retries next
+    // tick). NULL means no attempt is currently in flight for this project.
+    @Column(name = "start_cycle_claimed_at")
+    private Instant startCycleClaimedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
@@ -98,6 +105,9 @@ public class DesignShopCycleEntity {
 
     public int getEditIterationCount() { return editIterationCount; }
     public void setEditIterationCount(int editIterationCount) { this.editIterationCount = editIterationCount; }
+
+    public Instant getStartCycleClaimedAt() { return startCycleClaimedAt; }
+    public void setStartCycleClaimedAt(Instant startCycleClaimedAt) { this.startCycleClaimedAt = startCycleClaimedAt; }
 
     public Instant getCreatedAt() { return createdAt; }
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
