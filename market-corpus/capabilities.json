@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
-  "updatedAt": "2026-08-14",
-  "note": "Every entry MUST carry source and status. See README.md - only statutory, standard and observed entries may influence decisions; hypothesis entries are stored to be verified or refuted, never acted upon. detectionKeywords on a capability are the words a decomposition plan would realistically contain if it covers that capability - used by the compliance gate to test coverage by evidence rather than by guessing at prose.",
+  "schemaVersion": 2,
+  "updatedAt": "2026-08-15",
+  "note": "Every entry MUST carry source and status. See README.md - statutory, standard, observed and derived entries may influence decisions; hypothesis entries are stored to be verified or refuted, never acted upon. A 'derived' entry is reasoned domain knowledge: it must state its reasoning and may never carry a number - shares, percentages and effect sizes require measurement, not argument. detectionKeywords are the words a plan would realistically contain if it covers that capability, used by the compliance gate to test coverage by evidence. appliesWhenKeywords are the words that show a conditional duty's condition actually holds - without them a game that sells nothing gets told about loot-box odds.",
   "capabilities": [
     {
       "id": "accessibility",
@@ -83,9 +83,9 @@
           "appliesToProfiles": [
             "*"
           ],
-          "status": "hypothesis",
-          "source": "AI general knowledge, 2026-08-14 - unverified",
-          "note": "Plausible but unmeasured. Must not influence anything until promoted to observed or supported by a citation."
+          "status": "derived",
+          "source": "Derived from domain reasoning, 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+          "reasoning": "Consent rules change by jurisdiction and over time, and a hand-rolled banner freezes one reading of them into the product. The reasoning is about maintenance burden, not about measured compliance rates."
         }
       ],
       "detectionKeywords": [
@@ -136,9 +136,9 @@
           "appliesToProfiles": [
             "*"
           ],
-          "status": "hypothesis",
-          "source": "AI general knowledge, 2026-08-14 - unverified",
-          "note": "Universally expected in practice, but not measured here and not a statutory requirement. Pending market observation."
+          "status": "derived",
+          "source": "Derived from domain reasoning, 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+          "reasoning": "Credentials are lost routinely - people leave, phones break, passwords are forgotten. Without a way back in, the owner is locked out of their own business data and the only remedy is the vendor, which is not a product but a dependency. Nothing here claims how often it happens; only that the path must exist."
         }
       ]
     },
@@ -171,7 +171,25 @@
           ],
           "market": "DE",
           "status": "statutory",
-          "source": "Directive 2011/83/EU on consumer rights, transposed in BGB §§312g, 355 and Art. 246a EGBGB"
+          "source": "Directive 2011/83/EU on consumer rights, transposed in BGB §§312g, 355 and Art. 246a EGBGB",
+          "appliesWhenKeywords": [
+            "purchase",
+            "buy ",
+            "payment",
+            "checkout",
+            "price",
+            "in-app",
+            "virtual currency",
+            "coin",
+            "gem",
+            "monetis",
+            "monetiz",
+            "loot box",
+            "gacha",
+            "subscription",
+            "paid",
+            "store page"
+          ]
         },
         {
           "requirement": "Prices shown inclusive of VAT, with shipping costs stated and total shown before the order is binding; the order button must be labelled unambiguously (Button-Lösung)",
@@ -183,7 +201,25 @@
           ],
           "market": "DE",
           "status": "statutory",
-          "source": "Preisangabenverordnung (PAngV); BGB §312j(3) requiring an order button labelled e.g. 'zahlungspflichtig bestellen'"
+          "source": "Preisangabenverordnung (PAngV); BGB §312j(3) requiring an order button labelled e.g. 'zahlungspflichtig bestellen'",
+          "appliesWhenKeywords": [
+            "purchase",
+            "buy ",
+            "payment",
+            "checkout",
+            "price",
+            "in-app",
+            "virtual currency",
+            "coin",
+            "gem",
+            "monetis",
+            "monetiz",
+            "loot box",
+            "gacha",
+            "subscription",
+            "paid",
+            "store page"
+          ]
         },
         {
           "requirement": "Consent for non-essential cookies and trackers under the German transposition, not only the GDPR baseline",
@@ -238,7 +274,25 @@
           "market": "US",
           "status": "statutory",
           "source": "South Dakota v. Wayfair (2018) established economic nexus; roughly 11,000 taxing jurisdictions exist, so rates cannot be maintained by hand",
-          "note": "Architectural, not cosmetic: retrofitting destination-based tax means rewriting order totals, so it belongs in the first decomposition."
+          "note": "Architectural, not cosmetic: retrofitting destination-based tax means rewriting order totals, so it belongs in the first decomposition.",
+          "appliesWhenKeywords": [
+            "purchase",
+            "buy ",
+            "payment",
+            "checkout",
+            "price",
+            "in-app",
+            "virtual currency",
+            "coin",
+            "gem",
+            "monetis",
+            "monetiz",
+            "loot box",
+            "gacha",
+            "subscription",
+            "paid",
+            "store page"
+          ]
         }
       ],
       "detectionKeywords": [
@@ -267,9 +321,9 @@
             "subscription"
           ],
           "market": "DE",
-          "status": "hypothesis",
-          "source": "AI general knowledge, 2026-08-14 - unverified. Pending market observation to become an observed share.",
-          "note": "Direction is widely reported but the share is not measured here, so this must not drive any decision yet."
+          "status": "derived",
+          "source": "Derived from domain reasoning, 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+          "reasoning": "Payment habits are country-specific and a checkout that cannot accept how someone normally pays ends the transaction at its last step - the most expensive place to lose it. That invoice and direct debit are long-established consumer payment methods in Germany is documentary fact, not a measurement. The original wording claimed underperformance without a number behind it; the requirement now stands on the structural point, and any share remains unmeasured."
         },
         {
           "requirement": "Strong customer authentication on electronic payments in the EU",
@@ -290,6 +344,100 @@
         "sca",
         "3ds",
         "strong customer authentication"
+      ],
+      "appliesWhenKeywords": [
+        "payment",
+        "checkout",
+        "pay ",
+        "card",
+        "invoice",
+        "sepa",
+        "paypal"
+      ]
+    },
+    {
+      "id": "enquiry-acknowledgement",
+      "title": "An enquiry is visibly received",
+      "appliesWhen": "the product lets someone send an enquiry, request or message that a human is meant to answer",
+      "jobs": [
+        "When I send an enquiry, I want to know it arrived, so that I am not left guessing whether to try somewhere else"
+      ],
+      "expectations": [
+        {
+          "requirement": "Automatic acknowledgement to the sender the moment an enquiry is submitted, stating what was received and what happens next",
+          "kano": "must-be",
+          "appliesToProfiles": [
+            "site",
+            "support-desk",
+            "client-portal",
+            "booking"
+          ],
+          "status": "observed",
+          "source": "Matelso Lead Management Study 2024 (100 companies in construction, mechanical engineering, IT, automotive), read 2026-08-15 via ldb.de: only 4 automatic acknowledgements were received across 91 enquiries. See observations/site-enquiry-response-2026-08-15.json, including the fact that the study's publisher sells lead-management software.",
+          "validUntil": "2026-12-31",
+          "note": "Chosen because it is the one figure in that study that a product can actually act on. Everything else it measured - whether a human eventually replied, whether the phone was picked up - no website can guarantee. Silence after sending is indistinguishable from not being heard, and this is both the cheapest link in the chain and the one almost nobody builds."
+        }
+      ],
+      "detectionKeywords": [
+        "acknowledg",
+        "confirmation email",
+        "auto-reply",
+        "autoreply",
+        "eingangsbestätigung",
+        "we received your"
+      ]
+    },
+    {
+      "id": "appointment-essentials",
+      "title": "What a booking product is expected to contain",
+      "appliesWhen": "the product books appointments, resources or time slots",
+      "jobs": [
+        "When I have booked, I want to be reminded, so that I do not simply forget and lose the slot",
+        "When I cannot come, I want to say so without phoning, so that I am not counted as a no-show"
+      ],
+      "expectations": [
+        {
+          "requirement": "Automatic reminder to the customer before the appointment, by email or SMS",
+          "kano": "must-be",
+          "appliesToProfiles": [
+            "booking"
+          ],
+          "status": "observed",
+          "source": "Survey of 4 real German booking products for small service businesses, 2026-08-15 (cituro, eTermin, SuperSaaS, Terminbuch.de) - claimed by 4 of 4. See observations/booking-DE-2026-08-15.json for the method and its limits.",
+          "validUntil": "2027-08-15",
+          "note": "Table stakes in the market and almost never present in a client brief - exactly the shape of gap this corpus exists to fill. The survey measures what vendors ADVERTISE, not what products contain, so it is evidence of market expectation."
+        },
+        {
+          "requirement": "A way to handle a slot that frees up - a waiting list, or filling the gap when someone cancels",
+          "kano": "performance",
+          "appliesToProfiles": [
+            "booking"
+          ],
+          "status": "observed",
+          "source": "Same survey, 2026-08-15 - claimed by 4 of 4, either as an explicit waiting list or as reminders sold specifically as no-show reduction.",
+          "validUntil": "2027-08-15",
+          "note": "An empty chair is the loss this entire product class is sold against."
+        },
+        {
+          "requirement": "The customer can cancel or move the appointment themselves, without contacting the business",
+          "kano": "performance",
+          "appliesToProfiles": [
+            "booking"
+          ],
+          "status": "derived",
+          "source": "Derived from domain reasoning, 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+          "note": "Deliberately left inert despite looking obviously right. The market does not treat it as a selling point, which is precisely why no brief will ask for it - but wanting it to be true is not evidence that it is.",
+          "reasoning": "A reminder tells the business that someone intends to come; it does not free the slot when they cannot. Only the customer can know they will not make it, and only in time to matter if they can act without waiting for opening hours. Without this the booking degrades into a no-show, which is the exact loss the product is bought to prevent. No effect size is claimed."
+        }
+      ],
+      "detectionKeywords": [
+        "reminder",
+        "erinnerung",
+        "waiting list",
+        "warteliste",
+        "no-show",
+        "cancel",
+        "reschedule"
       ]
     },
     {
@@ -304,50 +452,102 @@
         {
           "requirement": "A valid age label (USK) shown clearly, including for purely digital and online distribution - not only physical media",
           "kano": "must-be",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "§14a Jugendschutzgesetz (JuSchG) as amended by the 2021 reform, which extended the age-labelling duty to online game platforms",
-          "note": "Blocking, not cosmetic: without a label the game cannot be legally distributed on German platforms at all. Belongs in the first decomposition because the rating depends on mechanics that are decided early."
+          "note": "Blocking, not cosmetic: without a label the game cannot be legally distributed on German platforms at all. Belongs in the first decomposition because the rating depends on mechanics that are decided early.",
+          "appliesWhenKeywords": [
+            "publish",
+            "release",
+            "distribut",
+            "app store",
+            "google play",
+            "steam",
+            "itch",
+            "store listing"
+          ]
         },
         {
           "requirement": "Structural precautions for online games: means to limit spending, disclosure of game mechanics and of the probabilities behind randomised rewards, restrictions on advertising aimed at minors, and usage-limiting options",
           "kano": "must-be",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "market": "DE",
           "status": "statutory",
           "source": "§24a JuSchG (Vorsorgemaßnahmen) as amended 2021",
-          "note": "The 2021 reform makes loot boxes, chat and excessive-use mechanics into rating factors: the USK reports that roughly 30% of tested games with online functions received a HIGHER age rating because of such usage risks. So these mechanics do not merely add legal duties - they narrow the game's legal audience, which is a commercial decision disguised as a design one and must be surfaced during decomposition, not after."
+          "note": "The 2021 reform makes loot boxes, chat and excessive-use mechanics into rating factors: the USK reports that roughly 30% of tested games with online functions received a HIGHER age rating because of such usage risks. So these mechanics do not merely add legal duties - they narrow the game's legal audience, which is a commercial decision disguised as a design one and must be surfaced during decomposition, not after.",
+          "appliesWhenKeywords": [
+            "chat",
+            "multiplayer",
+            "online",
+            "leaderboard",
+            "user-generated",
+            "purchase",
+            "loot box"
+          ]
         },
         {
           "requirement": "Verifiable parental consent before collecting personal data from children under 13, with age screening that does not invite misreporting",
           "kano": "must-be",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "market": "US",
           "status": "statutory",
           "source": "COPPA Rule, 16 CFR Part 312; FTC amendments finalised January 2025 with a compliance deadline of 2026-04-22, which expanded disclosure duties, tightened verifiable-consent standards and added biometric identifiers (fingerprint, voiceprint, iris, genetic data) to covered personal information",
-          "note": "Enforcement is real and expensive: the FTC's Epic Games settlement totalled $520M, of which $275M was the COPPA penalty. In FTC v. Cognosphere (Genshin Impact) the operator was held to be a child-directed service and required to obtain parental consent for under-16 loot box purchases. A game does not have to be aimed at children to be found child-directed."
+          "note": "Enforcement is real and expensive: the FTC's Epic Games settlement totalled $520M, of which $275M was the COPPA penalty. In FTC v. Cognosphere (Genshin Impact) the operator was held to be a child-directed service and required to obtain parental consent for under-16 loot box purchases. A game does not have to be aimed at children to be found child-directed.",
+          "appliesWhenKeywords": [
+            "account",
+            "sign up",
+            "signup",
+            "register",
+            "personal data",
+            "email address",
+            "profile",
+            "child",
+            "kid",
+            "age"
+          ]
         },
         {
           "requirement": "Age assurance may collect data for the sole purpose of establishing age",
           "kano": "performance",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "market": "US",
           "status": "statutory",
           "source": "FTC policy statement, February 2026: the Commission will not bring a COPPA Rule enforcement action against operators collecting, using and disclosing personal information solely to determine a user's age via age verification technologies",
-          "note": "Recorded because it removes the usual objection that age checking is itself a privacy violation - it is a safe harbour, so 'we cannot check age without breaking privacy law' is not a valid reason to omit age screening."
+          "note": "Recorded because it removes the usual objection that age checking is itself a privacy violation - it is a safe harbour, so 'we cannot check age without breaking privacy law' is not a valid reason to omit age screening.",
+          "appliesWhenKeywords": [
+            "account",
+            "sign up",
+            "signup",
+            "register",
+            "personal data",
+            "email address",
+            "profile",
+            "child",
+            "kid",
+            "age"
+          ]
         }
       ],
       "detectionKeywords": [
         "age rating",
         "usk",
         "esrb",
-        "parental",
+        "age label",
+        "parental consent",
+        "verifiable parental",
         "coppa",
         "jugendschutz",
-        "minor",
-        "under 13",
-        "age verification"
+        "age verification",
+        "spending limit"
       ]
     },
     {
@@ -362,39 +562,87 @@
         {
           "requirement": "Disclose the real probabilities and the real cost of randomised rewards, in the currency the player actually paid",
           "kano": "must-be",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "status": "statutory",
           "source": "FTC Act §5 as applied in FTC v. Cognosphere (Genshin Impact), which charged misrepresentation of loot box odds and required clear disclosure of odds and costs; in Germany the same disclosure is required as a Vorsorgemaßnahme under §24a JuSchG",
-          "note": "Virtual-currency layers are treated as part of the deception when they obscure real cost, so a plan that prices items only in a made-up currency has not satisfied this."
+          "note": "Virtual-currency layers are treated as part of the deception when they obscure real cost, so a plan that prices items only in a made-up currency has not satisfied this.",
+          "detectionKeywords": [
+            "odds",
+            "drop rate",
+            "probabilit",
+            "chance of receiving",
+            "real cost"
+          ]
         },
         {
           "requirement": "Disclose the odds of each outcome of a randomised virtual item before purchase, as a condition of being distributed at all on the mobile stores",
           "kano": "must-be",
-          "appliesToProfiles": ["game"],
+          "appliesToProfiles": [
+            "game"
+          ],
           "status": "standard",
           "source": "Apple App Store Review Guidelines §3.1.1, which requires apps offering loot boxes or other randomised virtual items to disclose the odds of each item type prior to purchase; Google Play carries an equivalent disclosure requirement",
-          "note": "A second, independent source for the same duty, and the one that bites first. Store review blocks the release outright, months before any regulator would look - so on mobile this is not a legal risk to weigh but a shipping gate. Recorded as standard rather than statutory because it is platform policy, not law; it is nonetheless mandatory in practice for anything distributed through those stores."
+          "note": "A second, independent source for the same duty, and the one that bites first. Store review blocks the release outright, months before any regulator would look - so on mobile this is not a legal risk to weigh but a shipping gate. Recorded as standard rather than statutory because it is platform policy, not law; it is nonetheless mandatory in practice for anything distributed through those stores.",
+          "detectionKeywords": [
+            "odds",
+            "drop rate",
+            "probabilit",
+            "chance of receiving"
+          ]
         },
         {
           "requirement": "No dark patterns in purchase flows: purchase confirmation must be deliberate, and controls must not be placed or timed so that an ordinary action triggers a charge",
           "kano": "must-be",
-          "appliesToProfiles": ["game", "shop", "subscription", "marketplace"],
+          "appliesToProfiles": [
+            "game",
+            "shop",
+            "subscription",
+            "marketplace"
+          ],
           "status": "statutory",
           "source": "FTC Act §5 as applied in FTC v. Epic Games (2023): $245M in refunds for dark patterns, where players were charged while the game woke from sleep, during loading screens, or by pressing a button adjacent to the purchase control, with button layouts differing between platforms",
-          "note": "The specific findings are recorded because they are concrete and testable design rules, not a vague call to be fair: no charge without a deliberate confirmation, no purchase control adjacent to a common non-purchase control, no purchase reachable from an inactive or loading state, consistent layout across platforms."
+          "note": "The specific findings are recorded because they are concrete and testable design rules, not a vague call to be fair: no charge without a deliberate confirmation, no purchase control adjacent to a common non-purchase control, no purchase reachable from an inactive or loading state, consistent layout across platforms.",
+          "detectionKeywords": [
+            "confirmation",
+            "confirm before",
+            "deliberate confirmation",
+            "dark pattern",
+            "double opt-in for purchase"
+          ]
         }
       ],
       "detectionKeywords": [
-        "loot box",
-        "gacha",
         "odds",
         "drop rate",
-        "in-app purchase",
-        "microtransaction",
+        "probabilit",
+        "chance of receiving",
+        "purchase confirmation",
+        "confirm before charging",
+        "dark pattern",
+        "real cost",
+        "price in real money"
+      ],
+      "appliesWhenKeywords": [
+        "purchase",
+        "buy ",
+        "payment",
+        "checkout",
+        "price",
+        "in-app",
         "virtual currency",
-        "confirmation",
-        "dark pattern"
-      ]
+        "coin",
+        "gem",
+        "monetis",
+        "monetiz",
+        "loot box",
+        "gacha",
+        "subscription",
+        "paid",
+        "store page"
+      ],
+      "detectionKeywordsNote": "These say the DUTY is addressed, not that the topic exists. They previously included 'loot box', 'in-app purchase' and 'virtual currency' - which are the words that show the duty APPLIES. A plan describing purchases therefore scored as having disclosed their odds simply by mentioning purchases, so the one duty most worth catching was silently never reported. Condition words belong in appliesWhenKeywords; coverage words belong here."
     },
     {
       "id": "product-measurement",
@@ -410,9 +658,10 @@
           "appliesToProfiles": [
             "*"
           ],
-          "status": "literature",
-          "source": "Basili & Weiss, 'A Methodology for Collecting Valid Software Engineering Data', IEEE TSE 1984; GQM as used in the NASA Software Engineering Laboratory",
-          "note": "The method is cited; the claim that every product needs it is this system's own position, adopted by operator decision 2026-08-14."
+          "status": "derived",
+          "source": "Method: Basili & Weiss, 'A Methodology for Collecting Valid Software Engineering Data', IEEE TSE 1984; GQM as used in the NASA Software Engineering Laboratory. The requirement that every product carry it is derived - operator decision 2026-08-14.",
+          "note": "The method is cited; the claim that every product needs it is this system's own position, adopted by operator decision 2026-08-14.",
+          "reasoning": "A product that ships without a way to tell whether it did what it was bought for cannot be improved, argued about, or defended - every later decision about it becomes taste. The method is Goal-Question-Metric so that the metrics follow from the client's own stated outcome instead of being whatever was easy to count. Operator decision, 2026-08-14: every delivered product carries this. No effect size is claimed."
         }
       ]
     }

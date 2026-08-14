@@ -38,8 +38,25 @@ import java.util.concurrent.ConcurrentHashMap;
 public class MarketCorpusService {
     private static final Logger log = LoggerFactory.getLogger(MarketCorpusService.class);
 
-    /** Statuses whose evidence is strong enough to change what gets built. See README.md's table. */
-    private static final List<String> INFLUENTIAL_STATUSES = List.of("statutory", "standard", "observed");
+    /**
+     * Statuses whose evidence is strong enough to change what gets built. See README.md's table.
+     *
+     * "derived" was added 2026-08-15 to fix a real defect in the original design, not to weaken it. The
+     * first version admitted only measured or legal facts, which quietly conflated two different kinds of
+     * claim: an empirical share of a market (what proportion of German shops offer purchase-on-invoice)
+     * cannot be known without measuring it, but a structural claim about what a product of a given class
+     * must contain to work at all (a shop needs a way to return goods; anything with accounts needs a way
+     * back into a locked-out one) is domain reasoning, checkable by inspection and refutable by argument.
+     *
+     * Treating the second as if it were the first made the corpus structurally incapable of its own
+     * purpose. The whole reason it exists is that clients do not know what software of their class must
+     * contain and the factory does; ruling that expertise permanently inert left a corpus that could only
+     * ever repeat legislation. The firewall that matters is against INVENTED NUMBERS, not against
+     * reasoning - so a derived entry may state what is needed and why, and may never state a share, a
+     * percentage or an effect size. Those still require measurement.
+     */
+    private static final List<String> INFLUENTIAL_STATUSES =
+            List.of("statutory", "standard", "observed", "derived");
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ConcurrentHashMap<String, Cached> cache = new ConcurrentHashMap<>();
@@ -57,10 +74,28 @@ public class MarketCorpusService {
      *                          exact silent assumption the corpus exists to prevent. The scope travels to
      *                          the compiler, which is already reading the brief, and it decides.
      * @param appliesWhen the capability-level condition in plain words, e.g. "the product takes payment"
+     * @param appliesWhenKeywords words that would appear in a plan if that condition actually holds - the
+     *                            machine-checkable half of appliesWhen. Empty means unconditional.
+     *                            <p>
+     *                            Needed because scoping a duty by product kind alone is too coarse. A game
+     *                            that sells nothing has no purchase duties, and reporting loot-box odds
+     *                            against a classroom game with no purchases is exactly the obvious nonsense
+     *                            that gets a check ignored. Note the deliberate asymmetry with profiles:
+     *                            failing to detect a PROFILE means the plan could not be classified, so
+     *                            every duty still applies, whereas failing to detect a CONDITION means the
+     *                            plan does not describe building the thing the duty is about - and a plan
+     *                            that builds no purchase flow cannot owe anything about purchase flows.
+     * @param detectionKeywords words showing THIS duty is addressed, overriding the capability's own list.
+     *                          One capability can carry several duties that are covered by different words:
+     *                          disclosing loot-box odds and confirming a purchase deliberately both live
+     *                          under purchase transparency, but a plan mentioning confirmation has not
+     *                          thereby disclosed any odds. With one shared list the easiest duty to satisfy
+     *                          silently marks the hardest one covered.
      */
     public record Expectation(String capabilityId, String requirement, String kano, String market,
                               String status, String source, String note,
-                              List<String> appliesToProfiles, String appliesWhen) {
+                              List<String> appliesToProfiles, String appliesWhen,
+                              List<String> appliesWhenKeywords, List<String> detectionKeywords) {
     }
 
     /**
@@ -88,9 +123,31 @@ public class MarketCorpusService {
                 if (!entryMarket.isBlank() && market != null && !entryMarket.equalsIgnoreCase(market)) {
                     continue;
                 }
+                if (hasExpired(expectation, status)) {
+                    continue;
+                }
                 List<String> profiles = new ArrayList<>();
                 for (JsonNode p : expectation.path("appliesToProfiles")) {
                     profiles.add(p.asText());
+                }
+                // The condition may be stated on the expectation or inherited from its capability, so that
+                // a capability-wide condition does not have to be repeated on every entry under it.
+                List<String> conditionWords = new ArrayList<>();
+                JsonNode declared = expectation.has("appliesWhenKeywords")
+                        ? expectation.path("appliesWhenKeywords")
+                        : capability.path("appliesWhenKeywords");
+                for (JsonNode w : declared) {
+                    String word = w.asText("");
+                    if (!word.isBlank()) {
+                        conditionWords.add(word);
+                    }
+                }
+                List<String> coverageWords = new ArrayList<>();
+                for (JsonNode w : expectation.path("detectionKeywords")) {
+                    String word = w.asText("");
+                    if (!word.isBlank()) {
+                        coverageWords.add(word);
+                    }
                 }
                 result.add(new Expectation(
                         capabilityId,
@@ -101,11 +158,55 @@ public class MarketCorpusService {
                         expectation.path("source").asText(""),
                         expectation.path("note").asText(""),
                         profiles.isEmpty() ? List.of("*") : profiles,
-                        capability.path("appliesWhen").asText("")
+                        capability.path("appliesWhen").asText(""),
+                        conditionWords,
+                        coverageWords
                 ));
             }
         }
         return result;
+    }
+
+    /**
+     * True when a market observation has outlived its own stated shelf life.
+     *
+     * Kano observed that attributes decay: what delights becomes expected, then mandatory. The corpus
+     * already recorded WHEN each observation was made, but a date alone changes nothing - a share measured
+     * two years ago went on steering decisions with exactly the force of one measured yesterday. Since
+     * expectations now move within a year or two rather than a decade, that is the difference between a
+     * corpus and a folklore that happens to carry dates.
+     *
+     * So an "observed" entry may declare validUntil, and past that date it stops influencing anything and
+     * reverts to being merely stored - the same standing as a hypothesis - until someone re-measures it.
+     * Evidence expiring is not a failure state: it is the corpus refusing to pretend it still knows.
+     *
+     * Deliberately NOT applied to statutory or standard entries. A law does not lapse because nobody
+     * re-read it; it lapses when it is repealed, which is an edit to the corpus, not a timeout. Applying a
+     * shelf life there would silently drop real legal duties for the sole reason that no one revisited the
+     * file - the exact opposite of what this mechanism is for.
+     */
+    private boolean hasExpired(JsonNode expectation, String status) {
+        if (!"observed".equals(status)) {
+            return false;
+        }
+        String validUntil = expectation.path("validUntil").asText("");
+        if (validUntil.isBlank()) {
+            return false;
+        }
+        try {
+            if (java.time.LocalDate.parse(validUntil).isBefore(java.time.LocalDate.now())) {
+                log.info("MarketCorpusService: observation for '{}' expired on {} - it no longer influences "
+                        + "decisions until re-measured", expectation.path("requirement").asText(""), validUntil);
+                return true;
+            }
+            return false;
+        } catch (java.time.format.DateTimeParseException e) {
+            // An unparseable date must not silently grant an entry immortality: the safe reading of a
+            // malformed shelf life is that we do not know it is still valid.
+            log.warn("MarketCorpusService: unparseable validUntil '{}' - treating the observation as expired",
+                    validUntil);
+            return true;
+        }
     }
 
     /**

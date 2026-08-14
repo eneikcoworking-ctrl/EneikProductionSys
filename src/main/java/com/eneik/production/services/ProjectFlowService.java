@@ -2818,6 +2818,59 @@ public class ProjectFlowService {
         }
     }
 
+    /**
+     * The known value chains per product kind, rendered for the completeness floor.
+     *
+     * This is the half of the decomposition the brief cannot supply. A client knows their business and not
+     * what software of their class must contain, so a plan built purely from the brief reproduces the
+     * brief's gaps with perfect fidelity - which was the original complaint this corpus was built to fix.
+     *
+     * Every chain here is 'derived': reasoned domain knowledge that states WHY it has the shape it does and
+     * that carries no invented numbers (see market-corpus/README.md). Chains still marked hypothesis are
+     * excluded, so the corpus can hold an idea without it steering anything.
+     *
+     * All kinds are rendered rather than one, because nothing in a wishlist reliably says which kind THIS
+     * product is, and picking one here would be exactly the silent assumption the corpus exists to prevent.
+     * The compiler is reading the brief and can tell.
+     */
+    private String valueChainsFromCorpus() {
+        if (marketCorpusService == null) {
+            return "";
+        }
+        com.fasterxml.jackson.databind.JsonNode profiles = marketCorpusService.profiles();
+        StringBuilder out = new StringBuilder();
+        for (com.fasterxml.jackson.databind.JsonNode profile : profiles) {
+            if (!"derived".equalsIgnoreCase(profile.path("status").asText(""))) {
+                continue;
+            }
+            StringBuilder chains = new StringBuilder();
+            for (com.fasterxml.jackson.databind.JsonNode path : profile.path("valuePaths")) {
+                java.util.List<String> links = new java.util.ArrayList<>();
+                for (com.fasterxml.jackson.databind.JsonNode link : path.path("path")) {
+                    links.add(link.asText(""));
+                }
+                if (links.isEmpty()) {
+                    continue;
+                }
+                chains.append("                    - ").append(path.path("actor").asText("user"));
+                String condition = path.path("appliesWhen").asText("");
+                if (!condition.isBlank()) {
+                    chains.append(" (only if ").append(condition).append(")");
+                }
+                chains.append(": ").append(String.join(" -> ", links)).append("\n");
+            }
+            if (chains.length() == 0) {
+                continue;
+            }
+            out.append("                  ").append(profile.path("title").asText(profile.path("id").asText("")))
+                    .append(":\n").append(chains);
+        }
+        if (out.length() == 0) {
+            return "";
+        }
+        return "                  KNOWN CHAINS BY PRODUCT KIND (compare, do not copy):\n" + out;
+    }
+
     private String regulatoryFloorFromCorpus() {
         if (marketCorpusService == null) {
             return "";
@@ -3039,12 +3092,21 @@ public class ProjectFlowService {
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
                 - COMPLETENESS FLOOR - the most important rule here, because value along a product's main
                   path MULTIPLIES rather than adds. A shop where the customer can browse and cannot pay is
-                  not "80% done", it is worth zero; a booking system that takes bookings and never reminds
-                  anyone loses roughly a third of them to no-shows, which is a multiplier on everything
-                  else. So before writing epics, work out the ONE path the end user walks from intention to
-                  outcome for THIS brief, and name its links explicitly as epic requirements. Derive the
-                  path from what the client actually described - never from a template of what products of
-                  this kind usually have.
+                  not "mostly done", it is worth zero; a booking system that takes bookings and never
+                  reminds anyone loses them to no-shows, and that loss multiplies against everything else
+                  built. So before writing epics, work out the ONE path the end user walks from intention to
+                  outcome for THIS brief, and name its links explicitly as epic requirements. Build the path
+                  from what the client actually described.
+                  Then compare it against the known chains below for products of this kind. They are here
+                  because a client writing a brief knows their business but not what software of their
+                  class must contain, so briefs arrive with predictable holes and a plan built only from
+                  the brief reproduces them faithfully. A link that appears below and NOT in your path is
+                  the single most likely thing to be missing - so for each one, either cover it or state in
+                  the epic requirements why this product genuinely does not need it. Note also that some
+                  products have SEVERAL chains that fail independently: a marketplace where sellers cannot
+                  list is dead however good the buying is. Never add a link the described product has no
+                  use for - this list exists to stop you forgetting, not to pad the plan.
+%s
                   Then check the path is unbroken, and cover every link you found. Three failure modes to
                   look for specifically, because they are what actually breaks delivered products:
                   * a missing link - the user reaches a point where the product simply cannot continue
@@ -3156,8 +3218,8 @@ public class ProjectFlowService {
                 understand each yourself, do not rely on it already being in English). Decompose each one
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
-                """.formatted(existingEpicsPromptContext(projectId), regulatoryFloorFromCorpus(), planPath,
-                        wishlists.size(), briefsSection.toString());
+                """.formatted(existingEpicsPromptContext(projectId), valueChainsFromCorpus(),
+                        regulatoryFloorFromCorpus(), planPath, wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and

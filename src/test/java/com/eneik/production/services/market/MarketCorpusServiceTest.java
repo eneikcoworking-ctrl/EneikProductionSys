@@ -1,6 +1,7 @@
 package com.eneik.production.services.market;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.util.List;
 
@@ -31,9 +32,11 @@ class MarketCorpusServiceTest {
         all.addAll(service.influentialExpectations("US"));
 
         assertThat(all)
-                .as("hypothesis entries - including anything an AI wrote from general knowledge - must "
-                        + "never reach a decision; they exist to be verified or refuted")
-                .allSatisfy(e -> assertThat(e.status()).isIn("statutory", "standard", "observed"));
+                .as("a hypothesis must never reach a decision - it exists to be verified or refuted. "
+                        + "'derived' is admitted because reasoned structural knowledge is not a guess, but "
+                        + "it pays for that with its own rules: it must state why, and may carry no number")
+                .allSatisfy(e -> assertThat(e.status())
+                        .isIn("statutory", "standard", "observed", "derived"));
     }
 
     @Test
@@ -87,6 +90,117 @@ class MarketCorpusServiceTest {
                         + "products, not as a blanket requirement an internal tool would inherit")
                 .isNotEmpty()
                 .allSatisfy(e -> assertThat(e.appliesToProfiles()).doesNotContain("*"));
+    }
+
+    /**
+     * What people expect moves within a year or two now, not a decade. A dated observation that keeps
+     * steering decisions with undiminished force is a corpus pretending it still knows something.
+     */
+    @Test
+    void marketObservationsStopInfluencingOnceTheyExpire(@TempDir java.nio.file.Path dir) throws Exception {
+        writeCorpus(dir, """
+                {"capabilities":[{"id":"c","appliesWhen":"always","expectations":[
+                  {"requirement":"a share measured long ago","kano":"performance","appliesToProfiles":["*"],
+                   "status":"observed","source":"survey","validUntil":"2020-01-01"},
+                  {"requirement":"a share measured recently","kano":"performance","appliesToProfiles":["*"],
+                   "status":"observed","source":"survey","validUntil":"2999-01-01"}]}]}
+                """);
+        MarketCorpusService service = new MarketCorpusService(dir.toString());
+
+        assertThat(service.influentialExpectations("DE"))
+                .extracting(MarketCorpusService.Expectation::requirement)
+                .as("stale evidence must stop steering decisions until someone re-measures it")
+                .containsExactly("a share measured recently");
+    }
+
+    @Test
+    void aLawDoesNotLapseBecauseNobodyRevisitedTheFile(@TempDir java.nio.file.Path dir) throws Exception {
+        writeCorpus(dir, """
+                {"capabilities":[{"id":"c","appliesWhen":"always","expectations":[
+                  {"requirement":"a statutory duty","kano":"must-be","appliesToProfiles":["*"],
+                   "status":"statutory","source":"an act","validUntil":"2020-01-01"}]}]}
+                """);
+        MarketCorpusService service = new MarketCorpusService(dir.toString());
+
+        assertThat(service.influentialExpectations("DE"))
+                .as("a shelf life applies to market observations only - a legal duty ends when it is "
+                        + "repealed, which is an edit here, never a timeout")
+                .hasSize(1);
+    }
+
+    @Test
+    void treatsAnUnreadableShelfLifeAsExpiredRatherThanImmortal(@TempDir java.nio.file.Path dir) throws Exception {
+        writeCorpus(dir, """
+                {"capabilities":[{"id":"c","appliesWhen":"always","expectations":[
+                  {"requirement":"a share with a broken date","kano":"performance","appliesToProfiles":["*"],
+                   "status":"observed","source":"survey","validUntil":"soon"}]}]}
+                """);
+        MarketCorpusService service = new MarketCorpusService(dir.toString());
+
+        assertThat(service.influentialExpectations("DE"))
+                .as("the safe reading of a malformed shelf life is that we do not know it still holds")
+                .isEmpty();
+    }
+
+    @Test
+    void anObservationWithNoStatedShelfLifeStillCounts(@TempDir java.nio.file.Path dir) throws Exception {
+        writeCorpus(dir, """
+                {"capabilities":[{"id":"c","appliesWhen":"always","expectations":[
+                  {"requirement":"an undated share","kano":"performance","appliesToProfiles":["*"],
+                   "status":"observed","source":"survey"}]}]}
+                """);
+        MarketCorpusService service = new MarketCorpusService(dir.toString());
+
+        assertThat(service.influentialExpectations("DE"))
+                .as("expiry is opt-in: silence means no shelf life was claimed, not that it lapsed")
+                .hasSize(1);
+    }
+
+    private void writeCorpus(java.nio.file.Path dir, String json) throws Exception {
+        java.nio.file.Files.writeString(dir.resolve("capabilities.json"), json);
+    }
+
+    /**
+     * The corpus exists because clients do not know what software of their class must contain and this
+     * factory does. A corpus whose every entry is inert can only repeat legislation, which was the defect
+     * this status was added to fix.
+     */
+    @Test
+    void reasonedExpertiseActuallyReachesDecisions() {
+        List<MarketCorpusService.Expectation> all = service.influentialExpectations("DE");
+
+        assertThat(all)
+                .filteredOn(e -> "derived".equals(e.status()))
+                .as("structural knowledge about what a product needs must be allowed to influence, or the "
+                        + "corpus cannot do the one job it was built for")
+                .isNotEmpty();
+    }
+
+    @Test
+    void derivedEntriesNeverSmuggleInANumber(@TempDir java.nio.file.Path dir) throws Exception {
+        writeCorpus(dir, """
+                {"capabilities":[{"id":"c","appliesWhen":"always","expectations":[
+                  {"requirement":"a reasoned structural need","kano":"must-be","appliesToProfiles":["*"],
+                   "status":"derived","source":"reasoning","reasoning":"because the object must pass through it"}]}]}
+                """);
+        MarketCorpusService svc = new MarketCorpusService(dir.toString());
+
+        assertThat(svc.influentialExpectations("DE"))
+                .as("a derived entry states what is needed and why; shares and effect sizes stay empirical")
+                .allSatisfy(e -> assertThat(e.requirement() + " " + e.source())
+                        .doesNotContainPattern("\\d+\\s?%"));
+    }
+
+    @Test
+    void realCorpusKeepsNumbersOutOfReasonedEntries() {
+        List<MarketCorpusService.Expectation> derived = service.influentialExpectations("DE").stream()
+                .filter(e -> "derived".equals(e.status()))
+                .toList();
+
+        assertThat(derived)
+                .as("the shipped corpus must obey its own rule: reasoning may not carry a percentage, "
+                        + "because the moment a claim needs a number it needs measurement instead")
+                .allSatisfy(e -> assertThat(e.requirement()).doesNotContainPattern("\\d+\\s?%"));
     }
 
     @Test

@@ -1,0 +1,37 @@
+{
+  "profile": "site",
+  "market": "DE",
+  "observedAt": "2026-08-15",
+  "sourceStudy": "Matelso Lead Management Study 2024",
+  "sampleSize": 100,
+  "method": "Secondary source. The study contacted 100 companies across construction, mechanical engineering, IT and automotive through their public enquiry channels and measured whether and how fast each responded. Retrieved 2026-08-15 via ldb.de reporting on the study.",
+  "methodLimitations": [
+    "CONDUCTED BY AN INTERESTED PARTY. Matelso sells lead-management software, so the study's subject - that companies handle enquiries badly - is the problem its product exists to solve. The figures are specific and attributable, which is why they are recorded, but the direction of any bias is knowable and points one way.",
+    "Read from a secondary report, not from the study's own publication. The method behind the numbers is not stated in the source consulted.",
+    "The sectors surveyed are not identical to the client base this factory serves, and the data is from 2024 - hence the short shelf life on the corpus entry derived from it.",
+    "This measures the BUSINESS's behaviour, not the software's. It supports a claim about what happens to an enquiry after it is sent, not about what any particular website contained."
+  ],
+  "figures": {
+    "answered within one week": "94%",
+    "no response for at least seven days": "~6%",
+    "phone enquiries not answered": "23%",
+    "auto-replies received": "4 out of 91 enquiries",
+    "contact-form leads answered (automotive sector)": "44%"
+  },
+  "findings": [
+    {
+      "claim": "Only 4 of 91 enquiries produced any automatic acknowledgement.",
+      "status": "observed",
+      "note": "THE ACTIONABLE ONE. An automatic acknowledgement is entirely inside the software's control, costs almost nothing, and is nearly never built. Everything else in this study measures whether a human eventually replied, which no website can guarantee. So this is the one figure that translates into a requirement rather than into advice for the client's staff."
+    },
+    {
+      "claim": "Roughly 6% of enquiries went unanswered for at least a week, and 23% of phone enquiries were not picked up.",
+      "status": "observed",
+      "note": "Supports the site profile's existing position that the final link of its value chain - 'receive an answer' - sits outside the software often enough that it must be declared as a handover rather than left silent. It does NOT support building anything: a website cannot make someone answer the phone."
+    }
+  ],
+  "doesNotSupport": [
+    "Any claim that a faster reply causes more sales. The frequently repeated '78% buy from whoever responds first' comes from vendor marketing pages, not from this study, and is deliberately not recorded.",
+    "Any conclusion about which features the surveyed companies' websites had. The study contacted companies; it did not audit their sites."
+  ]
+}

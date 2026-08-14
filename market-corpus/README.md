@@ -71,6 +71,45 @@ satisfy every requirement in this corpus and still be worthless.
 So for games the floors are a minimum that says nothing about whether the product is good, and no
 completeness check may be read as evidence that it is.
 
+## `derived` - reasoned expertise, and why it is allowed to count
+
+The first version of this corpus admitted only measured shares and legal duties. That was wrong, and wrong
+in a way that defeated its own purpose: the corpus exists because clients do not know what software of
+their class must contain and this factory does, so ruling that expertise permanently inert left a corpus
+that could only ever repeat legislation back at people.
+
+Two kinds of claim were being conflated:
+
+- **An empirical claim about a market** - what share of German shops offer purchase-on-invoice, how much a
+  reminder reduces no-shows. Unknowable without measuring. Stays `observed` or stays out.
+- **A structural claim about what a product of a class needs to function** - a shop needs a way to return
+  goods, a booking system needs cancellation, anything with accounts needs a way back into a locked-out
+  one. This is domain reasoning: checkable by inspection, refutable by argument, and wrong only in ways a
+  competent reviewer spots in a diff.
+
+`derived` is the second kind. It may influence what gets built. In exchange it carries two hard rules:
+
+1. **It must state its reasoning**, not just its conclusion - so it can be argued with rather than trusted.
+2. **It may never carry a number.** No share, no percentage, no effect size, no "reduces X by Y%". The
+   moment a claim needs a number it is empirical, and it needs measurement, not reasoning.
+
+`hypothesis` still exists and still means inert - it is for things that sound right but that reasoning
+does not actually establish, and it is where a claim goes when someone challenges a `derived` entry and it
+turns out to rest on nothing.
+
+## Market observations expire
+
+What people expect now moves within a year or two, not a decade. A dated observation that keeps steering
+decisions with undiminished force is not a corpus - it is folklore that happens to carry dates.
+
+So an `observed` entry may declare `validUntil`. Past that date it stops influencing anything and reverts
+to merely being stored, at the same standing as a hypothesis, until someone re-measures it. Evidence
+expiring is not a failure: it is the corpus refusing to pretend it still knows.
+
+This applies to market observations **only**. A law does not lapse because nobody re-read it - it lapses
+when it is repealed, which is an edit to this file, never a timeout. An unparseable `validUntil` counts as
+expired, because the safe reading of a broken shelf life is that we cannot tell whether it still holds.
+
 ## Kano class belongs to a pair, not to a capability
 
 Stock control is Must-Be for a wholesaler and irrelevant for a landing page. So a Kano class is always

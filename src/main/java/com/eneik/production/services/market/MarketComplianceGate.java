@@ -71,10 +71,17 @@ public class MarketComplianceGate {
                 if (!appliesToAnyOf(expectation, profiles)) {
                     continue;
                 }
+                if (!conditionHolds(expectation, haystack)) {
+                    continue;
+                }
                 if (!seen.add(expectation.capabilityId() + "|" + expectation.requirement())) {
                     continue;
                 }
-                List<String> keywords = corpus.detectionKeywords(expectation.capabilityId());
+                // A duty's own words win over its capability's, because one capability can carry several
+                // duties satisfied by different wording - see Expectation.detectionKeywords.
+                List<String> keywords = expectation.detectionKeywords().isEmpty()
+                        ? corpus.detectionKeywords(expectation.capabilityId())
+                        : expectation.detectionKeywords();
                 if (keywords.isEmpty()) {
                     // No way to test this one by evidence, so no claim is made about it either way -
                     // silence is honest here, a guess would not be.
@@ -109,6 +116,24 @@ public class MarketComplianceGate {
             return true;
         }
         return scope.stream().anyMatch(profilesInEvidence::contains);
+    }
+
+    /**
+     * A conditional duty applies only when the plan shows the condition actually holds.
+     *
+     * The asymmetry with {@link #appliesToAnyOf} is deliberate and load-bearing. Failing to recognise a
+     * PROFILE means the plan could not be classified, so nothing may be excused. Failing to find a
+     * CONDITION means the plan does not describe building the thing the duty governs - and a plan with no
+     * purchase flow in it cannot owe anything about purchase flows. Without this, a classroom game that
+     * sells nothing gets told to disclose its loot-box odds, and the first person to read that stops
+     * reading the rest.
+     */
+    private boolean conditionHolds(MarketCorpusService.Expectation expectation, String haystack) {
+        List<String> words = expectation.appliesWhenKeywords();
+        if (words == null || words.isEmpty()) {
+            return true;
+        }
+        return words.stream().anyMatch(w -> haystack.contains(w.toLowerCase(Locale.ROOT)));
     }
 
     /** Flattens a parsed compiler plan into the text the check reads. */

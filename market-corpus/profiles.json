@@ -35,8 +35,8 @@
           ]
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14. Chain structure follows the order states an order actually passes through; the claim that this is the typical shape for the profile is unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "shop",
         "basket",
@@ -46,7 +46,8 @@
         "catalog",
         "storefront",
         "order total"
-      ]
+      ],
+      "reasoning": "An order is an object with states: it must be findable, priced, paid for, confirmed, delivered, and - because consumers change their minds and the law lets them - returnable. Each state is a place the object can get stuck; a chain missing one of them describes a shop that cannot complete the transaction it exists for."
     },
     {
       "id": "booking",
@@ -70,7 +71,8 @@
             "attend",
             "pay",
             "reschedule or cancel"
-          ]
+          ],
+          "evidence": "observed 2026-08-15: 'get a reminder' claimed by 4/4 surveyed products; 'reschedule or cancel' claimed by only 1/4 - the weakest-advertised link in the chain"
         },
         {
           "actor": "staff",
@@ -83,9 +85,9 @@
           "note": "Breaks independently of the customer chain: a booking product nobody on staff can actually run gets abandoned even when customers can book perfectly."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
-      "note": "The reminder link is the one most often omitted and the one most often claimed to have a large effect on no-shows; it needs a real measured number before it may drive anything.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+      "note": "Surveyed 2026-08-15 across 4 real German booking products. Reminders (4/4) and no-show or waiting-list handling (4/4) are universally advertised - the market treats them as table stakes, and a client brief almost never asks for either. Self-service cancellation by the customer is advertised by only 1 of 4, which is the asymmetry worth acting on: every vendor sells reminders as the cure for no-shows, yet a reminder only tells you someone is coming, while a self-cancellation gives the hour back and lets it be rebooked. The survey measures what vendors ADVERTISE, not what products contain, so it is evidence about market expectation, not about implementations.",
       "detectionKeywords": [
         "booking",
         "appointment",
@@ -93,7 +95,11 @@
         "calendar",
         "time slot",
         "availability"
-      ]
+      ],
+      "observations": [
+        "observations/booking-DE-2026-08-15.json"
+      ],
+      "reasoning": "A booking commits a scarce resource - an hour of someone's time - which is why the chain has two ends. The customer's end fails by not turning up; the staff's end fails by nobody being able to run the day. Both destroy the same slot."
     },
     {
       "id": "crm",
@@ -119,8 +125,8 @@
           "note": "The object here is a RELATIONSHIP over time, not a task - which is why this is not the same profile as an internal operations tool. A lead lost between stages is money lost invisibly: nobody can see what did not happen."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "note": "Rarely commissioned whole on these markets - mature packaged CRMs exist and clients buy them. Real requests concentrate on integration with an ERP or accounting system, data migration off a legacy tool, and a pipeline shaped to a non-standard sales process. The full chain is recorded anyway, because a request for one fragment still has to fit the whole.",
       "detectionKeywords": [
         "crm",
@@ -129,7 +135,8 @@
         "sales pipeline",
         "deal stage",
         "opportunity"
-      ]
+      ],
+      "reasoning": "The object is a relationship persisting across contacts, not a task. Every stage boundary is a place a lead is dropped, and the loss is invisible because nobody can see the deal that did not happen."
     },
     {
       "id": "inventory-operations",
@@ -166,8 +173,8 @@
           "note": "The money chain runs in parallel and breaks independently. Both must hold: they are multiplied, not averaged."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge informed by a 2026-08-14 review of the German Warenwirtschaft market (SelectLine, Lexware, Softengine and similar packaged systems dominate the Mittelstand segment) - the chains themselves are unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "note": "In Germany this is the most established packaged-software category for mid-sized business, so a full custom build is unusual. Requests arrive as fragments: bills of materials and production steps for a small manufacturer, or a bridge between a shop and an existing Warenwirtschaft system.",
       "detectionKeywords": [
         "inventory",
@@ -177,7 +184,8 @@
         "purchase order",
         "bill of materials",
         "picking"
-      ]
+      ],
+      "reasoning": "Goods and money move through the business in parallel and are reconciled against each other. The two chains are separate because they fail separately: wrong stock stops production while the ledger stays perfect, and vice versa."
     },
     {
       "id": "marketplace",
@@ -216,8 +224,8 @@
           "note": "The clearest case for multiple chains: a marketplace with a perfect buyer experience and no workable way to list an item is dead, and no amount of buyer polish compensates."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "marketplace",
         "seller",
@@ -225,7 +233,8 @@
         "listing",
         "payout",
         "commission"
-      ]
+      ],
+      "reasoning": "Two parties must each complete their own journey for a single transaction to exist. Neither side's chain can compensate for the other's: an offer nobody could list cannot be bought however good the buying experience is."
     },
     {
       "id": "subscription",
@@ -262,8 +271,8 @@
           "note": "The chain that actually breaks. Signing up is usually built well; renewal failure handling and a cancellation that does not require contacting support are routinely missing, and in the EU an obstructed cancellation is also a legal problem."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "subscription",
         "recurring",
@@ -271,7 +280,8 @@
         "billing cycle",
         "plan upgrade",
         "cancel subscription"
-      ]
+      ],
+      "reasoning": "Money moves repeatedly over time, so the product has a start and a life. The life is where it breaks - renewals fail, plans change, people leave - and an exit that requires contacting support is both a product defect and, in the EU, a legal one."
     },
     {
       "id": "support-desk",
@@ -306,15 +316,16 @@
           ]
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "ticket",
         "helpdesk",
         "support request",
         "service level agreement",
         "escalation"
-      ]
+      ],
+      "reasoning": "A problem enters, is triaged, and either resolves or escalates. The acknowledgement is a link in its own right: silence after reporting is indistinguishable to the sender from not having been heard."
     },
     {
       "id": "field-service",
@@ -349,8 +360,8 @@
           "note": "The offline link is decisive here and is nearly always forgotten: basements, plant rooms and rural sites have no connectivity, and a tool that needs a network is a tool that fails exactly where the work happens."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "field service",
         "technician",
@@ -358,7 +369,8 @@
         "dispatch",
         "on-site",
         "offline mode"
-      ]
+      ],
+      "reasoning": "Work happens away from the office, so the chain crosses a boundary where connectivity is not guaranteed. A step that requires a network fails exactly where the work is - basements, plant rooms, rural sites."
     },
     {
       "id": "content-management",
@@ -384,8 +396,8 @@
           "note": "Reversibility is the defining property, not publishing: the cost of a mistake in public text is asymmetric, so unpublishing and rolling back matter more than the act of putting something live."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "note": "Rarely built from scratch - WordPress and similar dominate. Real requests are usually integration with an inventory or CRM system, or a workflow that packaged tools cannot express.",
       "detectionKeywords": [
         "cms",
@@ -394,7 +406,8 @@
         "publish",
         "draft",
         "article"
-      ]
+      ],
+      "reasoning": "Content is published to an audience, which makes the cost of a mistake asymmetric and public. Reversibility - unpublishing, rolling back - is therefore a stronger requirement than publishing itself."
     },
     {
       "id": "document-flow",
@@ -419,15 +432,16 @@
           "note": "Retrieval is the link that decides whether the product was worth building, and it is the one nobody demonstrates at handover."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "document approval",
         "signature",
         "sign-off",
         "contract",
         "template document"
-      ]
+      ],
+      "reasoning": "A document is created to be relied upon later. Approval and signature establish that reliance; retrieval years afterwards is what the whole exercise was for, and it is the step nobody demonstrates at handover."
     },
     {
       "id": "learning",
@@ -462,8 +476,8 @@
           ]
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "course",
         "lesson",
@@ -472,7 +486,8 @@
         "enroll",
         "quiz",
         "certificate"
-      ]
+      ],
+      "reasoning": "A learner moves from not knowing to demonstrably knowing, so assessment and proof are part of the chain rather than extras. The instructor's chain exists because material that nobody maintains stops teaching anything."
     },
     {
       "id": "client-portal",
@@ -498,28 +513,29 @@
           "note": "Strict data isolation between clients is the invariant here: one client seeing another's data is not a defect to prioritise, it is the end of the product."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "portal",
         "customer account area",
         "dealer",
         "self-service area",
         "tenant"
-      ]
+      ],
+      "reasoning": "An outside party is given a window onto their own data inside someone else's system. Isolation between clients is not a feature of this chain, it is its precondition - one client seeing another's data ends the product."
     },
     {
       "id": "game",
       "title": "Computer or mobile game",
       "coreCapabilities": [
-        "youth-protection",
-        "purchase-transparency",
         "accessibility",
         "data-subject-rights",
         "consent-management",
         "backup-restore",
         "account-recovery",
-        "product-measurement"
+        "product-measurement",
+        "youth-protection",
+        "purchase-transparency"
       ],
       "valuePaths": [
         {
@@ -568,9 +584,9 @@
           "note": "Adding this chain has a legal price, not only an engineering one - under §24a JuSchG chat functions are a rating factor that can raise the game's age label and so shrink its lawful audience. It also brings platform duties around user content that need checking case by case; the corpus does not yet hold a verified citation for those, so they must be raised as an open question rather than assumed."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14, except the legal duties in youth-protection and purchase-transparency, which are statutory and separately cited.",
-      "note": "TWO WAYS THIS PROFILE DIFFERS FROM EVERY OTHER ONE IN THIS FILE, both of which change how it must be decomposed. FIRST: there is no external need pushing the user forward. A buyer in a shop already wants the goods and will complain when a step is broken; a player owes the game nothing, so a broken link produces silent abandonment and no report. Outcome measurement is therefore not a nice-to-have epic here - it is the ONLY channel through which failure is observable at all. SECOND: capability completeness does not imply value. For a transactional product, a complete and working chain is most of the job. For a game it is a floor and nothing more - fun does not decompose into features, and a game can satisfy every requirement in this corpus and still be worthless. So the floors in the compiler prompt must be treated here as a minimum that says nothing about whether the product is good, and no completeness check may be read as evidence that it is.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
+      "note": "TWO WAYS THIS PROFILE DIFFERS FROM EVERY OTHER ONE IN THIS FILE, both of which change how it must be decomposed. FIRST: there is no external need pushing the user forward. A buyer in a shop already wants the goods and will complain when a step is broken; a player owes the game nothing, so a broken link produces silent abandonment and no report. Outcome measurement is therefore not a nice-to-have epic here - it is the ONLY channel through which failure is observable at all. SECOND: capability completeness does not imply value. For a transactional product, a complete and working chain is most of the job. For a game it is a floor and nothing more - fun does not decompose into features, and a game can satisfy every requirement in this corpus and still be worthless. So the floors in the compiler prompt must be treated here as a minimum that says nothing about whether the product is good, and no completeness check may be read as evidence that it is. THE LEGAL WEIGHT IS CONDITIONAL, NOT INHERENT. Every statutory entry attached to this profile now carries appliesWhenKeywords and fires only when the plan shows the condition actually holds: age labelling when the game is published or distributed, structural precautions when it has chat, multiplayer or purchases, parental consent when it collects personal data. A game that sells nothing, collects nothing and is not distributed - a classroom or jam project - therefore inherits none of them, and must not be told to disclose loot-box odds it does not have. What remains for such a game is the part that decides whether it is any good: the first session and the core loop, neither of which any law has an opinion about.",
       "detectionKeywords": [
         "game",
         "loot box",
@@ -580,7 +596,8 @@
         "playable",
         "respawn",
         "matchmaking"
-      ]
+      ],
+      "reasoning": "A player owes the product nothing, so the chain must manufacture the desire it then satisfies. The first session establishes whether there is a second; the core loop is what the rest multiplies against."
     },
     {
       "id": "internal-operations",
@@ -604,15 +621,16 @@
           ]
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "internal tool",
         "spreadsheet",
         "back office",
         "task tracker",
         "workflow tool"
-      ]
+      ],
+      "reasoning": "Work items must be captured, owned, tracked and closed, because the tool is replacing a spreadsheet whose actual failure was that nobody knew who had what."
     },
     {
       "id": "integration",
@@ -634,8 +652,8 @@
           "note": "Recovery from a partial or failed run is what separates a working integration from one that silently loses data - and silent loss is discovered months later, by which point the source may no longer hold the truth either."
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge informed by a 2026-08-14 market review: integration between existing systems, together with data migration off legacy tools, is reported as the dominant custom-software request on both target markets - unverified as a measured share.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "note": "Likely the single most common real request, precisely because packaged CRM, ERP and CMS products already exist and need connecting.",
       "detectionKeywords": [
         "integration",
@@ -644,7 +662,8 @@
         "webhook",
         "api bridge",
         "data migration"
-      ]
+      ],
+      "reasoning": "Data crosses a boundary between systems that do not share a transaction. Confirmation and recovery are therefore the load-bearing links: silent partial failure is discovered months later, when the source may no longer hold the truth either."
     },
     {
       "id": "site",
@@ -654,7 +673,8 @@
         "consent-management",
         "accessibility",
         "data-subject-rights",
-        "product-measurement"
+        "product-measurement",
+        "enquiry-acknowledgement"
       ],
       "valuePaths": [
         {
@@ -666,11 +686,12 @@
             "send an enquiry",
             "receive an answer"
           ],
-          "note": "The last link is outside the software as often as not - an enquiry nobody answers makes the site worth nothing, so it must be declared as a handover rather than left silent."
+          "note": "The last link is outside the software as often as not - an enquiry nobody answers makes the site worth nothing, so it must be declared as a handover rather than left silent.",
+          "evidence": "observed 2026-08-15 (Matelso 2024, 100 companies): only 4 automatic acknowledgements across 91 enquiries, ~6% unanswered for a week, 23% of calls unanswered - the final link is where this chain actually breaks, and only the acknowledgement part of it is inside the software"
         }
       ],
-      "status": "hypothesis",
-      "source": "AI general knowledge, 2026-08-14 - unverified.",
+      "status": "derived",
+      "source": "Derived from domain reasoning about what this class of product must contain to deliver its value, stated 2026-08-15. Carries no measured share by rule - see README.md on the 'derived' status. Refutable by argument.",
       "detectionKeywords": [
         "landing page",
         "marketing site",
@@ -678,7 +699,11 @@
         "enquiry",
         "inquiry",
         "brochure"
-      ]
+      ],
+      "observations": [
+        "observations/site-enquiry-response-2026-08-15.json"
+      ],
+      "reasoning": "A stranger must arrive, understand, trust, and make contact. The last link leaves the software - which is exactly why it must be declared as a handover instead of being left silent."
     }
   ]
 }

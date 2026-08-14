@@ -1,0 +1,52 @@
+{
+  "profile": "booking",
+  "market": "DE",
+  "observedAt": "2026-08-15",
+  "sampleSize": 4,
+  "method": "Vendor feature pages of real German appointment-booking products for small service businesses (hairdressers, practices), fetched and read for explicitly claimed capabilities. Each capability recorded only when the page states it in its own words.",
+  "methodLimitations": [
+    "THIS MEASURES WHAT VENDORS ADVERTISE, NOT WHAT PRODUCTS CONTAIN. A capability absent from a marketing page may still exist in the product. Every 'absent' count below therefore means 'not claimed', and no conclusion about a product lacking something may be drawn from it.",
+    "Sample is 4 and DE-only. A US product (Square Appointments) was attempted and discarded because the fetched page returned navigation markup rather than feature copy - counting that as absence would have manufactured evidence out of a tool failure.",
+    "Vendors advertise what differentiates them, so universally present capabilities may be UNDER-reported precisely because they are table stakes. This biases counts downward for the most basic links, not upward.",
+    "No product was actually used, no booking was made, no cancellation was attempted."
+  ],
+  "sample": [
+    {"product": "cituro", "url": "https://www.cituro.com/friseur-software"},
+    {"product": "eTermin", "url": "https://www.etermin.net/online-terminplaner-friseursalon"},
+    {"product": "SuperSaaS", "url": "https://www.supersaas.de/info/mobiler-friseur-buchungssystem"},
+    {"product": "Terminbuch.de (COMHAIR)", "url": "https://www.comhair.de/terminbuch/"}
+  ],
+  "claimedBy": {
+    "online booking": 4,
+    "automatic reminders to the customer": 4,
+    "no-show handling or waiting list": 4,
+    "customers browse services": 3,
+    "payment or deposit": 3,
+    "staff schedule view": 3,
+    "staff block or free time": 3,
+    "real-time free slots": 2,
+    "customer history": 2,
+    "customer can reschedule or cancel themselves": 1
+  },
+  "findings": [
+    {
+      "claim": "Automatic reminders to the customer are claimed by every product in the sample (4/4).",
+      "status": "observed",
+      "note": "Consistent with the profile's existing hypothesis that the reminder link is the one most often omitted by briefs while being standard in the market. The market treats it as table stakes; a client brief almost never asks for it."
+    },
+    {
+      "claim": "Handling of no-shows - waiting list, or reminders sold explicitly as no-show reduction - is claimed by every product in the sample (4/4).",
+      "status": "observed",
+      "note": "A missed appointment is the failure this whole product class is sold against."
+    },
+    {
+      "claim": "Only 1 of 4 claims that the customer can reschedule or cancel the appointment themselves.",
+      "status": "observed",
+      "note": "THE NOTABLE ASYMMETRY. All four sell reminders as the cure for no-shows, yet only one advertises the mechanism that actually frees the slot: letting the customer cancel without phoning. A reminder tells the business a customer is coming; a self-cancellation gives the business the hour back and lets someone else book it. Given the method limitation above this measures advertising rather than presence - but it does establish that the market does not consider self-cancellation a selling point, which is exactly the condition under which a brief will not ask for it and a faithful decomposition will omit it."
+    }
+  ],
+  "doesNotSupport": [
+    "The booking profile's value chains as a whole remain hypothesis. Marketing copy cannot establish that a chain is the right shape, only which links vendors think worth naming.",
+    "Nothing here measures whether any of these links affects a real outcome. No effect size on no-show rates was measured; vendor claims of '75% fewer no-shows' are marketing and are deliberately NOT recorded as evidence."
+  ]
+}
