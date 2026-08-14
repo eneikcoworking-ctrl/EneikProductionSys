@@ -68,6 +68,27 @@ class MarketCorpusServiceTest {
                 .anySatisfy(r -> assertThat(r).contains("impressum"));
     }
 
+    /**
+     * Consumer-sales duties must never be silently imposed on an internal tool. This service cannot judge
+     * that - it has not read the brief - so it must carry the scope outward rather than drop it. A dropped
+     * scope is invisible: the requirement still renders, just without the condition that limits it.
+     */
+    @Test
+    void carriesApplicabilityScopeInsteadOfDroppingIt() {
+        List<MarketCorpusService.Expectation> german = service.influentialExpectations("DE");
+
+        assertThat(german)
+                .as("every entry must state which product kinds it covers, even if that is all of them")
+                .allSatisfy(e -> assertThat(e.appliesToProfiles()).isNotEmpty());
+
+        assertThat(german)
+                .filteredOn(e -> e.requirement().toLowerCase().contains("withdrawal"))
+                .as("the 14-day withdrawal duty is a consumer-sales rule and must arrive scoped to selling "
+                        + "products, not as a blanket requirement an internal tool would inherit")
+                .isNotEmpty()
+                .allSatisfy(e -> assertThat(e.appliesToProfiles()).doesNotContain("*"));
+    }
+
     @Test
     void missingCorpusDegradesInsteadOfFailing() {
         MarketCorpusService absent = new MarketCorpusService("market-corpus-does-not-exist");

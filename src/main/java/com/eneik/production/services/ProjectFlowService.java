@@ -2805,6 +2805,19 @@ public class ProjectFlowService {
             if (e.market() != null && !e.market().isBlank()) {
                 line.append("[").append(e.market()).append("] ");
             }
+            // Applicability travels with the requirement instead of being resolved here. Nothing in this
+            // service knows what kind of product a brief describes, and inferring it would misapply
+            // consumer-sales duties (14-day withdrawal, destination sales tax) to an internal tool - the
+            // scope inflation this floor explicitly forbids. The compiler is already reading the brief, so
+            // it is the only component that can judge, and it needs the condition stated to do so.
+            if (e.appliesWhen() != null && !e.appliesWhen().isBlank()) {
+                line.append("APPLIES WHEN ").append(e.appliesWhen()).append(" - ");
+            }
+            if (e.appliesToProfiles() != null && !e.appliesToProfiles().contains("*")
+                    && !e.appliesToProfiles().isEmpty()) {
+                line.append("ONLY for products of kind ").append(String.join("/", e.appliesToProfiles()))
+                        .append(" - ");
+            }
             line.append(e.requirement());
             if (e.source() != null && !e.source().isBlank()) {
                 line.append(" (basis: ").append(e.source()).append(")");

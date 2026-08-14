@@ -50,8 +50,17 @@ public class MarketCorpusService {
         this.corpusRoot = corpusRoot;
     }
 
+    /**
+     * @param appliesToProfiles which product profiles this requirement is scoped to, or ["*"] for all.
+     *                          Carried through rather than resolved here on purpose: this service does not
+     *                          know what kind of product a brief describes, and guessing it would be the
+     *                          exact silent assumption the corpus exists to prevent. The scope travels to
+     *                          the compiler, which is already reading the brief, and it decides.
+     * @param appliesWhen the capability-level condition in plain words, e.g. "the product takes payment"
+     */
     public record Expectation(String capabilityId, String requirement, String kano, String market,
-                              String status, String source, String note) {
+                              String status, String source, String note,
+                              List<String> appliesToProfiles, String appliesWhen) {
     }
 
     /**
@@ -79,6 +88,10 @@ public class MarketCorpusService {
                 if (!entryMarket.isBlank() && market != null && !entryMarket.equalsIgnoreCase(market)) {
                     continue;
                 }
+                List<String> profiles = new ArrayList<>();
+                for (JsonNode p : expectation.path("appliesToProfiles")) {
+                    profiles.add(p.asText());
+                }
                 result.add(new Expectation(
                         capabilityId,
                         expectation.path("requirement").asText(""),
@@ -86,7 +99,9 @@ public class MarketCorpusService {
                         entryMarket,
                         status,
                         expectation.path("source").asText(""),
-                        expectation.path("note").asText("")
+                        expectation.path("note").asText(""),
+                        profiles.isEmpty() ? List.of("*") : profiles,
+                        capability.path("appliesWhen").asText("")
                 ));
             }
         }
