@@ -2936,6 +2936,49 @@ public class ProjectFlowService {
                   [X] for this epic, I want [Y], so that [the epic's outcome/Z] is achieved" - never repeat
                   the customer-facing sentence verbatim at task level.
                 - Each acceptanceCriteria field must contain 2-4 role-specific Given/When/Then lines.
+                - REGULATORY FLOOR (same kind of rule as the mandatory QA slice above: required whether or
+                  not the brief mentions it, because the client is buying software for the EU/US market and
+                  is not expected to know what that market legally requires). Each item below applies ONLY
+                  when its stated condition is true for this brief - never add one whose condition does not
+                  hold, that is scope inflation, not compliance:
+                  * IF the product has any browser/app interface: every UI slice (BARCAN-TAG-03,
+                    BARCAN-TAG-11) must carry accessibility in its own acceptanceCriteria - keyboard
+                    operability, visible focus, form labels, and 4.5:1 text contrast at minimum. This is
+                    WCAG 2.1 level AA, made binding by the European Accessibility Act (in force since
+                    2025-06-28, standard EN 301 549) and litigated in the US under ADA Title III. It is a
+                    property of every screen, so it belongs in each UI slice's criteria - never as one
+                    separate "make it accessible" epic bolted on at the end, which is how accessibility
+                    reliably fails to happen.
+                  * IF the product stores personal data of identifiable people: one epic covering the data
+                    subject's own rights - export of their data and deletion on request (GDPR Art. 15 and
+                    Art. 17). These are enforceable rights with statutory deadlines, not settings.
+                  * IF the product collects personal data or loads any third-party tracking/analytics:
+                    one epic for lawful-basis handling - explicit opt-in consent captured before any
+                    non-essential cookie or tracker loads, refusal as easy as acceptance, and the choice
+                    recorded (GDPR Art. 6-7, ePrivacy Directive).
+                  * IF the product holds data whose loss would harm the client's business: one epic for
+                    backup and verified restore. GDPR Art. 32(1)(c) requires the ability to restore
+                    availability and access in a timely manner - an untested backup does not satisfy it,
+                    so the acceptanceCriteria must include an actual restore being performed, not just a
+                    backup being produced.
+                  * IF the product has user accounts: account recovery must exist as part of the
+                    authentication epic - a product where a locked-out owner cannot get back in is not
+                    finished.
+                  Classify every epic created under this floor as Must-Be, because that is what it is: its
+                  absence is a defect, its presence delights nobody.
+                - MEASUREMENT FLOOR (unconditional - every product gets exactly one such epic, whatever it
+                  is): the product must measure whether it is actually achieving what it exists for. Derive
+                  this the Goal-Question-Metric way, never by installing a counter: read the brief for the
+                  ONE outcome the client is really buying (more bookings, fewer support calls, faster order
+                  handling, less manual re-typing), write the two or three questions whose answers would
+                  tell you whether that outcome is happening, and only then define the metrics that answer
+                  exactly those questions. State the goal and the questions explicitly in the epic's jtbd
+                  and requirements, so the link from metric back to purpose stays visible and checkable.
+                  A metric that answers none of the stated questions must not be built - "we might want it
+                  later" is how dashboards become noise nobody reads. Instrumenting a funnel the client
+                  never asked about is the same error in the other direction: measure the client's outcome,
+                  not everything measurable. This epic is Must-Be: a product nobody can tell is working is
+                  indistinguishable from one that is not.
                 - Classify Kano at the EPIC level ONLY (Must-Be, Performance, Attractive, or Reverse) - do
                   not repeat it per task slice. "Reverse" means the client asked for something the product
                   would be actively WORSE for having - not merely low-value, but harmful: a mobile app for
