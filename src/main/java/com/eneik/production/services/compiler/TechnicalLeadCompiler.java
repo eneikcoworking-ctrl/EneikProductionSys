@@ -483,22 +483,47 @@ public class TechnicalLeadCompiler {
                 .trim();
     }
 
+    /**
+     * Work sources that exist BECAUSE something is wrong. This is the whole definition of defect work
+     * (2026-08-15): the system already declares the kind of every item when it creates it, so the
+     * classification reads that declaration instead of guessing at prose.
+     *
+     * What it replaces: substring matching over content + tocConstraintRef + acceptanceCriteria against
+     * "defect", "bug", "blocker", "failure", "failed", "regression", "circuit breaker", "generated
+     * artifact" - with a SECOND, different word list in EmsMetricsService.isDefectWork. Measured
+     * consequence on test-forty-sixth: 63 of 66 tasks classified as defect work, DPMO 954,545, on a project
+     * that merged 22 of 22 with 8 of 8 features complete. Two ways it misfired by construction - a FEATURE
+     * named "Self-Service Account Recovery" was defect work by its name, and any acceptance criterion
+     * describing error handling contains "failure".
+     *
+     * That number is consumed, not merely displayed: KaizenService reads dpmo() as the postMetric deciding
+     * whether an applied micro-improvement worked, so the improvement engine was judging its own effect by
+     * substring matching.
+     *
+     * philosophical_falsification is deliberately NOT here: this codebase states elsewhere that a
+     * philosophical critique is "a genuinely NEW capability, not a narrow corrective follow-up". Counting
+     * new capability as defect work would invert the metric's meaning. onboarding_finding is likewise
+     * excluded - it describes a brownfield repository's pre-existing state, which is discovery, not rework.
+     */
+    private static final java.util.Set<WishlistSource> DEFECT_CLASS_SOURCES = java.util.EnumSet.of(
+            WishlistSource.role_mismatch_followup,
+            WishlistSource.chaotic_debt,
+            WishlistSource.self_falsification,
+            WishlistSource.coverage_gap,
+            WishlistSource.closeout_abandoned,
+            WishlistSource.gemini_observer,
+            WishlistSource.runtime_observability_gap,
+            WishlistSource.design_system_falsification,
+            WishlistSource.design_review_concern_pattern,
+            WishlistSource.dockerfile_missing_build_stage,
+            WishlistSource.frontend_not_deployed,
+            WishlistSource.product_not_launchable);
+
     private boolean isDefectWork(WishlistEntity wishlist) {
         if (isRecoveryWork(wishlist)) {
             return true;
         }
-        String text = ((wishlist.getContent() != null ? wishlist.getContent() : "") + " "
-                + (wishlist.getTocConstraintRef() != null ? wishlist.getTocConstraintRef() : "") + " "
-                + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : ""))
-                .toLowerCase(java.util.Locale.ROOT);
-        return text.contains("defect")
-                || text.contains("bug")
-                || text.contains("blocker")
-                || text.contains("failure")
-                || text.contains("failed")
-                || text.contains("regression")
-                || text.contains("circuit breaker")
-                || text.contains("generated artifact");
+        return wishlist.getSource() != null && DEFECT_CLASS_SOURCES.contains(wishlist.getSource());
     }
 
     private double defectWeight(WishlistEntity wishlist, String roleTag, String cynefin) {

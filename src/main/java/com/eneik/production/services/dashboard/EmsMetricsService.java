@@ -565,14 +565,16 @@ public class EmsMetricsService {
         if (task.getStatus() == TaskStatus.failed || task.getStatus() == TaskStatus.blocked) {
             return true;
         }
-        String text = ((task.getDescription() == null ? "" : task.getDescription()) + " "
-                + payloadText(task, "toc_constraint_ref")).toLowerCase(Locale.ROOT);
-        return text.contains("defect")
-                || text.contains("bug")
-                || text.contains("blocker")
-                || text.contains("recovery")
-                || text.contains("circuit breaker")
-                || text.contains("generated artifact");
+        // The second word list lived here (2026-08-15, removed): "defect", "bug", "blocker", "recovery",
+        // "circuit breaker", "generated artifact" - a DIFFERENT set from the compiler's, for one concept.
+        // "recovery" alone made a FEATURE called "Self-Service Account Recovery" defect work by its name.
+        //
+        // Nothing replaces it, because nothing needs to: the compiler already stamps ems_defect_work into
+        // every task's payload at creation time, from the originating wishlist's DECLARED source. That
+        // stamp is read above. A task with no stamp is not defect work by default - absence of a
+        // declaration is not evidence of a defect, and guessing from prose is exactly what produced
+        // DPMO 954,545 on a project that merged 22 of 22.
+        return false;
     }
 
     private boolean isDoneLike(TaskEntity task) {
