@@ -2532,13 +2532,27 @@ public class ProjectFlowService {
         return compact.length() <= 60 ? compact : compact.substring(0, 57) + "...";
     }
 
+    /**
+     * Whole words, never substrings (2026-08-15).
+     *
+     * This used to call {@code contains(...)} for each term, so "ui" matched inside b<b>ui</b>ld,
+     * req<b>ui</b>rement, g<b>ui</b>de, s<b>ui</b>te and circ<b>ui</b>t; "form" inside <b>form</b>at,
+     * in<b>form</b>ation, trans<b>form</b> and per<b>form</b>; "design" inside <b>design</b>ed; and
+     * "public" inside any mention of a public API. A "Material Data Schema" whose acceptance criteria said
+     * "build the table" or "the schema must inform ..." was therefore UI work.
+     *
+     * That is not cosmetic: besides naming the item, this feeds inferRoleTag below, so a substring inside
+     * an unrelated word could route backend work to a UI role. Same defect as the corpus keyword traps
+     * found the same day ("quest" inside "request", "level" inside "access level") - a term is a word, and
+     * asking whether a word occurs is not the same as asking whether its letters occur.
+     */
+    private static final java.util.regex.Pattern UI_TERMS = java.util.regex.Pattern.compile(
+            "\\b(ui|ux|frontend|front-end|screen|screens|page|pages|form|forms|button|buttons|browser|"
+                    + "svelte|design|designs|admin|panel|panels|portal|dashboard|dashboards|public)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
     private boolean looksLikeUi(String value) {
-        String lower = value == null ? "" : value.toLowerCase(java.util.Locale.ROOT);
-        return lower.contains("ui") || lower.contains("ux") || lower.contains("frontend")
-                || lower.contains("screen") || lower.contains("page") || lower.contains("form")
-                || lower.contains("button") || lower.contains("browser") || lower.contains("svelte")
-                || lower.contains("design") || lower.contains("admin") || lower.contains("panel")
-                || lower.contains("portal") || lower.contains("dashboard") || lower.contains("public");
+        return value != null && UI_TERMS.matcher(value).find();
     }
 
     private String defaultText(String value, String fallback) {
