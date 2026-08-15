@@ -297,6 +297,80 @@ be asserted, a number requires measurement.
 vanish silently**: a PR is closed, a branch retired, the plan shrinks, and no counter distinguishes
 "conflict resolved" from "conflict removed along with the work".
 
+---
+
+# FLOW STUDY, 2026-08-15 (beyond the task pipeline)
+
+Measured live on `test-forty-sixth`. The flow has several layers and **they return three different
+verdicts about the same project, with nowhere that reconciles them.**
+
+| Layer | Verdict |
+|---|---|
+| Task pipeline | 82% complete, 19/19 planned merged, 4 failed - healthy |
+| Doctrine (13 BARCAN roles) | **`blocked`** - 0 satisfied, 7 object, 2 refuse, 4 unknown |
+| Six Sigma | **DPMO 954,545** - 63 of 66 tasks classified as defect work |
+| Dependency graph | fragmented - 14 disconnected graphs over 42 tasks, 7 duplicate semantic keys |
+| Runtime | one observation, 6h stale, taken before two repairs |
+
+**F23. The Six Sigma layer measures keyword matches, not defects - and Kaizen acts on the result.**
+
+`isDefectWork` classifies a task as a defect by substring-matching free text:
+
+```java
+// EmsMetricsService:558           // TechnicalLeadCompiler:486
+"defect" "bug" "blocker"           "defect" "bug" "blocker"
+"recovery" "circuit breaker"       "failure" "failed" "regression"
+"generated artifact"               "circuit breaker" "generated artifact"
+```
+
+Two different word lists in two places for one concept - the same three-definitions defect as F22(c).
+`recovery` appears only in the metrics list, `failure`/`failed`/`regression` only in the compiler's.
+
+Consequence measured: 63 of 66 tasks are "defect work", DPMO 954,545, i.e. a 95% defect rate on a project
+that merged 19 of 19 planned tasks with 4 failures. The number is not describing the process.
+
+Two ways the classifier misfires by construction: a **feature** named "Self-Service Account **Recovery**"
+is defect work by name, and any acceptance criterion that specifies error handling contains "failure".
+(Checked whether this session's own QUALITY FLOOR caused it - it did not: only 3 of 21 original slices
+match. The bulk comes from elsewhere, most plausibly `task.getRetryCount() > 0`, which would mean nearly
+every task is retried at least once - itself worth measuring.)
+
+Why this is worse than the entropy defect: entropy was computed and discarded. **DPMO is consumed** -
+`KaizenService:585` reads `sixSigmaAuditService.calculateFullSixSigmaAudit().dpmo()` as `postMetric`, the
+number that decides whether an applied micro-improvement worked. So the improvement engine judges its own
+effect by a quantity derived from substring matching.
+
+**F24. The doctrine layer refuses and nothing acts on it.** `statusLabel: blocked`, interpretation *"One or
+more BARCAN doctrines refuse the current project state; resolve Must-Be objections before acceptance"*.
+BARCAN-TAG-11 and TAG-12 refuse outright; seven more object; not one role is satisfied. Meanwhile the task
+pipeline dispatches normally and reports 82% progress. A layer designed to withhold acceptance is
+withholding it, and no other layer reads that.
+
+**F25. UX/UI is the real bottleneck, and the task queue does not show it.** Per-stage:
+
+| stage | total | done | blocked |
+|---|---|---|---|
+| decision | 21 | 21 | 0 |
+| architecture | 1 | 1 | 0 |
+| data-model | 3 | 3 | 0 |
+| api-contract | 5 | 4 | 1 |
+| implementation | 9 | 7 | 0 |
+| **UX/UI** | **13** | 9 | **3** |
+| build/deploy | 7 | 4 | 0 |
+| verification | 7 | 5 | 0 |
+
+66 tasks across the flow versus the 22 "planned" the readiness view reports - and a third of everything
+blocked sits in UX/UI. By TOC that is where subordination should point; nothing points there.
+
+**F26. The dependency graph is mostly not a graph.** `graphTasks: 42`, `uniqueGraphs: 14`,
+`dependencyCoverage: 0.57` - 43% of tasks carry no dependency edge, and the work splits into 14
+disconnected fragments with a critical path of 4. `duplicateSemanticKeys: 7`, whose own interpretation
+says *"orchestration should collapse or skip repeated work"* - and nothing collapses it.
+
+**F27. Philosophy is blocked twice over.** `falsificationEligible: false` because `mergedRatio 0.86 <
+threshold 0.9`, **and** separately by TOC subordination on a launch observation from before two repairs.
+Either gate alone would hold it. Neither re-evaluates on an event.
+
 ## What went right (so the repair does not break it)
 
 Worth stating precisely, because these are now load-bearing:
