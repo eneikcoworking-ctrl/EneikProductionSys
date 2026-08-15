@@ -455,12 +455,34 @@ public class EmsMetricsService {
         );
     }
 
+    /**
+     * Repeated work, excluding the one case where a repeated key is the mechanism working (2026-08-15).
+     *
+     * OpsAuditorService.createTargetedRecoveryTask deep-copies a dead task's ENTIRE payload verbatim,
+     * ems_semantic_key included, precisely BECAUSE ClientDeliverableReadinessService.isDependencySatisfied
+     * recognises a replacement only by an exact role + featureId + semantic-key match. A shared key there
+     * does not mean "the same work twice", it means "this is the repair of that". Counting it as a
+     * duplicate made this metric report a deliberate, audited recovery as waste - and its own
+     * interpretation instructs that "orchestration should collapse or skip repeated work", which followed
+     * literally would disable the recovery mechanism.
+     *
+     * FlowSpineService.isDeliberateRecoveryTask already made exactly this exclusion for its own duplicate
+     * hard-stop on 2026-08-07, after counting a recovery re-tripped the very block the recovery existed to
+     * clear. The same concept lived in two places and only one of them knew - the recurring shape of every
+     * defect found this week.
+     */
     private long duplicateSemanticKeys(List<TaskEntity> tasks) {
         Map<String, Long> counts = tasks.stream()
+                .filter(task -> !isDeliberateRecoveryTask(task))
                 .map(task -> payloadText(task, "ems_semantic_key"))
                 .filter(value -> !value.isBlank())
                 .collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
         return counts.values().stream().filter(count -> count > 1).mapToLong(count -> count - 1).sum();
+    }
+
+    /** Mirrors FlowSpineService.isDeliberateRecoveryTask - one marker, one meaning, checked the same way. */
+    private static boolean isDeliberateRecoveryTask(TaskEntity task) {
+        return task.getPayload() != null && task.getPayload().has("recoversFailedTaskId");
     }
 
     private int criticalPathLength(List<TaskEntity> tasks) {
