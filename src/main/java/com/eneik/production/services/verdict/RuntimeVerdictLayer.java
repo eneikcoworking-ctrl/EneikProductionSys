@@ -1,7 +1,10 @@
 package com.eneik.production.services.verdict;
 
 import com.eneik.production.models.persistence.ClientRuntimeObservationEntity;
+import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.ClientRuntimeObservationRepository;
+import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.services.github.GitHubPullRequestService;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -31,17 +34,25 @@ public class RuntimeVerdictLayer implements VerdictLayer {
     static final String PROPOSITION_LAUNCHES = "the delivered product launches and reports healthy";
 
     /**
-     * A DECLARED bound, not a measured one, and labelled as such per the same rule the market corpus
-     * applies to `derived` entries: reasoning may be asserted, a number requires measurement. Nothing here
-     * establishes that six hours is the right horizon; it is chosen so that an observation predating a
-     * same-day repair cannot silently remain authoritative, which is the failure actually observed.
+     * Fallback only, used when the product's own history cannot be read.
+     *
+     * The real staleness test is below and is exact: an observation describes the product AS IT WAS, so a
+     * commit landing on main afterwards means the observation no longer describes the product that exists.
+     * This duration is a declared arbitrary bound - reasoning may be asserted, a number requires
+     * measurement - kept solely so an unreadable history degrades to caution rather than to silence.
      */
     static final Duration EVIDENCE_HORIZON = Duration.ofHours(6);
 
     private final ClientRuntimeObservationRepository observationRepository;
+    private final ProjectRepository projectRepository;
+    private final GitHubPullRequestService gitHubPullRequestService;
 
-    public RuntimeVerdictLayer(ClientRuntimeObservationRepository observationRepository) {
+    public RuntimeVerdictLayer(ClientRuntimeObservationRepository observationRepository,
+                               ProjectRepository projectRepository,
+                               GitHubPullRequestService gitHubPullRequestService) {
         this.observationRepository = observationRepository;
+        this.projectRepository = projectRepository;
+        this.gitHubPullRequestService = gitHubPullRequestService;
     }
 
     @Override
@@ -72,13 +83,20 @@ public class RuntimeVerdictLayer implements VerdictLayer {
         Instant observedAt = latest.getObservedAt();
         String evidence = "observation " + latest.getId() + " at " + observedAt;
 
-        if (observedAt != null && Duration.between(observedAt, Instant.now()).compareTo(EVIDENCE_HORIZON) > 0) {
-            // Stale evidence is not a verdict. Repairs may well have landed since, and treating an old
-            // failure as current is what kept philosophy blocked all day on 2026-08-15.
+        // THE REFERENT TEST. An observation is a claim about the product as it was at the moment it was
+        // taken. If main has been committed to since, the product it describes no longer exists, and the
+        // claim says nothing about the one that does - regardless of how recently it was made.
+        //
+        // This is exactly what went wrong on 2026-08-15: the factory diagnosed two Dockerfile defects
+        // itself, repaired both at 10:38 and 12:00, and never re-observed - so philosophy stayed
+        // subordinated for the rest of the day to a verdict taken at 10:21, before either repair. The
+        // stored `failed` was treated as a current fact about a product that had changed twice underneath
+        // it. Time alone could not have caught that; only asking about the referent can.
+        String staleness = stalenessReason(projectId, observedAt);
+        if (staleness != null) {
             return List.of(Judgement.abstain(layerName(), PROPOSITION_LAUNCHES,
-                    "the most recent observation is older than the declared evidence horizon ("
-                            + EVIDENCE_HORIZON.toHours() + "h) - a fresh observation is owed before this "
-                            + "can be established either way; " + evidence));
+                    staleness + " - a fresh observation is owed before this can be established either "
+                            + "way; " + evidence));
         }
 
         if (latest.isLaunchSuccess()) {
@@ -88,5 +106,36 @@ public class RuntimeVerdictLayer implements VerdictLayer {
                 ? "launch failed"
                 : latest.getErrorText().substring(0, Math.min(200, latest.getErrorText().length()));
         return List.of(Judgement.withhold(layerName(), PROPOSITION_LAUNCHES, detail, evidence));
+    }
+
+    /**
+     * Why the latest observation no longer describes the current product, or null when it still does.
+     *
+     * Reading the history is best-effort: if it cannot be read, the answer falls back to age, which is a
+     * declared bound rather than a fact. Degrading to caution is right here - an unverifiable claim about
+     * whether the product changed must not resolve as "it did not".
+     */
+    private String stalenessReason(UUID projectId, Instant observedAt) {
+        if (observedAt == null) {
+            return "the latest observation has no timestamp, so its currency cannot be established";
+        }
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        if (project != null) {
+            try {
+                Instant lastCommit = gitHubPullRequestService.latestCommitTime(project, "main").orElse(null);
+                if (lastCommit != null) {
+                    return lastCommit.isAfter(observedAt)
+                            ? "main has been committed to at " + lastCommit + ", after this observation was "
+                                    + "taken, so it describes a product that no longer exists"
+                            : null;
+                }
+            } catch (RuntimeException e) {
+                // fall through to the age bound
+            }
+        }
+        return Duration.between(observedAt, Instant.now()).compareTo(EVIDENCE_HORIZON) > 0
+                ? "the product's history could not be read and the observation is older than the declared "
+                        + EVIDENCE_HORIZON.toHours() + "h fallback horizon"
+                : null;
     }
 }
