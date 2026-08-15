@@ -338,6 +338,38 @@ from substring matching.
 
 ---
 
+## Progress, 2026-08-15
+
+| Step | State | Commit |
+|---|---|---|
+| 1 · effects verified not logged | **done** | `2165248` |
+| 2 · design shop stops burning quota | **done** | `2165248` |
+| 3 · conflicts: stop destroying work, then the mathematics | **done** | `9879c07` |
+| 4 · pool named, held connection observable | **done** | `2e1c81c` |
+| 5 · metrics read declarations, not prose | **done** | `eedf0b7` |
+| 6 · valueless flags named at startup | **done** | `926bacc` |
+| 7 · UI detection by whole words | **done** | `820e9e2` |
+| 8-18 | pending | |
+
+**Three findings did not survive verification and are retracted in place** rather than quietly dropped,
+because acting on any of them would have damaged working behaviour:
+
+- **F13** (generated items marked `source=client`) - not a defect. `WishlistSource` records the KIND of
+  work and is inherited by slices deliberately; `originWishlistId` records lineage. Every consumer already
+  distinguishes them, and Step 5's defect classification *depends* on that inheritance.
+- **F15** (`epics` returns `tasks: 0`) - my own error. `EpicDiagnostic` has no `tasks` field; it has
+  `codeProducingItemCount` and `mergedItemCount`. My inspection script asked for a field that does not
+  exist and I recorded the `None` as a system defect.
+- **F20's first diagnosis** (Flow Core denying `MERGE_PR`) - retracted earlier the same day; the real cause
+  was the CI gate. `MERGE_PR` was never denied.
+
+**Two open items carried forward from steps already closed:**
+
+- **F2**, the settings audit trail, was deliberately left out of Step 6: it needs its own entity, migration
+  and write-path interception, and mixing it in would make one commit do two unrelated things.
+- The `looksLikeUi` **vocabulary** still counts `public` as a UI term, so "public API contract" matches.
+  Step 7 fixed HOW terms are matched; WHICH terms count is a separate decision needing evidence.
+
 ## Every finding, and where it is handled
 
 | # | Finding | Step |
