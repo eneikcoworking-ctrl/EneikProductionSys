@@ -1066,6 +1066,38 @@ public class AutoMergeService {
                         reviewSession.getExternalSessionId());
                 return;
             }
+            // A conflicted PR must reach conflict resolution BEFORE the CI gate, because the conflict is
+            // exactly what makes the CI gate unsatisfiable (2026-08-15, confirmed live on test-forty-sixth
+            // PR#12, and the third recurrence of this deadlock shape after the "conflict" and
+            // "policy_denied" fixes above):
+            //
+            // GitHub runs `pull_request` workflows against refs/pull/N/merge. A conflicted PR has no such
+            // ref, so no workflow can start - measured: 0 workflow runs for that branch while CI ran fine
+            // on every other PR in the same repository. With no check-runs, pullRequestChecks returns
+            // (available=true, successful=false, status="pending"), so the gate below refuses the merge and
+            // returns. But handleMergeConflict is only reachable from GitHub answering 405/409 to an actual
+            // merge attempt further down, so the conflict is never acted on, so it never clears, so CI can
+            // never run. Measured: handleMergeConflict fired 0 times in 3h while the PR sat approved.
+            //
+            // The two previous fixes widened which statuses stay pollable, which kept the review alive but
+            // still routed it into the same closed loop. The real error is ordering: waiting for green CI
+            // before looking at a conflict presumes CI can go green, which a conflict forbids.
+            var mergeableState = gitHubPullRequestService.mergeableState(
+                    reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()));
+            boolean conflicted = mergeableState.isPresent()
+                    && Boolean.FALSE.equals(mergeableState.get().mergeable());
+            String conflictToken = settingsService.effectiveValue("github_token");
+            if (conflicted && conflictToken != null && !conflictToken.isBlank()) {
+                review.setCiStatus("conflict");
+                prReviewRepository.save(review);
+                log.warn("AutoMergeService: PR {} is conflicted, so CI cannot run against it - resolving the "
+                                + "conflict instead of waiting for checks that can never appear",
+                        review.getPrUrl());
+                handleMergeConflict(review, pullRequestTarget.owner(), pullRequestTarget.repo(),
+                        pullRequestTarget.pullNumber(), conflictToken);
+                return;
+            }
+
             GitHubPullRequestService.PullRequestChecks checks = gitHubPullRequestService.pullRequestChecks(
                     reviewTask.getProject(), Integer.parseInt(pullRequestTarget.pullNumber()));
             review.setCiStatus(checks.status());
