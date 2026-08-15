@@ -574,6 +574,199 @@ gap is not capability but that nothing composes those parts into something a cli
 verdict lattice this is a declared proposition like any other, and while it is undecided the acceptance
 gate owes `abstain`.
 
+---
+
+# APPROVED REPAIR II: the design shop, and the acceptance chain
+
+Two repairs with one root. Both are cases of **a declaration standing in for the property it indicates**,
+and both are fixed by asking after the property instead - the same move that grounds F22's substitutivity
+gate. Recorded for execution as one continuous piece of work.
+
+## Part 1 - the design shop: separate the modal kinds of failure
+
+### The error
+
+```java
+if (!result.available() || !"stitch".equals(result.model()) || repoDraftPath == null) { retry }
+```
+
+Two mistakes compounded. The criterion asks **who produced the artifact**; the requirement is a property
+**of the artifact** - that a session can implement pixel-perfect against it, which means implementable
+HTML exists at a known path. And the failure branch assumes transience: *"generation failures ... are
+exactly the kind of thing that resolves itself on retry."*
+
+That assumption is a modal claim, and it is false for this failure. Retrying changes **which world we are
+in** (the service may be free next time). It cannot change **what kind of thing** was produced. Six
+identical failures across four hours are the falsification.
+
+### The structure
+
+Failures are not one kind. Two are, and they differ modally:
+
+| Outcome | Modality | Retry can help? |
+|---|---|---|
+| `usable` | actual | — |
+| `unavailable` | about **this world** - rate limit, timeout, transport | **yes** |
+| `wrong-kind` | about the **kind** of thing produced | **never** |
+
+```
+usable(r)      ⟺  r.available ∧ r.repoDraftPath ≠ ∅ ∧ implementableHtmlExists(r.repoDraftPath)
+unavailable(r) ⟺  ¬r.available                              → retry within a declared budget
+wrongKind(r)   ⟺  r.available ∧ ¬usable(r)                  → withhold + escalate, never retry
+```
+
+Three consequences, each structural rather than local:
+
+1. **The model's name leaves the criterion entirely.** It becomes evidence cited in the reason, not the
+   gate. If some future model does emit implementable HTML, it passes on merit; if Stitch itself ever emits
+   a bare image, it fails on merit. The rule stops being about identity and becomes about the property -
+   the same correction as replacing path patterns with `fileScope`.
+2. **The infinite loop cannot recur.** Not because a counter caps it, but because **no quantity of retries
+   changes the kind of a thing**. The loop is closed by the taxonomy, not by a guard.
+3. **It lands directly in the verdict lattice**: `usable → permit`, `unavailable → abstain` (pending, and
+   abstention blocks), `wrongKind → withhold` with its reason attached.
+
+The retry budget for `unavailable` remains a **declared arbitrary bound** until per-attempt outcomes are
+recorded and `P(success | attempt k)` is measurable - same honesty rule as the conflict cap.
+
+## Part 2 - the acceptance chain: derived, not invented
+
+### The insight
+
+Do not add sixteen new chains. **The acceptance chain is the existing value path under a change of
+quantifier**, and stating it once generates it for every profile:
+
+> For each declared `valuePath` v of the product, there **exists** one complete traversal of v, performed
+> **by the client**, on the **deployed** instance, against **real content**.
+
+Nothing new is described. The actor changes from user to buyer, and a possibility claim is replaced by an
+existential one.
+
+### Why this is the system's own formula
+
+This factory is named after quantified modal logic, and the Barcan formula bears exactly here. The flow
+currently asserts `◇∃x walks(x)` - *it is possible that someone completes this path* - and treats merge
+counts as its evidence. The formula's demand is that such a possibility be **witnessed**: there must exist
+an actual instance in which the walking is possible.
+
+`DELIVERED` computed from merge ratios is a possibility claim with no witness. The acceptance chain is
+precisely the requirement that the witness exist and be produced.
+
+### The measure
+
+```
+witnessed(P) = |{ links of P's value paths traversed on the deployed instance with real content }|
+acceptable(P) ⟺ witnessed(P) = Σ|v|   for all declared paths v
+```
+
+**No threshold** - the third time this signature appears, and for the same reason each time. Here it also
+follows from a principle the corpus already holds: **value multiplies along a chain**, so a partial
+traversal witnesses nothing. The multiplicativity that governs construction governs demonstration.
+
+### Corpus change
+
+One rule at the top of `profiles.json`, not a chain per profile:
+
+```json
+"acceptanceRule": {
+  "status": "derived",
+  "appliesTo": "every profile, instantiated against whatever valuePaths it declares",
+  "requires": [
+    "the deployed instance is reachable by the client from outside the factory",
+    "it holds content sufficient to exercise every link of every declared path",
+    "one complete traversal of each path has been performed on that instance",
+    "the instance is recognisably the client's own - their data, their language"
+  ],
+  "reasoning": "Every valuePath traces the END USER's journey. None traces the buyer's: how does the
+    client see that what they paid for exists and runs? A product can be perfect for its users and
+    undemonstrable to its buyer, so this fails independently and must be judged separately. Carries no
+    measured number, per the 'derived' rule."
+}
+```
+
+The second requirement is F21 - nothing seeds primary content - stated as an obligation rather than a
+lament. A knowledge base with no materials cannot exercise "find the material", so it is unacceptable by
+the rule rather than by opinion.
+
+### What already exists
+
+`runtime-launcher` produces a live URL and `runtime-health` surfaces it; the launchability observation
+already attempts a real deployment. The missing piece is not capability but **composition**: nothing turns
+"it launched" into "the client walked it". Traversal evidence is the new artifact.
+
+## Order of work
+
+| Stage | Work | Depends on |
+|---|---|---|
+| **1** | `usable / unavailable / wrongKind` taxonomy in the design shop; criterion becomes implementable-HTML-exists; `wrongKind` escalates and never retries | — |
+| **2** | Record every generation attempt with its outcome kind, so the `unavailable` budget can later be derived rather than asserted | 1 |
+| **3** | `acceptanceRule` into `profiles.json` as a single `derived` entry with its reasoning | — |
+| **4** | Seeding obligation: the compiler must plan for content that exercises every link, closing F21 | 3 |
+| **5** | Traversal evidence: record which links have been walked on the deployed instance, compute `witnessed(P)` | 3, 4, and the runtime observation being event-driven (F4) |
+| **6** | The acceptance gate consumes `acceptable(P)`; `DELIVERED` stops being a merge-ratio claim | 5, verdict lattice stage D |
+
+Stages 1-3 are independent and safe. Stage 5 is the one that requires the runtime loop to close first -
+without a fresh observation there is nothing to traverse, which is F27 again and why it is upstream.
+
+---
+
+# EXPERIMENT CLOSED, 2026-08-15 · test-forty-sixth
+
+Project frozen by operator decision. Final state and conclusions.
+
+## Final numbers
+
+| | Value |
+|---|---|
+| Planned tasks / merged | **22 / 22** |
+| Features complete | **8 / 8** |
+| Tasks across the whole flow | **70**, completion 0.93 |
+| Done / failed | 41 / 5 |
+| Wishlists | **53**, of which the client wrote **one** |
+| Product deployable | **no** - one observation, 10:21, before two repairs |
+| Doctrine layer | `blocked`, 0 of 13 roles satisfied |
+| DPMO | 957,143 (measuring keyword matches, F23) |
+
+Wishlist provenance is the experiment's clearest single figure: 1 client brief, 52 items the factory
+generated for itself - 8 self-falsification, 8 design-review patterns, 4 Gemini observations, 4 coverage
+gaps, 2 launch failures, 2 Dockerfile defects, 2 frontend gaps.
+
+## What the experiment established
+
+**The factory closes its own loop on construction.** Unassisted, it found two Dockerfile defects, repaired
+both, added the Actuator health endpoint its own launch check needs, detected a design-concern pattern
+through a Six Sigma u-chart and fixed the contrast it named, ran a falsification audit over 13 roles, and
+carried 22 of 22 planned tasks to merge with 8 of 8 features complete. That is the thing that was being
+tested, and it works.
+
+**It does not close the loop on verification.** Detect → repair → **[nothing]**. The product was fixed twice
+and never re-observed; the launch verdict is still the one taken before either repair. Philosophy is
+therefore still subordinated to a constraint that probably no longer exists.
+
+**The corpus was not the cause of the decomposition's quality** (F29). The image running at decomposition
+predated the corpus becoming influential by three and a half hours. Of the three epics credited to it, one
+traces to a `statutory` entry that was already active; the other two came from prompt text. The value
+chains have never influenced any decomposition, and there is currently no way to observe from outside
+whether they render at all.
+
+**The TOC subordination built on 2026-08-11 fired correctly in production** - philosophy refused to audit a
+product that would not launch and created `product_not_launchable` instead. That mechanism is verified.
+
+**The conflict-ordering fix (821f12b) is deployed but unverified live** - zero firings, because no conflict
+occurred after the deploy. Correct by the diagnosed cause, unwitnessed in production.
+
+## The one sentence
+
+Across twenty-eight findings and two subsystems examined in depth, the same defect recurs: **the system
+trusts a declaration instead of checking what the declaration refers to.** A task says `done`; a flag says
+`enabled`; a setting says `registered`; a model is named `stitch`; a merge ratio says `delivered`. Each
+proxy was true when written and outlived its truth conditions, because nothing re-checks a declaration
+against its referent.
+
+Every repair proposed here is the same correction applied at a different site - ask after the property, not
+its indicator - and the verdict lattice is that correction made architectural, so it stops having to be
+rediscovered one subsystem at a time.
+
 ## What went right (so the repair does not break it)
 
 Worth stating precisely, because these are now load-bearing:
