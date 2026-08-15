@@ -272,6 +272,23 @@ public class MarketCorpusService {
         return root == null ? objectMapper.createObjectNode() : root.path("profiles");
     }
 
+    /**
+     * The one acceptance rule (schema v3), deliberately NOT a seventeenth profile chain.
+     *
+     * Every valuePath states what must be POSSIBLE for the end user. None of them states that anything was
+     * ever actually done, by the buyer, on the deployed instance - so the factory could reach DELIVERED on
+     * merge counts, which is a claim about what was built rather than about what was shown. The rule is the
+     * existing chains under a change of quantifier, which is why one entry covers all sixteen profiles: a
+     * chain per profile would be sixteen copies of one idea, and they would drift.
+     *
+     * Missing node rather than empty object when absent, so a caller can tell "the corpus does not declare
+     * this" from "it declares nothing" - the same distinction the whole lattice rests on.
+     */
+    public JsonNode acceptanceRule() {
+        JsonNode root = readJson("profiles.json");
+        return root == null ? objectMapper.missingNode() : root.path("acceptanceRule");
+    }
+
     /** True when a usable corpus exists - lets callers keep their previous behaviour when it does not. */
     public boolean isAvailable() {
         return readJson("capabilities.json") != null;

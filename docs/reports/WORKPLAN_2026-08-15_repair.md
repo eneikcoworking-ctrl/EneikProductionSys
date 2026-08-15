@@ -296,6 +296,47 @@ witness.
 
 **Depends on Step 11:** without a fresh observation there is no deployed instance to traverse.
 
+**Done 2026-08-16.** `acceptanceRule` is one entry at the top of `profiles.json` (schema v3), not a
+seventeenth chain, because acceptance is the sixteen existing chains under a change of quantifier: a
+valuePath says every link must be POSSIBLE, the rule says one complete traversal HAS BEEN performed, by the
+client, on the deployed instance, against real content. Sixteen copies of one idea would drift.
+
+The seeding obligation (F21) is rendered into the compiler prompt FROM the corpus, never restated in the
+prompt string - a second copy of a rule is a claim that can drift from the first, which is the shape of
+every defect found this week. It asks for real initial content in the client's own domain and language,
+because "Test Item 1" demonstrates nothing and has to be deleted before anyone can be shown the product.
+
+`AcceptanceVerdictLayer` computes
+
+```
+witnessed(P) = product over declared paths of (client-walked links / declared links)
+```
+
+A product, not a sum, and with no threshold: value multiplies along a chain, so a client who got stuck
+halfway was not shown a working product. One unwalked link makes the whole thing zero.
+
+Three things this forced into the open:
+
+- **The vacuous case is the dangerous one.** An empty product is 1, so a project with no client brief, or
+  one whose kind the corpus does not recognise, would have been the EASIEST to accept. Every empty
+  denominator resolves to `abstain` instead, and each says which gap it is - an unrecognised kind is the
+  corpus's debt, not the product's clearance.
+- **The denominator comes from the client's own words only** (`WishlistSource.client`). The factory's
+  generated wishlists are full of product vocabulary; letting them in would let the factory choose which
+  chains it owes.
+- **`walkedBy` separates client from factory walks.** A factory walk witnesses that the path CAN be
+  walked - the proposition the valuePath already made. Counting it as acceptance would let the factory
+  accept its own work. Factory walks are reported in the reason rather than discarded, so a refusal never
+  looks like nothing was tried.
+
+`ABSTAIN` rather than `WITHHOLD` throughout, per F30's own wording: an absent record cannot refute the
+client having walked the product - they may simply not have told us. Abstention blocks just as firmly.
+
+**What remains for the walker.** `client_acceptance_traversals` is the evidence store and it now has a
+reader; what writes to it - a client-facing acceptance walk on the live instance - is Stage 6 in the
+findings' own order of work and depends on the lattice gate (Step 18). Until then the layer abstains, which
+is the honest state and is visible rather than silent.
+
 ---
 
 # PHASE VI · THE CORPUS BECOMES COMPLETE

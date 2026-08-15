@@ -1,12 +1,26 @@
 {
-  "schemaVersion": 2,
-  "updatedAt": "2026-08-14",
+  "schemaVersion": 3,
+  "updatedAt": "2026-08-16",
   "markets": [
     "DE",
     "US"
   ],
   "note": "A product is a MIX of profiles, never one label. Weights are evidence-derived from the brief and the repository, and low confidence must weaken every downstream decision instead of being rounded up to a guess. See README.md. detectionKeywords let the compliance gate tell WHICH kind of product a plan describes from the plan's own words, so that a duty scoped to one profile is not reported against every other one.",
-  "schemaChange": "v2 replaces the single valuePath with valuePaths, a list. A product can carry several value chains that break INDEPENDENTLY - a marketplace with a flawless buyer journey and no way to list an item is dead, and an ERP whose money ledger is perfect while its stock figures lie stops production. Since value multiplies along a chain, multiple chains multiply with each other too: one intact chain does not rescue a product whose second chain is broken. A single-path schema could not express that, so the completeness check could not look for it.",
+  "schemaChange": "v2 replaces the single valuePath with valuePaths, a list. A product can carry several value chains that break INDEPENDENTLY - a marketplace with a flawless buyer journey and no way to list an item is dead, and an ERP whose money ledger is perfect while its stock figures lie stops production. Since value multiplies along a chain, multiple chains multiply with each other too: one intact chain does not rescue a product whose second chain is broken. A single-path schema could not express that, so the completeness check could not look for it. v3 adds acceptanceRule, one rule rather than a chain per profile, because acceptance is not a new journey but the existing ones under a change of quantifier.",
+  "acceptanceRule": {
+    "status": "derived",
+    "appliesTo": "every profile, instantiated against whatever valuePaths it declares",
+    "requires": [
+      "the deployed instance is reachable by the client from outside the factory",
+      "it holds content sufficient to exercise every link of every declared path",
+      "one complete traversal of each path has been performed on that instance",
+      "the instance is recognisably the client's own - their data, their language"
+    ],
+    "quantifier": "Not a seventeenth chain. Every valuePath already states what must be POSSIBLE; the acceptance rule states that at least one complete traversal of it has ACTUALLY been performed, by the client, on the deployed instance, against real content. Same chain, existential instead of universal, and a possibility claim is not witnessed by another possibility claim.",
+    "witness": "witnessed(P) = the product over every declared path of the fraction of its links actually traversed. No threshold: value multiplies along a chain, so one unwalked link makes the product zero and a partial traversal witnesses nothing. This is the same multiplicativity that governs construction, applied to demonstration.",
+    "reasoning": "Every valuePath traces the END USER's journey. None traces the buyer's: how does the client see that what they paid for exists and runs? The factory reaches DELIVERED on merge counts, which is a claim about what was built and not about what was shown. A product can be perfect for its users and undemonstrable to its buyer, so this fails independently of every other chain and must be judged separately. Carries no measured number, per the 'derived' rule - refutable by argument.",
+    "source": "Derived from domain reasoning, stated 2026-08-16 (closes F30 and F21). Carries no measured share by rule - see README.md on the 'derived' status."
+  },
   "profiles": [
     {
       "id": "shop",

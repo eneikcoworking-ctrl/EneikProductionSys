@@ -1199,6 +1199,37 @@ class AutonomousPipelineIntegrationTest {
         assertThat(correctionIndex).isLessThan(briefOneIndex);
     }
 
+    /**
+     * Step 13 (F30/F21). Two things at once, and the second is the reason this lives here rather than in a
+     * unit test of the renderer: the prompt is assembled with String.formatted, so a placeholder that does
+     * not line up with its argument throws at RUNTIME and compiles perfectly. Building the real prompt is
+     * the only thing that catches it.
+     */
+    @Test
+    void wishlistCompilerPromptBatchCarriesTheSeedingObligationFromTheCorpus() {
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setSource(WishlistSource.client);
+        clientBrief.setContent("A knowledge base of normative documents for our staff.");
+
+        String prompt = projectFlowService.wishlistCompilerPromptBatch(
+                List.of(clientBrief), ".eneik/records/task-plan-test.json");
+
+        assertThat(prompt).contains("ACCEPTANCE FLOOR");
+        assertThat(prompt)
+                .as("the requirements must come from the corpus's acceptanceRule, not from a second copy "
+                        + "restated in the prompt string that can drift away from it")
+                .contains("it holds content sufficient to exercise every link of every declared path");
+        assertThat(prompt)
+                .as("F21 is only closed if the compiler is told to plan real content - lorem ipsum "
+                        + "demonstrates nothing and has to be deleted before the client can be shown "
+                        + "anything")
+                .contains("lorem ipsum");
+        assertThat(prompt)
+                .as("the placeholders after the inserted one must still line up - planPath is rendered "
+                        + "last and is the one an off-by-one would corrupt")
+                .contains(".eneik/records/task-plan-test.json");
+    }
+
     @Test
     void wishlistCompilerPromptBatchCarvesPhilosophicalCritiquesOutOfTheFollowUpSuppressionDirective() {
         // Operator directive, 2026-07-25: a philosophical product critique is a genuinely NEW capability, not

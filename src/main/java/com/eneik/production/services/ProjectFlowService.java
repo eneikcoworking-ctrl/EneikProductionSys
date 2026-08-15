@@ -2910,6 +2910,55 @@ public class ProjectFlowService {
         return "                  KNOWN CHAINS BY PRODUCT KIND (compare, do not copy):\n" + out;
     }
 
+    /**
+     * The seeding obligation, rendered from the corpus's acceptanceRule rather than restated here.
+     *
+     * Closes F21 by turning it from a lament into a requirement. The rule's second clause - the instance
+     * holds content sufficient to exercise every link - is the only one the COMPILER can act on: reachability
+     * and traversal are facts about a deployed instance, established later by observation, but content that
+     * does not exist cannot be seeded after the fact by anyone who was never told to build it. A knowledge
+     * base with no materials cannot exercise "find the material", so it fails the rule by argument rather
+     * than by opinion.
+     *
+     * Read from the corpus for the same reason the value chains are: a second copy of a rule in a prompt
+     * string is a claim that can drift from the one the corpus holds, and every defect this week had that
+     * shape - one concept living in two places, only one of which knows.
+     */
+    private String acceptanceFloorFromCorpus() {
+        if (marketCorpusService == null) {
+            return "";
+        }
+        com.fasterxml.jackson.databind.JsonNode rule = marketCorpusService.acceptanceRule();
+        if (rule == null || rule.isMissingNode() || !rule.hasNonNull("requires")) {
+            return "";
+        }
+        StringBuilder requirements = new StringBuilder();
+        for (com.fasterxml.jackson.databind.JsonNode requirement : rule.path("requires")) {
+            String text = requirement.asText("");
+            if (!text.isBlank()) {
+                requirements.append("                  * ").append(text).append("\n");
+            }
+        }
+        if (requirements.length() == 0) {
+            return "";
+        }
+        return """
+                - ACCEPTANCE FLOOR (unconditional). The chains above say what the END USER must be able to
+                  do. They say nothing about the person who PAID: how does the client see that the thing
+                  they bought exists and runs? A product can be perfect for its users and undemonstrable to
+                  its buyer, so this is judged separately. For the product to be acceptable:
+                %s                  Your part is the second one, and it is a real obligation, not a note:
+                  plan the CONTENT that makes every link of every chain walkable on a fresh install. A
+                  knowledge base with no documents cannot exercise "find the document"; a shop with no
+                  products cannot exercise "find product". Give this its own epic when the content is a
+                  body of material the product exists to hold (documents, catalogue, courses, listings),
+                  and put it in the acceptanceCriteria of the slice that builds the feature when it is a
+                  handful of rows. Either way it must be REAL initial content in the client's own domain
+                  and language - not lorem ipsum, not "Test Item 1", which demonstrate nothing and have to
+                  be deleted before anyone can be shown the product.
+                """.formatted(requirements);
+    }
+
 
     /**
      * Records what the compiler prompt ACTUALLY contained, so the corpus's influence on a decomposition can
@@ -2929,6 +2978,9 @@ public class ProjectFlowService {
             return;
         }
         ObjectNode injected = payload.putObject("corpusInjection");
+        // Same rule as everything else here: read off the prompt that was actually built, never recomputed
+        // alongside it. A parallel computation is a second claim that can drift from the first.
+        injected.put("acceptanceFloorRendered", prompt.contains("ACCEPTANCE FLOOR"));
         boolean chainsPresent = prompt.contains("KNOWN CHAINS BY PRODUCT KIND");
         injected.put("valueChainsRendered", chainsPresent);
         if (chainsPresent && marketCorpusService != null) {
@@ -3248,6 +3300,7 @@ public class ProjectFlowService {
                   never asked about is the same error in the other direction: measure the client's outcome,
                   not everything measurable. This epic is Must-Be: a product nobody can tell is working is
                   indistinguishable from one that is not.
+                %s
                 - Classify Kano at the EPIC level ONLY (Must-Be, Performance, Attractive, or Reverse) - do
                   not repeat it per task slice. "Reverse" means the client asked for something the product
                   would be actively WORSE for having - not merely low-value, but harmful: a mobile app for
@@ -3308,7 +3361,8 @@ public class ProjectFlowService {
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
                 """.formatted(existingEpicsPromptContext(projectId), valueChainsFromCorpus(),
-                        regulatoryFloorFromCorpus(), planPath, wishlists.size(), briefsSection.toString());
+                        regulatoryFloorFromCorpus(), acceptanceFloorFromCorpus(), planPath,
+                        wishlists.size(), briefsSection.toString());
     }
 
     // Deliberately Gemini-free, same reasoning as the wishlist compiler above: refusal-criteria and
