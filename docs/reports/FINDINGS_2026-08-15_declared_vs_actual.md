@@ -496,6 +496,84 @@ six-hour-old evidence (F27). Evidence expiring is the same rule the market corpu
 Stages A-C add a reading of the system without changing its behaviour, so they can be built and observed
 against the live flow before anything depends on them. Only D changes what the factory does.
 
+---
+
+# LATER FINDINGS, same day
+
+**F28. The design shop discards a successful generation because of the model's name, and retries forever.**
+
+```java
+if (!result.available() || !"stitch".equals(result.model()) || result.repoDraftPath() == null ...) {
+    self.releaseStartCycleClaim(project.getId());
+    log.warn("no usable Stitch draft ... (model={}, message={}); will retry next tick");
+    return;
+}
+```
+
+Live on `test-forty-sixth`: `model=gemini-3.1-flash-image`, `message=Generated design asset and metadata.`
+**The generation succeeded.** It is rejected because the model's name is not the literal string `"stitch"`.
+
+Rejecting a fallback image model here is correct and deliberate (operator directive 2026-08-10: a raw
+image carries no HTML a session could implement against). The defect is what follows: the tick releases the
+claim and retries, on the stated assumption that this "resolves itself on retry". Six attempts recorded -
+10:24, 11:15, 11:24, 13:40, 13:45, 13:54 - and the condition is not transient: Stitch is degraded and keeps
+answering with an image model. Retrying an unchanging condition consumes generation quota indefinitely and
+never escalates.
+
+Same shape as everything else in this document: **a declaration ("the model is called stitch") stands in
+for the property ("there is a usable draft with implementable HTML")**, and an unbounded retry hides the
+gap instead of surfacing it. Under the verdict lattice this layer owes `withhold` with its reason, not a
+silent loop.
+
+**F29. Attribution correction - the corpus did not produce the epics credited to it.**
+
+Recorded because it was asserted to the operator and was wrong.
+
+Timeline: the backend image running when `test-forty-sixth` was decomposed (23:46-00:05) was built from
+`d737705` at **23:02**. The commit promoting the corpus from inert to influential - `64d34ee`, which
+introduced `derived` and `valueChainsFromCorpus` - landed at **02:35**, three and a half hours later.
+
+So at decomposition time:
+
+| Epic | Actual source |
+|---|---|
+| Automated Backups and Verified Restore | **corpus** - `backup-restore` was already `statutory` (GDPR Art. 32(1)(c)), and the wording "a restore that has actually been performed" is the corpus entry's |
+| Self-Service Account Recovery | **not the corpus** - `account-recovery` was `hypothesis` and therefore inert |
+| Goal-Question-Metric Telemetry | **not the corpus** - `product-measurement` was `literature` and therefore inert |
+
+The latter two came from the prompt floors added in `3db0eb6` (17:54) or from the session's own judgement.
+The claim that all three traced to corpus entries "promoted from inert to influential the same day" was
+false: the promotion happened after the decomposition it was credited with.
+
+**The value chains have never influenced a decomposition.** They did not exist at 23:46. Whether the three
+wishlists compiled after the 03:12 deploy used them is unverified - the prompt is not logged, so there is
+currently no way to confirm from the outside that `valueChainsFromCorpus()` rendered anything. That is
+itself worth fixing: **a floor whose presence in the prompt cannot be observed cannot be known to work.**
+
+**F30. Nothing shows the client the working, deployed product** (operator observation, 2026-08-15).
+
+Every `valuePath` in the corpus traces the END USER's journey. None traces the buyer's: *how does the
+client see that what they paid for exists and runs?* The factory reaches `DELIVERED` on merge counts, and
+acceptance is a human act performed against nothing in particular.
+
+This is the same missing link as F21 (nothing seeds primary content) seen from the other side, and the two
+compound: a knowledge base with no materials, shown to nobody, is reported as complete. Together they are
+the last link of every chain in the corpus - *the thing exists, there is something in it, and the person
+who ordered it can see it working.*
+
+Proposed as a second chain on every profile rather than a step in the first, because it fails
+independently: a product can be perfect for its users and undemonstrable to its buyer.
+
+```
+acceptance chain: deployed and reachable -> seeded with enough content to mean something
+                  -> the client can walk one real path themselves -> they can tell it is theirs
+```
+
+The mechanism partly exists - `runtime-launcher` produces a live URL, surfaced in `runtime-health` - so the
+gap is not capability but that nothing composes those parts into something a client is handed. Under the
+verdict lattice this is a declared proposition like any other, and while it is undecided the acceptance
+gate owes `abstain`.
+
 ## What went right (so the repair does not break it)
 
 Worth stating precisely, because these are now load-bearing:
