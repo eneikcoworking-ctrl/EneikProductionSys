@@ -196,6 +196,107 @@ Same class as F16: a link nobody looked at, at the end of the chain. It is argua
 `content-management`, `learning` and `shop` chain in the corpus - *the thing exists and there is something
 in it* - and no chain currently names it. Marked for future work, not for this repair pass.
 
+---
+
+# APPROVED REPAIR: conflict resolution (operator directive 2026-08-15)
+
+To be carried out **methodically, as one continuous piece of work** - not split into separately-approved
+fragments. Recorded here so the reasoning survives the session.
+
+## F22. The conflict mechanism is not mathematically sound, in three independent senses
+
+**(a) The number does not participate in any decision.** At its only call site the entropy result is
+computed, logged, and discarded; the actual gate is a hardcoded path filter. The documented threshold
+`H(C) < 0.2` exists nowhere in code.
+
+**(b) Shannon entropy cannot express the intended distinction.** `H(p, 1−p) = H(1−p, p)` - it measures
+mixedness, not which side dominates. Computed from the shipped code:
+
+| orchestrator | product | H(C) | documented rule | code's `isTrivial` |
+|---|---|---|---|---|
+| 3 | 0 | 0.0 | trivial | trivial |
+| **0** | **10** | **0.0** | **trivial** | not trivial |
+| **0** | **1** | **0.0** | **trivial** | not trivial |
+| 4 | 1 | 0.72 | not trivial | **trivial** |
+
+A **pure product-code conflict scores H = 0** and would be auto-resolved under the documented rule. The
+doc and the code disagree in both directions. Only the fact that the rule is unwired prevents harm - which
+makes it an invitation to "finish the job" and enable exactly that.
+
+There is a second, deeper defect: **entropy averages, safety requires conjunction.** A mean hides one
+dangerous file among nine harmless ones. "All of them must hold" is not expressible as a mean at any
+threshold.
+
+**(c) Three inconsistent definitions of "orchestrator-owned" in one mechanism:**
+calculator classification (`.eneik/` ∨ `.gitignore` ∨ `*.md`); calculator's `isTrivial` (count rule
+`prod == 0 ∨ (p_orch ≥ 0.8 ∧ prod ≤ 1)`); AutoMergeService's filter (`.eneik/` ∨ `.gitignore`, no `.md`).
+
+**Most dangerous consequence:** root `.gitignore` is classified as disposable orchestrator noise, and the
+fast path syncs such files to main's content - discarding the branch's edit. Per F11, `.gitignore` is the
+file whose content decides whether `target/` gets committed, i.e. whether every later task conflicts. The
+mechanism built to resolve conflicts systematically discards the one edit that ends them. PR#12's first
+act was adding `data/.gitignore`.
+
+The comment justifying this ("branches only ever add redundant root .gitignore edits") was true for
+test-thirty-seventh and became false once bootstrap stopped writing a correct `.gitignore`. **The path
+pattern outlived the condition that made it true.**
+
+**Mechanical defects found alongside:**
+- comment says the fast path is bounded to `resolutionAttempts == 0`; the code reads `< 10`
+- `conflict.setResolutionAttempts(1)` **assigns** rather than increments, while escalation tests
+  `get() + 1 >= 3` - a path that keeps "succeeding" pins the counter at 1 and can never escalate
+- Tier-1 sync always merges `"main"` regardless of the PR's actual `baseRef`; `UP_TO_DATE` then prints
+  "Branch is now clean!" having verified nothing
+- the escalation comment asserts the branch is "unrecoverable" - an unfounded universal claim; three
+  failures exhaust a budget, they do not prove impossibility
+
+## The principle: substitutivity salva veritate
+
+The mechanism asks *"how complex is this conflict?"* - hence a scalar and a threshold. The right question
+is *"does discarding one side change any truth the system has asserted?"* That is Leibniz's law, already in
+this system's vocabulary as BARCAN-TAG-08.
+
+The system **already declares ownership** and the mechanism ignores it: `TaskEntity.fileScope` is populated
+by `TechnicalLeadCompiler.determineFileScope` for every task at compile time (it even emits
+`collisionNotes`), and `ProjectFileClaimEntity` records `filePath → taskId/featureId`.
+
+```
+substitutable(f, t)  ⟺  f ∉ fileScope(t)  ∧  ¬∃ live claim on f
+n = |{ f ∈ conflictingFiles : ¬substitutable(f, t) }|
+auto-resolve         ⟺  n = 0
+```
+
+**There is no threshold, and that is the point.** A threshold is the signature of a proxy measure; when the
+measure captures the property itself, the gate is `n = 0`.
+
+Why declarations rather than path patterns: the referent "what this task owns" is fixed **at dispatch
+time** and cannot decay. A path pattern is a guess about authorship that outlives its own truth conditions
+- demonstrated above.
+
+Popperian layer: one cannot prove a conflict trivial, only fail to find evidence that it is not. So the
+default is escalation, auto-resolution requires positive evidence of substitutability for **every**
+conflicting file, and the loss asymmetry demands it - wrongly auto-resolving is silent unrecoverable loss
+of work, wrongly escalating costs one visible bounded session.
+
+## Order of work (dependency-driven, not preference-driven)
+
+| Stage | Work | Why here |
+|---|---|---|
+| **0** | One ownership definition replacing three. Implement `substitutable` on `fileScope` + claims. Delete path-pattern classification | Any formula over three diverging definitions computes different things. The only stage that **removes a false premise** instead of adding logic |
+| **1** | Remove the decorative math: delete `ConflictEntropyCalculator` or reduce it to an honest observation with no documented threshold | While `H(C)` is computed beside a non-existent threshold it invites being wired in - which would enable auto-resolution of pure product conflicts |
+| **2** | The gate becomes `n = 0`; everything else escalates to a session | Requires stage 0 |
+| **3** | Mechanical defects: increment instead of assign; PR's real `baseRef` instead of hardcoded `"main"`; reconcile comment and code on the bound; correct the "unrecoverable" claim | Independent bugs, fixed after the semantics are right so the behaviour being fixed is the final one |
+| **4** | Irreversibility: escalation triggers Branch GC which retires the branch and destroys work. **An automated path must not perform an irreversible action to resolve uncertainty.** Preserve and mark instead of deleting | This is the stage that stops loss; the others improve decisions about what is already gone. PR#12 consumed here: plan 21 → 19 |
+| **5** | Make the constants measurable: record per conflict the files, `n`, attempts, outcome, so `P(resolve \| attempt k)` becomes measurable and the cap of 3 stops being magic | Measuring is only worth doing on a process whose semantics are correct |
+
+Until stage 5 produces data, the 3-attempt cap must be **labelled an arbitrary budget**, not presented as a
+judgement about branch recoverability - the same rule the market corpus applies to `derived`: reasoning may
+be asserted, a number requires measurement.
+
+**TOC note:** the constraint here is not conflicts - the system survives those. It is that **work can
+vanish silently**: a PR is closed, a branch retired, the plan shrinks, and no counter distinguishes
+"conflict resolved" from "conflict removed along with the work".
+
 ## What went right (so the repair does not break it)
 
 Worth stating precisely, because these are now load-bearing:
