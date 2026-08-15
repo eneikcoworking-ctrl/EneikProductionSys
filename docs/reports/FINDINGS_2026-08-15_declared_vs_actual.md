@@ -371,6 +371,131 @@ says *"orchestration should collapse or skip repeated work"* - and nothing colla
 threshold 0.9`, **and** separately by TOC subordination on a launch observation from before two repairs.
 Either gate alone would hold it. Neither re-evaluates on an event.
 
+---
+
+# PROPOSED ARCHITECTURE: the verdict lattice
+
+Answers the structural problem behind F22-F27, not any one of them. Recorded for deliberation.
+
+## The problem, stated exactly
+
+Five layers report on one project and return `82%`, `blocked`, `954545`, `0.57`, `launchSuccess=false`.
+These cannot be combined, because **they are not measurements of one quantity.** They are different
+*modalities* applied to the same proposition:
+
+| Layer | Modality | Asks |
+|---|---|---|
+| Task pipeline | actuality | how much declared work is actual |
+| Doctrine | **deontic** | is this state permitted |
+| Six Sigma | frequency | how dense are defects |
+| Graph | structure | is the dependency relation coherent |
+| Runtime | actuality | does it run |
+
+Averaging a deontic claim with a frequency is a category error. It is the same category error, one level
+up, that produced both defects found today: entropy **averaged** where safety required conjunction, and
+DPMO **counted** where the question was classification. The architecture reproduces at the system level the
+mistake its components make individually.
+
+## The move: one type, not one number
+
+Do not ask "how good is this project" - that question has no single answer and its pursuit is what
+manufactures incommensurable scalars. Ask the question every layer can answer in its own terms:
+
+> **May this project advance to its next state?**
+
+Three admissible answers - `permit`, `withhold`, `abstain` - and every layer maps its native measure to one
+of them by **its own declared rule**. Thresholds do not disappear; they become **local, singular and
+auditable**, stated once inside the layer that owns the measure, instead of being smuggled into a global
+score nobody can inspect.
+
+## Combination: Kleene conjunction, not a weighted sum
+
+```
+advance(P)  =  ⋀ verdict_ℓ(P)        over all applicable layers ℓ
+```
+
+with strong three-valued conjunction: `withhold ∧ anything = withhold`; `permit ∧ abstain = abstain`;
+`permit` only when every layer permits.
+
+Four properties, each of which fixes a defect found today at the architectural level rather than one site
+at a time:
+
+1. **No approval can outvote a refusal.** Conjunction, never a mean. This is the entropy defect (F22b)
+   fixed structurally - a mean can never express "all of them must hold" at any threshold.
+2. **Abstention is not permission.** Today four doctrine roles sit at `unknown` and the flow proceeds. Under
+   conjunction they block. Popper made structural: absence of a refutation is not a verification.
+3. **Monotone.** Adding a layer can only make advance harder, never easier - so the factory may grow its own
+   verification without any risk that a new check accidentally unblocks something. This is what makes
+   autonomous self-extension safe.
+4. **A layer that cannot justify its verdict must abstain.** Six Sigma, whose defect classification is
+   substring matching (F23), owes `abstain`, not a number. That converts a false measurement into visible
+   epistemic debt - and, because abstention blocks, forces the repair instead of hiding it.
+
+## Declaration: the Barcan condition
+
+This system is named after quantified modal logic, and its central formula bears on exactly this point.
+The Barcan formula holds when the domain does not grow across possible worlds - nothing new comes into
+existence merely by moving to another world.
+
+Applied here: **each layer declares, at the moment it becomes applicable, the finite set of propositions it
+will rule on.** Verdicts are then over a fixed domain, not over whatever the layer happened to notice this
+tick.
+
+Without it, `abstain` is ambiguous between *"declared and not yet decided"* and *"never considered"* - and
+the second is invisible, which is how every silent gap in this document arose. With it, the two are
+distinct and the second cannot occur.
+
+This is the same rigid-designation argument that grounds the conflict repair (F22): the referent is fixed
+by declaration at the moment of commitment and cannot decay, whereas a pattern re-derived later outlives
+its own truth conditions.
+
+## The two numbers that replace all the others
+
+```
+D(P) = |{ declared propositions whose verdict is abstain }|     epistemic debt
+W(P) = |{ declared propositions whose verdict is withhold }|    refusals
+
+advance(P)  ⟺  D(P) = 0  ∧  W(P) = 0
+```
+
+**No threshold, and again that is the point** - a threshold is the signature of a proxy measure. `D` and `W`
+are commensurable because they count objects of one type: verdicts on declared propositions. Unification is
+achieved not by normalising `82%` and `954545` onto a common scale - which is impossible - but by mapping
+every layer onto a common *type*.
+
+DPMO, coverage ratios and completion rates do not vanish. They are demoted to what they always were:
+**evidence a layer cites for its verdict**, never verdicts themselves.
+
+## What follows without further design
+
+**The TOC constraint becomes derivable.** The constraint is the layer maximising `W + D`. Measured now, that
+is the doctrine layer (2 refuse, 7 object, 4 unknown) - and within the task layer, UX/UI (F25). Today
+subordination is asserted by hand and points at the queue; here it is computed and points where the block
+actually is.
+
+**Kano attaches naturally.** Each declared proposition carries its Kano class, so `W` splits:
+`advance ⟺ W_must = 0`, while `W_performance > 0` is a **documented compromise** rather than a block -
+which is precisely the distinction the flow cannot currently express, and why the corpus insists on the
+class in the first place.
+
+**Staleness becomes expressible.** A verdict carries the observation it rests on. When the referent changes
+- two Dockerfile repairs land - the verdict reverts to `abstain` rather than remaining `withhold` on
+six-hour-old evidence (F27). Evidence expiring is the same rule the market corpus already applies to
+`observed` entries; here it applies to verdicts.
+
+## Order of construction
+
+| Stage | Work |
+|---|---|
+| **A** | The `Verdict` type and Kleene conjunction. Pure, no dependencies, fully testable in isolation |
+| **B** | Each layer declares its proposition set and maps its own measure to a verdict by its own stated rule. Six Sigma declares `abstain` until F23 is repaired - honestly, and blocking |
+| **C** | `D` and `W` computed and surfaced. One place where the flow's verdicts are reconciled - the thing that does not exist today |
+| **D** | Advance gates read `advance(P)` instead of their private conditions. Existing thresholds move inside their owning layer, unchanged in value, now singular and inspectable |
+| **E** | Verdicts carry their evidence and revert to `abstain` when the evidence's referent changes |
+
+Stages A-C add a reading of the system without changing its behaviour, so they can be built and observed
+against the live flow before anything depends on them. Only D changes what the factory does.
+
 ## What went right (so the repair does not break it)
 
 Worth stating precisely, because these are now load-bearing:
