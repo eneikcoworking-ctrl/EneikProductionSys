@@ -1927,13 +1927,15 @@ public class ProjectFlowService {
         carrierTask.setRole(compilerRole);
         carrierTask.setTitle("Persistent wishlist compiler worker (" + shortId(project.getId()) + ")");
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
-        carrierTask.setDescription(wishlistCompilerPromptBatch(admitted, planPath));
+        String carrierPrompt = wishlistCompilerPromptBatch(admitted, planPath);
+        carrierTask.setDescription(carrierPrompt);
         carrierTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
         payload.put(PERSISTENT_WORKER_CARRIER_MARKER_KEY, true);
         payload.put(WISHLIST_COMPILER_PLAN_PATH_KEY, planPath);
+        recordCorpusInjection(payload, carrierPrompt);
         ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
         for (WishlistEntity w : admitted) {
             idsArray.add(w.getId().toString());
@@ -2594,12 +2596,14 @@ public class ProjectFlowService {
         // tripping ContinuousOrchestrationService's duplicate-task-title alarm as a false positive.
         compilerTask.setTitle("Compile " + wishlists.size() + " wishlist(s) into task graph (" + shortId(wishlists.get(0).getId()) + ")");
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
-        compilerTask.setDescription(wishlistCompilerPromptBatch(wishlists, planPath));
+        String compilerPrompt = wishlistCompilerPromptBatch(wishlists, planPath);
+        compilerTask.setDescription(compilerPrompt);
         compilerTask.setStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
         payload.put(WISHLIST_COMPILER_PLAN_PATH_KEY, planPath);
+        recordCorpusInjection(payload, compilerPrompt);
         com.fasterxml.jackson.databind.node.ArrayNode idsArray = payload.putArray(WISHLIST_COMPILER_WISHLIST_IDS_KEY);
         for (WishlistEntity w : wishlists) {
             idsArray.add(w.getId().toString());
@@ -2904,6 +2908,56 @@ public class ProjectFlowService {
             return "";
         }
         return "                  KNOWN CHAINS BY PRODUCT KIND (compare, do not copy):\n" + out;
+    }
+
+
+    /**
+     * Records what the compiler prompt ACTUALLY contained, so the corpus's influence on a decomposition can
+     * be checked afterwards instead of assumed (2026-08-15).
+     *
+     * Deliberately derived from the built prompt string rather than recomputed alongside it. A parallel
+     * computation would be a second claim that can drift from the first - exactly the divergence that let
+     * three epics be credited on 2026-08-14 to a corpus that had not yet become influential. Reading the
+     * artifact is the only record that cannot disagree with it.
+     *
+     * The prompt itself is already persisted in full: `tasks.description` is TEXT and holds it verbatim.
+     * What was missing is a way to ASK - "did the chains render, and which duties came with them" - without
+     * reading several thousand characters.
+     */
+    private void recordCorpusInjection(ObjectNode payload, String prompt) {
+        if (payload == null || prompt == null) {
+            return;
+        }
+        ObjectNode injected = payload.putObject("corpusInjection");
+        boolean chainsPresent = prompt.contains("KNOWN CHAINS BY PRODUCT KIND");
+        injected.put("valueChainsRendered", chainsPresent);
+        if (chainsPresent && marketCorpusService != null) {
+            com.fasterxml.jackson.databind.node.ArrayNode kinds = injected.putArray("productKinds");
+            for (com.fasterxml.jackson.databind.JsonNode profile : marketCorpusService.profiles()) {
+                String title = profile.path("title").asText("");
+                if (!title.isBlank() && prompt.contains(title + ":")) {
+                    kinds.add(profile.path("id").asText(title));
+                }
+            }
+        }
+        if (marketCorpusService != null) {
+            com.fasterxml.jackson.databind.node.ArrayNode duties = injected.putArray("regulatoryDuties");
+            java.util.LinkedHashSet<String> seen = new java.util.LinkedHashSet<>();
+            for (String market : java.util.List.of("DE", "US")) {
+                for (var e : marketCorpusService.influentialExpectations(market)) {
+                    String requirement = e.requirement();
+                    if (requirement == null || requirement.isBlank()) {
+                        continue;
+                    }
+                    // Match on a prefix rather than the whole line: the rendered line carries market tags,
+                    // applicability conditions and the source, so the requirement is a substring of it.
+                    String probe = requirement.length() > 60 ? requirement.substring(0, 60) : requirement;
+                    if (prompt.contains(probe) && seen.add(e.capabilityId() + "|" + probe)) {
+                        duties.add(e.capabilityId());
+                    }
+                }
+            }
+        }
     }
 
     private String regulatoryFloorFromCorpus() {

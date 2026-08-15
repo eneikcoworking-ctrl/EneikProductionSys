@@ -192,6 +192,13 @@ public class InternalGeminiObserverController {
                     m.put("taskId", task.getId());
                     m.put("status", task.getStatus());
                     m.put("payload", task.getPayload());
+                    // 2026-08-15: the prompt was always persisted here in full - tasks.description is TEXT -
+                    // but no read path exposed it, so what the corpus injected into a decomposition could
+                    // not be checked afterwards. Returned alongside the structured corpusInjection summary
+                    // in the payload, since a summary that cannot be compared against the artifact it
+                    // summarises is the same unverifiable claim in smaller form.
+                    m.put("promptLength", task.getDescription() == null ? 0 : task.getDescription().length());
+                    m.put("prompt", task.getDescription());
                     return m;
                 }
             }
