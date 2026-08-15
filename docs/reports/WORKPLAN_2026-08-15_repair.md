@@ -1,203 +1,381 @@
 # Work plan: repairing the factory, 2026-08-15
 
-Supersedes the three separate repair orders inside `FINDINGS_2026-08-15_declared_vs_actual.md`, which were
-written at different moments and overlap. Findings are unchanged and still referenced by number; only the
-sequencing is reconsidered.
+Every finding in `FINDINGS_2026-08-15_declared_vs_actual.md` is assigned to a step here. Nothing is
+deferred. Steps are ordered so each is verifiable alone and none depends on a later one; risk rises
+monotonically, and the factory can be stopped after any step with a consistent system.
 
-## What a fresh reading changes
+**Already fixed, listed for completeness:** F9 (a literal `%` broke every compiler prompt - fixed in
+`64d34ee`), F10 (one keyword list serving two roles - fixed in `64d34ee`), F20 (conflict/CI deadlock -
+fixed in `821f12b`, deployed, **not yet witnessed live** because no conflict has occurred since; its
+verification belongs to Step 3).
 
-**Three findings are one defect.** F1 (a task reports `done` without delivering), F11 (`.gitignore` never
-landed and nobody noticed) and half of F28 (a rejected generation is logged and retried) are all the same
-mechanical fault: **an operation's return value is written to a log instead of being acted on.** They are
-one fix, not three, and it is the cheapest fix in the document.
-
-**The verdict lattice is not a third plan, it is the container for the other two.** Both repair orders end
-"and this lands in the lattice". Building them separately and retrofitting means wiring twice. But stages
-A-C of the lattice are read-only, so it can be built as an **observer** first: it computes and surfaces,
-changes nothing, and immediately supplies the one thing the flow lacks - a place where layers reconcile.
-
-**Ordering must be by loss, not by depth.** Three defects are destroying work or burning quota right now;
-four are causing decisions to be made on false data; the architecture is last because it is worthless
-until its inputs are honest.
-
-## Sequence
-
-Steps are ordered so that each is verifiable on its own and none depends on a later one. Risk rises
-monotonically; the factory can be stopped after any step with a consistent system.
+**What a fresh reading changed.** F1, F11 and half of F28 are one mechanical defect - an operation's return
+value is written to a log instead of acted on. And the verdict lattice is not a separate plan but the
+container for the rest; since its first stages are read-only it is built as an observer early, where it
+costs nothing and immediately supplies the missing place where layers reconcile.
 
 ---
 
-### Step 1 · An operation's effect must be verified, not logged
-**Closes:** F1, F11, and the "silently retried" half of F28. **Risk: low.** **Factory may stay running.**
+# PHASE I · STOP THE LOSSES
+
+Work is being destroyed and quota burned right now. Nothing else matters until this stops.
+
+## Step 1 · An operation's effect must be verified, not logged
+**Closes F1, F11, F12.** Risk: low. Factory may run.
 
 `commitFile` is documented create-only ("no `sha`, so this is a create, not an update"), written for
 timestamped design assets. Bootstrap reused it for fixed paths, one of which (`.gitignore`) already exists,
-so the write fails with 422 and the failure is only logged - while `task.setStatus(done)` has already run,
-on the strength of a different file.
+so the write fails and the failure is only logged - while `task.setStatus(done)` has already run on the
+strength of a different file.
 
-1. Add `upsertFile(project, path, bytes, message)` as a **new** method: read the current `sha`, include it,
-   fall back to create when absent. Do **not** change `commitFile` - fourteen call sites rely on
-   create-only semantics, and design-draft promotion depends on a second write failing rather than
-   silently overwriting an approved mockup.
-2. `commitDeterministicJavaScaffoldIfAbsent` / `...FrontendScaffold...` switch to `upsertFile`.
-3. `completeBootstrapDeterministically`: move `task.setStatus(done)` to **after** all scaffold commits, and
-   set it only if every one returned true. A partial bootstrap leaves the task queued, which is the
-   existing, working fallback to Jules dispatch.
+1. Add **`upsertFile`** as a *new* method: read current `sha`, include it, fall back to create when absent.
+   Do **not** change `commitFile` - fourteen call sites depend on create-only semantics, and design-draft
+   promotion needs a second write to *fail* rather than silently overwrite an approved mockup.
+2. Both deterministic scaffold methods switch to `upsertFile`.
+3. `completeBootstrapDeterministically`: `task.setStatus(done)` moves **after** all scaffold commits and
+   fires only if every one returned true. A partial bootstrap stays queued - the existing working fallback.
 
-**Verification:** create a throwaway project; assert `.gitignore` on `main` contains `target/` and `data/`,
-and that `bootstrap.md`, `pom.xml`, `application.properties` all exist. Today `.gitignore` has exactly one
-commit - the factory's - on every project checked.
+**Verify:** new throwaway project; `.gitignore` on `main` contains `target/` and `data/`; `bootstrap.md`,
+`pom.xml`, `application.properties` all present. Today `.gitignore` has exactly one commit on every project.
 
-**Why first:** it is upstream of the conflicts (F12: no shared skeleton → each task invents one → build
-artifacts committed → every pair of tasks conflicts) and it costs a day, not a week.
+**Why first:** upstream of the conflicts. No skeleton → each task invents one → build artifacts committed →
+every pair of compiling tasks conflicts (F12).
 
----
+## Step 2 · The design shop stops burning quota
+**Closes F28.** Risk: low, one isolated service. Factory may run.
 
-### Step 2 · The design shop stops burning quota
-**Closes:** F28. **Risk: low**, one isolated service. **Factory may stay running.**
-
-Replace the identity test with a property test, and split failures by modality:
+Replace the identity test with a property test and split failures by modality:
 
 ```
-usable(r)      ⟺ r.available ∧ r.repoDraftPath ≠ ∅ ∧ implementableHtmlExists(repoDraftPath)
-unavailable(r) ⟺ ¬r.available                    → retry, declared budget
+usable(r)      ⟺ r.available ∧ repoDraftPath ≠ ∅ ∧ implementableHtmlExists(repoDraftPath)
+unavailable(r) ⟺ ¬r.available                    → retry within a declared budget
 wrongKind(r)   ⟺ r.available ∧ ¬usable(r)        → record, escalate once, never retry
 ```
 
 The model's name leaves the gate and becomes evidence in the reason. The loop closes because **no quantity
-of retries changes the kind of a thing** - not because a counter caps it.
+of retries changes the kind of a thing**.
 
-**Verification:** the same cause must not produce a second identical retry. Today: six identical failures
-across four hours, each consuming a generation call.
+**Verify:** the same cause must not produce a second identical retry. Today: six identical failures in four
+hours, each a real generation call.
 
----
+## Step 3 · Conflicts: stop destroying work, then fix the mathematics
+**Closes F22 entirely; verifies F20.** Risk: medium - `AutoMergeService` has documented incident history.
+Factory idle.
 
-### Step 3 · Conflict resolution: substitutivity, and stop destroying work
-**Closes:** F22 (all parts), F20. **Risk: medium** - `AutoMergeService` has a documented incident history.
-**Factory should be idle.**
+Stage 4 of the original order comes **first**, because it is the only part that stops loss rather than
+improving decisions about work already gone.
 
-Execute the approved order, but with **stage 4 pulled to the front**, because it is the only part that
-stops loss rather than improving decisions about work already gone:
-
-1. **Never perform an irreversible action to resolve uncertainty.** Escalation currently triggers Branch GC,
-   which retires the branch and destroys the work. Preserve and mark instead. (PR#12 was consumed this way:
-   plan 21 → 19.)
+1. **Never perform an irreversible action to resolve uncertainty.** Escalation triggers Branch GC, which
+   retires the branch and destroys the work. Preserve and mark. (PR#12 was consumed this way: plan 21 → 19.)
 2. One ownership definition replacing three, grounded in declarations the system already makes:
    `substitutable(f,t) ⟺ f ∉ fileScope(t) ∧ ¬∃ live claim on f`.
-3. Delete `ConflictEntropyCalculator`, or reduce it to an observation with no documented threshold.
-4. The gate becomes `n = 0`.
+3. Delete `ConflictEntropyCalculator` or reduce it to an observation with no documented threshold.
+4. Gate becomes `n = 0`.
 5. Mechanical: `setResolutionAttempts` increments rather than assigns; Tier-1 sync uses the PR's real
-   `baseRef` instead of a hardcoded `"main"`; the comment claiming a bound of `== 0` is reconciled with the
-   code's `< 10`; the "unrecoverable" claim becomes "budget exhausted".
+   `baseRef` instead of hardcoded `"main"`; the comment claiming a bound of `== 0` reconciled with the
+   code's `< 10`; "unrecoverable" becomes "budget exhausted".
+6. **Witness F20**: construct a conflicting PR deliberately and confirm `handleMergeConflict` now fires.
 
-**Verification:** the 17 existing `AutoMergeServiceTest` cases must stay green - they encode the two prior
-deadlock fixes. New cases for `substitutable` over a synthetic `fileScope`.
+**Verify:** all 17 `AutoMergeServiceTest` cases stay green - they encode the two prior deadlock fixes. New
+cases for `substitutable` over a synthetic `fileScope`.
+
+## Step 4 · The database stops growing, and the rollback errors stop
+**Closes F7.** Risk: low-medium. Factory stopped for the compaction.
+
+Two live problems in one place. `JpaSystemException: Unable to rollback against JDBC Connection` repeats
+roughly every 15 minutes on coverage-audit eligibility - the very gate that precedes falsification. And the
+H2 file is **400 MB today against 101 MB after yesterday's compaction** - fourfold in a day.
+
+1. Diagnose the rollback failure: connection-pool exhaustion, a closed connection, or a transaction held
+   across something slow. The 2026-08-14 incident had the same signature at a larger scale.
+2. Measure what is actually growing, table by table, before touching anything.
+3. Extend retention if the growth is in an append-only table the current policy deliberately spares -
+   `ProjectEventLogRetentionService` retains by meaning and never touches unaccepted projects, which is
+   correct and also why it may not be catching this.
+4. Clean shutdown + `SHUTDOWN COMPACT`, verifying row counts before and after.
+
+**Verify:** zero rollback exceptions over an hour; file size proportional to live data.
 
 ---
 
-### Step 4 · Metrics stop lying
-**Closes:** F23, F3, F13. **Risk: low-medium** - DPMO will change, because it is currently wrong.
+# PHASE II · MAKE THE INPUTS HONEST
 
-**F23.** `isDefectWork` substring-matches free text against two different word lists, so a *feature* named
-"Self-Service Account **Recovery**" is defect work by name. But the system **already declares** what kind
-of work each item is: `WishlistSource`. `self_falsification`, `product_not_launchable`,
-`dockerfile_missing_build_stage`, `coverage_gap`, `design_review_concern_pattern`, `gemini_observer` are
-defect-class by construction; `client` and `role` are not. Same substitutivity move as Step 3 - use the
-declaration, not a guess at the text.
+Four subsystems report numbers that do not describe reality. Anything built on them inherits the error.
+
+## Step 5 · Metrics measure the process, not the vocabulary
+**Closes F23.** Risk: low-medium - DPMO will change, because it is currently wrong.
+
+`isDefectWork` substring-matches free text against **two different word lists in two places**, so a
+*feature* named "Self-Service Account **Recovery**" is defect work by name, and any acceptance criterion
+describing error handling contains "failure". Result: 63 of 66 tasks classified as defects, DPMO 954,545,
+on a project that merged 22 of 22.
+
+The system **already declares** what kind of work each item is - `WishlistSource`. `self_falsification`,
+`product_not_launchable`, `dockerfile_missing_build_stage`, `coverage_gap`, `design_review_concern_pattern`
+and `gemini_observer` are defect-class by construction; `client` and `role` are not.
 
 ```
 isDefectWork(t) ⟺ defectClass(originWishlistSource(t)) ∨ t.retryCount > 0
 ```
 
-One definition, one place, both call sites. Then DPMO measures the process instead of the vocabulary.
+One definition, one place, both call sites. Same substitutivity move as Step 3, applied to metrics.
 
-**F3.** Four of 38 settings resolve with source `none`. A boolean flag with no value anywhere reads `false`
-and the feature is silently off - this already cost a full falsification pass. Startup must log each such
-key at WARN and the settings endpoint must mark it; a registered-but-valueless flag is a defect, not a
-default.
+**Consumer to check:** `KaizenService:585` reads `dpmo()` as the `postMetric` deciding whether an applied
+micro-improvement worked. Until this lands, the improvement engine is judging itself by substring matching.
 
-**F13.** Generated work items are stored with `source=client`. Twenty-one of twenty-two rows on this
-project misattribute their own origin, and that attribution is exactly what the market corpus reasons
-about. Compiler-generated items take a compiler source.
+**Verify:** recompute over `test-forty-sixth`'s frozen data; the defect count must match the number of
+defect-sourced wishlists (currently 30 of 53), not 63 of 66.
+
+## Step 6 · Settings cannot be silently absent
+**Closes F3, F2.** Risk: low.
+
+Four of 38 settings resolve with source `none` - registered, valueless. A boolean flag with no value reads
+`false` and its feature is silently off; this already cost an entire falsification pass
+(`design_system_falsification_enabled`), and the class has now recurred three times.
+
+1. Startup logs every `source=none` key at WARN; the settings endpoint marks them. A registered-but-
+   valueless flag is a defect, not a default.
+2. The existing source-scanning test extended to fail when a *boolean* key resolves to `none`.
+3. **Audit trail (F2):** who changed a setting, when, from what. `falsification_cycle_enabled=false` came
+   from the database and its author is unrecoverable. A switch that changes what the whole factory does
+   must not flip without a record.
+
+**Verify:** flip a flag, read its history back.
+
+## Step 7 · Items say where they came from
+**Closes F13, F14, F15.** Risk: low.
+
+1. **F13:** 21 of 22 generated work items are stored with `source=client`. The client wrote one brief. Any
+   analysis of "what the client asked for" - exactly what the market corpus reasons about - is wrong on 21
+   rows out of 22. Compiler-generated items take a compiler source.
+2. **F14:** eleven items titled `Internal UI work item` are a data schema, an API contract, a backend
+   service. The `BARCAN-TAG` is right, the noun is wrong; derive it from the role.
+3. **F15:** `GET /api/projects/{id}/epics` returns `tasks: 0` while `totalPlannedTasks = 22`. A reader of
+   that endpoint concludes no work exists.
+
+**Verify:** the endpoint's task counts equal `productReadiness`; source counts match wishlist provenance.
+
+## Step 8 · What is sent to the compiler must be observable
+**Closes F29.** Risk: low.
+
+The corpus floors and value chains are injected into the compiler prompt, and **there is no way to confirm
+from outside that they rendered.** The prompt is not logged, so it cannot be known whether
+`valueChainsFromCorpus()` produced anything on any run. This is how the misattribution in F29 happened -
+epics were credited to a corpus that had not yet become influential.
+
+**A floor whose presence in the prompt cannot be observed cannot be known to work.**
+
+1. Persist the rendered prompt, or at minimum a digest per section, alongside the compiler task.
+2. Surface which corpus entries and which value chains were injected, per decomposition.
+3. Re-check the F29 attribution against real evidence once a decomposition runs post-fix.
+
+**Verify:** decompose a brief and read back exactly which chains and duties were sent.
 
 ---
 
-### Step 5 · The verdict lattice, as a read-only observer
-**Closes:** the structural problem behind F22-F27. **Risk: near zero - changes no behaviour.**
+# PHASE III · THE PLACE WHERE LAYERS RECONCILE
 
-Stages A-C only. Nothing gates on it yet.
+## Step 9 · The verdict lattice, as a read-only observer
+**Closes the structure behind F22-F27; makes F24 and F25 visible.** Risk: near zero - changes no behaviour.
 
-1. `Verdict ∈ {permit, withhold, abstain}` and Kleene strong conjunction. Pure, fully testable in isolation.
-2. Each layer declares up front the finite set of propositions it rules on (the Barcan condition - without
+Five layers report `82%`, `blocked`, `954545`, `0.57`, `launchSuccess=false` about one project. They cannot
+be combined because they are different *modalities*, not measurements of one quantity. Averaging a deontic
+claim with a frequency is the same category error, one level up, that produced both the entropy calculator
+and DPMO.
+
+1. `Verdict ∈ {permit, withhold, abstain}` with Kleene strong conjunction. Pure, testable in isolation.
+2. Each layer declares up front the finite set of propositions it rules on - the Barcan condition. Without
    it `abstain` cannot distinguish "declared, undecided" from "never considered", and the second is
-   invisible, which is how every silent gap in the findings arose), and maps its own measure to a verdict
-   by its own stated rule. **Six Sigma declares `abstain` until Step 4 lands** - honestly.
-3. Compute and surface `D` (abstentions) and `W` (refusals). One endpoint. This is the place where the
-   flow's layers reconcile, which does not exist today.
+   invisible, which is how every silent gap in the findings arose.
+3. Each layer maps its own measure to a verdict by its own stated rule; thresholds become local and
+   auditable instead of smuggled into a global score.
+4. Compute and surface `D` (abstentions) and `W` (refusals). `advance(P) ⟺ D = 0 ∧ W = 0`.
 
-**Immediate value without gating anything:** the TOC constraint becomes derivable as `argmax(W + D)`
-instead of asserted by hand - measured now, that is the doctrine layer (2 refuse, 7 object, 4 unknown) and
-UX/UI within the task layer (F25), neither of which the queue view shows.
+**Free consequences:**
+- **F24** - the doctrine layer already refuses (`blocked`, 0 of 13 satisfied, 2 refusing, 7 objecting) and
+  nothing reads it. Here it is simply another verdict source, read like any other.
+- **F25** - the TOC constraint becomes derivable as `argmax(W + D)` instead of asserted. Measured now it
+  points at the doctrine layer and, within tasks, at UX/UI - 13 tasks holding 3 of the 4 blocked - neither
+  of which the queue view shows.
+
+## Step 10 · The dependency graph becomes a graph
+**Closes F26.** Risk: low - diagnostic first.
+
+`graphTasks 42`, `uniqueGraphs 14`, `dependencyCoverage 0.57`: 43% of tasks carry no edge and the work
+splits into 14 disconnected fragments with a critical path of 4. `duplicateSemanticKeys: 7`, whose own
+interpretation says *"orchestration should collapse or skip repeated work"* - and nothing collapses it.
+
+1. Measure first: are the 7 duplicates genuine repeats, and does the fragmentation cost anything, or is it
+   an artifact of decomposition emitting independent slices by design?
+2. Only then decide whether to collapse duplicates automatically or to surface them as a verdict.
+
+**Why after Step 9:** if fragmentation matters it should be a layer's verdict, not another private rule.
 
 ---
 
-### Step 6 · Close the runtime loop
-**Closes:** F27, and the part of F4 that costs most. **Risk: low.**
+# PHASE IV · CLOSE THE LOOPS
 
-The product was repaired twice and never re-observed; the launch verdict is still the one taken before
-either repair, and philosophy is subordinated to it.
+## Step 11 · Events instead of polls
+**Closes F4, F27.** Risk: low.
 
-1. Landing a fix for a launch failure publishes an event; the launchability observation subscribes. Cron
-   survives only as a rare safety net for a lost event, never as the primary trigger.
+Eleven of 37 `@Scheduled` methods fire blind and immediately check a state and return - a poll wearing a
+cron's clothes. The clearest case: falsification runs `0 0 3 */2 * ?` and its first statement checks
+readiness. Readiness can be reached at any moment and is sampled every 48 hours.
+
+Live consequence measured today: the product was repaired **twice** (10:38, 12:00) and never re-observed;
+the launch verdict is still the one taken at 10:21 before either repair, and philosophy is subordinated to
+it. It is blocked twice over - also by `mergedRatio` which has since reached 1.0.
+
+1. The transition establishing readiness publishes an event; falsification subscribes. Cron survives only
+   as a rare safety net for a lost event.
 2. A verdict carries the observation it rests on and **reverts to `abstain` when that observation's
-   referent changes** - the same expiry rule the market corpus already applies to `observed` entries.
+   referent changes** - the same expiry rule the corpus applies to `observed` entries.
+3. Convert the remaining ten polls, including `FactorySelfHealthService` (hourly), which this session added
+   and which repeats the pattern.
 
-**Verification:** land a Dockerfile fix on a live project and see a new observation without waiting for a
-scheduled tick.
+**Verify:** land a Dockerfile fix and see a new observation without waiting for a tick.
+
+## Step 12 · The factory watches itself
+**Closes F5, F6.** Risk: low.
+
+`FactorySelfHealthService` detects the factory's own ill health and writes `log.warn`. Nothing reads logs
+autonomously - a closed loop without the closure. And `runtime-launcher` was down with nothing saying so;
+without it no product can be launched or verified, and the TOC subordination gates on launchability, so
+philosophy would have been skipped or run blind. The operator noticed, not the factory.
+
+1. Self-health findings become `SYSTEMIC_DEFECT` proposals - the same stream as product findings, visible
+   on the dashboard - while keeping the rule that factory code is never auto-modified.
+2. A missing dependency of the flow (launcher, ML, database) is a declared proposition in the lattice, so
+   its absence is a `withhold`, not silence.
 
 ---
 
-### Step 7 · The acceptance chain
-**Closes:** F30, F21. **Risk: low for the corpus, medium for the compiler prompt.**
+# PHASE V · THE PRODUCT REACHES THE CLIENT
+
+## Step 13 · The acceptance chain
+**Closes F30, F21.** Risk: low for the corpus, medium for the compiler prompt. Depends on Step 11.
+
+Every `valuePath` traces the END USER's journey. None traces the buyer's: how does the client see that what
+they paid for exists and runs? `DELIVERED` is computed from merge counts - a possibility claim with no
+witness.
 
 1. One `acceptanceRule` in `profiles.json`, status `derived`, instantiated against whatever `valuePaths`
-   each profile declares. Not sixteen new chains - the acceptance chain is the existing path under a change
-   of quantifier: *there **exists** one complete traversal, performed **by the client**, on the **deployed**
+   each profile declares. Not sixteen chains: the acceptance chain is the existing path under a change of
+   quantifier - *there **exists** one complete traversal, performed **by the client**, on the **deployed**
    instance, against **real content**.*
-2. The seeding obligation (F21) follows from requirement two: a knowledge base with no materials cannot
-   exercise "find the material", so it is unacceptable by rule rather than by opinion.
+2. **Seeding (F21)** follows from requirement two: a knowledge base with no materials cannot exercise "find
+   the material", so it is unacceptable by rule rather than by opinion. The compiler must plan for content
+   that exercises every link.
 3. Traversal evidence recorded; `witnessed(P) = Σ|v|` gates acceptability. No threshold - value multiplies
    along a chain, so a partial traversal witnesses nothing.
 
-**Depends on Step 6:** without a fresh observation there is no deployed instance to traverse.
+**Depends on Step 11:** without a fresh observation there is no deployed instance to traverse.
 
 ---
 
-### Step 8 · The lattice gates
-**Risk: high - this changes what the factory permits.** Behind a flag, one project first.
+# PHASE VI · THE CORPUS BECOMES COMPLETE
+
+## Step 14 · Missing links in the value chains
+**Closes F16.** Risk: low.
+
+Found by the operator's first question - *why are there no reports?* The content-management and
+document-flow chains end at an action on a single document and never ask how anyone learns a document has
+gone stale, or what the collection holds and what is used. For a knowledge base of normative documents that
+is the governing need.
+
+```
+draft → edit → approve → publish → learn it has gone stale → update or unpublish
+      → see what exists and what is used
+```
+
+GQM telemetry does not substitute: telemetry measures whether the system works, a report answers what the
+collection holds.
+
+## Step 15 · Kano gradation, scoping, and market coverage
+**Closes F17, F18, F19.** Risk: low. Needs more than one project's evidence.
+
+1. **F17** - all five epics came out `Must-Be`. The vocabulary exists and is not discriminating. Determine
+   whether the class is being chosen or defaulted, then either fix the prompt or the parser.
+2. **F18** - GDPR data-subject rights did not appear, though the corpus scopes that duty to every product
+   and the system stores staff data. Possibly correct for a Russian institute; unexplained either way, and
+   an unexplained omission is indistinguishable from a miss.
+3. **F19** - the corpus covers DE and US; this brief was a Russian institution. Value chains are
+   market-independent so the experiment stands, but the regulatory floor renders duties that cannot apply.
+   Either scope the floor by the project's declared market, or state that markets outside DE/US get chains
+   only.
+
+---
+
+# PHASE VII · THE REST
+
+## Step 16 · Linear provisioning
+**Closes F8.** Risk: low.
+
+`Argument Validation Error` on `projectCreate`, reproduced on both `test-forty-fifth` and
+`test-forty-sixth`, so it is independent of the transient GitHub outage. Every project is created without
+its Linear counterpart. Fix, or decide Linear is out of the flow and stop attempting it - a failing
+integration that nobody needs is noise that trains people to ignore provisioning warnings.
+
+## Step 17 · English-only pass
+Risk: low, but touches ~187 files.
+
+Code, comments, commits, docs, corpora and test names are English; Russian is the language of conversation
+only. A 2026-08-15 scan found roughly 187 files containing Cyrillic, mostly comments. A dedicated pass,
+never mixed into repair work, so that a large mechanical diff never hides a semantic change.
+
+---
+
+# PHASE VIII · THE LATTICE DECIDES
+
+## Step 18 · Gating
+Risk: **high** - this changes what the factory permits. Behind a flag, one project first.
 
 Advance gates read `advance(P) = ⋀ verdict_ℓ(P)` instead of their private conditions. Existing thresholds
 move inside their owning layer, unchanged in value, now singular and inspectable.
 
-Only after Steps 1-7, because a gate is only as honest as its inputs, and today two of the five layers
-report numbers derived from substring matching.
+Last, because a gate is only as honest as its inputs, and today two of five layers report numbers derived
+from substring matching.
 
 ---
 
-## What is deliberately not in this plan
+## Every finding, and where it is handled
 
-| Finding | Why deferred |
-|---|---|
-| F2 settings audit trail | Real, but no loss is occurring; a day's work with no urgency |
-| F8 Linear provisioning fails | Reproduced on both projects, unrelated to the flow; fix when Linear is actually used |
-| F14 wrong item titles, F15 `epics` returns `tasks:0` | Cosmetic and display-only |
-| F17 all epics `Must-Be`, F18 GDPR absent | Need more than one project's evidence before concluding anything |
-| F19 corpus covers DE/US, brief was Russian | Correct behaviour for the declared markets; not a defect |
-| F24 doctrine refuses and nobody reads it | Becomes free once Step 5 exists - the doctrine layer is simply another verdict source |
-| F26 fragmented dependency graph | Real, but its own investigation; no evidence yet that it causes loss |
-| ~187 files containing Cyrillic | A dedicated pass, not to be mixed into repair work |
+| # | Finding | Step |
+|---|---|---|
+| F1 | `done` without delivery | 1 |
+| F2 | no settings audit trail | 6 |
+| F3 | settings with source `none` | 6 |
+| F4 | polls disguised as schedules | 11 |
+| F5 | self-health writes to a log nobody reads | 12 |
+| F6 | `runtime-launcher` down, nothing said | 12 |
+| F7 | JPA rollback failures, DB growth | 4 |
+| F8 | Linear provisioning fails | 16 |
+| F9 | `%` broke the compiler prompt | **done** `64d34ee` |
+| F10 | one keyword list, two roles | **done** `64d34ee` |
+| F11 | `.gitignore` never updated | 1 |
+| F12 | no shared skeleton | 1 |
+| F13 | generated items marked `source=client` | 7 |
+| F14 | wrong item titles | 7 |
+| F15 | `epics` returns `tasks: 0` | 7 |
+| F16 | chains lack staleness and collection state | 14 |
+| F17 | every epic `Must-Be` | 15 |
+| F18 | GDPR rights absent | 15 |
+| F19 | corpus market scope | 15 |
+| F20 | conflict/CI deadlock | fixed `821f12b`, witnessed in 3 |
+| F21 | nothing seeds primary content | 13 |
+| F22 | conflict mathematics unsound | 3 |
+| F23 | Six Sigma measures keywords | 5 |
+| F24 | doctrine refuses, nobody reads | 9 |
+| F25 | UX/UI bottleneck invisible | 9 |
+| F26 | dependency graph fragmented | 10 |
+| F27 | philosophy blocked on stale evidence | 11 |
+| F28 | design shop retries forever | 2 |
+| F29 | prompt contents unobservable | 8 |
+| F30 | nothing shows the client the product | 13 |
+| — | ~187 files containing Cyrillic | 17 |
 
 ## Order in one line
 
-**Stop the losses (1-3) → make the inputs honest (4) → build the place where they reconcile (5) → close the
-loop (6) → let the client see it (7) → and only then let it decide (8).**
+**Stop the losses (1-4) → make the inputs honest (5-8) → build the place where they reconcile (9-10) →
+close the loops (11-12) → let the client see it (13) → complete the corpus (14-15) → clear the rest
+(16-17) → and only then let it decide (18).**
