@@ -43,6 +43,23 @@ public class LinearProjectFactoryClient {
         if (teamId == null || teamId.isBlank()) {
             return new LinearProvisioningResult("skipped: LINEAR_TEAM_ID is not configured", null, null);
         }
+        // Closes F8. Every projectCreate on test-forty-fifth and test-forty-sixth failed with Linear's
+        // generic "Argument Validation Error", which said nothing about why. The live setting was
+        // linear_team_id = "Eneik Production System" - a team NAME where ProjectCreateInput.teamIds requires
+        // a UUID. A configuration mistake was arriving as an opaque API error, so the same failure repeated
+        // on every project while looking like a transient integration problem.
+        //
+        // Checked here rather than left to Linear, because the shape is knowable locally and a remote
+        // rejection cannot name the local cause. Deliberately no name-to-id lookup: silently accepting a
+        // name would make the setting mean two things, and a setting that accepts what it should reject is
+        // how the mistake survives into the next system that reads it.
+        if (!LINEAR_ID.matcher(teamId.trim()).matches()) {
+            return new LinearProvisioningResult(
+                    "skipped: linear_team_id is '" + teamId + "', which is not a Linear team id. Linear "
+                            + "expects a UUID here (ProjectCreateInput.teamIds), not the team's name or key "
+                            + "- open the team in Linear and take the id from its settings URL.",
+                    null, null);
+        }
 
         try {
             ObjectNode root = objectMapper.createObjectNode();
@@ -98,6 +115,10 @@ public class LinearProjectFactoryClient {
             return new LinearProvisioningResult("failed: " + e.getMessage(), null, null);
         }
     }
+
+    /** Linear identifies teams and projects by UUID; anything else is a name or a key, and cannot work. */
+    private static final java.util.regex.Pattern LINEAR_ID = java.util.regex.Pattern.compile(
+            "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     private String preview(String body) {
         if (body == null || body.isBlank()) {

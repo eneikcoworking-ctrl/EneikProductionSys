@@ -1505,14 +1505,20 @@ public class ProjectFlowService {
         if (wishlists.isEmpty()) {
             wishlists = wishlistRepository.findByProjectId(projectId);
         }
-        var epicPlans = parseCompilerPlanContent(jsonContent);
+        var epicPlans = parseCompilerPlanContent(jsonContent, project);
         if (epicPlans.isEmpty()) {
             return false;
         }
         return buildTaskGraphFromSlices(project, wishlists, epicPlans);
     }
 
+    /** Kept for callers with no project to hand; the compliance check then falls back to every market. */
     public java.util.List<MLPredictionServiceClient.EpicPlan> parseCompilerPlanContent(String jsonContent) {
+        return parseCompilerPlanContent(jsonContent, null);
+    }
+
+    public java.util.List<MLPredictionServiceClient.EpicPlan> parseCompilerPlanContent(
+            String jsonContent, ProjectEntity project) {
         try {
             com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
             com.fasterxml.jackson.databind.JsonNode root = mapper.readTree(jsonContent);
@@ -1527,7 +1533,7 @@ public class ProjectFlowService {
             // approximation, and blocking real work on an approximation trades a visible failure for an
             // invisible one. The findings make the false-positive rate measurable; blocking can follow once
             // it is known rather than assumed.
-            reportUncoveredStatutoryRequirements(root);
+            reportUncoveredStatutoryRequirements(root, project);
             java.util.List<MLPredictionServiceClient.EpicPlan> result = new java.util.ArrayList<>();
             for (com.fasterxml.jackson.databind.JsonNode epicNode : rawEpics) {
                 com.fasterxml.jackson.databind.JsonNode rawSlices = epicNode.path("slices");
@@ -1566,11 +1572,19 @@ public class ProjectFlowService {
                 // be exactly the 'system re-infers Kano and gets Must-Be' failure mode"). The two sides of
                 // the flow now hold the same discipline: an absent classification is recorded as absent,
                 // not invented. Downstream consumers must treat blank as "unknown", never as Must-Be.
+                //
+                // 2026-08-16 (F17): that claim of parity was false. JulesDispatchService.parseCompilerPlan -
+                // the path a Jules-delivered plan actually travels, i.e. the live one - still read
+                // .asText("Must-Be"), which is why all five epics of test-forty-sixth came out Must-Be after
+                // this very fix. Both parsers now call KanoClass, which also settles how an absent class is
+                // SPELLED: blank was indistinguishable from a column nobody wrote to, so it is now an
+                // explicit marker that reaches the project tree and can be seen.
                 result.add(new MLPredictionServiceClient.EpicPlan(
                         existingEpicId,
                         epicNode.path("title").asText(""),
                         epicNode.path("jtbd").asText(""),
-                        epicNode.path("kanoClass").asText(""),
+                        com.eneik.production.services.compiler.KanoClass.normalize(
+                                epicNode.path("kanoClass").asText("")),
                         epicNode.path("cynefinDomain").asText("clear"),
                         epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
                         epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
@@ -1621,7 +1635,7 @@ public class ProjectFlowService {
                         .build();
                 java.net.http.HttpResponse<String> resp = client.send(req, java.net.http.HttpResponse.BodyHandlers.ofString());
                 if (resp.statusCode() == 200 && resp.body() != null && !resp.body().isBlank()) {
-                    var epicPlans = parseCompilerPlanContent(resp.body());
+                    var epicPlans = parseCompilerPlanContent(resp.body(), project);
                     if (!epicPlans.isEmpty()) {
                         log.info("ProjectFlowService: found merged .eneik/task-plan.json on main for project {}; instantiating task graph", project.getId());
                         return buildTaskGraphFromSlices(project, java.util.List.of(wishlist), epicPlans);
@@ -2840,21 +2854,73 @@ public class ProjectFlowService {
      * Never throws: a compliance check that can break decomposition is worse than no check at all, since
      * the failure mode becomes "no plans at all" instead of "a plan missing a legal duty".
      */
-    private void reportUncoveredStatutoryRequirements(com.fasterxml.jackson.databind.JsonNode planRoot) {
+    private void reportUncoveredStatutoryRequirements(com.fasterxml.jackson.databind.JsonNode planRoot,
+                                                      ProjectEntity project) {
         if (marketComplianceGate == null) {
             return;
         }
         try {
             String planText = marketComplianceGate.flatten(planRoot);
+            // Closes half of F18. This used to hardcode DE and US, which made it the THIRD place deciding
+            // which markets a project serves - and a project's market is now a declared fact, so there is
+            // no reason for any of them to guess. An undeclared market still means every market, which is
+            // the gate's own documented rule: assuming a narrower market is how an obligation goes missing.
+            java.util.List<String> markets = declaredMarkets(project);
             var findings = marketComplianceGate.uncoveredStatutoryRequirements(
-                    planText, java.util.List.of("DE", "US"));
+                    planText, markets.isEmpty() ? CORPUS_MARKETS : markets);
             for (var finding : findings) {
                 log.warn("Compliance gap in decomposition plan: {} appears uncovered - {} (basis: {})",
                         finding.capabilityId(), finding.requirement(), finding.source());
             }
+            recordComplianceFindings(project, findings);
         } catch (Exception e) {
             log.warn("MarketComplianceGate check failed, continuing with the plan: {}", e.getMessage());
         }
+    }
+
+    /**
+     * The other half of F18. The gate's findings used to go to {@code log.warn} and nowhere else, so a duty
+     * the plan missed and a duty that never applied looked identical from outside - which is exactly why
+     * the missing GDPR epic on test-forty-sixth could not be explained afterwards.
+     *
+     * This is the same open loop closed in FactorySelfHealthService a day earlier, in a different service:
+     * detection with no consequence. It is written to the project's factoryReport rather than raised as
+     * work, deliberately - the check is keyword-based and approximate, so it must inform the operator
+     * without generating tasks off an approximation. Blocking, or creating work, can follow once the
+     * false-positive rate is measured rather than assumed, which is the gate's own stated plan.
+     */
+    private void recordComplianceFindings(ProjectEntity project,
+                                          java.util.List<com.eneik.production.services.market.MarketComplianceGate.Finding> findings) {
+        if (project == null) {
+            return;
+        }
+        if (findings.isEmpty()) {
+            // Recorded as explicitly nothing, not left blank: "checked, found nothing" and "never checked"
+            // must stay distinguishable, which is the whole reason the verdict lattice declares its
+            // propositions up front.
+            project.setFactoryReport(appendReportLine(project.getFactoryReport(),
+                    "Compliance gate: no uncovered statutory duty found for markets "
+                            + (declaredMarkets(project).isEmpty()
+                                    ? CORPUS_MARKETS + " (market undeclared)"
+                                    : declaredMarkets(project).toString())));
+        } else {
+            StringBuilder summary = new StringBuilder("Compliance gate: ")
+                    .append(findings.size()).append(" statutory duty(ies) appear uncovered - ");
+            for (int i = 0; i < findings.size(); i++) {
+                if (i > 0) {
+                    summary.append("; ");
+                }
+                summary.append(findings.get(i).capabilityId())
+                        .append(" [").append(findings.get(i).market()).append("]");
+            }
+            project.setFactoryReport(appendReportLine(project.getFactoryReport(), summary.toString()));
+        }
+        projectRepository.save(project);
+    }
+
+    private String appendReportLine(String existing, String line) {
+        String stamped = Instant.now() + " " + line;
+        return existing == null || existing.isBlank() ? stamped : existing + "\n" + stamped;
     }
 
     /**
@@ -3012,20 +3078,57 @@ public class ProjectFlowService {
         }
     }
 
-    private String regulatoryFloorFromCorpus() {
+    /** The markets the corpus actually holds duties for. Anything else it can say nothing about. */
+    private static final java.util.List<String> CORPUS_MARKETS = java.util.List.of("DE", "US");
+
+    /**
+     * Closes F19. The floor used to render DE and US unconditionally, because nothing told this service
+     * which market a project serves - and test-forty-sixth was a Russian institution, so it was shown
+     * duties that cannot apply to it. That is scope inflation dressed as compliance, which the floor's own
+     * wording forbids.
+     *
+     * A market is a fact about the engagement that somebody knows, so it is DECLARED on the project rather
+     * than inferred from the brief's wording - the same indicator-for-property substitution repaired
+     * everywhere else this week.
+     *
+     * Undeclared keeps rendering both, deliberately. Showing a duty that does not apply costs wasted scope;
+     * omitting one that does costs a legal hole. Those are not the same size of mistake, so the default
+     * fails towards the cheaper one - and says so in the prompt, because an assumption the reader cannot
+     * see is one they cannot correct.
+     *
+     * A declared market the corpus does not cover produces a STATEMENT rather than an empty section. The
+     * corpus holding nothing for Russia is a fact about the corpus, and rendering silence would let the
+     * compiler read it as "this market has no obligations" - which is false, and is the same confusion
+     * between "undecided" and "never considered" that the verdict lattice exists to prevent.
+     */
+    private String regulatoryFloorFromCorpus(ProjectEntity project) {
         if (marketCorpusService == null) {
             return "";
         }
+        java.util.List<String> declared = declaredMarkets(project);
+        java.util.List<String> covered = declared.stream().filter(CORPUS_MARKETS::contains).toList();
+        java.util.List<String> uncovered = declared.stream().filter(m -> !CORPUS_MARKETS.contains(m)).toList();
+
+        StringBuilder preamble = new StringBuilder();
+        if (declared.isEmpty()) {
+            preamble.append("                  (This project declares no target market, so BOTH markets' ")
+                    .append("duties are listed. Apply only those whose stated condition holds for this ")
+                    .append("brief.)\n");
+        }
+        if (!uncovered.isEmpty()) {
+            preamble.append("                  (This project also serves ").append(String.join("/", uncovered))
+                    .append(", which this corpus holds no duties for. That is a gap in the corpus, NOT a ")
+                    .append("finding that those markets impose nothing - do not invent duties for them, ")
+                    .append("and do not read their absence as clearance.)\n");
+        }
+
         java.util.List<com.eneik.production.services.market.MarketCorpusService.Expectation> all =
                 new java.util.ArrayList<>();
-        // Both target markets are rendered together, each tagged, because nothing in a wishlist tells us
-        // which market THIS project serves. Guessing it would be exactly the kind of silent assumption this
-        // corpus exists to avoid; the compiler sees both and decides from the brief's own content.
-        for (String market : java.util.List.of("DE", "US")) {
+        for (String market : covered.isEmpty() && uncovered.isEmpty() ? CORPUS_MARKETS : covered) {
             all.addAll(marketCorpusService.influentialExpectations(market));
         }
         if (all.isEmpty()) {
-            return "";
+            return preamble.toString();
         }
         java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>();
         for (var e : all) {
@@ -3055,7 +3158,25 @@ public class ProjectFlowService {
             }
             lines.add(line.toString());
         }
-        return String.join("\n", lines);
+        return preamble + String.join("\n", lines);
+    }
+
+    /**
+     * Declared markets, normalised. Blank means undeclared, which is a different thing from "none" and is
+     * handled by the caller - a project that serves no market at all is not a case that exists.
+     */
+    private java.util.List<String> declaredMarkets(ProjectEntity project) {
+        if (project == null || project.getTargetMarkets() == null || project.getTargetMarkets().isBlank()) {
+            return java.util.List.of();
+        }
+        java.util.List<String> markets = new java.util.ArrayList<>();
+        for (String part : project.getTargetMarkets().split(",")) {
+            String code = part.trim().toUpperCase(java.util.Locale.ROOT);
+            if (!code.isBlank() && !markets.contains(code)) {
+                markets.add(code);
+            }
+        }
+        return markets;
     }
 
     String wishlistCompilerPromptBatch(java.util.List<WishlistEntity> wishlists, String planPath) {
@@ -3142,6 +3263,13 @@ public class ProjectFlowService {
         }
 
         UUID projectId = wishlists.get(0).getProjectId();
+        // Absent whenever the prompt is built from detached wishlists, which unit tests do and which the
+        // recovery paths can too - hence the null projectId guard, not just the empty-Optional one.
+        // regulatoryFloorFromCorpus treats null as "undeclared", so the floor renders both markets exactly
+        // as it did before F19: unknown must never narrow scope.
+        ProjectEntity promptProject = projectId == null
+                ? null
+                : projectRepository.findById(projectId).orElse(null);
         return """
                 You are Eneik Technical Lead, Product Owner, and Delivery Manager. Decompose EACH client
                 brief below independently. Do NOT implement any product code, do not run builds or tests -
@@ -3361,7 +3489,7 @@ public class ProjectFlowService {
                 separately into its own epic(s); tag every resulting epic with the matching "sourceIndex":
                 %s
                 """.formatted(existingEpicsPromptContext(projectId), valueChainsFromCorpus(),
-                        regulatoryFloorFromCorpus(), acceptanceFloorFromCorpus(), planPath,
+                        regulatoryFloorFromCorpus(promptProject), acceptanceFloorFromCorpus(), planPath,
                         wishlists.size(), briefsSection.toString());
     }
 

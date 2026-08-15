@@ -56,6 +56,21 @@ public class ProjectEntity {
     @Column(name = "factory_report", columnDefinition = "TEXT")
     private String factoryReport;
 
+    /**
+     * Which markets this product actually serves, comma-separated ISO codes - "DE", "DE,US", "RU".
+     *
+     * Closes F19. The regulatory floor renders every duty the corpus holds for DE and US, and test-forty-
+     * sixth was a Russian institution, so it was shown duties that cannot apply to it. A market is a fact
+     * about the engagement that somebody knows; inferring it from the brief's wording would be the same
+     * indicator-for-property substitution repaired everywhere else this week, so it is DECLARED here.
+     *
+     * Null means undeclared, and undeclared must keep rendering both DE and US. The asymmetry is the point:
+     * showing a duty that does not apply costs wasted scope, omitting one that does costs a legal hole, and
+     * those are not the same size of mistake.
+     */
+    @Column(name = "target_markets", length = 64)
+    private String targetMarkets;
+
     // 2026-08-09 (Phase 0, client runtime observability plan): set once ProductLaunchabilityService has
     // checked whether this project has a documented way to run itself locally, so the check happens
     // exactly once per project (on the first Continuous Orchestration tick after it reaches "delivered"),
@@ -132,6 +147,8 @@ public class ProjectEntity {
     public void setLastRuntimePreviewPort(Integer lastRuntimePreviewPort) { this.lastRuntimePreviewPort = lastRuntimePreviewPort; }
     public String getFactoryReport() { return factoryReport; }
     public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
+    public String getTargetMarkets() { return targetMarkets; }
+    public void setTargetMarkets(String targetMarkets) { this.targetMarkets = targetMarkets; }
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }
     public String getOnboardingMode() { return onboardingMode; }

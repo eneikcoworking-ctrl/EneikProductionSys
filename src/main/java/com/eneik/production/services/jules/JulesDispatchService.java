@@ -4164,7 +4164,7 @@ public class JulesDispatchService {
                         existingEpicId == null || existingEpicId.isBlank() ? null : existingEpicId,
                         epicNode.path("title").asText(""),
                         epicNode.path("jtbd").asText(""),
-                        epicNode.path("kanoClass").asText("Must-Be"),
+                        epicKanoClass(project, epicNode),
                         epicNode.path("cynefinDomain").asText("clear"),
                         epicNode.path("sixSigmaMetric").asText("Escaped defects <= 5%"),
                         epicNode.path("tocConstraintRef").asText("TOC-CONSTRAINT-DECOMPOSITION"),
@@ -4179,6 +4179,41 @@ public class JulesDispatchService {
             log.warn("Failed to parse wishlist compiler plan for project {}: {}", project.getId(), e.getMessage());
             return List.of();
         }
+    }
+
+    /**
+     * Closes F17. This used to be {@code .asText("Must-Be")}, which made a missing classification
+     * indistinguishable from a deliberate one - and that is precisely why all five epics of test-forty-sixth
+     * came out Must-Be. The vocabulary was not failing to discriminate; nothing was being asked.
+     *
+     * The correct rule was already written in THIS FILE, 1200 lines above, over parsePhilosophicalReport:
+     * "silently defaulting here would be exactly the 'system re-infers Kano and gets Must-Be' failure mode
+     * this feature exists to avoid" (operator directive, 2026-07-25). And ProjectFlowService's own parser had
+     * already been repaired on 2026-08-14, its comment claiming "the two sides of the flow now hold the same
+     * discipline" - while this parser, the one a Jules-delivered plan actually travels, still defaulted. The
+     * vocabulary now lives once, in {@link KanoClass}, because a fix that leaves the concept in two places
+     * is the defect rather than the repair.
+     *
+     * It does NOT drop the epic the way the critique path drops a critique. The asymmetry is deliberate and
+     * is about what is lost: a dropped critique costs one opinion, a dropped epic costs its requirements and
+     * every slice under it. So the epic survives carrying an explicit marker, which reaches the project tree
+     * and is therefore visible to the operator rather than buried in a log.
+     *
+     * A second, quieter consequence is repaired by the same change: SelfFalsificationEpicMatcher adds a
+     * bonus when two epics share a Kano class. While everything defaulted to Must-Be that bonus was applied
+     * to every pair equally, so a signal built to discriminate contributed a constant.
+     */
+    private String epicKanoClass(ProjectEntity project, JsonNode epicNode) {
+        String raw = epicNode.path("kanoClass").asText("");
+        String normalized = com.eneik.production.services.compiler.KanoClass.normalize(raw);
+        if (com.eneik.production.services.compiler.KanoClass.isUnclassified(normalized)) {
+            log.warn("Compiler plan for project {}: epic '{}' has kanoClass '{}' - not one of {}. Recording "
+                            + "it as {} rather than defaulting, so an unmade classification stays "
+                            + "distinguishable from a made one.",
+                    project.getId(), epicNode.path("title").asText(""), raw,
+                    com.eneik.production.services.compiler.KanoClass.valid(), normalized);
+        }
+        return normalized;
     }
 
     private List<String> jsonStringList(JsonNode node) {

@@ -405,9 +405,19 @@
             "edit",
             "have it approved",
             "publish",
+            "learn it has gone stale",
             "update or unpublish"
           ],
-          "note": "Reversibility is the defining property, not publishing: the cost of a mistake in public text is asymmetric, so unpublishing and rolling back matter more than the act of putting something live."
+          "note": "Reversibility is the defining property, not publishing: the cost of a mistake in public text is asymmetric, so unpublishing and rolling back matter more than the act of putting something live. 'Learn it has gone stale' was missing until 2026-08-16 and is the link that makes reversibility reachable: 'update or unpublish' is an action nobody performs until something tells them the text no longer holds. Without it the chain silently assumes the editor already knows, which is true only on the day they published it."
+        },
+        {
+          "actor": "owner of the collection",
+          "path": [
+            "see what the collection holds",
+            "see what is actually used",
+            "see what has gone stale"
+          ],
+          "note": "A separate path, not a step in the editor's, because it breaks independently and serves a different person: an editorial workflow can be perfect while nobody can answer what exists. GQM telemetry does not substitute - telemetry measures whether the SYSTEM works, this answers what the COLLECTION holds, and the two are different questions with different readers."
         }
       ],
       "status": "derived",
@@ -421,7 +431,7 @@
         "draft",
         "article"
       ],
-      "reasoning": "Content is published to an audience, which makes the cost of a mistake asymmetric and public. Reversibility - unpublishing, rolling back - is therefore a stronger requirement than publishing itself."
+      "reasoning": "Content is published to an audience, which makes the cost of a mistake asymmetric and public. Reversibility - unpublishing, rolling back - is therefore a stronger requirement than publishing itself. Published content also DECAYS while nothing happens to it, which is the one failure mode no action in the workflow produces: the chain up to 'publish' describes work someone is doing, and staleness is the state a document reaches by nobody doing anything. A chain built only from actions cannot represent it, which is why it was missing."
     },
     {
       "id": "document-flow",
@@ -441,9 +451,19 @@
             "route for approval",
             "get it signed",
             "store it",
-            "find it again years later"
+            "find it again years later",
+            "learn it has been superseded"
           ],
-          "note": "Retrieval is the link that decides whether the product was worth building, and it is the one nobody demonstrates at handover."
+          "note": "Retrieval is the link that decides whether the product was worth building, and it is the one nobody demonstrates at handover. Retrieval alone is not enough, though, and this is worse here than in a CMS: finding a superseded contract or an obsolete regulation and believing it current is more damaging than finding nothing at all, because the user acts on it. Added 2026-08-16."
+        },
+        {
+          "actor": "owner of the collection",
+          "path": [
+            "see what the collection holds",
+            "see what is actually used",
+            "see what has expired or been superseded"
+          ],
+          "note": "Breaks independently of the originator's path and answers a different person's question. For a body of normative documents this is the governing need, not a report bolted on: the collection's own state IS the product."
         }
       ],
       "status": "derived",
@@ -455,7 +475,7 @@
         "contract",
         "template document"
       ],
-      "reasoning": "A document is created to be relied upon later. Approval and signature establish that reliance; retrieval years afterwards is what the whole exercise was for, and it is the step nobody demonstrates at handover."
+      "reasoning": "A document is created to be relied upon later. Approval and signature establish that reliance; retrieval years afterwards is what the whole exercise was for, and it is the step nobody demonstrates at handover. Reliance is also what makes staleness dangerous rather than untidy here: a retrieved document that is silently out of date is acted upon, so 'found' and 'still true' must be different states the product can tell apart."
     },
     {
       "id": "learning",
@@ -486,8 +506,10 @@
             "author material",
             "publish a cohort",
             "see who is stuck",
-            "mark work"
-          ]
+            "mark work",
+            "learn the material has gone stale"
+          ],
+          "note": "The staleness link (added 2026-08-16, same reasoning as content-management and document-flow) is not a copy for symmetry: teaching a superseded procedure actively misinforms, and the learner then carries a certificate asserting they know something that is no longer true. 'See who is stuck' already answers the collection-state question for LEARNERS, which is why no separate owner path is added here - the gap was about the MATERIAL only."
         }
       ],
       "status": "derived",

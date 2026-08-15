@@ -357,6 +357,31 @@ draft → edit → approve → publish → learn it has gone stale → update or
 GQM telemetry does not substitute: telemetry measures whether the system works, a report answers what the
 collection holds.
 
+**Done 2026-08-16.** The diagnosis turned out to be sharper than "two chains are short", and it explains why
+the gap hit several profiles at once instead of one:
+
+> Every link in these chains describes work somebody is DOING. Staleness is the one state a document
+> reaches by **nobody doing anything**. A chain assembled from actions cannot represent it.
+
+So the fix is two different kinds of link, not one:
+
+- **Staleness** joins the existing path, because it is the trigger the path already assumed someone had:
+  `update or unpublish` is an action nobody performs until something tells them the text no longer holds.
+  Added to `content-management`, `document-flow`, and - by the same argument, not for symmetry - `learning`,
+  where teaching a superseded procedure actively misinforms and the learner then carries a certificate
+  asserting they know something that is no longer true. In `document-flow` it is worse than in a CMS:
+  finding a superseded contract and believing it current is more damaging than finding nothing, because the
+  user acts on it. "Found" and "still true" must be states the product can tell apart.
+- **Collection state** is a SEPARATE path with its own actor, the owner of the collection, because it breaks
+  independently and answers a different person: an editorial workflow can be flawless while nobody can say
+  what exists. For a body of normative documents the collection's own state IS the product.
+
+`learning` gets no owner path: `see who is stuck` already answers the collection-state question for
+learners, and the gap there was about the MATERIAL only.
+
+No code change - the chains render into the compiler prompt straight from the corpus. Pinned by two tests
+that assert the property rather than the wording, so the links cannot be quietly dropped again.
+
 ## Step 15 · Kano gradation, scoping, and market coverage
 **Closes F17, F18, F19.** Risk: low. Needs more than one project's evidence.
 
@@ -370,6 +395,71 @@ collection holds.
    Either scope the floor by the project's declared market, or state that markets outside DE/US get chains
    only.
 
+**Done 2026-08-16.**
+
+**F17 - the class was not being chosen, it was being defaulted.** `JulesDispatchService.parseCompilerPlan`
+read `epicNode.path("kanoClass").asText("Must-Be")`, so a missing classification was spelled exactly like a
+deliberate one. The vocabulary was not failing to discriminate; nothing was being asked.
+
+**And this had already been "fixed" once.** On 2026-08-14 `ProjectFlowService.parseCompilerPlanContent`
+stopped defaulting, with a comment recording that "the two sides of the flow now hold the same discipline".
+That was false. There are two parsers, and the one repaired was the secondary path; the live path a
+Jules-delivered plan actually travels still defaulted - which is exactly why all five epics of
+test-forty-sixth came out `Must-Be` **after** that fix. A repair that asserts parity without checking it is
+worth less than no repair, because it also stops anyone looking.
+
+The correct rule was additionally written **1200 lines above it in the same file**, over
+`parsePhilosophicalReport`: a critique with a missing or unrecognised `kanoClass` is dropped rather than
+defaulted, because "silently defaulting here would be exactly the *system re-infers Kano and gets Must-Be*
+failure mode this feature exists to avoid" (operator directive, 2026-07-25). So the rule existed in three
+places and two spellings.
+
+I nearly made it four: my first pass added an `Unclassified` marker to one parser while the other still
+wrote blank - two representations of one concept, the same defect in a quieter form. The vocabulary and the
+reading rule now live once, in `KanoClass`, and both parsers call it. **A fix that leaves the concept in two
+places is the defect, not the repair.**
+
+The marker is deliberately neither a valid class nor blank: a marker that is also a valid class is not a
+marker, and blank is indistinguishable from a column nobody ever wrote to. `isUnclassified` still reads the
+old blank spelling, so rows written before today do not start reading as classified.
+
+It does **not** drop the epic the way the critique path drops a critique, and the asymmetry is about what is
+lost: a dropped critique costs one opinion, a dropped epic costs its requirements and every slice under it.
+The marker reaches the project tree, so it is visible to the operator rather than buried in a log.
+
+A quieter consequence goes with it: `SelfFalsificationEpicMatcher` adds a bonus when two epics share a Kano
+class. While everything defaulted to `Must-Be`, that bonus applied to every pair equally - a signal built to
+discriminate was contributing a constant.
+
+**F19 - the market becomes a declared fact.** `ProjectEntity.targetMarkets` (migration V101). A market is
+something somebody knows about the engagement; inferring it from the brief's wording would be the same
+indicator-for-property substitution repaired everywhere else this week.
+
+Undeclared keeps rendering both DE and US **deliberately**, and now says so in the prompt: showing a duty
+that does not apply costs wasted scope, omitting one that does costs a legal hole, and those are not the
+same size of mistake, so the default fails towards the cheaper one. An assumption the reader cannot see is
+one they cannot correct.
+
+A declared market the corpus does not cover produces a **statement**, not an empty section - the corpus
+holding nothing for Russia is a fact about the corpus, and silence would read as "this market imposes
+nothing". That is the same confusion between *undecided* and *never considered* the lattice exists to
+prevent.
+
+**F18 - the omission is now explainable, from both ends.** Two defects, not one:
+
+- `reportUncoveredStatutoryRequirements` hardcoded `List.of("DE", "US")`, making it the **third** place
+  deciding a project's markets. It now uses the declared one, with the same every-market fallback the gate's
+  own documentation requires.
+- Its findings went to `log.warn` **and nowhere else**, so a duty the plan missed and a duty that never
+  applied looked identical from outside. That is precisely why the missing GDPR epic could not be explained
+  afterwards - and it is the same open loop closed in `FactorySelfHealthService` in Step 12, in a different
+  service. Findings now land on the project's `factoryReport`, including an explicit "checked, found
+  nothing" line: *checked and clean* and *never checked* must stay distinguishable.
+
+Written to the report rather than raised as work, deliberately. The check is keyword-based and approximate;
+generating tasks off an approximation is how a gate teaches people to ignore it. Blocking or task-creation
+can follow once the false-positive rate is measured, which is the gate's own stated plan.
+
 ---
 
 # PHASE VII · THE REST
@@ -382,8 +472,65 @@ collection holds.
 its Linear counterpart. Fix, or decide Linear is out of the flow and stop attempting it - a failing
 integration that nobody needs is noise that trains people to ignore provisioning warnings.
 
+**Root cause found 2026-08-16, from the live effective configuration rather than from the code:**
+
+```
+linear_team_id = "Eneik Production System"     (source: database, linear_enabled = true)
+```
+
+That is the team's **name**. `ProjectCreateInput.teamIds` takes UUIDs, so Linear answered with its generic
+`Argument Validation Error` - which named nothing, so the same configuration mistake arrived on every
+project looking like a transient integration fault. It reproduced on both test projects for the obvious
+reason: the cause is in the configuration, not the data.
+
+The client now refuses a malformed team id **before** calling, and says which value is wrong and where the
+real id lives. The check has to be local, because a remote rejection cannot name a local cause.
+
+Deliberately **no** name-to-id lookup. Resolving a name would make the setting mean two things, and a
+setting that accepts what it should reject is how the mistake survives into whatever reads it next.
+
+**Left for the operator:** the correct team UUID. Finding it means calling Linear with their key, which is
+their decision, not something to do on their behalf. Until it is set, provisioning is now `skipped:` with a
+one-line instruction instead of a recurring opaque failure - which also answers the second half of the step,
+since the noise that trained people to ignore provisioning warnings is what has been removed.
+
 ## Step 17 · English-only pass
 Risk: low, but touches ~187 files.
+
+**Scope measured 2026-08-16**, because "mostly comments" turned out to be doing some work:
+
+| Where | Files | Nature |
+|---|---|---|
+| `src/**` comments only | 52 | safe, purely linguistic |
+| `src/**` reaching code | 15 Java | needs reading: strings, one user-facing message |
+| `src/main/resources/db/migration` | 11 | **deliberately not touched** - see below |
+| `docs/` | 116 | prose, mostly historical reports |
+| `frontend/src`, `scripts` | 9 | mixed |
+
+The single most common token is `эпик`/`эпики` - 128 of the occurrences are just the word "epic".
+
+**Migrations are left alone on purpose.** `spring.flyway.validate-on-migrate=false` today, so editing an
+applied migration would not break anything now - which is exactly the trap. That setting is one a careful
+person would later turn ON, and eleven changed checksums would then detonate for whoever improved the
+configuration. Comment cosmetics are not worth planting that.
+
+### Found while measuring, NOT fixed here (a linguistic pass must not carry a semantic change)
+
+**F31. The dashboard re-infers Kano from keywords and advises acceptance on it.**
+`CommandDashboardService.classifyKano` matches substrings - including the Russian `интегра`, `база`,
+`дизайн`, `экран` - and its answer drives `kanoRecommendation`, the text telling the operator whether to
+accept the project. Three things are wrong at once:
+
+- it is a **fourth** place deciding Kano, after the two plan parsers and the critique parser, and it does so
+  by the keyword re-inference that F17 exists to remove;
+- its vocabulary is a fourth one too (`One-Dimensional`, `Indifferent`), matching neither the epic classes
+  nor the critique classes;
+- `FeatureEntity.kanoClass` already holds the real classification the compiler made, and this reads none of
+  it - so acceptance advice rests on guessed words while the actual answer sits in the database.
+
+The Cyrillic here is **load-bearing**: deleting those four substrings silently stops classifying every piece
+of historical Russian content. That is why it is recorded rather than swept up in this step - the repair is
+to read `kanoClass` instead of guessing, and that is its own change with its own test.
 
 Code, comments, commits, docs, corpora and test names are English; Russian is the language of conversation
 only. A 2026-08-15 scan found roughly 187 files containing Cyrillic, mostly comments. A dedicated pass,

@@ -203,6 +203,53 @@ class MarketCorpusServiceTest {
                 .allSatisfy(e -> assertThat(e.requirement()).doesNotContainPattern("\\d+\\s?%"));
     }
 
+    /**
+     * Closes F16, and pins the reason rather than the wording.
+     *
+     * Every link in these chains up to the last one describes work somebody is DOING. Staleness is the one
+     * state a document reaches by nobody doing anything, so a chain assembled from actions cannot represent
+     * it - which is exactly how it went missing from three profiles at once rather than one. The operator
+     * found it by asking why a knowledge base had no reports.
+     */
+    @Test
+    void collectionProfilesSayHowStalenessBecomesKnown() {
+        for (String profileId : List.of("content-management", "document-flow", "learning")) {
+            assertThat(linksOf(profileId))
+                    .as("%s holds content that decays while nothing happens to it; 'update or unpublish' "
+                            + "is an action nobody performs until something tells them the text no longer "
+                            + "holds", profileId)
+                    .anySatisfy(link -> assertThat(link).containsAnyOf("stale", "superseded"));
+        }
+    }
+
+    @Test
+    void collectionProfilesLetSomebodyAskWhatTheCollectionHolds() {
+        for (String profileId : List.of("content-management", "document-flow")) {
+            assertThat(linksOf(profileId))
+                    .as("a separate path, because it breaks independently: the editorial workflow can be "
+                            + "perfect while nobody can answer what exists. GQM telemetry does not "
+                            + "substitute - it measures whether the SYSTEM works, not what the COLLECTION "
+                            + "holds (%s)", profileId)
+                    .anySatisfy(link -> assertThat(link).contains("what the collection holds"));
+        }
+    }
+
+    private List<String> linksOf(String profileId) {
+        List<String> links = new java.util.ArrayList<>();
+        for (com.fasterxml.jackson.databind.JsonNode profile : service.profiles()) {
+            if (!profileId.equals(profile.path("id").asText(""))) {
+                continue;
+            }
+            for (com.fasterxml.jackson.databind.JsonNode path : profile.path("valuePaths")) {
+                for (com.fasterxml.jackson.databind.JsonNode link : path.path("path")) {
+                    links.add(link.asText(""));
+                }
+            }
+        }
+        assertThat(links).as("profile %s must exist in the shipped corpus", profileId).isNotEmpty();
+        return links;
+    }
+
     @Test
     void missingCorpusDegradesInsteadOfFailing() {
         MarketCorpusService absent = new MarketCorpusService("market-corpus-does-not-exist");
