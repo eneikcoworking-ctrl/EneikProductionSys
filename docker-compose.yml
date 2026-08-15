@@ -36,6 +36,15 @@ services:
       - ./runtime-launcher-workspace:/workspace
     ports:
       - "8091:8091"
+    # 2026-08-16 - this was the only one of the factory's three dependencies with no healthcheck, which is
+    # why it could be down all of 2026-08-15 with nothing saying so. Probes /openapi.json rather than
+    # /healthcheck: every route this service publishes is POST, and two of them (/launch, /teardown) act
+    # on real containers, so a liveness probe must not use them.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8091/openapi.json')"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
     restart: unless-stopped
 
   backend:

@@ -248,6 +248,31 @@ philosophy would have been skipped or run blind. The operator noticed, not the f
 2. A missing dependency of the flow (launcher, ML, database) is a declared proposition in the lattice, so
    its absence is a `withhold`, not silence.
 
+**Done 2026-08-16.** `FactorySelfHealthService` escalates through `KaizenService.recordSystemicDefectProposal`
+(`expectedGainPercent = 0`, never auto-applied, so the autonomy boundary holds: finding a fault in itself is
+not a licence to repair itself), deduplicated on the assessment text so a persisting condition yields one
+finding rather than one per hour. New `InfrastructureVerdictLayer` declares three propositions - launcher,
+ML, database.
+
+Two things found while doing it, both kept as reasoning rather than as separate findings:
+
+- `runtime-launcher` is the only one of the three with **no `healthcheck:` block in docker-compose.yml**.
+  That is why its being down was invisible; the layer now covers it, but the compose gap is real and
+  narrower to fix.
+- The ML shape is the same defect already live in the code: `MLPredictionServiceClient` returns `false`
+  from bottleneck prediction and `null` from embed when the call fails, so an unreachable ML service reads
+  downstream as a positive finding of *no bottleneck* and *no semantic neighbours*. The withheld
+  proposition names that consequence explicitly.
+
+Each proposition is about REACHABILITY, not about the dependency's opinion of its own health - any answer
+settles it, including a 503. Conflating the two would let one sick product block every other project's
+verdict. The probe is `GET /openapi.json` (FastAPI's own, side-effect free): the launcher's four real
+routes are all POST and two of them act on live containers, so a check that caused the state it reports on
+would be worse than no check.
+
+Safe by construction for now: `VerdictReconciliation` is read by the controller only, so a layer able to
+`withhold` cannot block anything until Step 18 wires the gates.
+
 ---
 
 # PHASE V · THE PRODUCT REACHES THE CLIENT

@@ -33,6 +33,19 @@ public class FactorySelfHealthService {
 
     private final JdbcTemplate jdbcTemplate;
 
+    // Optional so this service keeps working - and keeps being testable in isolation - when Kaizen is not
+    // wired. A monitor that cannot start because its reporting channel is absent is worse than one that
+    // logs; the point of this change is to ADD a channel, not to make the existing one conditional.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.kaizen.service.KaizenService kaizenService;
+
+    /**
+     * The last assessment already reported, so a condition that persists produces ONE finding rather than
+     * one per hour. A monitor that repeats itself trains people to filter it, which returns the system to
+     * being unwatched - the state this service exists to end.
+     */
+    private volatile String lastReportedAssessment;
+
     @Value("${factory-self-health.db-file:./data/eneik_db.mv.db}")
     private String databaseFile;
 
@@ -57,10 +70,49 @@ public class FactorySelfHealthService {
             DatabaseHealth health = inspect();
             if (!health.healthy()) {
                 log.warn("FactorySelfHealth: {}", health.assessment());
+                escalate(health);
+            } else {
+                // Recovered: the next occurrence is a new event and deserves to be reported again.
+                lastReportedAssessment = null;
             }
         } catch (Exception e) {
             // Self-monitoring must never be the thing that breaks the system it monitors.
             log.debug("FactorySelfHealth: could not assess database health: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * Puts a finding about the FACTORY into the same stream as findings about client products.
+     *
+     * This service detected the factory's own ill health and wrote log.warn - which is the shape of a
+     * closed loop with the closure missing, because nothing reads logs autonomously. The 2026-08-14
+     * incident is the proof: a 1678 MB file holding 96 MB of live data, the connection pool exhausted for
+     * sixteen straight hours, every scheduled task failing, and the only symptom that reached a human was
+     * the operator noticing the machine felt slow.
+     *
+     * SYSTEMIC_DEFECT is deliberately the category: it carries expectedGainPercent = 0 and is never
+     * auto-applied, so this reaches a human as work rather than becoming an automatic change to the
+     * factory's own configuration. Detecting a problem in oneself does not license repairing oneself.
+     */
+    private void escalate(DatabaseHealth health) {
+        if (kaizenService == null) {
+            return;
+        }
+        String assessment = health.assessment();
+        if (assessment == null || assessment.equals(lastReportedAssessment)) {
+            return;
+        }
+        try {
+            kaizenService.recordSystemicDefectProposal(null, "Global",
+                    "Factory self-health: the orchestrator's own database is unhealthy",
+                    assessment + " Detected by FactorySelfHealthService, which watches the factory itself "
+                            + "rather than the products it builds. Review-only: the factory's own "
+                            + "configuration is never changed automatically.");
+            lastReportedAssessment = assessment;
+        } catch (Exception e) {
+            // Self-monitoring must never be the thing that breaks the system it monitors - the same rule
+            // that governs inspect() below.
+            log.debug("FactorySelfHealth: could not record a systemic-defect proposal: {}", e.getMessage());
         }
     }
 
