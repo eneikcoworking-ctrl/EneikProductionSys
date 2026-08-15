@@ -15,6 +15,9 @@ import java.util.Optional;
 @Service
 public class SystemSettingsService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(SystemSettingsService.class);
+
     private static final Map<String, SettingDefinition> DEFINITIONS = definitions();
 
     private final JdbcTemplate jdbcTemplate;
@@ -41,6 +44,44 @@ public class SystemSettingsService {
                 ? null
                 : definition.secret() ? mask(effective.value()) : effective.value();
         return new SettingDto(definition.key(), enabled, maskedValue, effective.source());
+    }
+
+    /**
+     * Names, at startup, every boolean flag that is registered and has no value anywhere.
+     *
+     * A flag whose source is `none` reads `false` through {@link #effectiveBoolean}, so its feature is off
+     * and nobody decided that - it is indistinguishable from a deliberate `false` at every call site. This
+     * has now cost real capability twice: `design_system_falsification_enabled` silently disabled an entire
+     * falsification pass, and `system_orchestrator_repository_name` produced "Unknown setting key" errors
+     * until it was registered. A registered-but-valueless flag is a defect, not a default, and the only
+     * reason it survived is that nothing ever said it out loud.
+     *
+     * Reports rather than refuses to start: a factory that will not boot because a flag is unset trades a
+     * silent gap for a total outage, which is a worse failure for a system meant to run unattended.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void reportValuelessBooleanFlags() {
+        java.util.List<String> valueless;
+        try {
+            valueless = DEFINITIONS.values().stream()
+                    .filter(SettingDefinition::enabledFlag)
+                    .filter(d -> "none".equals(effectiveSetting(d.key()).source()))
+                    .map(SettingDefinition::key)
+                    .sorted()
+                    .toList();
+        } catch (RuntimeException e) {
+            // A reporter that can throw is a reporter that can become the very outage it exists to
+            // prevent. Reading settings must never be able to break the startup it is describing.
+            log.warn("SystemSettingsService: could not check for valueless boolean flags: {}", e.getMessage());
+            return;
+        }
+        if (valueless.isEmpty()) {
+            return;
+        }
+        log.warn("SystemSettingsService: {} boolean flag(s) are registered with NO value in database, env or "
+                        + "properties, so they read false and their features are OFF without anyone having "
+                        + "decided that: {}. Set them explicitly - an unset flag is a defect, not a default.",
+                valueless.size(), valueless);
     }
 
     public boolean isKnownKey(String key) {
@@ -98,11 +139,16 @@ public class SystemSettingsService {
 
     private Optional<String> databaseValue(String key) {
         try {
-            return jdbcTemplate.query(
+            // JdbcTemplate.query(String, ResultSetExtractor, Object...) is declared @Nullable, so this
+            // Optional-returning method could itself return null and every caller does .isPresent() on it
+            // without a null check (2026-08-15 - found by the new startup reporter, which NPE'd here). An
+            // Optional that can be null defeats the entire point of returning an Optional.
+            Optional<String> value = jdbcTemplate.query(
                     "SELECT \"value\" FROM system_settings WHERE \"key\" = ?",
                     rs -> rs.next() ? Optional.ofNullable(rs.getString("value")) : Optional.empty(),
                     key
             );
+            return value == null ? Optional.empty() : value;
         } catch (DataAccessException e) {
             return Optional.empty();
         }

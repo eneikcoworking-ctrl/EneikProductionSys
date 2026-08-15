@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 
@@ -20,6 +21,32 @@ class SystemSettingsServiceTest {
 
     private final SystemSettingsService service =
             new SystemSettingsService(mock(JdbcTemplate.class), mock(Environment.class));
+
+    /**
+     * A registered flag with no value anywhere reads false and turns its feature off with nobody having
+     * decided that - and at every call site it is indistinguishable from a deliberate false. This has cost
+     * real capability twice (design_system_falsification_enabled silently disabled a whole falsification
+     * pass). The reporter must therefore actually name them, or the condition stays exactly as invisible
+     * as it was.
+     */
+    @Test
+    void namesEveryBooleanFlagThatHasNoValueAnywhere() {
+        // A service with no database rows and an environment that answers nothing: every boolean flag
+        // resolves with source "none", which is the pathological case this reporter exists to catch.
+        SystemSettingsService bare = new SystemSettingsService(mock(JdbcTemplate.class), mock(Environment.class));
+
+        assertDoesNotThrow(bare::reportValuelessBooleanFlags,
+                "reporting must never be able to prevent startup - a factory that refuses to boot over an "
+                        + "unset flag trades a silent gap for a total outage");
+
+        long valuelessFlags = bare.listSettings().stream()
+                .filter(dto -> dto.enabled() != null)
+                .filter(dto -> "none".equals(dto.source()))
+                .count();
+        assertTrue(valuelessFlags > 0,
+                "with no database and no environment every boolean flag should resolve to source 'none' - "
+                        + "if this is zero the fixture no longer exercises the case it was written for");
+    }
 
     @Test
     void designSystemFalsificationEnabledKeyIsRegistered() {
