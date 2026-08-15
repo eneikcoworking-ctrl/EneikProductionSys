@@ -589,6 +589,77 @@ public class GitHubPullRequestService {
     }
 
     /**
+     * Writes a file to the default branch, creating it or updating it in place.
+     *
+     * Deliberately a SEPARATE method rather than a change to {@link #commitFile} above (2026-08-15):
+     * fourteen call sites depend on that method's create-only semantics, and at least one depends on the
+     * failure - promoting a design draft to the approved folder must NOT silently overwrite an already
+     * approved mockup, so a second write there has to fail. Widening commitFile would have fixed the
+     * bootstrap and broken design-asset promotion in the same commit.
+     *
+     * Why it is needed: GitHub's contents API requires the current blob `sha` when updating an existing
+     * path and answers 422 without it. Bootstrap reused the create-only method for FIXED paths, one of
+     * which (`.gitignore`) the project factory has already written seconds earlier, so the scaffold's own
+     * `.gitignore` - the one carrying `target/` and `data/` - never landed on any project. Confirmed live
+     * on test-forty-sixth: `.gitignore` has exactly one commit, the factory's, and the repository
+     * consequently accumulated build artifacts that made every pair of compiling tasks conflict.
+     */
+    public boolean upsertFile(ProjectEntity project, String path, byte[] content, String commitMessage) {
+        if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return false;
+        }
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(path);
+            var body = objectMapper.createObjectNode();
+            body.put("message", commitMessage);
+            body.put("content", java.util.Base64.getEncoder().encodeToString(content));
+            // An absent sha means "create"; a present one means "update THIS version" and lets GitHub
+            // reject the write if someone else changed the file meanwhile, rather than clobbering them.
+            existingFileSha(repoRef, path, token).ifPresent(sha -> body.put("sha", sha));
+            HttpRequest request = baseRequest(urlPath, token)
+                    .PUT(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = sendGitHub(request);
+            if (response.statusCode() == 200 || response.statusCode() == 201) {
+                return true;
+            }
+            log.warn("GitHub upsert-file failed for {}/{} path={}: status={} body={}",
+                    repoRef.owner(), repoRef.repo(), path, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("Could not upsert file {} for project {}: {}", path, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
+    /** Current blob sha of a path on the default branch, or empty when the path does not exist yet. */
+    private Optional<String> existingFileSha(RepoRef repoRef, String path, String token) {
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/contents/" + encodePath(path);
+            HttpResponse<String> response = sendGitHub(baseRequest(urlPath, token).GET().build());
+            if (response.statusCode() != 200) {
+                return Optional.empty();
+            }
+            JsonNode node = objectMapper.readTree(response.body());
+            String sha = node.path("sha").asText("");
+            return sha.isBlank() ? Optional.empty() : Optional.of(sha);
+        } catch (Exception e) {
+            // Treated as "does not exist": the write then attempts a create and fails loudly if the path
+            // really was there, which is strictly better than silently skipping the write.
+            return Optional.empty();
+        }
+    }
+
+    /**
      * Overwrites (or removes) one path on a PR branch so it matches `main`'s current content for that
      * path - a plain git commit, never a Jules session. Built for resolving conflicts on our own
      * transient `.eneik/*.json` record files (task-plan/review-verdict/design-review-verdict): once

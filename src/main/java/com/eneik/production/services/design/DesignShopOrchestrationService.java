@@ -59,6 +59,7 @@ public class DesignShopOrchestrationService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final SystemSettingsService settingsService;
     private final DesignConsistencyAuditService consistencyAuditService;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
 
     // Self-injected proxy reference (2026-08-14, same pattern/reason as JulesDispatchService.self): a plain
     // `this.claimStartCycle(...)` call bypasses the Spring AOP proxy entirely, so @Transactional on it
@@ -75,6 +76,7 @@ public class DesignShopOrchestrationService {
                                            GitHubPullRequestService gitHubPullRequestService,
                                            SystemSettingsService settingsService,
                                            DesignConsistencyAuditService consistencyAuditService,
+                                           com.eneik.production.repositories.WishlistRepository wishlistRepository,
                                            @org.springframework.context.annotation.Lazy DesignShopOrchestrationService self) {
         this.projectRepository = projectRepository;
         this.designShopCycleRepository = designShopCycleRepository;
@@ -85,6 +87,7 @@ public class DesignShopOrchestrationService {
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.settingsService = settingsService;
         this.consistencyAuditService = consistencyAuditService;
+        this.wishlistRepository = wishlistRepository;
         this.self = self;
     }
 
@@ -187,6 +190,71 @@ public class DesignShopOrchestrationService {
         designShopCycleRepository.releaseStartCycleClaim(projectId);
     }
 
+    /**
+     * Whether the committed draft actually carries HTML a Jules session could implement pixel-perfect
+     * against - the property this stage needs, asked directly instead of inferred from the generator's
+     * name. `mockup.html` is the exact filename `DesignAssetService.commitDraftToGitHub` writes and
+     * `JulesDispatchService.completeDesignReview` later promotes, so its presence is the whole criterion.
+     *
+     * A read failure returns false, which routes to the wrong-kind branch rather than to a retry: if the
+     * file cannot be read there is nothing for the next stage to consume either way, and a retry that
+     * cannot observe its own precondition is the loop this method exists to prevent.
+     */
+    boolean hasImplementableHtml(ProjectEntity project, String repoDraftPath) {
+        try {
+            // fetchFileBytes, not fetchFileContent: this is the accessor the rest of this class already
+            // uses for this exact file (captureBaseline reads the same mockup.html to extract tokens), so
+            // the property is read one way throughout instead of two.
+            return gitHubPullRequestService
+                    .fetchFileBytes(project, "main", repoDraftPath + "/mockup.html")
+                    .filter(bytes -> bytes.length > 0)
+                    .isPresent();
+        } catch (Exception e) {
+            log.warn("DesignShopOrchestrationService: could not read {}/mockup.html for project {}: {}",
+                    repoDraftPath, project.getId(), e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Makes a wrong-kind generation visible instead of leaving it as a warning nobody reads.
+     *
+     * Deliberately a wishlist rather than a silent counter: a degraded generator is a real product-affecting
+     * condition - the project simply stops getting design rounds - and the flow's own way of surfacing such
+     * a thing is to create work for it. Never throws: a failure to record a degradation must not become a
+     * second failure on top of the first.
+     */
+    private void recordUnusableDraftConcern(ProjectEntity project, DesignAssetService.DesignAssetResult result) {
+        try {
+            // One per project: the condition is a degraded generator, not a per-attempt event, so a second
+            // identical row would be the same unbounded repetition in another form.
+            if (wishlistRepository.existsByProjectIdAndSource(project.getId(),
+                    com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern)) {
+                return;
+            }
+            com.eneik.production.models.persistence.WishlistEntity wishlist =
+                    new com.eneik.production.models.persistence.WishlistEntity();
+            wishlist.setProjectId(project.getId());
+            wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.design_review_concern_pattern);
+            wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+            wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+            wishlist.setCynefinDomain("clear");
+            wishlist.setContent("Design generation produced no implementable HTML: the generator answered "
+                    + "with model=" + result.model() + " and message=\"" + result.message() + "\", and the "
+                    + "committed draft carries no mockup.html for a session to implement against. The design "
+                    + "shop cannot proceed for this project until generation returns an implementable mockup. "
+                    + "Not retried automatically - retrying cannot change the kind of artifact a generator "
+                    + "produces.");
+            wishlist.setJtbd("When the design generator degrades to producing raw images, I want that "
+                    + "surfaced as work rather than repeated silently, so the project stops losing design "
+                    + "rounds without anyone knowing");
+            wishlistRepository.save(wishlist);
+        } catch (Exception e) {
+            log.warn("DesignShopOrchestrationService: could not record unusable-draft concern for project {}: {}",
+                    project.getId(), e.getMessage());
+        }
+    }
+
     private void startCycle(ProjectEntity project, DesignShopCycleEntity cycle,
                              ClientDeliverableReadinessService.Readiness readiness) {
         String brief = "Full-product design refresh for " + project.getName() + " - round complete ("
@@ -204,20 +272,46 @@ public class DesignShopOrchestrationService {
                         null, cycle.declaredColorsList(), cycle.declaredFontsList())
                 : designAssetService.generateAsset(project, context, brief, "mockup", "fast", false);
 
-        // Stitch-only for this stage (operator directive 2026-08-10): the nano-banana fallback produces a
-        // raw image with no HTML/CSS a Jules session could implement pixel-perfect against, and no
-        // mockup.html for JulesDispatchService.completeDesignReview's promotion step to find - it exists
-        // for future content-asset generation, not the design shop's mockup pipeline.
-        if (!result.available() || !"stitch".equals(result.model())
-                || result.repoDraftPath() == null || result.repoDraftPath().isBlank()) {
-            // Left lastWasReady=false so the next tick retries while readiness is still true, instead of
-            // silently losing this round - generation failures (rate limits, transient Stitch errors,
-            // a nano-banana fallback we don't want) are exactly the kind of thing that resolves itself on
-            // retry. The start-cycle claim must be released too, or that retry would be silently blocked
-            // by an attempt that never actually finished.
+        // What this stage needs is a mockup a Jules session can implement pixel-perfect against, and that
+        // JulesDispatchService.completeDesignReview's promotion step can find: implementable HTML at a known
+        // path. That is a property OF THE ARTIFACT. The previous gate asked instead WHO PRODUCED IT -
+        // `"stitch".equals(result.model())` - which is a proxy, and proxies fail in both directions: a
+        // future model emitting real HTML would be rejected on its name, and Stitch emitting a bare image
+        // would be accepted on its name.
+        //
+        // The failure branch then assumed transience: "generation failures ... are exactly the kind of thing
+        // that resolves itself on retry". That is a modal claim and it is false for one of the two failure
+        // kinds. Retrying changes WHICH WORLD we are in - the service may be free next time - but it cannot
+        // change WHAT KIND of thing was produced. Confirmed live on test-forty-sixth 2026-08-15: six
+        // identical rejections across four hours (10:24, 11:15, 11:24, 13:40, 13:45, 13:54), each one a real
+        // generation call, with `model=gemini-3.1-flash-image` and `message=Generated design asset and
+        // metadata.` - the generation SUCCEEDED every time and was discarded on the model's name.
+        //
+        // So failures are split by modality, and the loop closes because no quantity of retries changes the
+        // kind of a thing - not because a counter caps it.
+        boolean generationReached = result.available();
+        boolean implementableDraft = result.repoDraftPath() != null && !result.repoDraftPath().isBlank()
+                && hasImplementableHtml(project, result.repoDraftPath());
+
+        if (!generationReached) {
+            // Unavailable: about THIS world - rate limit, timeout, transport. Retrying is rational, so the
+            // claim is released and the next tick tries again while readiness still holds.
             self.releaseStartCycleClaim(project.getId());
-            log.warn("DesignShopOrchestrationService: no usable Stitch draft for project {} (model={}, message={}); will retry next tick",
+            log.warn("DesignShopOrchestrationService: design generation unavailable for project {} (model={}, message={}); "
+                            + "retrying next tick",
                     project.getId(), result.model(), result.message());
+            return;
+        }
+        if (!implementableDraft) {
+            // Wrong kind: the generator answered, and what it produced is not the kind of artifact this
+            // stage consumes. No retry - the same call would produce the same kind. Recorded as a concern so
+            // the degradation is visible instead of being an endless warning nobody reads.
+            self.releaseStartCycleClaim(project.getId());
+            recordUnusableDraftConcern(project, result);
+            log.warn("DesignShopOrchestrationService: design generation for project {} produced no implementable HTML "
+                            + "(model={}, draftPath={}, message={}); NOT retrying - retrying cannot change the kind of "
+                            + "artifact produced. Recorded for review.",
+                    project.getId(), result.model(), result.repoDraftPath(), result.message());
             return;
         }
 

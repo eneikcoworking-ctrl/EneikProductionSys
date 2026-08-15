@@ -709,15 +709,29 @@ public class ProjectFlowService {
                 content.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: repository execution boundary and runtime contract"
         );
-        if (committed) {
+        if (!committed) {
+            log.warn("Environment bootstrap commit failed for project {}; leaving task queued for normal Jules dispatch as fallback", project.getId());
+        }
+        // The scaffold commits run BEFORE the task is marked done, and their results decide whether it is
+        // marked at all (2026-08-15). Previously `done` was set on the strength of bootstrap.md alone and
+        // these two calls ran afterwards fire-and-forget, their booleans reaching nothing but a log line.
+        // Confirmed live on test-forty-sixth: bootstrap.md, pom.xml and application.properties landed while
+        // the scaffold's own .gitignore did not, the task reported done, 21 dependent tasks were dispatched
+        // against a boundary that was never fully established, and the missing target/ ignore rule made
+        // every pair of compiling tasks conflict. A task that says done must mean its work was delivered.
+        boolean backendScaffolded = commitDeterministicJavaScaffoldIfAbsent(project);
+        boolean frontendScaffolded = commitDeterministicFrontendScaffoldIfAbsent(project);
+
+        if (committed && backendScaffolded && frontendScaffolded) {
             task.setStatus(TaskStatus.done);
             taskRepository.save(task);
             log.info("Environment bootstrap for project {} completed deterministically by the backend (no Jules session needed): docs/architecture/bootstrap.md", project.getId());
         } else {
-            log.warn("Environment bootstrap commit failed for project {}; leaving task queued for normal Jules dispatch as fallback", project.getId());
+            log.warn("Environment bootstrap for project {} incomplete (doc={}, backend scaffold={}, frontend scaffold={}); "
+                            + "leaving task queued so the normal Jules dispatch path can finish it instead of "
+                            + "reporting a boundary that was never established",
+                    project.getId(), committed, backendScaffolded, frontendScaffolded);
         }
-        commitDeterministicJavaScaffoldIfAbsent(project);
-        commitDeterministicFrontendScaffoldIfAbsent(project);
     }
 
     // Found live (test-thirty-fifth, 2026-07-23): two separate epics each independently dispatched a
@@ -734,9 +748,10 @@ public class ProjectFlowService {
     // this reuses that same convention rather than inventing a new one. Never touches a brownfield repo or
     // a project that already committed to a different stack (Next.js, Python, etc.) - absence of ALL three
     // common manifests is required before writing anything.
-    private void commitDeterministicJavaScaffoldIfAbsent(ProjectEntity project) {
+    private boolean commitDeterministicJavaScaffoldIfAbsent(ProjectEntity project) {
         if (!"greenfield".equals(project.getOnboardingMode())) {
-            return;
+            // Brownfield repos are never scaffolded, so nothing was owed and nothing failed.
+            return true;
         }
         boolean pomExists = gitHubPullRequestService.fetchFileContent(project, "main", "pom.xml").isPresent();
         boolean packageJsonExists = gitHubPullRequestService.fetchFileContent(project, "main", "package.json").isPresent();
@@ -744,23 +759,25 @@ public class ProjectFlowService {
         if (pomExists || packageJsonExists || requirementsExists) {
             log.info("Skipping deterministic backend scaffold for project {}: a manifest already exists (pom.xml={}, package.json={}, requirements.txt={})",
                     project.getId(), pomExists, packageJsonExists, requirementsExists);
-            return;
+            // Nothing was owed, so nothing failed: a project that already carries a manifest is a
+            // brownfield/other-stack repo this scaffold deliberately never touches.
+            return true;
         }
 
         String artifactId = javaArtifactId(project);
-        boolean pomCommitted = gitHubPullRequestService.commitFile(
+        boolean pomCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "pom.xml",
                 javaScaffoldPomXml(artifactId).getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: minimal Java/Spring Boot Maven skeleton (deterministic, avoids cross-epic scaffold collisions)"
         );
-        boolean gitignoreCommitted = gitHubPullRequestService.commitFile(
+        boolean gitignoreCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 ".gitignore",
                 javaScaffoldGitignore().getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: standard Java/Maven .gitignore"
         );
-        boolean applicationPropertiesCommitted = gitHubPullRequestService.commitFile(
+        boolean applicationPropertiesCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "src/main/resources/application.properties",
                 javaScaffoldApplicationProperties().getBytes(java.nio.charset.StandardCharsets.UTF_8),
@@ -772,6 +789,7 @@ public class ProjectFlowService {
         recordGlobalFileClaimIfCommitted(project, "pom.xml", pomCommitted);
         recordGlobalFileClaimIfCommitted(project, ".gitignore", gitignoreCommitted);
         recordGlobalFileClaimIfCommitted(project, "src/main/resources/application.properties", applicationPropertiesCommitted);
+        return pomCommitted && gitignoreCommitted && applicationPropertiesCommitted;
     }
 
     // Feeds TechnicalLeadCompiler.applyCrossEpicCollisionGuard: a project-wide claim (taskId=null,
@@ -809,9 +827,10 @@ public class ProjectFlowService {
     // the Java scaffold above already uses.
     // Package-private (not private) so it's directly unit-testable without wiring the whole bootstrap
     // task-creation pipeline, same convention already used for wishlistCompilerPromptBatch below.
-    void commitDeterministicFrontendScaffoldIfAbsent(ProjectEntity project) {
+    boolean commitDeterministicFrontendScaffoldIfAbsent(ProjectEntity project) {
         if (!"greenfield".equals(project.getOnboardingMode())) {
-            return;
+            // Brownfield repos are never scaffolded, so nothing was owed and nothing failed.
+            return true;
         }
         boolean pomExists = gitHubPullRequestService.fetchFileContent(project, "main", "pom.xml").isPresent();
         boolean packageJsonExists = gitHubPullRequestService.fetchFileContent(project, "main", "package.json").isPresent();
@@ -822,41 +841,41 @@ public class ProjectFlowService {
             log.info("Skipping deterministic frontend scaffold for project {}: a manifest already exists "
                             + "(pom.xml={}, package.json={}, frontend/package.json={}, frontend/src/App.svelte={}, requirements.txt={})",
                     project.getId(), pomExists, packageJsonExists, frontendPackageJsonExists, appSvelteExists, requirementsExists);
-            return;
+            return true;
         }
 
         String appTitle = defaultText(project.getName(), "Generated App");
-        boolean packageJsonCommitted = gitHubPullRequestService.commitFile(
+        boolean packageJsonCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/package.json",
                 frontendScaffoldPackageJson(javaArtifactId(project)).getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: minimal Svelte/Vite package.json (deterministic, avoids cross-эпик scaffold collisions)"
         );
-        boolean viteConfigCommitted = gitHubPullRequestService.commitFile(
+        boolean viteConfigCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/vite.config.js",
                 frontendScaffoldViteConfig().getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: minimal Vite config"
         );
-        boolean indexHtmlCommitted = gitHubPullRequestService.commitFile(
+        boolean indexHtmlCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/index.html",
                 frontendScaffoldIndexHtml(appTitle).getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: minimal index.html"
         );
-        boolean mainJsCommitted = gitHubPullRequestService.commitFile(
+        boolean mainJsCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/src/main.js",
                 frontendScaffoldMainJs().getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: Svelte app entrypoint"
         );
-        boolean routesJsCommitted = gitHubPullRequestService.commitFile(
+        boolean routesJsCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/src/routes.js",
                 frontendScaffoldRoutesJs().getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "EMS bootstrap: routes registry (append-only extension point for later эпики's UI)"
         );
-        boolean appSvelteCommitted = gitHubPullRequestService.commitFile(
+        boolean appSvelteCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/src/App.svelte",
                 frontendScaffoldAppSvelte(appTitle).getBytes(java.nio.charset.StandardCharsets.UTF_8),
@@ -873,6 +892,8 @@ public class ProjectFlowService {
         recordGlobalFileClaimIfCommitted(project, "frontend/src/main.js", mainJsCommitted);
         recordGlobalFileClaimIfCommitted(project, "frontend/src/routes.js", routesJsCommitted);
         recordGlobalFileClaimIfCommitted(project, "frontend/src/App.svelte", appSvelteCommitted);
+        return packageJsonCommitted && viteConfigCommitted && indexHtmlCommitted
+                && mainJsCommitted && routesJsCommitted && appSvelteCommitted;
     }
 
     private String frontendScaffoldPackageJson(String appName) {

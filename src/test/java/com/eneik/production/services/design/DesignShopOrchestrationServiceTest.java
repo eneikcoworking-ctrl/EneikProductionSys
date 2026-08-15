@@ -33,6 +33,8 @@ class DesignShopOrchestrationServiceTest {
     private GitHubPullRequestService gitHubPullRequestService;
     private SystemSettingsService settingsService;
     private DesignConsistencyAuditService consistencyAuditService;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository =
+            org.mockito.Mockito.mock(com.eneik.production.repositories.WishlistRepository.class);
     private DesignShopOrchestrationService service;
     private ProjectEntity project;
 
@@ -50,7 +52,7 @@ class DesignShopOrchestrationServiceTest {
 
         service = new DesignShopOrchestrationService(projectRepository, designShopCycleRepository,
                 readinessService, designAssetService, projectFlowService, contextService,
-                gitHubPullRequestService, settingsService, consistencyAuditService, null);
+                gitHubPullRequestService, settingsService, consistencyAuditService, wishlistRepository, null);
         // 2026-08-14 (bug-hunt sweep): ensureCycleRow/claimStartCycle/releaseStartCycleClaim are called via
         // a self-proxy field (REQUIRED transaction, same pattern as JulesDispatchService.self) - wired to
         // the instance itself here since there's no real Spring proxy in a plain unit test.
@@ -144,14 +146,25 @@ class DesignShopOrchestrationServiceTest {
         when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
                 isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk"))))
                 .thenReturn(result);
+        // 2026-08-15: the draft is now verified to carry implementable HTML before the cycle proceeds -
+        // the gate asks after the artifact's property rather than the generator's name - so a usable draft
+        // has to actually be present for this path to run at all.
+        when(gitHubPullRequestService.fetchFileBytes(eq(project), any(), eq("design/draft/round-2/mockup.html")))
+                .thenReturn(Optional.of("<style>body{background:#2e3a8c;}</style>".getBytes()));
 
         service.tick();
 
         verify(designAssetService).generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
                 isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk")));
         verify(projectFlowService).dispatchDesignReview(eq(project), eq("design/draft/round-2"), anyString());
-        // The already-established baseline must not be re-fetched/re-captured on a later cycle.
-        verify(gitHubPullRequestService, never()).fetchFileBytes(eq(project), any(), eq("design/draft/round-2/mockup.html"));
+        // The already-established baseline must not be re-captured on a later cycle. Asserted on the
+        // stored tokens rather than on whether the file was read: since 2026-08-15 the same file is also
+        // read to verify the draft carries implementable HTML, which is a different question from
+        // re-extracting a palette, so "was it read" no longer expresses the claim.
+        ArgumentCaptor<DesignShopCycleEntity> savedCycle = ArgumentCaptor.forClass(DesignShopCycleEntity.class);
+        verify(designShopCycleRepository, atLeastOnce()).save(savedCycle.capture());
+        assertThat(savedCycle.getAllValues())
+                .allSatisfy(c -> assertThat(c.getDeclaredColors()).isEqualTo("#2e3a8c,#14b8a6"));
     }
 
     @Test
