@@ -1,0 +1,12 @@
+-- 2026-08-15: an automated path must not perform an irreversible action to resolve uncertainty.
+--
+-- Exhausting the 3-attempt conflict budget used to call BranchGarbageCollectorService with the head ref,
+-- whose Step 2 deletes the branch - so running out of automatic attempts DESTROYED the work instead of
+-- setting it aside. Confirmed live on test-forty-sixth: PR#12 vanished and the plan shrank from 21 tasks
+-- to 19, with no counter anywhere distinguishing "conflict resolved" from "conflict removed along with
+-- the work".
+--
+-- The budget running out is not evidence that a branch is unrecoverable; it is evidence that this many
+-- automatic attempts did not succeed. This column records the branch that was kept, so the work stays
+-- findable by whoever looks.
+ALTER TABLE task_conflicts ADD COLUMN preserved_branch VARCHAR(255);

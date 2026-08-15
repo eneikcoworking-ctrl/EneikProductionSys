@@ -72,8 +72,21 @@ public class AutoMergeService {
 
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
+
+    // Declared ownership, the ground substitutable() stands on - see its javadoc.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.eneik.production.services.automerge.ConflictEntropyCalculator conflictEntropyCalculator;
+    private com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
+
+    /**
+     * How many automatic resolution attempts one conflict gets before the flow stops trying.
+     *
+     * A DECLARED ARBITRARY BUDGET, not a measurement (2026-08-15). Nothing here establishes that a fourth
+     * attempt would fail; per-attempt outcomes are not yet recorded, so P(success | attempt k) cannot be
+     * computed. When they are, this number should be derived from that distribution instead of asserted -
+     * the same rule the market corpus applies to `derived` entries: reasoning may be stated, a number
+     * requires measurement.
+     */
+    static final int MAX_CONFLICT_ATTEMPTS = 3;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.orchestration.BranchGarbageCollectorService branchGarbageCollectorService;
     @org.springframework.beans.factory.annotation.Autowired(required = false)
@@ -368,18 +381,14 @@ public class AutoMergeService {
                 }
                 List<String> allFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
 
-                if (conflictEntropyCalculator != null) {
-                    var entropyResult = conflictEntropyCalculator.calculateEntropy(allFiles);
-                    log.info("[AUTOMERGE-ENTROPY] Conflict entropy H(C) = {} for PR {} (Trivial: {})",
-                            entropyResult.shannonEntropy(), target.pullNumber(), entropyResult.isTrivialOrchestratorConflict());
-                }
+                // The Shannon-entropy conflict score was removed here on 2026-08-15. It participated in no
+                // decision - computed, logged, discarded, while a hardcoded path filter decided - and it
+                // could not have participated correctly: H(p,1-p) is symmetric, so a PURE PRODUCT-CODE
+                // conflict scores H = 0 exactly like a pure orchestrator one, and the documented rule
+                // "H(C) < 0.2 -> trivial" would have auto-resolved the most dangerous case. Entropy also
+                // averages where safety requires conjunction. substitutable()/nonSubstitutableCount() below
+                // ask the question that was actually meant.
 
-                List<String> files = allFiles.stream()
-                        .filter(f -> f.startsWith(".eneik/") || f.equals(".gitignore"))
-                        .toList();
-                if (files.isEmpty()) {
-                    continue;
-                }
                 var sessionOpt = julesSessionRepository.findById(review.getJulesSessionId());
                 if (sessionOpt.isEmpty()) {
                     continue;
@@ -390,6 +399,14 @@ public class AutoMergeService {
                     continue;
                 }
                 var task = taskOpt.get();
+                // Resolved before the filter because substitutability is defined against THIS task's own
+                // declared scope - there is no task-independent notion of "the orchestrator owns this".
+                List<String> files = allFiles.stream()
+                        .filter(f -> substitutable(task, f))
+                        .toList();
+                if (files.isEmpty()) {
+                    continue;
+                }
                 // 2026-07-26: same guard as resurrectEscalatedConflictsWithRealCode below - a frozen/
                 // accepted/cancelled project gets no further automated work, not even a housekeeping-file
                 // sync commit.
@@ -1437,6 +1454,66 @@ public class AutoMergeService {
         });
     }
 
+
+    /**
+     * Whether main's version of {@code file} may replace the branch's without changing any truth this
+     * system has asserted - substitutivity salva veritate, BARCAN-TAG-08's own principle.
+     *
+     * Replaces THREE divergent path-pattern definitions of "the orchestrator owns this file" (2026-08-15).
+     * They disagreed with each other, and the most consequential of them classified the root
+     * {@code .gitignore} as disposable noise - so the mechanism built to resolve conflicts systematically
+     * discarded the one edit that ends them. That rule was true for test-thirty-seventh and became false
+     * once bootstrap stopped writing a correct .gitignore: <b>the path pattern outlived the condition that
+     * made it true</b>, which is exactly what a pattern does and a declaration cannot.
+     *
+     * The system already declares ownership, and the mechanism was ignoring it. Every task is dispatched
+     * with a {@code fileScope} written by TechnicalLeadCompiler.determineFileScope, and
+     * {@code ProjectFileClaimEntity} records path -> task/feature. So:
+     *
+     * <pre>substitutable(f, t) ⟺ f ∉ fileScope(t) ∧ ¬∃ live claim on f</pre>
+     *
+     * If a file is in nobody's declared scope, nobody asserted anything about it, so substituting main's
+     * version preserves truth. Note this is a CONJUNCTION over every conflicting file, never an average:
+     * a mean hides one dangerous file among nine harmless ones, which is why the entropy calculator this
+     * replaces could not express the requirement at any threshold.
+     *
+     * Unreadable scope counts as NOT substitutable. Failing to establish that a discard is safe is not
+     * the same as establishing that it is, and the loss is asymmetric: a wrong auto-resolve silently
+     * destroys work, a wrong escalation costs one visible session.
+     */
+    boolean substitutable(com.eneik.production.models.persistence.TaskEntity task, String file) {
+        if (file == null || file.isBlank()) {
+            return false;
+        }
+        try {
+            if (task.getFileScope() != null && !task.getFileScope().isBlank()) {
+                java.util.List<String> scope = objectMapper.readValue(task.getFileScope(),
+                        new com.fasterxml.jackson.core.type.TypeReference<java.util.List<String>>() {});
+                if (scope.contains(file)) {
+                    return false;
+                }
+            }
+        } catch (Exception e) {
+            return false;
+        }
+        if (projectFileClaimRepository == null || task.getProject() == null) {
+            return false;
+        }
+        try {
+            return projectFileClaimRepository
+                    .findByProjectIdAndFilePathIn(task.getProject().getId(), java.util.List.of(file))
+                    .isEmpty();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /** How many of a conflict's files are NOT substitutable. Auto-resolution requires exactly zero. */
+    long nonSubstitutableCount(com.eneik.production.models.persistence.TaskEntity task,
+                               java.util.List<String> files) {
+        return files == null ? 0L : files.stream().filter(f -> !substitutable(task, f)).count();
+    }
+
     // Package-private (not private), matching reconcileReviewAgainstTaskOutcome's existing convention in
     // this class, so the escalation branch's terminal ciStatus transition can be tested directly.
     void handleMergeConflict(PrReviewEntity review, String owner, String repo, String pullNumber, String token) {
@@ -1505,22 +1582,33 @@ public class AutoMergeService {
         // `.eneik/task-plan.json`). Fixed to act on this SUBSET of files regardless of what else
         // changed - real code is never touched by this path either way, so widening it is safe.
         //
-        // Bounded to one attempt per conflict (`resolutionAttempts == 0`, i.e. only on the FIRST time this
-        // conflict is diagnosed): if the real conflict is elsewhere and syncing these alone doesn't
-        // make the PR mergeable, retrying this same sync every cycle forever would silently mask that and
-        // never fall through to the rebase/escalation path that actually handles a real code conflict.
-        // Tier-1 100% Autonomous Branch Sync: Automatically merge main into feature branch via GitHub API
-        if (owner != null && repo != null && pullNumber != null && conflict.getResolutionAttempts() < 10) {
+        // The bound below is the SHARED budget, not a separate one (2026-08-15). This comment used to
+        // describe a bound of `resolutionAttempts == 0` while the code read `< 10`; the "Tier-1" block was
+        // inserted between the two and the description was left describing its neighbour. Since the counter
+        // now increments rather than being assigned, this path spends the same 3-attempt budget as every
+        // other, and cannot loop past it.
+        // Tier-1 autonomous branch sync: merge the PR's own base into the feature branch via the GitHub API.
+        if (owner != null && repo != null && pullNumber != null && conflict.getResolutionAttempts() < MAX_CONFLICT_ATTEMPTS) {
             String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
                     .map(GitHubPullRequestService.GitHubPullRequest::headRef)
                     .orElse(null);
             if (branch != null) {
+                // The PR's real base, not a hardcoded "main" (2026-08-15): a PR based on a feature-thread
+                // continuation branch conflicts against THAT base, so merging main into the head verified
+                // nothing and UP_TO_DATE then printed "Branch is now clean!" having checked the wrong thing.
+                String baseRef = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                        .map(GitHubPullRequestService.GitHubPullRequest::baseRef)
+                        .filter(ref -> ref != null && !ref.isBlank())
+                        .orElse("main");
                 GitHubPullRequestService.MergeBranchResult branchMergeResult =
-                        gitHubPullRequestService.mergeBranch(task.getProject(), branch, "main", "AutoMerge: sync main into " + branch);
+                        gitHubPullRequestService.mergeBranch(task.getProject(), branch, baseRef, "AutoMerge: sync " + baseRef + " into " + branch);
                 if (branchMergeResult == GitHubPullRequestService.MergeBranchResult.MERGED ||
                     branchMergeResult == GitHubPullRequestService.MergeBranchResult.UP_TO_DATE) {
                     log.info("AutoMergeService [100% AUTONOMOUS]: Successfully merged main into branch {} via GitHub API for PR #{}. Branch is now clean!", branch, pullNumber);
-                    conflict.setResolutionAttempts(1);
+                    // Increment, never assign (2026-08-15): this used to SET the counter to 1, so a path
+                    // that kept reporting success pinned it there and the >= 3 escalation test could never
+                    // be reached. A budget that cannot be spent is not a budget.
+                    conflict.setResolutionAttempts(conflict.getResolutionAttempts() + 1);
                     taskConflictRepository.save(conflict);
                     return;
                 }
@@ -1532,11 +1620,23 @@ public class AutoMergeService {
                     .map(GitHubPullRequestService.GitHubPullRequest::headRef)
                     .orElse(null);
             if (branch != null) {
-                boolean allResolved = files.stream()
-                        .allMatch(f -> f.startsWith(".eneik/") || f.equals(".gitignore")
-                                ? gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f)
-                                : gitHubPullRequestService.resolveProductCodeConflictWithMain(task.getProject(), branch, f));
-                conflict.setResolutionAttempts(1);
+                // The gate is n = 0, not a threshold (2026-08-15): a file may be discarded in favour of
+                // main's version only when substituting it changes no truth this system asserted. If even
+                // one conflicting file is in a declared scope or claim, nothing here is auto-resolved and
+                // the conflict goes to a session - the asymmetry is deliberate, since a wrong discard
+                // silently destroys work while a wrong escalation costs one visible session.
+                long owed = nonSubstitutableCount(task, files);
+                boolean allResolved;
+                if (owed > 0) {
+                    allResolved = false;
+                    log.info("AutoMergeService: PR #{} has {} of {} conflicting file(s) inside a declared "
+                                    + "fileScope or claim; not auto-resolving - escalating to a session instead.",
+                            pullNumber, owed, files.size());
+                } else {
+                    allResolved = files.stream()
+                            .allMatch(f -> gitHubPullRequestService.resolveFileConflictWithMain(task.getProject(), branch, f));
+                }
+                conflict.setResolutionAttempts(conflict.getResolutionAttempts() + 1);
                 taskConflictRepository.save(conflict);
                 if (allResolved) {
                     log.info("AutoMergeService [100% AUTONOMOUS SMART CODE MERGER]: PR #{} had {} conflicting file(s); "
@@ -1576,7 +1676,7 @@ public class AutoMergeService {
         int attempts = conflict.getResolutionAttempts() + 1;
         conflict.setResolutionAttempts(attempts);
 
-        if (attempts >= 3) {
+        if (attempts >= MAX_CONFLICT_ATTEMPTS) {
             // Three auto-resolve attempts have failed - this branch is unrecoverable, not worth a
             // fourth rebase. No human ever looks at this system day-to-day, so escalating to a
             // needs_human_review row here used to be a dead end (nothing reads that table). Instead,
@@ -1600,13 +1700,37 @@ public class AutoMergeService {
             review.setCiStatus("escalated");
             prReviewRepository.save(review);
 
-            log.warn("Poka-yoke: merge conflict for task {} escalated after {} attempts; triggering Branch Garbage Collector to retire old branch and re-queue task.", taskId, attempts);
+            // An automated path must NOT perform an irreversible action to resolve uncertainty
+            // (2026-08-15). This branch previously passed the head ref to retireAbandonedBranchAndPR, whose
+            // Step 2 calls deleteBranch - so exhausting the retry budget DESTROYED the work rather than
+            // setting it aside. Confirmed live on test-forty-sixth: PR#12 disappeared and the plan shrank
+            // from 21 tasks to 19, with no counter anywhere distinguishing "conflict resolved" from
+            // "conflict removed along with the work".
+            //
+            // Exhausting a budget is not evidence that a branch is unrecoverable. It is evidence that this
+            // many automatic attempts did not succeed - a strictly weaker claim, and not one that justifies
+            // deleting anything. So the PR is closed (it must stop holding the project in
+            // BLOCKED_BY_REVIEW) and the branch is KEPT, named in the log and in the conflict record, so
+            // the work can be recovered by anyone who looks.
+            String branch = (owner != null && repo != null && pullNumber != null)
+                    ? gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
+                            .map(GitHubPullRequestService.GitHubPullRequest::headRef)
+                            .orElse(null)
+                    : null;
+            conflict.setResolutionStatus("escalated");
+            if (branch != null && !branch.isBlank()) {
+                conflict.setPreservedBranch(branch);
+            }
+            taskConflictRepository.save(conflict);
+            log.warn("Poka-yoke: merge conflict for task {} exhausted its {}-attempt automatic budget; closing PR #{} "
+                            + "to unblock the project and PRESERVING branch '{}' - the budget running out does not "
+                            + "establish that the branch is unrecoverable, so nothing is deleted.",
+                    taskId, attempts, pullNumber, branch);
             if (branchGarbageCollectorService != null && owner != null && repo != null && pullNumber != null) {
-                String branch = gitHubPullRequestService.fetchPullRequestByNumber(task.getProject(), Integer.parseInt(pullNumber))
-                        .map(GitHubPullRequestService.GitHubPullRequest::headRef)
-                        .orElse(null);
+                // branchName deliberately null: close the PR, keep the branch.
                 branchGarbageCollectorService.retireAbandonedBranchAndPR(
-                        task.getProject(), task, branch, Integer.parseInt(pullNumber), "Conflict escalated after 3 attempts");
+                        task.getProject(), task, null, Integer.parseInt(pullNumber),
+                        "Conflict budget exhausted after " + attempts + " attempts; branch preserved for recovery");
             }
         } else {
             taskConflictRepository.save(conflict);

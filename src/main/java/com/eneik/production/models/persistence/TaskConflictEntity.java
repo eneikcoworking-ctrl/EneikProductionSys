@@ -36,6 +36,15 @@ public class TaskConflictEntity {
     @Column(name = "conflicting_files", columnDefinition = "TEXT")
     private String conflictingFiles;
 
+    // The branch kept when the automatic conflict budget was exhausted (2026-08-15). Exhausting a budget
+    // says only that this many attempts did not succeed - never that the work is unrecoverable - so the
+    // branch is preserved and named here instead of deleted.
+    @Column(name = "preserved_branch", length = 255)
+    private String preservedBranch;
+
+    public String getPreservedBranch() { return preservedBranch; }
+    public void setPreservedBranch(String preservedBranch) { this.preservedBranch = preservedBranch; }
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
