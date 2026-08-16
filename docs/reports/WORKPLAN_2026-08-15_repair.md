@@ -2360,3 +2360,63 @@ recorded at 21:48Z are the most recent movement.
 each per thread. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and philosophical
 falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks
 or lock timeouts this window.
+
+## Watch pass 2026-08-16 22:48Z — test-forty-ninth
+
+### The observer's evidence survives checking this time — a real change from 16:18Z
+
+Her newest finding:
+
+```
+Gemini project observer finding (severity: medium): Code integrity violation: PR #19 uses a
+superficial 'IF NOT EXISTS' fix for a database migration that masks an underlying root cause in
+Flyway state synchronization. Evidence: CODE_INTEGRITY_FINDING (node b2852b4b)
+```
+
+Checked against the client repo directly (cloned `eneikdru/test-forty-ninth`, depth 60):
+
+```
+V20260816054204525__create_categories_and_tags_schema.sql:1
+    CREATE ALIAS IF NOT EXISTS gen_random_uuid FOR "java.util.UUID.randomUUID";
+
+git log for that file:
+    f978233  Fix Flyway schemas and test assertions, untrack target artifacts   <- guard added here
+    48a90f8  feat: add relational schema migration for categories and tags      <- original
+```
+
+The factual scaffolding is real: exactly one migration carries `IF NOT EXISTS`, and it was **not** in
+the original migration — it was added by a later commit whose own message says it is fixing Flyway
+schemas. Her description of the shape is accurate.
+
+Her interpretation is arguable — the guarded statement is `CREATE ALIAS gen_random_uuid`, an H2 shim
+for a Postgres function, where an idempotency guard is ordinary practice rather than evidence of
+masked corruption. "Code integrity violation" likely overstates it. But this is a disagreement about
+severity, not a fabrication.
+
+That is a material improvement on the 16:18Z assessment, where all three of her specific claims
+failed: "nearly all done tasks" against 1 of 33, and a nudge target `c034c2fb` that did not exist in
+the project at all. Recorded here so the earlier F51 entry is not read as a standing verdict on her
+reliability — the failure mode there was quantifier inflation and a phantom id, and neither recurs
+here.
+
+### Board — one merge-less completion, observer output accelerating
+
+```
+22:18Z  queued 0 · claimed 1 · done 36 · failed 3   merged 25/26  gemini_observer 13
+22:48Z  queued 0 · claimed 1 · done 37 · failed 3   merged 25/26  gemini_observer 15
+```
+
+`done` rose by one with `mergedPlannedTasks` unchanged at 25 — the same signature as the recovery
+task at 20:18Z: work completing outside the planned set, so it moves `done` without moving readiness.
+
+The observer has produced findings at 11 -> 13 -> 15 across the last two passes, the only source
+generating new material on this project. `f42e448c Build Pipeline 115f4b3f` has now been `claimed`
+for 60 minutes with no lease extension, no nudge and no stall line — worth watching next pass, since
+60 minutes is the threshold the system's own detector uses.
+
+### Unchanged
+
+`failed` 3 (F62's two invisible failures still uncovered), readiness 0.833, `falsificationEligible
+false`, status `decomposing`. Denial poll at 7 each per thread. Zero design/Stitch lines since
+16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6 epics
+still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts this window.
