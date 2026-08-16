@@ -1698,3 +1698,69 @@ and the failure is booked as a pass with `applied=false`.
 
 Design shop starts only on the rise to 1.0; philosophical falsification needs 0.9. Both correctly
 silent at 0.667. Two of six features remain incomplete, 2 of 27 planned tasks unmerged.
+
+## Watch pass 2026-08-16 17:48Z — test-forty-ninth
+
+### Board unchanged over 30 minutes — and this time the reason is measured
+
+```
+17:18Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+17:48Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+```
+
+Identical, including all six wishlist source counts and `blockedItems` (still the single
+`done_not_reached_main` on `Runtime Contract 8becdc01`).
+
+Unlike the previous unchanged-board pass, this one is explained rather than asserted. Exactly one
+unit of work is in flight — `b50a4511 API Slice 77380b22` (BARCAN-TAG-02) — and it is alive:
+
+```
+17:45:45Z  ClaimService: Maintenance: Extended lease for task b50a4511-13bc-4033-b0b2-652ced78835d
+           because Jules session is still active
+```
+
+Lease extensions over a 6-hour window: **1 for `b50a4511`, 1 for `bc113800`, nothing else.** So the
+extension is a one-off for live work, not a renewal loop — this is not the F42/F43 shape.
+
+An unchanged board with one live session and an empty queue is a narrow pipeline, not a stall.
+
+### Real code landed in the previous window
+
+```
+17:16:55Z  [BRANCH-GC] Inspecting open PR #65 ('test(qa): add Epidemiological Protocols management
+           QA automated test suite')
+           merged PR #65
+```
+
+That merge is already accounted for in the `done 33 -> 35` / `merged 23 -> 25` jump reported at
+17:18Z. `Found 0 open PR` 44 times since — the repo currently has no open PRs.
+
+### F56 (NEW) — an action is denied 35 times while there is nothing for it to do
+
+```
+35  policy denied RECOVER_FAILED_FRONTIER
+35  policy denied DISPATCH_QUEUED_TASKS
+34  policy denied DISPATCH_REVIEW_TASKS
+ 1  policy denied ORCHESTRATE
+```
+
+`DISPATCH_QUEUED_TASKS` was denied 35 times in 35 minutes while `totalQueued` is **0** and
+`queue.byTag` is empty. The policy is being consulted, and the denial logged at INFO, for an action
+that has no work to act on either way. Same for `DISPATCH_REVIEW_TASKS` with `review 0`.
+
+This is not a functional defect — nothing is blocked that would otherwise proceed — but it is the
+reason the log looks like a system in distress when it is merely idle. The denial should be logged
+once per state transition, not once per poll, and ideally not evaluated at all when the action's
+work set is empty.
+
+### `failed` still 2, still no replacement
+
+`RECOVER_FAILED_FRONTIER` denied 35 more times this window. `ab74be69 UI Slice 1559c9b0`
+(BARCAN-TAG-11) and `36651896 Data Schema 7dd76d5f` (BARCAN-TAG-08) have been `failed` all day with
+no replacement work created. This remains the one open substantive finding.
+
+### Clean this window
+
+Zero `Apparent connection leak`, zero `Timeout trying to lock`, zero `BLOCKED_BY_TASK`.
+Zero design/Stitch lines (last activity still 16:00:06Z). Readiness 0.667 — design shop (1.0) and
+philosophical falsification (0.9) both correctly silent. All 6 epics still `kanoClass: null`.
