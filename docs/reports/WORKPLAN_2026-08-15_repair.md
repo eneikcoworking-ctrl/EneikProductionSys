@@ -1827,3 +1827,87 @@ stuck task alongside the two `failed` ones.
 `RECOVER_FAILED_FRONTIER` still denied. All six wishlist source counts identical. Zero open PRs.
 Zero design/Stitch lines (last activity 16:00:06Z). Readiness 0.667: design shop (1.0) and
 philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-16 18:48Z — test-forty-ninth
+
+### F43 HAS RECURRED LIVE — 27 forced nudges in 60 minutes, one per minute, to a single session
+
+```
+27  Sent Forced stale-revising unblock message to Jules session sessions/8476359396578350915
+```
+
+All 27 to the same session. The cadence:
+
+```
+17:38:53   <- nudge 1
+18:08:54   <- nudge 2   (30 min apart, backoff working)
+18:38:26   <- nudge 3
+18:39:08
+18:39:53
+18:40:53  18:41:53  18:42:53  18:43:53  18:44:53
+18:45:53  18:46:53  18:47:53  18:48:53   <- every 60 seconds, still going
+```
+
+**This directly contradicts what I reported one pass ago.** At 18:18Z I wrote "F43's fix VERIFIED
+LIVE — the forced-unblock budget holds, exactly 2 in a 6-hour window" and recorded it as confirmation
+that the existing machinery was correct. Thirty minutes later the same session had taken 27. I
+measured two data points during a backoff interval and published them as a proof of termination.
+That is the second time today I converted a snapshot into a verdict (the first being "narrow
+pipeline, not a stall" at 17:48Z). The 18:18Z entry's verification claim is **withdrawn**.
+
+What is measured, and nothing beyond it:
+- the budget is configured at 2 (`jules.forced-unblock-max-attempts`)
+- 27 nudges went out inside one hour to one session
+- the first two respected a 30-minute backoff; from nudge 3 the interval collapsed to 60 seconds
+- the collapse begins at 18:38, after the project entered `SYSTEM_STALLED`
+
+Whether the stalled state routes through a different, unbudgeted nudge path — or the counter is
+reset, or not persisted — is **not established**. I am not touching it. The last time I acted on a
+guess about this exact mechanism I added a duplicate `forced_unblock_attempts` column and broke the
+migration and every integration test.
+
+### F57 (NEW) — the stall state forbids the action that would clear the stall
+
+Flow Core moved the project from `DECOMPOSING` to `SYSTEM_STALLED`, and recovery is refused there too:
+
+```
+policy denied RECOVER_FAILED_FRONTIER for project test-forty-ninth in state SYSTEM_STALLED:
+Operational action RECOVER_FAILED_FRONTIER denied by Flow Core state SYSTEM_STALLED:
+System status is stalled.
+```
+
+`RECOVER_FAILED_FRONTIER` is the action that would produce replacement work for the two failed tasks.
+It is denied in `DECOMPOSING` because decomposition is unfinished, and denied in `SYSTEM_STALLED`
+because the system is stalled. The state that exists to signal "work has stopped" is the state in
+which the remedy for stopped work is unavailable.
+
+This subsumes F53: the problem was never specific to `DECOMPOSING`.
+
+### F58 (NEW) — the dashboard and Flow Core disagree about the project's state
+
+`/dashboard` reports `productReadiness.status: "decomposing"` at 18:48Z while Flow Core is enforcing
+policy against state `SYSTEM_STALLED` in the same minute. Two readers of project state, two answers.
+The dashboard is the surface an operator looks at, and it is the one showing the wrong value.
+
+### Board — unchanged for 90 minutes
+
+```
+17:18Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+17:48Z  identical
+18:18Z  identical
+18:48Z  identical
+```
+
+`b50a4511 API Slice 77380b22` still `claimed`, still not retired despite the nudge budget being
+nominally spent. Its lease was extended again at 18:46:45 "because Jules session is still active" —
+so the system simultaneously believes the session is alive (extends the lease) and stuck (nudges it
+every 60 seconds).
+
+Answering the question the previous pass left open: **the task was not retired.** The termination
+path stops at nudging and never reaches a terminal state.
+
+### Unchanged
+
+`failed` still 2, no replacement. All six wishlist source counts identical. Zero open PRs. Zero
+design/Stitch lines since 16:00:06Z. Readiness 0.667 — design shop (1.0) and philosophical
+falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
