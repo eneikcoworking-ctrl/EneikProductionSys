@@ -1111,6 +1111,41 @@ rather than "not ready", which is the Kleene mapping doing its job.
 **The observer loop closed on this run**: a `gemini_observer` wishlist appeared, i.e. she found something
 and raised work for it.
 
+### Passes 3-4 on test-forty-ninth - the repair holds, and its limit is now known
+
+Compiler tasks per wishlist, counted over three passes:
+
+```
+56484b6d  the client brief      1     held across the whole run
+ba6ac99c  a Gemini finding      2     rose to 2, then STOPPED - never reached the budget of 3
+506ea961  a later wishlist      1
+```
+
+**F42 holds, and its boundary is measured rather than assumed.** The brief compiled once. One wishlist
+reached two attempts and stopped on its own, so both exits work: the referent test ends a wishlist that has
+produced slices, and nothing has yet needed the budget - `exhausted its decomposition budget` has not fired
+once.
+
+**Known limit of the repair, stated honestly.** The referent test cannot stop a wishlist that has produced
+nothing yet - by construction, since that is the case that legitimately retries. Only the budget bounds
+that one. So a brief that keeps failing costs up to 3 attempts, not 1. Terminating, but not free. The
+atomic dispatch claim proposed earlier and not implemented would close it at 1, and would also remove the
+`Timeout trying to lock table "PROJECTS"` errors that have cost 3 coverage-audit checks and 1 task dispatch
+in an hour.
+
+**F40 confirmed stable:** verdict endpoint 8.6 s, then 9.0 s, against 68.9 s before the cache.
+
+**Zero epic merges across the whole run.** P3 stays closed.
+
+**A Gemini finding that did not survive checking.** She reported *"tasks marked done disagree with their
+actual GitHub PR state"* and offered task `dc09037e` as evidence. That task is `Compile 1 wishlist(s)
+(56484b6d)` and it is legitimately `done` - the very compile that decomposed the brief once. The claim may
+hold elsewhere; the evidence offered for it does not. By this plan's own rule that is an `ABSTAIN`, not a
+confirmation - and it is worth noting that the observer's finding is the same CLASS as F1, which suggests
+she is looking in the right place even when the instance is wrong.
+
+Flow: 28 tasks, 19 done, no errors beyond the known lock timeouts.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
