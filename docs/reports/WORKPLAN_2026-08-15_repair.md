@@ -737,6 +737,48 @@ argument for enumerating inflections: an approximation fails **quietly**.
 repaired. What still stands between the flag and being switched on is not the inputs but the observation -
 none of this has been seen against a running factory.
 
+### Found on the live run, test-forty-seventh, 2026-08-16
+
+The third run of the same brief began at 01:52 UTC+4 on project `cd9a0b82-4465-4839-a651-7bd4b8cebec4`.
+Recorded as observed, with the evidence, and deliberately without intervening in the flow.
+
+**Confirmed working, on the live system rather than in a test:**
+
+- `runtime-launcher` reports `healthy`. It had no `healthcheck:` block at all before Step 12, which is why
+  its outage on 2026-08-15 was invisible.
+- Linear provisioning answered with the informative refusal instead of `Argument Validation Error`:
+  *"linear_team_id is 'Eneik Production System', which is not a Linear team id..."* (F8).
+- Migrations V99, V100, V101 applied cleanly; schema at v101.
+- `verdict_gating_enabled` resolves off with source `none`, as intended for this run.
+
+**F36. `/api/projects/{id}/verdict` did not answer within 120 s while the flow was active.**
+
+Measured: two attempts, `[000] total=120.0s`. In the same window `/api/settings` answered 200 but took
+12.4 s, against well under a second when the factory was idle. So the request thread was not obviously
+deadlocked - the whole application was slow while onboarding and wishlist compilation ran.
+
+**The cause is not established and is not being guessed at.** Two candidates, both testable:
+
+1. contention for database connections with the flow's own work (Hikari pool, `maximum-pool-size=24`);
+2. per-layer synchronous network I/O with no overall budget - `RuntimeVerdictLayer` calls GitHub for
+   `latestCommitTime`, `InfrastructureVerdictLayer` makes two HTTP probes at 5 s each.
+
+Either way the structural point stands and is worth acting on regardless of which it turns out to be:
+**`VerdictLayer` has no deadline in its contract.** A read-only observer that can hold a request thread
+indefinitely is tolerable; the same code sitting in the flow's path once Step 18's gate is switched on is
+not. A gate that can hang is a gate that stops the factory.
+
+This is the first thing the live run has told us that the tests could not, which is precisely why the run
+exists.
+
+**F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
+in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
+There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
+safe default: both DE and US rendered, with the "market undeclared" preamble stating the assumption. That
+is the correct fallback and it is also the only reachable behaviour, so the declaration currently buys the
+statement in the prompt and nothing else. Completing it means a create-time field and a way to change it
+later.
+
 ### Carried forward from earlier steps
 
 - **F2** - settings audit trail. Needs its own entity, migration and write-path interception (deferred at
