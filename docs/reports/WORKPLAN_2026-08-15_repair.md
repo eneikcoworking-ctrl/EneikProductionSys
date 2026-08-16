@@ -2291,3 +2291,72 @@ Denial poll continues at 5 each per thread for `RECOVER_FAILED_FRONTIER`, `DISPA
 `DISPATCH_QUEUED_TASKS`. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and
 philosophical falsification (0.9) correctly silent at 0.833. All 6 epics still `kanoClass: null`.
 No stalls, nudges, leaks or lock timeouts this window.
+
+## Watch pass 2026-08-16 22:18Z — test-forty-ninth
+
+### F62 — DEFINITIVE ANSWER: the recovery mechanism can only see failures shaped as orphans
+
+`gatherAllEvidence` read in full. It has exactly two sources:
+
+```java
+public List<Evidence> gatherAllEvidence(ProjectEntity project) {
+    List<Evidence> evidence = new ArrayList<>(gatherOrphanedWishlistEvidence(project));
+    evidence.addAll(gatherOrphanedDependencyChainEvidence(project));
+    return evidence;
+}
+```
+
+and the orphan test inside the first one is:
+
+```java
+boolean allTerminalFailed = derivedTasks.stream().allMatch(t -> t.getStatus() == TaskStatus.failed);
+```
+
+**A failed task produces evidence only if EVERY task derived from its wishlist failed.** A failure
+whose siblings succeeded orphans nothing, generates no evidence, and is therefore invisible to the
+auditor — permanently, not temporarily.
+
+This explains the whole observed pattern exactly:
+
+```
+b50a4511  API Slice 77380b22    -> sole derived task of wishlist 77380b22 -> allTerminalFailed
+                                   -> orphan -> evidence -> auditor dismissed that very wishlist at
+                                   19:30:35 and created the recovery task at 20:00:15  ✓
+ab74be69  UI Slice 1559c9b0     -> siblings succeeded -> no orphan -> no evidence -> never recovered
+36651896  Data Schema 7dd76d5f  -> siblings succeeded -> no orphan -> no evidence -> never recovered
+```
+
+The auditor dismissing "orphaned wishlist **77380b22**" is the same id as the recovered task's title.
+That is the mechanism confirming itself in the log.
+
+So the answer to the operator's question of 2026-08-16 is not a rate limit, not an age cutoff, and
+not the circular readiness dependency I described at 19:18Z. It is a **coverage gap in the evidence
+predicate**: `OpsAuditorService` audits for orphans, and a partially-failed wishlist is not an
+orphan. Every earlier explanation I gave for this is superseded by this one.
+
+The repair belongs here — a failed task with no replacement should generate evidence in its own
+right, independently of what its siblings did. That is additive to `gatherAllEvidence` and does not
+touch the readiness mathematics, the retirement path, or Flow Core policy. **Not implemented; no
+intervention taken.**
+
+### Board — one task in flight, unchanged 30 minutes
+
+```
+21:48Z  queued 0 · claimed 1 · done 36 · failed 3   merged 25/26  features 5/6 = 0.833
+22:18Z  identical
+```
+
+`f42e448c Build Pipeline 115f4b3f` claimed for 30 minutes; no lease extension, no nudge, no stall
+line — nothing yet indicates it is in trouble. Per the rule recorded last pass, a single unchanged
+reading is not evidence of a stall at this cadence.
+
+Wishlist counts identical to last pass (`gemini_observer` 13, `coverage_gap` 12, `client` 19,
+`design_system_falsification` 3, `self_falsification` 2, `role` 1) — the two new observer findings
+recorded at 21:48Z are the most recent movement.
+
+### Unchanged
+
+`failed` 3, readiness 0.833, `falsificationEligible false`, status `decomposing`. Denial poll at 7
+each per thread. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and philosophical
+falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks
+or lock timeouts this window.
