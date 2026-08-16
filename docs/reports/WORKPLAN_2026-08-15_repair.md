@@ -936,6 +936,95 @@ because near-duplicates are what it is built to merge.
 Attacking the matcher first would be treating the symptom, and would very likely produce twenty epics that
 are six ideas repeated - which is worse than one epic, not better.
 
+## PROPOSED REPAIR (not implemented): compilation must terminate
+
+Run stopped 03:19 UTC, project `frozen`, PR #7 closed as WIP. Nothing below is built yet.
+
+### The defect in one line
+
+**The system uses a rate limit where it needs a termination condition.**
+`lastCompileDispatchedAt` + `WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS` bound how *often* a compile may be
+dispatched. They cannot bound how *many times*. There is no decreasing quantity anywhere in the loop, so
+there is no termination proof - which is exactly why 16 plans on `test-forty-sixth` and 4 on
+`test-forty-seventh` were possible and nobody had to be at fault.
+
+### The doctrine already contains the answer, twice
+
+- **Step 1:** *"an operation's effect must be verified, not logged."* Applied to file commits. Never applied
+  to compilation.
+- **Step 13:** *"a possibility claim is not witnessed by another possibility claim."* A dispatched carrier
+  task is a possibility claim about decomposition. A plan file is another one.
+
+### Ask after the property, not the indicator
+
+```
+compiled(w)  ⟺  ∃ e ∈ Epics  : originWishlistId(e) = w
+              ∧  ∃ s ∈ Slices : originWishlistId(s) = w
+```
+
+Not "a task ran", not "a plan file exists", not "we dispatched recently" - the artefacts exist and point
+back at the brief. The same referent move as Step 11.
+
+### Admission with a well-founded measure
+
+```
+mayCompile(w)  ⟺  ¬compiled(w)  ∧  attempts(w) < B
+```
+
+`B` declared, finite, and documented as an arbitrary budget - the same honesty as
+`MAX_CONFLICT_ATTEMPTS = 3`. Reasoning may be asserted; a number requires measurement, so it is labelled a
+budget rather than dressed as a threshold.
+
+**Termination proof.** Let `μ(w) = B − attempts(w) ∈ ℕ`. Every dispatch either
+
+- **(a)** establishes `compiled(w)` — the loop exits by success, or
+- **(b)** leaves it unestablished and decreases `μ` by exactly 1.
+
+`μ` is a natural number strictly decreasing on (b), so there is no infinite descending chain: the loop
+terminates in at most `B` attempts. **Today `μ` does not exist.** That absence is the whole defect, and no
+tuning of the cooldown can supply it.
+
+### Exhaustion is a stated refusal, never silence
+
+When `μ = 0` and `¬compiled(w)`, the wishlist takes a terminal state carrying the reason. In the lattice's
+own terms this is `WITHHOLD`, not `ABSTAIN`: it is *established* that decomposition failed inside its
+declared budget. And per **F39**, "somewhere a human looks" must be verified rather than assumed - the
+finding is only closed when it can be retrieved.
+
+### Idempotence is the second half, and the logs already demand it
+
+```
+MVStoreException: Map entry <table.166> ... 'test-forty-seventh' ...
+is locked by tx 2 and can not be updated by tx 1 within allocated time interval 2000 ms
+```
+
+Two transactions were writing the same project row. So admission must be an atomic **claim**, not a check
+followed by a write - the pattern already used for `handlePrOpenedWorkflow`'s completion claim and the
+design shop's per-project claim. One live claim per wishlist; a second carrier cannot be created while one
+holds it.
+
+### Order, and what must NOT be touched
+
+1. **F42 first** - terminate compilation.
+2. **F41 second** - the matcher's discriminating terms.
+
+Fixing the matcher first would store six ideas twenty times, which is worse than one epic. And three things
+stay untouched on purpose:
+
+- **the cooldown** - it is the wrong instrument, not a mis-tuned one; changing its value hides the loop
+  without ending it;
+- **the per-attempt plan files** - they are the evidence that made this visible at all;
+- **the matcher** - until its input stops being duplicates, any measurement of it is meaningless.
+
+### Verification, stated before the change rather than after
+
+On a fresh project with one brief: exactly **one** `task-plan-*.json` in `.eneik/records`, the wishlist
+reaching `converted_to_task`, and the epic count in `/tree` **equal to** the epic count in that one plan.
+
+The last clause is the point: repairing F42 converts F41 from a suspicion into a measurement. If the plan
+holds 6 epics and the tree holds 6, both are answered at once. If the tree holds fewer, F41 is isolated,
+quantified, and only then worth touching.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
