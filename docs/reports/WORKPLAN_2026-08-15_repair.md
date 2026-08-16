@@ -1471,3 +1471,73 @@ hang shape as `/verdict`; whatever F36 really is, it is not unique to the verdic
 - `pull-requests` returns 0 while `mergedPlannedTasks = 22`; the client repo does carry real
   branches (`git ls-remote` lists api-contract-…, barcan-tag-02-…, barcan-tag-06-…, barcan-tag-12-…).
   Endpoint scope vs. reality not yet reconciled — measure before calling it a defect.
+
+## Watch pass 2026-08-16 16:18Z — test-forty-ninth (14 min after previous)
+
+`docker logs` still unavailable (WSL interop dead). Measured over the HTTP API.
+
+### F48 CORRECTED — the board is NOT stalled; `stale_in_progress` is not proof of death
+
+`Test Coverage 1f67e34a` moved `claimed -> done` and merged between the two passes:
+
+```
+pipeline prev: queued 1, claimed 3, done 32, failed 2   mergedPlannedTasks 22
+pipeline now : queued 1, claimed 2, done 33, failed 2   mergedPlannedTasks 23
+```
+
+That task was flagged `stale_in_progress` in the previous pass and finished 14 minutes later. My
+previous entry reported all four non-terminal items as stalled on the strength of that flag; that was
+an overstatement. **`stale_in_progress` marks a staleness window elapsing, not a dead task** — it is
+the same class of false positive the watch brief warns about for the observer.
+
+What IS genuinely stuck: `Test Coverage F55efeef`, queued, `oldestWaitingMinutes` 218 -> 234 — grown
+by exactly the 16 minutes elapsed, i.e. no progress at all. One item, not four.
+
+Unchanged: `failed 2` (the two awaiting replacement), `featureReadinessRatio 0.5`,
+`completeFeatures 3/6`, `decompositionComplete false`, `falsificationEligible false`, status
+`decomposing`. Wishlist counts identical across all six sources.
+
+### F51 (NEW, loop + unsound evidence) — the observer repeats one overstated claim hourly and acts on it
+
+Five journal entries, roughly hourly (08:26, 11:22, 12:25, 13:24, 14:22Z), all asserting the same
+"massive, systemic state-desynchronization", each ending in an intent to nudge. Quoted:
+
+```
+14:22Z  "Verified that nearly all 'done' tasks are plagued by operational reality findings
+         indicating a massive, systemic mismatch between the orchestrator's internal task status
+         and actual GitHub PR states. ... Will try nudging the remaining stuck task candidates
+         (fc6459d5 and c034c2fb) which have not yet been nudged."
+13:24Z  "A large number of tasks (e.g., 23e34965, fc6459d5, c034c2fb) remain marked internally as
+         'done' while operational reality findings confirm persistent conflicts with their GitHub
+         PR status."
+```
+
+Checked against the board, every specific claim fails:
+
+| her claim | measured |
+|---|---|
+| "nearly all 'done' tasks" desynchronized | **1 of 33** done tasks carries `done_not_reached_main` |
+| `fc6459d5` a stuck candidate to nudge | exists, status `done` (`Data Schema 88bd5721`), **not flagged** |
+| `23e34965` desynchronized | exists, status `done` (`API Contract 33533b16`), **not flagged** |
+| `c034c2fb` a stuck candidate to nudge | **does not exist among this project's tasks at all** |
+
+The one real instance is `Runtime Contract 8becdc01 | done_not_reached_main` — which she never names.
+
+So this is both shapes at once: a **loop** (the same conclusion re-derived hourly, each round emitting
+nudges that change nothing and never terminate) and **unsound evidence** (a quantifier stretched from
+1/33 to "nearly all", plus a nudge target that does not exist). Her conclusion that the project is
+"effectively stalled" is contradicted by the movement measured above.
+
+Fix shape: her nudge action needs a well-founded measure like any other retry, and her findings need
+the referent test — assert a task is stuck only against its live status, not against a remembered one.
+
+### F52 (NEW) — the product has never been observed running
+
+`/runtime-health`: `observationCount 0`, `lastObservedAt null`, `liveUrl null`,
+`recentObservations []`. `posteriorMean 0.5` is the untouched prior, not evidence. Nothing has ever
+launched this project's product, so every launchability signal downstream is uninformed.
+
+### F46 — not re-confirmed this window
+
+Still exactly 3 `design_system_falsification` wishlists; the 30-minute cron last fired at 16:00:06Z
+and the next tick is due at 16:30Z, after this pass. Neither confirmed nor contradicted here.
