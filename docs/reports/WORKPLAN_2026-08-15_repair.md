@@ -1025,6 +1025,41 @@ The last clause is the point: repairing F42 converts F41 from a suspicion into a
 holds 6 epics and the tree holds 6, both are answered at once. If the tree holds fewer, F41 is isolated,
 quantified, and only then worth touching.
 
+## RESULT of the fourth run - test-forty-ninth, 2026-08-16
+
+F42 and F41 are both settled, on the running factory rather than in tests.
+
+| Measure | 46th | 47th | **49th** |
+|---|---|---|---|
+| Compile carrier tasks for one brief | 16 plans | 4 | **1** |
+| Epics in plan / features in tree | - | 20 / 1 | **5 / 5** |
+| Epic merges logged | - | collapsed all | **none - nothing to merge** |
+| Deterministic scaffold (`pom.xml`) | - | never ran | **present** |
+| Errors in the log | - | - | none |
+
+**F42 closed.** One carrier task, `done`. The referent exit plus mu = B - compileAttempts terminated it.
+
+**F41 closed, and the matcher is EXONERATED.** Five epics in the plan, five features in the tree, and not
+one `SelfFalsificationEpicMatcher: matched` line. It never over-merged; it was fed twenty near-duplicates
+that were six ideas repeated by four decompositions, and merging near-duplicates is its job. Not touching
+its scoring blind was right - the repair would have broken something that works.
+
+Five PRs merged: the task plan, an ADR on document storage, the search API contract, a search-analytics
+schema, and review verdicts. The corpus floors keep landing: *Baseline Epidemiological Content
+Provisioning* is F21's seeding obligation again.
+
+**A reporting error of mine, recorded because the lesson is the plan's own.** The first pass this run
+counted PLAN FILES and reported "2 compilations, the fix half-works". Two files existed, but one was named
+by Jules on a timestamp - Java only ever emits UUID names - so the file count was an INDICATOR of
+compilation, not compilation itself. Counting carrier tasks, the thing itself, gives one. I substituted an
+indicator for the property inside a report about substituting indicators for properties, and had begun
+proposing a hunt for a second write path that does not exist.
+
+**Still open: F17's other half.** All five epics are `Must-Be` again - second run running. Removing the
+`Must-Be` default was necessary; the compiler independently labels *Knowledge Base Utilization Measurement*
+and *Disaster Recovery* exactly like the core cataloguing. Four classes offered, one used. That is now
+twice-observed, not a fluke.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
