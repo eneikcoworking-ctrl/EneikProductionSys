@@ -1,0 +1,11 @@
+-- F42: the well-founded measure that makes compilation terminate.
+--
+-- lastCompileDispatchedAt plus a cooldown bound how OFTEN a brief is sent for decomposition. They cannot
+-- bound how MANY TIMES, because a clock is not a decreasing quantity. Measured consequence: 4 full plans
+-- for one brief in an hour on test-forty-seventh, 16 on test-forty-sixth over a day.
+--
+-- This column is that quantity. With B a declared finite budget and mu = B - compile_attempts, every
+-- dispatch either establishes that the brief was decomposed - and exits - or decreases mu by exactly one.
+-- mu is a natural number, so no infinite descending chain exists and the loop terminates in at most B
+-- attempts. Nothing else in the loop had this property.
+ALTER TABLE wishlist ADD COLUMN compile_attempts INT DEFAULT 0 NOT NULL;

@@ -93,6 +93,17 @@ public class WishlistEntity {
     @Column(name = "origin_wishlist_id")
     private UUID originWishlistId;
 
+    /**
+     * How many times decomposition has been ATTEMPTED for this brief (F42, 2026-08-16).
+     *
+     * The cooldown beside it bounds how often an attempt may be made; only this bounds how many. With a
+     * declared budget B, mu = B - compileAttempts is a natural number that strictly decreases on every
+     * attempt that fails to produce a slice, so the loop cannot run forever. Before this column there was
+     * no decreasing quantity anywhere in the compile loop, which is why one brief was decomposed 16 times.
+     */
+    @Column(name = "compile_attempts", nullable = false)
+    private int compileAttempts = 0;
+
     // 2026-08-13 (live incident, test-forty-fourth): a per-wishlist dispatch cooldown, same pattern as
     // ProjectFlowService.recordOrchestrationStartOrThrow/ORCHESTRATION_COOLDOWN_SECONDS but scoped to this
     // one wishlist instead of the whole project. Without it, a wishlist bounced back to `pending` by ANY
@@ -247,6 +258,9 @@ public class WishlistEntity {
     public void setOriginFeatureId(UUID originFeatureId) {
         this.originFeatureId = originFeatureId;
     }
+
+    public int getCompileAttempts() { return compileAttempts; }
+    public void setCompileAttempts(int compileAttempts) { this.compileAttempts = compileAttempts; }
 
     public UUID getOriginWishlistId() {
         return originWishlistId;

@@ -56,6 +56,18 @@ public class ProjectFlowService {
     // same 3-wishlist batch repeatedly while orchestration kept running opened several real duplicate
     // "Compile 3 Wishlist" sessions against the daily Jules quota.
     private static final long WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS = 900L;
+
+    /**
+     * B - the declared, finite budget of decomposition attempts per brief (F42, 2026-08-16).
+     *
+     * Arbitrary and labelled as such, exactly like AutoMergeService.MAX_CONFLICT_ATTEMPTS: reasoning may be
+     * asserted, a number requires measurement. What is NOT arbitrary is that a finite bound exists at all.
+     * With mu(w) = B - compileAttempts(w), every attempt either establishes that the brief was decomposed
+     * and exits, or decreases mu by one; mu is a natural number, so the loop terminates in at most B
+     * attempts. The cooldown beside this constant cannot supply that property at any value, because a
+     * clock does not decrease.
+     */
+    private static final int WISHLIST_COMPILE_ATTEMPT_BUDGET = 3;
     // Dashboard "blocked for N hours" visibility (2026-07-25, operator directive) - generous enough that a
     // task legitimately mid-review/mid-dispatch never falsely shows up, same reasoning as this codebase's
     // other safety-net thresholds (e.g. MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN).
@@ -607,6 +619,48 @@ public class ProjectFlowService {
                 wishlist = wishlistRepository.findById(wishlist.getId()).orElse(wishlist);
                 if (wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.pending
                         && wishlist.getStatus() != com.eneik.production.models.persistence.WishlistStatus.compiling) {
+                    continue;
+                }
+
+                // F42 (2026-08-16, found on test-forty-seventh): `compiling` is admitted here as well as
+                // `pending`, so a brief already being compiled is re-collected on the next tick and
+                // dispatched again once the 15-minute cooldown lapses. Nothing reverts it - it never left.
+                // Measured: 4 full plans for one brief in an hour on test-forty-seventh, 16 on
+                // test-forty-sixth over a day, each a fresh decomposition of the same sentence under
+                // different names. That is what the epic matcher was then collapsing into one feature.
+                //
+                // A cooldown bounds how OFTEN a compile runs and cannot bound how MANY TIMES: there is no
+                // decreasing quantity in the loop, so nothing makes it terminate. The exit condition is the
+                // referent, not the clock - Step 1's rule, an operation's effect must be verified rather
+                // than assumed, applied to compilation for the first time:
+                //
+                //     compiled(w) <=> a slice exists whose originWishlistId is w
+                //
+                // A slice is the artefact decomposition was supposed to produce, and it points back at the
+                // brief it came from, so its existence IS the effect. Deliberately restrictive-only: this
+                // can remove a dispatch, never add one, which is why it cannot make anything worse than it
+                // already is. A brief still `compiling` with no slice yet is untouched and retries exactly
+                // as before.
+                if (alreadyDecomposed(project.getId(), wishlist.getId())) {
+                    log.info("ProjectFlowService: wishlist {} has already produced slices; decomposition is "
+                            + "established, not re-collecting it (F42)", wishlist.getId());
+                    continue;
+                }
+                if (wishlist.getCompileAttempts() >= WISHLIST_COMPILE_ATTEMPT_BUDGET) {
+                    // mu = 0 and the brief is still not decomposed. This is a WITHHOLD, not an abstention:
+                    // it is ESTABLISHED that decomposition failed inside its declared budget. Recorded where
+                    // a human actually looks rather than only in a log - F39 is the lesson that a finding
+                    // nobody can retrieve is not a finding. The status is deliberately left alone so no
+                    // downstream consumer changes behaviour; what stops is the re-dispatch.
+                    log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
+                                    + "without producing a single slice; no further compile will be dispatched "
+                                    + "for it (F42)",
+                            wishlist.getId(), WISHLIST_COMPILE_ATTEMPT_BUDGET);
+                    project.setFactoryReport(appendReportLine(project.getFactoryReport(),
+                            "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
+                                    + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
+                                    + "the brief needs a human reading, not another retry."));
+                    projectRepository.save(project);
                     continue;
                 }
 
@@ -1704,6 +1758,21 @@ public class ProjectFlowService {
     // Package-private (not private) so tests in this package can call it directly - a CGLIB proxy (this
     // class is @Transactional) doesn't intercept private methods, so invoking one reflectively hits an
     // uninitialized proxy field, not the real bean's state.
+    /**
+     * Has this brief already been decomposed - i.e. does the artefact it was supposed to produce exist?
+     *
+     * Asks after the effect rather than the attempt. A dispatched carrier task and a committed plan file
+     * are both claims that decomposition was ATTEMPTED; a slice carrying this brief's id in
+     * originWishlistId is the decomposition itself.
+     */
+    private boolean alreadyDecomposed(UUID projectId, UUID wishlistId) {
+        if (wishlistId == null) {
+            return false;
+        }
+        return wishlistRepository.findByProjectId(projectId).stream()
+                .anyMatch(w -> wishlistId.equals(w.getOriginWishlistId()));
+    }
+
     int dispatchBatchedWishlistCompiler(ProjectEntity project, java.util.List<WishlistEntity> candidates) {
         if (candidates.isEmpty()) {
             return 0;
@@ -1867,6 +1936,9 @@ public class ProjectFlowService {
         Instant compileAttemptAt = Instant.now();
         for (WishlistEntity w : admitted) {
             w.setLastCompileDispatchedAt(compileAttemptAt);
+            // mu decreases here, on every exit path of this method, for the same reason the timestamp is
+            // recorded here: an attempt was made against this brief either way (F42).
+            w.setCompileAttempts(w.getCompileAttempts() + 1);
         }
         wishlistRepository.saveAll(admitted);
 

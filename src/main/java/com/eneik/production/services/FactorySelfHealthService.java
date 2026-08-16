@@ -7,6 +7,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -156,8 +158,37 @@ public class FactorySelfHealthService {
         }
     }
 
+    /**
+     * How long a live-data measurement stays usable. Declared arbitrary budget, not a tuned number.
+     *
+     * F40, measured 2026-08-16: this walk calls H2's DISK_SPACE_USED once per table, which on a 419 MB
+     * store held a pooled connection past the 30 s leak threshold added in Step 4 - and, because
+     * InfrastructureVerdictLayer calls inspect(), made GET /api/projects/{id}/verdict take 68.9 s on an
+     * IDLE system. A monitor that holds connections that long is a contributor to the load it reports on.
+     *
+     * Bloat is a property that moves over hours, so a measurement minutes old is still a true statement
+     * about it. Caching therefore costs no honesty: what is reported remains something that was measured,
+     * never something inferred.
+     */
+    private static final Duration LIVE_DATA_MEASUREMENT_TTL = Duration.ofMinutes(10);
+
+    private volatile long cachedLiveDataBytes = -1L;
+    private volatile Instant cachedLiveDataAt = Instant.EPOCH;
+
     /** Sum of what the tables actually hold, which is what the file size should be compared against. */
     private long liveDataBytes() {
+        Instant now = Instant.now();
+        long cached = cachedLiveDataBytes;
+        if (cached >= 0 && Duration.between(cachedLiveDataAt, now).compareTo(LIVE_DATA_MEASUREMENT_TTL) < 0) {
+            return cached;
+        }
+        long measured = measureLiveDataBytes();
+        cachedLiveDataBytes = measured;
+        cachedLiveDataAt = now;
+        return measured;
+    }
+
+    private long measureLiveDataBytes() {
         long total = 0L;
         for (Map<String, Object> row : jdbcTemplate.queryForList(
                 "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = 'PUBLIC'")) {

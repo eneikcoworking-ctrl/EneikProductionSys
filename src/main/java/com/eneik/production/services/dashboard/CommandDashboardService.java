@@ -253,9 +253,9 @@ public class CommandDashboardService {
             }
 
             if (hasHighValuePending) {
-                kanoRecommendation = "Recommendation: Keep working. There are pending Must-Be/One-Dimensional tasks (e.g. database, core logic) that must be implemented before project acceptance.";
+                kanoRecommendation = "Recommendation: Keep working. Some pending items are classified Must-Be or Performance, or are not classified at all, and an unclassified item cannot be judged low-value.";
             } else {
-                kanoRecommendation = "Kano Model Suggestion: The remaining outstanding tasks/wishlist items represent low-value tweaks (Attractive/Indifferent). All Must-Be core functionality has been successfully implemented and approved. We highly recommend completing the project now to avoid diminishing returns.";
+                kanoRecommendation = "Kano Model Suggestion: Every remaining item is classified Attractive or Reverse, so the Must-Be and Performance work is done. Completing the project now avoids diminishing returns.";
             }
         } else {
             kanoRecommendation = "Kano Model Suggestion: All tasks completed! Ready to complete and accept the project.";
