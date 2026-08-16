@@ -2029,3 +2029,67 @@ destroying the work it was complaining about.
 counts identical for the sixth consecutive pass. Zero open PRs. Zero design/Stitch lines since
 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) still correctly silent — but see
 F59 for why that silence may end for the wrong reason. All 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-16 20:18Z — test-forty-ninth
+
+### CORRECTION to the 19:18Z entry — recovery DOES happen, via a third mechanism I never looked for
+
+At 19:18Z I wrote that both recovery exits were closed and called it "the complete circle, every link
+measured". That conclusion was wrong. There is a third path, and it fired:
+
+```
+20:00:15Z  OpsAuditorService: created recovery task 4bb0510f-9bc3-49bb-844d-e2f436980e73
+20:08:50Z  [BRANCH-GC] Inspecting open PR #66 ('feat(api): recovery slice for epidemiological pr…')
+20:08:58Z  AutoMergeService [DIRECT-SWEEP]: Found clean open GitHub PR #66
+```
+
+Board: a new task `Recovery API Slice` appeared and is already `done`; `done 35 -> 36`.
+
+Full sequence: `b50a4511` retired 19:08:54 → `OpsAuditorService` created a recovery task 52 minutes
+later → Jules implemented it → PR #66 opened, was swept clean and merged → done by 20:18. The factory
+repaired its own failure end to end within 70 minutes, unaided.
+
+The error in my 19:18Z analysis was one of exhaustiveness, not of measurement: I enumerated
+`RECOVER_FAILED_FRONTIER` and `self_falsification` — the two paths the retirement message itself
+names — verified both were closed, and declared the set complete. I never asked whether a third
+mechanism existed. `OpsAuditorService` is not mentioned in that message and I had not encountered it
+in any code I read. The "failures suppress the only mechanism authorised to repair failures"
+conclusion is **withdrawn**.
+
+### The real remaining gap — recovery covered the newest failure only
+
+Exactly **one** `created recovery task` line in a 12-hour window. The two tasks that have been
+`failed` since before this watch began got nothing:
+
+```
+ab74be69  UI Slice 1559c9b0    (BARCAN-TAG-11)   failed all day, no recovery task
+36651896  Data Schema 7dd76d5f (BARCAN-TAG-08)   failed all day, no recovery task
+b50a4511  API Slice 77380b22   (BARCAN-TAG-02)   failed 19:08, recovered 20:00  ✓
+```
+
+So the mechanism works and is not reaching the older failures. Whether that is an age cutoff, a
+one-per-sweep rate, or a condition those two do not satisfy is **not established** — `OpsAuditorService`
+has not been read yet. That is the next thing to measure, and it is a narrower and more tractable
+question than the circle I described yesterday.
+
+### The recovery task does not repair the readiness deficit
+
+```
+19:48Z  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833  done 35
+20:18Z  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833  done 36
+```
+
+`done` rose by one and every readiness figure stayed put. The recovery task sits outside the planned
+set, so merging it neither restores the lost denominator entry nor moves `mergedPlannedTasks`. The
+product got the code back; the metric did not get the task back.
+
+F59 therefore stands unchanged: the retirement's effect on readiness (27 -> 26 denominator) was never
+undone by the recovery.
+
+### Unchanged
+
+`queued 0 · claimed 0 · failed 3`. `falsificationEligible false`, `decompositionComplete false`,
+status `decomposing`. All six wishlist source counts identical for the seventh consecutive pass.
+Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9)
+correctly silent at 0.833. All 6 epics still `kanoClass: null`. No `SYSTEM STALLED` lines, no forced
+nudges, no connection leaks this window.
