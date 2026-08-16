@@ -1055,10 +1055,41 @@ compilation, not compilation itself. Counting carrier tasks, the thing itself, g
 indicator for the property inside a report about substituting indicators for properties, and had begun
 proposing a hunt for a second write path that does not exist.
 
-**Still open: F17's other half.** All five epics are `Must-Be` again - second run running. Removing the
-`Must-Be` default was necessary; the compiler independently labels *Knowledge Base Utilization Measurement*
-and *Disaster Recovery* exactly like the core cataloguing. Four classes offered, one used. That is now
-twice-observed, not a fluke.
+**RETRACTED: "the compiler does not discriminate Kano".** Operator's correction, and it is the doctrine's
+own rule turned on my own reporting.
+
+All five epics COULD NOT have come out otherwise. The prompt itself mandates `Must-Be` for the measurement
+epic (*"a product nobody can tell is working is indistinguishable from one that is not"*) and for every
+regulatory-floor epic, which is where backup and recovery come from. The remaining three - cataloguing,
+search, seeding - are the value chain of a knowledge base: without them there is no product. No delighter
+was requested, and inventing one is explicitly forbidden.
+
+**A test whose outcome is fixed by construction is not a test.** I applied a measurement to a proposition
+whose value the prompt had already determined, and read the result as evidence. That is the same shape as
+the matcher's Kano bonus - a term built to discriminate contributing a constant - which I found in the code
+this morning and then committed in my own analysis.
+
+**Three times this run I issued a WITHHOLD where the honest verdict was ABSTAIN:** "the compiler does not
+discriminate" (input contained nothing to discriminate), "the fix half-works" (I counted plan files, an
+indicator), "the matcher over-merges" (its input was duplicates). Each converted absence of evidence into a
+refusal - the defect this entire doctrine exists to remove, committed by the author of the layer that
+forbids it.
+
+**And I broke the Barcan condition:** propositions must be DECLARED before they are ruled on. I found
+numbers and invented propositions to fit them afterwards, so I could not tell "undecided" from "never
+considered".
+
+Declared now, before further observation:
+
+```
+P1  the compiler discriminates Kano classes
+    testable ONLY on input that admits a non-Must-Be answer: a client request beyond
+    necessity, a falsification finding, a request that would harm the product.
+    Until such input exists: ABSTAIN. That is not a defect.
+P2  the compile loop terminates              CLOSED - PERMIT (one carrier task)
+P3  the epic matcher does not over-merge     CLOSED - PERMIT (5 plan epics = 5 tree features, no merges)
+P4  the deterministic scaffold runs          PERMIT (pom.xml present)
+```
 
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
