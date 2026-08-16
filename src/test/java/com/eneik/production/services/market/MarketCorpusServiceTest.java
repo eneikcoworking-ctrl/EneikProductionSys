@@ -250,6 +250,49 @@ class MarketCorpusServiceTest {
         return links;
     }
 
+    /**
+     * The fourth appearance of one defect: a substring test standing in for a word test. Here it decided
+     * which value chains a product owes, i.e. the denominator of witnessed(P) in the acceptance rule.
+     */
+    @Test
+    void aKeywordMustBeMentionedAsAWordNotFoundInsideAnother() {
+        assertThat(MarketCorpusService.mentions("we run workshops for members", "shop"))
+                .as("'shop' sits inside 'workshop'; a coworking company that runs workshops was being "
+                        + "handed an online shop's payment and withdrawal-rights duties")
+                .isFalse();
+        assertThat(MarketCorpusService.mentions("a study of cartography", "cart"))
+                .as("'cart' sits inside 'cartography' the same way")
+                .isFalse();
+    }
+
+    @Test
+    void ordinaryEnglishInflectionStillMatches() {
+        assertThat(MarketCorpusService.mentions("customers fill their carts", "cart")).isTrue();
+        assertThat(MarketCorpusService.mentions("online shopping for members", "shop"))
+                .as("English doubles a final consonant before a suffix; a rule built only from the plain "
+                        + "endings stopped matching 'shopping', and would have done so silently")
+                .isTrue();
+        assertThat(MarketCorpusService.mentions("a study of cartography", "cart"))
+                .as("the doubled letter is the keyword's own, so 'cart' admits 'cartt' - which no word is - "
+                        + "and still refuses 'cartography', because the boundary must close")
+                .isFalse();
+        assertThat(MarketCorpusService.mentions("we need a SHOP", "shop"))
+                .as("case must not decide whether a duty applies")
+                .isTrue();
+        assertThat(MarketCorpusService.mentions("a content management system", "content management"))
+                .as("multi-word keywords are quoted, so the phrase is matched literally")
+                .isTrue();
+    }
+
+    @Test
+    void nothingMatchesOnEmptyInput() {
+        assertThat(MarketCorpusService.mentions("anything at all", ""))
+                .as("an empty keyword matched every text under contains(), which would have made every "
+                        + "profile apply to every plan")
+                .isFalse();
+        assertThat(MarketCorpusService.mentions(null, "shop")).isFalse();
+    }
+
     @Test
     void missingCorpusDegradesInsteadOfFailing() {
         MarketCorpusService absent = new MarketCorpusService("market-corpus-does-not-exist");

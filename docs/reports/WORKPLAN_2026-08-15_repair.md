@@ -644,9 +644,98 @@ deliberate deferral with a stated reason.
 
 | # | Finding | Why it was not fixed in place |
 |---|---|---|
-| **F31** | `CommandDashboardService.classifyKano` re-infers Kano from keywords - a **fourth** decider, a fourth vocabulary (`One-Dimensional`, `Indifferent`), and it drives the acceptance recommendation while `FeatureEntity.kanoClass` already holds the real answer | Found during the linguistic pass. Its Russian substrings are load-bearing, so removing them is a semantic change; the repair is to read `kanoClass` instead of guessing |
-| **F32** | The working tree carries **CRLF in 80+ files** the repo has as LF, with no `.gitattributes` and `core.autocrlf` unset | One `git add -A` would push an 80-file diff where every line is replaced by a visually identical one. Likely wants `* text=auto eol=lf` |
+| **F31** | `CommandDashboardService.classifyKano` re-inferred Kano from keywords - a **fourth** decider, a fourth vocabulary (`One-Dimensional`, `Indifferent`), driving the acceptance recommendation while `FeatureEntity.kanoClass` already held the real answer | **Repaired 2026-08-16.** `classifyKano` deleted; `fetchEpicKanoClasses` reads `features.kano_class`, joined by `feature_id`, which both tasks and wishlist rows carry. Unclassified counts as high-value: recommending that a client finish on an item nobody classified is advice from silence, the same reason ABSTAIN blocks. Its Russian substrings went with the mechanism |
+| **F32** | The working tree carried **CRLF in 80+ files** the repo had as LF, with no `.gitattributes` and `core.autocrlf` unset | **Repaired 2026-08-16**, commit `6574307`: `* text=auto eol=lf` plus `git add --renormalize .` as a commit that does nothing else. 181 files, ~23000 lines, zero content change - checkable, not asserted: `git diff --ignore-cr-at-eol --name-only` lists only `.gitattributes`, and `git ls-files --eol \| grep -c i/crlf` is 0 |
 | **F33** | `getRoleSpecificAssignment` hardcodes chess-specific task text in a general-purpose factory | A leftover from an early experiment; translated in place rather than removed, because removing it is a product decision |
+| **F34** | `EmsMetricsService.containsRefusalSignal` - **the substring dependency Step 18 named, now identified and repaired 2026-08-16** | See below; it was worse than the plan recorded |
+
+### F34 in full, because the shape of it matters
+
+Step 18's last line said *"two of five layers report numbers derived from substring matching"* without naming
+them. Reading rather than remembering found one, and it was anti-correlated with the thing it measured.
+
+`containsRefusalSignal` matched free text for `refusal`, `reject`, `forbidden`, `violation`, `critical`,
+`p0`, `security`, `auth`, `privacy`, `compliance`, `leak`, `failed`, `blocked`. One hit set
+`severeSourceObjection`, and since almost every role carries `kanoBias = must_be`, that set the role's
+stance straight to **`refuses`** - which `DoctrineVerdictLayer` reads.
+
+**The regulatory floor added in Steps 13-15 requires epics about privacy, consent, security and compliance
+for the German and US markets.** Every plan that obeys it contains those words by construction. So the
+better a plan served the client's legal obligations, the more roles were recorded as refusing it. A metric
+that punishes the behaviour it exists to encourage is worse than no metric.
+
+`auth` was a bare substring besides, matching `author` and `authority` - the same word-boundary defect
+repaired in Step 7, in a third place.
+
+The declared property was available all along: a philosophical critique, a self-falsification finding and a
+design-review concern **are** roles refusing; a client brief and a coverage gap are not. Replaced by
+`ROLE_REFUSAL_SOURCES` over `WishlistSource` - the same move as Step 5.
+
+Deliberately **not** the same predicate as `isDefectWork`, because they answer different questions.
+`philosophical_falsification` is excluded from defect work (a critique proposes a genuinely new capability,
+not rework) and included here for exactly the same reason: proposing it *is* the objection.
+
+**Correction while repairing it.** My first version listed five `WishlistSource` values as "refusal-class",
+and `EmsMetricsServiceTest.pendingSourceRoleRefusalBlocksDoctrineReadiness` refused it - correctly, because
+`source = role` is a role objecting too. The right line is not which source but **who raised it**: `client`
+is what the client asked for, every other source is something the factory itself raised. Severity is then
+read off the role's own `kanoBias` at the call site, not off the text: for a must-be doctrine an open
+objection is a refusal, for a performance doctrine the same objection is an objection. The doctrine decides
+what its own objection weighs, which is what a doctrine is for.
+
+### F35. The second substring input, found by auditing all five layers
+
+Step 18 asserted two and named none. Enumerating each layer's dependencies gave a definite answer:
+
+| Layer | Inputs | Substring-derived? |
+|---|---|---|
+| runtime | observation record, `latestCommitTime` | no |
+| infrastructure | HTTP reachability, `DatabaseHealth` | no |
+| six-sigma | none; always abstains | no |
+| doctrine | `EmsMetricsService` stances | **was** - F34, repaired |
+| acceptance | `MarketCorpusService.profilesInEvidence` | **yes - F35** |
+
+The second one is code written for Step 13. `profilesInEvidence` used `haystack.contains(needle)` to decide
+which value chains a product owes - the **denominator of `witnessed(P)`**. The corpus keyword `shop` is a
+substring of `workshop`, and `cart` of `cartography`: a company that runs workshops would have been
+classified an online shop and handed the payment and withdrawal-rights duties that follow.
+
+**This is the fourth appearance of one defect this week** - a substring test standing in for a word test -
+after `looksLikeUi` (Step 7), the compiler's keyword scan (Step 5's neighbourhood), and `auth` matching
+`author` (F34).
+
+All three matching sites - `profilesInEvidence`, and both in `MarketComplianceGate` - now call one helper,
+`MarketCorpusService.mentions`, with compiled patterns cached per keyword:
+
+```
+\bKEYWORD(<the keyword's own last letter>)?(s|es|ing|ed)?\b
+```
+
+Inflection is **enumerated rather than approximated by a prefix rule**, because a prefix rule is precisely
+what let `auth` match `author`. The doubled letter is not decoration: English doubles a final consonant
+before a suffix, so `shop` becomes `shopping`, and the first version of this rule stopped matching it. It is
+the keyword's **own** last letter that may repeat, never an arbitrary character - so `cart` admits `cartt`,
+which no English word is, and still refuses `cartography` because the boundary must close. A wildcard would
+have re-opened the hole being closed.
+
+**Why the rule is strict on both sides**, when a start-only boundary would have been simpler: one helper
+serves two consumers whose safety asymmetries are opposite.
+
+| Site | A false positive means | Direction of the error |
+|---|---|---|
+| `profilesInEvidence` | a chain the product does not owe joins the denominator, `witnessed(P)` falls, acceptance blocks | safe |
+| `MarketComplianceGate` coverage | a duty is marked covered and silently dropped | **unsafe** |
+
+A start-only boundary would have been kinder to the first (`workshop` fixed) and useless to the second
+(`cartography` still matches `cart`). The rule is therefore chosen by the worse of its two consumers, not
+the more convenient one.
+
+The failing case was found by a test rather than by a wrong classification months later, which is the whole
+argument for enumerating inflections: an approximation fails **quietly**.
+
+**Consequence for Step 18: its stated precondition is now met.** Both substring inputs are named and
+repaired. What still stands between the flag and being switched on is not the inputs but the observation -
+none of this has been seen against a running factory.
 
 ### Carried forward from earlier steps
 

@@ -6,6 +6,7 @@ import com.eneik.production.models.persistence.PrReviewEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.PrReviewRepository;
@@ -226,9 +227,7 @@ public class EmsMetricsService {
         boolean hasEvidence = ownerTotal > 0 || sourceTotal > 0;
         boolean severeSourceObjection = sourceWishlist.stream()
                 .filter(item -> item.getStatus() == WishlistStatus.pending)
-                .anyMatch(item -> containsRefusalSignal(item.getContent())
-                        || containsRefusalSignal(item.getAcceptanceCriteria())
-                        || containsRefusalSignal(item.getDod()));
+                .anyMatch(EmsMetricsService::isRoleRefusal);
         boolean hardFailure = ownerBlocked > 0 || ownerFailed > 0;
 
         double totalPotentialImpact = 0.0;
@@ -681,24 +680,33 @@ public class EmsMetricsService {
                 .collect(Collectors.toCollection(java.util.LinkedHashSet::new));
     }
 
-    private boolean containsRefusalSignal(String text) {
-        if (text == null || text.isBlank()) {
-            return false;
-        }
-        String lower = text.toLowerCase(Locale.ROOT);
-        return lower.contains("refusal")
-                || lower.contains("reject")
-                || lower.contains("forbidden")
-                || lower.contains("violation")
-                || lower.contains("critical")
-                || lower.contains("p0")
-                || lower.contains("security")
-                || lower.contains("auth")
-                || lower.contains("privacy")
-                || lower.contains("compliance")
-                || lower.contains("leak")
-                || lower.contains("failed")
-                || lower.contains("blocked");
+    /**
+     * A pending item that the FACTORY raised is an objection; one the CLIENT asked for is not.
+     *
+     * F34, 2026-08-16. This replaced containsRefusalSignal, which substring-matched free text for
+     * "refusal", "reject", "forbidden", "violation", "critical", "p0", "security", "auth", "privacy",
+     * "compliance", "leak", "failed" and "blocked". A single hit set severeSourceObjection, and because
+     * almost every role carries kanoBias = must_be, that set the role's stance straight to `refuses` -
+     * which DoctrineVerdictLayer reads.
+     *
+     * The metric was therefore anti-correlated with the thing it measures. The regulatory floor (Steps
+     * 13-15) REQUIRES epics about privacy, consent, security and compliance for the German and US markets,
+     * and slices inherit `client` as their source from the brief they came from. So every plan that obeyed
+     * the client's legal obligations contained those words by construction, and the better it obeyed them
+     * the more roles were recorded as refusing it. "auth" was a bare substring besides, matching "author"
+     * and "authority" - the word-boundary defect repaired in Step 7, in a third place.
+     *
+     * The declared property was available all along. `client` marks what the client asked for; every other
+     * WishlistSource marks something the factory itself raised - a critique, a falsification finding, a
+     * design-review concern, a coverage gap. Only the second kind is an objection.
+     *
+     * SEVERITY is not read off the text either: it comes from the role's own kanoBias at the call site. For
+     * a must-be doctrine (contracts, data integrity, auth) an open objection is a refusal; for a
+     * performance doctrine (UX, prediction) the same objection is an objection. The doctrine decides how
+     * much its own objection weighs, which is what a doctrine is for.
+     */
+    private static boolean isRoleRefusal(WishlistEntity item) {
+        return item != null && item.getSource() != null && item.getSource() != WishlistSource.client;
     }
 
     private double confidence(long ownerTotal, long ownerDone, long gatePassed, long sourceTotal, boolean hasEvidence) {

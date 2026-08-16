@@ -87,7 +87,7 @@ public class MarketComplianceGate {
                     // silence is honest here, a guess would not be.
                     continue;
                 }
-                boolean covered = keywords.stream().anyMatch(k -> haystack.contains(k.toLowerCase(Locale.ROOT)));
+                boolean covered = keywords.stream().anyMatch(k -> MarketCorpusService.mentions(haystack, k));
                 if (!covered) {
                     findings.add(new Finding(expectation.capabilityId(), expectation.requirement(),
                             expectation.source(), expectation.market()));
@@ -133,7 +133,7 @@ public class MarketComplianceGate {
         if (words == null || words.isEmpty()) {
             return true;
         }
-        return words.stream().anyMatch(w -> haystack.contains(w.toLowerCase(Locale.ROOT)));
+        return words.stream().anyMatch(w -> MarketCorpusService.mentions(haystack, w));
     }
 
     /** Flattens a parsed compiler plan into the text the check reads. */

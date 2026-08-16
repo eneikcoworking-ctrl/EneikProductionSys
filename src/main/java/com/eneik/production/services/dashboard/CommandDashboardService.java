@@ -96,7 +96,7 @@ public class CommandDashboardService {
     // Phase follow-up (2026-07-21, found via a live API check against test-twenty-ninth while chasing the
     // system-task-pollution fix): H2's JdbcTemplate.queryForList returns column keys in the driver's
     // native case (confirmed live: "STATUS", "QUALITY_GATE_PASSED", "CONTENT", not the lowercase
-    // snake_case calculateReadiness()/classifyKano() actually look up). That mismatch meant every
+    // snake_case calculateReadiness() actually looks up). That mismatch meant every
     // t.get("status")/t.get("quality_gate_passed")/etc. call silently returned null - the Acceptance
     // Readiness card had been unconditionally reporting "not ready"/"unknown" for every project
     // regardless of real task state, since dataSourcesStatus wasn't set (so the code assumed "healthy
@@ -118,7 +118,7 @@ public class CommandDashboardService {
     // carrier tasks around the normal pipeline (payload.taskType). Raw JDBC returns the JSON payload
     // column as byte[] (confirmed live: base64 in the HTTP response), so it's decoded to text and
     // pattern-matched rather than parsed as structured JSON - consistent with this file's existing
-    // string-heuristic style (see classifyKano) and avoids pulling a JSON parser into a class that
+    // string style and avoids pulling a JSON parser into a class that
     // otherwise works purely off raw JDBC maps.
     private static final Set<String> SYSTEM_META_TASK_TYPES = Set.of(
             "wishlist_compiler", "falsification_audit", "pr_review_fallback", "design_review", "coverage_audit"
@@ -230,15 +230,23 @@ public class CommandDashboardService {
             }
         }
 
+        // F31 (2026-08-16). This used to call classifyKano(content), which substring-matched the item's prose
+        // for words like "database", "api", "style", "color" - a FOURTH place deciding Kano, with a fourth
+        // vocabulary, driving the recommendation the operator reads when choosing whether to accept. The
+        // real classification was in the database the whole time: the compiler writes it to
+        // features.kano_class, and both tasks and wishlist rows carry feature_id.
+        Map<String, String> epicKano = fetchEpicKanoClasses(projectId);
         if (!pendingItems.isEmpty()) {
             boolean hasHighValuePending = false;
             for (Map<String, Object> item : pendingItems) {
-                String content = (String) item.get("content");
-                if (content == null) content = (String) item.get("text");
-                if (content == null) content = (String) item.get("description");
-
-                String kanoClass = classifyKano(content);
-                if ("Must-Be".equals(kanoClass) || "One-Dimensional".equals(kanoClass)) {
+                Object featureId = item.get("feature_id");
+                String kanoClass = featureId == null ? null : epicKano.get(featureId.toString());
+                // Unclassified counts as high value, deliberately. Recommending that a client finish on an
+                // item nobody classified would be advising from silence - the same reason ABSTAIN blocks in
+                // the verdict lattice rather than passing.
+                if (com.eneik.production.services.compiler.KanoClass.isUnclassified(kanoClass)
+                        || "Must-Be".equals(kanoClass)
+                        || "Performance".equals(kanoClass)) {
                     hasHighValuePending = true;
                     break;
                 }
@@ -310,21 +318,30 @@ public class CommandDashboardService {
         return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken, kanoRecommendation);
     }
 
-    private String classifyKano(String text) {
-        if (text == null) return "Indifferent";
-        String lower = text.toLowerCase(Locale.ROOT);
-        if (lower.contains("database") || lower.contains("api") || lower.contains("auth") ||
-            lower.contains("backend") || lower.contains("security") || lower.contains("logic") ||
-            lower.contains("core") || lower.contains("save") || lower.contains("create") ||
-            lower.contains("интегра") || lower.contains("база")) {
-            return "Must-Be";
+    /**
+     * The epic-level Kano the compiler actually decided, keyed by feature id.
+     *
+     * Replaces classifyKano, deleted 2026-08-16 (F31). Read through the same raw-JDBC path as every other
+     * table here, and degrading to an empty map rather than throwing: a missing classification must make
+     * the recommendation more cautious, never make the dashboard fail.
+     */
+    private Map<String, String> fetchEpicKanoClasses(UUID projectId) {
+        if (!tableExists("features") || !columnExists("features", "kano_class")) {
+            return Map.of();
         }
-        if (lower.contains("tweak") || lower.contains("style") || lower.contains("color") ||
-            lower.contains("css") || lower.contains("layout") || lower.contains("text") ||
-            lower.contains("label") || lower.contains("optimization") || lower.contains("minor") ||
-            lower.contains("дизайн") || lower.contains("экран")) {
-            return "Attractive";
+        try {
+            Map<String, String> byId = new LinkedHashMap<>();
+            for (Map<String, Object> row : lowercaseKeys(jdbcTemplate.queryForList(
+                    "SELECT id, kano_class FROM features WHERE project_id = ?", projectId))) {
+                Object id = row.get("id");
+                Object kano = row.get("kano_class");
+                if (id != null) {
+                    byId.put(id.toString(), kano == null ? null : kano.toString());
+                }
+            }
+            return byId;
+        } catch (Exception e) {
+            return Map.of();
         }
-        return "One-Dimensional";
     }
 }

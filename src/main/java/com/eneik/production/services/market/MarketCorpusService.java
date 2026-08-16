@@ -252,18 +252,72 @@ public class MarketCorpusService {
         for (JsonNode profile : profiles()) {
             for (JsonNode keyword : profile.path("detectionKeywords")) {
                 String needle = keyword.asText("").toLowerCase(Locale.ROOT);
-                // A blank keyword must never be tested: contains("") is true for every text, so a
-                // single empty entry in the corpus would match every profile against every plan.
+                // A blank keyword must never be tested: it would match every text, so a single empty entry
+                // in the corpus would match every profile against every plan.
                 if (needle.isBlank()) {
                     continue;
                 }
-                if (haystack.contains(needle)) {
+                if (mentions(haystack, needle)) {
                     matched.add(profile.path("id").asText(""));
                     break;
                 }
             }
         }
         return matched;
+    }
+
+    /**
+     * Does this text MENTION the keyword, as a word rather than as a fragment of one?
+     *
+     * 2026-08-16. Every detection in this package used {@code haystack.contains(keyword)}, and the corpus
+     * keyword "shop" is a substring of "workshop": a company that runs workshops was classified as an
+     * online shop and handed the payment and withdrawal-rights duties that follow. "cart" sits inside
+     * "cartography" the same way. That is the fourth appearance this week of one defect - a substring test
+     * standing in for a word test - after looksLikeUi (Step 7), EmsMetricsService's "auth" matching
+     * "author" (F34), and the compiler's own keyword scan.
+     *
+     * The rule is exact: a word boundary on both sides, with the common English inflections allowed, so
+     * "shopping carts" still matches "cart" while "workshop" and "cartography" do not. Inflection is
+     * enumerated rather than approximated by a prefix rule, because a prefix rule is what let "auth" match
+     * "author" - and an approximation that fails silently is what this whole class exists to stop.
+     *
+     * Cached per keyword: this runs over every capability keyword for every plan, and Pattern.compile on a
+     * hot path was the kind of quiet cost that gets blamed on something else later.
+     */
+    public static boolean mentions(String haystack, String keyword) {
+        if (haystack == null || haystack.isBlank() || keyword == null || keyword.isBlank()) {
+            return false;
+        }
+        return KEYWORD_PATTERNS
+                .computeIfAbsent(keyword.trim().toLowerCase(Locale.ROOT), MarketCorpusService::compileKeyword)
+                .matcher(haystack)
+                .find();
+    }
+
+    private static final ConcurrentHashMap<String, java.util.regex.Pattern> KEYWORD_PATTERNS =
+            new ConcurrentHashMap<>();
+
+    /**
+     * {@code \bKEYWORD(<doubled final letter>)?(s|es|ing|ed)?\b}.
+     *
+     * The doubled letter is not decoration: English doubles a final consonant before a suffix, so "shop"
+     * becomes "shopping" and a rule built only from the plain suffixes silently stopped matching it. That
+     * showed up as a failing test rather than as a wrong classification months later, which is the whole
+     * reason the inflections are enumerated instead of approximated - an approximation fails quietly.
+     *
+     * It is the keyword's OWN last letter that may repeat, never an arbitrary character. "cart" therefore
+     * admits "cartt", which no English word is, and still refuses "cartography" because the boundary must
+     * close. A wildcard here would have re-opened exactly the hole being closed.
+     */
+    private static java.util.regex.Pattern compileKeyword(String keyword) {
+        String quoted = java.util.regex.Pattern.quote(keyword);
+        char last = keyword.charAt(keyword.length() - 1);
+        String doubled = Character.isLetter(last)
+                ? "(" + java.util.regex.Pattern.quote(String.valueOf(last)) + ")?"
+                : "";
+        return java.util.regex.Pattern.compile(
+                "\\b" + quoted + doubled + "(s|es|ing|ed)?\\b",
+                java.util.regex.Pattern.CASE_INSENSITIVE);
     }
 
     /** Value paths per profile, for the completeness check. Profiles themselves carry no authority yet. */
