@@ -1246,6 +1246,39 @@ Also confirmed this pass: 135 `SQL Error 90020` (database already in use) all pr
 zero since; no repeated meaningful log line in 35 minutes, so no new F42/F43-shaped loop; the client brief
 still shows exactly ONE compiler task across eight passes.
 
+### F45. The design-system call sends Eneik's own project id to Stitch
+
+First activity from `design_system_falsification_enabled`, switched on 2026-08-16. It fails, and the error
+is exact rather than generic:
+
+```
+StitchClient: tool call create_design_system returned an error result: Requested entity was not found.
+```
+
+The HTTP call succeeds; Stitch answers, and its answer is that the entity does not exist. Of the two
+arguments only one is a REFERENCE to something that must already exist:
+
+```java
+stitchClient.createDesignSystem(
+        project.getId().toString(),   // <- Eneik's internal project UUID
+        epic.title(), "LIBRE_CASLON_TEXT", "IBM_PLEX_SANS", "#7d8570", "#c99a2e");
+```
+
+`41af381d-...` is a row id in this system's own database. Stitch has never heard of it; Stitch projects
+carry Stitch ids.
+
+**The system already knows these are different identifiers - in one place.** `DesignAssetResult.stitchProjectId`
+exists precisely because a Stitch project id is not an Eneik project id. One concept in two places, only one
+of which knows - the same shape as F17's Kano default, F34's two spellings of an objection, and the two
+plan parsers.
+
+**Not fixed.** The repair is to pass the Stitch project id, but whether this project HAS one, where it is
+persisted, and what should happen when it does not are three things I have not read yet. A fifth guess in
+one day is worth less than one reading.
+
+Frequency is low - 2 occurrences in 35 minutes, against 3 in three seconds when first observed - so this is
+not an F42/F43-shaped loop and does not burn quota.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
