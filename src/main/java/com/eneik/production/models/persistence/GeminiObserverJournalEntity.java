@@ -6,8 +6,8 @@ import java.util.UUID;
 
 /**
  * One cycle's self-written journal entry for {@code GeminiProjectObserverService} (2026-07-25 redesign,
- * operator directive: "она вообще должна была создать свой отдельный лог, а не работать с твоим! ты должен
- * оставаться внешним наблюдателем, а джемини справляется сама"). Gemini authors this entry herself each
+ * operator directive: "she should have created her own separate log rather than working with yours! you must
+ * remain an outside observer while Gemini manages on her own"). Gemini authors this entry herself each
  * cycle for her own cross-cycle continuity - it replaces the backend's internal Logback capture pipeline as
  * the observer's source of "what did I already know", so the backend stays a pure evidence-gatherer/external
  * observer rather than curating its own technical log as if it WERE the project.

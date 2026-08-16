@@ -23,14 +23,14 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Sole owner of "does Jules itself know this session is done" - 2026-08-01 (operator: "те сессии джулс,
- * которые не продуктовые а технические можно убирать в архив или удалять"). Confirmed live against
+ * Sole owner of "does Jules itself know this session is done" - 2026-08-01 (operator: "those Jules sessions that
+ * are technical rather than product ones can be archived or deleted"). Confirmed live against
  * Jules's real API (https://jules.google/docs/api/reference/sessions/): DELETE /v1alpha/sessions/{session}
  * genuinely removes the session server-side (a follow-up GET returns a real 404, not just a locally-assumed
  * success) - before this, our own "cancelled" convention was purely local fiction, Jules was never told.
  *
  * Two triggers: a task reaching a terminal status, or its whole project closing - matching exactly what the
- * operator described doing by hand ("я вручную отправлял много активных сессий из закрытого проекта").
+ * operator described doing by hand ("I was manually retiring many active sessions from a closed project").
  */
 @Service
 public class SessionLifecycleService {

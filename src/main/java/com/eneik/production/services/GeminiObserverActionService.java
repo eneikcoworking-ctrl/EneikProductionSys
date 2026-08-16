@@ -22,13 +22,13 @@ import java.time.Instant;
 import java.util.UUID;
 
 /**
- * The observer's real, non-code powers (2026-07-26, operator directive: "даем ей все полномочия - кроме
- * кода"). Every method here is a thin, guarded wrapper over an operation that already exists elsewhere in
+ * The observer's real, non-code powers (2026-07-26, operator directive: "we give her every authority - except
+ * code"). Every method here is a thin, guarded wrapper over an operation that already exists elsewhere in
  * the codebase for a human/scheduled caller - nothing here is a new capability, only a new, safe entry
  * point for {@link GeminiProjectObserverService} to reach it. Deliberately excludes anything that writes
  * source code, touches git, or dispatches a fresh coding session against unreviewed judgment - those stay
- * Jules-on-client-projects-only or human/Claude-only, per operator directive ("им занимаемся только мы с
- * тобой", 2026-07-26 - system-repo code stays off-limits to any autonomous agent).
+ * Jules-on-client-projects-only or human/Claude-only, per operator directive ("only you and I deal with
+ * that", 2026-07-26 - system-repo code stays off-limits to any autonomous agent).
  *
  * Every call is scoped to the SAME project the observer is currently evaluating (never trusts a
  * cross-project id), and every outcome - success, skipped, or failed - is persisted to
@@ -105,8 +105,8 @@ public class GeminiObserverActionService {
     }
 
     /**
-     * Retire a wedged PersistentWorkerSessionEntity by hand (2026-08-11, operator directive: "дай этот
-     * инструмент джемини тоже" after a confirmed live incident - worker 924b2c9f stayed batch-in-flight for
+     * Retire a wedged PersistentWorkerSessionEntity by hand (2026-08-11, operator directive: "give Gemini this
+     * tool as well" after a confirmed live incident - worker 924b2c9f stayed batch-in-flight for
      * 14+ hours after its carrier session died, because isIdleAndFresh's isBatchInFlight() check
      * short-circuits before the age/cycle-count rotation safety net is ever reached). targetId is the
      * CARRIER TASK id (same convention as nudgeStuckSession), not the worker row id - she never sees the

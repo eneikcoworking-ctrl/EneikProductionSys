@@ -52,7 +52,7 @@ public class FeatureService {
     }
 
     /**
-     * Ф8 (2026-07-21, operator directive): every compile cycle must decide, per эпик, whether it matches
+     * Phase 8 (2026-07-21, operator directive): every compile cycle must decide, per эпик, whether it matches
      * an already-existing эпик in the project or is genuinely new - this list is what gets handed to the
      * compiler prompt as the candidate set to semantically match against (id/title/jtbd only - enough for
      * the compiler to judge a narrative match without dumping every task inside each эпик into the prompt).

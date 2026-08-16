@@ -47,7 +47,7 @@ public class GitHubPullRequestService {
     }
 
     /**
-     * Ф-followup (2026-07-21, operator directive): generalizes the persistent-worker "principle of
+     * Phase follow-up (2026-07-21, operator directive): generalizes the persistent-worker "principle of
      * charity" check (already-parseable result file = real progress) to real implementer sessions, which
      * have no single result file to check - the closest analogous ground truth is "did a new commit land
      * on this branch since our own tracking last saw progress". Confirmed live: a session can push a real,

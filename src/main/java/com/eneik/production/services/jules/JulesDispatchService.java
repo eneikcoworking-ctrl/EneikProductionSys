@@ -91,7 +91,7 @@ public class JulesDispatchService {
     // actually need" reason, and because a single sloppy brief could in principle keep re-triggering gaps
     // across retries. Was 0 (observation-only: gaps were reported but never turned into work) while this
     // was being live-verified; operator directive (2026-07-23) after seeing the first real audit run "6
-    // gaps found, 0 created" - each real gap should become its own wishlist item, one эпик per gap (the
+    // gaps found, 0 created" - each real gap should become its own wishlist item, one epic per gap (the
     // compiler's own rules already guarantee this: every brief becomes at least one epic, epics from
     // different briefs are never merged, and a non-client-sourced brief is told to produce exactly ONE
     // work item rather than a full schema+API+UI decomposition).
@@ -138,8 +138,8 @@ public class JulesDispatchService {
     // its file sits at a fixed, reused path (e.g. .eneik/task-plan.json) - the NEXT merge would silently
     // overwrite it, destroying the previous run's documentation. Archiving a timestamped copy under
     // .eneik/records/ keeps every run as permanent, distinctly named production documentation instead of
-    // a single clobbered file (operator's explicit instruction: "даже если там просто файл с текстом -
-    // его сохранять под соответствующим названием - для контекста. Это производственная документация").
+    // a single clobbered file (operator's explicit instruction: "even if it is just a text
+    // file, save it under a fitting name - for context. This is production documentation").
     private void archiveRecordFile(com.eneik.production.models.persistence.ProjectEntity project, String fixedPath, String typeLabel) {
         String archivePath = ".eneik/records/" + typeLabel + "-" + RECORD_ARCHIVE_TIME_SUFFIX.format(java.time.Instant.now()) + ".json";
         boolean archived = gitHubPullRequestService.copyFile(project, fixedPath, archivePath,
@@ -711,7 +711,7 @@ public class JulesDispatchService {
         // AutoMergeService.classifyAndHandleBranch), so this is a no-op for the compiler/audit/review-
         // fallback/design-review roles, which never earn one.
         //
-        // Ф7 (2026-07-21, operator directive): used to also require accountId == featureThread.getAccountId()
+        // Phase 7 (2026-07-21, operator directive): used to also require accountId == featureThread.getAccountId()
         // before allowing continuation, reasoning that cross-account continuation "has never been tested".
         // Removed after review found nothing to actually justify it: session creation authenticates purely
         // via the per-account API key (X-Goog-Api-Key) for quota/billing, not git identity - Jules's GitHub
@@ -971,8 +971,8 @@ public class JulesDispatchService {
                 }
             }
 
-            // Ф-followup (2026-07-23, operator directive): "опрос статуса джулс впринципе ненадежная
-            // вещь ... статус должен жёстко устанавливаться бекендом" - Jules's own raw status API is
+            // Phase follow-up (2026-07-23, operator directive): "polling Jules for status is unreliable in
+            // principle ... the status must be set firmly by the backend" - Jules's own raw status API is
             // not treated as authoritative once a real PR has been independently confirmed to exist.
             // Confirmed live: Jules's API kept reporting "running" for a session that had already opened
             // a real GitHub PR (AutoMergeService's own sync confirmed it), so this poll unconditionally
@@ -1415,8 +1415,8 @@ public class JulesDispatchService {
     }
 
     /**
-     * Gemini removed entirely from this path (2026-07-26, operator directive - "не согласен. может быть
-     * детерменированный ответ. 'Следуй своим предпостениям и рекомендациям'"). We trust Jules: for
+     * Gemini removed entirely from this path (2026-07-26, operator directive - "disagree. a deterministic answer is
+     * possible. 'Follow your own guidelines and recommendations'"). We trust Jules: for
      * anything not caught by the specific deterministic patterns (artifact hygiene, repeated-question
      * circuit breaker, generic-proceed), the answer is simply to trust Jules's own judgment on the task
      * facts already in front of it - {@link #fallbackJulesAnswer} already said exactly this, it was just
@@ -1532,8 +1532,8 @@ public class JulesDispatchService {
     }
 
     // UNAVAILABLE is deliberately distinct from STUCK: a broken/unreachable classifier is an absence of
-    // information, not evidence of anything about the session. Operator directive 2026-07-24: "если ИИ
-    // недоступен это не значит что ты имеешь право сохранять нерабочие решения" (unavailable AI does not
+    // information, not evidence of anything about the session. Operator directive 2026-07-24: "if the AI is
+    // unavailable that does not entitle you to keep broken solutions" (unavailable AI does not
     // grant permission to fall back to a destructive default) - closing/failing the task on an infra
     // hiccup would be exactly that. UNAVAILABLE must never be silently folded into STUCK.
     private enum LoopVerdict { PROGRESSING, REASONED_BLOCKER, STUCK, UNAVAILABLE }
@@ -1681,7 +1681,7 @@ public class JulesDispatchService {
         // fact changing - fall back to the original generic circuit-breaker path.
         LoopDiagnosis diagnosis = diagnoseLoop(task, latestQuestion, closeReason);
         String geminiAnalysis = geminiLoopAnalysis(task, latestQuestion, responseHistory, diagnosis, closeReason);
-        // Ф-followup (2026-07-21, operator directive): this text is Gemini's own INFERENCE from limited
+        // Phase follow-up (2026-07-21, operator directive): this text is Gemini's own INFERENCE from limited
         // signal (the question/response history it was given), not a verified fact - confirmed live
         // tonight that repeating it as ground truth produced a false report ("UI Slice stopped making
         // objective progress") that directly contradicted hard evidence (a complete, working PR had
@@ -1759,8 +1759,7 @@ public class JulesDispatchService {
     }
 
     /**
-     * Gemini call removed (2026-07-25, operator directive - emergency cost incident, "оставить только
-     * мониторинг"). Safe to drop entirely: the close-and-follow-up decision this feeds into is already
+     * Gemini call removed (2026-07-25, operator directive - emergency cost incident, "keep monitoring only"). Safe to drop entirely: the close-and-follow-up decision this feeds into is already
      * fully made by the time this runs (session.setStatus("loop_closed") and createCircuitBreakerWishlist
      * both happen unconditionally right after, driven by the deterministic {@code diagnosis}) - this text
      * was always supplementary documentation for the closure reason/dialogue log, never load-bearing. Now
@@ -2084,12 +2083,12 @@ public class JulesDispatchService {
     void executeCodeReview(TaskEntity task, JulesSessionEntity session, String prUrl, List<String> siblingPrUrls,
                             List<PendingFallbackReview> fallbackCollector) {
         // Gemini PR review permanently disabled (2026-07-25, operator directive - emergency cost incident:
-        // "она за несколько часов потратила месячный бюджет, при этом по проекту ничего не сдвинулось" -
+        // "in a few hours it spent a month's budget while nothing on the project moved" -
         // a task that fails review repeatedly paid for a full pro-tier diff review on every single
         // resubmission, with no cap). Every PR now routes to the Jules-reviewer fallback path unconditionally
         // - previously reserved for Gemini-outage recovery only, already fully proven (a different Jules
         // session reviews the diff; applyReviewVerdictToTask mirrors the exact same approve/reject state
-        // transitions this method used to apply inline). "оставить только джулса" - Jules capacity, not
+        // transitions this method used to apply inline). "keep Jules only" - Jules capacity, not
         // metered per-token Gemini calls, is the review cost now.
         fallbackCollector.add(new PendingFallbackReview(task, prUrl));
     }
@@ -2123,8 +2122,8 @@ public class JulesDispatchService {
 
         for (Map.Entry<UUID, List<TaskEntity>> entry : byFeature.entrySet()) {
             List<TaskEntity> siblings = entry.getValue();
-            // Operator directive (2026-07-25): "нужно проверять только один текущий проект... чтобы чужой
-            // контекст не вредил мониторингу" - this loop spans every project's pending_review tasks in
+            // Operator directive (2026-07-25): "only the one current project should be checked... so that another
+            // project's context does not harm the monitoring" - this loop spans every project's pending_review tasks in
             // one tick, and previously logged everything under SYSTEM scope, making it impossible to tell
             // which project a given "no resolvable open-PR session" line was about. A feature can only
             // belong to one project (siblings under one featureId are always from the same project), so
@@ -2422,7 +2421,7 @@ public class JulesDispatchService {
                 markSystemTaskDone(compilerTask);
             }
             systemProgressTracker.recordProgress();
-            log.info("{} wishlist(s) compiled by Jules session {} into {} эпик(s), {} task slice(s) total",
+            log.info("{} wishlist(s) compiled by Jules session {} into {} epic(s), {} task slice(s) total",
                     wishlists.size(), session.getExternalSessionId(), epics.size(),
                     epics.stream().mapToInt(e -> e.slices().size()).sum());
             return;
@@ -2686,7 +2685,7 @@ public class JulesDispatchService {
         if (isValidCompilerPlan(epics, wishlists.size())) {
             projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, epics);
             systemProgressTracker.recordProgress();
-            log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} эпик(s), {} task slice(s) this cycle",
+            log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} epic(s), {} task slice(s) this cycle",
                     carrierTask.getId(), wishlists.size(), epics.size(),
                     epics.stream().mapToInt(e -> e.slices().size()).sum());
             return;
@@ -2750,7 +2749,7 @@ public class JulesDispatchService {
      * not - see PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT's javadoc).
      */
     /**
-     * 2026-08-09 (live incident, operator-flagged: "проверь что все философы высказались"): BARCAN-TAG-12
+     * 2026-08-09 (live incident, operator-flagged: "check that every philosopher has spoken"): BARCAN-TAG-12
      * was sent a follow-up at 09:00:14 and this method merged/closed the whole discussion by 09:00:23 - 9
      * seconds later - with the final archived report never containing a single critique for that role tag.
      * Root cause: "covered" used to come from ProjectFlowService.coveredPhilosophicalAuditRoles, an
@@ -3772,7 +3771,7 @@ public class JulesDispatchService {
             wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.coverage_gap);
             wishlist.setSourceRoleTag(gap.roleTag());
             // Left unset (unlike the pre-redesign version): a coverage audit now runs once against the
-            // WHOLE wishlist's shipped code, potentially spanning several эпики, so there is no single
+            // WHOLE wishlist's shipped code, potentially spanning several epics, so there is no single
             // correct feature to inherit anymore - resolveOrCreateFeatureId gives it its own grouping,
             // same fallback every other un-featured wishlist item already gets.
             wishlist.setContent("Coverage audit gap [" + gap.title() + "]: " + gap.reason()
@@ -4114,8 +4113,8 @@ public class JulesDispatchService {
     }
 
     /**
-     * Ф8 (2026-07-21, operator directive): parses the two-level {"epics": [{...,"slices": [...]}]} shape -
-     * a wishlist splits into as many эпики (epics) as the product needs, not always exactly one, and every
+     * Phase 8 (2026-07-21, operator directive): parses the two-level {"epics": [{...,"slices": [...]}]} shape -
+     * a wishlist splits into as many epics (epics) as the product needs, not always exactly one, and every
      * compile cycle decides per epic whether it matches an existing one (see existingEpicsPromptContext).
      */
     private List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> parseCompilerPlan(
@@ -4328,7 +4327,7 @@ public class JulesDispatchService {
     public String mapExternalStatus(String externalStatus) {
         if (externalStatus == null) return "running";
 
-        // Ф-followup (2026-07-21, operator directive): FAILED and CANCELLED used to collapse into one
+        // Phase follow-up (2026-07-21, operator directive): FAILED and CANCELLED used to collapse into one
         // "failed" string, discarding which one Jules actually reported - confirmed live to cost real
         // investigation time earlier tonight (had to dig through DB fields and this exact switch statement
         // just to determine a session's `failed` status wasn't from our own circuit breakers). FAILED means
@@ -4416,7 +4415,7 @@ public class JulesDispatchService {
         String taskDescription = task.getDescription();
 
         java.util.concurrent.CompletableFuture.runAsync(() -> {
-            // 2026-07-26 operator directive ("косметику отключить - она не нужна"): this message's wording
+            // 2026-07-26 operator directive ("turn the cosmetics off - they are not needed"): this message's wording
             // has no effect on anything downstream (Jules reads it as a nudge, not a spec) - a Gemini call
             // to rephrase it bought nothing but cost and an extra failure mode. Deterministic text only now.
             String prompt = "Eneik orchestrator recovery: continue this task if possible, or open a PR with the current progress. "
@@ -4756,8 +4755,8 @@ public class JulesDispatchService {
             TaskStatus.pending_review, TaskStatus.review, TaskStatus.blocked);
 
     /**
-     * Testimony-vs-evidence Phase 2 (2026-07-25, operator directive: "надо придумать механизм регулярного
-     * обновления всех статусов - фактических" - a mechanism to regularly reconcile every status against
+     * Testimony-vs-evidence Phase 2 (2026-07-25, operator directive: "a mechanism is needed for regularly
+     * refreshing every status - the factual ones" - a mechanism to regularly reconcile every status against
      * fact). Phase 1 above (honorDavidsonProgressEvidence and its callers) is entirely reactive - it only
      * ever runs for a session the timestamp-based "looks stuck" heuristic already flagged, and only closes
      * one specific gap (a branch exists but no PR was ever opened). This sweep is unconditional: it checks

@@ -240,7 +240,7 @@ public class ContinuousOrchestrationService {
      * skimming PR titles, but invisible to every process-activity metric this system had (dispatch
      * counts, merge counts, stall detection). Direct, cheap, catches the exact class of regression.
      */
-    // Ф-followup (2026-07-21, operator directive): TaskEntity.getTitle() is a generic role-template string
+    // Phase follow-up (2026-07-21, operator directive): TaskEntity.getTitle() is a generic role-template string
     // ("API Slice" for any BARCAN-TAG-02 slice, "UI Slice" for any BARCAN-TAG-11 slice) - confirmed live to
     // false-positive on genuinely distinct work that just happens to share a role (3 unrelated tasks - an
     // original CRUD endpoint slice, an unrelated auth-endpoints follow-up, and a dead-code cleanup - all

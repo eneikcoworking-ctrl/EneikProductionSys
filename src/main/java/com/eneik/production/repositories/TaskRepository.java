@@ -24,7 +24,7 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
     Optional<TaskEntity> findByProjectIdAndDescription(UUID projectId, String description);
 
-    // Ф4/Д3 (2026-07-21): needed to repoint a downstream task's dependsOn when its dependency gets
+    // Phase 4/Д3 (2026-07-21): needed to repoint a downstream task's dependsOn when its dependency gets
     // abandoned (merge-conflict escalation, force-unblock exhaustion) - without this, dependsOn pointing
     // at a task that will never reach TaskStatus.done (or ever merge) leaves the downstream task silently
     // stuck in `queued` forever, with no error, no alarm, nothing to search for.

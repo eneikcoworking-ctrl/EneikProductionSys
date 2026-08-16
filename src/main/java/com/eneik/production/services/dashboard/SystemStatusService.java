@@ -442,8 +442,8 @@ public class SystemStatusService {
     // Same marker EmsMetricsService.isSystemMetaTask() uses: compiler/falsification-audit/review-fallback/
     // design-review/coverage-audit carrier tasks are dispatched under the orchestrator role and never
     // produce user-facing work. This section feeds the Metrics tab's "System Pipeline" chart (task status
-    // breakdown), which the operator explicitly wants scoped to real work only (2026-07-21: "меня не
-    // интересуют задачи без кода или без полезного для пользователя контента") - counting carrier tasks
+    // breakdown), which the operator explicitly wants scoped to real work only (2026-07-21: "I am not
+    // interested in tasks with no code and no content useful to a user") - counting carrier tasks
     // here would silently reintroduce the exact debris this directive was about.
     private boolean isSystemMetaTask(TaskEntity task) {
         return task.getPayload() != null && task.getPayload().has("taskType");

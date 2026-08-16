@@ -340,7 +340,7 @@ public class AutoMergeService {
     }
 
     // Operator directive 2026-07-24 (live incident, 6 simultaneous escalations on test-thirty-seventh, all
-    // traced to orchestrator-owned files not real code - "чинить это сейчас и навсегда"): the 3-attempt
+    // traced to orchestrator-owned files not real code - "fix this now and for good"): the 3-attempt
     // escalation path above is correct to stop burning Jules retries on a conflict that keeps failing, but
     // once ciStatus="escalated" the review is permanently excluded from isReviewPollCandidate - a genuine
     // dead end even for the class of conflict the widened fast path (see handleMergeConflict) can now
@@ -349,7 +349,7 @@ public class AutoMergeService {
     // GitHub and syncs whichever files fall in the auto-resolvable set (`.eneik/*`, root `.gitignore`) to
     // main, then re-queues the review for a normal merge attempt next cycle.
     //
-    // Same correction as Ф1 in handleMergeConflict's fast path (2026-07-21) applies here, and was missed in
+    // Same correction as Phase 1 in handleMergeConflict's fast path (2026-07-21) applies here, and was missed in
     // the first version of this method: `fetchPrFiles` returns the PR's FULL changed-file list, not just
     // the files actually in conflict - a real feature PR always has dozens of legitimate Java/SQL files
     // alongside the one or two stray orchestrator files, so requiring `allMatch` on the WHOLE list meant
@@ -447,8 +447,8 @@ public class AutoMergeService {
     }
 
     /**
-     * Real-code escalation resurrection (2026-07-25, operator: "мы сделали проверку на истинность статусов,
-     * но автомерж работает плохо" - concrete live incident, PR#87/task e4b1bc9e). resurrectTriviallyEscalated
+     * Real-code escalation resurrection (2026-07-25, operator: "we added a truthfulness check on statuses,
+     * but auto-merge works badly" - concrete live incident, PR#87/task e4b1bc9e). resurrectTriviallyEscalated
      * Conflicts above only ever resurrects a conflict whose files are ENTIRELY orchestrator-owned (`.eneik/`,
      * root `.gitignore`) - its own `if (files.isEmpty()) continue;` guard is unreachable whenever the
      * conflict touches real product code, which is the common case. handleMergeConflict's own escalation
@@ -730,8 +730,8 @@ public class AutoMergeService {
         }
     }
 
-    // Operator directive 2026-07-24: "нужна автоматика - три попытки и закрыть удалить ветку, удалить
-    // цепочку. написать в вишлист подробные причины и рекомендации." Up to CLOSEOUT_CONFLICT_MAX_ATTEMPTS
+    // Operator directive 2026-07-24: "automation is needed - three attempts, then close, delete the branch,
+    // delete the chain. write detailed causes and recommendations into the wishlist." Up to CLOSEOUT_CONFLICT_MAX_ATTEMPTS
     // Jules-mediated conflict-resolution rounds (unlike a regular PR conflict there is no live Jules
     // session to message in-place - the thread's last session is long-terminal - so each attempt dispatches
     // a fresh one). A cooldown prevents piling a new session on top of one that might still be working.
@@ -857,7 +857,7 @@ public class AutoMergeService {
                         boolean changed = !prUrl.equals(matchingSession.getPrUrl());
                         matchingSession.setPrUrl(prUrl);
                         String status = matchingSession.getStatus();
-                        // Ф-followup (2026-07-23, confirmed live on test-thirty-fifth): setting the status
+                        // Phase follow-up (2026-07-23, confirmed live on test-thirty-fifth): setting the status
                         // field directly here used to never trigger handlePrOpenedWorkflow - that edge-
                         // trigger only lives inside JulesDispatchService.pollStatus's own oldStatus/mappedStatus
                         // comparison within ONE call, so a status flip written by a completely different
@@ -991,7 +991,7 @@ public class AutoMergeService {
                     }
 
                     // Role Philosophical Filter (Gemini refusal-criteria check) removed (2026-07-25,
-                    // operator directive - emergency cost incident, "прекрати вызывать джемени на ревью").
+                    // operator directive - emergency cost incident, "stop calling Gemini for reviews").
                     // Note found while removing it: this block never actually gated the merge (a non-
                     // compliant verdict only logged a warning - mergeSuccess/return were never touched) -
                     // it was already pure log-only overhead, so removing it loses zero real enforcement.
@@ -1575,7 +1575,7 @@ public class AutoMergeService {
         //     ignore needs belong in a nested .gitignore, never here - discarding a branch's root-level edit
         //     in favor of main's never loses anything the branch actually needed.
         //
-        // Ф1 (2026-07-21 review, corrected from the first version of this fix): `files` is the PR's FULL
+        // Phase 1 (2026-07-21 review, corrected from the first version of this fix): `files` is the PR's FULL
         // changed-file list, not specifically the files actually in conflict - requiring `allMatch` meant
         // this never fired for any PR that also carried real product code alongside a stray `.eneik/`
         // file, which is exactly the motivating case (PR#12: real Svelte frontend + one incidental
@@ -1879,7 +1879,7 @@ public class AutoMergeService {
         }
     }
 
-    // Ф-followup (2026-07-23, operator directive - confirmed live on two separate projects,
+    // Phase follow-up (2026-07-23, operator directive - confirmed live on two separate projects,
     // test-thirty-third and test-thirty-fourth): reconcileMergedTaskOutcomes() above only repairs a task
     // when a LOCAL PrReviewEntity row already exists with merged=true. Two independent live incidents
     // proved that assumption false: (1) a session can reach pr_opened through the GitHub-lookup fallback
@@ -2249,7 +2249,7 @@ public class AutoMergeService {
                 .filter(review -> !"superseded".equals(review.getCiStatus()))
                 .toList();
         boolean taskNeedsRepair = task.getStatus() != TaskStatus.done;
-        // Ф-followup (2026-07-23, widened 2026-07-31): the GitHub-truth reconciliation path
+        // Phase follow-up (2026-07-23, widened 2026-07-31): the GitHub-truth reconciliation path
         // (reconcileMergedGitHubPullRequests) calls this with a winning session whose PrReviewEntity may be
         // missing OR stale - without a review row with merged=true and a matching prUrl,
         // ClientDeliverableReadinessService.isTaskMerged/isDependencySatisfied can never see this task as

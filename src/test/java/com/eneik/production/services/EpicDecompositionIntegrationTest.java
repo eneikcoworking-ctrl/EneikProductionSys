@@ -17,7 +17,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product needs,
+ * Phase 8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product needs,
  * each carrying its own content (JTBD/Kano/Cynefin), and every compile cycle must decide per эпик whether
  * it matches an existing one or is genuinely new. Exercises ProjectFlowService.buildTaskGraphFromSlices
  * directly against real repositories (not mocked) so the actual persistence/graph-scoping behavior is

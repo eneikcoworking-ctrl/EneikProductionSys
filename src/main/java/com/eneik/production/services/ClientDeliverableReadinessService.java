@@ -181,8 +181,8 @@ public class ClientDeliverableReadinessService {
      * All tasks belonging to features rooted at the given wishlist - same feature-resolution rootWishlistId
      * semantics computeForSources uses internally (a feature's own rootWishlistId, not its featureId),
      * exposed directly for a caller that needs the underlying task list itself rather than aggregate counts.
-     * Built for ProjectFlowService.checkAndDispatchCoverageAudits (2026-07-26 operator directive: "привязать
-     * к целому вишлисту" - the coverage-audit re-trigger watermark must only look at merges belonging to
+     * Built for ProjectFlowService.checkAndDispatchCoverageAudits (2026-07-26 operator directive: "tie it
+     * to the whole wishlist" - the coverage-audit re-trigger watermark must only look at merges belonging to
      * THIS wishlist's own features, not any merge anywhere in the project, which previously made the audit
      * re-fire every time ANY unrelated work merged and kept creating new coverage_gap wishlists in response -
      * a self-perpetuating loop that could keep decompositionComplete from ever stabilizing).
@@ -306,8 +306,8 @@ public class ClientDeliverableReadinessService {
             fulfilledByPlannedItem.put(plannedItem.getId(), fulfilled);
         }
 
-        // Operator directive 2026-07-24, sharpened over two rounds of correction: "формулу надо считать
-        // только по задачам с кодом, а не спайкам, ревью и прочему вспомогательному" (this ratio must only
+        // Operator directive 2026-07-24, sharpened over two rounds of correction: "the formula must be computed
+        // only over code-bearing tasks, not spikes, reviews and other auxiliary work" (this ratio must only
         // count tasks that produce code, not spikes/reviews/other auxiliary work). Confirmed live: a
         // legitimate `complex`-Cynefin spike (AutoMergeService deliberately never merges its PR - its
         // deliverable is a decision record, not code) permanently stuck the denominator via the exact same
@@ -363,7 +363,7 @@ public class ClientDeliverableReadinessService {
                 .count();
         double selfFalsificationReadyRatio = totalFeatures == 0
                 ? 1.0 : (double) falsificationReadyFeatures / totalFeatures;
-        // 2026-07-26 operator directive ("считать по фичам, а не по таскам!", repeated - this metric had
+        // 2026-07-26 operator directive ("count by features, not by tasks!", repeated - this metric had
         // drifted to deliverable-granularity): ratio() now reflects completeFeatures/totalFeatures, not
         // mergedDeliverables/totalDeliverables. totalDeliverables/mergedDeliverables stay in the record as
         // informational detail (still shown), they just no longer DRIVE ratio() or anything gated on it
@@ -612,7 +612,7 @@ public class ClientDeliverableReadinessService {
     }
 
     /**
-     * Operator directive 2026-07-24 ("перечислить все 12 эпиков и докажи что ты не лжёшь") - a real,
+     * Operator directive 2026-07-24 ("list all 12 epics and prove you are not lying") - a real,
      * read-only listing of the exact FeatureEntity rows behind {@code productReadiness.totalFeatures}/
      * {@code completeFeatures}, so those numbers can be checked against ground truth instead of taken on
      * faith. Deliberately mirrors {@link #computeForSources}'s own filtering step for step (same
@@ -751,8 +751,8 @@ public class ClientDeliverableReadinessService {
     }
 
     /**
-     * Deletes epics with zero real code value (2026-07-25, operator directive: "эпик - это реальная фича с
-     * jtbd для пользователей - там не может не быть реальной ценности. ценность - это код"). An epic ends
+     * Deletes epics with zero real code value (2026-07-25, operator directive: "an epic is a real feature with
+     * a jtbd for users - it cannot fail to carry real value. value is code"). An epic ends
      * up here two ways: its only wishlist item(s) were dismissed (abandoned scope, never attempted), or
      * every task its wishlist item(s) produced was auxiliary (a DECISION-stage/complex-cynefin item that
      * structurally never produces mergeable code - see isAuxiliaryPlannedItem). Both leave
@@ -1114,7 +1114,7 @@ public class ClientDeliverableReadinessService {
      * a terminal status before folding ANY of the thread's already-merged work into main - confirmed live
      * (test-thirty-eighth) this could hold a feature's genuinely-done work hostage indefinitely behind
      * ordinary siblings still in review, keeping completeFeatures at 0 for hours despite real progress.
-     * Operator directive: "убрать блокировку закрытия" - a review/pending_review sibling has not yet added
+     * Operator directive: "remove the close-blocking" - a review/pending_review sibling has not yet added
      * its own commits to the thread branch at all (see classifyAndHandleBranch), so there is nothing of
      * theirs to wait for; closing out now just means "fold what's actually on the branch", not "declare the
      * whole feature finished". `blocked`/`failed` still count as terminal (must never hold up real work),

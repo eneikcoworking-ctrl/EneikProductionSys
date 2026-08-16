@@ -31,8 +31,8 @@ import java.util.UUID;
 
 /**
  * Read-only exposure of Gemini's own real journal/action tables plus the shared evidence graph
- * (2026-08-08, engineering invariant #14 follow-up, operator directive: "у джемини есть свой лог ты мог там
- * посмотреть"). Before this existed, checking what she actually saw/did meant reconstructing it from docker
+ * (2026-08-08, engineering invariant #14 follow-up, operator directive: "Gemini has her own log, you could have
+ * looked there"). Before this existed, checking what she actually saw/did meant reconstructing it from docker
  * container logs (lost across every restart) or source code inference - both give an incomplete, sometimes
  * misleading picture, exactly the gap that triggered this endpoint's creation. GeminiObserverJournalEntity/
  * GeminiObserverActionEntity are the real record ("regardless of what she later claims in her journal
@@ -91,16 +91,16 @@ public class InternalGeminiObserverController {
         this.wishlistRepository = wishlistRepository;
     }
 
-    // Pure diagnostic (2026-08-13, operator directive: "базу сжать, там мусор" - before running any real
+    // Pure diagnostic (2026-08-13, operator directive: "compact the database, there is rubbish in it" - before running any real
     // compaction, see what's actually taking the space). H2's INFORMATION_SCHEMA.TABLES carries a row-count
     // estimate per table, no need to touch/lock the live .mv.db file to read it.
-    // Pure diagnostic (2026-08-13, operator directive: "разберись" - direct evidence of exactly when/why
+    // Pure diagnostic (2026-08-13, operator directive: "work it out" - direct evidence of exactly when/why
     // an account got blocked, instead of inferring from journal prose or capacity-check logs that only show
     // the SYMPTOM (retries failing locally) not the CAUSE (the real Jules API rejection that set the
     // status). DefectJournalEntity.accountName + rawReason is the actual recorded evidence
     // (AccountHealthService.reportDispatchOutcomeCore), scoped by account name, not the forbidden unscoped
     // dump.
-    // Pure diagnostic (2026-08-13, operator directive: "не начинать без полного понимания" - operator saw
+    // Pure diagnostic (2026-08-13, operator directive: "do not start without full understanding" - operator saw
     // 20+ wishlist-compiler tasks directly in Jules's own UI, contradicting the 3-entry defect-journal
     // picture). Lists every wishlist_compiler task for a project with its real session count and statuses,
     // to check for genuine duplicate dispatch (multiple real Jules sessions created for overlapping
@@ -147,7 +147,7 @@ public class InternalGeminiObserverController {
                         + "WHERE TABLE_SCHEMA = 'PUBLIC' ORDER BY ROW_COUNT_ESTIMATE DESC LIMIT 20");
     }
 
-    // Manual trigger (2026-08-13, operator directive: "освободи те 3 finalizing вручную, не жди её цикл")
+    // Manual trigger (2026-08-13, operator directive: "release those 3 finalizing ones by hand, do not wait for her cycle")
     // for the exact same audited action Gemini's own observer cycle already calls - not a new/different
     // release path, the identical GeminiObserverActionService.retireStuckWorker method, same
     // OperationalPolicyService.authorize() gate, same GeminiObserverActionEntity audit trail. Exists because

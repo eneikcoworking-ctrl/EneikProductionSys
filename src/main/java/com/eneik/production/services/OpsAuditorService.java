@@ -24,8 +24,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Embedded ops auditor (2026-07-25, operator directive: "мало системных решений... встроить такого же
- * аудитора как ты прямо внутрь бекенда... который будет проталкивать автоматизацию и фиксить мелкие баги").
+ * Embedded ops auditor (2026-07-25, operator directive: "too few systemic decisions... embed an
+ * auditor like you right inside the backend... one that will push automation through and fix small bugs").
  * This is an automated version of exactly what the human orchestrator (this session) spent the last several
  * hours doing by hand: query real system state, diagnose what's actually blocking progress, apply a narrow,
  * safe, evidence-based fix.

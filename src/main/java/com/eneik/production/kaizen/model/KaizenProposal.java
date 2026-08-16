@@ -37,7 +37,7 @@ public class KaizenProposal {
         // health-check behavior (not the factory's construction quality, not this codebase's own defects -
         // SYSTEMIC_DEFECT already owns that). Deliberately its own category, never folded into
         // SYSTEMIC_DEFECT, so the two streams stay visibly separate on the same dashboard (operator's own
-        // requirement: "явно помечена как улучшение продукта, не смешивается с заводским списком").
+        // requirement: "clearly marked as a product improvement, not mixed into the factory list").
         // Review-only, same boundary as every category above (expectedGainPercent=0, never auto-applied).
         PRODUCT_RUNTIME_DEFECT
     }

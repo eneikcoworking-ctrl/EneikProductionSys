@@ -36,8 +36,8 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Periodic Gemini observer (2026-07-25, operator directive: "нужен был именно наблюдатель, джемини,
- * который подключается раз в 30 минут и анализирует лог создания проекта"). Redesigned the same day after
+ * Periodic Gemini observer (2026-07-25, operator directive: "what was needed was an observer, Gemini,
+ * connecting once every 30 minutes and analysing the project-creation log"). Redesigned the same day after
  * a sharp correction: the original version fed Gemini the backend's OWN internal Logback log every cycle -
  * a raw, ever-growing technical dump, and a direct contradiction of the no-full-resend principle
  * {@link GeminiContextService} was built around. This version follows {@link OpsAuditorService}'s
@@ -46,7 +46,7 @@ import java.util.Set;
  * cycle, and now duration-based stagnation signals) - never internal log lines - and Gemini keeps her OWN
  * journal ({@link GeminiObserverJournalEntity}) for cross-cycle continuity, written by her, read back to her.
  *
- * 2026-07-26 extension (operator directive: "даем ей все полномочия - кроме кода"): she is no longer
+ * 2026-07-26 extension (operator directive: "we give her every authority - except code"): she is no longer
  * report-only. She may propose a small set of real, reversible, non-code actions (see
  * {@link GeminiObserverActionService}) - dismiss dead wishlists, nudge a stuck session, abandon a dead
  * conflict, boost priority, pull a falsification pass forward. Every action is capped, scoped to her own
@@ -66,7 +66,7 @@ public class GeminiProjectObserverService {
     // Only "done"/"failed" tasks are worth surfacing as a recency signal - everything else (queued,
     // in_progress, review, blocked) is normal, expected, and already visible in the status histogram below.
     private static final List<TaskStatus> NOTABLE_RECENT_STATUSES = List.of(TaskStatus.done, TaskStatus.failed);
-    // 2026-07-26 operator directive ("проект стоит... применяла свои инструменты"): review/pending_review
+    // 2026-07-26 operator directive ("the project is stalled... she should have used her tools"): review/pending_review
     // added - confirmed live (test-thirty-eighth) these were the OLDEST-stuck tasks in the whole project
     // (11+ hours untouched, since minutes after project creation) but were invisible to her because only
     // blocked/queued counted as "stuck candidates". A task waiting on review with no forward motion for
@@ -91,7 +91,7 @@ public class GeminiProjectObserverService {
     private static final int STAGNATION_MIN_MATCHING_CYCLES = 3;
     private static final double STAGNATION_EPSILON = 0.001;
     private static final int MAX_STALE_CANDIDATES_LISTED = 5;
-    // 2026-07-26 cost control (operator: "общая цифра быстро кончается"): a hard, code-enforced cap on her
+    // 2026-07-26 cost control (operator: "the overall figure runs out fast"): a hard, code-enforced cap on her
     // own journalEntry length - the instruction below already asks for "one short paragraph", but nothing
     // previously stopped a verbose response from compounding every cycle (she re-reads her own last 5
     // entries every time).
@@ -185,7 +185,7 @@ public class GeminiProjectObserverService {
         this.persistentWorkerSessionService = persistentWorkerSessionService;
     }
 
-    // Widened from every 30 min to hourly (2026-07-26, operator: "общая цифра быстро кончается" - reduce
+    // Widened from every 30 min to hourly (2026-07-26, operator: "the overall figure runs out fast" - reduce
     // spend). The "nothing changed, skip" path already covers idle projects cheaply; this halves the call
     // count for an ACTIVE project too, which is where most of tonight's spend actually came from (skip
     // rarely triggers when there's real ongoing work). Offset to :20 rather than :00 purely to avoid
@@ -507,8 +507,8 @@ public class GeminiProjectObserverService {
         ObserverResponse parsed = parseResponse(response);
         if (parsed == null) {
             // Response genuinely could not be parsed as her own words - do NOT write a Claude-authored
-            // fallback into her journal (that would be exactly the violation the operator flagged: "ты сам
-            // ничего не пиши в его лог"). Skip this cycle entirely; "since" stays at the last real entry, so
+            // fallback into her journal (that would be exactly the violation the operator flagged: "do not write anything into her log
+            // yourself"). Skip this cycle entirely; "since" stays at the last real entry, so
             // nothing that happened during this failed cycle is lost - it just gets picked up next time.
             log.warn("GeminiProjectObserverService: project {} - Gemini response could not be parsed, skipping this cycle (not writing to her journal)", project.getId());
             return;
@@ -830,7 +830,7 @@ public class GeminiProjectObserverService {
         taskHistogram.forEach((status, count) -> sb.append(status).append('=').append(count).append(' '));
         sb.append("\nWishlist status counts: ");
         wishlistHistogram.forEach((status, count) -> sb.append(status).append('=').append(count).append(' '));
-        // 2026-07-26 operator directive ("считать по фичам, а не по таскам!"): readiness.ratio() now
+        // 2026-07-26 operator directive ("count by features, not by tasks!"): readiness.ratio() now
         // reflects completeFeatures/totalFeatures, not mergedDeliverables/totalDeliverables - show both
         // numbers explicitly so she (and anyone reading her journal later) never confuses the two.
         sb.append("\nFeature readiness: ").append(readiness.completeFeatures()).append('/')
@@ -908,8 +908,8 @@ public class GeminiProjectObserverService {
                                 ? " (" + task.getJulesDispatchStatus() + ")" : "");
             }
         }
-        // Deterministic, code-only check (2026-07-26 operator directive: "плохо что джемини мониторинг
-        // пропускает такое" - a live incident where a hardcoded bug generated 9 near-identical tasks over
+        // Deterministic, code-only check (2026-07-26 operator directive: "it is bad that the Gemini monitoring
+        // misses this sort of thing" - a live incident where a hardcoded bug generated 9 near-identical tasks over
         // 2 hours, invisible to the old evidence snapshot since it only ever gave status COUNTS, never
         // description-level comparison). This never needs Gemini's judgment to detect - identical
         // descriptions across 3+ non-terminal tasks is unambiguous mechanical evidence - but flagging it
@@ -1013,8 +1013,8 @@ public class GeminiProjectObserverService {
             }
             anomalies.add(orphanedPrs.size() + " orphaned PR(s) with a terminal owning session");
         }
-        // 2026-08-03 addition (operator directive: "это её прямая задача читать все постоянные логи и
-        // находить дефекты и причины дефектов" - after I had to trace today's incident by hand through
+        // 2026-08-03 addition (operator directive: "it is her direct job to read every persistent log and
+        // find defects and their causes" - after I had to trace today's incident by hand through
         // ProjectEventLogService because docker's own log buffer had already been lost across redeploys).
         // Bounded and filtered to the loggers that matter for defect forensics - the corrected, project-
         // scoped version of "read the log", not the whole-backend raw dump that was deliberately removed
@@ -1215,7 +1215,7 @@ public class GeminiProjectObserverService {
     /**
      * Returns null when Gemini's own words could not be recovered from the response - the caller must skip
      * the cycle entirely rather than substitute a Claude-authored stand-in (2026-07-25, operator directive:
-     * "так теперь ты сам ничего не пиши в его лог" - her journal only ever contains her own text, never mine).
+     * "so from now on write nothing into her log yourself" - her journal only ever contains her own text, never mine).
      */
     private ObserverResponse parseResponse(String response) {
         if (response == null || response.isBlank()) {

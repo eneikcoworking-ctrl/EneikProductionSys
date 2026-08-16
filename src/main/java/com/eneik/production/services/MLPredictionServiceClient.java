@@ -335,7 +335,7 @@ public class MLPredictionServiceClient {
 
 
     /**
-     * One atomic task-slice within an эпик (see {@link EpicPlan}). Ф8 (2026-07-21, operator directive):
+     * One atomic task-slice within an эпик (see {@link EpicPlan}). Phase 8 (2026-07-21, operator directive):
      * kanoClass moved OFF this record entirely - Kano is a customer-value classification, meaningful at
      * the эпик level only, never per-task. A task's own {@code jtbd} is scoped to the эпик it belongs to
      * ("when implementing X for this эпик, I want Y so the эпик's Z works"), NOT the end customer - the
@@ -364,7 +364,7 @@ public class MLPredictionServiceClient {
     }
 
     /**
-     * Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product
+     * Phase 8 (2026-07-21, operator directive): a wishlist splits into as many эпики (epics) as the product
      * actually needs, by narrative/theme - never assumed to be exactly one. Every compile cycle (not just
      * the first) must decide per эпик, semantically, whether it matches an ALREADY-EXISTING эпик in the
      * project (existingEpicId non-null, echoed back from the candidate list handed to the compiler prompt

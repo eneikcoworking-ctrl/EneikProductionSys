@@ -83,7 +83,7 @@ public class TechnicalLeadCompiler {
      * call sites write to `projects` in the whole codebase; this was a new one) coincided with a
      * PessimisticLockingFailureException retry storm (7 failed attempts, ~7 minutes, H2 "Timeout trying to
      * lock table PROJECTS") on `reconcileStrandedPrOpenedWorkflows`. This holder lets one whole compile
-     * batch (all эпики for one wishlist - see ProjectFlowService.buildTaskGraphFromSlices) share ONE
+     * batch (all epics for one wishlist - see ProjectFlowService.buildTaskGraphFromSlices) share ONE
      * in-memory counter, reserving numbers purely in memory and persisting to the DB exactly ONCE via
      * {@link #flushFlywayVersionReservation}, instead of once per Data-Schema task.
      */
@@ -100,7 +100,7 @@ public class TechnicalLeadCompiler {
             java.time.format.DateTimeFormatter.ofPattern("yyyyMMddHHmmssSSS").withZone(java.time.ZoneOffset.UTC);
 
     // Guarantees strictly-increasing values even for two calls issued in the same millisecond (a
-    // synchronous per-эпик loop can easily do this) - never persisted, never seeded from any repo state,
+    // synchronous per-epic loop can easily do this) - never persisted, never seeded from any repo state,
     // so a JVM restart just resumes from real wall-clock time with no continuity requirement.
     private static final java.util.concurrent.atomic.AtomicLong LAST_FLYWAY_VERSION_MILLIS =
             new java.util.concurrent.atomic.AtomicLong(0);
@@ -167,7 +167,7 @@ public class TechnicalLeadCompiler {
     }
 
     // Batch overload (2026-07-24): identical behavior, plus an optional shared FlywayVersionReservation so
-    // an entire compile pass (all эпики for one wishlist) can amortize its Data-Schema version reservation
+    // an entire compile pass (all epics for one wishlist) can amortize its Data-Schema version reservation
     // into a single DB write instead of one per task - see reserveNextFlywayVersion's javadoc for the live
     // incident this fixes. Every other call site keeps using the 6-arg overload above (flywayCache=null),
     // unaffected.
@@ -290,10 +290,10 @@ public class TechnicalLeadCompiler {
         String joinedRoles = String.join(", ", extractedRoles);
 
         String cynefin = cynefinDomain(wishlist);
-        // Ф-followup (2026-07-21, operator directive): prefer the real, structured эпик-level Kano
+        // Phase follow-up (2026-07-21, operator directive): prefer the real, structured epic-level Kano
         // (FeatureEntity.kanoClass, set explicitly by the compiler - see ProjectFlowService.
         // resolveEpicFeatureId) over the text-keyword heuristic below, when this task's wishlist actually
-        // has a featureId. Falls back to the heuristic only for wishlists with no эпик content recorded
+        // has a featureId. Falls back to the heuristic only for wishlists with no epic content recorded
         // yet (e.g. older data, or the cheap/recovery compile path that reuses a featureId without
         // reloading its content) - never fails outright.
         String kano = wishlist.getFeatureId() != null
@@ -302,7 +302,7 @@ public class TechnicalLeadCompiler {
                         .filter(k -> k != null && !k.isBlank())
                         .orElseGet(() -> kanoClass(wishlist, extractedRoles))
                 : kanoClass(wishlist, extractedRoles);
-        // Ф-fix (2026-07-24): TaskTitleBuilder's role-default titles ("API Slice", "UI Slice", etc.) are
+        // Phase fix (2026-07-24): TaskTitleBuilder's role-default titles ("API Slice", "UI Slice", etc.) are
         // deliberately generic and repeat across every slice for a role - the 4 system/meta task types
         // already got a unique shortId suffix for this exact reason (see ProjectFlowService's
         // compiler/falsification/PR-review-fallback/design-review task titles); ordinary role slices never
@@ -808,19 +808,19 @@ public class TechnicalLeadCompiler {
     private record CollisionGuardResult(java.util.List<String> paths, String collisionNotes) {
     }
 
-    // Cross-эпик file-collision guard (smart decomposition v2, 2026-07-31): general, code-enforced
+    // Cross-epic file-collision guard (smart decomposition v2, 2026-07-31): general, code-enforced
     // replacement for the earlier same-day attempt at a compiler-prompt "ceiling rule" the operator
     // correctly rejected as a заплатка (hardcoded to one resource type, relied on the LLM obeying one more
     // rule in an already-large prompt). This instead checks the live ProjectFileClaimRepository ledger -
     // populated by every task ever created (see recordFileClaims below) plus the deterministic bootstrap
     // scaffolds (ProjectFlowService.commitDeterministicJavaScaffoldIfAbsent/
     // commitDeterministicFrontendScaffoldIfAbsent, which record global claims with featureId=null) - and
-    // strips any predicted path already owned by a DIFFERENT эпик, regardless of what any LLM decided.
+    // strips any predicted path already owned by a DIFFERENT epic, regardless of what any LLM decided.
     // Generalizes to any future resource type with zero new code: the next collision the operator finds
     // needs no hand-written special case here.
     private CollisionGuardResult applyCrossEpicCollisionGuard(ProjectEntity project, UUID featureId,
                                                                String roleTag, java.util.List<String> predictedPaths) {
-        // BARCAN-TAG-00 (integration/merge-hygiene) tasks legitimately need to touch files other эпики own -
+        // BARCAN-TAG-00 (integration/merge-hygiene) tasks legitimately need to touch files other epics own -
         // that is their whole job - so they are exempt, mirroring the existing isIntegrationTask distinction
         // already used above in this same method.
         if ("BARCAN-TAG-00".equals(roleTag) || predictedPaths.isEmpty()) {
@@ -835,8 +835,8 @@ public class TechnicalLeadCompiler {
         for (com.eneik.production.models.persistence.ProjectFileClaimEntity claim : existingClaims) {
             boolean sameEpic = featureId != null && featureId.equals(claim.getFeatureId());
             if (sameEpic) {
-                // Same эпик's own internal dependency graph (buildTaskGraphForOneEpic) already sequences
-                // its own slices - this guard only needs to fire cross-эпик.
+                // Same epic's own internal dependency graph (buildTaskGraphForOneEpic) already sequences
+                // its own slices - this guard only needs to fire cross-epic.
                 continue;
             }
             if (claim.getTaskId() != null) {
@@ -860,7 +860,7 @@ public class TechnicalLeadCompiler {
             return new CollisionGuardResult(narrowed, null);
         }
 
-        log.info("Cross-эпик file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
+        log.info("Cross-epic file collision guard for project {}: featureId={} roleTag={} stripped {} from predicted fileScope",
                 project.getId(), featureId, roleTag, collidingPaths);
         String note = "CROSS-EPIC RESOURCE GUARD: " + String.join(", ", collidingPaths)
                 + " already exist and are owned by other work in this project - do not recreate or rewrite "
@@ -1470,7 +1470,7 @@ public class TechnicalLeadCompiler {
         return "Compiled JTBD slice " + shortId(wishlist.getId());
     }
 
-    // Ф-followup (2026-07-23, operator directive): "на фронтенде все должно быть предельно
+    // Phase follow-up (2026-07-23, operator directive): "на фронтенде все должно быть предельно
     // информативно... не должно быть одинаковых названий" - task.title itself is a fixed per-role
     // template ("API Slice", "UI Slice"), identical across every task sharing a role, and
     // payload.role_atomic_goal is equally generic (one fixed sentence per role, confirmed live: byte-

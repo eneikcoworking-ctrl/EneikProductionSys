@@ -143,7 +143,7 @@ public class KaizenServiceTest {
         // used to dead-end at "marked applied by explicit human/operator action" for every source.
         UUID projectId = UUID.randomUUID();
         KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "Test Project",
-                "u-chart out of control: reviewConcerns (эпик abc-123)",
+                "u-chart out of control: reviewConcerns (epic abc-123)",
                 "Stream 'reviewConcerns' u=0.9000 outside [0.1000, 0.5000] (centerline 0.3000)");
 
         boolean applied = kaizenService.applyMicroStep(proposal.getId());
@@ -162,7 +162,7 @@ public class KaizenServiceTest {
     void applyMicroStepLeavesAnUnrelatedSystemicDefectRequiringHumanAction() {
         UUID projectId = UUID.randomUUID();
         KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "Test Project",
-                "u-chart out of control: qualityGate (эпик abc-123)",
+                "u-chart out of control: qualityGate (epic abc-123)",
                 "Stream 'qualityGate' u=0.9000 outside [0.1000, 0.5000] (centerline 0.3000)");
 
         boolean applied = kaizenService.applyMicroStep(proposal.getId());

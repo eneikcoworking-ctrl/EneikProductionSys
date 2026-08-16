@@ -253,10 +253,12 @@ public class KaizenService {
 
             KaizenProposal p = new KaizenProposal(
                     propId,
-                    "Устранение потерь очереди (Muda)",
+                    "Queue waste elimination (Muda)",
                     KaizenProposal.KaizenCategory.WASTE_REDUCTION,
                     "TaskQueue",
-                    String.format("За последние 2 часа зафиксировано %d сигналов простоя очереди (в среднем %.1f задач в ожидании > 1ч). Предложение: автоматический пересчет и оптимизация приоритетов задач.",
+                    String.format("Over the last 2 hours %d queue-stall signals were recorded (on average %.1f tasks "
+                            + "waiting longer than 1h). Proposal: recompute and optimise task priorities "
+                            + "automatically.",
                             wasteGroup.size(), avgStale),
                     6.5,
                     targetProjectId,
@@ -279,10 +281,11 @@ public class KaizenService {
 
                     KaizenProposal p = new KaizenProposal(
                             propId,
-                            String.format("Точечная настройка буфера DBR: %s", component),
+                            String.format("Targeted DBR buffer tuning: %s", component),
                             KaizenProposal.KaizenCategory.BUFFER_TUNING,
                             component,
-                            String.format("На узле-ограничении '%s' за 2 часа зафиксировано %d перегрузок буфера. Предложение: аккуратное точечное расширение емкости буфера на +2 единицы для выравнивания потока.",
+                            String.format("The constraint node '%s' recorded %d buffer overloads in 2 hours. Proposal: a "
+                                    + "careful targeted increase of buffer capacity by +2 units to level the flow.",
                                     component, bufList.size()),
                             8.5,
                             targetProjectId,
@@ -313,14 +316,16 @@ public class KaizenService {
 
                 KaizenProposal p = new KaizenProposal(
                         propId,
-                        targeted ? "Снижение уровня дефектов проверки '" + resolvedComponent + "' (Six Sigma)"
-                                : "Снижение уровня дефектов Quality Gate (Six Sigma)",
+                        targeted ? "Defect-rate reduction for check '" + resolvedComponent + "' (Six Sigma)"
+                                : "Quality Gate defect-rate reduction (Six Sigma)",
                         KaizenProposal.KaizenCategory.DEFECT_ELIMINATION,
                         resolvedComponent,
                         targeted
-                                ? String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Доминирующая проверка: '%s'. Предложение: точечное устранение причины именно этой проверки.",
+                                ? String.format("Over the 2-hour window mean DPMO was %.2f across %d spikes. Dominant check: "
+                                        + "'%s'. Proposal: address the cause of that specific check.",
                                         avgDpmo, defectGroup.size(), resolvedComponent)
-                                : String.format("За 2-часовой окно средний DPMO составил %.2f (всего %d всплесков). Предложение: усиление автоматической зачистки транзиторных ошибок проверки качества.",
+                                : String.format("Over the 2-hour window mean DPMO was %.2f across %d spikes. Proposal: "
+                                        + "strengthen automatic cleanup of transient quality-check errors.",
                                         avgDpmo, defectGroup.size()),
                         12.0,
                         targetProjectId,
@@ -359,7 +364,7 @@ public class KaizenService {
      * gemini_observer wishlists like "Fix pending_review state transition logic" were unfixable no-ops for
      * exactly this reason). expectedGainPercent is fixed at 0 so periodicKaizenCycle's auto-apply loop
      * (">= 5.0" threshold) never fires for this category - review and any resulting code change stay
-     * human/Claude-only, matching operator directive ("им занимаемся только мы с тобой").
+     * human/Claude-only, matching operator directive ("only you and I deal with that").
      */
     public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
                                                          String title, String actionDescription) {

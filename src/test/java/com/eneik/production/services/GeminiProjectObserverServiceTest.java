@@ -215,7 +215,7 @@ class GeminiProjectObserverServiceTest {
 
     @Test
     void neverWritesToHerJournalWhenGeminiResponseCannotBeParsed() {
-        // Direct regression for the operator's correction: "так теперь ты сам ничего не пиши в его лог" -
+        // Direct regression for the operator's correction: "so from now on write nothing into her log yourself" -
         // a parse failure must skip the cycle entirely, never substitute a Claude-authored fallback string
         // into her journal.
         setUp();
@@ -446,7 +446,7 @@ class GeminiProjectObserverServiceTest {
 
     @Test
     void executesAProposedActionThroughTheActionServiceAndCapsPerRun() {
-        // 2026-07-26 operator directive ("даем ей все полномочия - кроме кода"): a proposed action must be
+        // 2026-07-26 operator directive ("we give her every authority - except code"): a proposed action must be
         // dispatched to the real, guarded action service - never executed inline, never trusted blindly.
         setUp();
         when(settingsService.effectiveBoolean("gemini_project_observer_enabled")).thenReturn(true);
@@ -651,8 +651,8 @@ class GeminiProjectObserverServiceTest {
 
     @Test
     void unverifiedPriorActionForcesARealCycleEvenWhenNothingElseChangedAndGetsMarkedVerifiedAfterward() {
-        // Direct fix for "она нашла дефект, попыталась что-то сделать и больше никогда не проверяла, что у
-        // неё получилось" - her own action must always get a follow-up check on the next cycle, independent
+        // Direct fix for "she found a defect, tried to do something about it, and never checked
+        // again what came of it" - her own action must always get a follow-up check on the next cycle, independent
         // of the normal content-based dedup, since a failed action leaves the evidence fingerprint
         // unchanged and would otherwise never resurface.
         setUp();

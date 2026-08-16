@@ -20,7 +20,7 @@ public class FeatureEntity {
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt = Instant.now();
 
-    // Ф8 (2026-07-21, operator directive): an эпик used to be a bare grouping row - JTBD/Kano/Cynefin all
+    // Phase 8 (2026-07-21, operator directive): an эпик used to be a bare grouping row - JTBD/Kano/Cynefin all
     // lived on the task/slice level instead, with no way to identify or match against an epic's own
     // content. A wishlist now splits into as many epics as the product needs (by narrative/theme, decided
     // semantically by the compiler against this content on every later compile cycle too), each carrying

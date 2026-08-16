@@ -25,7 +25,7 @@ public class WishlistController {
         this.projectFlowService = projectFlowService;
     }
 
-    // Ф-followup (2026-07-21): this used to call wishlistService.create(), a second, divergent wishlist-
+    // Phase follow-up (2026-07-21): this used to call wishlistService.create(), a second, divergent wishlist-
     // creation implementation (no content trimming, defaulted null source silently instead of to
     // 'client', didn't check project state) living alongside ProjectController's
     // POST /{projectId}/wishlist -> projectFlowService.addWishlistItem(). Delegating to the same service

@@ -40,7 +40,7 @@ public class WishlistControllerIntegrationTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    // Ф-followup (2026-07-21): WishlistController now delegates creation to
+    // Phase follow-up (2026-07-21): WishlistController now delegates creation to
     // ProjectFlowService.addWishlistItem (see WishlistController), which requires a real, active project
     // row - the old WishlistService.VALID_PROJECT_ID placeholder ("any UUID equal to this magic constant
     // is valid, even with no project row") no longer applies now that both wishlist-creation endpoints

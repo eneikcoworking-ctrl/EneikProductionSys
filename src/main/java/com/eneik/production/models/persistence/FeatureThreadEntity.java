@@ -55,8 +55,8 @@ public class FeatureThreadEntity {
     @Column(name = "closeout_pr_url", length = 256)
     private String closeoutPrUrl;
 
-    // Bounded escalation (2026-07-24, operator directive: "три попытки и закрыть, удалить ветку, удалить
-    // цепочку, написать в вишлист причины") - up to 3 Jules-mediated conflict-resolution attempts, each
+    // Bounded escalation (2026-07-24, operator directive: "three attempts, then close, delete the branch, delete
+    // the chain, write the causes into the wishlist") - up to 3 Jules-mediated conflict-resolution attempts, each
     // dispatched no more than once per cooldown window (see AutoMergeService's closeout-conflict logic);
     // closeoutConflictEscalatedAt is the timestamp of the MOST RECENT dispatch (not a one-shot flag
     // anymore), used only to avoid re-dispatching while the previous attempt might still be working.

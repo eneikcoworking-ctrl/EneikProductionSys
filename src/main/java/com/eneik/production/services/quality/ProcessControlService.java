@@ -33,12 +33,12 @@ import java.util.UUID;
 /**
  * Layer 1 (Six Sigma / Measure) of the unified Lean-TOC-Six-Sigma system - see
  * docs/ENGINEERING_INVARIANTS_CHARTER.md and the plan this implements. Computes classical u-charts:
- * subgroup = эпик (FeatureEntity), sequenced ONLY by completion order WITHIN one project - never by
+ * subgroup = epic (FeatureEntity), sequenced ONLY by completion order WITHIN one project - never by
  * calendar date, never across projects (operator's explicit "полная чистота эксперимента" constraint).
  *
  * Phase 1/Phase 2 discipline: the center line and control limits are computed ONCE, pooled from the
- * project's own first {@code baselineEpicCount} completed эпики (in completion order), then held FIXED
- * forever - every later эпик is checked against that fixed baseline, never against a recomputed running
+ * project's own first {@code baselineEpicCount} completed epics (in completion order), then held FIXED
+ * forever - every later epic is checked against that fixed baseline, never against a recomputed running
  * average (a recomputed average would let drift silently renormalize itself, defeating the whole point).
  */
 @Service
@@ -142,7 +142,7 @@ public class ProcessControlService {
 
     /**
      * Recomputes and persists every u-chart snapshot for one project, one stream at a time. Idempotent:
-     * wipes this project's existing snapshots for the stream and rewrites from scratch, since эпик
+     * wipes this project's existing snapshots for the stream and rewrites from scratch, since epic
      * completion order within a project never changes retroactively (only grows).
      */
     @org.springframework.transaction.annotation.Transactional
@@ -215,8 +215,8 @@ public class ProcessControlService {
             counts.add(countFn.apply(ep.featureId()));
         }
 
-        // Pooled baseline centerline from exactly the first `locked` эпики, by completion order - a
-        // stable set that never changes as later эпики complete (Phase 1/Phase 2 discipline).
+        // Pooled baseline centerline from exactly the first `locked` epics, by completion order - a
+        // stable set that never changes as later epics complete (Phase 1/Phase 2 discipline).
         long baselineDefects = 0;
         long baselineOpportunities = 0;
         for (int i = 0; i < locked; i++) {
@@ -283,7 +283,7 @@ public class ProcessControlService {
                     projectId, stream, outOfControlCount, Math.max(0, total - locked));
         }
 
-        // Layer 4 loop-closing: react only to the CURRENT state (latest эпик), not a replay of every
+        // Layer 4 loop-closing: react only to the CURRENT state (latest epic), not a replay of every
         // historical excursion on every recompute - a u-chart's job is "is the process out of control
         // right now", and each past excursion already had its moment when it was the latest point.
         if (!saved.isEmpty()) {
@@ -297,7 +297,7 @@ public class ProcessControlService {
 
     /**
      * Layer 4 (Analyze -> Improve): a u-chart out-of-control signal is diagnosed by looking at the
-     * underlying defect events already recorded for this эпик. If they carry a consistent
+     * underlying defect events already recorded for this epic. If they carry a consistent
      * rootCausePatternId (Layer 0), this is a KNOWN fix shape - raise a KNOWN_PATTERN_VIOLATION proposal
      * citing the exact charter rule. If uncategorized, raise a SYSTEMIC_DEFECT proposal flagged as a
      * candidate new invariant pattern - the taxonomy itself is meant to grow from real incidents.
@@ -319,18 +319,18 @@ public class ProcessControlService {
         String projectName = projectRepository.findById(projectId)
                 .map(com.eneik.production.models.persistence.ProjectEntity::getName)
                 .orElse(null);
-        String title = String.format("u-chart out of control: %s (эпик %s)", stream, signal.getFeatureId());
+        String title = String.format("u-chart out of control: %s (epic %s)", stream, signal.getFeatureId());
         String description = String.format(
-                "Stream '%s' u=%.4f outside [%.4f, %.4f] (centerline %.4f)%s at эпик sequence #%d.%s",
+                "Stream '%s' u=%.4f outside [%.4f, %.4f] (centerline %.4f)%s at epic sequence #%d.%s",
                 stream, signal.getU(), signal.getLowerControlLimit(), signal.getUpperControlLimit(),
                 signal.getCenterLine(),
                 signal.getWesternElectricSignal() != null ? " [Western Electric: " + signal.getWesternElectricSignal() + "]" : "",
                 signal.getSequenceIndex(),
-                // 2026-08-07: the эпик owner's own operational definition of what quality means here
+                // 2026-08-07: the epic owner's own operational definition of what quality means here
                 // (FeatureEntity.sixSigmaMetric, carried onto the snapshot in recomputeStream) - gives a
                 // human reviewer the actual business meaning of this excursion, not just a raw stream name.
                 signal.getSixSigmaMetricLabel() != null && !signal.getSixSigmaMetricLabel().isBlank()
-                        ? " Эпик's own quality target: \"" + signal.getSixSigmaMetricLabel() + "\"." : "");
+                        ? " The epic's own quality target: \"" + signal.getSixSigmaMetricLabel() + "\"." : "");
 
         if (!patternIds.isEmpty()) {
             int dominant = patternIds.stream()

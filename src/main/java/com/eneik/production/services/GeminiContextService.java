@@ -22,9 +22,9 @@ import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 /**
- * RAG (retrieval-augmented generation) layer for Gemini calls (2026-07-25, operator directive: "нужно
- * чтобы Джемини постоянно училась контексту моей системы и в каждом вызове была максимально компетентна...
- * мат. выверенные недорогие по токенам решения"). Two concrete, testable mechanisms, deliberately NOT
+ * RAG (retrieval-augmented generation) layer for Gemini calls (2026-07-25, operator directive: "Gemini needs
+ * to keep learning the context of my system and to be as competent as possible on every call...
+ * mathematically sound solutions that are cheap in tokens"). Two concrete, testable mechanisms, deliberately NOT
  * fine-tuning or a hosted vector DB - both unnecessary at this corpus size:
  *
  * 1. Standing knowledge (OBSERVER_LOG, engineering-invariants charter, BARCAN role charters) is chunked
@@ -65,7 +65,7 @@ public class GeminiContextService {
         this.repoRoot = repoRoot;
     }
 
-    // 2026-07-26 operator directive ("общая цифра быстро кончается" - reduce spend): OBSERVER_LOG.md is
+    // 2026-07-26 operator directive ("the overall figure runs out fast" - reduce spend): OBSERVER_LOG.md is
     // append-only and grows forever (4700+ lines and counting) - indexing the WHOLE file every reindex
     // would make embedding cost scale with total project history, not current relevance. Bounded to the
     // tail (most recent activity is what matters for pattern-matching against a live anomaly anyway).
@@ -94,10 +94,10 @@ public class GeminiContextService {
         indexFileIfPresent(root.resolve("docs/AI_REVIEW_GUIDELINES.md"), "ai_review_guidelines", -1);
         // The orchestrator's own accumulated experience/knowledge about this project (architecture
         // decisions, confirmed bugs, standing principles) - a manually-refreshed snapshot maintained by
-        // Claude, not a live feed (operator directive 2026-07-25: "свой опыт и знания о проекте поместить").
+        // Claude, not a live feed (operator directive 2026-07-25: "put in your own experience and knowledge of the project").
         indexFileIfPresent(root.resolve("docs/CLAUDE_OPERATOR_KNOWLEDGE.md"), "claude_operator_notes", -1);
-        // 2026-07-26 operator directive ("знала большинство математически идеальных паттернов
-        // программирования"): a catalog of structural/operational failure signatures the observer can match
+        // 2026-07-26 operator directive ("knew most of the mathematically ideal programming
+        // patterns"): a catalog of structural/operational failure signatures the observer can match
         // against evidence-snapshot symptoms - she never sees code, so these are written as
         // symptom -> pattern, not code smells.
         indexFileIfPresent(root.resolve("docs/OPERATIONAL_FAILURE_PATTERNS.md"), "operational_failure_patterns", -1);

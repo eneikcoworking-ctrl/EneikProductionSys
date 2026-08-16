@@ -16,8 +16,8 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * Restoration (2026-07-26, operator directive: "лог проекта должен независеть от деплоев!! это огромное
- * упущение. я точно давал задание реализовать полный лог от старта проекта до его принятия") of the
+ * Restoration (2026-07-26, operator directive: "the project log must not depend on deployments!! this is a huge
+ * omission. I definitely asked for a full log from project start to its acceptance") of the
  * durable per-project log deleted in V58 (2026-07-25). That deletion over-corrected a real, narrower
  * complaint - Gemini's observer should not CONSUME the backend's own internal log as if it were the
  * project - by removing the capture pipeline entirely instead of just cutting Gemini off from it. This

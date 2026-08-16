@@ -13,9 +13,9 @@ import java.util.Set;
 import java.util.UUID;
 
 /**
- * Deterministic, non-AI safeguard for self_falsification-sourced эпик resolution: when the compiler
- * decides a falsification finding needs a brand-new эпик (existingEpicId == null), this independently
- * checks whether an existing эпик already covers the same client-facing JTBD before letting the backend
+ * Deterministic, non-AI safeguard for self_falsification-sourced epic resolution: when the compiler
+ * decides a falsification finding needs a brand-new epic (existingEpicId == null), this independently
+ * checks whether an existing epic already covers the same client-facing JTBD before letting the backend
  * create a duplicate. Self-falsification audits already-shipped code, so its prior should favor attaching
  * over inventing - this is exactly Quine's web-of-belief principle: don't add new core structure when the
  * existing structure already accounts for the observation.
@@ -90,7 +90,7 @@ public class SelfFalsificationEpicMatcher {
             return Optional.empty();
         }
 
-        log.info("SelfFalsificationEpicMatcher: matched '{}' to existing эпик {} ('{}') score={}",
+        log.info("SelfFalsificationEpicMatcher: matched '{}' to existing epic {} ('{}') score={}",
                 candidate.title(), best.getId(), best.getTitle(), bestScore);
         return Optional.of(best.getId());
     }

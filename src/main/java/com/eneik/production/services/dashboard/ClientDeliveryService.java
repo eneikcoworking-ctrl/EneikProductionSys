@@ -73,7 +73,7 @@ public class ClientDeliveryService {
         return new ClientDeliveryDto(requested, delivered, screenshots, prLinks, testSummary);
     }
 
-    // Ф-followup (2026-07-21): same H2 raw-JDBC key-casing fragility fixed in CommandDashboardService -
+    // Phase follow-up (2026-07-21): same H2 raw-JDBC key-casing fragility fixed in CommandDashboardService -
     // confirmed live via a direct /client-delivery call that H2's JdbcTemplate.queryForList returns
     // uppercase column keys ("SCREENSHOT_URLS", "CI_STATUS"), not the lowercase snake_case this file's
     // .get(...) calls look up, so addScreenshots()/the CI status summary silently no-op'd. Normalized once

@@ -31,7 +31,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
            "(:tag IS NULL OR a.capabilities = '*' OR CONCAT(',', a.capabilities, ',') LIKE CONCAT('%,', :tag, ',%'))")
     boolean existsOnlineWithCapability(@Param("tag") String tag, @Param("threshold") Instant threshold);
 
-    // Ф-followup (2026-07-21, operator directive - found via a live screenshot audit of the admin
+    // Phase follow-up (2026-07-21, operator directive - found via a live screenshot audit of the admin
     // dashboard): lastHeartbeat used to only update at account creation and via a dedicated /heartbeat
     // endpoint nothing in the real dispatch/claim/completion cycle ever called - confirmed live, all 5
     // active accounts showed the identical, week-old timestamp while one was genuinely `busy` at that

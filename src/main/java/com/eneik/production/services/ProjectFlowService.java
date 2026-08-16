@@ -368,8 +368,8 @@ public class ProjectFlowService {
     }
 
     // Frozen means zero background activity in any form, not just "orchestrator stops picking new work"
-    // (operator directive 2026-07-24: "софт предполагает ничего ни в каком виде не делать с замороженными
-    // проектами - все задачи снимать"). Freezing alone only drops a project out of
+    // (operator directive 2026-07-24: "the software is supposed to do nothing whatsoever with frozen
+    // projects - drop every task"). Freezing alone only drops a project out of
     // ContinuousOrchestrationService.continuousOrchestrate's active-projects loop - several other scheduled
     // loops (pollActiveJulesSessions, JulesDispatchService.runSessionSafetyMaintenance,
     // reconcileStrandedPrOpenedWorkflows, AutoMergeService's merge-execution half) are project-status-BLIND,
@@ -400,8 +400,8 @@ public class ProjectFlowService {
         return toProjectDto(project);
     }
 
-    // 2026-08-07 (operator directive: "надо будет удалить там результаты первой декомпозиции и полностью
-    // с самого начала провести новую"): deletes every task/wishlist/feature produced by a project's first
+    // 2026-08-07 (operator directive: "the results of the first decomposition must be deleted there and a
+    // completely new one run from scratch"): deletes every task/wishlist/feature produced by a project's first
     // decomposition attempt and re-submits the same brief as a fresh client wishlist, so the SAME
     // project/repo/GitHub collaborators (already provisioned, no need to redo that) get a clean second
     // decomposition run through the now-fixed grounding pipeline. Requires the project to already be
@@ -793,9 +793,9 @@ public class ProjectFlowService {
     }
 
     // Feeds TechnicalLeadCompiler.applyCrossEpicCollisionGuard: a project-wide claim (taskId=null,
-    // featureId=null) always collides with every эпик's predicted fileScope, regardless of which эпик asks -
+    // featureId=null) always collides with every epic's predicted fileScope, regardless of which epic asks -
     // this is how the deterministic bootstrap scaffolds (backend and frontend) plug into the same general
-    // collision-guard mechanism used for every other cross-эпик file collision, instead of needing their own
+    // collision-guard mechanism used for every other cross-epic file collision, instead of needing their own
     // separate enforcement path.
     private void recordGlobalFileClaimIfCommitted(ProjectEntity project, String path, boolean committed) {
         if (!committed) {
@@ -812,15 +812,15 @@ public class ProjectFlowService {
     }
 
     // Frontend sibling of commitDeterministicJavaScaffoldIfAbsent above - same root cause, same fix shape.
-    // Found live (test-fortieth, 2026-07-31): three separate эпики each independently dispatched a
+    // Found live (test-fortieth, 2026-07-31): three separate epics each independently dispatched a
     // BARCAN-TAG-11 frontend task with no shared dependency between them (dependency graphs never span
-    // sibling эпики - see buildTaskGraphForOneEpic), and each one rewrote frontend/src/App.svelte from
+    // sibling epics - see buildTaskGraphForOneEpic), and each one rewrote frontend/src/App.svelte from
     // scratch as if no shell existed yet, producing real GitHub merge conflicts (PR#13/PR#21 both touching
     // the same file). Committing a minimal, working Svelte+Vite shell once, deterministically, right after
-    // the backend scaffold (before any эпик's implementer task is ever dispatched) removes the race the
+    // the backend scaffold (before any epic's implementer task is ever dispatched) removes the race the
     // same way the backend fix already does: every later TAG-11 session sees a real shell already on main
     // and extends it instead of re-inventing it. The shell also commits frontend/src/routes.js - a small,
-    // explicit routes registry - specifically so that adding a new эпик's UI later becomes "add one
+    // explicit routes registry - specifically so that adding a new epic's UI later becomes "add one
     // component file and append one line to routes.js" instead of "edit App.svelte's shared layout",
     // shrinking the collision surface even after this one-time bootstrap. Only for greenfield projects, and
     // only when no frontend/backend manifest of ANY kind already exists yet, mirroring the same convention
@@ -849,7 +849,7 @@ public class ProjectFlowService {
                 project,
                 "frontend/package.json",
                 frontendScaffoldPackageJson(javaArtifactId(project)).getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                "EMS bootstrap: minimal Svelte/Vite package.json (deterministic, avoids cross-эпик scaffold collisions)"
+                "EMS bootstrap: minimal Svelte/Vite package.json (deterministic, avoids cross-epic scaffold collisions)"
         );
         boolean viteConfigCommitted = gitHubPullRequestService.upsertFile(
                 project,
@@ -873,13 +873,13 @@ public class ProjectFlowService {
                 project,
                 "frontend/src/routes.js",
                 frontendScaffoldRoutesJs().getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                "EMS bootstrap: routes registry (append-only extension point for later эпики's UI)"
+                "EMS bootstrap: routes registry (append-only extension point for later epics' UI)"
         );
         boolean appSvelteCommitted = gitHubPullRequestService.upsertFile(
                 project,
                 "frontend/src/App.svelte",
                 frontendScaffoldAppSvelte(appTitle).getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                "EMS bootstrap: minimal App.svelte shell driven by routes.js (deterministic, avoids cross-эпик scaffold collisions)"
+                "EMS bootstrap: minimal App.svelte shell driven by routes.js (deterministic, avoids cross-epic scaffold collisions)"
         );
         log.info("Deterministic frontend scaffold for project {}: package.json={}, vite.config.js={}, index.html={}, "
                         + "main.js={}, routes.js={}, App.svelte={}",
@@ -960,11 +960,11 @@ public class ProjectFlowService {
                 """;
     }
 
-    // The extension point every later эпик's TAG-11 slice should touch instead of App.svelte's shared
+    // The extension point every later epic's TAG-11 slice should touch instead of App.svelte's shared
     // layout: one new component file, one appended entry here. Kept deliberately tiny and append-only.
     private String frontendScaffoldRoutesJs() {
         return """
-                // Routes registry - append-only. Each эпик's UI adds one entry here and its own component
+                // Routes registry - append-only. Each epic's UI adds one entry here and its own component
                 // file under frontend/src/, instead of editing App.svelte's shared layout/nav directly.
                 export const routes = [];
                 """;
@@ -2016,8 +2016,8 @@ public class ProjectFlowService {
      */
     public boolean buildTaskGraphFromSlices(ProjectEntity project, java.util.List<WishlistEntity> sourceWishlists,
             java.util.List<MLPredictionServiceClient.EpicPlan> epicPlans) {
-        // Ф8 (2026-07-21, operator directive): a wishlist splits into as many эпики as the product needs -
-        // grouped by epic.sourceIndex() now (was per-slice sourceIndex before эпики existed), and a single
+        // Phase 8 (2026-07-21, operator directive): a wishlist splits into as many epics as the product needs -
+        // grouped by epic.sourceIndex() now (was per-slice sourceIndex before epics existed), and a single
         // wishlist can legitimately produce MULTIPLE epic entries here, not just one.
         java.util.Map<Integer, java.util.List<MLPredictionServiceClient.EpicPlan>> epicsBySource =
                 new java.util.LinkedHashMap<>();
@@ -2035,7 +2035,7 @@ public class ProjectFlowService {
             }
             java.util.List<MLPredictionServiceClient.EpicPlan> myEpics = epicsBySource.getOrDefault(i, java.util.List.of());
             boolean wishlistBuiltAnything = false;
-            // Poka-yoke (live bug, 2026-07-24): one LLM decomposition response can list the same эпик
+            // Poka-yoke (live bug, 2026-07-24): one LLM decomposition response can list the same epic
             // theme twice under one sourceIndex (confirmed live - two epicPlans both titled "Campaign
             // Configuration & Ingestion UI" spawned two independently-running Jules session chains for the
             // same work). This list is scoped to THIS wishlist's own epic list only - reset every loop
@@ -2050,7 +2050,7 @@ public class ProjectFlowService {
             // confirmed live on test-thirty-seventh as a real contributing factor to a
             // PessimisticLockingFailureException retry storm on the `projects` table (7 failed
             // reconcileStrandedPrOpenedWorkflows attempts, ~7 minutes, before one finally succeeded). This
-            // holder lets every эпик in THIS wishlist's batch share one in-memory counter, persisted in
+            // holder lets every epic in THIS wishlist's batch share one in-memory counter, persisted in
             // exactly one write via flushFlywayVersionReservation below instead of once per Data-Schema task.
             TechnicalLeadCompiler.FlywayVersionReservation flywayCache = new TechnicalLeadCompiler.FlywayVersionReservation();
             for (MLPredictionServiceClient.EpicPlan epicPlan : myEpics) {
@@ -2066,7 +2066,7 @@ public class ProjectFlowService {
             // at least one epic actually produced new work. A wishlist whose every epic collapsed into
             // pre-existing features/tasks (same-batch duplicates, or an empty/invalid slice list after EMS
             // filtering) never converted into anything new; `dismissed` says that honestly instead of
-            // falsely claiming a real conversion happened (Ф-honesty fix, 2026-07-24).
+            // falsely claiming a real conversion happened (honesty fix, 2026-07-24).
             wishlist.setStatus(wishlistBuiltAnything ? WishlistStatus.converted_to_task : WishlistStatus.dismissed);
             wishlistRepository.save(wishlist);
         }
@@ -2074,9 +2074,9 @@ public class ProjectFlowService {
     }
 
     /**
-     * Resolves the эпик (FeatureEntity) this epicPlan belongs to: reuses an existing one if the compiler
+     * Resolves the epic (FeatureEntity) this epicPlan belongs to: reuses an existing one if the compiler
      * matched it semantically (existingEpicId, validated against this project - a hallucinated or
-     * cross-project id falls back to creating new rather than attaching real tasks to the wrong эпик or
+     * cross-project id falls back to creating new rather than attaching real tasks to the wrong epic or
      * throwing), otherwise mints a brand-new one with the epic's own content.
      */
     private UUID resolveEpicFeatureId(ProjectEntity project, WishlistEntity wishlist,
@@ -2087,19 +2087,19 @@ public class ProjectFlowService {
                 return existing.get().getId();
             }
             log.warn("ProjectFlowService: compiler echoed existingEpicId {} for project {} but it doesn't "
-                            + "resolve to a real эпик in this project; creating a new one instead of guessing.",
+                            + "resolve to a real epic in this project; creating a new one instead of guessing.",
                     epicPlan.existingEpicId(), project.getId());
         }
-        // Poka-yoke, scoped strictly to self_falsification: the compiler already claims "no existing эпик
+        // Poka-yoke, scoped strictly to self_falsification: the compiler already claims "no existing epic
         // matches" here, but falsification is by definition auditing already-shipped code, so a bad
-        // compiler judgment call has a real and observed cost (duplicate эпики in the same domain). Every
+        // compiler judgment call has a real and observed cost (duplicate epics in the same domain). Every
         // other wishlist source (client, coverage_gap, role, etc.) is completely untouched by this check.
         if (wishlist.getSource() == WishlistSource.self_falsification) {
             try {
                 List<FeatureEntity> candidates = featureService.listExistingEpics(project.getId());
                 Optional<UUID> override = selfFalsificationEpicMatcher.findLikelyExistingEpic(candidates, epicPlan);
                 if (override.isPresent()) {
-                    log.info("Poka-yoke: self_falsification эпик '{}' deterministically matched existing эпик {}; "
+                    log.info("Poka-yoke: self_falsification epic '{}' deterministically matched existing epic {}; "
                                     + "attaching instead of creating a duplicate.", epicPlan.title(), override.get());
                     return override.get();
                 }
@@ -2108,7 +2108,7 @@ public class ProjectFlowService {
                         project.getId(), e.getMessage(), e);
             }
         }
-        // Poka-yoke, universal to every WishlistSource (2026-07-24): same-batch dedup against эпики already
+        // Poka-yoke, universal to every WishlistSource (2026-07-24): same-batch dedup against epics already
         // minted moments ago for THIS wishlist's own epic list. In-memory only, never a DB read, so unlike
         // the self_falsification block above it cannot see anything from a prior or later
         // buildTaskGraphFromSlices call - strictly same-batch. Reuses the matcher's existing deterministic
@@ -2117,7 +2117,7 @@ public class ProjectFlowService {
             Optional<UUID> sameBatchMatch =
                     selfFalsificationEpicMatcher.findLikelyExistingEpic(epicsResolvedThisWishlist, epicPlan);
             if (sameBatchMatch.isPresent()) {
-                log.info("Poka-yoke: эпик '{}' matched another эпик already created earlier in this same "
+                log.info("Poka-yoke: epic '{}' matched another epic already created earlier in this same "
                                 + "decomposition batch ({}); attaching instead of creating a duplicate.",
                         epicPlan.title(), sameBatchMatch.get());
                 return sameBatchMatch.get();
@@ -2148,7 +2148,7 @@ public class ProjectFlowService {
 
         warnIfImplicitLayerMissing(wishlist, graphSlices);
 
-        // Every эпик is its own dependency graph - stage anchoring (below) is scoped to THIS эпик's own
+        // Every epic is its own dependency graph - stage anchoring (below) is scoped to THIS epic's own
         // slices only, never spanning across sibling epics from the same wishlist, since two epics may be
         // entirely unrelated pieces of work that just happened to originate from one client brief.
         UUID featureId = resolveEpicFeatureId(project, wishlist, epicPlan, epicsResolvedThisWishlist);
@@ -2389,11 +2389,11 @@ public class ProjectFlowService {
         );
     }
 
-    // Ф8 (2026-07-21, operator directive): Kano moved off the task level entirely (customer-value
-    // classification only makes sense per эпик, never per task) - epicKanoClass is threaded through purely
-    // as informational context ("this task belongs to a Must-Be эпик"), nullable for the cheap/recovery
+    // Phase 8 (2026-07-21, operator directive): Kano moved off the task level entirely (customer-value
+    // classification only makes sense per epic, never per task) - epicKanoClass is threaded through purely
+    // as informational context ("this task belongs to a Must-Be epic"), nullable for the cheap/recovery
     // compile path (tryCompileWishlistCheaply), which reuses an already-known featureId without loading
-    // that эпик's own content back out.
+    // that epic's own content back out.
     private String compiledDod(String ownerRole, MLPredictionServiceClient.TaskSliceMetadata slice, String epicKanoClass) {
         String roleSpecificReadiness = switch (ownerRole) {
             case "BARCAN-TAG-03" -> "UI/design readiness: follow docs/DESIGN_SYSTEM.md for layout, visual states, and interaction evidence. Deliverable is a committed HTML/CSS mockup file - a written brief or description with no mockup file is not acceptable.";
@@ -2402,7 +2402,7 @@ public class ProjectFlowService {
         };
         return "Compiled from English JTBD work item by Eneik Management System. Owner role: "
                 + ownerRole + ". Role refusal criteria: " + ownerRole + ". Compiler role: BARCAN-TAG-09. "
-                + "Parent эпик Kano: " + defaultText(epicKanoClass, "(unclassified)")
+                + "Parent epic Kano: " + defaultText(epicKanoClass, "(unclassified)")
                 + ". Cynefin: " + defaultText(slice.cynefinDomain(), "clear") + ". "
                 + roleSpecificReadiness;
     }
@@ -2817,15 +2817,15 @@ public class ProjectFlowService {
 
     // Package-private for the same reason as dispatchBatchedWishlistCompiler above.
     /**
-     * Ф8 (2026-07-21, operator directive): renders the project's existing эпики (id/title/jtbd only - not
+     * Phase 8 (2026-07-21, operator directive): renders the project's existing epics (id/title/jtbd only - not
      * their tasks) as the candidate set the compiler must semantically match new content against before
-     * ever minting a brand-new эпик. Every compile cycle, not just the first, since a follow-up brief
+     * ever minting a brand-new epic. Every compile cycle, not just the first, since a follow-up brief
      * routinely belongs to something the project already has.
      */
     private String existingEpicsPromptContext(UUID projectId) {
         java.util.List<com.eneik.production.models.persistence.FeatureEntity> epics = featureService.listExistingEpics(projectId);
         if (epics.isEmpty()) {
-            return "(none yet - this project has no эпики/epics so far; every эпик you produce is new)";
+            return "(none yet - this project has no epics/epics so far; every epic you produce is new)";
         }
         StringBuilder sb = new StringBuilder();
         for (var epic : epics) {
@@ -3276,7 +3276,7 @@ public class ProjectFlowService {
                 this task only produces a decomposition plan.
 
                 TWO-LEVEL decomposition - do this in order, for every brief:
-                STEP 1 - split into эпики (epics): identify how many DISTINCT epics this brief's narrative
+                STEP 1 - split into epics (epics): identify how many DISTINCT epics this brief's narrative
                 actually contains (by theme, not by role - "notes CRUD" is one epic even though it needs
                 backend+frontend+data roles; "notes CRUD" + "user profile settings" in the same brief is
                 TWO epics). A brief may produce 1 epic or several - never assume exactly one. Before
@@ -3707,7 +3707,7 @@ public class ProjectFlowService {
     // fully isolated one-role sessions with no discussion between them). One continuous Jules session
     // per project, one role-batch (3 roles) per follow-up turn.
     //
-    // 2026-08-09 (live incident, operator-flagged - "проверь что все философы высказались"): this used to
+    // 2026-08-09 (live incident, operator-flagged - "check that every philosopher has spoken"): this used to
     // track "covered" role tags as an append-only marker on the carrier task's payload, written the moment a
     // batch was SENT (see PHILOSOPHICAL_AUDIT_COVERED_ROLES_KEY, removed) - not once Jules's answer was
     // actually verified to exist. Confirmed live: BARCAN-TAG-12 was asked about at 09:00:14 and this
@@ -3916,7 +3916,7 @@ public class ProjectFlowService {
     // EPIC, immediately after decomposition, comparing the brief against the (not-yet-built) planned task
     // list. Confirmed live (test-thirty-third) that this fires N audit tasks per wishlist (one per epic,
     // observed 3 for a single brief) and burns worker slots before any real code exists to actually check
-    // against - the operator called this "громоздко с костылями" (clunky, hacky) and asked for a redesign:
+    // against - the operator called this "clunky and full of crutches" (clunky, hacky) and asked for a redesign:
     // exactly ONE audit task per WISHLIST (not per epic), dispatched only once ALL of that wishlist's
     // planned tasks are genuinely merged, comparing the brief against the REAL code now on main - not a
     // text description of a plan. Still deliberately NOT an extension of FalsificationCycleService: that
@@ -3996,7 +3996,7 @@ public class ProjectFlowService {
         List<DueCoverageAudit> due = new java.util.ArrayList<>();
 
         for (WishlistEntity wishlist : clientWishlists) {
-            // 2026-07-26 operator directive ("привязать к целому вишлисту"): scoped to THIS wishlist's own
+            // 2026-07-26 operator directive ("tie it to the whole wishlist"): scoped to THIS wishlist's own
             // features, not highestMergedPrNumber(project) (any product-code merge anywhere in the project).
             // The project-wide version already survived one self-triggering-loop fix (2026-07-24, see the
             // javadoc below) but still re-fired this wishlist's audit every time an UNRELATED wishlist's own
@@ -4064,7 +4064,7 @@ public class ProjectFlowService {
     }
 
     /**
-     * Live incident, 2026-07-24 (operator: "ковер важнее сейчас. он сломан?" - confirmed yes): coverage
+     * Live incident, 2026-07-24 (operator: "coverage matters more right now. is it broken?" - confirmed yes): coverage
      * audits were chasing their own tail. This watermark is "has anything new merged for this project since
      * the last audit" - but it counted EVERY merged PR project-wide, including the audit's own record-only
      * report PR (`.eneik/records/coverage-audit-*.json`, never product code). Each audit's own merge bumped
@@ -4096,7 +4096,7 @@ public class ProjectFlowService {
     }
 
     /**
-     * 2026-07-26 operator directive ("привязать к целому вишлисту"): same watermark as
+     * 2026-07-26 operator directive ("tie it to the whole wishlist"): same watermark as
      * {@link #highestMergedPrNumber(ProjectEntity)}, but scoped to sessions whose task belongs to THIS
      * wishlist's own features (via {@link ClientDeliverableReadinessService#listTasksForRootWishlist}),
      * not any task anywhere in the project. The project-wide version still let one client wishlist's audit
@@ -4300,7 +4300,7 @@ public class ProjectFlowService {
     // "already covered" from "needs re-review" in that case, since the URL alone doesn't change.
     public static final String PR_REVIEW_FALLBACK_DIFF_HASH_KEY = "reviewsDiffHash";
 
-    // Fixes the "исчерпаный ретри на ревью" incident (2026-07-26, test-thirty-eighth, tasks 41dc3324/
+    // Fixes the "retries exhausted on review" incident (2026-07-26, test-thirty-eighth, tasks 41dc3324/
     // c43575c5/4db2f25e/64d2fc08/e4caba98): "this target was included in a dispatched fallback-review batch"
     // (recorded forever on the CARRIER via PR_REVIEW_FALLBACK_TASK_IDS_KEY) and "this target's verdict
     // actually came back and got applied" were wrongly treated as the same thing. A batch that completed
@@ -4798,7 +4798,7 @@ public class ProjectFlowService {
                 wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.pending) > 0
                         || wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling) > 0;
 
-        // Ф-followup (2026-07-21, operator directive - the night's core complaint): review-fallback/
+        // Phase follow-up (2026-07-21, operator directive - the night's core complaint): review-fallback/
         // design-review/coverage-audit tasks share the SAME general account pool as real implementer work
         // (dispatchToGeneralPool, see below), with no priority separation from it - `priority` defaults to
         // 0 for both and is otherwise driven entirely by TOC-bottleneck matching (BottleneckAwarePriorityService),
@@ -4854,11 +4854,11 @@ public class ProjectFlowService {
             // after the previous stage's real, merged code is on main - it sees the actual decision
             // instead of guessing one of its own.
             //
-            // Ф3 (2026-07-21 review): TaskStatus.done is set at review approval, independently of whether
+            // Phase 3 (2026-07-21 review): TaskStatus.done is set at review approval, independently of whether
             // the PR itself ever actually merged (see ClientDeliverableReadinessService's class doc) - a
             // dependency stuck in a merge conflict would still read as "done", letting the next stage start
             // before its code is really on main, exactly what this check exists to prevent.
-            // Ф4/Д3: isDependencySatisfied also recognizes a merged REPLACEMENT task when the literal
+            // Phase 4/Д3: isDependencySatisfied also recognizes a merged REPLACEMENT task when the literal
             // dependency was abandoned (escalated/force-unblocked) - otherwise a dependsOn edge pointing at
             // a permanently-failed task would leave this task stuck in `queued` forever with no way out.
             // Live regression (2026-08-08, found during monitoring, same day as the fix that caused it):
@@ -4945,7 +4945,7 @@ public class ProjectFlowService {
                 // it simply waits) until the project has actually shipped its first
                 // buildPhaseDeliverableCount client deliverables. See test-twenty-eighth post-mortem §6.4:
                 // this kind of self-generated backlog made up 82% of dispatched capacity while the two real
-                // ТЗ items sat starved of retries.
+                // specification items sat starved of retries.
                 continue;
             }
 
@@ -5175,7 +5175,7 @@ public class ProjectFlowService {
                 })
                 .toList();
 
-        // Ф-followup (2026-07-21, operator directive, found via a live screenshot audit): system/carrier
+        // Phase follow-up (2026-07-21, operator directive, found via a live screenshot audit): system/carrier
         // tasks (compiler, review-fallback, coverage-audit, design-review, falsification-audit) never
         // produce anything user-facing - they're internal bookkeeping, not a real deliverable. Confirmed
         // live on test-twenty-ninth: 9 failed pr_review_fallback tasks from a pre-fix incident cluttered
@@ -5227,7 +5227,7 @@ public class ProjectFlowService {
                 .toList();
 
         ClientDeliverableReadinessService.Readiness productReadiness = readinessService.computeForProject(projectId);
-        // Operator directive 2026-07-24 ("надо считать по фичам!"), explicit choice via AskUserQuestion
+        // Operator directive 2026-07-24 ("it must be counted by features!"), explicit choice via AskUserQuestion
         // over 3 concrete alternatives (task ratio 66.7%, feature ratio 25%, thread-closeout ratio 75%):
         // falsification readiness now gates on EPIC completion (completeFeatures/totalFeatures), not task
         // merge ratio. Deliberately stricter than the old task-based gate for a project with many
@@ -5478,29 +5478,38 @@ public class ProjectFlowService {
         if (isChess) {
             switch (roleTag) {
                 case "BARCAN-TAG-03":
-                    return "Спроектировать 3D-сцену шахматной доски, включая материалы фигур, параметры камеры и освещения в едином визуальном стиле.";
+                    return "Design the 3D chessboard scene, including piece materials and camera and lighting "
+                            + "parameters, in one consistent visual style.";
                 case "BARCAN-TAG-02":
-                    return "Реализовать логику шахматных правил и алгоритм ИИ с 3 уровнями сложности (через глубину поиска или оценочную функцию).";
+                    return "Implement the chess rules engine and an AI opponent with 3 difficulty levels "
+                            + "(via search depth or an evaluation function).";
                 case "BARCAN-TAG-11":
-                    return "Подключить 3D-визуализацию к логике игры: обработка кликов по фигурам, подсветка доступных ходов, отправка хода в движок.";
+                    return "Connect the 3D view to the game logic: piece click handling, highlighting of "
+                            + "legal moves, and submitting a move to the engine.";
                 case "BARCAN-TAG-06":
-                    return "Разработать автоматизированный E2E тест на сквозной игровой процесс против компьютера.";
+                    return "Write an automated E2E test covering a full game played against the computer.";
             }
         }
-        
+
         switch (roleTag) {
             case "BARCAN-TAG-03":
-                return "Спроектировать пользовательский интерфейс, макеты экранов и дизайн-элементы для функции: \"" + wishlistText + "\" согласно docs/DESIGN_SYSTEM.md.";
+                return "Design the user interface, screen layouts and design elements for the feature: \""
+                        + wishlistText + "\", per docs/DESIGN_SYSTEM.md.";
             case "BARCAN-TAG-02":
-                return "Разработать серверную бизнес-логику, API эндпоинты, миграции базы данных и юнит-тесты для функции: \"" + wishlistText + "\".";
+                return "Implement the server-side business logic, API endpoints, database migrations and "
+                        + "unit tests for the feature: \"" + wishlistText + "\".";
             case "BARCAN-TAG-11":
-                return "Реализовать фронтенд-компоненты на Svelte, интерактивное взаимодействие и интеграцию с API для функции: \"" + wishlistText + "\" согласно docs/DESIGN_SYSTEM.md.";
+                return "Implement the Svelte frontend components, their interactions and the API "
+                        + "integration for the feature: \"" + wishlistText + "\", per docs/DESIGN_SYSTEM.md.";
             case "BARCAN-TAG-06":
-                return "Написать автоматизированные E2E и интеграционные тесты для верификации функции: \"" + wishlistText + "\".";
+                return "Write automated E2E and integration tests verifying the feature: \""
+                        + wishlistText + "\".";
             case "BARCAN-TAG-05":
-                return "Настроить CI/CD пайплайн, Dockerfile, конфигурации сборки и окружения для деплоя функции: \"" + wishlistText + "\".";
+                return "Set up the CI/CD pipeline, Dockerfile, and build and environment configuration to "
+                        + "deploy the feature: \"" + wishlistText + "\".";
             default:
-                return "Реализовать технические требования для роли " + roleTag + " по пожеланию клиента: \"" + wishlistText + "\".";
+                return "Implement the technical requirements for role " + roleTag
+                        + " arising from the client's request: \"" + wishlistText + "\".";
         }
     }
 

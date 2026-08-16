@@ -105,7 +105,7 @@ public class ProjectController {
                 java.time.Instant date = existing.get(0).getCreatedAt();
                 return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
                         "error", "audit_already_conducted",
-                        "message", "Аудит уже проводился " + date.toString() + ", повторить?"
+                        "message", "An audit was already conducted at " + date.toString() + "; repeat it?"
                 ));
             }
             com.eneik.production.services.onboarding.StackProfile profile = onboardingAuditService.runOnboardingAudit(project, true);
