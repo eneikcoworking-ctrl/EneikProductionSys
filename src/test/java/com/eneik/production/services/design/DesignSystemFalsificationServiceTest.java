@@ -34,9 +34,16 @@ class DesignSystemFalsificationServiceTest {
     private final StitchClient stitchClient = mock(StitchClient.class);
     private final WishlistRepository wishlistRepository = mock(WishlistRepository.class);
     private final SystemSettingsService settingsService = mock(SystemSettingsService.class);
+    // F45 (2026-08-16): the service now reads the STITCH project id from the design-shop cycle row rather
+    // than passing Eneik's own project id, which Stitch rightly answered "Requested entity was not found".
+    // Returning empty here is the case that matters most: no Stitch project exists yet, and the argument
+    // must then be omitted rather than filled with something else.
+    private final com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository =
+            mock(com.eneik.production.repositories.DesignShopCycleRepository.class);
 
     private final DesignSystemFalsificationService service = new DesignSystemFalsificationService(
-            projectRepository, readinessService, stitchClient, wishlistRepository, settingsService, null);
+            projectRepository, readinessService, stitchClient, designShopCycleRepository, wishlistRepository,
+            settingsService, null);
     // 2026-08-14 (bug-hunt sweep): recordAuditTrail is now called via a self-proxy field (REQUIRES_NEW,
     // same pattern as JulesDispatchService.self) - wired to the instance itself here since there's no real
     // Spring proxy in a plain unit test.
