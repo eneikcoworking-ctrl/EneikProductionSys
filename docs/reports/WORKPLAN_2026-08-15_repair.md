@@ -1182,6 +1182,39 @@ exposes them hangs.
 consistent with the size not being the cause. Two tasks (`Data Schema`, `UI Slice`) sit `failed` with
 `retry_count = 0`; the count is static, not a cascade, and the reason is not yet established.
 
+### F43. The unblock message loop - F42 in a second place, and this one burns Jules quota
+
+Traced from the two `failed` tasks on test-forty-ninth, backwards through the log.
+
+```
+05:49  task 36651896 early-unblocked on an open-but-unmerged spec dependency, started in parallel
+06:00  told its dependency had finalised
+06:50  declared stale -> "Sent Forced stale-revising unblock message"
+06:51  Sent Forced stale-revising unblock message
+06:52  Sent Forced stale-revising unblock message
+       ... once every 60 seconds, same session, same task ...
+07:54  Flow Core: BLOCKED_BY_TASK - ORCHESTRATE and RECOVER_FAILED_FRONTIER denied for the WHOLE project
+07:54  iteration-admission poka-yoke retires the task to clear the block
+08:11  identical sequence for task ab74be69
+08:31  Gemini dismisses both orphaned wishlists, freeing the compiler-admission gate
+```
+
+**Over sixty forced messages into one Jules session in one hour, for one task.** And it is still running:
+6 messages in the last 40 minutes on another task.
+
+**This is exactly F42's shape in a different place.** A rate limit (one per minute) with no attempt bound:
+nothing decreases, so nothing terminates. The loop is not ended by its own logic but by a *different*
+mechanism an hour later, and the price is paid twice - Jules quota, and the whole project frozen in
+`BLOCKED_BY_TASK` while one task sits blocked.
+
+The same repair applies and is already written and proven: a declared finite budget with a counter, so
+`mu = B - attempts` decreases on every message and the task is declared unblockable after B rather than
+after an hour. Site: `JulesDispatchService`, the `Forced stale-revising unblock message` path.
+
+**Note the cost asymmetry that makes this worse than the compile loop.** A repeated decomposition wastes a
+Jules session. A repeated unblock message wastes a session AND holds the entire project in a state where
+Flow Core denies orchestration - so one stuck task stops all work until the poka-yoke fires.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
