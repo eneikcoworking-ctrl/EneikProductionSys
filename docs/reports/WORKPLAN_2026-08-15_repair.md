@@ -814,6 +814,56 @@ changed where the class comes from - `features.kano_class` instead of guessed wo
 still reads *"pending Must-Be/One-Dimensional tasks"*, and `One-Dimensional` is not one of the four epic
 classes. Cosmetic today; it becomes misleading the moment someone compares the advice against the tree.
 
+**Third pass, 02:57 UTC. The prediction held, and it exposed two defects in Step 12 itself.**
+
+**F5 fires - the escalation is real.** At 02:42:06, exactly on the declared `cron = 0 40 * * * ?`:
+
+```
+WARN  FactorySelfHealth: database file is 419 MB holding only 62 MB of live data (6.7x bloat) ...
+INFO  [KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal
+      'kz-systemic-3d650db6-...' from project null: Factory self-health: the
+      orchestrator's own database is unhealthy
+```
+
+**F39. The finding is created and then invisible.** `/api/kaizen/proposals` and `/api/kaizen/opportunities`
+both return zero. `KaizenController` serves `kaizenService.getProposalsForProject(projectId)`, and the
+proposal carries `projectId = null` - which Step 12 chose deliberately, because a fault in the factory
+belongs to no client project. That choice is what makes it unreachable through the only API a human would
+look at.
+
+This is **the F5 defect reproduced one level further out, by the repair for F5**. Detection stopped writing
+to a log nobody reads and started writing to a list nobody can retrieve. The repair is not to give the
+finding a fake project: it is that a factory-level proposal needs a way to be listed *as* factory-level.
+
+**F40. The health check trips the connection-leak detector - and is the established cause of F36.**
+
+```
+java.lang.Exception: Apparent connection leak detected
+  at FactorySelfHealthService.liveDataBytes(FactorySelfHealthService.java:166)
+  at FactorySelfHealthService.inspect(FactorySelfHealthService.java:121)
+  at FactorySelfHealthService.reportIfUnhealthy(FactorySelfHealthService.java:70)
+```
+
+`liveDataBytes()` calls H2's `DISK_SPACE_USED(table)` **once per table** in the schema. On a 419 MB store
+that walks the pages of every table, and the pool's 30 s leak threshold - added in Step 4 to make exactly
+this visible - fires on it.
+
+**This closes F36 with a cause rather than a candidate.** `InfrastructureVerdictLayer.judgeDatabase()` calls
+`selfHealthService.inspect()`, so every request to `/api/projects/{id}/verdict` re-runs that whole per-table
+scan. That is the 68.9 s measured on an idle system, and no amount of pool tuning would have found it: the
+answer was in what the layer *does*, not in what it competes with.
+
+Three things follow, and the third is the one that matters:
+
+1. `inspect()` needs a cached or sampled measurement, not a full scan per call.
+2. A monitor that holds pooled connections for over 30 s is a contributor to the condition it reports on.
+   The observer must not be a load-bearing part of the load.
+3. **This is the concrete form of the deadline problem recorded as F36.** Had Step 18's flag been switched
+   on before this run, the gate would have put a 69-second per-table disk scan into the flow's path. The
+   decision to ship the gate off by default, and to insist the run happen before switching it on, is
+   precisely what caught this - which is the strongest argument available for keeping it off until the
+   layers carry a measured budget.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
