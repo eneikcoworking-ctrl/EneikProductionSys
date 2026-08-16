@@ -1911,3 +1911,64 @@ path stops at nudging and never reaches a terminal state.
 `failed` still 2, no replacement. All six wishlist source counts identical. Zero open PRs. Zero
 design/Stitch lines since 16:00:06Z. Readiness 0.667 — design shop (1.0) and philosophical
 falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-16 19:18Z — test-forty-ninth — THE FULL CHAIN, MEASURED
+
+### The nudge loop ended exactly as the watch brief predicts: by another mechanism, at a cost
+
+45 forced nudges in 60 minutes, one per minute, all to session `8476359396578350915`, last one at
+19:07:53. Then:
+
+```
+19:08:52.581  WARN  Poka-yoke: circuit breaker closed session 7b042351 for task b50a4511
+19:08:52.582  WARN  Closed Jules session sessions/8476359396578350915 for task b50a4511
+                    due to stuck_session_timeout
+19:08:54.547  WARN  ProjectFlowService: retiring blocked task b50a4511 without creating a
+                    recovery wishlist/task; product recovery reuses an existing planned task ID
+                    or enters through self_falsification
+```
+
+Board: `claimed 1 -> 0`, **`failed 2 -> 3`**. `b50a4511 API Slice 77380b22` is now the third
+permanently-failed task. The cost of the loop is one dead task.
+
+### Why no replacement is ever created — the complete circle, every link measured
+
+The retirement message states the design intent outright: retire **without creating recovery work**,
+and delegate recovery to `self_falsification`. Both exits are then closed:
+
+1. **`RECOVER_FAILED_FRONTIER`** — denied in `DECOMPOSING` ("decomposition unfinished") and denied in
+   `SYSTEM_STALLED` ("system status is stalled"). Measured in both states today.
+2. **`self_falsification`** — `falsificationEligible: false`, `falsificationThreshold: 0.9`,
+   `featureReadinessRatio: 0.667`. Not eligible.
+
+So a task fails → it is retired with no replacement by design → recovery is delegated to
+self-falsification → self-falsification is gated behind a readiness threshold → and every failed task
+without a replacement holds readiness down. **Failures suppress the only mechanism authorised to
+repair failures.**
+
+This is the answer to the operator's question of 2026-08-16 ("why was no replacement created"),
+now established by measurement rather than inference. It is also the same failure mode
+`ClientDeliverableReadinessService` documented from the 2026-08-06 incident (task `5ac0b91b`,
+"retired by iteration-admission poka-yoke with no child work created") — recurring live, unfixed.
+
+Note: `selfFalsificationReadyRatio` — the metric that grants dead-end credit specifically to break
+this circle — is **not exposed by `/dashboard`**, so whether the credit is being applied and still
+falls short, or is not reaching this gate at all, could not be measured from outside. That is the
+one remaining unknown, and it is the right place to look first.
+
+### Do not fix this by lowering the threshold or by excluding failed tasks from the denominator
+
+Both would be the patch-instead-of-mathematics move. The defect is the circular dependency itself:
+the repair mechanism must not be gated on a quantity that failures reduce.
+
+### F58 persists — dashboard still disagrees with Flow Core
+
+`/dashboard` reports `status: "decomposing"` at 19:18Z; Flow Core denied `RECOVER_FAILED_FRONTIER`
+against state `SYSTEM_STALLED` at 19:17:56.
+
+### Unchanged
+
+`done 35`, `merged 25/27`, `features 4/6`, `ratio 0.667`, `mergedRatio 0.926`. All six wishlist
+source counts identical. Zero open PRs. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0)
+and philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
+`blockedItems` back to one entry: `Runtime Contract 8becdc01 | done_not_reached_main`.
