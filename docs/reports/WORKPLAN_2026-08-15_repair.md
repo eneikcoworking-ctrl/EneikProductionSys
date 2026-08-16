@@ -2480,3 +2480,57 @@ findings stopped after 15.
 false`, status `decomposing`. Zero connection leaks, zero lock timeouts. Zero design/Stitch lines
 since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6
 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-16 23:48Z — test-forty-ninth
+
+### The nudge-to-death sequence completed a second time, identically
+
+```
+22:33:52   nudge 1 to sessions/8833681214974395634
+   …       one nudge per minute, ~60 minutes, no backoff at any point
+23:32:52   last nudge
+23:33:52   WARN  Poka-yoke: circuit breaker closed session 743c0842 for task f42e448c
+23:33:52   WARN  Closed Jules session sessions/8833681214974395634 for task f42e448c
+                 due to stuck_session_timeout
+23:33:56   WARN  ProjectFlowService: retiring blocked task f42e448c …
+```
+
+Board: `failed 3 -> 4`. `f42e448c Build Pipeline 115f4b3f` is dead.
+
+Two tasks, two identical endings within six hours — 60-odd nudges over an hour, then the circuit
+breaker, then retirement. This is now demonstrably **the standard fate of a stale session on this
+project**, not an incident. It also matches F43's original signature exactly ("60+ forced Jules
+nudges in an hour"), so F43 is not fixed in any sense that survives contact with a real stale session.
+
+### F59 does NOT apply to this retirement — and that is informative
+
+```
+23:18Z  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+23:48Z  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+```
+
+Every readiness figure is unchanged despite a task being retired. When `b50a4511` was retired at
+19:08 the denominator fell 27 -> 26 and a feature flipped complete. Here nothing moved.
+
+The difference is that `Build Pipeline 115f4b3f` was never in the planned set — the same category as
+the `Recovery API Slice` task, whose completion also moved `done` without moving `mergedPlannedTasks`.
+So F59's "failure raises readiness" effect is specific to **planned** tasks being retired; retiring
+non-planned work is metric-neutral. That narrows F59 usefully rather than contradicting it.
+
+### The flow immediately picked up new work
+
+`claimed` is 1 again: `1e169d70 Build Pipeline Ebfba197`, a fresh task, claimed within minutes of the
+kill. No nudges against its session yet. `blockedItems` is back to the single long-standing
+`Runtime Contract 8becdc01 | done_not_reached_main`.
+
+So the project is not winding down — it replaced the killed work and continued. The observer also
+produced two more findings (15 -> 17), continuing to be the most productive source here.
+
+### Unchanged
+
+`failed` now 4: `f42e448c`, `b50a4511`, `ab74be69`, `36651896`. Of these, only `b50a4511` ever
+received a recovery task — F62's orphan-only evidence predicate still leaves the rest uncovered, and
+`f42e448c` joins that set. Readiness 0.833, `falsificationEligible false`, status `decomposing`.
+Zero connection leaks, zero lock timeouts, zero `SYSTEM STALLED` lines this window. Zero design/Stitch
+lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All
+6 epics still `kanoClass: null`.
