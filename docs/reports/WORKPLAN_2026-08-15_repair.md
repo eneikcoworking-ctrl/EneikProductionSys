@@ -1764,3 +1764,66 @@ no replacement work created. This remains the one open substantive finding.
 Zero `Apparent connection leak`, zero `Timeout trying to lock`, zero `BLOCKED_BY_TASK`.
 Zero design/Stitch lines (last activity still 16:00:06Z). Readiness 0.667 — design shop (1.0) and
 philosophical falsification (0.9) both correctly silent. All 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-16 18:18Z — test-forty-ninth
+
+### REAL STALL — the system raised it itself, at ERROR, and it is correct
+
+First occurrence `2026-08-16T18:02:51Z`, escalating once per minute:
+
+```
+ERROR  SYSTEM STALLED: no forward progress (dispatch/merge) for 60 minutes with actionable work
+       present: queuedTasks=0, pendingOrCompilingWishlists=0, activeNonTerminalTasks=1,
+       reviewTasksWithPr=0.
+```
+
+The board confirms it — unchanged across three consecutive passes, a full hour:
+
+```
+17:18Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+17:48Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+18:18Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+```
+
+**This reverses my previous pass's call.** At 17:48 I reported "narrow pipeline, not a stall" because
+`b50a4511 API Slice 77380b22` held a live Jules session. That was true then. Since then the session
+went stale-revising and the task has not moved for over 90 minutes. The reading was right for its
+moment and wrong as a forecast — a live session is evidence of work now, not evidence that work will
+continue.
+
+Also 16 occurrences in 35 minutes of the milder variant, same root cause:
+
+```
+16  SYSTEM STALLED: Branch Garbage Collector not triggered because no review task with a PR URL
+    is actionable.
+```
+
+### F43's fix VERIFIED LIVE — the forced-unblock budget holds
+
+Exactly **2** forced-unblock messages in a 6-hour window, both to the same session, 30 minutes apart:
+
+```
+17:38:53.605Z  Sent Forced stale-revising unblock message to Jules session sessions/8476359396578350915
+18:08:54.176Z  Sent Forced stale-revising unblock message to Jules session sessions/8476359396578350915
+```
+
+Configured maximum is 2 (`jules.forced-unblock-max-attempts`). The measure decreased, the backoff
+spaced the attempts, and the loop terminated. Against F43's original 60+ nudges in an hour, this is
+the fix working exactly as designed — and it is the mechanism I nearly destroyed on 2026-08-16 by
+adding a duplicate `forced_unblock_attempts` column on the false premise that no counter existed.
+Recorded here as live confirmation that the existing machinery was correct and my "fix" was the bug.
+
+### What to watch next pass
+
+The nudge budget is now **spent** on session `8476359396578350915`. The question the next pass must
+answer by measurement, not inference: does the task get retired/failed now that the budget is
+exhausted, or does it sit `claimed` indefinitely? If nothing retires it, the termination proof stops
+at "stop nudging" instead of reaching a terminal state, and `b50a4511` becomes a third permanently
+stuck task alongside the two `failed` ones.
+
+### Unchanged
+
+`failed` still 2 — `ab74be69 UI Slice 1559c9b0`, `36651896 Data Schema 7dd76d5f` — no replacement,
+`RECOVER_FAILED_FRONTIER` still denied. All six wishlist source counts identical. Zero open PRs.
+Zero design/Stitch lines (last activity 16:00:06Z). Readiness 0.667: design shop (1.0) and
+philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
