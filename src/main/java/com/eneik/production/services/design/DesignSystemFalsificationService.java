@@ -47,6 +47,8 @@ public class DesignSystemFalsificationService {
     private final ProjectRepository projectRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final StitchClient stitchClient;
+    // F45 (2026-08-16): the only place a Stitch project id for this project is persisted.
+    private final com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository;
     private final WishlistRepository wishlistRepository;
     private final SystemSettingsService settingsService;
 
@@ -59,12 +61,14 @@ public class DesignSystemFalsificationService {
     public DesignSystemFalsificationService(ProjectRepository projectRepository,
                                              ClientDeliverableReadinessService readinessService,
                                              StitchClient stitchClient,
+                                             com.eneik.production.repositories.DesignShopCycleRepository designShopCycleRepository,
                                              WishlistRepository wishlistRepository,
                                              SystemSettingsService settingsService,
                                              @org.springframework.context.annotation.Lazy DesignSystemFalsificationService self) {
         this.projectRepository = projectRepository;
         this.readinessService = readinessService;
         this.stitchClient = stitchClient;
+        this.designShopCycleRepository = designShopCycleRepository;
         this.wishlistRepository = wishlistRepository;
         this.settingsService = settingsService;
         this.self = self;
@@ -110,8 +114,22 @@ public class DesignSystemFalsificationService {
             // no API-level way to have Stitch "derive" a theme from a text description of shipped UI;
             // the epic title becomes the display name and the project's standard Verdant Flow tokens
             // are used as the theme, same tokens as ProductTree.svelte.
+            // F45 (2026-08-16, found on the live run): this used to pass project.getId() - a row id in
+            // THIS system's database - as Stitch's projectId, and Stitch answered exactly what was true:
+            // "Requested entity was not found". A Stitch project id is not an Eneik project id, which the
+            // codebase already knew in one place (DesignAssetResult.stitchProjectId) and not in this one.
+            //
+            // The id is persisted per project on the design-shop cycle row, created by
+            // StitchClient.createProject. When it is absent the argument is OMITTED rather than filled with
+            // something else: the client treats a blank projectId as "not supplied", so the design system is
+            // created unattached. Sending a wrong reference is worse than sending none - one fails loudly
+            // every cycle, the other simply attaches nothing.
+            String stitchProjectId = designShopCycleRepository.findByProjectId(project.getId())
+                    .map(com.eneik.production.models.persistence.DesignShopCycleEntity::getStitchProjectId)
+                    .filter(id -> id != null && !id.isBlank())
+                    .orElse(null);
             StitchClient.DesignSystemResult created = stitchClient.createDesignSystem(
-                    project.getId().toString(), epic.title(), "LIBRE_CASLON_TEXT", "IBM_PLEX_SANS",
+                    stitchProjectId, epic.title(), "LIBRE_CASLON_TEXT", "IBM_PLEX_SANS",
                     "#7d8570", "#c99a2e");
             if (!created.available()) {
                 log.warn("DesignSystemFalsificationService: could not create a Stitch design system for epic {} ({}): {}",
