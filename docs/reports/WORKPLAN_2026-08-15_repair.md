@@ -2420,3 +2420,63 @@ for 60 minutes with no lease extension, no nudge and no stall line — worth wat
 false`, status `decomposing`. Denial poll at 7 each per thread. Zero design/Stitch lines since
 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6 epics
 still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts this window.
+
+## Watch pass 2026-08-16 23:18Z — test-forty-ninth
+
+### F43 RECURRED ON A SECOND TASK — and this time there was no backoff at all
+
+```
+39  Sent Forced stale-revising unblock message to Jules session sessions/8833681214974395634
+```
+
+All 39 to one session, inside 60 minutes. The cadence, from the very first message:
+
+```
+22:33:52   <- nudge 1
+22:34:52   <- nudge 2      60 seconds
+22:35:52   <- nudge 3      60 seconds
+   …
+23:18:53   <- still going, 60-second interval throughout
+```
+
+This differs materially from the 18:48Z occurrence and sharpens the diagnosis. There, nudges 1 and 2
+were 30 minutes apart — the configured backoff visibly worked — and only collapsed to 60 seconds from
+nudge 3, after the project entered `SYSTEM_STALLED`. **Here the interval is 60 seconds from message
+one.** No backoff was ever applied to this session.
+
+So the earlier hypothesis — that entering `SYSTEM_STALLED` routes through an unbudgeted path — does
+not survive: this session was never in that state when the burst began, and the project is in
+`DECOMPOSING` throughout this window (`policy denied … in state DECOMPOSING`, 5 per thread). Whatever
+governs the backoff is not applying consistently between sessions. Cause still **not established**;
+`jules.forced-unblock-max-attempts` is configured at 2 and 39 messages went out.
+
+This is now twice in one evening, on two different tasks (`b50a4511`, then `f42e448c`), so it is the
+default behaviour for a stale session on this project rather than an isolated incident. The first
+occurrence ended with the circuit breaker killing the task at a cost of one permanent failure; there
+is no reason yet to expect a different ending here.
+
+I am not touching it. The one time I acted on a guess about this mechanism I added a duplicate
+`forced_unblock_attempts` column and broke the migration and every integration test.
+
+### Board — unchanged, with the nudged task still claimed
+
+```
+22:48Z  queued 0 · claimed 1 · done 37 · failed 3   merged 25/26  features 5/6 = 0.833
+23:18Z  identical in every field
+```
+
+`f42e448c Build Pipeline 115f4b3f` has been `claimed` for 90 minutes and is the nudge target. No
+`Extended lease` line this window — unlike `b50a4511`, which was getting lease extensions "because
+Jules session is still active" while being nudged. Zero `SYSTEM STALLED` lines so far; the system's
+own 60-minute no-forward-progress detector has not fired for this one yet.
+
+All six wishlist source counts identical (`gemini_observer` 15, `coverage_gap` 12, `client` 19,
+`design_system_falsification` 3, `self_falsification` 2, `role` 1) — the observer's run of new
+findings stopped after 15.
+
+### Unchanged
+
+`failed` 3, F62's two invisible failures still uncovered. Readiness 0.833, `falsificationEligible
+false`, status `decomposing`. Zero connection leaks, zero lock timeouts. Zero design/Stitch lines
+since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6
+epics still `kanoClass: null`.
