@@ -1215,6 +1215,37 @@ after an hour. Site: `JulesDispatchService`, the `Forced stale-revising unblock 
 Jules session. A repeated unblock message wastes a session AND holds the entire project in a state where
 Flow Core denies orchestration - so one stuck task stops all work until the poka-yoke fires.
 
+### F44. The design shop waits behind a threshold the run may never reach
+
+Measured on test-forty-ninth at 37 tasks, 32 done, queue empty:
+
+```
+readiness: unknown
+unmet:     "Some tasks are not done or in review"
+           "Some quality gates failed"
+```
+
+`DesignShopOrchestrationService.tick` runs every 5 minutes over active projects, but only STARTS a cycle
+when readiness RISES to 1.0. Readiness is a conjunction that includes every task being done and every
+quality gate passing. This project has two `failed` tasks - retired by the iteration-admission poka-yoke
+after the forced-unblock sequence - and at least one failed quality gate.
+
+**So the design shop is not broken and is also not reachable.** A single task that fails anywhere in the
+run closes the door permanently for that project, because readiness can then never rise to 1.0 again.
+Zero `DesignShop` log lines across the whole run is the correct behaviour of an unsatisfiable condition.
+
+That is the answer to the operator's question "how do you do a full run without design": design sits behind
+a gate the run does not reach, and nothing reports that fact - the shop simply stays silent, which looks
+identical to it being switched off. It was in fact enabled the whole time.
+
+**Not proposing a fix.** Whether the trigger should be a rising edge on 1.0, a threshold below 1.0, or an
+explicit operator action is a product decision about when a client should be shown designs, not a defect to
+be patched. Recording it as measured.
+
+Also confirmed this pass: 135 `SQL Error 90020` (database already in use) all predate the backend restart,
+zero since; no repeated meaningful log line in 35 minutes, so no new F42/F43-shaped loop; the client brief
+still shows exactly ONE compiler task across eight passes.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
