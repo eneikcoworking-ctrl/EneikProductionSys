@@ -2226,3 +2226,68 @@ uncounted for readiness and counted for failure.
 Design shop (1.0) and philosophical falsification (0.9) correctly silent. Zero design/Stitch lines
 since 16:00:06Z. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts this
 window.
+
+## Watch pass 2026-08-16 21:48Z — test-forty-ninth
+
+### F61 CORRECTED — the auditor is enabled and sweeping; the silence has one specific cause
+
+I claimed last pass that no "sweep ran, no action" line exists. That was wrong — it does:
+
+```java
+private void auditProject(ProjectEntity project) {
+    List<Evidence> evidence = self.gatherAllEvidence(project);
+    if (evidence.isEmpty()) {
+        return;                                            // <- silent
+    }
+    ...
+    if (decisions.isEmpty()) {
+        log.info("OpsAuditorService: project {} - {} evidence item(s) gathered, "
+               + "Gemini returned no actionable decisions", project.getName(), evidence.size());
+        return;                                            // <- logged
+    }
+```
+
+And the flag is on, read from the running system rather than from source defaults:
+
+```
+ops_auditor_enabled -> {enabled: true, source: "database"}
+```
+
+So the sweep runs, and the two remaining explanations are distinguishable: `decisions.isEmpty()`
+logs at INFO and no such line appears anywhere, therefore **`gatherAllEvidence` is returning empty
+for this project**. The auditor is not stuck and not dead — it is finding nothing to look at on a
+project holding three failed tasks.
+
+The evidence gatherers visible in the method are orphan-shaped —
+`gatherOrphanedWishlistEvidence`, `gatherOrphanedDependencyChainEvidence`, plus lookups by
+`findByProjectId` / `findBySourceWishlistIdIn`. That is consistent with the 19:30 action being an
+orphaned-wishlist dismissal. Whether a plain `failed` task with no orphan attached ever produces
+evidence at all is **not yet established** — I read the method's call sites, not its body. That is
+the next measurement, and it is the sharp version of the question F61 asked vaguely.
+
+### The board woke up — "inert" was wrong
+
+```
+21:18Z  queued 0 · claimed 0 · done 36 · failed 3   gemini_observer wishlists 11
+21:48Z  queued 0 · claimed 1 · done 36 · failed 3   gemini_observer wishlists 13
+```
+
+New task `Build Pipeline 115f4b3f` is `claimed`, and the observer produced **two new findings**
+(11 -> 13), the first movement in the wishlist counts across ten passes.
+
+Last pass I described the board as "fully inert" after three identical readings. That is the third
+time today I have turned a run of identical snapshots into a claim about the system's condition —
+after "narrow pipeline, not a stall" (17:48) and "F43's budget verified" (18:18). The pattern is
+consistent enough to state as a rule for this project: **at this flow's cadence, three identical
+half-hourly readings are not evidence of a stopped system.** Only the system's own
+`SYSTEM STALLED` detector, with its 60-minute no-forward-progress window, has been reliable on that
+question.
+
+### Unchanged
+
+`failed` still 3 (`b50a4511` still listed despite its recovery having merged — F59/F61 note stands),
+readiness 0.833, merged 25/26, features 5/6, `falsificationEligible false`, status `decomposing`.
+Denial poll continues at 5 each per thread for `RECOVER_FAILED_FRONTIER`, `DISPATCH_REVIEW_TASKS`,
+`DISPATCH_QUEUED_TASKS`. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and
+philosophical falsification (0.9) correctly silent at 0.833. All 6 epics still `kanoClass: null`.
+No stalls, nudges, leaks or lock timeouts this window.
