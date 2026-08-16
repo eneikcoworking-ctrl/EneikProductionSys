@@ -1635,3 +1635,66 @@ wishlist source counts identical. This is a stall, not stability.
 Two open PRs are being re-inspected every orchestration tick (21 times in 35 min): PR #61
 `Fix Epidemiological Protocol Search Test Expectations` and PR #60
 `feat(ui): implement interactive protocol management dashboard`. Neither is merging.
+
+## Watch pass 2026-08-16 17:18Z — test-forty-ninth
+
+### The stall from the previous pass broke — substantial movement in 30 minutes
+
+```
+16:48Z  queued 1 · claimed 2 · done 33 · failed 2   merged 23/27  features 3/6  ratio 0.500
+17:18Z  queued 0 · claimed 1 · done 35 · failed 2   merged 25/27  features 4/6  ratio 0.667
+```
+
+`blockedItems` collapsed from 4 to 1. Both open PRs closed during the window — BRANCH-GC observed
+`Found 2 open PR` once, `Found 1 open PR` twice, then `Found 0 open PR` 32 times.
+
+The queued `Test Coverage F55efeef` that had waited 264 minutes **did dispatch and complete**. So the
+previous pass's "stall" was a 30-minute quiet window inside a working flow, not a stopped flow. Two
+passes of identical counts is evidently not sufficient evidence of a stall in this system; the
+dispatch cadence is slower than the watch interval.
+
+### F53 REFINED — the denials are loud but only one of them actually blocks
+
+All four denial types, counted over 35 minutes, every one citing state `DECOMPOSING` with
+authorization `ENFORCED_ACTIONS_AVAILABLE`:
+
+```
+36  policy denied RECOVER_FAILED_FRONTIER
+32  policy denied DISPATCH_REVIEW_TASKS      (+32 "Flow policy denies review dispatch; skipping")
+18  policy denied DISPATCH_QUEUED_TASKS      (+18 "Flow policy denies queued-task dispatch; skipping")
+ 1  policy denied ORCHESTRATE
+```
+
+Critically, `DISPATCH_QUEUED_TASKS` was denied 18 times **and the queued task still dispatched and
+finished within the same window**. So these denials are a periodic poll hitting a
+temporarily-unauthorized action, not a hard block — work proceeds by other paths. My previous
+framing, that the queued task's 264-minute wait was caused by this denial, is withdrawn: it was not
+measured, and the outcome contradicts it.
+
+What does survive: **`failed` stayed at 2 across every pass today** while everything else moved. With
+`RECOVER_FAILED_FRONTIER` denied 36 times in 35 minutes and no replacement work appearing, the
+missing-replacement problem remains real and remains attached to this action. The circular-wait
+hypothesis is now weaker, though — decomposition is clearly still advancing
+(`completeFeatures 3 -> 4`), so recovery is waiting on a moving target rather than a stuck one.
+
+Still unmeasured, and the next thing to establish: whether `RECOVER_FAILED_FRONTIER` becomes
+authorized once `decompositionComplete` flips true, or whether the two failed tasks are themselves
+among the 2 unmerged of 27 that keep it false.
+
+### F46 CLOSED as not-a-loop
+
+Zero design/Stitch log lines in the last 40 minutes; last activity remains 16:00:06Z. The 16:30 and
+17:00 ticks produced nothing. This is consistent with the sweep recording one pass per epic and
+finding nothing new afterwards — i.e. it terminated on its own after covering each eligible epic
+once. The "unbounded 30-minute loop" framing is withdrawn entirely.
+
+What remains real from F46, unchanged: `apply_design_system` fails every time with
+`Request contains an invalid argument`, three Stitch design systems were created and never applied,
+and the failure is booked as a pass with `applied=false`.
+
+### F50 unchanged — all 6 epics still report `kanoClass: null`
+
+### Readiness now 0.667
+
+Design shop starts only on the rise to 1.0; philosophical falsification needs 0.9. Both correctly
+silent at 0.667. Two of six features remain incomplete, 2 of 27 planned tasks unmerged.
