@@ -1091,6 +1091,26 @@ P3  the epic matcher does not over-merge     CLOSED - PERMIT (5 plan epics = 5 t
 P4  the deterministic scaffold runs          PERMIT (pom.xml present)
 ```
 
+### Second pass on test-forty-ninth, 07:47 UTC+4 - repairs holding
+
+**The client brief was compiled ONCE and is `converted_to_task` with `compile_attempts = 0`.** Two compiler
+tasks exist, but they carry two different wishlists: `56484b6d` is the brief (done), `ba6ac99c` is a finding
+raised by the Gemini observer - new work, not a repeat. Counting compiler tasks rather than plan files is
+the only reading that distinguishes them; the file count is still 2 because Jules names one of them itself.
+
+**F40 confirmed by measurement:** `GET /api/projects/{id}/verdict` now answers in **8.6 s**, against 68.9 s
+before the cache. Eight-fold, and it isolates the cause exactly where it was diagnosed - the per-table
+`DISK_SPACE_USED` walk inside `inspect()`.
+
+**Zero epic merges logged.** Nothing to merge, because duplicates are no longer produced. P3 stays closed.
+
+Flow state: 24 tasks (11 done, 6 claimed, 6 queued, 1 in review), 21 wishlists of which 19 are slices of the
+brief. Readiness reports `unknown` - correct: the work is unfinished and the system says "not established"
+rather than "not ready", which is the Kleene mapping doing its job.
+
+**The observer loop closed on this run**: a `gemini_observer` wishlist appeared, i.e. she found something
+and raised work for it.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
