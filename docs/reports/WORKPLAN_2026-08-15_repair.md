@@ -2093,3 +2093,73 @@ status `decomposing`. All six wishlist source counts identical for the seventh c
 Zero design/Stitch lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9)
 correctly silent at 0.833. All 6 epics still `kanoClass: null`. No `SYSTEM STALLED` lines, no forced
 nudges, no connection leaks this window.
+
+## Watch pass 2026-08-16 20:48Z — test-forty-ninth
+
+### Answered: why only one failure was recovered — one auditor action per sweep
+
+`OpsAuditorService` read directly. The mechanism:
+
+- `@Scheduled(cron = "${ops-auditor.cron:0 */30 * * * ?}")` — every 30 minutes
+- the auditor returns **`private record AuditorDecision(String tool, String subjectId, String reasoning)`**
+  — a single tool call against a single subject per sweep
+- `createTargetedRecoveryTask` is one of its tools; it re-validates its own precondition in code and
+  refuses if `hasOpenRecoveryTaskFor(projectTasks, failedTaskId)`
+- the recovery task carries `RECOVERS_FAILED_TASK_ID_KEY` in its payload, pointing back at the
+  original, and inherits the failed task's role and featureId
+
+So the reason the two older failures were not recovered is **not** an age cutoff or an eligibility
+filter — it is that the auditor gets one action per 30-minute sweep and spent it elsewhere. The
+hypothesis I offered last pass (age cutoff / rate / unsatisfied condition) is resolved: it is the
+rate, by design.
+
+Complete auditor record over three hours — only three actions exist:
+
+```
+19:30:35  dismissed orphaned wishlist 77380b22 for project test-forty-ninth
+19:30:35  FLAGGED FOR HUMAN REVIEW - subject b50a4511
+20:00:15  created recovery task 4bb0510f (role=BARCAN-TAG-02) for failed task b50a4511
+```
+
+The 20:30 sweep produced no log line at all — no decision was recorded, and the two older failed
+tasks were not addressed. At one action per half hour, with dismissals and flags competing for the
+same slot, a backlog of three failures cannot be worked down promptly even in principle.
+
+### F60 (NEW) — an escalation to a human exists only as a WARN log line
+
+```
+19:30:35  WARN  OpsAuditorService: FLAGGED FOR HUMAN REVIEW - project test-forty-ninth
+                subject b50a4511 - Task b50a4511 failed due to an 'iteration-admission poka-yoke'.
+                Since this indicates a systemic rejection at the iteration gate, …
+```
+
+The auditor correctly diagnosed the failure — the iteration-admission poka-yoke, the same mechanism
+named in the 2026-08-06 incident — and escalated it to a human. That escalation is a log line and
+nothing else: it does not appear in `/dashboard`, in the observer journal, or in any wishlist. It is
+detection without a reader, the same F5 shape already recorded against my own step-6 valueless-flag
+reporter.
+
+Note the auditor then recovered the task anyway at 20:00, so nothing was lost this time. The defect
+is that the flag's visibility does not depend on that: had recovery not followed, the operator would
+have had no way to learn the system had asked for them.
+
+### Board fully unchanged — and now genuinely inert
+
+```
+20:18Z  queued 0 · claimed 0 · done 36 · failed 3   totalPlanned 26  merged 25  ratio 0.9615  features 5/6
+20:48Z  identical in every field
+```
+
+Nothing in flight at all: zero queued, zero claimed, zero in review. Zero new recovery tasks this
+window. All six wishlist source counts identical for the eighth consecutive pass. The only project
+activity in the log is the denial poll — `RECOVER_FAILED_FRONTIER`, `DISPATCH_REVIEW_TASKS`,
+`DISPATCH_QUEUED_TASKS`, 8 each, all citing `DECOMPOSING`.
+
+With no work in flight, the sole remaining engine for this project is the auditor's one action per
+30 minutes. `failed` stands at 3 with one recovered.
+
+### Unchanged
+
+`falsificationEligible false`, `decompositionComplete false`, status `decomposing`, readiness 0.833.
+Design shop (1.0) and philosophical falsification (0.9) correctly silent. Zero design/Stitch lines
+since 16:00:06Z. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts.
