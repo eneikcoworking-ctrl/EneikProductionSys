@@ -905,6 +905,37 @@ doing its job: it makes a broken epic visible instead of well-formed.
 That distinction decides the repair and must be measured, not assumed - the matcher is the strong
 hypothesis because its scoring is documented and its discriminating term is provably constant here.
 
+**F42. The same brief was compiled four times, and that is where the twenty epics came from.**
+
+The three plan files are not three parts of one decomposition. Each is a full, independent decomposition of
+**the same single client wishlist**, `504ca516`. The dashboard shows four carrier tasks, all titled
+`Compile 1 wishlist(s) into task graph (504ca516)` - three `done`, one still `claimed` - and each completed
+one wrote its own plan under its own per-task path (`compilerPlanPath`, made per-task by the 2026-07-24
+fixed-path collision fix).
+
+The wishlist has not left `compiling` through any of it.
+
+The overlap is the tell. Across the three plans:
+
+- *Backup / Business Continuity / Data Protection and Recovery* - **three times**, three wordings
+- *Measurement / Telemetry / Value Measurement* - **three times**
+- *Account Recovery / Identity and Access* - **three times**
+- *Seeding / Factory Acceptance Content / Acceptance Demonstration Content* - **twice**
+- *Search / Discovery / Knowledge Discovery* - **three times**
+
+These are not twenty distinct epics. They are roughly six or seven ideas, each re-invented under a
+different name on every pass - which is exactly the input that makes an epic matcher collapse everything,
+because near-duplicates are what it is built to merge.
+
+**So F41 and F42 are one problem seen from two ends.** Ordering the repair matters:
+
+1. **Why does one wishlist get compiled four times and stay `compiling`?** Until that is answered, fixing
+   the matcher only changes how the duplicates are stored.
+2. Only then, whether the matcher's discriminating terms are constant (F41).
+
+Attacking the matcher first would be treating the symptom, and would very likely produce twenty epics that
+are six ideas repeated - which is worse than one epic, not better.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
