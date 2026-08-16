@@ -1146,6 +1146,42 @@ she is looking in the right place even when the instance is wrong.
 
 Flow: 28 tasks, 19 done, no errors beyond the known lock timeouts.
 
+### Later passes on test-forty-ninth - what held, and what I got wrong
+
+**Held.** Four distinct wishlists, five compile tasks: the client brief exactly ONE, one Gemini finding two
+(stopped on its own), two later wishlists one each. `exhausted its decomposition budget` never fired.
+Zero epic merges across the entire run - P3 confirmed four passes running. Flow reached 34 tasks, 23 done.
+
+**Database compacted with the operator's approval.** 549 MB -> 378 MB on clean stop -> **91 MB** after
+`SHUTDOWN COMPACT`. Row counts identical before and after: tasks 1279, wishlist 1194, projects 22, features
+190. Backup kept at `data/eneik_db.mv.db.pre-compact-20260816`.
+
+**F40 IS NOT FIXED, AND MY DIAGNOSIS WAS WRONG - not merely incomplete.**
+
+```
+before the cache   68.9 s
+one hour later      8.6 s   <- I reported this as the repair working
+after compaction  >120 s   <- worse than before any of it
+```
+
+`/api/settings` answers in 0.5 s in the same minute, so the machine is not loaded. And the database is now
+six times smaller, which should have made a per-table scan six times faster - it got slower. **Therefore
+the per-table scan is not the cause.** I found a method that holds a connection past 30 s and concluded it
+was also the source of the 69 s, which was inference from coincidence, not measurement. The cache masked it
+for its ten-minute lifetime and I sampled inside that window and called it fixed.
+
+That is the fourth time in this run I turned a single observation into a law. The others: counting plan
+files instead of compile tasks; reading all-Must-Be as a classifier defect when the prompt mandates it;
+proposing an atomic dispatch claim that already exists at `ProjectFlowService:1903`.
+
+**The honest next step is measurement, not repair:** time each `VerdictLayer` separately. Until then the
+cause is unknown, and the infrastructure and acceptance layers are unobservable because the endpoint that
+exposes them hangs.
+
+**Also open:** 22 `Timeout trying to lock` / connection-leak lines per 35 minutes, unchanged by compaction -
+consistent with the size not being the cause. Two tasks (`Data Schema`, `UI Slice`) sit `failed` with
+`retry_count = 0`; the count is static, not a cascade, and the reason is not yet established.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
