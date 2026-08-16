@@ -1393,3 +1393,81 @@ because acting on any of them would have damaged working behaviour:
 **Stop the losses (1-4) → make the inputs honest (5-8) → build the place where they reconcile (9-10) →
 close the loops (11-12) → let the client see it (13) → complete the corpus (14-15) → clear the rest
 (16-17) → and only then let it decide (18).**
+
+## Watch pass 2026-08-16 16:04Z — test-forty-ninth (41af381d)
+
+Measured over the HTTP API only: `docker logs` is unavailable this pass (WSL→Windows interop dead,
+`accept4 failed 110` on every `.exe`), so the log-frequency loop hunt could not be run. The loop below
+was found instead through the wishlist trail, which carries the same evidence.
+
+### F46 (LOOP, live, costs real money) — design-system falsification re-creates a Stitch design system every 30 min and never applies it
+
+Three `design_system_falsification` wishlists, all `dismissed`, each naming a **different** Stitch
+design system id:
+
+```
+2026-08-16T15:30:02Z  Stitch design system 117098067252365250   epic 'Epidemiological Material Search and Retrieval'  apply failed
+2026-08-16T15:30:03Z  Stitch design system 15040433662171631907 epic 'Knowledge Base Utilization Measurement'         apply failed
+2026-08-16T16:00:06Z  Stitch design system 16711088566797296707 epic 'Epidemiological Material Cataloging and Mgmt'    apply failed
+```
+
+The 30-minute cron creates a fresh design system per eligible epic, `apply_design_system` fails, the
+finding is dismissed, and the next tick starts over from scratch. **No attempt counter, no budget,
+nothing decreasing** — the exact F42/F43 shape. Unlike those, each iteration allocates a real
+billable Stitch resource, so the cost grows without bound.
+
+Fix shape (do NOT patch by widening the cooldown): an attempt budget per (project, epic) with a
+well-founded measure, and reuse of an already-created design system id instead of creating a new one
+on every retry.
+
+### F47 — the apply failure carries no underlying reason
+
+Full recorded text is `"apply failed - Stitch apply_design_system call failed."` and nothing more.
+The real Stitch error is dropped, so F46 cannot be diagnosed from the wishlist trail alone. The
+underlying cause of the apply failure is therefore **not yet established** — F45 fixed creation
+(ids are now real), application is a separate, still-open failure.
+
+### F48 (STALL) — every non-terminal task is flagged stale; board shape unchanged since last pass
+
+`pipeline`: `done 32, claimed 3, queued 1, failed 2`. The non-done shape (2 failed / 3 claimed /
+1 queued) is **identical to the previous pass** — an unchanged board, i.e. a stall, not stability.
+The system's own `blockedItems` agrees, flagging all four non-terminal items:
+
+```
+claimed | UI Slice Ed79db3e     | stale_in_progress
+claimed | Test Coverage 1f67e34a | stale_in_progress
+claimed | API Slice 77380b22     | stale_in_progress
+queued  | Test Coverage F55efeef | stale_in_progress   (oldestWaitingMinutes = 218, BARCAN-TAG-06)
+```
+
+### F49 — a task reports `done` while its code never reached main
+
+```
+done | Runtime Contract 8becdc01 | done_not_reached_main
+```
+
+Status and merge evidence disagree. This is the readiness invariant catching a task that closed
+without landing.
+
+### F50 — every epic has a null Kano class
+
+All 6 epics return `kanoClass: null` from `/epics`. After F31 the dashboard reads `kanoClass`
+instead of guessing, so the field being empty is now visible rather than masked — nothing is
+writing it.
+
+### F36 extension — `/tree` hangs like `/verdict`
+
+`GET /api/projects/{id}/tree` → 45 s timeout, 0 bytes, while `/dashboard` (401 KB) returns in 8.1 s
+and `/epics`, `/pull-requests`, `/observer-journal`, `/runtime-health` all return normally. Same
+hang shape as `/verdict`; whatever F36 really is, it is not unique to the verdict endpoint.
+
+### Not defects this pass
+
+- **Design shop silent** — correct. `featureReadinessRatio = 0.5` (3 of 6 features complete); the
+  shop only starts on the rise to 1.0. Expected, per the watch brief.
+- **Philosophical falsification not running** — `falsificationEligible: false`
+  (`0.5 < 0.9` threshold), `decompositionComplete: false`, status `decomposing`. Gated, not broken.
+- **Client brief still exactly 1 compiler task** — holds.
+- `pull-requests` returns 0 while `mergedPlannedTasks = 22`; the client repo does carry real
+  branches (`git ls-remote` lists api-contract-…, barcan-tag-02-…, barcan-tag-06-…, barcan-tag-12-…).
+  Endpoint scope vs. reality not yet reconciled — measure before calling it a defect.
