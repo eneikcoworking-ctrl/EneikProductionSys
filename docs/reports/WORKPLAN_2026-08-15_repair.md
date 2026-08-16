@@ -1541,3 +1541,97 @@ launched this project's product, so every launchability signal downstream is uni
 
 Still exactly 3 `design_system_falsification` wishlists; the 30-minute cron last fired at 16:00:06Z
 and the next tick is due at 16:30Z, after this pass. Neither confirmed nor contradicted here.
+
+## Watch pass 2026-08-16 16:48Z — test-forty-ninth
+
+`docker logs` available again (WSL interop recovered). **The container is
+`eneikproductionsys-backend-1`, not `eneik-backend`** — earlier passes in this session queried the
+wrong name and read the resulting empty output as "no activity". Any such earlier conclusion drawn
+from a silent `docker logs` is void.
+
+### F53 (NEW, THE ANSWER to "why was no replacement created") — recovery of the failed frontier is denied by state, 52 times in 35 minutes
+
+```
+52   Continuous Orchestration: policy denied RECOVER_FAILED_FRONTIER for project test-forty-ninth
+     in state DECOMPOSING: Operational action RECOVER_FAILED_FRONTIER denied by Flow Core state
+     DECOMPOSING with authorization ENFORCED_ACTIONS_AVAILABLE.
+```
+
+Roughly once every 40 seconds. `RECOVER_FAILED_FRONTIER` is precisely the action that would produce
+replacement work for the two permanently-failed tasks. Flow Core refuses it because the project is in
+`DECOMPOSING` and enforced actions are still available.
+
+And decomposition does not complete: `decompositionComplete: false` across every pass today, status
+`decomposing`, `completeFeatures 3/6` unchanged.
+
+So the shape is: **recovery waits for decomposition; decomposition does not finish.** Whether the two
+failed tasks are themselves what holds decomposition open is the next thing to establish — if they
+are, this is a genuine circular wait, not merely a slow one. Do not touch the policy before that is
+measured.
+
+The retry itself is also the familiar defect: 52 identical denials with no attempt counter and
+nothing decreasing. The denial is an expected outcome of a rate-limited poll, so it should be logged
+once per state, not once per tick.
+
+### F54 (NEW) — 34 concurrent-claim collisions in 35 minutes on one workflow
+
+```
+34   handlePrOpenedWorkflow: session UUID pr_opened completion is already claimed by a concurrent
+     invocation; skipping this one instead of risking duplicate work
+```
+
+The guard added earlier works — no duplicate work is done. But firing 34 times in 35 minutes means
+several scheduler threads (`scheduling-task-2/6/8/10`) are racing on the same session continuously.
+The guard is treating contention as normal steady state rather than preventing it.
+
+### F46 UPDATED — the real Stitch error is `Request contains an invalid argument`
+
+The underlying error F47 said was missing is now visible:
+
+```
+15:30:01.209Z WARN StitchClient: tool call create_design_system returned an error result:
+              Request contains an invalid argument.
+15:30:02.545Z WARN StitchClient: tool call apply_design_system returned an error result:
+              Request contains an invalid argument.
+16:00:06.681Z WARN StitchClient: tool call apply_design_system returned an error result:
+              Request contains an invalid argument.
+```
+
+So F45 did **not** fix the argument problem. `create_design_system` is intermittent (failed for epic
+`6e2959ed` at 15:30:01, succeeded for the same epic at 16:00:06); `apply_design_system` fails every
+single time. The fix must be to the arguments themselves, against the Stitch tool schema — not to
+the retry rhythm.
+
+Worse, the failure is recorded as a success:
+
+```
+16:00:06.729Z INFO DesignSystemFalsificationService: recorded design-system pass for epic
+              6e2959ed (...), designSystemId=16711088566797296707, applied=false
+```
+
+A "pass" with `applied=false` is a **false-success record** — the design system exists and was never
+applied, but the pass is booked.
+
+Correction to my own F46 framing: this is **not** a fixed-period unbounded loop. Passes occurred at
+15:30:01, 15:30:02, 15:30:03 and 16:00:06, and **no tick appears at 16:30** (last design line in a
+90-minute window is 16:00:06). The cost claim stands — three orphaned Stitch design systems exist —
+but "every 30 minutes forever" was not measured and is withdrawn.
+
+### F55 (NEW) — connection leak still occurring
+
+One `java.lang.Exception: Apparent connection leak detected` in the 35-minute window, after all the
+transaction-span work. Not eliminated.
+
+### STALL — the board is unchanged over 30 minutes
+
+```
+16:18Z  queued 1 · claimed 2 · done 33 · failed 2   mergedPlannedTasks 23
+16:48Z  queued 1 · claimed 2 · done 33 · failed 2   mergedPlannedTasks 23
+```
+
+Identical. `oldestWaitingMinutes` 234 -> 264, grown by exactly the 30 minutes elapsed. All six
+wishlist source counts identical. This is a stall, not stability.
+
+Two open PRs are being re-inspected every orchestration tick (21 times in 35 min): PR #61
+`Fix Epidemiological Protocol Search Test Expectations` and PR #60
+`feat(ui): implement interactive protocol management dashboard`. Neither is merging.
