@@ -532,6 +532,40 @@ The Cyrillic here is **load-bearing**: deleting those four substrings silently s
 of historical Russian content. That is why it is recorded rather than swept up in this step - the repair is
 to read `kanoClass` instead of guessing, and that is its own change with its own test.
 
+### Done 2026-08-16 (source code)
+
+7473 → ~2100 Cyrillic characters, 67 → ~44 Java files. What was translated is what actually leaves the
+system:
+
+- **the task text the factory writes for Jules** (`getRoleSpecificAssignment`) - Russian instructions to a
+  worker, inside a system whose artifacts must be English;
+- **Kaizen proposal titles and descriptions** - what the operator reads on the dashboard;
+- the user-facing re-audit message in `ProjectController`;
+- log messages and the quoted operator directives in comments;
+- the `Ф` marker expanded to `Phase` (37 occurrences).
+
+### NOT done, and why - three different reasons, none of them cosmetic
+
+**1. Referents (`RoleRulesParser`, `FalsificationCycleService`, and the three tests mirroring them).**
+The parser extracts sections by the Russian headings of the real charter files - `ПРИОРИТЕТЫ`,
+`КРИТЕРИИ ОТКАЗА`, `ФИЛОСОФСКИЙ ФУНДАМЕНТ`. Translating the parser without the charters breaks parsing;
+they are a bound pair and must move together, against the live files. **Own task.**
+
+**2. Matchers over historical content** (`TechnicalLeadCompiler`, `ProjectFlowService`,
+`WishlistContentSimilarityMatcher`, `SelfFalsificationEpicMatcher`, `CommandDashboardService`,
+`JulesDispatchService`'s clarifying-question detector). These match Russian substrings in client briefs, and
+the `а-яА-Я` character classes tokenise Russian text. Deleting them silently stops understanding everything
+already written in Russian. **Needs a decision about historical data, not a translation.**
+
+**3. Mojibake signatures.** `TechnicalLeadCompiler:1659` tests `value.contains("Р")` / `("С")`, and
+`JulesDispatchService` tests `"рђсс"` / `"рѕс€"`. These are the classic markers of UTF-8 read as CP1251.
+The Cyrillic here is not text - it is a corruption signature, and it must stay exactly as it is.
+
+**4. `docs/` - 116 files, untouched.** Historical reports and post-mortems. Deliberately not mixed with the
+source pass: this step's own rule is that a large mechanical diff must not hide a semantic change, and the
+same rule argues for not putting 116 prose files in the same commit as behaviour-bearing string edits.
+**Own commit, own review.**
+
 Code, comments, commits, docs, corpora and test names are English; Russian is the language of conversation
 only. A 2026-08-15 scan found roughly 187 files containing Cyrillic, mostly comments. A dedicated pass,
 never mixed into repair work, so that a large mechanical diff never hides a semantic change.
@@ -549,6 +583,92 @@ move inside their owning layer, unchanged in value, now singular and inspectable
 Last, because a gate is only as honest as its inputs, and today two of five layers report numbers derived
 from substring matching.
 
+**Done 2026-08-16.** The first question was not how to gate but **what the lattice is entitled to gate**,
+and two candidates had to be refused before the right one was left:
+
+- **Not acceptance.** `acceptProject` is the client's act of ending an engagement, not a claim that the
+  product is ready. A lattice that abstains must never be able to stop someone ending their own engagement.
+- **Not task dispatch.** A layer saying "the product does not launch" is an argument *for* dispatching
+  repair work. Gating dispatch on it would make the system unable to fix the very thing being refused.
+
+What remains is exactly what the layers judge: **the readiness the factory REPORTS**. A verdict governs
+claims.
+
+**The arithmetic was already in place, unnamed.** `CommandDashboardService` answered in three values -
+`ready` when four conditions hold, `unknown` when one is unmeasurable, `not ready` when one fails. That is
+Kleene conjunction written out by hand. Naming it lets the lattice join as one more conjunct rather than
+being bolted on beside it:
+
+```
+report(P) = construction(P) ∧ ⋀_ℓ verdict_ℓ(P)
+```
+
+And it exposes what those four conditions were: tasks done, gates passed, PRs merged, GitHub reachable -
+**all four about construction**, none about the product running or having been shown. That is F1 and F30 at
+the top of the system.
+
+**Why turning it on is safe**, in the only sense that matters: by monotonicity of `and`, adding a conjunct
+can only make the claim harder to earn. No configuration of the lattice can cause the factory to report
+readiness it would not have reported before.
+
+**Three ways it declines to act**, and the third is the one worth writing down. Flag off; a different
+project; **an empty lattice**. The conjunction over no propositions is `PERMIT` - correct arithmetic, and a
+claim made out of silence. So an empty lattice does not permit, it stands aside. A gate that approves
+because it has nothing to say is worse than no gate.
+
+An empty `verdict_gating_project_slug` means **no** project, never every project: a scoping value that
+falls back to "all" turns the first careless deploy into a factory-wide change.
+
+`applied` is reported alongside the verdict rather than inferred from it - "the gate ran and agreed" and
+"the gate never ran" are different facts, and a staged rollout cannot be judged if they look the same.
+
+**Not done, deliberately:** the second half of the step - moving existing thresholds inside their owning
+layers. Those thresholds live in services with their own histories, and relocating them is a behaviour
+change dressed as a refactor. It also cannot be verified while the factory is stopped. **Own task.**
+
+**Not done, and it is the precondition for ever switching the flag on:** the step's own last sentence -
+*a gate is only as honest as its inputs, and two of five layers report numbers derived from substring
+matching.* That is still true. The flag exists so the gate can be observed against a live project before
+anything depends on it; turning it on before those two layers are repaired would be gating on the very
+proxy measures this plan has spent eighteen steps removing.
+
+---
+
+## Everything left undone, 2026-08-16 — one list, for a separate conversation
+
+All eighteen steps have been worked. What follows is what each one did **not** close, gathered here so it
+is discussed on purpose rather than rediscovered by accident. Nothing in this list is blocked; each is a
+deliberate deferral with a stated reason.
+
+### New findings raised while doing the work
+
+| # | Finding | Why it was not fixed in place |
+|---|---|---|
+| **F31** | `CommandDashboardService.classifyKano` re-infers Kano from keywords - a **fourth** decider, a fourth vocabulary (`One-Dimensional`, `Indifferent`), and it drives the acceptance recommendation while `FeatureEntity.kanoClass` already holds the real answer | Found during the linguistic pass. Its Russian substrings are load-bearing, so removing them is a semantic change; the repair is to read `kanoClass` instead of guessing |
+| **F32** | The working tree carries **CRLF in 80+ files** the repo has as LF, with no `.gitattributes` and `core.autocrlf` unset | One `git add -A` would push an 80-file diff where every line is replaced by a visually identical one. Likely wants `* text=auto eol=lf` |
+| **F33** | `getRoleSpecificAssignment` hardcodes chess-specific task text in a general-purpose factory | A leftover from an early experiment; translated in place rather than removed, because removing it is a product decision |
+
+### Carried forward from earlier steps
+
+- **F2** - settings audit trail. Needs its own entity, migration and write-path interception (deferred at
+  Step 6 so one commit would not do two unrelated things).
+- **`looksLikeUi` vocabulary** - `public` still counts as a UI term, so "public API contract" matches. Step
+  7 fixed *how* terms are matched; *which* terms count needs evidence.
+- **The remaining polls→events conversion** - ten call sites, deliberately deferred pending measurement.
+
+### Left open by steps 12-18
+
+- **Step 13** - the acceptance **walker**. `client_acceptance_traversals` has a reader and no writer; what
+  performs a client-facing walk of the live instance is Stage 6 of the findings' own order of work.
+- **Step 16** - the correct Linear team **UUID**. Finding it means calling Linear with the operator's key,
+  which is their decision.
+- **Step 17** - three categories of Cyrillic that must not be translated as text (charter **referents**,
+  **matchers** over historical Russian content, **mojibake signatures**), plus **116 `docs/` files** left
+  for their own commit.
+- **Step 18** - moving existing thresholds inside their owning layers, and, before the flag may ever be
+  switched on, repairing **the two layers that still report numbers derived from substring matching**.
+  Gating on a proxy measure would undo what eighteen steps were spent removing.
+
 ---
 
 ## Progress, 2026-08-15
@@ -562,7 +682,17 @@ from substring matching.
 | 5 · metrics read declarations, not prose | **done** | `eedf0b7` |
 | 6 · valueless flags named at startup | **done** | `926bacc` |
 | 7 · UI detection by whole words | **done** | `820e9e2` |
-| 8-18 | pending | |
+| 8 · design shop: modal kinds of failure | **done** | |
+| 9 · the verdict lattice, read-only | **done** | |
+| 10 · duplicate metric counted recovery as waste | **done** | |
+| 11 · ask whether the observed product still exists | **done** | |
+| 12 · the factory watches itself | **done** | `85353b3` |
+| 13 · the acceptance chain | **done** | `effdc35` |
+| 14 · missing links in the value chains | **done** | `7b97f41` |
+| 15 · Kano gradation, scoping, market coverage | **done** | `7b97f41` |
+| 16 · Linear provisioning | **done** | `7b97f41` |
+| 17 · English-only pass | **source done, docs open** | |
+| 18 · gating | **built, flag off** | |
 
 **Three findings did not survive verification and are retracted in place** rather than quietly dropped,
 because acting on any of them would have damaged working behaviour:

@@ -216,6 +216,16 @@ public class SystemSettingsService {
         // same generateAsset/dispatchDesignReview building blocks already live in production.
         definitions.put("design_shop_enabled", flag("design_shop_enabled",
                 "DESIGN_SHOP_ENABLED", "design-shop.enabled"));
+        // Off by default (Step 18). Lets the verdict lattice constrain the readiness the factory REPORTS -
+        // never what the client may do. See VerdictGate: acceptance is the client's act of ending an
+        // engagement, and a lattice that abstains must not be able to stop them ending it.
+        definitions.put("verdict_gating_enabled", flag("verdict_gating_enabled",
+                "VERDICT_GATING_ENABLED", "verdict.gating.enabled"));
+        // Empty by default: which single project the gate applies to while it is being trusted. Empty means
+        // no project, not every project - a scoping value that falls back to "all" would turn the first
+        // careless deploy into a factory-wide change, which is the opposite of what a staged rollout is for.
+        definitions.put("verdict_gating_project_slug", plain("verdict_gating_project_slug",
+                "VERDICT_GATING_PROJECT_SLUG", "verdict.gating.project-slug"));
         // 2026-08-14: same class of failure as design_system_falsification_enabled above, found the same
         // way - by being the first caller to actually exercise the path. JulesDispatchService.
         // systemOrchestratorRepositoryName() reads this key and carries a fallback for when it is unset,
@@ -242,27 +252,27 @@ public class SystemSettingsService {
         // so it gets its own explicit opt-in even though the underlying logic is low-risk (CAS-guarded,
         // only ever touches already-orphaned tasks).
         definitions.put("github_truth_reconciliation_enabled", flag("github_truth_reconciliation_enabled", "GITHUB_TRUTH_RECONCILIATION_ENABLED", "github-truth-reconciliation.enabled"));
-        // Off by default (2026-07-25, operator directive: "мало системных решений... встроить такого же
-        // аудитора как ты прямо внутрь бекенда"). An embedded Gemini-powered ops auditor that reasons over
+        // Off by default (2026-07-25, operator directive: "too few systemic decisions... embed an
+        // auditor like you right inside the backend"). An embedded Gemini-powered ops auditor that reasons over
         // real evidence (not guesses) and autonomously calls a curated, pre-vetted tool set to fix bounded-
         // risk operational issues (orphaned wishlists behind a terminally-failed task, etc.) - the same
         // pattern the operator watched the human orchestrator (this session) perform by hand all night.
         definitions.put("ops_auditor_enabled", flag("ops_auditor_enabled", "OPS_AUDITOR_ENABLED", "ops-auditor.enabled"));
-        // Off by default (2026-07-25, operator directive: "нужно чтобы Джемини постоянно училась контексту
-        // моей системы и в каждом вызове была максимально компетентна"). Gates GeminiContextService's
+        // Off by default (2026-07-25, operator directive: "Gemini needs to keep learning the context
+        // of my system and to be as competent as possible on every call"). Gates GeminiContextService's
         // scheduled re-indexing (embeds OBSERVER_LOG/engineering-charter/role-charter text via the ML
         // service - a real, metered Gemini API cost) AND whether callers augment their prompts with
         // retrieved context at all - off means byte-for-byte the pre-existing prompt behavior, no surprise
         // cost the operator didn't opt into.
         definitions.put("gemini_context_learning_enabled", flag("gemini_context_learning_enabled", "GEMINI_CONTEXT_LEARNING_ENABLED", "gemini-context.learning-enabled"));
         // Gates GeminiProjectObserverService's scheduled analysis cycle (2026-07-25, operator directive:
-        // "нужен был именно наблюдатель, джемини, который подключается раз в 30 минут"). Redesigned same
-        // day after "она вообще должна была создать свой отдельный лог, а не работать с твоим" - the
+        // "what was needed was an observer, Gemini, connecting once every 30 minutes"). Redesigned same
+        // day after "it should have created its own separate log rather than working with yours" - the
         // observer now reasons over a structured evidence snapshot of real project state plus Gemini's own
         // journal (GeminiObserverJournalEntity), never the backend's internal Logback log.
         definitions.put("gemini_project_observer_enabled", flagDefaultTrue("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
-        // On by default (2026-07-26 restoration, operator directive: "лог проекта должен независеть от
-        // деплоев!! это огромное упущение") - baseline infrastructure, not an opt-in experiment. Seeded
+        // On by default (2026-07-26 restoration, operator directive: "the project log must not depend on
+        // deployments!! this is a huge omission") - baseline infrastructure, not an opt-in experiment. Seeded
         // 'true' in V61. Gates only the DB write (ProjectEventLogService.flush); the appender always
         // enqueues so the kill switch can never leak into unbounded in-memory growth either way.
         definitions.put("project_event_log_enabled", flag("project_event_log_enabled", "PROJECT_EVENT_LOG_ENABLED", "project-event-log.enabled"));

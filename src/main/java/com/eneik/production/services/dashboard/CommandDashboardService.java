@@ -2,6 +2,9 @@ package com.eneik.production.services.dashboard;
 
 import com.eneik.production.dto.dashboard.AcceptanceReadinessDto;
 import com.eneik.production.dto.dashboard.CommandDashboardDto;
+import com.eneik.production.repositories.ProjectRepository;
+import com.eneik.production.services.verdict.Verdict;
+import com.eneik.production.services.verdict.VerdictGate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -12,8 +15,19 @@ public class CommandDashboardService {
 
     private final JdbcTemplate jdbcTemplate;
 
-    public CommandDashboardService(JdbcTemplate jdbcTemplate) {
+    // Both nullable so the dashboard keeps working exactly as before in any context that does not wire
+    // them - the gate is an addition to what is reported, never a new requirement for reporting at all.
+    private final ProjectRepository projectRepository;
+    private final VerdictGate verdictGate;
+
+    public CommandDashboardService(JdbcTemplate jdbcTemplate,
+                                   @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                   ProjectRepository projectRepository,
+                                   @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                   VerdictGate verdictGate) {
         this.jdbcTemplate = jdbcTemplate;
+        this.projectRepository = projectRepository;
+        this.verdictGate = verdictGate;
     }
 
     public CommandDashboardDto getDashboard(UUID projectId) {
@@ -57,7 +71,7 @@ public class CommandDashboardService {
         }
     }
 
-    // Ф-fix (2026-07-24): jules_sessions has no project_id column of its own - only task_id (confirmed via
+    // Phase fix (2026-07-24): jules_sessions has no project_id column of its own - only task_id (confirmed via
     // JulesSessionEntity, not via the debug SQL endpoint - that endpoint is deliberately disabled by
     // default, see project_eneik_deferred_backlog memory). The generic fetchData() correctly refuses to
     // leak all projects when a table has no project_id column, which meant this dashboard's julesSessions
@@ -79,7 +93,7 @@ public class CommandDashboardService {
         }
     }
 
-    // Ф-followup (2026-07-21, found via a live API check against test-twenty-ninth while chasing the
+    // Phase follow-up (2026-07-21, found via a live API check against test-twenty-ninth while chasing the
     // system-task-pollution fix): H2's JdbcTemplate.queryForList returns column keys in the driver's
     // native case (confirmed live: "STATUS", "QUALITY_GATE_PASSED", "CONTENT", not the lowercase
     // snake_case calculateReadiness()/classifyKano() actually look up). That mismatch meant every
@@ -157,7 +171,7 @@ public class CommandDashboardService {
         Boolean githubAccessHealthy = null;
         List<String> unmetConditions = new ArrayList<>();
 
-        // Ф-followup (2026-07-21): system/carrier tasks (compiler, review-fallback, audit, design review)
+        // Phase follow-up (2026-07-21): system/carrier tasks (compiler, review-fallback, audit, design review)
         // never produce user-facing work, so a failed/incomplete one shouldn't flip "acceptance readiness"
         // to not-ready - confirmed live on test-twenty-ninth, where 9 failed pr_review_fallback carrier
         // tasks were the sole reason allTasksDone/allQualityGatesPassed read false.
@@ -239,21 +253,58 @@ public class CommandDashboardService {
             kanoRecommendation = "Kano Model Suggestion: All tasks completed! Ready to complete and accept the project.";
         }
 
+        // Step 18. These four conditions were already being combined in three values - `unknown` when one
+        // is unmeasurable, `not ready` when one fails, `ready` only when all hold - which is Kleene
+        // conjunction written out by hand and never named. Naming it lets the verdict lattice join as one
+        // more conjunct instead of being bolted on beside it:
+        //
+        //     report(P) = construction(P) ∧ ⋀ verdict_layer(P)
+        //
+        // Every one of these four is about CONSTRUCTION - tasks done, gates passed, PRs merged, GitHub
+        // reachable. None is about the product running or having been shown to anyone, which is why
+        // `ready` could be reached on merge counts alone (F1, F30).
+        Verdict construction;
+        if (allTasksDone == null || allQualityGatesPassed == null || allPrsMerged == null || githubAccessHealthy == null) {
+            construction = Verdict.ABSTAIN;
+        } else if (allTasksDone && allQualityGatesPassed && allPrsMerged && githubAccessHealthy) {
+            construction = Verdict.PERMIT;
+        } else {
+            construction = Verdict.WITHHOLD;
+        }
+
+        // Off by default and scoped to one project; when it declines to act the verdict is returned
+        // untouched, so the reported values stay byte-for-byte what they were before this existed.
+        VerdictGate.Decision decision = verdictGate == null
+                ? new VerdictGate.Decision(construction, false, List.of())
+                : verdictGate.constrain(
+                        projectRepository == null ? null : projectRepository.findById(projectId).orElse(null),
+                        construction);
+        if (decision.applied()) {
+            unmetConditions.addAll(decision.reasons());
+        }
+
         String readiness;
         String statusLabel;
         String uiColorToken;
-        if (allTasksDone == null || allQualityGatesPassed == null || allPrsMerged == null || githubAccessHealthy == null) {
-            readiness = "unknown";
-            statusLabel = "UNKNOWN";
-            uiColorToken = "border-warning";
-        } else if (allTasksDone && allQualityGatesPassed && allPrsMerged && githubAccessHealthy) {
-            readiness = "ready";
-            statusLabel = "READY";
-            uiColorToken = "border-success";
-        } else {
-            readiness = "not ready";
-            statusLabel = "NOT READY";
-            uiColorToken = "border-error";
+        switch (decision.verdict()) {
+            case PERMIT -> {
+                readiness = "ready";
+                statusLabel = "READY";
+                uiColorToken = "border-success";
+            }
+            case WITHHOLD -> {
+                readiness = "not ready";
+                statusLabel = "NOT READY";
+                uiColorToken = "border-error";
+            }
+            // ABSTAIN keeps the existing "unknown" wording, and that mapping is the point rather than a
+            // convenience: an unestablished claim is not a refuted one, and the two must not be shown the
+            // same way to someone deciding whether to keep working or to accept.
+            default -> {
+                readiness = "unknown";
+                statusLabel = "UNKNOWN";
+                uiColorToken = "border-warning";
+            }
         }
 
         return new AcceptanceReadinessDto(readiness, allTasksDone, allQualityGatesPassed, allPrsMerged, githubAccessHealthy, unmetConditions, statusLabel, uiColorToken, kanoRecommendation);
