@@ -2163,3 +2163,66 @@ With no work in flight, the sole remaining engine for this project is the audito
 `falsificationEligible false`, `decompositionComplete false`, status `decomposing`, readiness 0.833.
 Design shop (1.0) and philosophical falsification (0.9) correctly silent. Zero design/Stitch lines
 since 16:00:06Z. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts.
+
+## Watch pass 2026-08-16 21:18Z — test-forty-ninth
+
+### F61 (NEW) — the auditor is unobservable when idle, and it is the project's only remaining engine
+
+Exactly **three** `OpsAuditorService` log lines exist in a 6-hour window, all inside a 30-minute
+span:
+
+```
+19:30:35  dismissed orphaned wishlist 77380b22
+19:30:35  FLAGGED FOR HUMAN REVIEW - subject b50a4511
+20:00:15  created recovery task 4bb0510f for failed task b50a4511
+```
+
+Nothing before 19:30, nothing after 20:00. The service logs only when it *acts*; there is no
+"sweep ran, no action taken" line. Its silence is therefore ambiguous — a sweep that ran and decided
+nothing is indistinguishable from a sweep that did not run, or from a service that has stopped.
+
+That ambiguity matters here specifically because, with zero tasks in flight, the auditor's one
+action per 30 minutes is the **only** thing that can still move this project. Two consecutive sweeps
+(20:30, 21:00) produced nothing, and from outside there is no way to tell whether it is deciding
+"nothing to do" or is dead.
+
+This is the inverse of F56: there, an action with an empty work set is logged 35 times in 35 minutes;
+here, the one mechanism whose liveness actually matters logs nothing at all. Both are the same
+underlying error — log volume is not tied to what an observer needs to know.
+
+### The board is fully inert — third consecutive identical pass
+
+```
+20:18Z  queued 0 · claimed 0 · review 0 · done 36 · failed 3   merged 25/26  features 5/6 = 0.833
+20:48Z  identical
+21:18Z  identical
+```
+
+Zero tasks in any active state. No new tasks. All six wishlist source counts identical for the ninth
+consecutive pass. The only log activity for this project is the denial poll (5 each of
+`RECOVER_FAILED_FRONTIER`, `DISPATCH_REVIEW_TASKS`, `DISPATCH_QUEUED_TASKS`, all citing
+`DECOMPOSING`).
+
+### The recovered task's original remains `failed` forever
+
+```
+failed: b50a4511 API Slice 77380b22     <- recovery task built, PR #66 merged, recovery is `done`
+        ab74be69 UI Slice 1559c9b0      <- no recovery
+        36651896 Data Schema 7dd76d5f   <- no recovery
+```
+
+`b50a4511` is still counted among the three failures even though its replacement work shipped and
+merged. The recovery task is a separate row; the original is never reconciled. So `failed` can only
+ever grow, and the count carries no information about whether the work was actually recovered — two
+of these three are genuinely outstanding, one is not, and nothing in the data distinguishes them.
+
+This compounds F59: the retirement removed the task from the readiness denominator, and the recovery
+did not put it back, and the original still shows as failed. The same task is simultaneously
+uncounted for readiness and counted for failure.
+
+### Unchanged
+
+`falsificationEligible false`, `decompositionComplete false`, status `decomposing`, readiness 0.833.
+Design shop (1.0) and philosophical falsification (0.9) correctly silent. Zero design/Stitch lines
+since 16:00:06Z. All 6 epics still `kanoClass: null`. No stalls, nudges, leaks or lock timeouts this
+window.
