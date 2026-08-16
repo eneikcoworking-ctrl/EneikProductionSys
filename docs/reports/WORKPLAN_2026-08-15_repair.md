@@ -864,6 +864,47 @@ Three things follow, and the third is the one that matters:
    precisely what caught this - which is the strongest argument available for keeping it off until the
    layers carry a measured budget.
 
+**F41. The compiler produced 20 epics. The database holds 1.** Operator's question, and the decisive
+finding of the run.
+
+Read from the plans the compiler itself committed to the repository:
+
+| Plan file | Epics | Titles include |
+|---|---|---|
+| `task-plan-109fd79c` | 6 | Material Management, Search and Discovery, **System Outcome Measurement**, **Factory Acceptance Content**, **Business Continuity and Backups**, Identity and Access |
+| `task-plan-1182b68d` | 6 | Content Lifecycle, Knowledge Discovery, **Telemetry and Measurement**, **Initial Content Seeding**, **Backup and Restore**, Account Recovery |
+| `task-plan-3d221420` | 8 | Content Discovery, **Data Protection and Recovery**, Account Recovery, **Value Measurement**, **Analytics Consent Management**, **Data Subject Privacy Rights**, **Acceptance Demonstration Content**, and one malformed entry |
+
+`/tree` reports exactly one feature: *Epidemiological Content Lifecycle and Management*.
+
+**So the corpus work succeeded and the persistence path throws it away.** Every floor built in Steps 13-15
+is visibly producing epics - the measurement floor (*System Outcome Measurement*, *Value Measurement*), the
+regulatory floor (*Data Subject Privacy Rights*, *Analytics Consent Management*, *Backup and Restore*), and
+the acceptance floor's seeding obligation, F21, by name: *Initial Epidemiological Content Seeding* and
+*Factory Acceptance Content*. The compiler is obeying the prompt. Then `resolveEpicFeatureId` /
+`SelfFalsificationEpicMatcher` collapses them into one.
+
+**The mechanism is the one this session already named and under-corrected.** From Step 15's own commit
+message: *"SelfFalsificationEpicMatcher gives a bonus when two epics share a Kano class. While everything
+defaulted to Must-Be, that bonus applied to every pair equally - a signal built to discriminate was a
+constant."* Removing the default was necessary and is not sufficient: **all 20 epics carry `Must-Be`
+anyway**, chosen rather than defaulted, so the bonus is still a constant. Add a Cynefin bonus that is
+likely as uniform, and a Jaccard over titles that all share *Epidemiological / Knowledge Base / Content*,
+and the matcher sees twenty near-identical candidates.
+
+**F17 is therefore only half repaired, and the live run says which half.** The plan asked: *"determine
+whether the class is being chosen or defaulted."* The answer is **both**. The code defaulted - fixed - and
+the compiler does not discriminate either: it labels *Analytics Consent Management* and *Telemetry and
+Measurement* `Must-Be` exactly like the core content lifecycle. The prompt offers four classes and gets one.
+
+One plan entry carries `kanoClass: null, title: null` - a malformed epic the compiler emitted. Under
+`KanoClass.normalize` that now becomes `Unclassified` rather than a silent `Must-Be`, which is the marker
+doing its job: it makes a broken epic visible instead of well-formed.
+
+**Not yet established:** whether the twenty were merged by the matcher or dropped by something earlier.
+That distinction decides the repair and must be measured, not assumed - the matcher is the strong
+hypothesis because its scoring is documented and its discriminating term is provably constant here.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
