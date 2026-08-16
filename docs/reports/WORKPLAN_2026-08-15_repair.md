@@ -771,6 +771,49 @@ not. A gate that can hang is a gate that stops the factory.
 This is the first thing the live run has told us that the tests could not, which is precisely why the run
 exists.
 
+**Second pass, 02:35 UTC. The lattice produced a real, non-vacuous answer on a live project.**
+
+```
+advance = WITHHOLD   D = 11   W = 2   constraint = doctrine
+```
+
+Every layer said something worth reading, and three repairs were confirmed by the answer itself rather than
+by a test:
+
+- **F35 word boundaries, confirmed live.** The acceptance layer picked exactly `content-management` and
+  `document-flow` from the client's own words for a knowledge base of epidemiological materials - sane
+  kinds, and notably not `shop`. It counted **18 links**, which is the two extended chains from Step 14
+  (6 editor + 3 owner, 6 originator + 3 owner) including the staleness and collection-state links added
+  that step. The corpus additions are live and reaching a decision.
+- **F34 holds so far.** No role sits at `refuses`. The one doctrine withhold is *"source-role objections
+  are still pending"* at `stance=objects` - a pending-work signal, not a regulatory epic being read as a
+  refusal. That was the exact failure mode F34 removed.
+- **Step 12 self-observation, confirmed.** The infrastructure layer refused with a measured reason: *"the
+  database file is 406 MB holding only 61 MB of live data (6.6x bloat) - the store is not reclaiming freed
+  space, which happens when it is killed instead of closed"*. The factory found a defect in itself and said
+  so in a place a human reads.
+
+**F36 sharpened by measurement, not by argument.** The verdict endpoint answered in **68.9 s on an idle
+system**, where `/api/settings` answers in 0.5 s. That discriminates the two candidates recorded earlier:
+contention with the flow's work is **not** the main cause - the layers themselves are. Which layer is not
+yet established and should be measured before anything is changed.
+
+**Open prediction, checkable at the next pass.** `FactorySelfHealthService` runs on
+`cron = 0 40 * * * ?`; the backend started 01:49:51 UTC, so its first firing is 02:40 UTC and had not
+happened at the time of this reading - which is why zero Kaizen proposals exist, and why this is **not** a
+falsification of F5 yet. The prediction is exact: after 02:40 UTC, with the database at 6.6x bloat, a
+`SYSTEMIC_DEFECT` proposal titled for factory self-health must exist. If it does not, F5 is falsified.
+
+**Not yet established, deliberately not called a falsification.** `.gitignore` on main contains only
+`.eneik/`, without `target/` and `data/` - but the repository root holds no `pom.xml` and no `src/`, so the
+deterministic scaffold has not run yet. Step 1's verification cannot be performed until it does. Re-check
+when the repository gains a build file.
+
+**F38. The acceptance recommendation still speaks a vocabulary the classification no longer uses.** F31
+changed where the class comes from - `features.kano_class` instead of guessed words - but the message text
+still reads *"pending Must-Be/One-Dimensional tasks"*, and `One-Dimensional` is not one of the four epic
+classes. Cosmetic today; it becomes misleading the moment someone compares the advice against the tree.
+
 **F37. `ProjectEntity.targetMarkets` is declared but unreachable.** The column and the reading side landed
 in Step 15, and `test-forty-seventh` was created with `targetMarkets: null` - because nothing can set it.
 There is no field on `ProjectCreateRequestDto`, no settings key, no UI. Every project therefore gets F19's
