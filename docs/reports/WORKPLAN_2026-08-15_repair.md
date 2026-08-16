@@ -1972,3 +1972,60 @@ against state `SYSTEM_STALLED` at 19:17:56.
 source counts identical. Zero open PRs. Zero design/Stitch lines since 16:00:06Z. Design shop (1.0)
 and philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
 `blockedItems` back to one entry: `Runtime Contract 8becdc01 | done_not_reached_main`.
+
+## Watch pass 2026-08-16 19:48Z — test-forty-ninth
+
+### F59 (NEW, SERIOUS) — retiring a failed task RAISES readiness, because it leaves the denominator
+
+Three consecutive measurements of the same project, nothing merged between them:
+
+```
+18:48Z  totalPlanned 27  merged 25  mergedRatio 0.9259  features 4/6 = 0.667
+19:18Z  totalPlanned 27  merged 25  mergedRatio 0.9259  features 4/6 = 0.667
+19:48Z  totalPlanned 26  merged 25  mergedRatio 0.9615  features 5/6 = 0.833
+```
+
+`mergedPlannedTasks` never moved — 25 throughout. `done` never moved — 35 throughout. **The
+denominator shrank from 27 to 26**, exactly the retired task `b50a4511`, and readiness rose on both
+axes: `mergedRatio 0.926 -> 0.962`, and a whole feature flipped to complete, `4/6 -> 5/6`.
+
+A feature became "complete" because its outstanding task was killed, not because it was built.
+
+This is precisely the third state the operator ruled out on 2026-08-16: *"if tasks are needed they
+must be done; if they are not needed they must not be counted."* The system takes a third path — the
+task is neither done nor replaced, it is dropped from the count — and the product's reported
+readiness **improves as a direct result of work failing**.
+
+The consequence compounds with the circle recorded at 19:18Z. Readiness gates self-falsification
+(0.9), the design shop (1.0) and the philosophical track. Each retired failure pushes readiness
+toward those thresholds. A project can therefore unlock its own falsification and design stages by
+losing tasks — arriving at "ready" with less product, not more. `mergedRatio` is already 0.962 and
+one retirement away from 0.9-class thresholds on that axis.
+
+Note this cuts against the fix I was tempted toward earlier: excluding failed tasks from the
+denominator is not a candidate repair, it is **the defect itself**, already implemented.
+
+### The stall cleared — by the same retirement
+
+Zero `SYSTEM STALLED` lines and zero forced nudges in the last 35 minutes, against 45 nudges an hour
+earlier. Flow Core state returned from `SYSTEM_STALLED` to `DECOMPOSING`. Killing the task removed
+the "actionable work present" condition, so the stall detector fell silent. The stall was resolved by
+destroying the work it was complaining about.
+
+### `RECOVER_FAILED_FRONTIER` still denied, now with 3 failed tasks
+
+```
+7  policy denied RECOVER_FAILED_FRONTIER ... in state DECOMPOSING ... ENFORCED_ACTIONS_AVAILABLE
+7  policy denied DISPATCH_REVIEW_TASKS   ... same
+7  policy denied DISPATCH_QUEUED_TASKS   ... same (queue is empty)
+```
+
+`falsificationEligible` still `false`. `failed` is 3: `ab74be69 UI Slice 1559c9b0`,
+`36651896 Data Schema 7dd76d5f`, `b50a4511 API Slice 77380b22`. No replacement for any of them.
+
+### Board otherwise unchanged
+
+`queued 0 · claimed 0 · done 35 · failed 3` — nothing in flight at all. All six wishlist source
+counts identical for the sixth consecutive pass. Zero open PRs. Zero design/Stitch lines since
+16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) still correctly silent — but see
+F59 for why that silence may end for the wrong reason. All 6 epics still `kanoClass: null`.
