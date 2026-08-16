@@ -1,0 +1,28 @@
+# Line endings, settled once (F32, 2026-08-16).
+#
+# The repository had no .gitattributes and no core.autocrlf, so line endings were whatever each tool
+# happened to write. The result: 80+ files showed as modified with every line replaced by a visually
+# identical one, and any scripted edit silently rewrote the endings of the file it touched. A diff that
+# large hides real changes inside itself, which is the one thing a diff must never do.
+#
+# LF everywhere. The build, the tests and the runtime all execute in Linux containers; the Windows host
+# only edits. Nothing here is consumed by a tool that requires CRLF - there is not a single .bat or .cmd
+# file in the repository.
+* text=auto eol=lf
+
+# Shell scripts are executed by the container's /bin/sh: a CR at the end of a shebang or a command is a
+# syntax error, so this is correctness rather than tidiness.
+*.sh text eol=lf
+
+# Binary, so git must never guess and never translate anything inside them.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.jar binary
+*.zip binary
+*.woff binary
+*.woff2 binary
+*.db binary
