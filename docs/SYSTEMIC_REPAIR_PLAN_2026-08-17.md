@@ -427,3 +427,76 @@ Every infrastructure evidence node carries its type explicitly. Corroboration mu
 category error of exactly the kind Charter invariant 6 names (Ryle). Without this constraint,
 enriching the evidence graph would make the observer's quantifier inflation worse rather than
 better — she would gain new facts to over-read across type boundaries.
+
+---
+
+## 8. Correction: the three-way separation is architecture, and it is finer than I stated
+
+Operator correction, 2026-08-17: *"this is how the system is built — it is not just a rule."* Upheld,
+and checking Kaizen shows my §7 framing was too coarse.
+
+`KaizenProposal.KaizenCategory` encodes the separation in the type system, and the load-bearing
+distinction is not *what the problem is about* but **what action is safe**:
+
+| Categories | Scope | Safety boundary |
+| --- | --- | --- |
+| `WASTE_REDUCTION`, `SPEED_OPTIMIZATION`, `DEFECT_ELIMINATION`, `BUFFER_TUNING` | factory **runtime parameters** | auto-applicable by `periodicKaizenCycle` |
+| `SYSTEMIC_DEFECT`, `KNOWN_PATTERN_VIOLATION`, `ROLE_QUALITY_DRIFT` | factory **source code** | review-only, `expectedGainPercent = 0`, **never auto-applied** |
+| `PRODUCT_RUNTIME_DEFECT` | the client **product's** own runtime | review-only, deliberately never folded into `SYSTEMIC_DEFECT` |
+
+The enum states the invariant in its own comment: *fixing the factory's own source code is never a
+safe automatic action, unlike this engine's other three categories which only ever tune runtime
+parameters.* And `PRODUCT_RUNTIME_DEFECT` carries the operator's own requirement verbatim: *"clearly
+marked as a product improvement, not mixed into the factory list."*
+
+Two consequences for this plan, both correcting §7:
+
+1. **`KNOWN_PATTERN_VIOLATION` already does what I proposed to build.** It carries a defect whose
+   `rootCausePatternId` matches one of the documented charter patterns, **cited by number**. Stage 3
+   should route infrastructure facts into this existing category where they match a charter invariant
+   rather than inventing a parallel taxonomy — F59's denominator defect is invariant 8, the nudge
+   loop is invariant 7. Findings that match no pattern stay `SYSTEMIC_DEFECT`.
+2. **Nothing in Stage 3 may be auto-applicable.** Every infrastructure fact concerns the factory's
+   own source or configuration, so it inherits the review-only boundary with
+   `expectedGainPercent = 0`. This is now a hard constraint on the stage, not a preference.
+
+### F67 (NEW, factory) — factory-scope findings are filed under whichever client project was active
+
+`KaizenService` line 120 and line 211:
+
+```java
+final UUID targetProjectId = (projectId != null) ? projectId : sixSigmaAuditService.getActiveProjectId();
+```
+
+A finding with no project — which is what a defect in the orchestrator's own code is — has a client
+project substituted for it. The live proposal shows the result:
+
+```
+category:        SYSTEMIC_DEFECT
+title:           "Gemini observer (platform): Project is in a persistent state of stagnation …"
+targetComponent: EneikProductionSys          <- correctly the factory
+projectName:     test-forty-ninth            <- but filed under a client project
+projectId:       41af381d-5789-404d-b76d-f2c85e3728b0
+expectedGain:    0.0                         <- correctly review-only
+```
+
+Measured: `GET /api/kaizen/opportunities` returns 4 open proposals, **0 of them with a null
+projectId**. The factory has no defect backlog of its own; its defects are scattered across client
+projects. Two concrete consequences: the question *"what is wrong with the factory"* cannot be asked
+without sweeping every project, and when a project reaches `accepted` or `archived` its findings about
+`EneikProductionSys` go with it.
+
+**The observer already types this correctly.** She wrote `(platform)` in the title and set
+`targetComponent = EneikProductionSys`. She also wrote, unprompted, in her 14:22Z journal entry:
+*"Since this state tracking is handled by the orchestrator/factory and is independent of the
+project's own code, this is a platform-scope issue."* The persistence layer discards a distinction
+she is already drawing correctly.
+
+**This changes the answer to "how do we make Gemini see and fix it".** She sees it. The repair is not
+to teach her, enrich her prompt, or give her more evidence — it is to stop overwriting the type she
+declares. `targetComponent` already carries it; `projectId` contradicts it in the same row.
+
+Type: **factory**. Entry mode: `observe_only` — surface the contradiction between `targetComponent`
+and `projectId` before changing either. Falsifier: if `getActiveProjectId()` is null in production so
+the substitution never fires, then the observed attribution came from the caller and the defect is
+elsewhere — this must be measured before any repair.
