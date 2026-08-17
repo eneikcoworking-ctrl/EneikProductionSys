@@ -935,3 +935,97 @@ Step 1 is additive and reversible. Steps 2 and 3 are not, and neither should be 
 - **F51 is re-explained, not retracted.** The measurement stands — "nearly all" against 1 of 33. The
   cause was recorded as a reasoning failure on her part; it is structural. A claim that manufactures
   its own corroboration strengthens regardless of the world.
+
+## 13. Correction, and the deeper result: assertions are not objects in this ontology
+
+### Correction to §12
+
+§12 states that `V82__operational_reality_findings.sql` **drops**
+`chk_evidence_nodes_exactly_one_source`, so a node could carry both keys. **That is wrong.** V82 drops
+it and re-adds it in the same migration, widened to include the new column:
+
+```sql
+ALTER TABLE evidence_nodes DROP CONSTRAINT chk_evidence_nodes_exactly_one_source;
+ALTER TABLE evidence_nodes ADD CONSTRAINT chk_evidence_nodes_exactly_one_source CHECK (
+    (CASE WHEN defect_journal_id IS NOT NULL THEN 1 ELSE 0 END
+   + … + CASE WHEN operational_reality_finding_id IS NOT NULL THEN 1 ELSE 0 END) = 1
+);
+```
+
+Exactly one source per node is still enforced at the database level. **The "safe first step" specified
+in §12 — populate `geminiFindingId` in addition to `kaizenProposalId`, changing no reads — is
+impossible.** The database would reject every such row. Recorded here rather than silently amended,
+per the corrections rule adopted in §1.1.
+
+### What blocks it is not the constraint
+
+Even with the constraint gone, the step would have been wrong. `V79__kaizen_proposals_and_evidence_nodes.sql:26`
+says so in its own comment:
+
+```
+-- is set per row (gemini_finding_id has no FK target yet - Gemini findings become WishlistEntity today).
+```
+
+`gemini_finding_id` is a bare UUID column with **no referent to point at**. Populating it would have
+meant minting a name for a thing that does not exist — a designator with no bearer. That is precisely
+what `BARCAN-TAG-01_ACTUALIST-OBJECT` forbids, and what `BARCAN-TAG-02_RIGID-DESIGNATOR` requires the
+opposite of: a designator must pick out the same thing in every context, and an invented UUID picks
+out nothing in any of them.
+
+### The result this exposes
+
+**This system has no representation for "an agent asserted P".**
+
+Her findings exist only as what was *done about* them — a `WishlistEntity` (work created) or a
+`KaizenProposal` (proposal created). Both are the **uptake** of the assertion, not the assertion. So
+when the evidence graph asks "what kind of thing is this", the only answer available is the kind of
+action that followed, and reliability is then computed from that.
+
+This is Austin exactly, and the corpus already carries the rule.
+`DZHON_OSTIN_02_CATEGORY_ERROR_SCAN`, in the factory's own words:
+
+> *"Reject code that treats a process as an object, **an observation as authority** or a policy as
+> data without an adapter. Proof obligation: **Point to the type, schema or adapter that preserves the
+> category boundary.**"*
+
+Discharging that proof obligation is what fails. There is no type, schema or adapter that preserves
+the boundary between *she asserted it* and *a measurement established it*, because one of the two
+categories has no representation. The evidence algebra distinguishes them — agent prose is strength 1,
+measurement is 3 — and the schema cannot.
+
+So D6 is not a mis-set field. **It is a missing entity.** That is why the reliability of her prose
+equals the reliability of `FactorySelfHealthService`'s 9.6x bloat measurement: not because someone
+chose to weigh them equally, but because the system has no way to say they are different kinds of
+thing.
+
+### Specified: the minimal schema change
+
+Persist agent findings as findings — a table `gemini_findings` (id, projectId, scope as she declared
+it, summary, evidence text, severity, createdAt), the FK target `gemini_finding_id` was written for
+and never given. Then:
+
+- an evidence node derived from her assertion carries `geminiFindingId` and types as `GEMINI_FINDING`;
+- `sourceReliability("GEMINI_FINDING")` calibrates on her own outcome record, separately from
+  `KAIZEN_PROPOSAL`;
+- `distinctHistoricallyCorroboratingSourceTypes` stops counting her restatement as a second
+  independent source, because it is now visibly the same source;
+- the two declared-but-empty source types drop to one, and the Barcan condition is honoured in the
+  data as well as the declaration.
+
+None of this changes what she is shown or how the flow runs; it changes what the graph knows about
+where a claim came from. It is nonetheless a migration plus a new entity plus a write path, and it
+touches the reliability mathematics the moment `GEMINI_FINDING` starts appearing. **Not implemented —
+this is the operator's call, and it is the first item in this plan that cannot be done additively.**
+
+### What is safe to do next instead
+
+Two items remain that are additive and blocked by nothing:
+
+1. **F64 — lock timeouts have no producer.** 21 occurred, 17 on `PROJECTS`, all invisible outside the
+   H2 trace file. `FactorySelfHealthService` is the natural home: it already watches the factory's own
+   database, already escalates factory-scope, already carries the review-only boundary.
+2. **F65 is already producing correctly** and is now readable via `/api/kaizen/factory` — the 9.6x
+   bloat finding is live. Nothing more is needed there.
+
+Item 1 is the next implementation step under the existing, unchanged goal: a flow without category
+errors, and a production mechanism that does not fail silently.
