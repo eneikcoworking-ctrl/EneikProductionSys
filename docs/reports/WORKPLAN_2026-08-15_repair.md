@@ -2688,3 +2688,67 @@ orphan evidence).
 `failed` 4, readiness 0.833, `falsificationEligible false`, status `decomposing`. Zero design/Stitch
 lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All
 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-17 ~07:10Z — test-forty-ninth — after a Docker outage and restart
+
+### Infrastructure: the engine was down, and my first reading of it was false
+
+At 07:03Z `docker logs --since 35m` returned `nudges: 0 | stalls: 0`. Those zeros were **not**
+evidence of a quiet system — the Docker engine was stopped and the command had no output at all:
+
+```
+failed to connect to the docker API at npipe:////./pipe/dockerDesktopLinuxEngine;
+check if the path is correct and if the daemon is running
+```
+
+This is exactly the trap already recorded for this environment: a failed container query produces
+empty output that reads as "nothing is happening". Distinguishable this time from the WSL-interop
+failure, because `whoami.exe` answered normally — interop was fine, the engine itself was stopped.
+My own attempt to start Docker Desktop from WSL was refused by Windows ("Отказано в доступе"); the
+operator restarted it. Stack brought back up with `docker compose up -d` — all four containers
+healthy, backend answering.
+
+**Consequence: the overnight logs are gone.** The containers were recreated, so `docker logs` starts
+from the restart. The sequence between 01:18Z and the outage cannot be reconstructed; only its
+outcome is visible on the board.
+
+### The third nudge-to-death cycle completed — the answer is no, it did not fix itself
+
+```
+01:18Z  queued 0 · claimed 1 · done 38 · failed 4    (1e169d70 Build Pipeline Ebfba197 in flight,
+                                                      7 nudges in, SYSTEM STALLED at 67 min)
+07:10Z  queued 0 · claimed 0 · done 39 · failed 5
+```
+
+`Build Pipeline Ebfba197` is now `failed`. Three for three: every task that entered the stale-session
+path yesterday ended retired. `done` rose by one, consistent with a recovery task completing as in
+the two previous cycles.
+
+### Readiness has not moved in over eleven hours
+
+```
+19:48Z (2026-08-16)  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+07:10Z (2026-08-17)  totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+```
+
+Identical. `falsificationEligible false`, `decompositionComplete false`, status `decomposing`
+throughout. Across that span the factory retired two tasks, built and merged two recovery tasks, and
+moved `done` from 37 to 39 — and not one readiness figure changed. The retire-recover loop recorded
+at 00:18Z is confirmed over a long window: **productive in code, inert in metric.**
+
+### Current state: nothing in flight
+
+`queued 0 · claimed 0 · review 0`. Five failed tasks:
+
+```
+Build Pipeline Ebfba197 · Build Pipeline 115f4b3f · API Slice 77380b22
+UI Slice 1559c9b0 · Data Schema 7dd76d5f
+```
+
+All six wishlist source counts identical to last night (`gemini_observer` 17, `coverage_gap` 12,
+`client` 19, `design_system_falsification` 3, `self_falsification` 2, `role` 1) — no new material
+from any source, including the observer, which had been the only productive one.
+
+Under F62, `UI Slice 1559c9b0` and `Data Schema 7dd76d5f` remain permanently uncovered: their
+siblings survived, so their wishlists are not orphans and the auditor's evidence predicate never
+sees them.
