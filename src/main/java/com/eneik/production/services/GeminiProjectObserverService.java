@@ -548,8 +548,30 @@ public class GeminiProjectObserverService {
                 String label = selfReportedPlatform
                         ? "Gemini observer (platform): "
                         : "Gemini observer (disputed - self-reported product, but evidence names this factory's own internals): ";
-                kaizenService.recordSystemicDefectProposal(project.getId(), project.getName(),
-                        label + finding.summary(), content);
+                // 2026-08-17 (SYSTEMIC_REPAIR_PLAN_2026-08-17, F67): scope decides where the finding is
+                // FILED, not just how it is labelled. An undisputed platform finding is about
+                // EneikProductionSys and belongs to no client project, so it is recorded with a null
+                // projectId - the same call shape FactorySelfHealthService:108 already uses - and reaches
+                // GET /api/kaizen/factory. Previously every one of these was filed under whichever project
+                // surfaced it, which meant the factory had no backlog of its own and a finding about the
+                // orchestrator would be archived along with an unrelated client project.
+                //
+                // The DISPUTED case deliberately keeps the project attribution. There she self-reported
+                // "product" and only the deterministic detector says otherwise; committing that to factory
+                // scope would resolve a dispute this code is explicitly written not to resolve (Charter
+                // Pattern #12 - don't trust either side blind). The project is also the context the dispute
+                // arose in, and it is what makes the disagreement investigable at all.
+                //
+                // Originating project is carried in the description rather than in projectId, so scope
+                // stays correct without losing the trail back to where the evidence was observed.
+                boolean fileAsFactoryScope = selfReportedPlatform;
+                String body = fileAsFactoryScope
+                        ? content + "\nObserved while auditing project: " + project.getName() + " (" + project.getId() + ")"
+                        : content;
+                kaizenService.recordSystemicDefectProposal(
+                        fileAsFactoryScope ? null : project.getId(),
+                        fileAsFactoryScope ? "Global" : project.getName(),
+                        label + finding.summary(), body);
                 created++;
                 continue;
             }

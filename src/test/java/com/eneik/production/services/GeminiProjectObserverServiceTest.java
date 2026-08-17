@@ -322,8 +322,18 @@ class GeminiProjectObserverServiceTest {
         service.runObserverCycle();
 
         verify(wishlistRepository, never()).save(any());
-        verify(kaizenService).recordSystemicDefectProposal(eq(project.getId()), eq(project.getName()),
-                contains("pending_review tasks never transition automatically"), anyString());
+        // 2026-08-17 (SYSTEMIC_REPAIR_PLAN_2026-08-17, F67): an undisputed platform finding is about
+        // EneikProductionSys and belongs to no client project, so it is filed with a null projectId - the
+        // same shape FactorySelfHealthService already uses - and reaches GET /api/kaizen/factory. It used
+        // to be filed under whichever project surfaced it, which left the factory with no backlog of its
+        // own and meant a finding about the orchestrator was archived along with an unrelated project.
+        // The assertion this test exists for - that a platform finding never becomes a wishlist dispatched
+        // against the client's repo - is the verify(wishlistRepository, never()) line above and is
+        // unchanged.
+        verify(kaizenService).recordSystemicDefectProposal(isNull(), eq("Global"),
+                contains("pending_review tasks never transition automatically"),
+                // scope moves to the factory, but the trail back to where the evidence was observed must not
+                contains(project.getName()));
     }
 
     @Test
