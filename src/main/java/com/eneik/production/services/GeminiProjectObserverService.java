@@ -116,6 +116,16 @@ public class GeminiProjectObserverService {
     private final com.eneik.production.services.ProjectEventLogService projectEventLogService;
     private final com.eneik.production.services.audit.SixSigmaAuditService sixSigmaAuditService;
     private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
+
+    /**
+     * Optional, and injected as a field rather than through the constructor, following the precedent
+     * FactorySelfHealthService set for KaizenService: the observer must keep working - and keep being
+     * testable in isolation - when this collaborator is absent. A 23-test constructor is also not worth
+     * widening for a dependency whose absence is a safe degradation (the assertion simply is not persisted,
+     * and the evidence node falls back to its previous typing).
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.repositories.GeminiFindingRepository geminiFindingRepository;
     private final com.eneik.production.repositories.CoherenceRunRepository coherenceRunRepository;
     private final com.eneik.production.repositories.CoherenceRunNodeResultRepository coherenceRunNodeResultRepository;
     private final com.eneik.production.repositories.OperationalRealityFindingRepository operationalRealityFindingRepository;
@@ -568,10 +578,21 @@ public class GeminiProjectObserverService {
                 String body = fileAsFactoryScope
                         ? content + "\nObserved while auditing project: " + project.getName() + " (" + project.getId() + ")"
                         : content;
+                // 2026-08-18 (SYSTEMIC_REPAIR_PLAN, D6): persist the ASSERTION before recording what was
+                // done about it. Until V103 there was nowhere to put it - evidence_nodes.gemini_finding_id
+                // existed since V79 with no FK target - so her claims entered the evidence graph typed
+                // KAIZEN_PROPOSAL, i.e. by the channel that stored them. That let her prose inherit the
+                // reliability of measurement-derived proposals and, worse, let her own restatement count as
+                // a distinct corroborating sourceType for the position she was arguing. Recording the
+                // finding first and passing its id types the resulting node GEMINI_FINDING - testimony as
+                // testimony, strength 1 in the evidence algebra, never final evidence of delivery.
+                java.util.UUID geminiFindingId = persistAssertion(project, finding, fileAsFactoryScope);
                 kaizenService.recordSystemicDefectProposal(
                         fileAsFactoryScope ? null : project.getId(),
                         fileAsFactoryScope ? "Global" : project.getName(),
-                        label + finding.summary(), body);
+                        "EneikProductionSys",
+                        label + finding.summary(), body,
+                        geminiFindingId);
                 created++;
                 continue;
             }
@@ -1216,6 +1237,39 @@ public class GeminiProjectObserverService {
             sb.append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * Records that the observer asserted something, as distinct from what the factory then did about it.
+     *
+     * Returns null when the repository is absent or the write fails - the caller then records the proposal
+     * exactly as before, so a failure here degrades the TYPING of evidence and never the finding itself.
+     * Self-monitoring must not be the thing that breaks what it monitors, the same rule
+     * FactorySelfHealthService states for its own escalation path.
+     *
+     * Her scope self-classification is stored as she declared it and never overwritten. The disputed case
+     * (she said "product", PlatformSelfReferenceDetector disagrees) is recorded with her value, because
+     * Charter invariant 12 forbids resolving that disagreement here - the record must preserve what each
+     * side actually said, or the dispute stops being investigable.
+     */
+    private java.util.UUID persistAssertion(ProjectEntity project, Finding finding, boolean factoryScope) {
+        if (geminiFindingRepository == null) {
+            return null;
+        }
+        try {
+            com.eneik.production.models.persistence.GeminiFindingEntity entity =
+                    new com.eneik.production.models.persistence.GeminiFindingEntity();
+            entity.setProjectId(factoryScope ? null : project.getId());
+            entity.setScope(finding.scope() == null || finding.scope().isBlank() ? "product" : finding.scope());
+            entity.setSeverity(finding.severity());
+            entity.setSummary(finding.summary());
+            entity.setEvidenceText(finding.evidence());
+            return geminiFindingRepository.save(entity).getId();
+        } catch (Exception e) {
+            log.debug("GeminiProjectObserverService: could not persist the assertion, evidence will fall back "
+                    + "to proposal-typed: {}", e.getMessage());
+            return null;
+        }
     }
 
     private record Finding(String summary, String evidence, String severity, String scope) {

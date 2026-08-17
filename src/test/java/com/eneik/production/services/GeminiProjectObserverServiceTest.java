@@ -330,10 +330,17 @@ class GeminiProjectObserverServiceTest {
         // The assertion this test exists for - that a platform finding never becomes a wishlist dispatched
         // against the client's repo - is the verify(wishlistRepository, never()) line above and is
         // unchanged.
+        // 2026-08-18 (D6): the call now carries the component and the persisted assertion's id. The last
+        // argument is null here because GeminiFindingRepository is an optional field-injected collaborator
+        // and a unit test constructs the service without it - which is the degradation path that matters:
+        // absent repository means the assertion is not persisted and the evidence node falls back to its
+        // previous typing, while the finding itself is still recorded exactly as before.
         verify(kaizenService).recordSystemicDefectProposal(isNull(), eq("Global"),
+                eq("EneikProductionSys"),
                 contains("pending_review tasks never transition automatically"),
                 // scope moves to the factory, but the trail back to where the evidence was observed must not
-                contains(project.getName()));
+                contains(project.getName()),
+                isNull());
     }
 
     @Test

@@ -105,11 +105,36 @@ public class KaizenService {
      * micro-tuning proposal is speculative, not yet real evidence.
      */
     private void writeEvidenceNode(KaizenProposal p, EvidenceNodeEntity.Polarity polarity) {
+        writeEvidenceNode(p, polarity, null);
+    }
+
+    /**
+     * When {@code geminiFindingId} is present the node is typed by PROVENANCE rather than by the channel
+     * that stored the finding: the evidence is that an agent asserted something, and the Kaizen proposal is
+     * the uptake of that assertion, not independent support for it.
+     *
+     * evidence_nodes enforces exactly one source (chk_evidence_nodes_exactly_one_source, re-added in V82),
+     * so this is a choice, not an addition - and provenance is the truthful side of it. Charter invariant 12
+     * requires independent verification rather than self-attestation, and the evidence algebra puts agent
+     * prose at strength 1, "intent or claim, not delivery". While her assertions were typed KAIZEN_PROPOSAL
+     * they inherited the reliability of measurement-derived proposals and, worse, counted as a distinct
+     * corroborating sourceType for the very position she was arguing - measured 2026-08-17 at 10 of the 26
+     * KAIZEN_PROPOSAL nodes in her own 24-hour read window.
+     *
+     * The proposal itself is unaffected: it is still recorded, still review-only, still reaches
+     * GET /api/kaizen/factory. Only what the evidence graph believes the fact IS has changed.
+     */
+    private void writeEvidenceNode(KaizenProposal p, EvidenceNodeEntity.Polarity polarity,
+                                   java.util.UUID geminiFindingId) {
         EvidenceNodeEntity node = new EvidenceNodeEntity();
         node.setProjectId(p.getProjectId());
         node.setPolarity(polarity);
         node.setSummaryText(p.getTitle() + ": " + p.getActionDescription());
-        node.setKaizenProposalId(p.getId());
+        if (geminiFindingId != null) {
+            node.setGeminiFindingId(geminiFindingId);
+        } else {
+            node.setKaizenProposalId(p.getId());
+        }
         evidenceNodeRepository.save(node);
     }
 
@@ -392,6 +417,21 @@ public class KaizenService {
     public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
                                                          String targetComponent,
                                                          String title, String actionDescription) {
+        return recordSystemicDefectProposal(projectId, projectName, targetComponent, title, actionDescription, null);
+    }
+
+    /**
+     * Same, for a finding that originates in an agent's assertion rather than in a measurement.
+     *
+     * {@code geminiFindingId} points at the persisted assertion, so the evidence node this writes is typed
+     * GEMINI_FINDING - what the fact IS - instead of KAIZEN_PROPOSAL - where the fact was filed. See
+     * {@link #writeEvidenceNode(KaizenProposal, EvidenceNodeEntity.Polarity, java.util.UUID)} for why that
+     * distinction changes what the coherence graph concludes.
+     */
+    public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
+                                                         String targetComponent,
+                                                         String title, String actionDescription,
+                                                         java.util.UUID geminiFindingId) {
         String propId = "kz-systemic-" + java.util.UUID.randomUUID();
         KaizenProposal proposal = new KaizenProposal(
                 propId,
@@ -404,9 +444,9 @@ public class KaizenService {
                 projectName == null ? "Global" : projectName
         );
         saveProposal(proposal);
-        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
-        log.info("[KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal '{}' from project {}: {}",
-                propId, projectId, title);
+        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, geminiFindingId);
+        log.info("[KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal '{}' from project {} (evidence typed {}): {}",
+                propId, projectId, geminiFindingId != null ? "GEMINI_FINDING" : "KAIZEN_PROPOSAL", title);
         return proposal;
     }
 
