@@ -368,12 +368,36 @@ public class KaizenService {
      */
     public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
                                                          String title, String actionDescription) {
+        return recordSystemicDefectProposal(projectId, projectName, "EneikProductionSys", title, actionDescription);
+    }
+
+    /**
+     * Same finding, with the component it is actually about (F69).
+     *
+     * {@link #getDeduplicatedProposals} keys on {@code category + ":" + targetComponent}. That key
+     * discriminates correctly wherever the component is specific - ROLE_QUALITY_DRIFT passes the role tag,
+     * so BARCAN-TAG-02, -05 and -06 coexist as three findings. It fails wherever the component is the whole
+     * system: every SYSTEMIC_DEFECT hardcoded "EneikProductionSys", so all of them collapsed to the single
+     * key SYSTEMIC_DEFECT:EneikProductionSys and each new finding silently displaced the last.
+     *
+     * Measured 2026-08-17: two proposals recorded four seconds apart - a 12.9x database bloat and 21 lock
+     * timeouts - and GET /api/kaizen/factory returned one. The factory backlog was structurally capped at
+     * one item no matter how many distinct defects existed.
+     *
+     * The key is left alone deliberately: it is correct, and it is shared with categories that rely on it.
+     * What was wrong is the designator - "the whole system" cannot pick out which finding is meant. Callers
+     * that know what their finding is about pass it; the 4-argument overload above keeps the old value for
+     * callers that do not, so nothing existing changes behaviour.
+     */
+    public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
+                                                         String targetComponent,
+                                                         String title, String actionDescription) {
         String propId = "kz-systemic-" + java.util.UUID.randomUUID();
         KaizenProposal proposal = new KaizenProposal(
                 propId,
                 title,
                 KaizenProposal.KaizenCategory.SYSTEMIC_DEFECT,
-                "EneikProductionSys",
+                targetComponent == null || targetComponent.isBlank() ? "EneikProductionSys" : targetComponent,
                 actionDescription,
                 0.0,
                 projectId,

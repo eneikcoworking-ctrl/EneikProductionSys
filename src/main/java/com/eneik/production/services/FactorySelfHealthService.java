@@ -160,6 +160,9 @@ public class FactorySelfHealthService {
         }
         try {
             kaizenService.recordSystemicDefectProposal(null, "Global",
+                    // F69: distinct from database-storage above - a different defect in the same system is a
+                    // different finding, and the key must be able to say so.
+                    "EneikProductionSys/database-locks",
                     "Factory self-health: lock contention on the orchestrator's own database",
                     assessment + " Detected by FactorySelfHealthService, which watches the factory itself "
                             + "rather than the products it builds. Review-only: the factory's own "
@@ -192,6 +195,11 @@ public class FactorySelfHealthService {
         }
         try {
             kaizenService.recordSystemicDefectProposal(null, "Global",
+                    // F69: the dedupe key is category + targetComponent. "EneikProductionSys" is the whole
+                    // system and cannot pick out which finding is meant, so every factory finding collapsed
+                    // into one and displaced the last. Naming the component this finding is actually about
+                    // lets it coexist with the lock-contention finding below.
+                    "EneikProductionSys/database-storage",
                     "Factory self-health: the orchestrator's own database is unhealthy",
                     assessment + " Detected by FactorySelfHealthService, which watches the factory itself "
                             + "rather than the products it builds. Review-only: the factory's own "
