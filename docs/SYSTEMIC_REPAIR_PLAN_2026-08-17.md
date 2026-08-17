@@ -824,3 +824,114 @@ harm*. Two specific things must be measured first:
 
 Type: **factory**. Entry mode when specified: `observe_only` — measure the self-derived fraction and
 surface it before changing what she reads.
+
+## 12. D6 measured — the category error located exactly
+
+Goal restated, unchanged: **a flow free of category errors and a production mechanism that does not
+fail.** What follows is one category error, found where the plan said to look, measured rather than
+argued.
+
+### Three measurements
+
+**1 — how much of her evidence is her own.**
+
+```
+nodes in her 24h read window        46 of 46
+  self-derived (her prior findings) 10   = 22%
+sourceTypes present in the window   KAIZEN_PROPOSAL 26 · OPERATIONAL_REALITY_FINDING 20
+  all 10 self-derived are           KAIZEN_PROPOSAL
+```
+
+With two source types in the window, "corroborated by a different source type" is a two-sided coin,
+and 10 of the 26 faces on one side are her own earlier words.
+
+**2 — how the mathematics uses that.** `EvidenceCoherenceService` resolves a polarity contradiction
+by revising *"the side with LOWER historical entrenchment (fewer **distinct source types** that have
+ever corroborated it)"* — `distinctHistoricallyCorroboratingSourceTypes`. Her restatement, typed
+`KAIZEN_PROPOSAL`, therefore increases the entrenchment of the position she is arguing for.
+
+**3 — what reliability it is granted.** `sourceReliability(sourceType)` is honestly built — three
+tiers, outcome-calibrated where data exists. Measured now:
+
+```
+STANDARDIZED + REVERTED = 0        (threshold: coherence.min-reliability-samples = 10)
+-> tier-1 outcome calibration does NOT apply
+-> falls through to accepted/total over coherence history
+accepted nodes = 53 of 53          nothing has ever been rejected
+```
+
+So `KAIZEN_PROPOSAL` reliability rests at the top of its range, and every node of that type inherits
+it.
+
+### The category error, precisely
+
+`sourceReliability` and `distinctHistoricallyCorroboratingSourceTypes` both key on **sourceType**, and
+`EvidenceNodeEntity.sourceType()` is derived from *which foreign key is set*:
+
+```java
+if (defectJournalId != null)             return "DEFECT_JOURNAL";
+if (codeIntegrityFindingId != null)      return "CODE_INTEGRITY_FINDING";
+if (kaizenProposalId != null)            return "KAIZEN_PROPOSAL";
+if (geminiFindingId != null)             return "GEMINI_FINDING";
+if (operationalRealityFindingId != null) return "OPERATIONAL_REALITY_FINDING";
+```
+
+A foreign key records **where a finding is stored**. Reliability and corroboration are properties of
+**where a finding came from**. Those are different categories, and the system reads the first as if it
+were the second — Ryle's mistake, which Charter invariant 6 already names for numeric types crossing a
+serialization boundary. Here it crosses a persistence boundary instead.
+
+The consequence is exact: `FactorySelfHealthService`'s measured 9.6x database bloat and the observer's
+prose about "systemic desynchronization" are both stored as Kaizen proposals, therefore both typed
+`KAIZEN_PROPOSAL`, therefore granted the same reliability. The Evidence Algebra says they are not the
+same: *agent prose, generated title, planned item text* is **strength 1 — intent or claim, not
+delivery**, and *agent claims are never final evidence*. The algebra's distinction is correct and the
+graph cannot see it, because provenance was never written down.
+
+### The system already declares the right category and never populates it
+
+`sourceType()` includes `GEMINI_FINDING`, and `EvidenceNodeEntity` has a `geminiFindingId` column for
+it. **Nothing anywhere sets it** — zero call sites. Her testimony has a dedicated, correct source type
+that has never been used; the Kaizen path files it under the storage channel instead.
+
+That also resolves a discrepancy noted earlier in this plan. Her prompt describes *"5 independent
+signal sources"*; three appear in the data. The two missing ones are `GEMINI_FINDING` and
+`DEFECT_JOURNAL` — declared in the enum, never written. The Barcan condition is honoured in the
+declaration and violated in the data, and one of the empty ones is precisely the type that would make
+her self-corroboration visible as self-corroboration.
+
+### Why this is not being changed today
+
+The fix is to type by provenance: a node derived from an agent's finding is `GEMINI_FINDING`, not
+`KAIZEN_PROPOSAL`. Note `V82__operational_reality_findings.sql` **drops**
+`chk_evidence_nodes_exactly_one_source`, so a node may now carry both keys — but `sourceType()`
+returns the first match in its if-chain, so making provenance win requires reordering that chain, and
+that reorders the type of **every existing node**, changing entrenchment and reliability for the whole
+graph at once.
+
+That is a live reasoning system whose failure modes this log has misjudged repeatedly, and the
+standing instruction is *do no harm*. Changing corroboration counts and source reliabilities in one
+step, on my own judgement, is the opposite of the discipline this plan exists to impose.
+
+**Specified, not implemented.** The safe sequence, in order:
+1. Populate `geminiFindingId` on nodes derived from her findings **in addition to** `kaizenProposalId`,
+   changing no reads. Provenance becomes recorded fact; nothing consumes it yet. `observe_only`.
+2. Measure the divergence: how many nodes would change type, and what that does to entrenchment on
+   the contradictions currently in the graph.
+3. Only then decide whether `sourceType()` should prefer provenance — with the measurement in hand
+   rather than the argument above.
+
+Step 1 is additive and reversible. Steps 2 and 3 are not, and neither should be taken on inference.
+
+### Plan corrections carried out here
+
+- **§3's proposed evidence vocabulary is reduced again.** Before writing any new source type, the two
+  already declared and empty must be populated. Adding a sixth while two sit unused would repeat the
+  defect rather than fix it.
+- **D1 is amended.** It said the observer's limit is that infrastructure facts are unrepresentable.
+  True, and incomplete: representable facts are *mis*-typed as well. Enriching the vocabulary without
+  fixing provenance would add sources whose evidential weight is again decided by their storage
+  channel.
+- **F51 is re-explained, not retracted.** The measurement stands — "nearly all" against 1 of 33. The
+  cause was recorded as a reasoning failure on her part; it is structural. A claim that manufactures
+  its own corroboration strengthens regardless of the world.
