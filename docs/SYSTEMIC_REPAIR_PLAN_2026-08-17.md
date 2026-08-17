@@ -1029,3 +1029,55 @@ Two items remain that are additive and blocked by nothing:
 
 Item 1 is the next implementation step under the existing, unchanged goal: a flow without category
 errors, and a production mechanism that does not fail silently.
+
+## 14. F64 closed, and F69 found by closing it
+
+### F64 — lock contention now has a producer, verified live 16:40Z
+
+```
+16:40:27Z  WARN  FactorySelfHealth: database file is 784 MB holding only 60 MB of live data (12.9x bloat)
+16:40:31Z  WARN  FactorySelfHealth: the orchestrator's own store recorded 21 lock timeout(s)
+                 (standing total at first observation)
+```
+
+Twenty-one is exactly the count measured in `eneik_db.trace.db`. The signal that existed only in a
+file nobody opens now reaches `GET /api/kaizen/factory` as a factory-scope, review-only finding.
+
+Note the database is deteriorating quickly: **573 MB / 9.6x at 09:40 → 784 MB / 12.9x at 16:40**, on a
+host with 3917 MB total. This is F65 and it is getting worse, not stable.
+
+### F69 (NEW, factory) — the factory backlog can hold exactly one finding
+
+Two proposals were recorded seconds apart:
+
+```
+16:40:27.660Z  [KAIZEN-SYSTEMIC] Recorded … 'kz-systemic-6a6181a1-…'   (database bloat)
+16:40:31.631Z  [KAIZEN-SYSTEMIC] Recorded … 'kz-systemic-7d3ca51e-…'   (lock contention)
+```
+
+`GET /api/kaizen/factory` returns **one** — `7d3ca51e`. The bloat finding, recorded four seconds
+earlier, is not shown. The cause:
+
+```java
+String key = p.getCategory() + ":" + p.getTargetComponent();
+```
+
+`recordSystemicDefectProposal` hardcodes `targetComponent = "EneikProductionSys"`, so **every**
+factory finding collapses to the single key `SYSTEMIC_DEFECT:EneikProductionSys`. The factory backlog
+is structurally capped at one item regardless of how many distinct defects exist, and each new one
+silently displaces the last. That is why the observer's platform finding vanished when the
+lock-contention finding arrived.
+
+This is the same category error as D6, one level up: **the key identifies the component a finding is
+about, not the finding.** Two different defects in the same component are treated as the same
+finding — the key is a designator of the subject, not of the claim, so it cannot rigidly pick out
+what it is used to identify (`BARCAN-TAG-02_RIGID-DESIGNATOR`).
+
+It also negates most of F68's value. Making the factory backlog readable achieves little while the
+backlog can only ever show its most recent entry.
+
+**Not fixed yet.** The dedupe key is shared with project-scope proposals, where collapsing repeated
+`ROLE_QUALITY_DRIFT` reports for one role is plausibly intentional. Changing the key globally would
+change what the existing dashboard shows. The impact must be measured before the key is touched —
+specifically, how many currently-hidden proposals would become visible, and whether any category
+relies on the collapse.
