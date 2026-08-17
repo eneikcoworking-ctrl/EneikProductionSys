@@ -527,3 +527,109 @@ noise defect. The margin is wider than the argument needed.
 An incidental fact worth recording, because it reframes several earlier observations: the entire
 factory currently has **one** active project. Every "the board is unchanged" reading in the
 observation log describes the whole factory's work in flight, not one project's share of it.
+
+---
+
+## 10. Stage 3 — the producer already exists, works, and is unreadable
+
+Stage 3 was specified as "build an infrastructure evidence producer". Reading the code before writing
+any showed that would have duplicated existing machinery. **`FactorySelfHealthService` already is
+that producer**, and it is correct in every respect this plan asked for:
+
+- cron `0 40 * * * ?`, hourly, watching the factory itself rather than the products it builds
+- measures the orchestrator's own database: file size, live data, bloat ratio
+- escalates through `recordSystemicDefectProposal(null, "Global", …)` — factory scope, done properly
+- `SYSTEMIC_DEFECT`, `expectedGainPercent = 0`, review-only, with the boundary stated in its own
+  javadoc: *"Detecting a problem in oneself does not license repairing oneself."*
+- deduplicates on `lastReportedAssessment` so a persistent condition yields one finding, not one per hour
+
+Its javadoc already names the defect this plan calls D4, and was written to close it: *"This service
+detected the factory's own ill health and wrote log.warn — which is the shape of a closed loop with
+the closure missing, because nothing reads logs autonomously."*
+
+### It ran, and it was right
+
+```
+2026-08-17T09:40:34.021Z  WARN  FactorySelfHealth: database file is 573 MB holding only 59 MB of
+    live data (9.6x bloat) - the store is not reclaiming freed space, which happens when it is
+    killed instead of closed; a clean shutdown compacts it
+```
+
+Measured independently: 585 MB inside the container, `sizeWarnMb = 512` (no override), so
+`tooBig = true` and `healthy = false` — the service is firing exactly as designed. Its diagnosis is
+also correct in substance: the store is repeatedly killed rather than closed (Docker Desktop stopped;
+containers exited 255; `compose up` after each), which is precisely the condition it describes.
+
+### F68 (NEW, factory) — factory-scope findings are recorded successfully and cannot be read by anyone
+
+The escalation succeeded. The log proves it:
+
+```
+09:40:34.108Z  [KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal
+               'kz-systemic-a819306c-…' from project null: Factory self-health
+```
+
+That proposal appears in **neither** `/api/kaizen/opportunities` **nor** `/api/kaizen/history`. Both
+route through:
+
+```java
+public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
+    if (projectId == null) {
+        projectId = sixSigmaAuditService.getActiveProjectId();   // substitution on READ
+    }
+    final UUID targetPid = projectId;
+    Collection<KaizenProposal> projectProposals = (targetPid == null)
+            ? allProposals()
+            : allProposals().stream().filter(p -> Objects.equals(p.getProjectId(), targetPid)).toList();
+```
+
+Asking for *all* proposals substitutes the *active* project and then filters to exactly it.
+`Objects.equals(null, <active-project-uuid>)` is false, so every factory-scope proposal is filtered
+out. They become visible only when there is no active project at all — that is, only when the factory
+is idle.
+
+Live confirmation of both halves, same hour:
+
+```
+09:20:32Z  proposal recorded from project 41af381d…  -> visible in the API
+09:40:34Z  proposal recorded from project null       -> stored, invisible in both endpoints
+```
+
+**The factory diagnoses itself correctly, records the diagnosis correctly, and no reader — human or
+Gemini — can retrieve it.** The closure the service's javadoc set out to add is still missing, one
+layer further along than where it was fixed.
+
+### Correction to F67
+
+F67 claimed the substitution was on the **write** path at `KaizenService` lines 120/211. That was
+wrong: those lines are inside `recordUnderTheHoodDefects`, a different method (silent telemetry), and
+`recordSystemicDefectProposal` does not substitute at all — it passes `projectId` through and handles
+null explicitly as `"Global"`. The falsifier declared with F67 is what caught this.
+
+F67 splits:
+
+- **F67 (stands, factory):** `GeminiProjectObserverService:551` calls
+  `recordSystemicDefectProposal(project.getId(), project.getName(), …)` unconditionally, so a finding
+  the observer herself typed as platform-scope is filed under a client project. `FactorySelfHealthService:108`
+  proves the correct call shape exists — `(null, "Global")`.
+- **F68 (new, above):** correctly-stored factory-scope findings are unreadable.
+
+The two compound: findings that *should* be factory-scope are given a project (F67), and those that
+*are* factory-scope cannot be read (F68). Between them the factory has no legible backlog of its own
+in either direction.
+
+### Stage 3 respecified
+
+Not "build a producer". The producer exists and works. Stage 3 is now:
+
+1. **Make factory-scope proposals retrievable.** The read substitution treats "no project specified"
+   as "the active project", which silently converts a request for everything into a request for one
+   thing. Factory scope needs to be expressible in the query rather than colliding with the null case.
+2. **Stop discarding the observer's own type judgement** (F67) — she already writes `(platform)` and
+   `targetComponent = EneikProductionSys`.
+3. **Only then** consider new evidence kinds, and only for facts `FactorySelfHealthService` does not
+   already cover. Its current scope is the database; the lock timeouts (F64) and the endpoint contract
+   (F66) are not covered and remain candidates.
+
+Entry mode unchanged: `observe_only`. Nothing here changes what the factory does — only what can be
+seen of what it already does.
