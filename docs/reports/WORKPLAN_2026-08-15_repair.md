@@ -2635,3 +2635,56 @@ the non-reconciliation from 21:18Z). Readiness 0.833, `falsificationEligible fal
 `decomposing`. Denial poll at 6 each per thread, all citing `DECOMPOSING`. Zero design/Stitch lines
 since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6
 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-17 01:18Z — test-forty-ninth
+
+### The nudge-to-death cycle has begun a THIRD time, on a third task
+
+```
+01:12:10Z  first Forced stale-revising unblock to sessions/17454916506787164653
+01:15:52Z  01:16:52Z  01:17:51Z  01:18:52Z   — 60-second interval, no backoff
+7 nudges in the 35-minute window so far
+```
+
+Target is `1e169d70 Build Pipeline Ebfba197`, `claimed` since ~23:45 and alive as recently as
+00:35:43 ("Extended lease … because Jules session is still active"). Same 60-second cadence from the
+first message as the second instance, i.e. no backoff applied here either.
+
+Alongside it the system's own detector is escalating at ERROR:
+
+```
+01:18:51Z ERROR  SYSTEM STALLED: no forward progress (dispatch/merge) for 67 minutes with actionable
+                 work present: queuedTasks=0, pendingOrCompilingWishlists=0,
+                 activeNonTerminalTasks=1, reviewTasksWithPr=0.
+```
+
+23 of those in 35 minutes, plus 23 of the milder Branch-GC variant.
+
+Three tasks in roughly nine hours — `b50a4511` (19:08), `f42e448c` (23:33), now `1e169d70` — have
+entered the identical sequence. The first two both ended the same way: circuit breaker closes the
+session on `stuck_session_timeout`, `ProjectFlowService` retires the task without recovery work, and
+`failed` increments permanently. I am **not** asserting this one ends the same way; that is exactly
+the forecast-from-snapshot error I made three times yesterday. What is established is that the
+sequence has started for a third time and that the configured budget
+(`jules.forced-unblock-max-attempts` = 2) is again not constraining it.
+
+At three occurrences this is no longer an incident but the project's normal failure path, and it is
+worth stating plainly: **on this project, a Jules session that goes stale is nudged roughly sixty
+times and then killed.** F43 is not fixed.
+
+### Board unchanged
+
+```
+00:48Z  queued 0 · claimed 1 · done 38 · failed 4   merged 25/26  features 5/6 = 0.833
+01:18Z  identical in every field
+```
+
+All six wishlist source counts identical. Zero connection leaks, zero lock timeouts, zero auditor
+lines (expected under F62 — the two outstanding failures have surviving siblings and so produce no
+orphan evidence).
+
+### Unchanged
+
+`failed` 4, readiness 0.833, `falsificationEligible false`, status `decomposing`. Zero design/Stitch
+lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All
+6 epics still `kanoClass: null`.
