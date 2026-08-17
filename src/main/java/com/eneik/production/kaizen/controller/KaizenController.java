@@ -30,6 +30,26 @@ public class KaizenController {
         return ResponseEntity.ok(open);
     }
 
+    /**
+     * Open findings about the FACTORY itself, as distinct from findings about any client project.
+     *
+     * A separate route rather than a scope parameter on /opportunities, because factory and project
+     * are different types and the standing rule is that factory, value-delivery and product problems
+     * are never mixed on one surface.
+     *
+     * Closes F68 (SYSTEMIC_REPAIR_PLAN_2026-08-17): factory-scope proposals are stored with a null
+     * projectId, and /opportunities substitutes the active project for a null query before filtering,
+     * so they were retrievable only while no project was active. This is the first surface on which
+     * the question "what is wrong with the factory" can be asked at all.
+     */
+    @GetMapping("/factory")
+    public ResponseEntity<List<KaizenProposal>> getFactoryOpportunities() {
+        List<KaizenProposal> open = kaizenService.getFactoryProposals().stream()
+                .filter(p -> p.getStatus() == KaizenProposal.ProposalStatus.PROPOSED)
+                .toList();
+        return ResponseEntity.ok(open);
+    }
+
     @GetMapping("/history")
     public ResponseEntity<Collection<KaizenProposal>> getHistory(@RequestParam(name = "projectId", required = false) java.util.UUID projectId) {
         return ResponseEntity.ok(kaizenService.getProposalsForProject(projectId));

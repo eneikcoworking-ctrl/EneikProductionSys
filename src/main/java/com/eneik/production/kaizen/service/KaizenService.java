@@ -655,6 +655,30 @@ public class KaizenService {
         return getDeduplicatedProposals(allProposals());
     }
 
+    /**
+     * Findings about the FACTORY itself - the ones stored with no projectId, because a defect in the
+     * orchestrator's own code or configuration belongs to no client project.
+     *
+     * Deliberately a separate accessor rather than a flag on {@link #getProposalsForProject}: factory
+     * scope and project scope are different types, and the operator's standing rule is that factory,
+     * value-delivery and product problems are never mixed. A parameter would imply they are the same
+     * kind of thing filtered differently.
+     *
+     * Why this was needed (measured 2026-08-17, SYSTEMIC_REPAIR_PLAN_2026-08-17 F68):
+     * getProposalsForProject substitutes the ACTIVE project when asked for null and then filters to
+     * exactly it, so Objects.equals(null, activeProjectId) is false and every factory-scope proposal is
+     * silently removed from both /opportunities and /history. They were reachable only while no project
+     * was active - i.e. only while the factory was idle. FactorySelfHealthService had correctly measured
+     * the orchestrator's own database at 573 MB holding 59 MB of live data (9.6x bloat), correctly
+     * escalated it via recordSystemicDefectProposal(null, "Global", ...), and the proposal was recorded
+     * successfully - and no reader, human or agent, could retrieve it. The service's own javadoc calls
+     * that shape "a closed loop with the closure missing"; the closure was missing one layer further on.
+     */
+    public Collection<KaizenProposal> getFactoryProposals() {
+        return getDeduplicatedProposals(
+                allProposals().stream().filter(p -> p.getProjectId() == null).toList());
+    }
+
     public Collection<KaizenProposal> getProposalsForProject(UUID projectId) {
         if (projectId == null) {
             projectId = sixSigmaAuditService.getActiveProjectId();
