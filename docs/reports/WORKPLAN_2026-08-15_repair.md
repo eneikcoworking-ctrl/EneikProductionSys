@@ -2534,3 +2534,63 @@ received a recovery task — F62's orphan-only evidence predicate still leaves t
 Zero connection leaks, zero lock timeouts, zero `SYSTEM STALLED` lines this window. Zero design/Stitch
 lines since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All
 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-17 00:18Z — test-forty-ninth
+
+### F62 CONFIRMED PREDICTIVELY — the orphan predicate behaved exactly as derived from the code
+
+At 22:18Z I read `gatherAllEvidence` and stated: a failed task is recovered **only** when every task
+derived from its wishlist failed, making that wishlist an orphan. `f42e448c Build Pipeline 115f4b3f`
+died at 23:33:56. The next auditor sweep:
+
+```
+00:00:17.638Z  OpsAuditorService: dismissed orphaned wishlist 115f4b3f
+00:00:17.663Z  OpsAuditorService: created recovery task db0430a3-1f68-…
+```
+
+`115f4b3f` is precisely the wishlist id carried in the dead task's title. Orphan detected → evidence
+produced → recovery created, 26 minutes after retirement, i.e. on the next 30-minute sweep. The
+recovery task `Recovery Build Pipeline` is already `done` (`done 37 -> 38`).
+
+This is the same shape as `b50a4511`/`77380b22` at 19:30–20:00, and it is now a prediction that held
+rather than a pattern read backwards off two samples. F62 stands as the established mechanism.
+
+The two failures that do **not** orphan their wishlists remain untouched for a second consecutive
+cycle:
+
+```
+ab74be69  UI Slice 1559c9b0     — failed all day, siblings survived, no evidence, no recovery
+36651896  Data Schema 7dd76d5f  — failed all day, siblings survived, no evidence, no recovery
+```
+
+Two auditor sweeps have now run while these sat there, and both spent their action on the
+freshly-orphaned wishlist instead. The coverage gap is not a queueing delay — those two are not
+candidates at all.
+
+### The retire-recover cycle is metric-neutral and self-sustaining
+
+```
+23:48Z  done 37 · failed 4   totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+00:18Z  done 38 · failed 4   totalPlanned 26  merged 25  ratio 0.9615  features 5/6 = 0.833
+```
+
+A task died, a replacement was built and merged, `done` rose by one, and **not one readiness figure
+moved**. The original `Build Pipeline 115f4b3f` is still counted among the four failures even though
+its replacement shipped — the same non-reconciliation recorded at 21:18Z for `b50a4511`.
+
+So the factory can run this loop indefinitely: task stales → ~60 nudges → circuit breaker → retire →
+orphan → recovery task → merged → `done` +1 → readiness unchanged → `failed` +1 permanently. It is
+productive in code terms and inert in metric terms.
+
+### Board
+
+`claimed` is 1 — `1e169d70 Build Pipeline Ebfba197`, claimed since ~23:45, **zero nudges against its
+session so far**, so it is not yet on the stale path. `queued` 0, `review` 0. `failed` 4. All six
+wishlist source counts identical (`gemini_observer` 17, `coverage_gap` 12, `client` 19,
+`design_system_falsification` 3, `self_falsification` 2, `role` 1).
+
+### Unchanged
+
+Readiness 0.833, `falsificationEligible false`, status `decomposing`. Zero connection leaks, lock
+timeouts or `SYSTEM STALLED` lines this window. Zero design/Stitch lines since 16:00:06Z. Design shop
+(1.0) and philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
