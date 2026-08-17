@@ -1109,3 +1109,80 @@ deployment of code that was never built.
 Same class as the earlier `docker ps` trap: a failed step upstream produces output downstream that
 looks like success. Added to `WATCH_PROTOCOL.md`'s falsifier set in spirit — **a build's exit code is
 the authority on whether an image changed; a health check is not.**
+
+## 15. F66 RETRACTED — it was my measurement error, not a defect
+
+`GET /api/projects/{id}/recent-activity` returns:
+
+```
+keys: ['projectId', 'lines']
+lines: 100
+```
+
+One hundred lines, correctly. It is an in-memory `LogScopeBuffer`, not a database query. My original
+check parsed the response for `activities` / `content` / `events`, found none of them, and I recorded
+"an endpoint that answers 200 with an empty set" as a finding.
+
+The endpoint was never broken. **I measured it wrongly**, and — the part worth recording — I did so in
+the same batch of findings where I diagnosed F64 as *"measured in a source that does not carry the
+signal"*. I committed the error I was in the act of naming.
+
+Added to the corrections register (§1.1):
+
+| My claim | What was true | The error |
+| --- | --- | --- |
+| "F66: `/recent-activity` returns 200 with 0 items" | It returns 100 lines under the key `lines` | Parsed for keys the endpoint does not use, then reported absence as a defect |
+
+Consequence for Stage 3: the remaining producer list is now **empty**. F64 is done and F66 does not
+exist. Stage 3 is complete apart from D6, which needs a migration and is the operator's decision.
+
+## 16. Where the project actually moves — measured, not inferred
+
+Asked directly: which part of this plan moves the project. The honest answer required a measurement,
+and it is not flattering to the plan.
+
+```
+completeFeatures       5 / 6
+mergedPlannedTasks     25 / 26
+openWishlistCount      0
+blockedItems           1  ->  Runtime Contract 8becdc01 | done_not_reached_main
+falsificationEligible  false   (threshold 0.9, readiness 0.833)
+```
+
+**The project is one item short on both axes.** Not five - the five `failed` tasks are not what holds
+it. One task, and it is not failed:
+
+```
+id                  f163e834-dbc7-46cf-8f1e-163f97bf17c6
+title               Runtime Contract 8becdc01
+status              done
+role                BARCAN-TAG-01
+featureId           null
+julesSessionName    null
+julesDispatchStatus null
+```
+
+A task marked `done` that **was never dispatched** - no Jules session, no dispatch status, no PR, no
+feature. It reports completion and has no evidence of any work at all. `done_not_reached_main` is the
+readiness invariant catching precisely that, and it has been the single blocked item since
+2026-08-16.
+
+### The answer to the question
+
+**No stage of this plan moves the project.** Stages 1-3 repair the factory's knowledge of itself:
+what it can measure, what it can read, what it can distinguish. That work is real - four defects
+closed today, all verified live - and none of it dispatches a task.
+
+What moves this project is resolving `f163e834`. At 5/6 features, completing the sixth takes readiness
+to 1.0, which is the threshold the design shop waits on and above the 0.9 the philosophical track
+waits on. **One item stands between this project and both gates opening.**
+
+That reframes the plan honestly rather than changing its goal. The goal is unchanged: a flow without
+category errors and a production mechanism that does not fail silently. `f163e834` is an instance of
+exactly that goal - a task asserting `done` with no evidence is the substitutivity error the corpus
+forbids, `task done` standing in for `value delivered`. It is the goal's own test case, sitting in the
+live project.
+
+**Not yet established:** whether `f163e834` is the task holding the sixth feature incomplete. It has
+`featureId: null`, so it cannot be attached to any feature, and the relation between it and the
+missing feature is unmeasured. That measurement comes before any action on it.
