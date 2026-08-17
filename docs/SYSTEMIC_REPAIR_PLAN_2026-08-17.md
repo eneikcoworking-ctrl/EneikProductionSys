@@ -1081,3 +1081,31 @@ backlog can only ever show its most recent entry.
 change what the existing dashboard shows. The impact must be measured before the key is touched —
 specifically, how many currently-hidden proposals would become visible, and whether any category
 relies on the collapse.
+
+### F69 closed — live verification 17:40Z
+
+```
+GET /api/kaizen/factory  -> 3 findings
+
+  EneikProductionSys                   Gemini observer (platform): Systemic platform-level desync…
+  EneikProductionSys/database-storage  Factory self-health: the orchestrator's own database is unhealthy
+  EneikProductionSys/database-locks    Factory self-health: lock contention on the orchestrator's own …
+```
+
+Three distinct factory findings coexist where the backlog previously held exactly one. The observer's
+platform finding, which had been displaced twice, is present again alongside both self-health
+findings.
+
+The dedupe key was not touched. Only the designator changed, and only for callers that know what
+their finding is about.
+
+### A deployment trap worth recording
+
+The first build of this fix returned `BUILD_EXIT=1` (the WSL bridge died mid-build), and the same
+command then printed `backend UP` — because `docker compose up -d` started the **previous** image and
+the health check passed against it. Reading the last line would have meant reporting a successful
+deployment of code that was never built.
+
+Same class as the earlier `docker ps` trap: a failed step upstream produces output downstream that
+looks like success. Added to `WATCH_PROTOCOL.md`'s falsifier set in spirit — **a build's exit code is
+the authority on whether an image changed; a health check is not.**
