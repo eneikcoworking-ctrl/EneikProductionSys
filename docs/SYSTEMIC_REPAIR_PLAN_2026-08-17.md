@@ -500,3 +500,30 @@ Type: **factory**. Entry mode: `observe_only` — surface the contradiction betw
 and `projectId` before changing either. Falsifier: if `getActiveProjectId()` is null in production so
 the substitution never fires, then the observed attribution came from the caller and the defect is
 elsewhere — this must be measured before any repair.
+
+---
+
+## 9. Stage 2 — live confirmation, 2026-08-17
+
+The first sweep on the new build declared its outcome:
+
+```
+2026-08-17T09:30:02.146Z  INFO [PROJECT:41af381d-…]  OpsAuditorService: project test-forty-ninth -
+    swept, 0 evidence item(s) from gatherers
+    [orphaned_wishlist_behind_failed_task, orphaned_dependency_chain]; ABSTAIN - no decision requested
+```
+
+Before this change the same sweep produced nothing at all. Two consecutive sweeps on 2026-08-16
+(20:30, 21:00) were silent while three terminally failed tasks sat in the project, and the service's
+liveness could not be established from outside by any means.
+
+**Success condition met:** an empty sweep is now distinguishable from an absent sweep.
+
+Volume, measured rather than estimated: `runAuditCycle` iterates only `ProjectStatus.active`
+projects, and of 22 projects exactly one is active (12 `frozen`, 7 `accepted`, 2 `waiting`). So the
+declaration costs **two lines per hour**, not the ~44 I assumed when weighing it against the F56
+noise defect. The margin is wider than the argument needed.
+
+An incidental fact worth recording, because it reframes several earlier observations: the entire
+factory currently has **one** active project. Every "the board is unchanged" reading in the
+observation log describes the whole factory's work in flight, not one project's share of it.
