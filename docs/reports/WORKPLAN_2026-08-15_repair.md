@@ -2594,3 +2594,44 @@ wishlist source counts identical (`gemini_observer` 17, `coverage_gap` 12, `clie
 Readiness 0.833, `falsificationEligible false`, status `decomposing`. Zero connection leaks, lock
 timeouts or `SYSTEM STALLED` lines this window. Zero design/Stitch lines since 16:00:06Z. Design shop
 (1.0) and philosophical falsification (0.9) correctly silent. All 6 epics still `kanoClass: null`.
+
+## Watch pass 2026-08-17 00:48Z — test-forty-ninth — quiet, nothing new
+
+```
+00:18Z  queued 0 · claimed 1 · review 0 · done 38 · failed 4   totalPlanned 26  merged 25  features 5/6 = 0.833
+00:48Z  identical in every field
+```
+
+All six wishlist source counts identical. No new tasks. Zero forced nudges, zero `SYSTEM STALLED`
+lines, zero connection leaks, zero lock timeouts.
+
+`1e169d70 Build Pipeline Ebfba197` has been `claimed` for about an hour and is alive:
+
+```
+00:35:43Z  ClaimService: Maintenance: Extended lease for task 1e169d70-b05f-45bb-a875-972810cd285d
+           because Jules session is still active
+```
+
+This is the same signature `b50a4511` showed before it went stale, and I am recording it as a present
+fact only. A live session is evidence of work now, not a forecast of how it ends — the lesson from
+17:48Z.
+
+### The auditor's silence is now explained rather than open
+
+Zero `OpsAuditorService` lines this window, and under F62 that is the expected result, not an
+anomaly: the only two outstanding failures (`ab74be69 UI Slice 1559c9b0`, `36651896 Data Schema
+7dd76d5f`) have surviving siblings, so their wishlists are not orphans, so `gatherAllEvidence`
+returns empty and `auditProject` exits at its silent branch. Nothing else on this project currently
+produces evidence.
+
+That closes the F61 line of enquiry entirely: the auditor is enabled (`ops_auditor_enabled`,
+source `database`), it sweeps, and it correctly finds nothing — because its evidence predicate does
+not cover the two failures that remain. The defect is F62's coverage gap, not the auditor's liveness.
+
+### Unchanged
+
+`failed` 4 (`Build Pipeline 115f4b3f` still listed despite `Recovery Build Pipeline` having merged —
+the non-reconciliation from 21:18Z). Readiness 0.833, `falsificationEligible false`, status
+`decomposing`. Denial poll at 6 each per thread, all citing `DECOMPOSING`. Zero design/Stitch lines
+since 16:00:06Z. Design shop (1.0) and philosophical falsification (0.9) correctly silent. All 6
+epics still `kanoClass: null`.
