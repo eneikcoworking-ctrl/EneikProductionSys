@@ -633,3 +633,42 @@ Not "build a producer". The producer exists and works. Stage 3 is now:
 
 Entry mode unchanged: `observe_only`. Nothing here changes what the factory does — only what can be
 seen of what it already does.
+
+### F68 closed — live verification, 2026-08-17 10:40Z
+
+```
+GET /api/kaizen/factory        -> 200, 1 finding
+    SYSTEMIC_DEFECT | Global | "Factory self-health: the orchestrator's own database is unhealthy"
+
+GET /api/kaizen/opportunities  -> 4 findings, unchanged
+```
+
+The finding recorded at 09:40:34 — the one that existed in the system and could be retrieved by
+nobody — is now readable. The existing project-scope endpoint returns exactly what it returned
+before, so nothing that consumed it changed behaviour.
+
+Incidentally established: proposals survive a restart. The 09:40 finding was still present after the
+10:40 redeploy, so this is durable state, not an in-memory list.
+
+**The factory now has a backlog of its own.** Its first entry is a real, correct, previously
+unreachable diagnosis: the orchestrator's database is 573 MB holding 59 MB of live data, 9.6x bloat,
+because the store is repeatedly killed rather than closed. That is a factory problem, not a
+value-delivery problem and not a product problem, and it is now filed as one.
+
+### What remains in Stage 3
+
+1. **F67** — `GeminiProjectObserverService:551` still passes `project.getId()` unconditionally, so a
+   finding the observer types as platform-scope is filed under a client project. The correct call
+   shape exists two files away (`FactorySelfHealthService:108` → `(null, "Global")`). Now that a
+   factory surface exists to receive them, this is worth doing; before, it would have moved findings
+   from one unreadable place to another.
+2. **The observer still cannot see factory-scope evidence.** `readRecentEvidenceNodes` calls
+   `findByProjectIdAndCreatedAtAfter(project.getId(), …)`, and `writeEvidenceNode` copies the
+   proposal's null projectId onto the node, so factory evidence nodes match no project query. Fixing
+   this is **not** a matter of feeding them into her project sweep — that would mix types and, per §7,
+   make corroboration across type boundaries possible, which is a category error. It needs her to be
+   able to reason about the factory *as the factory*. Design question, not yet specified.
+3. **Uncovered facts** — `FactorySelfHealthService` watches the database only. Lock timeouts (F64) and
+   the endpoint contract violation (F66) have no producer. These are the only genuinely new evidence
+   kinds Stage 3 still needs, and they are far fewer than the six proposed in §3 before the code was
+   read.
