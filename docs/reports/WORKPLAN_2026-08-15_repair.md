@@ -2897,3 +2897,80 @@ in the flow. The substantive open items, in the order I would fix them:
 4. **F59** — retiring a planned task raises readiness by shrinking the denominator.
 5. **F63** — hourly job that has never succeeded.
 6. The evidence-source gap above, which is what would have surfaced 3 and 5 without me.
+
+## F65 investigated 2026-08-17 22:15Z — the growth is not data, and compaction is not absent
+
+### What is measured
+
+Live data against file size, from the factory's own self-health measurements plus direct sampling:
+
+```
+09:40Z   573 MB file   59 MB live    9.6x
+16:40Z   784 MB file   60 MB live   12.9x
+19:00Z   892 MB file   (backup taken)
+22:11Z  1278 MB file
+```
+
+`dL/dt ≈ 0.14 MB/h` against `dF/dt ≈ 46 MB/h`. **The file grows roughly 330x faster than the data it
+holds.** Whatever is consuming disk, it is not rows.
+
+### The file does not grow monotonically — it saws
+
+Sampled every 25 s:
+
+```
+22:11:06  1277.8
+22:11:31  1322.5    +44.7
+22:11:56  1322.5
+22:12:21  1322.5
+22:12:46  1322.5    flat for ~2 min
+22:13:12  1322.5
+22:13:37  1307.4    -15.1
+22:14:02  1000.5    -306.9   <- a single large reclaim
+22:14:27  1121.0   +120.5
+22:14:52  1121.0
+```
+
+**Background compaction is working.** It reclaimed 307 MB in one step. So the earlier framing —
+"the store is not reclaiming freed space" — is incomplete: it reclaims, and then the file grows
+straight back.
+
+That shape matters. If application writes were the cause, the file would climb monotonically between
+reclaims. Instead growth arrives in bursts immediately around the reclaims, which is the signature of
+**compaction writing its own new chunks** — the reclaim process paying a write cost that produces
+fresh garbage.
+
+### The candidate that is ruled out
+
+`ProjectAuditPipelineService` runs every ~55 s (22:14:34, 22:15:29 …), a full COVERAGE + STITCH_DESIGN
+pipeline on a project with zero tasks in flight — a strong suspect for heavy writes. It is **not** the
+writer: the class contains **zero** `save(` or `saveAll(` calls. Ruled out by inspection, not by
+argument.
+
+### The shape of the defect, stated mathematically
+
+Let `L` be live bytes, `F` file bytes, `G = F − L` garbage bytes. Compaction is a process that
+decreases `G` but is itself a writer, so each pass adds `w > 0` to `F`. The system is stable when the
+reclaim per unit time exceeds `w`; here it settles into an equilibrium around 1.1–1.3 GB instead of
+converging toward `L ≈ 60 MB`.
+
+The fill rate is the reason: `L/F ≈ 60/1300 ≈ 4.6%`. MVStore compacts toward a target fill rate and
+moves a bounded amount per pass, so from 4.6% the target is unreachable in bounded steps — the process
+runs continuously, pays its write cost continuously, and never terminates. **A reclaim loop whose
+measure decreases but whose own by-product replenishes it at a comparable rate has no termination
+proof**, which is defect D2's shape applied to storage rather than to retries.
+
+### What this predicts, and what has not been established
+
+If the analysis holds, a single full compaction restores a high fill rate, after which background
+compaction becomes cheap and terminating — which is exactly what the 2026-08-16 compaction did
+(549 MB → 91 MB, row counts identical). That compaction was therefore **not** symptomatic treatment,
+as recorded earlier in this log; it restored the precondition under which the reclaim process
+terminates. That earlier characterisation is withdrawn.
+
+**Not established:** why the file was 892 MB before the 21:55Z restart and 1121 MB after, when
+`stop_grace_period: 90s` exists precisely so H2 can close and compact. A clean close should have
+reduced it. Two candidates, neither measured: the close-time compaction is time-bounded and
+accomplishes little on a 4.6%-full 1.3 GB file, or the close is not actually clean despite the grace
+period. **Distinguishing these is the next measurement, and it must come before any change** — the
+correct repair differs completely between them.
