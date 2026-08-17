@@ -29,7 +29,15 @@ public class OperationalRealityFindingEntity {
     @Column(name = "task_id", nullable = false)
     private UUID taskId;
 
-    @Column(name = "jules_session_id", nullable = false)
+    /**
+     * The session whose self-reported status disagreed with reality, when the disagreement was found that
+     * way. Nullable since V103: a session is one KIND of record, not the essence of the claim. The claim is
+     * that the record disagrees with reality, and a task can assert `done` having never been dispatched at
+     * all - no session, no PR, no work - which is the shape of the live blocking instance f163e834
+     * "Runtime Contract 8becdc01" that no producer in the factory could express while this column was
+     * NOT NULL. Requiring it made a property of the detector into a property of the fact.
+     */
+    @Column(name = "jules_session_id")
     private UUID julesSessionId;
 
     @Column(name = "expected_status", nullable = false, length = 32)
