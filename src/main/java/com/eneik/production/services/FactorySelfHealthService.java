@@ -48,6 +48,12 @@ public class FactorySelfHealthService {
      */
     private volatile String lastReportedAssessment;
 
+    /**
+     * High-water mark of lock timeouts already reported (F64). Negative means nothing observed yet, which
+     * is distinguishable from zero observed - the Barcan distinction between undecided and decided-empty.
+     */
+    private volatile long lastReportedLockTimeoutCount = -1L;
+
     @Value("${factory-self-health.db-file:./data/eneik_db.mv.db}")
     private String databaseFile;
 
@@ -80,6 +86,86 @@ public class FactorySelfHealthService {
         } catch (Exception e) {
             // Self-monitoring must never be the thing that breaks the system it monitors.
             log.debug("FactorySelfHealth: could not assess database health: {}", e.getMessage());
+        }
+        reportLockContention();
+    }
+
+    /**
+     * Lock contention on the factory's own store (F64).
+     *
+     * Deliberately called from the scheduled path and NOT from {@link #inspect()}: inspect() is on
+     * InfrastructureVerdictLayer's path to GET /api/projects/{id}/verdict, and F40 already measured what
+     * happens when that path does slow I/O - 68.9 s on an idle system. Reading a growing trace file there
+     * would repeat exactly the defect this class documents about itself.
+     *
+     * Why the trace file rather than SQL: H2 reports a lock timeout by throwing to the caller and writing
+     * the exception to <db>.trace.db. Nothing else records it. Measured 2026-08-17: 21 timeouts - 17 on
+     * PROJECTS, 2 on ACCOUNTS, 1 each on WISHLIST and CLAIMS - none of which appeared in the application
+     * log, on any dashboard, or in any evidence node. Every watch pass that reported "zero lock timeouts"
+     * had measured a source that does not carry the signal.
+     *
+     * The count is a monotone high-water mark (Charter invariant 7): the trace file only ever grows within
+     * a run, so reporting on an increase - rather than on presence - means a standing condition produces
+     * one finding, not one per hour. The first observation after start reports the standing total, because
+     * a backlog that exists is a fact about now, not history: silently baselining it would be the referent
+     * error of treating an old record as an absent condition.
+     */
+    private void reportLockContention() {
+        try {
+            long observed = countLockTimeouts();
+            if (observed <= 0 || observed == lastReportedLockTimeoutCount) {
+                return;
+            }
+            boolean first = lastReportedLockTimeoutCount < 0;
+            long delta = first ? observed : observed - lastReportedLockTimeoutCount;
+            if (delta <= 0) {
+                lastReportedLockTimeoutCount = observed;
+                return;
+            }
+            String assessment = String.format(
+                    "the orchestrator's own store recorded %d lock timeout(s)%s - concurrent transactions are "
+                            + "waiting on each other long enough to be abandoned, which surfaces to the caller as a "
+                            + "failed operation and nowhere else. Only %s carries this signal; it is absent from the "
+                            + "application log and from every dashboard",
+                    delta, first ? " (standing total at first observation)" : " since the last check",
+                    traceFilePath());
+            log.warn("FactorySelfHealth: {}", assessment);
+            escalateLockContention(assessment);
+            lastReportedLockTimeoutCount = observed;
+        } catch (Exception e) {
+            // Same rule as everywhere else in this class: self-monitoring never breaks what it monitors.
+            log.debug("FactorySelfHealth: could not assess lock contention: {}", e.getMessage());
+        }
+    }
+
+    private long countLockTimeouts() throws java.io.IOException {
+        Path trace = Paths.get(traceFilePath());
+        if (!Files.exists(trace)) {
+            return 0L;
+        }
+        try (java.util.stream.Stream<String> lines = Files.lines(trace, java.nio.charset.StandardCharsets.ISO_8859_1)) {
+            return lines.filter(l -> l.contains("Timeout trying to lock table")).count();
+        }
+    }
+
+    private String traceFilePath() {
+        return databaseFile.endsWith(".mv.db")
+                ? databaseFile.substring(0, databaseFile.length() - ".mv.db".length()) + ".trace.db"
+                : databaseFile + ".trace.db";
+    }
+
+    private void escalateLockContention(String assessment) {
+        if (kaizenService == null) {
+            return;
+        }
+        try {
+            kaizenService.recordSystemicDefectProposal(null, "Global",
+                    "Factory self-health: lock contention on the orchestrator's own database",
+                    assessment + " Detected by FactorySelfHealthService, which watches the factory itself "
+                            + "rather than the products it builds. Review-only: the factory's own "
+                            + "configuration is never changed automatically.");
+        } catch (Exception e) {
+            log.debug("FactorySelfHealth: could not record a lock-contention proposal: {}", e.getMessage());
         }
     }
 
