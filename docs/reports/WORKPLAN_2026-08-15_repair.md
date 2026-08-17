@@ -2815,3 +2815,85 @@ could not reconstruct the overnight sequence from the API and wrongly concluded 
 I wrote that the overnight sequence "cannot be reconstructed". That was wrong — it was a conclusion
 about the system drawn from the limits of the one source I happened to be using. The trace log covers
 01:40 through 05:40 continuously.
+
+## 2026-08-17 — why the observer could not have found F63–F66, and what to change
+
+### The cause is structural, not a failure of her reasoning
+
+Her entire input is an evidence snapshot plus `readRecentEvidenceNodes` — "the last 24h of evidence
+nodes from all 5 independent signal sources". Everything she can reason about must first exist as an
+`EvidenceNodeEntity`. The services that write those nodes are:
+
+```
+DefectJournalService · KaizenService · AutoMergeService · FalsificationCycleService
+```
+
+All four are **application-layer**. Nothing anywhere writes an evidence node for an infrastructure
+fact. There is no producer for:
+
+- an exception in the H2 trace log (F63 — 60 hourly failures over three days)
+- a lock timeout (F64 — 21, seventeen of them on `PROJECTS`)
+- database file growth (F65 — 91 MB → 553 MB in a day)
+- an endpoint answering 200 with an empty body (F66)
+
+So the observer is not failing to notice these. **They are not expressible in the only vocabulary she
+is given.** Asking her to find them is like asking someone to describe a colour absent from their
+palette. Her documented failure mode is the opposite one — over-claiming from the evidence she does
+have (F51: "nearly all done tasks" against 1 of 33, a nudge target that did not exist). She
+over-reads a narrow input rather than ignoring a wide one.
+
+This also explains why her only verified-good finding (22:48Z, the Flyway `IF NOT EXISTS`) came from
+`CODE_INTEGRITY_FINDING` — a source type that does exist.
+
+### The improvement: make infrastructure a first-class signal source, not a patch
+
+The system already has the machinery. `EvidenceNodeEntity.sourceType()` feeds a **distinct-sourceType
+corroboration count**, and `EvidenceCoherenceService` (Thagard ECHO / Gärdenfors AGM) already scores
+and reconciles nodes across sources. Adding a sixth source type therefore costs no new reasoning
+layer — it makes infrastructure facts citizens of the graph that already exists, and every downstream
+consumer (corroboration, coherence, her tools, the auditor) picks them up unchanged.
+
+Concretely, one new producer that emits evidence nodes for infrastructure facts:
+
+- scheduled-job outcomes, so a job that has never succeeded is a fact in the graph rather than a line
+  in a file nobody opens (F63)
+- database contention and growth as measured quantities (F64, F65)
+- endpoint contract violations — 200 with an empty set where the data plainly exists (F66)
+
+Two properties matter more than the list:
+
+**It must record the negative.** F63 is invisible precisely because a job failing produces nothing
+anywhere. A source that only emits on success cannot represent "never worked". This is the same F5
+shape as F60's human-review flag and the step-6 valueless-flag reporter I built myself — detection
+with no reader. The general rule the system keeps violating: *a signal with no consumer is not
+monitoring.*
+
+**It must not become another unread log.** The point is not to route the trace file into Gemini's
+prompt — that is a patch and it would drown her. The point is that an infrastructure fact should
+enter through the same predicate-and-corroboration path as every other fact, so it is subject to the
+same three-valued discipline: a job that has never succeeded is not ABSTAIN, it is a decided negative
+with a witness.
+
+### Related: the same predicate-coverage defect, twice
+
+F62 is the identical error one layer down — `OpsAuditorService.gatherAllEvidence` only builds
+orphan-shaped evidence, so a failed task with surviving siblings is permanently invisible to it. Two
+different components, same root cause: **the evidence predicate, not the reasoner, is the limit.**
+Any fix aimed at the reasoner (better prompts, more frequent sweeps, a stronger model) cannot reach
+either problem.
+
+### Plan status
+
+The plan is 2817 lines, findings F31–F66. Everything from F43 onward is **recorded and not
+implemented** — this watch has produced diagnosis only, per the standing instruction not to intervene
+in the flow. The substantive open items, in the order I would fix them:
+
+1. **F62** — auditor evidence predicate misses non-orphan failures. Two tasks
+   (`UI Slice 1559c9b0`, `Data Schema 7dd76d5f`) are permanently unrecoverable today because of it.
+2. **F43** — nudge-to-death: three tasks killed in nine hours, ~60 nudges each, configured budget of
+   2 not applying. Cause still not established; do not touch without measuring first.
+3. **F65** — database back to 553 MB, past the level that caused a real OOM crash. Cause never
+   identified; the compaction was symptomatic.
+4. **F59** — retiring a planned task raises readiness by shrinking the denominator.
+5. **F63** — hourly job that has never succeeded.
+6. The evidence-source gap above, which is what would have surfaced 3 and 5 without me.
