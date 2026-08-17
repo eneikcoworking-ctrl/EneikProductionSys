@@ -2752,3 +2752,66 @@ from any source, including the observer, which had been the only productive one.
 Under F62, `UI Slice 1559c9b0` and `Data Schema 7dd76d5f` remain permanently uncovered: their
 siblings survived, so their wishlists are not orphans and the auditor's evidence predicate never
 sees them.
+
+## 2026-08-17 — problems found in the H2 trace log, a source I had never checked
+
+The operator pointed out that the system keeps its own logs, not just Docker's. `data/eneik_db.trace.db`
+lives on the host mount and therefore survives container restarts — the overnight window I reported
+as unrecoverable was recoverable. Four problems, none of them previously reported.
+
+### F63 — a job has failed once an hour for three days, silently, on a case-sensitivity bug
+
+```
+2026-08-17 01:40:07Z jdbc[209]: exception
+org.h2.jdbc.JdbcSQLSyntaxErrorException: Table "FLYWAY_SCHEMA_HISTORY" not found
+    (candidates are: "flyway_schema_history"); SQL statement:
+CALL DISK_SPACE_USED(?) [42103-224]
+```
+
+**60 occurrences**, one per hour, unbroken: 1 on 2026-08-14, 24 on 08-15, 29 on 08-16, 6 so far on
+08-17. Identical every time — an uppercase table name passed to `DISK_SPACE_USED` against a database
+whose table is lowercase, and H2 says so in the error itself.
+
+Whatever this job measures has never once succeeded. It appears in no Docker log, no dashboard, no
+wishlist — three days of hourly failure with no reader, and it is still failing now. Same F5 shape as
+the human-review flag (F60): a signal exists and nothing consumes it.
+
+### F64 — I reported "zero lock timeouts" in every pass and was reading the wrong source
+
+The watch brief asks for `Timeout trying to lock`. I grepped Docker logs, found none, and wrote "zero
+lock timeouts" in pass after pass. They were in the trace log the whole time — **21 of them**:
+
+```
+17  Timeout trying to lock table "PROJECTS"
+ 2  Timeout trying to lock table "ACCOUNTS"
+ 1  Timeout trying to lock table "WISHLIST"
+ 1  Timeout trying to lock table "CLAIMS"
+```
+
+Spread across 08-15 (9) and 08-16 (12), the last at 2026-08-16 15:xx, none since. Every "zero lock
+timeouts" line in the passes above is void — the measurement was taken from a source that does not
+carry the signal. The contention is real and concentrated on `PROJECTS`.
+
+### F65 — the database has regrown 6× since the compaction, in under a day
+
+```
+2026-08-16  compacted to        91 MB   (row counts verified identical)
+2026-08-17  eneik_db.mv.db     553 MB
+```
+
+Six-fold growth in roughly 24 hours, back past the 549 MB that prompted the compaction in the first
+place. The compaction treated the symptom; whatever produces the volume was never identified, so the
+same H2 OOM risk that caused a real crash is rebuilding. The trace file is a further 11.2 MB.
+
+### F66 — `/recent-activity` returns nothing
+
+`GET /api/projects/{id}/recent-activity` returns HTTP 200 with **0 items** for a project that has 39
+done tasks, 5 failures and 54 wishlists. An endpoint that answers successfully with an empty set is
+worse than one that errors: it reads as "no activity" rather than "not wired up". It is also why I
+could not reconstruct the overnight sequence from the API and wrongly concluded it was lost.
+
+### Correction to the 07:10Z entry
+
+I wrote that the overnight sequence "cannot be reconstructed". That was wrong — it was a conclusion
+about the system drawn from the limits of the one source I happened to be using. The trace log covers
+01:40 through 05:40 continuously.
