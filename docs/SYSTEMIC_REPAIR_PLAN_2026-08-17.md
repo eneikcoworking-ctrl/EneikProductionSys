@@ -672,3 +672,43 @@ value-delivery problem and not a product problem, and it is now filed as one.
    the endpoint contract violation (F66) have no producer. These are the only genuinely new evidence
    kinds Stage 3 still needs, and they are far fewer than the six proposed in §3 before the code was
    read.
+
+### F67 closed — 2026-08-17 11:02Z
+
+`GeminiProjectObserverService` now files an **undisputed** platform finding with a null projectId and
+`"Global"`, the same call shape `FactorySelfHealthService:108` already used, so it lands on
+`GET /api/kaizen/factory` rather than under whichever client project surfaced it.
+
+The **disputed** branch is deliberately unchanged. There the observer self-reported `product` and only
+`PlatformSelfReferenceDetector` disagrees; filing it as factory scope would resolve a dispute this
+code is explicitly written not to resolve — Charter Pattern #12, *do not trust either side blind* —
+and the project is the context that makes the disagreement investigable at all. Scope correctness is
+not worth destroying an open question.
+
+The originating project moves into the description rather than being dropped, so the finding stays
+traceable to where its evidence was observed without being mis-typed.
+
+**A test asserted the old behaviour and failed.** `platformScopeFindingGoesToKaizenNeverBecomesAWishlist`
+verified `recordSystemicDefectProposal(eq(project.getId()), eq(project.getName()), …)`. That assertion
+encoded F67 itself. It was changed to `isNull(), eq("Global")` — and strengthened, so the fourth
+argument now asserts the originating project survives in the description instead of matching
+`anyString()`. The test's actual subject, stated in its own comment — that a platform finding never
+becomes a wishlist dispatched against the client's repo — is the
+`verify(wishlistRepository, never()).save(any())` line, which is untouched and still passing.
+
+Recording this explicitly because "the test failed so I changed the test" is the move that hides real
+regressions. The justification here is that the specification changed deliberately and is written
+down as F67; the test's own stated purpose did not.
+
+Verification: 23/23 in `GeminiProjectObserverServiceTest`; `mvn test-compile` exit 0; deployed at
+11:01:59Z; `GET /api/kaizen/factory` still returns the self-health finding.
+
+### Stage 3 status
+
+Done: F68 (factory findings retrievable), F67 (observer's platform findings filed at factory scope).
+
+Remaining, unchanged from the previous entry:
+- the observer still cannot **read** factory-scope evidence (`findByProjectIdAndCreatedAtAfter` never
+  matches a null projectId). Not a routing fix — it needs her to reason about the factory as the
+  factory, which is a design question, not yet specified.
+- lock timeouts (F64) and the endpoint contract violation (F66) still have no producer.
