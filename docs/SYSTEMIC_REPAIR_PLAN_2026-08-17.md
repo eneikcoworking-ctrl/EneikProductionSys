@@ -284,3 +284,79 @@ already load-bearing in this codebase's falsification track; it applies to this 
   given F64, is a live possibility and must be checked before implementing.
 
 Each falsifier is a measurement, not an argument.
+
+---
+
+## 6. Stages
+
+Staged so that each stage is independently valuable, independently revertible, and strictly less
+risky than the one after it. The project stays active throughout; no stage requires stopping the
+flow.
+
+### Stage 1 — Declare what is measured and who reads it *(no code)*
+
+Covers D5 operator half and D4. Deliverable: `WATCH_PROTOCOL.md` — a register of every proposition
+the watch rules on, its authoritative source, and its falsifier; plus a signal→reader register.
+
+Risk: none. Nothing executes. Revert: delete a document.
+
+**Status: DONE (2026-08-17).** Every source in the register was verified against the running system
+before entry. The register already carries seven falsifiers derived from real counter-examples,
+including the one that would have prevented the "zero lock timeouts" error.
+
+Byproduct, recorded in the protocol: the evidence graph was measured and D1 became quantitative —
+73 nodes across **three** sourceTypes where the observer's prompt declares five, 70% of them from a
+single source, `acceptedNodes` equal to `totalNodes`.
+
+### Stage 2 — Make silence decidable *(additive, `observe_only`)*
+
+Covers D5 machine half. The auditor emits a decided outcome for every sweep, including "swept, zero
+evidence". Today `auditProject` returns silently when `gatherAllEvidence` is empty, so from outside
+"swept and found nothing", "did not sweep" and "service stopped" are one indistinguishable state.
+
+Smallest possible change, purely additive, no behaviour altered. Chosen before Stage 3 because
+Stage 3's instrumentation is unreadable without it.
+
+Success condition: from outside, an empty sweep is distinguishable from an absent sweep.
+
+### Stage 3 — Infrastructure as a signal source *(additive, `observe_only`)*
+
+Covers D1. One producer emitting `EvidenceNodeEntity` rows with a new `sourceType` for infrastructure
+facts, entering the existing corroboration and coherence path rather than bypassing it. Vocabulary
+from §3, all at strength ≤ 4, negatives included.
+
+Success condition: an infrastructure fact appears in `readRecentEvidenceNodes` and raises the
+distinct-sourceType corroboration count of a node it corroborates.
+
+### Stage 4 — Measure the nudge divergence *(measurement only)*
+
+Covers D2. Instrument the persisted attempt counter and the backoff decision so that the observed
+interval and the stored count are both visible per session. **No change to the mechanism.**
+
+This stage deliberately produces no fix. The configured bound is 2 and ~60 messages were sent three
+times; the divergence is unexplained, and the one previous attempt to repair this mechanism on an
+unmeasured hypothesis added a duplicate `forced_unblock_attempts` column and broke the migration and
+every integration test. The measurement is the deliverable.
+
+Success condition: for a stale session, stored count and observed interval are both retrievable and
+mutually consistent — or their inconsistency is exhibited.
+
+### Stage 5 — Declared denominator *(`warn_only`)*
+
+Covers D3. Readiness declares its exclusion set explicitly; a retired-without-replacement task is not
+in it. Two published figures: delivered-over-required, and required-but-undelivered.
+
+Last because it touches the calculation `FlowSpineService` and `OperationalTruthService` derive
+client-facing status from, and because readiness gates self-falsification (0.9), the design shop
+(1.0) and the philosophical track. Entered at `warn_only`: warn when readiness rises with no merge
+event, before changing any number.
+
+Success condition: a retirement produces no upward movement in any readiness figure.
+
+### Not staged — pending measurement
+
+`OpsAuditorService` evidence-predicate coverage. The motivating finding (F62) is **retracted**: the
+second gatherer does not test siblings; the real gate is `isDependencySatisfied`, true when a task
+with the same role, `featureId` and `ems_semantic_key` has merged. Whether `ab74be69` and `36651896`
+are correctly satisfied by a semantic equivalent or falsely matched is unmeasured. The measurement
+precedes any repair and does not belong in a stage until it has been done.
