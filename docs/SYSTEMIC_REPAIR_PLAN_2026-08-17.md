@@ -1186,3 +1186,82 @@ live project.
 **Not yet established:** whether `f163e834` is the task holding the sixth feature incomplete. It has
 `featureId: null`, so it cannot be attached to any feature, and the relation between it and the
 missing feature is unmeasured. That measurement comes before any action on it.
+
+## 17. Correcting §16 — the plan does move the project, through D1
+
+§16 concluded "no stage of this plan moves the project". That was too literal an answer, and tracing
+the chain properly shows it is wrong.
+
+### Why Gemini cannot currently act on the blocking item
+
+```
+nodes in the evidence graph naming f163e834 / 8becdc01   0
+OPERATIONAL_REALITY_FINDING nodes                        7
+   all of the form "Session <id> status disagreed with real GitHub PR state for task <id>"
+```
+
+The blocking task has `julesSessionName: null` — it never had a session. The operational-reality
+detector compares a session's status against GitHub's PR state, so for this task there is nothing to
+compare and it can never emit. And `OpsAuditorService` only gathers evidence about `failed` tasks and
+orphaned wishlists, while this task is `done`.
+
+So **no producer in the factory can generate evidence about the one item blocking the project**, and
+the measurement confirms it: zero nodes name it.
+
+### The detection exists and reaches only a screen
+
+`ClientDeliverableReadinessService` **does** detect it — `done_not_reached_main` has been the single
+entry in `blockedItems` since 2026-08-16. Who consumes `blockedItems`:
+
+```
+src/main/java/com/eneik/production/dto/dashboard/ProductReadinessDto.java:16   List<BlockedItemDto> blockedItems
+```
+
+A DTO. Nothing else. The invariant that names the exact thing blocking the project reaches a dashboard
+field and no reasoner. That is defect D4 — *a signal with no reader is not monitoring* — sitting on
+the most consequential signal in the system.
+
+### So the answer is yes, and it is D1
+
+D1's repair — making facts representable as evidence — is exactly what would put `done_not_reached_main`
+in front of her. She has been reporting this class for two days ("internal task states marked 'done'
+while operational reality findings confirm conflicts with GitHub PR status"). On 2026-08-16 I measured
+her claim as 1 of 33 and filed it as quantifier inflation.
+
+**The one was real, and it is this task.** She was right about the instance and wrong about the
+quantifier — and D6 explains the quantifier: with her own restatements corroborating her, "one"
+inflates. Fix D6 and the same finding deflates to a precise, actionable claim about one task. Fix D1
+and she has the evidence to make it at all.
+
+F67/F68/F69 already did their part of this: her platform findings now persist instead of displacing
+each other, are filed at factory scope, and are readable. Before today each new finding erased the
+last, which is why this one never accumulated into anything.
+
+### Both paths terminate at the same wall
+
+Building the D1 producer additively is blocked, and by the same thing D6 is blocked by:
+
+```
+OperationalRealityFindingEntity:32   @Column(name = "jules_session_id", nullable = false)
+V82__operational_reality_findings.sql:9   jules_session_id UUID NOT NULL
+```
+
+The evidence type for *"the record disagrees with reality"* structurally **requires a session**. It can
+express "session says X, GitHub says Y" and cannot express "the task claims done and nothing ever
+happened". The predicate cannot represent the case — the same shape as F62, D1 and D6, now on the
+decisive instance.
+
+D6 needs `gemini_findings` to exist so testimony can be typed as testimony. D1 needs an evidence type
+that does not presuppose a session. **Two independent lines of this plan converge on one migration to
+the evidence schema**, and that convergence is the argument for doing it: it is not one feature's
+plumbing, it is the thing standing between the factory and its own ability to see two different
+classes of fact.
+
+That is the operator's decision, and it is now supported by measurement on a live blocking instance
+rather than by argument.
+
+### Goal unchanged
+
+A flow without category errors and a production mechanism that does not fail silently. `f163e834` is
+that goal's own test case: a task asserting `done` with no evidence of any work, invisible to every
+mechanism built to catch exactly that, while the invariant that detected it talks only to a screen.
