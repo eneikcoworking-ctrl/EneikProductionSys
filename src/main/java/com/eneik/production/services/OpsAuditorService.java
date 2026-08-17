@@ -127,6 +127,23 @@ public class OpsAuditorService {
     private void auditProject(ProjectEntity project) {
         List<Evidence> evidence = self.gatherAllEvidence(project);
         if (evidence.isEmpty()) {
+            // Barcan condition (SYSTEMIC_REPAIR_PLAN_2026-08-17, defect D5): returning silently makes three
+            // operationally different FACTORY states indistinguishable from outside - "swept, found nothing",
+            // "did not sweep", and "service stopped". Declaring the outcome turns the first into an ABSTAIN
+            // carrying its own witness (which gatherers were consulted) instead of an absence. This is a
+            // factory-scope fact about the auditor itself; it says nothing about value delivery or about the
+            // client's product, and must never be read as either.
+            // Confirmed live 2026-08-17: two consecutive sweeps emitted no line at all while three terminally
+            // failed tasks sat in the project, and the service's liveness could not be established from
+            // outside at all - only by reading this method's source.
+            // NOT the F56 defect (an action denied 35x in 35min with an empty work set): this is a periodic
+            // sweep, once per 30 minutes per project, and its information content is non-zero precisely
+            // because liveness is otherwise unobservable. A sweep must never be rate-limited into silence -
+            // that is how monitoring stops without anyone noticing.
+            log.info("OpsAuditorService: project {} - swept, 0 evidence item(s) from gatherers "
+                            + "[orphaned_wishlist_behind_failed_task, orphaned_dependency_chain]; "
+                            + "ABSTAIN - no decision requested",
+                    project.getName());
             return;
         }
 
