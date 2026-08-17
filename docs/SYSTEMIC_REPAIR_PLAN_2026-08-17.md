@@ -308,7 +308,7 @@ Byproduct, recorded in the protocol: the evidence graph was measured and D1 beca
 73 nodes across **three** sourceTypes where the observer's prompt declares five, 70% of them from a
 single source, `acceptedNodes` equal to `totalNodes`.
 
-### Stage 2 — Make silence decidable *(additive, `observe_only`)*
+### Stage 2 — Make silence decidable *(additive, `observe_only`)* — **DONE 2026-08-17**
 
 Covers D5 machine half. The auditor emits a decided outcome for every sweep, including "swept, zero
 evidence". Today `auditProject` returns silently when `gatherAllEvidence` is empty, so from outside
@@ -318,6 +318,24 @@ Smallest possible change, purely additive, no behaviour altered. Chosen before S
 Stage 3's instrumentation is unreadable without it.
 
 Success condition: from outside, an empty sweep is distinguishable from an absent sweep.
+
+**Delivered.** `OpsAuditorService.auditProject` now declares the empty case as an ABSTAIN carrying
+its own witness (which gatherers were consulted) instead of returning silently. Commit `5555366`.
+
+Verification actually run, in the order the lesson requires:
+- `mvn test-compile` (not `compile`) - exit 0. The image build compiles test sources, so a check that
+  skips them is not a check of what the target runs.
+- `mvn -Dtest=OpsAuditorServiceTest test` - exit 0, and the new line appears twice in the run,
+  proving it fires on the empty-evidence path rather than merely compiling.
+- Image rebuilt, backend redeployed while the board held zero queued and zero claimed tasks, so the
+  restart interrupted no work.
+
+Why this is not the F56 defect it superficially resembles: F56 is an *action* denied 35 times in 35
+minutes against an empty work set - zero information content, once per poll. This is a *periodic
+sweep*, once per 30 minutes per project, and its information content is non-zero precisely because
+liveness is otherwise unobservable. The distinction is the one recorded under D2: a retry needs a
+bound, a sweep must never be bounded into silence. A future reader tempted to "clean up" this line
+would be removing the only external evidence that the auditor runs at all.
 
 ### Stage 3 — Infrastructure as a signal source *(additive, `observe_only`)*
 
@@ -360,3 +378,52 @@ second gatherer does not test siblings; the real gate is `isDependencySatisfied`
 with the same role, `featureId` and `ems_semantic_key` has merged. Whether `ab74be69` and `36651896`
 are correctly satisfied by a semantic equivalent or falsely matched is unmeasured. The measurement
 precedes any repair and does not belong in a stage until it has been done.
+
+---
+
+## 7. Type discipline: three kinds of problem, never mixed
+
+Operator directive, 2026-08-17. The system separates **factory problems**, **value-delivery
+problems**, and **product problems**. These are distinct types and must not be substituted for one
+another.
+
+This is not a filing convention. It is the corpus's own rule — `OPERATIONAL_MATH_ARCHITECTURE.md`
+requires *type distinctions: activity, merge, delivery, trust, and user value are not
+interchangeable*, and *limits of substitutivity: `task done` cannot be substituted for `value
+delivered`*. A finding filed under the wrong type routes to the wrong repair and, worse, licenses a
+wrong inference: a factory defect read as a product defect makes the client's software look broken
+when it is not, and a product defect read as a factory defect gets "fixed" by changing the
+orchestrator.
+
+The observer already carries this distinction and uses it correctly. Her 14:22Z entry reads: *"Since
+this state tracking is handled by the orchestrator/factory and is independent of the project's own
+code, this is a platform-scope issue."* That is a correct type assignment, made unprompted. It is
+therefore a hook to build on, not a capability to add.
+
+### Findings retyped
+
+| Type | Definition | Findings |
+| --- | --- | --- |
+| **Factory** | Defects in the orchestrator itself. Invisible to the client; they degrade the machine that builds products. | D1 evidence-predicate poverty · D2 nudge loop with no measure (F43) · D5 undecidable silence · F63 hourly job that has never succeeded · F64 lock timeouts · F65 database regrowth · F66 empty endpoint · F56 denial noise · F60 human-review flag with no reader · F58 dashboard vs Flow Core disagreement |
+| **Value delivery** | Defects in how delivered work is counted, gated, or reported. The product may be fine and the factory may be running; what breaks is the claim about what has been delivered. | D3 undeclared denominator (F59) · retirement without replacement leaving `failed` uncorrelated with recovery · readiness gating self-falsification, the design shop and the philosophical track on a figure that failure can raise |
+| **Product** | Defects in the client's software. | The Flyway `IF NOT EXISTS` finding (observer, 22:48Z — verified against the client repo: real, severity arguable) · `apply_design_system` failing every call with `Request contains an invalid argument`, which is a product-design defect surfacing through a factory service |
+
+### Consequences for this plan
+
+- **Stage 2 is a factory repair.** The sweep outcome says nothing about delivery or product, and the
+  committed code says so in its own comment so a later reader cannot mistake it.
+- **Stage 3's evidence vocabulary is entirely factory-scope** — job outcomes, contention, volume,
+  endpoint contracts. Every kind in §3 must be emitted with its type, or it will be corroborated
+  against facts of a different type and produce false coherence.
+- **Stage 5 is the only value-delivery stage**, and it is last precisely because miscounting delivery
+  is the failure mode that most easily masquerades as the other two.
+- `apply_design_system` failing is filed under product, not factory, even though a factory service
+  reports it. **The reporter's identity does not determine the type; the referent does.**
+
+### Requirement added to Stage 3
+
+Every infrastructure evidence node carries its type explicitly. Corroboration must be computed
+**within** a type: a factory fact corroborating a product claim is not corroboration, it is a
+category error of exactly the kind Charter invariant 6 names (Ryle). Without this constraint,
+enriching the evidence graph would make the observer's quantifier inflation worse rather than
+better — she would gain new facts to over-read across type boundaries.
