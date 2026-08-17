@@ -712,3 +712,115 @@ Remaining, unchanged from the previous entry:
   matches a null projectId). Not a routing fix — it needs her to reason about the factory as the
   factory, which is a design question, not yet specified.
 - lock timeouts (F64) and the endpoint contract violation (F66) still have no producer.
+
+---
+
+## 11. D6 — testimony recorded as evidence becomes evidence of itself
+
+Found while specifying the remaining Stage 3 item. It is more serious than the item it was found
+under, and it explains a behaviour this log has been describing for two days without understanding.
+
+### The measurement
+
+`GET /api/projects/{id}/coherence-graph`, 2026-08-17:
+
+```
+total nodes                    53
+KAIZEN_PROPOSAL nodes          26
+  originating from the observer  10   ("Gemini observer (platform): …")
+polarity            NEGATIVE_FINDING 40 · POSITIVE_CONFIRMATION 13
+accepted                       53 of 53   (nothing has ever been rejected)
+```
+
+Two of the ten, verbatim:
+
+```
+"Gemini observer (platform): Systemic platform-level desynchronization where internal task states
+ are marked 'd…"
+"Gemini observer (platform): Systemic state-desynchronization between internal 'done' task status
+ and GitHub PR…"
+```
+
+That is the same claim, twice, as two separate pieces of evidence.
+
+### The circle
+
+1. The observer asserts X.
+2. X is recorded as a `SYSTEMIC_DEFECT` Kaizen proposal.
+3. `KaizenService.writeEvidenceNode` writes an `EvidenceNodeEntity` for it, `sourceType`
+   `KAIZEN_PROPOSAL`, carrying the proposal's projectId.
+4. On the next cycle `readRecentEvidenceNodes` calls
+   `findByProjectIdAndCreatedAtAfter(project.getId(), now-24h)` and returns it.
+5. She reads her own prior assertion as evidence, from a *different* sourceType than the one she is
+   arguing from — so it raises the distinct-sourceType corroboration count.
+6. She restates X, now apparently corroborated. Return to 2.
+
+**This is the mechanism of the quantifier inflation recorded as F51.** On 2026-08-16 her claim
+"nearly all 'done' tasks are plagued by operational reality findings" was measured against the board:
+**1 of 33**. I recorded that as a reasoning failure. It is not. A claim that manufactures its own
+corroboration will strengthen monotonically regardless of the world, and "one" becomes "nearly all"
+without anything false being inferred at any single step. The inference is locally valid; the
+evidence set is circular.
+
+### Why the existing guard does not reach it
+
+The code already rejects exactly this failure — **within a cycle**:
+
+> *"Termination is deliberately NOT her own self-report ('isolation problem' of pure coherentism — an
+> LLM can always generate a plausible 'yes, one more look' even when nothing real changed; this
+> system has lived incidents of exactly that failure mode)."*
+
+The within-cycle loop terminates on two external signals: no unseen evidence-node id, and coherence
+scores within epsilon. Both are correct and both are scoped to one cycle. **Across cycles the same
+isolation problem is unguarded**, and the feedback runs through persistence instead of through the
+tool loop, so the guard cannot see it.
+
+### The philosophical form
+
+This is Charter invariant 12 — *an entity producing a result cannot be the sole source confirming its
+correctness* — violated by a route the invariant's authors did not anticipate: the entity does not
+confirm itself directly, it confirms itself **through the record of its own claim**.
+
+It is also a violation of the Evidence Algebra as written. `OPERATIONAL_MATH_ARCHITECTURE.md` puts
+*agent prose, generated title, planned item text* at **strength 1 — intent or claim, not delivery**,
+and states *agent claims are never final evidence*. A Kaizen proposal derived from an agent finding
+is agent prose that has acquired a database row. The row changes its persistence, not its epistemic
+strength; the graph treats the row as a peer of a merged-PR fact.
+
+The deepest form is Tarski's: a language cannot contain its own truth predicate without
+contradiction. The observer's findings are statements *about* the evidence stream. When they are
+written back into that same stream they stop being a metalanguage and become object-language
+sentences, and self-reference is no longer stratified. Charter invariant 7 records the same shape one
+level down as a lived incident — *"the audit recognised its own PR with the report as new merged work
+and restarted itself endlessly"* — and fixed it with a monotone watermark. The watermark idiom is the
+stratification; it was applied to merges and not to evidence.
+
+### What F67 already did to this, unintentionally
+
+Filing undisputed platform findings with a null projectId (F67, deployed 11:02Z) means their evidence
+nodes carry a null projectId, and `findByProjectIdAndCreatedAtAfter(project.getId(), …)` cannot match
+them. **The loop is therefore already broken for undisputed platform findings.** That was not the
+intent of F67 and is worth stating plainly rather than claiming as foresight.
+
+It is not broken for the disputed branch, which still carries the project id by deliberate design
+(§F67), and the ten existing nodes retain their old projectId and continue to feed back until they
+age out of the 24-hour window.
+
+### Not implemented — and why not today
+
+The repair is to stratify: an evidence node derived from an agent's own finding must not be readable
+by that agent as evidence, or must be readable only at its true strength.
+
+I am not making that change now. It alters what the observer sees on every cycle, in a reasoning loop
+whose failure modes this log has been wrong about repeatedly, and the operator's instruction is *do no
+harm*. Two specific things must be measured first:
+
+1. **How much of her current evidence is her own.** Ten of fifty-three nodes are hers, but the
+   question that matters is what fraction of the nodes she actually reads per cycle — the 24-hour
+   window, not the whole graph.
+2. **Whether `EvidenceCoherenceService` already discounts them.** `acceptedNodes` equals `totalNodes`
+   and nothing has ever been rejected, which suggests it does not — but "suggests" is not
+   established, and this is precisely the kind of inference this plan exists to stop me making.
+
+Type: **factory**. Entry mode when specified: `observe_only` — measure the self-derived fraction and
+surface it before changing what she reads.
