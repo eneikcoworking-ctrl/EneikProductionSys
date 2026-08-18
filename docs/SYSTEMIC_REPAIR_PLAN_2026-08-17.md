@@ -315,3 +315,59 @@ excludes the five is **unmeasured**, and measuring it precedes any change.
 
 Lesson carried into the register: a plan built from observed symptoms will miss a cause that produces
 no symptom of its own. The stranded row logged nothing, ever.
+
+---
+
+## 8. The delivery gap after 3474a26 and 374c583 — what shipped, and what it does not reach
+
+`3474a26` makes a gate verdict record the stages it covers. `374c583` records the general rule as
+`ACP-101 — Verdict Carries Its Subject`. Neither closes the delivery of `8becdc01`, and the measurement
+below is the reason to say so plainly rather than let two commits and a clean formulation stand in for
+a result.
+
+### Measured limit of what shipped
+
+```
+f163e834 gate log report      NO_STAGES        (written 2026-08-16, predates the change)
+pr_reviews for the task              0
+claims / jules sessions              0 / 0
+```
+
+`stages` is written by new gate runs only. For this task the verdict remains **undated as to subject**,
+so its delivery gap is still an inference - from the uniform 2-5s creation-to-gate gap across every
+task, from one gate log, from no claim - and not yet a fact readable off the record. The change makes
+the distinction available going forward; it does not backfill.
+
+### Why the gap is real regardless
+
+`ClientDeliverableReadinessService.reachedMain` requires a merged `PrReviewEntity` on one of the task's
+sessions, and then either a `main` base ref or a feature thread merged to main. `f163e834` has no
+sessions and no PR reviews, so the first condition cannot be met. `done_not_reached_main` is correct.
+
+### The shortest path to closing the delivery, and why it is not mine to take
+
+The task's own Definition of Done requires *"one branch and one PR opened for this role only"* and a PR
+summary carrying the verification command and result. Delivery therefore means the task is actually
+executed and its PR merges.
+
+The dispatch machinery only picks up `queued` tasks. This task is `done`. **Nothing in the system
+returns a `done`-without-delivery task to work** - `resumeNextFrontier` resumes `failed`, by a declared
+set that is about failure, and widening it to cover `done` would change what "resumable" means for
+every task in the factory.
+
+So the shortest path is the plainest one: put the task back in the queue and let the ordinary machinery
+run. **That is a `TaskStatus` change, which §0 of this plan forbids** - the Non-Negotiable Boundary
+adopted before any of this work began. It is an operator action, not an inference I am entitled to
+make, and the boundary is worth more than closing this one gap.
+
+What is in place instead: the fact is now produced as evidence (`DeliveryRealityProducerService`,
+verified 2026-08-18T22:20Z) and reaches the observer's graph, so the system can raise it rather than
+depend on someone reading a dashboard field.
+
+### Status, stated without rounding up
+
+- Flow defect: **fixed and demonstrated** - a 72-hour standstill ended, five tasks resumed and completed.
+- Verdict subject: **fixed forward**, not backfilled.
+- Delivery of `8becdc01`: **open**, and deliberately open, because closing it requires crossing the
+  boundary this plan set for itself.
+
