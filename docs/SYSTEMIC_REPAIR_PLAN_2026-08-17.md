@@ -42,6 +42,9 @@ entry and its retraction hundreds of lines apart with equal authority.
 | **F67** "the substitution is on the write path (`KaizenService:120`)" | That line is in `recordUnderTheHoodDefects`; the substitution is on the **read** path | Attributed a measured effect to the first plausible line |
 | "V82 drops the exactly-one-source constraint" | V82 drops and immediately re-adds it, widened | Read the DROP and not the ADD two lines below |
 | "No stage of this plan moves the project" | D1 is precisely what lets the observer act on the blocking item | Answered a question about consequence with a fact about direct causation |
+| **§5.2** "`f163e834` is the item blocking the project" | A wishlist stranded in `finalizing` held Flow Core in `DECOMPOSING`, where every dispatch was denied | Took `blockedItems` — a list of blocked *tasks* — as authoritative for what blocks *progress* |
+| "Deployed; policy denials went to zero" | The jar did not contain the change; denials continued at 27 per 20 min | Read the build's exit code as proof the image changed, and sampled denials in a window before the first full tick |
+| "The change is absent from the image" (`unzip` check) | `unzip` is not installed in the container, so the check produced empty output | Read a tool's silence as a measurement — the third instance of this same error |
 
 Seven of the first eight share one form: **a claim whose truth conditions had not been established**.
 That is the same defect this plan repairs in the system, which is why it is organised by defect rather
@@ -61,7 +64,11 @@ review-only, `expectedGainPercent = 0`.
 
 **Remaining:** the readiness invariant `done_not_reached_main` still has no producer. It is detected
 correctly and consumed only by `ProductReadinessDto` — a dashboard field, no reasoner. V103 made it
-expressible; nothing writes it yet. This is the item that moves the live project (§5.2).
+expressible, and `DeliveryRealityProducerService` writes it - verified live 2026-08-18T22:20:00Z,
+recording task `f163e834` and reaching the coherence graph as an OPERATIONAL_REALITY_FINDING node.
+D1 is closed for this signal.
+
+It was **not** what moved the project: see §7. The claim that it was is in the corrections register.
 
 ### D2 — repeated actions carry no well-founded measure — *not repaired, deliberately untouched*
 
@@ -100,7 +107,8 @@ legitimate when the work is *not required*, illegitimate when it is *required an
 | Auditor sweep outcome | log, decided | fixed (Stage 2) |
 | `SYSTEM STALLED: no forward progress` | log only | open |
 | `FLAGGED FOR HUMAN REVIEW` | log only | open |
-| `done_not_reached_main` | dashboard DTO only | open — **and it is the blocking one** |
+| `done_not_reached_main` | evidence graph, since 2026-08-18 | fixed (`DeliveryRealityProducerService`) |
+| Wishlist stranded in `finalizing` | nothing, ever | fixed (`StrandedFinalizingSweepService`, §7) |
 
 ### D5 — claims made without stated truth conditions — *repaired, both halves*
 
@@ -112,7 +120,7 @@ Operator: `WATCH_PROTOCOL.md` declares every proposition the watch rules on, its
 and its falsifier. A proposition absent from that register has not been ruled on, and silence about it
 is ABSTAIN.
 
-### D6 — testimony recorded as evidence becomes evidence of itself — *schema repaired, write path pending*
+### D6 — testimony recorded as evidence becomes evidence of itself — *repaired, deployed*
 
 Measured before V103:
 
@@ -195,26 +203,31 @@ The repair was never to teach her; it was to stop discarding what she declares.
 Ordered by safety of the repair, because acting on an unmeasured hypothesis in this system has done
 more damage than the defects being fixed.
 
-### 5.1 — Write path for `gemini_findings` *(next, additive)*
+### 5.1 — Write path for `gemini_findings` — **DONE**
 
-The table exists; nothing writes it. Until something does, her testimony still enters the graph typed
-by its storage channel. Closes D6.
+`GeminiFindingEntity` + repository over the V103 table; the observer persists the assertion before
+recording what was done about it, and passes its id so the evidence node types `GEMINI_FINDING` —
+testimony as testimony, strength 1 in the evidence algebra. Deployed 2026-08-18; 35/35 tests green.
 
-Success condition: a node derived from her assertion types as `GEMINI_FINDING`, and `sourceReliability`
-calibrates it separately from `KAIZEN_PROPOSAL`.
+Success condition not yet observed: no new platform finding has been recorded since deployment, so
+the typing has not been seen in live data. Not a failure — nothing to type yet.
 
-### 5.2 — Producer for `done_not_reached_main` *(the item that moves the project)*
+### 5.2 — Producer for `done_not_reached_main` — **DONE**
 
-V103 made a session-less reality finding expressible. A task asserting `done` with no merge evidence can
-now become an `OperationalRealityFindingEntity`, and therefore an evidence node.
+Deployed and verified 2026-08-18T22:20:00Z. It records `f163e834` and the fact reaches the coherence
+graph. It did **not** move the project, and the header that said it would is in the corrections
+register.
 
-**Live instance:** `f163e834` "Runtime Contract 8becdc01" — status `done`, `julesSessionName` null,
-`julesDispatchStatus` null, no PR, no featureId. Detected since 2026-08-16; zero evidence nodes name it;
-no producer could express it. The project stands at 5/6 features and 25/26 merged tasks with this as its
-single blocked item. At 6/6, readiness reaches 1.0 — the design shop's threshold, and above the
-philosophical track's 0.9.
+### 5.2b — Gate and resolver must quantify over the same set — **written, NOT deployed**
 
-Success condition: the blocking item appears in the evidence graph and the observer can name it.
+`PlannedWorkRecoveryService.isResumableInPrinciple` declares the set once, on the resolver that owns
+it; `FlowSpineService` counts through it. Committed as `8cbd560`, `mvn test-compile` exit 0.
+
+**Not in the running image.** Established by behaviour, not by inspecting the jar: 27 denials in 20
+minutes and the state still `BLOCKED_BY_FAILED_FRONTIER`. A first build reported exit 0 without the
+change reaching the image, and a `--no-cache` rebuild had to be killed — it exhausted the host and
+put the backend into H2 write failures. One ordinary build remains to be run, and the check is
+behavioural: if the state changes, it arrived.
 
 ### 5.3 — Instrument the nudge divergence (D2) *(measurement only, no fix)*
 
