@@ -3426,3 +3426,77 @@ an unidentifiable event is not a reason to credit a task chosen by stream order.
 Not applied. It changes a production webhook path, and the correct lookup (by PR URL, by branch, or by
 session) should be chosen against how sessions actually record their branch, which is a measurement not
 yet taken.
+
+## 2026-08-18 08:2xZ — resolved: the gate flag is written at CREATION, by the spec gate
+
+Measured against the store with the backend stopped, then the backend was restarted and the probe
+removed.
+
+### What the store says about f163e834
+
+```
+claims_for_task           0
+jules_sessions_for_task   0
+gate_logs_for_task        1     passed=TRUE at 2026-08-16 05:23:58
+claims_total (all)     1846     over 1144 distinct tasks
+```
+
+Claims survive in bulk, so their absence here is real and not a cleanup artefact.
+`resetProjectForRedecomposition` does delete claims and sessions - but it deletes the **tasks** too
+(`taskRepository.deleteAll(tasks)`), and this task exists, so that path never touched it.
+
+### The mechanism, finally established
+
+`GateOrchestrator` has **two** public entry points, not one:
+
+```java
+@Transactional public void runTaskSpecGate(TaskEntity task) { runQualityGate(task, Set.of(GateStage.TASK_SPEC)); }
+@Transactional public void runQualityGate(TaskEntity task)  { runQualityGate(task, EnumSet.allOf(GateStage.class)); }
+```
+
+`runTaskSpecGate` is called from `TechnicalLeadCompiler:258`, **immediately after the task is created**.
+`GateCheck.stage()` defaults to `TASK_SPEC`, so `BaseQualityGate`'s five checks run there.
+
+This is confirmed by a measurement taken before the cause was known: across the project, the gap
+between a task's `created_at` and its gate log is **2 to 5 seconds for every task**, f163e834 included
+at 2s. That uniformity is the compiler gating each task at birth.
+
+I had recorded that `runQualityGate`'s only caller is `ClaimService.complete`. **That was wrong** - I
+grepped for `runQualityGate` and did not notice that `runTaskSpecGate` reaches the same private method.
+Same error shape as the `supports()` default: I treated the set I found as the set that exists.
+
+### What `qualityGatePassed` actually means
+
+**It is a specification-time verdict**: at creation, the Technical Lead compiler checked that the task
+has a lean value, a definition of done, Given/When/Then acceptance criteria, a repo URL and an active
+role - and it passed. `f163e834` passed because it is exceptionally well written.
+
+The flag is then **never updated** for a task that is never completed. So for any task that dies
+between creation and delivery, `qualityGatePassed = true` stands forever as the last thing the system
+said about it.
+
+Six readers treat that flag as a delivery-time verdict: `ClaimService` (false -> retry, then blocked),
+`EmsMetricsService` (quality multiplier, `gated` count), `ProjectOperationalContextService` (written as
+a fact for reasoning), `JulesDispatchService` (defence in depth at review).
+
+### The defect, stated exactly
+
+One field carries two different assertions, distinguished only by **when** it was written:
+
+```
+written by runTaskSpecGate  ->  "this task is well specified"
+written by runQualityGate   ->  "this task's work passed every applicable check"
+```
+
+Nothing in the field, or in any reader, distinguishes them. `well specified` is silently substituted
+for `verified`, and the substitution is invisible because both writes are true statements - about
+different subjects.
+
+`done_not_reached_main` is the only mechanism that asks about delivery, which is why it alone has been
+right about `f163e834` since 2026-08-16.
+
+### Still open, and deliberately not guessed at
+
+How `f163e834` reached `status = done` with no claim and no session. The gate flag no longer needs
+explaining, but the status transition does. `ClaimService.complete` requires an active claim and there
+never was one for this task.
