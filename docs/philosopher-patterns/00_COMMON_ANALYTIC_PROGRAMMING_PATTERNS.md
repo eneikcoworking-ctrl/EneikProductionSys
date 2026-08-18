@@ -104,6 +104,7 @@ These patterns are intentionally shared. A concrete reusable practice belongs he
 | `ACP-098` | Kill Switch | Every risky external effect has a fast disable path | Prevents prolonged damage from a bad deployment or dependency change. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-099` | Shadow Traffic Verification | Run new behavior beside old behavior before user-visible cutover | Finds semantic differences without exposing clients. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-100` | Canary Invariant Monitor | Bind rollout progression to live invariant checks | Prevents a canary from advancing after hidden correctness drift. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
+| `ACP-101` | Verdict Carries Its Subject | A recorded judgement stores what it examined, not only what it concluded | Stops two different acts of judgement from collapsing into one indistinguishable record, so a narrow verdict cannot be read as a broad one. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 
 ## RAG Retrieval Rule
 
@@ -112,3 +113,66 @@ These patterns are intentionally shared. A concrete reusable practice belongs he
 3. If a new concrete personal pattern starts fitting more than 5 philosophers, move it here and replace it in those philosopher files.
 4. For mathematical assignment and QA rules, retrieve `02_RAG_MATHEMATICAL_ASSIGNMENT_MODEL.md`.
 5. For parallel development tasks, also retrieve `01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md`.
+
+---
+
+## ACP-101 — Verdict Carries Its Subject
+
+**Publication anchor:** J. L. Austin, *How to Do Things with Words* — felicity conditions of a
+performative. **Added 2026-08-18** from a live incident in this system, recorded in
+`docs/reports/WORKPLAN_2026-08-15_repair.md`.
+
+### The rule
+
+When code records a judgement — passed, approved, verified, accepted, reviewed — the record must state
+**what was examined**, not only what was concluded. A verdict without its subject is not a weaker
+verdict; it is a different kind of thing, because two acts of judgement over different subjects become
+one indistinguishable row.
+
+**Proof obligation:** point to the field, column or report key that names the scope of the judgement,
+and show that two judgements made in different circumstances produce distinguishable records.
+
+### Why it is not `ACP-015`, `ACP-016` or `PERFORMATIVE_COMMIT`
+
+`DZHON_OSTIN_10_PERFORMATIVE_COMMIT` already requires that *a declaration have its operational
+consequence*: declare a status, and the transition, event or gate it performs must exist. That runs
+**forwards**, from the declaration to the world.
+
+This pattern is its converse. The declaration exists, the consequence exists, each write is correct —
+and the record still misleads, because it does not say **which declaration it was**. Austin's own
+distinction covers it: an utterance's force depends on the circumstances of its utterance, so "I
+verify this" spoken at two different moments about two different things is **two acts**, and a record
+that keeps only the words has lost the act.
+
+### The incident that produced it
+
+`GateOrchestrator` has two public entry points writing one boolean into one field:
+
+```
+runTaskSpecGate(task)   called at task CREATION     -> "this task is well specified"
+runQualityGate(task)    called at implementer FINISH -> "the work passed every applicable check"
+```
+
+Six readers consume that field as the second meaning. A task can therefore be recorded as verified
+having delivered nothing — measured live: `f163e834`, status `done`, `qualityGatePassed = true`, no
+claim, no session, no PR, zero mentions in the log. Its flag was written two seconds after creation and
+never revisited. Across the whole project the gap between a task's creation and its gate log is 2–5
+seconds, which is that same creation-time gating.
+
+**Both writes were true.** That is the difficulty this pattern exists for: the defect cannot be found
+by asking whether a value is correct, only by asking what it is about. No test of truth would have
+caught it.
+
+### How it was discharged
+
+The report gained the stages the verdict covers. One line; the boolean untouched; no reader's behaviour
+changed. What changed is that *verified* can now be asked of a specific question, and a task whose only
+gate log carries `[TASK_SPEC]` has never been verified for delivery — a readable fact instead of an
+inference from timestamps.
+
+### Where to apply it
+
+Any field whose name is a past participle of judgement — `passed`, `approved`, `validated`, `checked`,
+`reviewed`, `accepted` — and which is written from more than one call site, or at more than one moment
+in an object's life. If the writes cannot be told apart afterwards, the record is incomplete even when
+every write was correct.
