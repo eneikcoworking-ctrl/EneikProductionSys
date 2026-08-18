@@ -3204,3 +3204,73 @@ be wrong in the opposite direction - it would fail tasks that were never in scop
 **Not implemented.** It changes a recorded outcome for every task with an uncovered role, and the
 correct destination for the third state (a separate field, an enum, or a report-only distinction) is
 an operator decision, not an inference from one task.
+
+## 2026-08-18 — the invariant, the change point, and the test (specified, not implemented)
+
+### Blast radius, measured before proposing anything
+
+`ClaimService:206-214` is the reader that matters:
+
+```java
+gateOrchestrator.runQualityGate(task);
+if (!task.isQualityGatePassed()) {
+    task.setRetryCount(task.getRetryCount() + 1);
+    if (task.getRetryCount() >= 3) task.setStatus(TaskStatus.blocked);
+    else                           task.setStatus(TaskStatus.queued);
+}
+```
+
+`false` means **failed**, not *not applicable*: three retries, then `blocked`. Flipping the empty case
+to `false` would push every task whose role tag is outside `{02,03,06,07,11}` through three retries and
+into `blocked`. The caution recorded earlier against that is now measured rather than argued.
+
+Other readers: `EmsMetricsService` (quality multiplier 1.0 vs 0.7, and a `gated` count),
+`ProjectOperationalContextService` (writes it as a fact for reasoning), `JulesDispatchService:3520`
+(defence in depth — a reviewer verdict may not override a failed mechanical gate).
+
+### Correction to the framing
+
+**The vacuous success does not mask the deliverable gap.** `done_not_reached_main` is an independent
+readiness invariant: it asked for merge evidence, found none, and has reported the gap since
+2026-08-16. Readiness never consults `qualityGatePassed`. The gap was visible throughout.
+
+The actual harm is different and narrower: `qualityGatePassed = true` is a **false positive claim about
+verification**. It tells every reader above that a task was mechanically verified when no check ran.
+That inflates a metric, feeds a reasoning fact, and weakens a defence-in-depth check.
+
+### The invariant
+
+**Positive verification requires a non-empty evidence set:**
+
+```
+qualityGatePassed = true   ⟹   |results| > 0
+```
+
+### The smallest form that records the distinction
+
+The distinction is *already persisted* — the report carries `checks: []` for the vacuous case. What is
+missing is that it is not stated, so no reader can ask. One line in `GateOrchestrator`, beside the
+existing `report.put("passed", allPassed)`:
+
+```java
+report.put("applicable", !results.isEmpty());
+```
+
+**No reader changes behaviour**, because the boolean is untouched. What changes is that the gate stops
+being silent about its own scope. It is the honest minimum: do not alter what the gate decides, stop
+omitting that there was nothing to decide.
+
+Flipping `allPassed`, adding an enum, or adding a column are all larger and none is needed to make the
+vacuous case machine-checkable for the first time.
+
+### The test that proves it
+
+1. A task whose role tag is in none of `BACKEND_TAGS`, `UI_TAGS`, `QA_TAGS` (e.g. `BARCAN-TAG-01`, the
+   tag `f163e834` carries): `runQualityGate` produces a report with `applicable = false` and an empty
+   `checks` array, **and** `qualityGatePassed` and the task's status are unchanged from before the
+   call. This proves the vacuous case is now distinguishable and that nothing was broken to achieve it.
+2. A task tagged `BARCAN-TAG-06`: `applicable = true`. This proves the ordinary path is untouched.
+
+### Status
+
+Specified. Not implemented — the beacon's instruction is to fix the change point and the test first.
