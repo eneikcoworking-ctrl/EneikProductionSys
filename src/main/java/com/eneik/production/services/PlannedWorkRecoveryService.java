@@ -156,13 +156,17 @@ public class PlannedWorkRecoveryService {
      * none, so a caller that must reason about the task population without loading anything can use it.
      *
      * Why it exists (2026-08-18): FlowSpineService gates BLOCKED_BY_FAILED_FRONTIER on
-     * {@code failedTasks() > 0} counting EVERY failed task, while the transition row names this service as
-     * the resolver. Measured on test-forty-ninth, all five failed tasks carry null featureId and null
-     * sourceWishlistId - they are not planned deliverables, sit outside totalPlannedTasks entirely, and can
-     * never satisfy the resolver. They therefore satisfied the gate permanently while being structurally
-     * unresolvable, and the state could not clear by itself. That is `failed task` substituted for
-     * `failed planned deliverable` - the undeclared-set error Charter invariant 8 names for metric
-     * denominators, occurring in a state predicate instead.
+     * {@code failedTasks() > 0}, counting EVERY failed task, while the transition row names this service as
+     * the resolver. A gate and its named resolver must quantify over the same set, or the state is
+     * unreachable-from by construction.
+     *
+     * CORRECTION, same day: this was introduced believing test-forty-ninth's five failed tasks had null
+     * featureId and null sourceWishlistId. They do not - the dashboard DTO simply does not carry those
+     * fields, and reading their absence from a projection as absence in the data was the error. Measured
+     * directly against the store: all five have both set, so this predicate admits all five and the gate's
+     * behaviour is unchanged. What actually blocks their recovery is the reason whitelist in
+     * {@link #isEligibleRetiredPlanTask}. The predicate is kept because the gate/resolver agreement is
+     * correct on its own terms, not because it fixed anything.
      */
     public static boolean isResumableInPrinciple(TaskEntity task) {
         return task != null
@@ -170,6 +174,35 @@ public class PlannedWorkRecoveryService {
                 && task.getSourceWishlistId() != null
                 && task.getFeatureId() != null;
     }
+
+    /**
+     * The failure modes where a single clean retry is the correct default, declared as one set.
+     *
+     * They share one property, which is what makes them a set rather than a list of incidents: the task
+     * failed and nothing was left actively working it. Not "the failure was harmless" and not "the cause
+     * is known" - a PR that closed unmerged and a task the admission poka-yoke retired are different
+     * causes with the same consequence, and retrying once from clean main is the same safe action for both.
+     *
+     * The fourth entry was added 2026-08-18 after measuring test-forty-ninth directly against the store:
+     * all five failed tasks have featureId and sourceWishlistId set and are structurally resumable, and
+     * the ONLY thing excluding them was that their reason - the iteration-admission poka-yoke retirement,
+     * whose own message ends "no child work created" - was not among the first three. The project had
+     * stood at 25/26 merged with nothing in flight.
+     *
+     * Safety is not from this list being short. It is from resumeCount(task) >= 1 below: at most one
+     * automatic resume per task, ever. That is a well-founded measure - it strictly decreases and cannot
+     * be replenished - so a task that fails the same way again is retired for good rather than retried
+     * forever. The 2026-08-01 comment inside the method makes exactly this argument for its own widening,
+     * and it holds here for the same reason.
+     *
+     * Kept as a named set rather than another inline || so the next case is added by declaring membership,
+     * not by growing a boolean expression - the shape that let this one sit unfixed for twelve days.
+     */
+    private static final List<String> RETIRED_WITH_NOTHING_LEFT_WORKING_IT = List.of(
+            "auto-recovery is disabled; dependent task retired",
+            "Blocked task retired; auto-recovery follow-up disabled during task-expansion incident",
+            "left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)",
+            "Blocked task retired by iteration-admission poka-yoke; no child work created");
 
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
         if (task.getStatus() != TaskStatus.failed || task.getSourceWishlistId() == null
@@ -191,9 +224,7 @@ public class PlannedWorkRecoveryService {
         // action either way - this method's existing resume-count cap (max 1 auto-resume per task) already
         // protects against a repeatedly-failing task being retried forever, so widening the trigger
         // condition does not widen the blast radius.
-        return reason.contains("auto-recovery is disabled; dependent task retired")
-                || reason.contains("Blocked task retired; auto-recovery follow-up disabled during task-expansion incident")
-                || reason.contains("left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)");
+        return RETIRED_WITH_NOTHING_LEFT_WORKING_IT.stream().anyMatch(reason::contains);
     }
 
     private int resumeCount(TaskEntity task) {
