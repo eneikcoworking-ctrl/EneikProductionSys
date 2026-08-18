@@ -3274,3 +3274,78 @@ vacuous case machine-checkable for the first time.
 ### Status
 
 Specified. Not implemented — the beacon's instruction is to fix the change point and the test first.
+
+## 2026-08-18 — RETRACTION and the real diagnosis of 8becdc01
+
+### Retracted: the vacuous-truth explanation
+
+I recorded that `f163e834` passed the quality gate because no check applies to `BARCAN-TAG-01`, so
+`results` was empty and `allMatch` was vacuously true. **That is wrong.**
+
+`GateCheck.supports(TaskEntity)` has a default body of `return true`, and `BaseQualityGate` does not
+override it. It therefore applies to **every** task. `results` is never empty.
+
+The error: I grepped for `public boolean supports` implementations, found three, and treated them as
+the full set. A class that does not override an interface default is not a class without the
+behaviour. **I read the absence of a method as the absence of a behaviour** - the fourth time in one
+day of reading silence as a fact.
+
+`GateOrchestratorIntegrationTest` names five `BASE_CHECKS` and was in the repository the whole time.
+I did not open it because I was searching only for `supports`. The change was reverted before
+deployment; nothing shipped on the false premise.
+
+### What the gate actually verifies
+
+`BaseQualityGate` contributes five checks to every task:
+
+```
+Business Value Check       payload has lean_value, and it is not "waste"
+DoD Check                  a definition-of-done text is present
+Acceptance Criteria Check  the text contains a Given/When/Then pattern
+Repo URL Check             a repository URL is present
+Active Role Check          the task has a role and the role is active
+```
+
+Every one is a property of the task's **description**. Not one touches a Jules session, a PR, a diff,
+or main. `f163e834` passes all five because it is **exceptionally well written** - JTBD, Kano
+classification, Cynefin domain, TOC constraint ref, DoD, acceptance criteria, explicit boundaries.
+
+### The real defect, and it is worse than vacuity
+
+`qualityGatePassed` means **"this task is properly specified"**. Six readers treat it as **"this task's
+work was mechanically verified"**:
+
+```
+ClaimService              false -> three retries, then blocked
+EmsMetricsService         quality multiplier 1.0 vs 0.7, and a `gated` count
+ProjectOperationalContext written as a fact for reasoning
+JulesDispatchService      defence in depth: a reviewer verdict may not override a failed gate
+```
+
+A vacuous claim asserts nothing. This asserts something **true about the wrong subject**:
+`well-specified` substituted for `delivered`. That is the limits-of-substitutivity error the goal
+names, and it is harder to see precisely because the verification is real - it simply verifies the
+description.
+
+`done_not_reached_main` is the only mechanism in the system that asks about delivery. That is why it
+alone caught this, and why it has been right since 2026-08-16 while the gate said the task was fine.
+
+### What is established about the task itself
+
+```
+BARCAN-TAG-01 (Architecture)   appears on exactly ONE task in the project - this one
+                               all 43 others use 02, 05, 06, 08, 11, 12
+toc_constraint_ref             BOOTSTRAP-ENVIRONMENT-BOUNDARY
+kano                           Must-Be          lean_value: essential
+DoD                            "One branch and one PR are opened for this role only"
+actual                         no session, no PR, zero mentions in the backend log
+```
+
+`runQualityGate`'s only caller is `ClaimService.complete`, which requires an active claim, and reaching
+`done` needs that call **twice**. So the task was claimed and completed twice with no Jules session
+ever created. **How that happened is not established** and is the next thing to measure - not guessed
+at, and not patched around.
+
+Note also: comma-joined `source_role_tag` values (`"BARCAN-TAG-01, BARCAN-TAG-09"`) are normal - 43 of
+44 tasks carry them. A hypothesis that this was the anomaly was refuted by measurement before any
+action was taken.
