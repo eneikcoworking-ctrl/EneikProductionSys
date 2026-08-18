@@ -246,3 +246,49 @@ A plan whose outcome is fixed by construction is not a plan.
   correctly by an existing invariant and could reach no reasoner.
 
 Each falsifier is a measurement, not an argument.
+
+---
+
+## 7. What actually halted the project — found 2026-08-18, fixed
+
+Everything in sections 2-5 concerned the factory's knowledge of itself. None of it was what stopped
+this project, and section 5.2's claim to have identified the blocking item was **wrong**: it named
+`f163e834` on the strength of `blockedItems`, which lists blocked *tasks* and is not authoritative for
+what blocks *progress*. Substituting one for the other is the category error this plan exists to
+remove, committed in the plan's own central claim.
+
+The real cause, measured:
+
+```
+wishlist ca1c6413   status finalizing   source self_falsification
+                    stranded since 2026-08-16T09:39:17Z  (38 hours)
+```
+
+`finalizing` is a transient guard set before slow GitHub/parse work and cleared by the same code path.
+When that path dies, nothing else moves the row - stated twice in `JulesDispatchService` itself
+(:2308, :2432). One stranded root makes `everyRootCompiled` false, hence `decompositionComplete`
+false, holding Flow Core in `DECOMPOSING`, where every dispatch action is denied.
+
+**One row halted the whole project for 38 hours.** `decompositionComplete: false` appeared in every
+measurement taken since 2026-08-16 and was recorded as context, never interrogated. Every denial line
+named the state that explained it.
+
+`StrandedFinalizingSweepService` released it at 2026-08-18T00:20:00Z. Immediately after:
+
+```
+decompositionComplete   false -> true
+status                  decomposing -> building
+Flow Core state         DECOMPOSING -> BLOCKED_BY_FAILED_FRONTIER
+finalizing wishlists    1 -> 0
+```
+
+The new state is itself informative: `RECOVER_FAILED_FRONTIER` is no longer denied. The flow has
+reached its *next* obstacle and named it honestly - the five failed tasks.
+
+`PlannedWorkRecoveryService.resumeNextFrontier` now runs every tick and resumes 0, because each
+candidate must satisfy `resumeCount(task) < 1` (a genuine well-founded measure - at most one resume
+per task), no active claim or session, not already merged, and a satisfied dependency. Which of these
+excludes the five is **unmeasured**, and measuring it precedes any change.
+
+Lesson carried into the register: a plan built from observed symptoms will miss a cause that produces
+no symptom of its own. The stranded row logged nothing, ever.
