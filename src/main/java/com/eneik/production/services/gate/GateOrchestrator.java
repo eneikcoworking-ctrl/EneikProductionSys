@@ -59,6 +59,26 @@ public class GateOrchestrator {
 
         ObjectNode report = objectMapper.createObjectNode();
         report.put("passed", allPassed);
+        // 2026-08-18: a verdict must carry its own subject. This method has two public entry points -
+        // runTaskSpecGate(task), called by TechnicalLeadCompiler the moment a task is CREATED, and
+        // runQualityGate(task), called by ClaimService when an implementer FINISHES - and both write the
+        // same boolean into the same field. Nothing in the field or in any of its readers says which
+        // question was answered, so "this task is well specified" and "this task's work passed every
+        // applicable check" are indistinguishable after the fact.
+        //
+        // Both writes are true statements. That is what makes the substitution invisible: it cannot be
+        // caught by asking whether the value is correct, only by asking what it is about. Measured on
+        // test-forty-ninth: task f163e834 is status done with qualityGatePassed true, no claim, no Jules
+        // session, no PR - its flag was written by the spec gate two seconds after creation and never
+        // revisited, and the gap between created_at and the gate log is 2-5 seconds for EVERY task in
+        // the project, which is that same creation-time gating.
+        //
+        // Recording the stages makes the subject part of the verdict. No reader changes behaviour and
+        // the boolean is untouched; what changes is that "verified" can now be asked of a specific
+        // question. A task whose only gate log carries stages [TASK_SPEC] has never been verified for
+        // delivery, and that is now a fact anything can read rather than an inference from timestamps.
+        ArrayNode stageNames = report.putArray("stages");
+        stages.stream().map(Enum::name).sorted().forEach(stageNames::add);
 
         ArrayNode checks = report.putArray("checks");
         for (GateResult res : results) {

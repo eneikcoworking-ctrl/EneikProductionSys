@@ -279,6 +279,40 @@ class GateOrchestratorIntegrationTest {
         return payload;
     }
 
+    // 2026-08-18: the same boolean is written by two entry points answering two different questions -
+    // runTaskSpecGate at task CREATION ("is this well specified?") and runQualityGate at implementer
+    // COMPLETION ("did the work pass every applicable check?"). Both writes are true, which is why the
+    // substitution cannot be caught by checking whether the value is correct. These two tests check what
+    // the verdict is ABOUT.
+    @Test
+    void specGateVerdictSaysItCoversOnlyTheSpecification() {
+        TaskEntity task = createTask("BARCAN-TAG-01", basePayload());
+
+        gateOrchestrator.runTaskSpecGate(task);
+
+        TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
+        JsonNode stages = refreshed.getQualityGateReport().path("stages");
+        assertThat(stages.isArray()).isTrue();
+        assertThat(StreamSupport.stream(stages.spliterator(), false).map(JsonNode::asText).toList())
+                .containsExactly("TASK_SPEC");
+        // The point of the finding: this task can be perfectly specified and still have delivered nothing.
+        // BARCAN-TAG-01 is the tag the live blocking task f163e834 carries.
+        assertThat(refreshed.isQualityGatePassed()).isTrue();
+    }
+
+    @Test
+    void fullGateVerdictSaysItCoversEveryStage() {
+        TaskEntity task = createTask("BARCAN-TAG-01", basePayload());
+
+        gateOrchestrator.runQualityGate(task);
+
+        TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
+        JsonNode stages = refreshed.getQualityGateReport().path("stages");
+        assertThat(StreamSupport.stream(stages.spliterator(), false).map(JsonNode::asText).toList())
+                .containsExactlyInAnyOrderElementsOf(
+                        java.util.Arrays.stream(GateStage.values()).map(Enum::name).toList());
+    }
+
     private TaskEntity createTask(String roleTag, ObjectNode payload) {
         ProjectEntity project = new ProjectEntity();
         String suffix = UUID.randomUUID().toString();
