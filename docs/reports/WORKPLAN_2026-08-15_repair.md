@@ -3349,3 +3349,80 @@ at, and not patched around.
 Note also: comma-joined `source_role_tag` values (`"BARCAN-TAG-01, BARCAN-TAG-09"`) are normal - 43 of
 44 tasks carry them. A hypothesis that this was the anomaly was refuted by measurement before any
 action was taken.
+
+## 2026-08-18 — how a task completes with no session: the webhook resolves a PR to the wrong task
+
+**Fact -> source -> hypothesis -> minimal check**, kept in that order.
+
+### Fact
+
+`f163e834` is `done` with `qualityGatePassed = true`, no Jules session, no PR, zero mentions in the
+backend log. Reaching `done` requires `ClaimService.complete` **twice** (its two-call state machine),
+and each call requires an active claim.
+
+Source: dashboard DTO, backend log, `ClaimService:189-214`.
+
+### Source of the mechanism
+
+`complete()` has four callers. Two are in `JulesDispatchService` (2019, 2050) and both sit inside a
+session-transition handler - they need a session that reached `pr_opened`, so they cannot apply here.
+One is the REST endpoint `ClaimController:36`. The fourth is `GithubWebhookController:78`:
+
+```java
+// For verification, we assume the branch name contains task ID or we find by PR URL.
+// In this MVP, we find the first running task for the repo.
+String repoName = root.path("repository").path("name").asText();
+…
+PrReviewEntity review = prReviewPipelineService.onPrOpened(prUrl, UUID.randomUUID(), prData);
+
+// For the test, we find a task associated with this repo and dispatch a reviewer mode session.
+taskRepository.findAll().stream()
+        .filter(t -> t.getProject().getRepositoryName().equals(repoName))
+        .filter(t -> t.getStatus() == TaskStatus.claimed)
+        .findFirst()
+        .ifPresent(task -> { claimService.complete(task.getId()); … });
+```
+
+On a `pull_request opened` event this takes **only the repository name**, picks `findFirst()` from an
+unordered `findAll()` of every `claimed` task in that repo, and completes that task's claim.
+
+`prUrl` is available and is used for the review record. It is **not** used to find the task. Where a
+task id belongs, `UUID.randomUUID()` is passed instead. The code says why in its own words: *"In this
+MVP"*, *"For the test"*.
+
+### The defect, stated exactly
+
+The event is about **one specific pull request**. The handler resolves it to **some claimed task in the
+same repository**. Those are different referents, and nothing in between establishes that they are the
+same thing.
+
+So when task A opens a PR while task B is also `claimed` in that repo, B can receive A's completion.
+B moves to `review`, its quality gate runs against its own description and passes, and a second event
+advances it to `done` - with no session, no PR and no log line of its own, because none of the work was
+ever B's.
+
+This is the same substitution as `well-specified` for `delivered`, one level deeper: not a wrong
+property of the right object, but **the right property recorded against the wrong object**. Credit for
+real delivered work is applied to a task that delivered nothing, and both tasks end up misdescribed -
+one silently, one visibly as `done_not_reached_main`.
+
+### Hypothesis, and what would confirm it
+
+**Established:** the mechanism exists, is reachable in production, and produces exactly the state
+`f163e834` is in.
+
+**Not established:** that this is what happened to `f163e834` specifically. Confirming it needs the
+claims table - a claim for this task with an account and no session - which means stopping the backend
+to read the store. Not done: the mechanism is enough to act on, and the repair does not depend on
+proving this one instance.
+
+### Repair, specified not applied
+
+The webhook must resolve the event to the task that owns the PR, using evidence it already has - the
+PR URL, or the branch name, both present in the payload and both already linked to a session elsewhere
+in the system. If no task can be identified, it must do nothing rather than complete an arbitrary one:
+an unidentifiable event is not a reason to credit a task chosen by stream order.
+
+Not applied. It changes a production webhook path, and the correct lookup (by PR URL, by branch, or by
+session) should be chosen against how sessions actually record their branch, which is a measurement not
+yet taken.
