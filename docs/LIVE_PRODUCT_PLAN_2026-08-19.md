@@ -1,6 +1,7 @@
 # Live Product Plan
 
-Rewritten, never appended. Every number carries its source. Nothing is inferred from naming.
+Rewritten, never appended. Every number carries its source. Nothing inferred from naming — that rule
+was broken twice while writing earlier versions of this file, and both are in §7.
 
 ---
 
@@ -9,221 +10,228 @@ Rewritten, never appended. Every number carries its source. Nothing is inferred 
 **The factory keeps a running product under permanent falsification.**
 
 "Finish the product" is not a goal because it is not a state. Product readiness means fitness to a
-market, and fitness is never proven - only not yet refuted. What a completeness metric measures is how
-much of the **currently known** scope is delivered; the next falsification enlarges that scope. A ratio
-falling after a falsification round is the system working.
+market; fitness is never proven, only not yet refuted. A completeness metric measures how much of the
+**currently known** scope is delivered, and the next falsification enlarges that scope. A ratio falling
+after a falsification round is the system working.
 
-That is not a preference. It follows from what falsification is. A theory earns its keep by forbidding
-something observable; a claim that forbids nothing is not false, it is empty. So a falsification cycle
-run against a product that does not run is quantification over an empty domain - `∀x ∈ ∅` - trivially
-satisfied and informative about nothing. This is the same vacuity found in the quality gate on
-2026-08-18 (`allMatch` over a stream filtered to nothing), and it is why the codebase already states:
+This is forced, not chosen. A theory earns its keep by forbidding something observable; a claim that
+forbids nothing is not false, it is empty. Falsification against a product that does not run is
+therefore quantification over an empty domain — `∀x ∈ ∅` — trivially satisfied and informative about
+nothing. The codebase already states it:
 
 > *"a philosophical audit reasoning about a product that can't even start would be reasoning about
 > nothing real. TOC: launchability is the constraint; everything else (including philosophical review)
-> subordinates to it until it's cleared. Kano Must-Be by construction - not a taste judgment, a
+> subordinates to it until it's cleared. Kano Must-Be by construction — not a taste judgment, a
 > precondition."*
 > — `WishlistSource.product_not_launchable`, 2026-08-11
 
-**The constraint therefore has an epistemic ground, not merely a throughput one.** Subordinating
-everything to launchability is not "unblock the bottleneck"; it is "make the observations possible at
-all".
-
-### The direction this forces
-
-Two architectures are available:
-
-- **(a)** build → complete → launch → improve
-- **(b)** launch as early as it *can* run → improve while running
-
-(a) is an infinite wait, because "complete" does not exist. (b) is forced by the epistemology: if
-fitness is only ever learned by not being refuted, the product must be observable to be learned about.
-Every drift back toward (a) is a category error wearing a schedule.
+So the constraint has an **epistemic** ground, not a throughput one. Subordinating to launchability is
+not "unblock the bottleneck"; it is "make observation possible at all".
 
 ---
 
 ## 2. Three axes that must never be merged
 
-| Axis | Question | Category | Answered by |
+| Axis | Question | Category | Owner |
 | --- | --- | --- | --- |
-| **Scope delivery** | how much of the currently known intent is built | a quantity over a known set | `ClientDeliverableReadinessService` |
-| **Operability** | does the thing start and stay up | a binary state about **now** | `ProductLaunchabilityService` + `runtime-launcher` |
-| **Fitness** | does it match the market | a hypothesis under permanent test | falsification cycles, forever |
+| **Scope delivery** | how much of currently known intent is built | quantity over a known set | `ClientDeliverableReadinessService` |
+| **Operability** | does it start and stay up | binary state about **now** | `ProductLaunchabilityService`, `ClientRuntimeObservabilityService` |
+| **Fitness** | does it match the market | hypothesis under permanent test | philosophical falsification, forever |
 
-They are categorically different, and every failure this plan repairs is one of them being read as
-another:
+Every failure this plan guards against is one axis read as another. Scope read as fitness closes the
+flow — **the error that broke this system twice in earlier sessions**, and which appeared in my own
+language throughout 2026-08-18.
 
-- Scope read as fitness → "the product is ready" → the flow gets closed. **This is the error that broke
-  this system twice in earlier sessions, and it appeared in my own language repeatedly on 2026-08-18.**
-- Operability read as scope → launch waits for a completeness number → infinite wait.
-- Fitness read as scope → falsification is expected to terminate → the engine is switched off as
-  "finished".
-
-**Verified in code, 2026-08-19:** nothing merges them today.
-`acceptProject` is reachable only from `ProjectController` - a human action; no service and no scheduler
-calls it. `DELIVERED` names a state and stops nothing. `CHECK_LAUNCHABILITY` is gated on `activeProject`
-alone, with no readiness condition. `DesignShopCycleEntity` is edge-triggered and explicitly anticipates
-readiness *"genuinely dropping and rising again after a falsification round adds new features"*.
-
-The architecture already embodies the philosophy. The work is to find where it does not.
+**Verified in code:** nothing merges them. `acceptProject` is reachable only from `ProjectController`,
+a human action. `DELIVERED` names a state and stops nothing. `CHECK_LAUNCHABILITY` is gated on
+`activeProject` alone. `DesignShopCycleEntity` is edge-triggered and explicitly anticipates readiness
+*"genuinely dropping and rising again after a falsification round adds new features"*.
 
 ---
 
-## 3. The systems - measured 2026-08-19
+## 3. The constraint, measured to its root
 
-71 services, 27 scheduled.
-
-| Subsystem | Files | Owns |
-| --- | --- | --- |
-| `services/gate` | 8 | quality gates by stage; spec-only roles deliver documents, not code |
-| `kaizen` | 8 | three levels: factory params (auto), factory source (review-only), product runtime |
-| `services/operational` | 7 | flow spine state matrix, policy, operational truth |
-| `services/design` | 5 | Stitch / image generation, drift, design-system falsification |
-| `services/runtime` | 5 | launchability, client runtime observability, launcher client |
-| `services/jules` | 5 | dispatch, sessions, review |
-| `services/compiler` | 2 | wishlist → tasks |
-| `services/coherence` | 1 | evidence graph: ECHO, AGM revision, Bayesian corroboration |
-| `services/advice` | 2 | idle-project advice |
-
-**Sixteen ways work enters the system** (`WishlistSource`): `client`, `role`, `role_mismatch_followup`,
-`chaotic_debt`, `self_falsification`, `onboarding_finding`, `coverage_gap`, `closeout_abandoned`,
-`philosophical_falsification`, `gemini_observer`, `runtime_observability_gap`,
-`design_system_falsification`, `design_review_concern_pattern`, `dockerfile_missing_build_stage`,
-`frontend_not_deployed`, `product_not_launchable`.
-
-**Six of the sixteen are about operability, not features.** The system already treats "does it run" as
-first-class work, which is the axis distinction of §2 made concrete.
-
-**The launch path**: `runtime-launcher` - separate container, Docker socket, port 8091, healthcheck on
-`/openapi.json` (added 2026-08-16 after it was down a whole day unnoticed). `POST /launch` clones the
-product repo at a ref, requires `docker-compose.yml` **at repo root**, remaps published ports, runs
-`docker compose up -d --build`. `POST /healthcheck` probes the result. **The product is launched by its
-own compose file**; the launcher adds nothing and assumes nothing.
-
-**Flags** (`GET /api/settings`):
+The chain is **complete and working**. Three claims in earlier versions of this file said otherwise;
+all three were refuted by measurement and are in §7.
 
 ```
-client_runtime_observability_enabled  true     stitch_enabled              true (env)
-design_shop_enabled                   true     stitch_api_key              SET  (****9SCw)
-design_system_falsification_enabled   true     nano_banana_enabled         true (env)
-philosophical_falsification_enabled   true     falsification_cycle_enabled FALSE
+ProductLaunchabilityService.checkOnce
+    → projects.launchability_checked_at = 2026-08-18 14:15:09      (set; the Phase-0 gate is OPEN)
+ClientRuntimeObservabilityService.maybeObserve
+    → launcherClient.launch(repoUrl, defaultBranch, slug)          (called; adaptive cadence)
+runtime-launcher POST /launch
+    → git clone → docker compose up -d --build
+client_runtime_observations                              1 row
+    observed_at    2026-08-18 14:17:08
+    launch_success FALSE
+wishlist source=product_not_launchable                   4 rows    (the system filed the work itself)
 ```
 
-**Live state**: `ratio 1.0 · merged 25/25 · features 6/6 · pipeline idle · failed 0 ·
-state ready_for_falsification`. Per §1 this means *everything currently known is delivered*, and the
-enabled falsification tracks have just produced the next scope: `frontend_not_deployed` and
-`design_review_concern_pattern`, both `compiling`.
+**The full failure text:**
+
+```
+object-storage Error failed to resolve reference
+  "docker.io/minio/minio:RELEASE.2023-09-20T22-40-07Z": not found
+db Error context canceled
+```
+
+**At source** — `runtime-launcher-workspace/test-forty-ninth/docker-compose.yml`:
+
+```yaml
+services:
+  app:             build: …
+  backup-cron:     build: …
+  db:              image: postgres:15-alpine                        # resolves
+  object-storage:  image: minio/minio:RELEASE.2023-09-20T22-40-07Z  # does NOT resolve
+```
+
+Two independent defects, both already recognised by the system as work:
+
+- **The image tag has no bearer.** Its *form* is perfect — MinIO really does name releases
+  `RELEASE.YYYY-MM-DDTHH-MM-SSZ` — and the referent does not exist. This is
+  `RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` violated in a generated artefact: a name with the right
+  shape and no bearer. Quantified actualism says do not quantify over what does not exist; the compose
+  quantifies over an image that does not.
+- **There is no frontend service at all**, which confirms `frontend_not_deployed` from a second,
+  independent direction.
+
+**The constraint is not in the factory. It is one unresolvable image reference in the product's own
+compose.**
 
 ---
 
-## 4. What is measured to be wrong
+## 4. What is actually wrong, and at which level
 
-**4.1 Launchability is a verdict about the past, not a state.** `ProductLaunchabilityService` sets
-`launchabilityCheckedAt` unconditionally after the first check, "so this never re-fetches from GitHub on
-every tick forever". Correct as written for a file-existence probe. But operability is a claim **about
-now** (§2), and a value written once cannot be one. A product that becomes unlaunchable later is never
-noticed.
+**4.1 (product, one instance)** `object-storage` names a nonexistent image. Launch dies at pull, before
+anything else is attempted. `db` reports `context canceled` — collateral, not a second fault.
 
-**4.2 The constraint is measured and never acted on.** The service answers "could this be launched" and
-files a wishlist item when the answer is no. `/launch` and `/healthcheck` exist, are healthy, and are
-called by nothing in that path. The architecture declares launchability supreme (§1) and then leaves the
-edge from constraint to action missing.
+**4.2 (product, one instance)** No frontend service. Even with 4.1 fixed, the launch would serve a
+partial product.
 
-**4.3 The main falsification engine is the philosophical track, and it is running.**
-`philosophical_falsification_enabled = true`, and it is what produced both items now compiling. An
-earlier version of this plan read `falsification_cycle_enabled = false` as "the engine is off" - that
-was wrong. That flag governs a different, internally complex mechanism which is **deliberately left
-alone** (operator directive, 2026-08-19). Nothing here proposes touching it.
+**4.3 (factory, systemic)** **Nothing checks that a generated deployment descriptor refers to things
+that exist.** `ProductLaunchabilityService` asks only *"is there a compose file"*. The next predicate in
+the same family — *"do its references resolve"* — is absent, so the first check of a generated name is
+the launch itself, and the failure arrives as a generic `docker compose up failed` rather than as
+*"this reference has no bearer"*.
 
-Recorded as a correction rather than edited away: I inferred which component was "the main engine" from
-a flag name, which is the same reading-from-naming this plan forbids in its own header.
-
-**4.4 The product's compose is backend-only.** The reason `frontend_not_deployed` exists. Until it
-merges, a launch would serve half a product.
+This is the level that matters. 4.1 and 4.2 are instances; 4.3 is why instances of this class keep
+arriving.
 
 ---
 
-## 5. Plan
+## 5. Deterministic plan
 
-Ordered by the constraint, because §1 says everything subordinates to it. Each item states **why it
-follows**, **what would falsify it**, and its **entry mode** on the existing promotion policy
-(`observe_only → warn_only → soft_gate → hard_gate → auto_remediate`).
+Ordered by dependency, not by preference. Each item states its **precondition**, **what it changes**,
+**why it follows**, its **falsifier**, and its **entry mode** on the existing promotion policy.
+No item gates on a completeness metric; no item introduces a terminal state.
 
-### 5.1 — Let `frontend_not_deployed` land. Do not launch before it does.
+### 5.1 — Let the two product-level items land
 
-*Follows because*: launching a backend-only image would produce a running thing that is not the product,
-and falsification against it would be observing the wrong object - the referent error, not a lesser
-version of the right one.
+**Precondition:** none. Both are already `compiling`.
+**Changes:** the product's compose gains a frontend service and, via `dockerfile_missing_build_stage`,
+a build stage that serves it.
+**Follows because:** they are ordinary product work already routed through wishlist → compiler → task →
+Jules. Touching them by hand would bypass the path whose bypass caused the 2026-08-07..09
+self-referential contamination incident, recorded in `ProductLaunchabilityService`'s own javadoc.
+**Falsifier:** they merge and the compose still lacks a frontend service → the task's scope was wrong,
+not the ordering.
+**Mode:** none. Watch only. **Do not launch before they merge** — launching a partial product means
+falsifying the wrong object.
 
-*Falsified if*: the item merges and the compose still does not serve the frontend. Then the task's
-own scope was wrong, not the plan's ordering.
+### 5.2 — The unresolvable image reference must become work, not a launch failure
 
-*Mode*: none. Watch only.
+**Precondition:** none.
+**Changes:** the `minio/minio:RELEASE.2023-09-20T22-40-07Z` reference is replaced by one that resolves.
+**Follows because:** this is the single thing killing the launch (§3), and it is product content — so it
+belongs on the same wishlist → task path as 5.1, for the same contamination reason. There are already
+four `product_not_launchable` items; whether any of them names *this* reference is **unmeasured**, and
+that measurement comes first: filing a fifth would repeat the unbounded-repetition failure the
+one-per-project dedup guard exists to prevent.
+**Falsifier:** the tag resolves on retry → it was a transient registry fault, not a nonexistent bearer,
+and 4.3 does not follow from this instance.
+**Mode:** none — ordinary product work.
 
-### 5.2 — Make launchability a state instead of a memory.
+### 5.3 — Give launchability the predicate it is missing: references must have bearers
 
-*Follows because*: §2 classes operability as a claim about **now**, and §4.1 shows it is currently
-written once. Re-check when the thing it describes could have changed - a merge to main - rather than
-once per project forever.
+**Precondition:** 5.2 measured, so the check is written against a known-real instance.
+**Changes:** `ProductLaunchabilityService` gains one further precondition — every `image:` in the
+product's compose resolves in the registry — recorded like its existing one and routed the same way when
+it fails.
+**Follows because:** this is the actualist rule (`RUT_BARKAN_MARKUS_01`, score 12.0, defect class *D002
+invalid state*) applied to a generated artefact. The service already owns operability preconditions; its
+current predicate is simply too shallow, asking whether the descriptor **exists** and not whether what it
+**names** exists. It is not a new mechanism — it is completing one.
+**Falsifier:** the check never fires again on any project → generated composes do not in fact invent
+image names, and 4.3 was a single accident rather than a class.
+**Mode:** `observe_only` — record the unresolvable reference and file work, gate nothing.
 
-*Falsified if*: re-checking finds the value never changes in practice. Then the once-only check was
-adequate and 4.1 is a defect on paper only.
+### 5.4 — Launchability must be read from observations, not from a timestamp
 
-*Mode*: `observe_only` - record the re-checked state, change no decision.
+**Precondition:** 5.3 exists, so there is more than one precondition to represent.
+**Changes:** "is this launchable **now**" is answered from the latest `ClientRuntimeObservationEntity`,
+not from `launchability_checked_at` being non-null.
+**Follows because:** §2 classes operability as a state about now.
+`ClientRuntimeObservationEntity` is already exactly the right object — `id`, `projectId`, `observedAt`,
+`launchSuccess`, append-only — satisfying both
+`RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` (owner, identity, lifecycle) and
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (*"show stable identifiers and replay evidence across time
+points"*). The defect is that a Phase-0 boolean is consulted where a history exists.
+**Falsifier:** the derived state never differs from the timestamp in practice → the timestamp was
+adequate and this is a defect on paper.
+**Mode:** `observe_only` — publish the derived state beside the existing one before anything reads it.
 
-### 5.3 — Close the edge from constraint to action.
+### 5.5 — Relaunch when main changes
 
-*Follows because*: a constraint that is measured and never acted on is not a constraint, it is a report.
-When launchability holds: `POST /launch`, then `POST /healthcheck`, and record the outcome as evidence
-in the graph so it can corroborate and be corroborated like any other fact.
+**Precondition:** one launch has succeeded. Meaningless before that.
+**Changes:** a merge to main triggers a new launch, so the running instance tracks main.
+**Follows because:** falsification must observe the **current** product (§1); an instance lagging main
+is a stale referent, and reasoning about it is reasoning about something that no longer exists.
+**Falsifier:** relaunching yields no new observations → the value is in observing, not in freshness.
+**Mode:** deferred until its precondition holds. Building it now would be a mechanism with nothing to
+act on.
 
-*Falsified if*: a launch succeeds and nothing downstream can use it - i.e. no falsification track
-actually observes the running product. Then the missing edge was further along than this.
+### 5.6 — `falsification_cycle_enabled` is not to be touched
 
-*Mode*: `observe_only` first - launch into the launcher's own workspace and record, before anything
-gates on the result.
-
-### 5.4 — Relaunch on merge, once a first launch has succeeded.
-
-*Follows because*: falsification must observe the **current** thing (§1). A running instance that lags
-main is a stale referent, and reasoning about it is reasoning about something that no longer exists.
-
-*Falsified if*: relaunching produces no new observations - i.e. the observability layer reports the same
-things regardless of version. Then the value is in observation, not in freshness.
-
-*Mode*: deferred. It is meaningless until 5.3 has succeeded once, and building it earlier would be a
-mechanism with nothing to act on.
-
-### 5.5 — Do not touch `falsification_cycle_enabled`.
-
-*Follows because*: the engine of the goal is the philosophical track, which is already on (§4.3). That
-other flag governs a separate mechanism that is complex inside, and the operator has directed it be left
-alone. A flag whose blast radius I cannot measure is not a lever I may pull.
-
-*Mode*: none. This is a prohibition, not a task.
+The engine of the goal is the **philosophical** track and it is enabled — it produced both items now
+compiling. That other flag governs a different, internally complex mechanism, and the operator has
+directed it be left alone. A flag whose blast radius I cannot measure is not a lever I may pull.
+**Mode:** prohibition, not a task.
 
 ---
 
-## 6. Guards against my own demonstrated failure modes
+## 6. Dependency order, explicitly
 
-These are not general caution. Each is a thing I did on 2026-08-18, recorded so the plan does not
-depend on my remembering.
+```
+5.2 (measure existing product_not_launchable items, then fix the reference)
+ └─ 5.1 (frontend + build stage land)
+     └─ first successful launch
+         ├─ 5.4 (launchability read from observations)
+         └─ 5.5 (relaunch on merge)
+5.3 (reference-resolution precondition) — independent of the above, but written after 5.2
+     so it is built against a measured instance rather than an imagined one
+```
 
-| Failure | Instances | Guard |
+Nothing in this order waits on a readiness number. The only sequencing is causal.
+
+---
+
+## 7. Corrections — claims of mine that measurement refuted
+
+| I claimed | Measurement | The error |
 | --- | --- | --- |
-| Reading absence in a projection as absence in the data | 5 (dashboard DTO fields ×2, `unzip` in container, `docker logs` on a dead bridge, `stitch_api_key` masked field) | Before concluding "X is absent", show the same query returning a value for a case known to have one |
-| Treating a metric as a terminal state | throughout the day, in language | §2 is the check: name which axis the number belongs to before drawing any conclusion from it |
-| Proposing to merge deliberately separated distinctions | the first version of this plan proposed gating launch on readiness | Any proposal that reduces the number of distinct predicates must state what incident originally separated them |
-| Declaring deployed what was never built | 2 (build exit code read as proof; `backend UP` from a stale image) | A build's exit code is authority on nothing; verify the artifact or the behaviour |
-| Reading a tool's silence as a fact | the same 5 as above | Verify the instrument before believing the measurement |
-| Inferring a component's role from a flag's name | 1 (read `falsification_cycle_enabled=false` as "the main engine is off"; the main engine is the philosophical track and it is on) | Name the component that implements the thing, and show it running, before describing what is or is not working |
+| "Nobody launches; the constraint is measured and never acted on" | `ClientRuntimeObservabilityService` calls `launcherClient.launch`; one observation row exists | Read a service's *name* as its scope; never opened the caller |
+| "Launchability is a verdict about the past, with no state object" | `ClientRuntimeObservationEntity` — append-only, owner, identity, `observedAt` | Concluded a model was absent without looking for it |
+| "The main falsification engine is off" | The main engine is the philosophical track, and it is on | Inferred a component's role from a flag's name |
+| "`stitch_api_key` is null" | `****9SCw` — set; I read `enabled`, which is null for all secrets | Read absence in the wrong field as absence in the data — the fifth instance that day |
+| "Launch should be a consequence of readiness" | The two are separate axes, deliberately (§2) | Proposed merging distinctions an incident had separated |
 
 ---
 
-## 7. Forbidden by construction
+## 8. Forbidden by construction
 
-- **No number may be treated as "the product is ready."**
-- **No number may close the flow.** The only terminal is `acceptProject`, and it is a human's.
-- **No launch may wait on a completeness metric.** Waiting for "complete" is waiting for a state that
-  does not exist (§1).
-- **No falsification track may be switched off as "finished."** Finishing is not a thing it does.
+- No number may be treated as "the product is ready."
+- No number may close the flow. The only terminal is `acceptProject`, and it is a human's.
+- No launch may wait on a completeness metric — that is waiting for a state that does not exist.
+- No falsification track may be switched off as "finished."
+- No product content may be written directly into the client repo, bypassing wishlist → task → Jules.
+  That bypass is what caused the 2026-08-07..09 self-referential contamination.
