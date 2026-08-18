@@ -3500,3 +3500,53 @@ right about `f163e834` since 2026-08-16.
 How `f163e834` reached `status = done` with no claim and no session. The gate flag no longer needs
 explaining, but the status transition does. `ClaimService.complete` requires an active claim and there
 never was one for this task.
+
+## 2026-08-18 09:53Z — the fact I made producible is not durable
+
+Watching the one invariant the beacon named: does `done_not_reached_main` stay raised by the system,
+without a manual status change.
+
+### Measured
+
+```
+evidence node naming f163e834   created 2026-08-17T22:20:00Z   (11.5 hours ago)
+DeliveryRealityProducerService runs since deploy        1
+observer read window   GeminiProjectObserverService:687
+                       findByProjectIdAndCreatedAtAfter(projectId, now - 24 HOURS)
+```
+
+The node ages out of the observer's window at 2026-08-18T22:20Z. The producer is idempotent by Charter
+invariant 4 - `operationalRealityFindingRepository.findByTaskId(...)` non-empty means "already done,
+nothing to do" - so it will **not** create a replacement.
+
+**The condition persists and its evidence expires.** After ~12 more hours the observer stops seeing the
+one fact that names the delivery gap, and nothing re-raises it. That is a defect in what I built, not
+in the system I was repairing.
+
+### The shape
+
+Idempotency is correct: a standing condition must not spawn a row per sweep. A 24-hour read window is
+also reasonable: a reasoner should look at what is current.
+
+Both are right, and together they are wrong. A **standing** condition announced **once** into a
+**decaying** window is not monitoring - it is a historical note that silently stops being read. D4
+again, one turn subtler: the signal has a reader, and the reader's horizon is shorter than the fact.
+
+It is also the same family as `ACP-101`. There, a verdict did not say **what** it was about. Here, an
+evidence node does not say **that it is still true** - its timestamp records when the condition was
+first noticed, and is read as when it was last true.
+
+### The repair, stated but not yet applied
+
+The evidence is about a **present** condition, so while the condition holds its record must be current.
+The minimal form keeps one row and refreshes it rather than adding another: the producer, finding an
+existing finding for a task that still satisfies `done_not_reached_main`, touches the evidence node's
+timestamp instead of skipping silently. One row, always current, no duplicates, idempotency preserved
+in the sense that matters - **no growth** - while the fact stops decaying.
+
+Not applied yet: it changes how a producer treats existing rows, and the right verb (touch the node,
+touch the finding, or re-emit and let dedupe collapse it) should be chosen against how the coherence
+graph treats repeated nodes, which is a measurement not yet taken.
+
+**No status change is involved.** This closes the gap the beacon named - the fact raising itself - and
+does not approach §0's boundary.
