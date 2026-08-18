@@ -72,6 +72,15 @@ public class StrandedFinalizingSweepService {
     private final WishlistRepository wishlistRepository;
 
     /**
+     * Self-proxy, the idiom OpsAuditorService already uses here. compareAndSetStatus is a @Modifying query
+     * and needs an actual transaction; a plain this.sweepProject(...) call bypasses the Spring proxy, so the
+     * @Transactional never applies and the write fails with "No EntityManager with actual transaction
+     * available" - which is exactly how the first deployment of this class failed at 00:10:00Z. @Lazy breaks
+     * the constructor cycle that self-injection would otherwise create.
+     */
+    private final StrandedFinalizingSweepService self;
+
+    /**
      * How long {@code finalizing} may legitimately last. It covers one GitHub fetch plus a parse, so this is
      * generous by roughly two orders of magnitude on purpose: the cost of releasing a live claim too early
      * is a duplicated compile, and the cost of waiting is a halted project, but the compare-and-swap already
@@ -81,9 +90,11 @@ public class StrandedFinalizingSweepService {
     private long maxAgeMinutes;
 
     public StrandedFinalizingSweepService(ProjectRepository projectRepository,
-                                           WishlistRepository wishlistRepository) {
+                                           WishlistRepository wishlistRepository,
+                                           @org.springframework.context.annotation.Lazy StrandedFinalizingSweepService self) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
+        this.self = self;
     }
 
     @Scheduled(cron = "${stranded-finalizing.cron:0 */10 * * * ?}")
@@ -93,7 +104,7 @@ public class StrandedFinalizingSweepService {
                 .toList()) {
             LogScope.project(project.getId());
             try {
-                sweepProject(project);
+                self.sweepProject(project);
             } catch (Exception e) {
                 log.error("StrandedFinalizingSweepService: failed for project {}: {}",
                         project.getId(), e.getMessage(), e);
@@ -103,7 +114,8 @@ public class StrandedFinalizingSweepService {
         }
     }
 
-    private void sweepProject(ProjectEntity project) {
+    @org.springframework.transaction.annotation.Transactional
+    public void sweepProject(ProjectEntity project) {
         Instant cutoff = Instant.now().minus(Duration.ofMinutes(maxAgeMinutes));
         for (WishlistEntity w : wishlistRepository.findByProjectIdAndStatus(project.getId(), WishlistStatus.finalizing)) {
             // lastCompileDispatchedAt is the closest available referent for "when this claim was taken" -
