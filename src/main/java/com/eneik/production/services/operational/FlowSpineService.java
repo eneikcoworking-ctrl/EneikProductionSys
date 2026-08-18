@@ -356,7 +356,16 @@ public class FlowSpineService {
         long active = tasks.stream().filter(task -> Set.of(TaskStatus.claimed, TaskStatus.in_progress).contains(task.getStatus())).count();
         long review = tasks.stream().filter(task -> Set.of(TaskStatus.pending_review, TaskStatus.review).contains(task.getStatus())).count();
         long done = countStatus(tasks, TaskStatus.done) + countStatus(tasks, TaskStatus.spike_completed);
-        long failed = countStatus(tasks, TaskStatus.failed);
+        // 2026-08-18: count only failed tasks the named resolver for this state can ever act on. The
+        // transition row below names PlannedWorkRecoveryService as the resolver for
+        // BLOCKED_BY_FAILED_FRONTIER, and that service declares its own domain in
+        // isResumableInPrinciple. Counting every failed task instead let five tasks with null featureId and
+        // null sourceWishlistId - not planned deliverables, outside totalPlannedTasks entirely - hold the
+        // project in a state whose only resolver was structurally unable to clear it. The gate and its
+        // resolver must quantify over the same set, or the state is unreachable-from by construction.
+        long failed = tasks.stream()
+                .filter(com.eneik.production.services.PlannedWorkRecoveryService::isResumableInPrinciple)
+                .count();
         long blocked = countStatus(tasks, TaskStatus.blocked);
         long pendingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.pending).count();
         long compilingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.compiling).count();

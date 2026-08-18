@@ -147,6 +147,30 @@ public class PlannedWorkRecoveryService {
         return true;
     }
 
+    /**
+     * The field-only NECESSARY conditions for this service to ever resume a failed task.
+     *
+     * Declared here, next to the full predicate, so the set has one point of application (Charter
+     * invariant 10). {@link #isEligibleRetiredPlanTask} adds the sufficient conditions on top - the source
+     * wishlist's role and source, and the failure reason - which need repository lookups. This part needs
+     * none, so a caller that must reason about the task population without loading anything can use it.
+     *
+     * Why it exists (2026-08-18): FlowSpineService gates BLOCKED_BY_FAILED_FRONTIER on
+     * {@code failedTasks() > 0} counting EVERY failed task, while the transition row names this service as
+     * the resolver. Measured on test-forty-ninth, all five failed tasks carry null featureId and null
+     * sourceWishlistId - they are not planned deliverables, sit outside totalPlannedTasks entirely, and can
+     * never satisfy the resolver. They therefore satisfied the gate permanently while being structurally
+     * unresolvable, and the state could not clear by itself. That is `failed task` substituted for
+     * `failed planned deliverable` - the undeclared-set error Charter invariant 8 names for metric
+     * denominators, occurring in a state predicate instead.
+     */
+    public static boolean isResumableInPrinciple(TaskEntity task) {
+        return task != null
+                && task.getStatus() == TaskStatus.failed
+                && task.getSourceWishlistId() != null
+                && task.getFeatureId() != null;
+    }
+
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
         if (task.getStatus() != TaskStatus.failed || task.getSourceWishlistId() == null
                 || task.getFeatureId() == null) {
