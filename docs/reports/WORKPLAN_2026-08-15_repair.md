@@ -3083,3 +3083,58 @@ The delivery gap is untouched and is exactly what it was three days ago: **one t
 asserting `done` with no merge evidence.** That is the substitutivity error the goal names - `task
 done` standing in for `value delivered` - and it now stands alone, with nothing else in the system
 obscuring it.
+
+## 2026-08-18 05:5xZ — 8becdc01 is a real `task done != value delivered` gap
+
+Established from non-invasive sources only: `GET /api/projects/{id}/dashboard` and the backend log.
+The store was not read and nothing was built.
+
+```
+id                    f163e834-dbc7-46cf-8f1e-163f97bf17c6
+title                 Runtime Contract 8becdc01
+status                done
+qualityGatePassed     true
+cynefinDomain         clear
+tag                   BARCAN-TAG-01  (Architecture)
+julesSessionName      null
+julesDispatchStatus   null
+payload.source_wishlist_id  8becdc01-d4ef-4d8a-82b2-e9d9dbebc7c9
+mentions in the entire backend log   0
+```
+
+### Why the nulls are a measurement and not a projection artefact
+
+The dashboard task DTO carries exactly these keys: `cynefinDomain, dependsOn, description, id,
+julesDispatchStatus, julesSessionName, payload, priority, qualityGatePassed, status, tag, title`.
+
+`julesSessionName` and `julesDispatchStatus` **are in that set**, and on other `done` tasks from the
+same payload they are populated:
+
+```
+392deb2d  julesSessionName 'sessions/4542055490084663732'   julesDispatchStatus 'Dispatched to Jules'
+db0430a3  julesSessionName 'sessions/10690298081185582019'  julesDispatchStatus 'Dispatched to Jules'
+```
+
+This is the distinction that was missed on 2026-08-18 with the five failed tasks: there,
+`featureId` and `sourceWishlistId` were **absent from the DTO's key set entirely**, and their apparent
+nullity was an artefact. Here the keys are present and the values are null, which is a fact about the
+data. The comparison against two sibling tasks is what establishes it.
+
+### The finding
+
+**No work was ever dispatched for this task.** No Jules session, no dispatch status, no PR, and the
+backend log has never mentioned its id - not once, across the whole retained log. Yet it is `done`
+and `qualityGatePassed` is `true`.
+
+It is therefore a genuine instance of the substitutivity error the goal names: `task done` standing in
+for `value delivered`, with nothing behind the claim. `done_not_reached_main` is the readiness
+invariant correctly refusing to accept the claim, and it has been the single blocked item since
+2026-08-16.
+
+Its `cynefinDomain` is `clear`, so it is not excluded as auxiliary on that ground.
+
+### Narrow question, not yet answered
+
+How did a task reach `done` with `qualityGatePassed = true` having never been dispatched? That is one
+question about one task, and answering it is the next step. It is deliberately not widened into a
+review of the quality gate or of task-completion paths in general.
