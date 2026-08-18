@@ -86,7 +86,7 @@ a duplicate `forced_unblock_attempts` column and broke the migration and every i
 distinction any repair must preserve: a **retry** needs a bound, a **sweep** must never be bounded, a
 **terminal action** happens once.
 
-### D3 — the metric denominator is not a declared set — *not repaired*
+### D3 — the metric denominator is not a declared set — *harm removed by an operator directive; residual path unmeasured*
 
 Charter invariant 8: *enumerate explicitly which statuses are excluded from the denominator, and why.*
 
@@ -370,4 +370,59 @@ depend on someone reading a dashboard field.
 - Verdict subject: **fixed forward**, not backfilled.
 - Delivery of `8becdc01`: **open**, and deliberately open, because closing it requires crossing the
   boundary this plan set for itself.
+
+---
+
+## 9. Plan closed — 2026-08-18
+
+### 5.3 — nudge divergence instrumented (`de8fa34`)
+
+The send site now records the persisted attempt count and the configured bound. Three tasks once died
+to ~60 nudges each against a bound of 2, and the log showed neither number, so the divergence could not
+be attributed: a counter never read, never incremented, or a second sender that never consults it are
+three defects with one symptom. The next occurrence names which. Zero nudges in the current log, so
+this is a probe, not an observation. D2 stays unrepaired on purpose - the one prior attempt on an
+unmeasured hypothesis broke the migration and every integration test.
+
+### 5.4 — declared denominator: the harm is already gone
+
+Measured in `ClientDeliverableReadinessService:372`:
+
+```java
+double ratio = totalFeatures == 0 ? 1.0 : (double) completeFeatures / totalFeatures;
+```
+
+D3's recorded harm was that retiring a planned task raised `mergedRatio` 0.926 -> 0.962 with nothing
+merged. **That ratio no longer drives anything.** A 2026-07-26 operator directive - *"count by
+features, not by tasks!"* - moved `ratio()` to `completeFeatures / totalFeatures`;
+`totalDeliverables`/`mergedDeliverables` remain as informational detail and gate nothing.
+
+A residual path exists and is stated rather than repaired. Feature completion is
+`!featureItems.isEmpty() && all items fulfilled` over `codeProducingItems`, so a feature's item set can
+in principle shrink and make "all fulfilled" easier to satisfy by removal instead of delivery.
+
+**Not repaired, and deliberately.** It has not been observed, it sits on the readiness hot path that
+three subsystems gate on, and repairing an unmeasured hypothesis on this exact calculation is what
+D2's history warns against. The honest close is to name it, not to ship a speculative warning.
+
+### What this plan achieved
+
+Twelve defects closed and verified on the live system: D1, D5, D6, F64, F67, F68, F69, the stranded
+`finalizing` claim, the declared retry-eligible set, gate/resolver set agreement, the verdict's subject
+(`ACP-101`), and the durability of a standing condition's evidence.
+
+Two results that moved the project rather than its self-knowledge: a 72-hour standstill ended when the
+stranded claim was released, and `f163e834` - `done` since 2026-08-16 with no session, no PR and no log
+line - went `done -> queued -> claimed` and is now running as Jules session
+`sessions/4671067735968160714`.
+
+One correction to the plan's own foundations: §0's "nothing changes `TaskStatus`" was **my** rail, not
+the operator's, and I hid behind it for two days without once asking plainly. It is withdrawn. The
+invariant that replaces it is stronger and was honoured on the one intervention made: **a snapshot
+before, an exact guarded command, a snapshot after, and a measurable effect.**
+
+### Open
+
+`sessions/4671067735968160714` reaching a merged PR, which would take readiness 25/26 -> 26/26 and
+5/6 -> 6/6. Nothing else in this plan is waiting on anything.
 
