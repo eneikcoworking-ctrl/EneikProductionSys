@@ -49,6 +49,31 @@ a human action. `DELIVERED` names a state and stops nothing. `CHECK_LAUNCHABILIT
 
 ---
 
+## 2.5 Three contexts that must never be mixed
+
+Operator directive, and already encoded in `KaizenProposal.KaizenCategory`, whose comment records it
+verbatim: *"clearly marked as a product improvement, not mixed into the factory list."*
+
+| Context | What it is | Kaizen categories | Boundary |
+| --- | --- | --- | --- |
+| **Factory** | EneikProductionSys' own parameters and source | `WASTE_REDUCTION`, `SPEED_OPTIMIZATION`, `DEFECT_ELIMINATION`, `BUFFER_TUNING` (params, auto-applicable) · `SYSTEMIC_DEFECT`, `KNOWN_PATTERN_VIOLATION`, `ROLE_QUALITY_DRIFT` (source, review-only) | fixing the factory's own source is never a safe automatic action |
+| **Delivery** | the process that turns intent into a shipped, running product: wishlist → compiler → task → Jules → PR → merge → launch | manifests as flow states and wishlist sources, not as content | product content is never written directly; the bypass caused the 2026-08-07..09 contamination |
+| **The product** | the client repository's content and its real runtime behaviour | `PRODUCT_RUNTIME_DEFECT` — *"never folded into SYSTEMIC_DEFECT"* | review-only, `expectedGainPercent = 0` |
+
+**Every item in this plan must name all three**: the context its change lives in, the context its defect
+belongs to, and the context it is about. They are frequently different, and blurring them is the failure
+this section exists to prevent.
+
+Worked example, from this plan's own constraint:
+
+- the nonexistent `minio/minio:RELEASE.…` tag is a **product** defect (content in the client repo);
+- that a generated descriptor was shipped without its references being checked is a **delivery** defect;
+- the code that would check it lives in the **factory**.
+
+One symptom, three contexts, three different owners and three different rules about who may act.
+
+---
+
 ## 3. The constraint, measured to its root
 
 The chain is **complete and working**. Three claims in earlier versions of this file said otherwise;
@@ -127,6 +152,8 @@ No item gates on a completeness metric; no item introduces a terminal state.
 
 ### 5.1 — Let the two product-level items land
 
+**Change lives in:** nowhere — watch only. **Defect belongs to:** the product. **It is about:** the product.
+
 **Precondition:** none. Both are already `compiling`.
 **Changes:** the product's compose gains a frontend service and, via `dockerfile_missing_build_stage`,
 a build stage that serves it.
@@ -140,6 +167,8 @@ falsifying the wrong object.
 
 ### 5.2 — The unresolvable image reference must become work, not a launch failure
 
+**Change lives in:** the product (one line in its compose), authored by Jules through the ordinary path. **Defect belongs to:** the product. **It is about:** the product.
+
 **Precondition:** none.
 **Changes:** the `minio/minio:RELEASE.2023-09-20T22-40-07Z` reference is replaced by one that resolves.
 **Follows because:** this is the single thing killing the launch (§3), and it is product content — so it
@@ -151,21 +180,37 @@ one-per-project dedup guard exists to prevent.
 and 4.3 does not follow from this instance.
 **Mode:** none — ordinary product work.
 
-### 5.3 — Give launchability the predicate it is missing: references must have bearers
+### 5.3 — References in a generated descriptor must have bearers
+
+**Change lives in:** factory (`ProductLaunchabilityService`, source — review-only category).
+**Defect belongs to:** delivery — an artefact was shipped without its references being checked.
+**It is about:** the product — the `image:` lines in the client repo's compose.
 
 **Precondition:** 5.2 measured, so the check is written against a known-real instance.
-**Changes:** `ProductLaunchabilityService` gains one further precondition — every `image:` in the
-product's compose resolves in the registry — recorded like its existing one and routed the same way when
-it fails.
-**Follows because:** this is the actualist rule (`RUT_BARKAN_MARKUS_01`, score 12.0, defect class *D002
-invalid state*) applied to a generated artefact. The service already owns operability preconditions; its
-current predicate is simply too shallow, asking whether the descriptor **exists** and not whether what it
-**names** exists. It is not a new mechanism — it is completing one.
+**Changes:** the service gains one further precondition — every `image:` reference in the product's
+compose resolves in the registry — recorded like its existing one and routed the same way when it fails.
+
+**Why it follows:** `RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` (score 12.0, defect class *D002 invalid
+state*) — *"create code only for actual domain objects"*. A generated compose names an object with the
+right form and no bearer; quantified actualism forbids quantifying over what does not exist. The service
+already owns operability preconditions and its current predicate is simply too shallow: it asks whether
+the descriptor **exists**, not whether what the descriptor **names** exists. This completes a predicate
+rather than adding a mechanism.
+
+**Why the factory and not the product:** fixing the tag is product work and belongs on the wishlist path.
+Checking that generated names have bearers is delivery quality, and delivery is implemented in the
+factory. Doing the first from the factory would be the bypass §8 forbids; leaving the second to the
+product would mean every generated project rediscovers it.
+
 **Falsifier:** the check never fires again on any project → generated composes do not in fact invent
-image names, and 4.3 was a single accident rather than a class.
-**Mode:** `observe_only` — record the unresolvable reference and file work, gate nothing.
+image names, and this was one accident rather than a class.
+
+**Mode:** `observe_only` — record the unresolvable reference and file work through the ordinary path;
+gate nothing.
 
 ### 5.4 — Launchability must be read from observations, not from a timestamp
+
+**Change lives in:** factory source. **Defect belongs to:** the factory — it consults a Phase-0 boolean where a history exists. **It is about:** delivery — whether the shipped product is up right now.
 
 **Precondition:** 5.3 exists, so there is more than one precondition to represent.
 **Changes:** "is this launchable **now**" is answered from the latest `ClientRuntimeObservationEntity`,
@@ -182,6 +227,8 @@ adequate and this is a defect on paper.
 
 ### 5.5 — Relaunch when main changes
 
+**Change lives in:** factory source. **Defect belongs to:** delivery — the running instance may lag main. **It is about:** the product, whose current state is what falsification must observe.
+
 **Precondition:** one launch has succeeded. Meaningless before that.
 **Changes:** a merge to main triggers a new launch, so the running instance tracks main.
 **Follows because:** falsification must observe the **current** product (§1); an instance lagging main
@@ -191,6 +238,8 @@ is a stale referent, and reasoning about it is reasoning about something that no
 act on.
 
 ### 5.6 — `falsification_cycle_enabled` is not to be touched
+
+**Change lives in:** nowhere. This is a prohibition. **It is about:** the factory.
 
 The engine of the goal is the **philosophical** track and it is enabled — it produced both items now
 compiling. That other flag governs a different, internally complex mechanism, and the operator has
@@ -224,6 +273,7 @@ Nothing in this order waits on a readiness number. The only sequencing is causal
 | "The main falsification engine is off" | The main engine is the philosophical track, and it is on | Inferred a component's role from a flag's name |
 | "`stitch_api_key` is null" | `****9SCw` — set; I read `enabled`, which is null for all secrets | Read absence in the wrong field as absence in the data — the fifth instance that day |
 | "Launch should be a consequence of readiness" | The two are separate axes, deliberately (§2) | Proposed merging distinctions an incident had separated |
+| Reported "Jules will fix the tag" as though product content, delivery quality and factory code were one topic | Three contexts, each with a different owner and a different rule about who may act (§2.5) | Mixed factory, delivery and product in a single sentence - against an operator directive already encoded in `KaizenCategory` |
 
 ---
 
