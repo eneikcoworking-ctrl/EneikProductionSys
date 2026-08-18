@@ -3030,3 +3030,56 @@ rather than fix it.
 
 **Not fixed.** The repair is a declared set, not another string, and which side should change - the
 gate's predicate or the tasks' missing identity - is unmeasured.
+
+## 2026-08-18 05:22Z — the flow moved, the deliverable count did not
+
+Source for every number below: `GET /api/projects/41af381d.../dashboard`, fields `pipeline` and
+`productReadiness`. Log counts from `docker logs eneikproductionsys-backend-1`.
+
+After the retry-eligible set was declared (`3a8e5bb`), all five failed tasks resumed and dispatched
+across two passes, and every one reached `done`:
+
+```
+04:06Z   queued 0  claimed 0  done 39  failed 5     (72 hours unchanged)
+04:09Z   queued 0  claimed 3  done 39  failed 2
+04:52Z   queued 0  claimed 1  done 43  failed 0
+05:22Z   queued 0  claimed 0  done 44  failed 0
+```
+
+Five resumed, five dispatched, four PRs opened. The flow is healthy: nothing failed, nothing queued,
+nothing stuck.
+
+**And the deliverable count did not move.**
+
+```
+mergedPlannedTasks   25 / 26   before and after
+completeFeatures      5 / 6    before and after
+featureReadinessRatio 0.833    before and after
+blockedItems          Runtime Contract 8becdc01 | done_not_reached_main   (unchanged, still the only one)
+```
+
+### The fact, separated from the hypothesis
+
+**Fact:** five tasks went `failed → done` and `mergedPlannedTasks` stayed 25. None of the five appears
+in `blockedItems`, so for each of them `reachedMain(task) || isAuxiliaryTask(task)` holds.
+
+**Narrowed hypothesis:** the five are not members of the deliverable set. `totalPlannedTasks` stayed
+26 throughout - before the resume, during, and after - so the denominator never contained them. Their
+completion therefore cannot raise the numerator, whichever of `reachedMain` or `isAuxiliaryTask` is
+what keeps them off the blocked list.
+
+**Not established:** which of the two it is. Distinguishing them needs the task rows, and the dashboard
+DTO does not expose role, cynefin reliably, `featureId` or `sourceWishlistId` - reading absence in that
+projection as absence in the data is exactly the error made on 2026-08-18 with these same five tasks.
+The store is not being read for this; it is not worth touching the database for a distinction that
+changes nothing about what to do next.
+
+### What this means for the goal, which is unchanged
+
+The flow defect is fixed and demonstrated: work that could not move now moves, and the mechanism that
+released it carries a well-founded measure (`resumeCount >= 1`, at most one resume per task).
+
+The delivery gap is untouched and is exactly what it was three days ago: **one task, `8becdc01`,
+asserting `done` with no merge evidence.** That is the substitutivity error the goal names - `task
+done` standing in for `value delivered` - and it now stands alone, with nothing else in the system
+obscuring it.
