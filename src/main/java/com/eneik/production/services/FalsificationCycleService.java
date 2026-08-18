@@ -386,7 +386,7 @@ public class FalsificationCycleService {
         // liveEvidenceBlock already draws on - never a second, independently-derived source of truth.
         var runtimeHealth = clientRuntimeObservabilityService.summarize(project.getId());
         if (runtimeHealth != null && Boolean.FALSE.equals(runtimeHealth.lastObservationHealthy())) {
-            ensureProductNotLaunchableWishlist(project);
+            ensureProductNotLaunchableWishlist(project, runtimeHealth);
             log.info("FalsificationCycleService: Project {} is not currently launchable/healthy - "
                             + "subordinating philosophical review to that constraint (TOC) instead of "
                             + "auditing a broken product this cycle",
@@ -756,7 +756,24 @@ public class FalsificationCycleService {
      * one while the first is still unresolved, never invented scope - only a concrete, already-observed
      * fact: the last real observation failed).
      */
-    private void ensureProductNotLaunchableWishlist(ProjectEntity project) {
+    /**
+     * The most recent observation's error text, or blank when there is none.
+     *
+     * Reads the summary already fetched by the caller rather than issuing a second query: two derivations
+     * of the same fact are two things that can disagree, and this method exists precisely to stop a claim
+     * and its witness from drifting apart.
+     */
+    private String latestErrorText(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth) {
+        if (runtimeHealth == null || runtimeHealth.recentObservations() == null
+                || runtimeHealth.recentObservations().isEmpty()) {
+            return "";
+        }
+        String text = runtimeHealth.recentObservations().get(0).getErrorText();
+        return text == null ? "" : text.trim();
+    }
+
+    private void ensureProductNotLaunchableWishlist(ProjectEntity project,
+                                                    com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth) {
         if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable)) {
             return;
         }
@@ -766,10 +783,21 @@ public class FalsificationCycleService {
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);
         wishlist.setCynefinDomain("clear");
+        // 2026-08-19: carry the OBSERVED CAUSE, not only the fact of failure. The launcher already
+        // records exactly why the launch died in ClientRuntimeObservationEntity.errorText, and that text
+        // sits in this very summary's recentObservations - measured live on test-forty-ninth:
+        // "object-storage Error failed to resolve reference minio/minio:RELEASE.2023-09-20T22-40-07Z:
+        // not found". Filing "it is not healthy" while holding that string asks the worker to rediscover
+        // what the system already knows, and it is the same defect the auditor's ABSTAIN fix removed on
+        // 2026-08-18: a claim must arrive with its witness, or the reader cannot act on it.
+        String observedCause = latestErrorText(runtimeHealth);
         wishlist.setContent("The delivered product's most recent runtime observation was not healthy "
                 + "(launch failed, or launched but its health check failed). Fix this before any further "
                 + "philosophical review - reviewing a product that doesn't actually run produces no real "
-                + "evidence, only guesses.");
+                + "evidence, only guesses."
+                + (observedCause.isBlank() ? ""
+                        : "\n\nObserved failure, exactly as the launcher recorded it - this is evidence, not a "
+                                + "hypothesis, so start here rather than by re-deriving it:\n" + observedCause));
         wishlist.setJtbd("When the product doesn't currently launch or respond healthily, I want that "
                 + "fixed before anything else, so all other evaluation (philosophical, design, feature "
                 + "work) is grounded in a real, working product");
