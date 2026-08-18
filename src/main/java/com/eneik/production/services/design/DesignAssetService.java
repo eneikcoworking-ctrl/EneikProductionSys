@@ -210,6 +210,42 @@ public class DesignAssetService {
                                            String designSystemId,
                                            List<String> designSystemColors,
                                            List<String> designSystemFonts) {
+        return generateAsset(project, context, brief, assetType, quality, useGoogleSearch, designSystemId,
+                designSystemColors, designSystemFonts, false);
+    }
+
+    /**
+     * Same, for a caller that needs an IMPLEMENTABLE result - HTML a developer can build from - rather than
+     * a picture of one.
+     *
+     * Why the parameter exists (2026-08-18). This method has two producers and they make different KINDS of
+     * thing. Stitch emits HTML plus a screenshot; the nano-banana path emits an image and commits
+     * {@code commitDraftToGitHub(project, basename, null, imageBytes, extension)} - null where the HTML
+     * belongs. The fallback below treated them as interchangeable, which is a substitution claim: "B will
+     * do instead of A". That claim is only valid when B satisfies the same predicate the caller requires,
+     * and here it never can - an image generator has no HTML to emit, in any world, on any retry.
+     *
+     * Measured consequence: DesignShopOrchestrationService checks for {@code <draft>/mockup.html} on main,
+     * which the image path never writes, so every fallback was a guaranteed rejection - and not a cheap
+     * one, because each generation commits to the project's live main branch first. Confirmed live on
+     * test-forty-sixth: six identical rejections in four hours, each a SUCCESSFUL generation of the wrong
+     * kind. DesignShopOrchestrationService's own comment already reasoned it out: retrying changes which
+     * world we are in, never what kind of thing was produced.
+     *
+     * So the fix is not a better retry or a smarter check downstream. It is to stop substituting across a
+     * kind boundary: when the caller requires implementable HTML and the only producer of HTML is
+     * unavailable, the honest answer is unavailable - not a picture offered in its place.
+     */
+    public DesignAssetResult generateAsset(ProjectEntity project,
+                                           ProjectOperationalContext context,
+                                           String brief,
+                                           String assetType,
+                                           String quality,
+                                           boolean useGoogleSearch,
+                                           String designSystemId,
+                                           List<String> designSystemColors,
+                                           List<String> designSystemFonts,
+                                           boolean requireImplementableHtml) {
         if (!settingsService.effectiveBoolean("design_service_enabled")) {
             log.info("DesignAssetService: design service is disabled; skipping mockup generation for project {}",
                     project == null ? "unknown" : project.getId());
@@ -226,8 +262,26 @@ public class DesignAssetService {
             if (stitchResult.available()) {
                 return stitchResult;
             }
+            if (requireImplementableHtml) {
+                log.warn("DesignAssetService: Stitch generation failed ({}) and the caller requires "
+                                + "implementable HTML; NOT falling back to nano-banana, which cannot produce "
+                                + "any. Reporting unavailable: {}",
+                        stitchResult.status(), stitchResult.message());
+                return DesignAssetResult.unavailable(
+                        "Stitch unavailable and no other producer emits implementable HTML: " + stitchResult.message());
+            }
             log.warn("DesignAssetService: Stitch generation failed ({}), falling back to nano-banana: {}",
                     stitchResult.status(), stitchResult.message());
+        }
+
+        if (requireImplementableHtml) {
+            // Reached only when Stitch is disabled or unconfigured. The caller asked for HTML and the only
+            // producer of HTML is not available; an image would be a different kind of thing, not a lesser
+            // amount of the same one.
+            log.warn("DesignAssetService: implementable HTML required but Stitch is not enabled/configured; "
+                    + "no image fallback for project {}", project == null ? "unknown" : project.getId());
+            return DesignAssetResult.unavailable(
+                    "Implementable HTML required, but Stitch (the only HTML producer) is not enabled or configured.");
         }
 
         if (!settingsService.effectiveBoolean("nano_banana_enabled")) {

@@ -267,10 +267,16 @@ public class DesignShopOrchestrationService {
         // stays un-audited, same as before. Every LATER generation reuses the real tokens captured from
         // that first screen instead - E(f) then checks against this project's own actual brand.
         boolean hasBaseline = cycle.getDeclaredColors() != null && !cycle.getDeclaredColors().isBlank();
+        // 2026-08-18: this stage requires implementable HTML - see hasImplementableHtml below, which looks
+        // for <draft>/mockup.html on main - so it now SAYS SO at the call, and DesignAssetService refuses to
+        // substitute an image generator when Stitch is unavailable. Before this, the fallback produced a
+        // picture, committed it to the project's live main branch, and this method rejected it a moment
+        // later. The rejection was correct and the generation was wasted, every time, by construction.
         DesignAssetService.DesignAssetResult result = hasBaseline
                 ? designAssetService.generateAsset(project, context, brief, "mockup", "fast", false,
-                        null, cycle.declaredColorsList(), cycle.declaredFontsList())
-                : designAssetService.generateAsset(project, context, brief, "mockup", "fast", false);
+                        null, cycle.declaredColorsList(), cycle.declaredFontsList(), true)
+                : designAssetService.generateAsset(project, context, brief, "mockup", "fast", false,
+                        null, java.util.List.of(), java.util.List.of(), true);
 
         // What this stage needs is a mockup a Jules session can implement pixel-perfect against, and that
         // JulesDispatchService.completeDesignReview's promotion step can find: implementable HTML at a known

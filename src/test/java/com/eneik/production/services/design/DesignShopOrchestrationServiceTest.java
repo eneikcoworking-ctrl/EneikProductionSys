@@ -107,7 +107,8 @@ class DesignShopOrchestrationServiceTest {
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
         DesignAssetService.DesignAssetResult result = new DesignAssetService.DesignAssetResult(
                 true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-1", "stitch-proj-1", "screen-1");
-        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
+                isNull(), eq(List.of()), eq(List.of()), eq(true)))
                 .thenReturn(result);
         when(gitHubPullRequestService.fetchFileBytes(eq(project), any(), eq("design/draft/round-1/mockup.html")))
                 .thenReturn(Optional.of("<style>body{background:#2e3a8c;font-family:'Hanken Grotesk';}</style>".getBytes()));
@@ -144,7 +145,7 @@ class DesignShopOrchestrationServiceTest {
         DesignAssetService.DesignAssetResult result = new DesignAssetService.DesignAssetResult(
                 true, "ok", "stitch", "/tmp/x.png", "", "image/png", "", "design/draft/round-2", "stitch-proj-1", "screen-2");
         when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
-                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk"))))
+                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk")), eq(true)))
                 .thenReturn(result);
         // 2026-08-15: the draft is now verified to carry implementable HTML before the cycle proceeds -
         // the gate asks after the artifact's property rather than the generator's name - so a usable draft
@@ -155,7 +156,7 @@ class DesignShopOrchestrationServiceTest {
         service.tick();
 
         verify(designAssetService).generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
-                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk")));
+                isNull(), eq(List.of("#2e3a8c", "#14b8a6")), eq(List.of("hanken grotesk")), eq(true));
         verify(projectFlowService).dispatchDesignReview(eq(project), eq("design/draft/round-2"), anyString());
         // The already-established baseline must not be re-captured on a later cycle. Asserted on the
         // stored tokens rather than on whether the file was read: since 2026-08-15 the same file is also
@@ -205,7 +206,8 @@ class DesignShopOrchestrationServiceTest {
         when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(Optional.empty());
         when(readinessService.computeForProject(project.getId()))
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
-        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
+                isNull(), eq(List.of()), eq(List.of()), eq(true)))
                 .thenReturn(DesignAssetService.DesignAssetResult.unavailable("drift"));
 
         service.tick();
@@ -228,7 +230,8 @@ class DesignShopOrchestrationServiceTest {
                 .thenReturn(new ClientDeliverableReadinessService.Readiness(5, 5, 5, 5, 1.0, true));
         DesignAssetService.DesignAssetResult nanoBananaResult = new DesignAssetService.DesignAssetResult(
                 true, "ok", "gemini-3.1-flash-image", "/tmp/x.png", "", "image/png", "", "design/draft/round-1", "", "");
-        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false)))
+        when(designAssetService.generateAsset(eq(project), any(), anyString(), eq("mockup"), eq("fast"), eq(false),
+                isNull(), eq(List.of()), eq(List.of()), eq(true)))
                 .thenReturn(nanoBananaResult);
 
         service.tick();
