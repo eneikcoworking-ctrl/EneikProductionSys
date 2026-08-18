@@ -426,3 +426,56 @@ before, an exact guarded command, a snapshot after, and a measurable effect.**
 `sessions/4671067735968160714` reaching a merged PR, which would take readiness 25/26 -> 26/26 and
 5/6 -> 6/6. Nothing else in this plan is waiting on anything.
 
+---
+
+## 10. The 5/6 contradiction, explained to its cause — 2026-08-18
+
+`f163e834` is `done`, `blockedItems` is empty, and readiness still reads 25/26 and 5/6. Traced to one
+task, then to one pull request.
+
+### Why the two views disagreed
+
+They quantify over different domains, and that is legitimate:
+
+```
+blockedItems     iterates TASKS      skip when reachedMain(task) || isAuxiliaryTask(task)
+readiness        iterates ITEMS      fulfilled = anyTask(hasRequiredMergeEvidence)
+hasRequiredMergeEvidence = reachedMain && (role exempt from code || spec stage || merged PR has code)
+```
+
+`blockedItems` asks only whether the task reached main. Readiness additionally asks whether anything
+was delivered. A task can pass the first and fail the second, and nothing is wrong with either.
+
+### The task, and the pull request
+
+```
+32f8f498  "Build Pipeline (e4f6126b)"   done
+role      BARCAN-TAG-05 -> OPERATIONS(specOnly = false)   -> code required
+PR        github.com/eneikdru/test-forty-ninth/pull/50
+          merged TRUE   has_code FALSE   diff_summary null
+GitHub    state MERGED   changedFiles 0   additions 0   deletions 0
+          title "Verify automated backup and restore procedures"
+```
+
+**The pull request changed nothing.** Zero files, zero lines, merged.
+
+The neighbouring case proves the mechanism discriminates correctly: `b5c26e47` "API Contract" has the
+same profile - merged, no code - and IS counted, because `API_CONTRACT` is a spec-only stage where code
+is not expected.
+
+### Conclusion: no repair is warranted
+
+`has_code = FALSE` is correct. `hasRequiredMergeEvidence` is correct. Readiness at 5/6 is correct.
+**A real delivery gap is being reported accurately**, and it is one task that merged an empty PR.
+
+The repair I had drafted - add `BARCAN-TAG-05` to `HAS_CODE_EXEMPT_ROLE_TAGS`, by analogy with the QA
+exemption already in the code - **would have hidden it**. That risk was stated before the measurement
+and the measurement is what stopped it. This is the plan's own discipline producing a non-change, which
+is a result.
+
+### Plan status
+
+The contradiction is explained to its cause. What holds readiness below 1.0 is not a metric defect and
+not a mechanism defect: it is one task whose work was not done, correctly refused by an invariant that
+has been right about this project every time it disagreed with something else.
+
