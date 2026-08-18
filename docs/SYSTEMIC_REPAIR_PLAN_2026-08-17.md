@@ -45,6 +45,8 @@ entry and its retraction hundreds of lines apart with equal authority.
 | **§5.2** "`f163e834` is the item blocking the project" | A wishlist stranded in `finalizing` held Flow Core in `DECOMPOSING`, where every dispatch was denied | Took `blockedItems` — a list of blocked *tasks* — as authoritative for what blocks *progress* |
 | "Deployed; policy denials went to zero" | The jar did not contain the change; denials continued at 27 per 20 min | Read the build's exit code as proof the image changed, and sampled denials in a window before the first full tick |
 | "The change is absent from the image" (`unzip` check) | `unzip` is not installed in the container, so the check produced empty output | Read a tool's silence as a measurement — the third instance of this same error |
+| "The five failed tasks have null `featureId`/`sourceWishlistId`" | All five have both set; the dashboard DTO does not carry those keys | Read absence in a projection as absence in the data |
+| "`8becdc01` passed the gate vacuously — no check applies to `BARCAN-TAG-01`" | `GateCheck.supports` defaults to `true` and `BaseQualityGate` does not override it, so it applies to every task | Read the absence of an override as the absence of the behaviour — the fourth instance of reading silence as a fact |
 
 Seven of the first eight share one form: **a claim whose truth conditions had not been established**.
 That is the same defect this plan repairs in the system, which is why it is organised by defect rather
@@ -218,16 +220,24 @@ Deployed and verified 2026-08-18T22:20:00Z. It records `f163e834` and the fact r
 graph. It did **not** move the project, and the header that said it would is in the corrections
 register.
 
-### 5.2b — Gate and resolver must quantify over the same set — **written, NOT deployed**
+### 5.2b — Gate and resolver must quantify over the same set — **DONE**
 
-`PlannedWorkRecoveryService.isResumableInPrinciple` declares the set once, on the resolver that owns
-it; `FlowSpineService` counts through it. Committed as `8cbd560`, `mvn test-compile` exit 0.
+Deployed and verified present in the running jar. It changed no behaviour: the premise that the five
+failed tasks lacked `featureId`/`sourceWishlistId` was false (see the register), so the predicate
+admits all five. Kept because gate/resolver agreement is correct on its own terms.
 
-**Not in the running image.** Established by behaviour, not by inspecting the jar: 27 denials in 20
-minutes and the state still `BLOCKED_BY_FAILED_FRONTIER`. A first build reported exit 0 without the
-change reaching the image, and a `--no-cache` rebuild had to be killed — it exhausted the host and
-put the backend into H2 write failures. One ordinary build remains to be run, and the check is
-behavioural: if the state changes, it arrived.
+### 5.2c — Declared set of retry-eligible failure reasons — **DONE, and this is what moved the project**
+
+The three literal reason strings became a named set, `RETIRED_WITH_NOTHING_LEFT_WORKING_IT`, defined by
+the property its members share: *the task failed and nothing was left actively working it*. The
+iteration-admission poka-yoke retirement joined it after measurement showed it was the only thing
+excluding all five failed tasks.
+
+Safety is the existing `resumeCount(task) >= 1` — at most one automatic resume per task, a measure that
+strictly decreases and cannot be replenished. Not from the list being short.
+
+Result, 2026-08-18: five tasks resumed and dispatched across two passes, all reached `done`, failed
+went 5 -> 0, and a 72-hour standstill ended. Board: `done 44, failed 0, nothing in flight`.
 
 ### 5.3 — Instrument the nudge divergence (D2) *(measurement only, no fix)*
 
