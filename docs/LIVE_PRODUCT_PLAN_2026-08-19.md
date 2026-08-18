@@ -129,10 +129,14 @@ files a wishlist item when the answer is no. `/launch` and `/healthcheck` exist,
 called by nothing in that path. The architecture declares launchability supreme (§1) and then leaves the
 edge from constraint to action missing.
 
-**4.3 The main falsification cycle is off.** `falsification_cycle_enabled = false`. The two items now
-compiling came from the design-system and philosophical tracks. Since falsification is the only source
-of new scope (§1), switching it off narrows the engine of the entire goal. Whether that is deliberate is
-**unknown to me** and is an operator question, not an inference.
+**4.3 The main falsification engine is the philosophical track, and it is running.**
+`philosophical_falsification_enabled = true`, and it is what produced both items now compiling. An
+earlier version of this plan read `falsification_cycle_enabled = false` as "the engine is off" - that
+was wrong. That flag governs a different, internally complex mechanism which is **deliberately left
+alone** (operator directive, 2026-08-19). Nothing here proposes touching it.
+
+Recorded as a correction rather than edited away: I inferred which component was "the main engine" from
+a flag name, which is the same reading-from-naming this plan forbids in its own header.
 
 **4.4 The product's compose is backend-only.** The reason `frontend_not_deployed` exists. Until it
 merges, a launch would serve half a product.
@@ -190,11 +194,13 @@ things regardless of version. Then the value is in observation, not in freshness
 *Mode*: deferred. It is meaningless until 5.3 has succeeded once, and building it earlier would be a
 mechanism with nothing to act on.
 
-### 5.5 — `falsification_cycle_enabled` is an operator decision.
+### 5.5 — Do not touch `falsification_cycle_enabled`.
 
-*Follows because*: §1 makes falsification the engine of the goal, and §4.3 shows it is off. I do not
-know why, and guessing at a flag that governs the whole loop is exactly the class of act this plan
-exists to prevent.
+*Follows because*: the engine of the goal is the philosophical track, which is already on (§4.3). That
+other flag governs a separate mechanism that is complex inside, and the operator has directed it be left
+alone. A flag whose blast radius I cannot measure is not a lever I may pull.
+
+*Mode*: none. This is a prohibition, not a task.
 
 ---
 
@@ -210,6 +216,7 @@ depend on my remembering.
 | Proposing to merge deliberately separated distinctions | the first version of this plan proposed gating launch on readiness | Any proposal that reduces the number of distinct predicates must state what incident originally separated them |
 | Declaring deployed what was never built | 2 (build exit code read as proof; `backend UP` from a stale image) | A build's exit code is authority on nothing; verify the artifact or the behaviour |
 | Reading a tool's silence as a fact | the same 5 as above | Verify the instrument before believing the measurement |
+| Inferring a component's role from a flag's name | 1 (read `falsification_cycle_enabled=false` as "the main engine is off"; the main engine is the philosophical track and it is on) | Name the component that implements the thing, and show it running, before describing what is or is not working |
 
 ---
 
