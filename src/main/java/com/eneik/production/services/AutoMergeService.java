@@ -2270,6 +2270,7 @@ public class AutoMergeService {
             return;
         }
 
+        Boolean mergedPrHasCode = winningReview != null ? winningReview.getHasCode() : null;
         if (reviewNeedsUpdate) {
             // Engineering invariant #14 (2026-08-08, AGM belief revision): capture the task's belief BEFORE
             // this repair touches anything - taskNeedsRepair may flip it to `done` a few lines below, which
@@ -2289,6 +2290,7 @@ public class AutoMergeService {
             target.setRiskLevel("LOW");
             target.setMerged(true);
             target.setHasCode(classifyHasCodeForPr(mergedPrUrl));
+            mergedPrHasCode = target.getHasCode();
             target.setBaseRef(baseRefForMergedPr(mergedPrUrl));
             prReviewRepository.save(target);
             // Same canonical evidence write repairSessionForConfirmedOpenPr uses for the open-PR case - a
@@ -2299,6 +2301,34 @@ public class AutoMergeService {
             writeOperationalRealityFinding(task, winningSession, statusBeforeRepair, "merged", mergedPrUrl, prNumber);
         }
 
+        // 2026-08-18: a merged PR is not delivery. This reconciler had already classified the PR a few
+        // lines above - target.setHasCode(classifyHasCodeForPr(mergedPrUrl)) - and then closed the task
+        // regardless of what that classification said, substituting "the PR merged" for "the work was
+        // delivered". Measured on test-forty-ninth: task 32f8f498 "Build Pipeline" merged PR #50 with
+        // changedFiles 0, additions 0, deletions 0. Readiness correctly refused it, this reconciler
+        // correctly re-derived `done` from GitHub truth, and between them the project sat at 5/6 with a
+        // task that had done nothing - requeuing it was futile, because this line closed it again within
+        // fifty seconds.
+        //
+        // The fix is not a second opinion about delivery. It is to ask the one predicate that already owns
+        // the question (Charter invariant 10, one point of application): reached main AND either the role
+        // is not expected to produce code or the merged PR contains some. If that is not satisfied, the
+        // poka-yoke declines to close the task and leaves its status untouched - it repairs GitHub-truth
+        // drift, it does not certify delivery. The operational-reality finding written above still records
+        // what was observed, so nothing becomes invisible.
+        // Use the hasCode this reconciler just computed, and ask readinessService only for the ROLE rule -
+        // one point of application without re-querying merge evidence mid-write.
+        boolean roleNeedsCode = readinessService.requiresCodeForDelivery(task);
+        // Block ONLY when the merge is positively known to carry no code. An unknown classification never
+        // blocks a repair - the poka-yoke's job is to fix GitHub-truth drift, and refusing on ignorance
+        // would turn a safety net into a new way to strand tasks.
+        boolean deliveredByTheOnePredicate = !roleNeedsCode || !Boolean.FALSE.equals(mergedPrHasCode);
+        if (taskNeedsRepair && !deliveredByTheOnePredicate) {
+            log.warn("Poka-yoke: NOT closing task {} from merged PR {} - the merge carries no delivery "
+                            + "evidence for this role (hasRequiredMergeEvidence=false). Status left at {}.",
+                    task.getId(), mergedPrUrl, task.getStatus());
+            taskNeedsRepair = false;
+        }
         if (taskNeedsRepair) {
             task.setStatus(TaskStatus.done);
             taskRepository.save(task);

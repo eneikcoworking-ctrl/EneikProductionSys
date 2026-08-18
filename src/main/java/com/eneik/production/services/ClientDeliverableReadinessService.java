@@ -947,7 +947,28 @@ public class ClientDeliverableReadinessService {
     // instance found tonight.
     private static final Set<String> HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-03");
 
-    private boolean hasRequiredMergeEvidence(TaskEntity task) {
+    /**
+     * The single delivery predicate: a task counts as delivered when it reached main AND either its role
+     * is not expected to produce code (spec stage, or explicitly exempt) or the merged PR actually contains
+     * code. Public since 2026-08-18 so AutoMergeService's reconciler can consult THIS predicate instead of
+     * deciding delivery for itself - Charter invariant 10, one point of application. Two mechanisms
+     * disagreeing about what "delivered" means is what let a merged empty PR hold a project at 5/6.
+     */
+    /**
+     * Whether this task's role is expected to produce code for its work to count as delivered.
+     *
+     * The role half of {@link #hasRequiredMergeEvidence}, exposed on its own so AutoMergeService's
+     * reconciler can apply the SAME rule to the hasCode value it has already computed, instead of forming a
+     * second opinion or re-querying merge evidence it is in the middle of writing. Charter invariant 10:
+     * one point of application. Spec-only stages (architecture, api-contract, decision, compliance) and the
+     * explicitly exempt tags deliver documents and decisions, not code.
+     */
+    public boolean requiresCodeForDelivery(TaskEntity task) {
+        String roleTag = task != null && task.getRole() != null ? task.getRole().getTag() : "";
+        return !HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag) && !EmsFlowStage.isSpecStage(roleTag);
+    }
+
+    public boolean hasRequiredMergeEvidence(TaskEntity task) {
         if (!reachedMain(task)) {
             return false;
         }
