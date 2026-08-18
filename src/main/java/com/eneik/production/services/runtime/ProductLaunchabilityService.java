@@ -75,9 +75,27 @@ public class ProductLaunchabilityService {
             return;
         }
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        boolean delivered = readiness.decompositionComplete() && readiness.ratio() >= 1.0;
-        if (!delivered) {
-            // Not yet delivered - stays unchecked, tried again on a later tick once it genuinely is.
+        // 2026-08-19: the gate asks whether there is a product to check, NOT whether the product is
+        // finished. It used to require decompositionComplete && ratio >= 1.0 - completeness - which
+        // merged two axes that must stay apart: scope delivery is a quantity over the currently known
+        // intent, operability is a state about now. Nothing about "does this repository describe a way to
+        // run itself" depends on the scope being complete.
+        //
+        // The consequence was not cosmetic. This check is Phase 0: ClientRuntimeObservabilityService
+        // refuses to observe until launchabilityCheckedAt is set, so gating it on completeness meant the
+        // product could not be launched or observed AT ALL until every planned task had merged - while the
+        // architecture subordinates everything to launchability precisely so that falsification has a real
+        // running object to observe. A product that cannot be observed until it is finished cannot be
+        // falsified while it is being built, which is the only time falsification could change it.
+        //
+        // The original intent survives: do not fetch from GitHub for a project whose repository has nothing
+        // in it yet. That intent is served by EXISTENCE, not by completeness - the actualist rule
+        // (RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER): ask whether the object is there to be quantified
+        // over, never whether it is complete.
+        boolean somethingHasShipped = readiness.mergedDeliverables() > 0;
+        if (!somethingHasShipped) {
+            // Nothing merged yet - there is no product in the repository to describe a way of running.
+            // Retried on a later tick, exactly as before.
             return;
         }
         boolean hasComposeFile = gitHubPullRequestService
