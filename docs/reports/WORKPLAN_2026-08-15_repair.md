@@ -3138,3 +3138,69 @@ Its `cynefinDomain` is `clear`, so it is not excluded as auxiliary on that groun
 How did a task reach `done` with `qualityGatePassed = true` having never been dispatched? That is one
 question about one task, and answering it is the next step. It is deliberately not widened into a
 review of the quality gate or of task-completion paths in general.
+
+## 2026-08-18 — how 8becdc01 passed the quality gate: vacuous truth
+
+Answered from source only. No store read, no build, no endpoint beyond the dashboard already used.
+
+`GateOrchestrator:47-72` is the **only** place that sets the flag on a task:
+
+```java
+List<GateResult> results = gateChecks.stream()
+        .filter(check -> stages.contains(check.stage()))
+        .filter(check -> check.supports(task))
+        .filter(check -> !(buildPhase && check.isBuildPhaseExempt()))
+        .map(check -> check.check(task))
+        .toList();
+
+boolean allPassed = results.stream().allMatch(GateResult::passed);
+…
+task.setQualityGatePassed(allPassed);
+```
+
+`Stream.allMatch` returns `true` on an empty stream. So when every check is filtered out, the task is
+recorded as having passed.
+
+There are exactly three checks, and each `supports(task)` tests the task's role tag against a fixed
+set:
+
+```
+BackendContractGate      BACKEND_TAGS = { BARCAN-TAG-02, BARCAN-TAG-07 }
+DesignExcellenceGate     UI_TAGS      = { BARCAN-TAG-03, BARCAN-TAG-11 }
+VerificationEvidenceGate QA_TAGS      = { BARCAN-TAG-06 }
+```
+
+`f163e834` carries `tag: BARCAN-TAG-01` (Architecture) — a member of none of them. Every check is
+filtered out by `supports`, `results` is empty, `allMatch` is vacuously true, and
+`qualityGatePassed` is written as `true`.
+
+**That is the answer to the narrow question.** The task did not pass a gate; no gate applied to it,
+and "no gate applied" was recorded in the same field, with the same value, as "every gate passed".
+
+### The form
+
+`∀x ∈ ∅ · P(x)` is true, and reporting it as a positive result is the error. This is the actualist
+rule the corpus states for objects, applied to a quantifier: a claim about a domain that turns out to
+be empty asserts nothing, and must not be stored in a field that also carries assertions about
+non-empty domains. Two distinguishable states — *checked and passed* and *nothing to check* — are
+being written into one boolean, which is the same limits-of-substitutivity error the goal names.
+
+It is also why `done_not_reached_main` was right and the gate was not: the readiness invariant asked
+for merge evidence and found none, while the gate asked nothing and reported success.
+
+### Scope, held deliberately narrow
+
+The union of the three tag sets is `{02, 03, 06, 07, 11}`. Any task whose role tag falls outside it
+takes the same empty-stream path. **That observation is recorded, not acted on** - the beacon's
+instruction is one task, not an audit of the quality gate, and this is one line of shared code whose
+behaviour change would affect every task with an uncovered role.
+
+### The fix, specified and NOT applied
+
+The minimal correct change separates the two states rather than tightening the boolean: an empty
+`results` is `not_applicable`, not `passed`. Flipping `allPassed` to `false` for the empty case would
+be wrong in the opposite direction - it would fail tasks that were never in scope.
+
+**Not implemented.** It changes a recorded outcome for every task with an uncovered role, and the
+correct destination for the third state (a separate field, an enum, or a report-only distinction) is
+an operator decision, not an inference from one task.
