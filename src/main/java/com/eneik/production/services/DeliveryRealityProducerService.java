@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -109,7 +110,7 @@ public class DeliveryRealityProducerService {
                 continue;
             }
             if (!operationalRealityFindingRepository.findByTaskId(task.getId()).isEmpty()) {
-                alreadyKnown++;
+                alreadyKnown += refreshStandingEvidence(task);
                 continue;
             }
             OperationalRealityFindingEntity finding = new OperationalRealityFindingEntity();
@@ -141,5 +142,39 @@ public class DeliveryRealityProducerService {
             log.info("DeliveryRealityProducerService: project {} - {} new done-without-merge finding(s), "
                     + "{} already recorded", project.getName(), recorded, alreadyKnown);
         }
+    }
+
+    /**
+     * Keeps a standing condition's evidence current without growing the number of rows.
+     *
+     * Measured 2026-08-18: this producer is idempotent, so it recorded the finding for f163e834 once, at
+     * 22:20:00Z, and skipped every sweep after. Both readers of the graph select nodes by createdAt after
+     * a window start - EvidenceCoherenceService.graphSnapshot and GeminiProjectObserverService:687, the
+     * latter at 24 hours - so the node silently leaves both windows while the condition it reports is
+     * still true. Idempotency and a bounded read window are each correct; together they turn a standing
+     * fact into a historical note that stops being read.
+     *
+     * Refresh rather than re-emit, and the reason is not economy. The observer's tool loop terminates on
+     * "a round that returns no evidence-node id she has not already seen this cycle" - an id-based signal,
+     * chosen deliberately against the isolation problem of pure coherentism. Emitting a fresh node every sweep
+     * would hand her an unseen id every time and defeat that termination; refreshing the same row cannot.
+     *
+     * What each timestamp means afterwards, stated rather than left to be inferred (ACP-101): the evidence
+     * node's createdAt becomes **last confirmed still true**, and the OperationalRealityFindingEntity keeps
+     * **first detected** in its own createdAt. Both facts survive, each where it is authoritative.
+     *
+     * Cardinality stays bounded at one node per task, forever, for as long as the condition holds.
+     */
+    private int refreshStandingEvidence(TaskEntity task) {
+        List<OperationalRealityFindingEntity> findings = operationalRealityFindingRepository.findByTaskId(task.getId());
+        int refreshed = 0;
+        for (OperationalRealityFindingEntity finding : findings) {
+            for (EvidenceNodeEntity node : evidenceNodeRepository.findByOperationalRealityFindingId(finding.getId())) {
+                node.setCreatedAt(Instant.now());
+                evidenceNodeRepository.save(node);
+                refreshed++;
+            }
+        }
+        return refreshed == 0 ? 1 : refreshed;
     }
 }
