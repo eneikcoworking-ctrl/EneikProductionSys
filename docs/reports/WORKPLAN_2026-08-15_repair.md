@@ -2974,3 +2974,59 @@ reduced it. Two candidates, neither measured: the close-time compaction is time-
 accomplishes little on a 4.6%-full 1.3 GB file, or the close is not actually clean despite the grace
 period. **Distinguishing these is the next measurement, and it must come before any change** — the
 correct repair differs completely between them.
+
+## 2026-08-18 — the state gate and its named resolver disagree about what a failed frontier is
+
+After the stranded-claim release the project reached `BLOCKED_BY_FAILED_FRONTIER`. Measured why it
+stays there.
+
+The gate, `FlowSpineService:240`:
+
+```java
+if (input.failedTasks() > 0) {
+    return "BLOCKED_BY_FAILED_FRONTIER";
+}
+```
+
+**Any** failed task, regardless of kind. The same state machine names its resolver in the transition
+row itself (`matrix(120, "ACTIVE", "failedTasks > 0 and no live work", "BLOCKED_BY_FAILED_FRONTIER",
+"PlannedWorkRecoveryService", …)`), and that resolver's own predicate is far narrower —
+`isEligibleRetiredPlanTask` requires `sourceWishlistId != null`, `featureId != null`, a source wishlist
+whose `source` is in `PRODUCT_SOURCES`, and a `julesDispatchStatus` matching one of three literal
+strings.
+
+All five failed tasks, measured:
+
+```
+1e169d70 Build Pipeline Ebfba197   featureId null   sourceWishlistId null
+f42e448c Build Pipeline 115f4b3f   featureId null   sourceWishlistId null
+b50a4511 API Slice 77380b22        featureId null   sourceWishlistId null
+ab74be69 UI Slice 1559c9b0         featureId null   sourceWishlistId null
+36651896 Data Schema 7dd76d5f      featureId null   sourceWishlistId null
+
+all five: julesDispatchStatus = "Blocked task retired by iteration-admission poka-yoke;
+                                 no child work created"
+```
+
+They fail three of the five conditions independently, and the retirement path
+(`ProjectFlowService:1521`) does not null those fields — they were never set. These are not planned
+deliverables, which is consistent with `totalPlannedTasks 26 / mergedPlannedTasks 25`: the five sit
+outside that set entirely.
+
+So: the gate counts them, the resolver cannot touch them, and neither is wrong on its own terms.
+**`failed task` is being substituted for `failed planned deliverable`** — the same limits-of-
+substitutivity error Charter invariant 8 names for metric denominators, here in a state predicate.
+The set the gate quantifies over is undeclared.
+
+Consequence, measured: `ORCHESTRATE`, `DISPATCH_QUEUED_TASKS` and `DISPATCH_REVIEW_TASKS` are denied
+in this state, `resumeNextFrontier` runs every tick and resumes 0, and the condition cannot clear by
+itself.
+
+The whitelist is also worth recording as a shape: condition five is three literal substrings, and the
+2026-08-01 comment above them says it was widened "for the GENERAL case" — but what was added was a
+third specific string. The dominant failure mode on this project, the iteration-admission poka-yoke
+retirement, is a fourth phrasing and is not in the list. Widening it again would repeat the shape
+rather than fix it.
+
+**Not fixed.** The repair is a declared set, not another string, and which side should change - the
+gate's predicate or the tasks' missing identity - is unmeasured.
