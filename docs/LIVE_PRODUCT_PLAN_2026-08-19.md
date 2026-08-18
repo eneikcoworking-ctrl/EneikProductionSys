@@ -180,50 +180,72 @@ one-per-project dedup guard exists to prevent.
 and 4.3 does not follow from this instance.
 **Mode:** none — ordinary product work.
 
-### 5.3 — References in a generated descriptor must have bearers
+### 5.3 — WITHDRAWN, and replaced by 5.3a
 
-**Change lives in:** factory (`ProductLaunchabilityService`, source — review-only category).
-**Defect belongs to:** delivery — an artefact was shipped without its references being checked.
-**It is about:** the product — the `image:` lines in the client repo's compose.
+**Change lives in:** nowhere. **It is about:** the plan itself.
 
-**Precondition:** 5.2 measured, so the check is written against a known-real instance.
-**Changes:** the service gains one further precondition — every `image:` reference in the product's
-compose resolves in the registry — recorded like its existing one and routed the same way when it fails.
+5.3 proposed that `ProductLaunchabilityService` verify every `image:` reference resolves in the registry
+before a launch is attempted. **Withdrawn on 2026-08-19, before any code was written**, for two reasons
+that only became true after 5.2 shipped:
 
-**Why it follows:** `RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` (score 12.0, defect class *D002 invalid
-state*) — *"create code only for actual domain objects"*. A generated compose names an object with the
-right form and no bearer; quantified actualism forbids quantifying over what does not exist. The service
-already owns operability preconditions and its current predicate is simply too shallow: it asks whether
-the descriptor **exists**, not whether what the descriptor **names** exists. This completes a predicate
-rather than adding a mechanism.
+1. **It would be a second source of truth.** `docker compose up` inside the launcher already resolves
+   every reference authoritatively - it is what produced *"failed to resolve reference
+   minio/minio:RELEASE.2023-09-20T22-40-07Z: not found"*. A registry pre-check would derive the same fact
+   a second way, and two derivations of one fact are two things that can disagree. That is exactly the
+   one-point-of-application rule (Charter invariant 10) this plan applies everywhere else.
+2. **It would be worse than the authority it duplicates.** A network failure reaching the registry would
+   report "no such image" for an image that exists, filing work for a defect that is not there.
 
-**Why the factory and not the product:** fixing the tag is product work and belongs on the wishlist path.
-Checking that generated names have bearers is delivery quality, and delivery is implemented in the
-factory. Doing the first from the factory would be the bypass §8 forbids; leaving the second to the
-product would mean every generated project rediscovers it.
+What made 5.3 look necessary was that the cause used to be **lost**: the work item said "not healthy"
+while holding the exact error text. 5.2 fixed that. With the witness now travelling with the claim, the
+only thing an early check would buy is a few hours' notice - at the price of a second truth.
 
-**Falsifier:** the check never fires again on any project → generated composes do not in fact invent
-image names, and this was one accident rather than a class.
+### 5.3a — The launchability gate asks existence, not completeness — **DONE** (`a311c97`)
 
-**Mode:** `observe_only` — record the unresolvable reference and file work through the ordinary path;
-gate nothing.
+**Change lives in:** factory source. **Defect belongs to:** delivery. **It is about:** the product.
 
-### 5.4 — Launchability must be read from observations, not from a timestamp
+`checkOnce` required `decompositionComplete && ratio >= 1.0` before it would look for a compose file at
+all. Since this check is Phase 0 - `ClientRuntimeObservabilityService` refuses to observe until
+`launchabilityCheckedAt` is set - the product could not be launched or observed **until every planned
+task had merged**.
 
-**Change lives in:** factory source. **Defect belongs to:** the factory — it consults a Phase-0 boolean where a history exists. **It is about:** delivery — whether the shipped product is up right now.
+That is §2's forbidden merge with a real cost: the architecture subordinates everything to launchability
+so that falsification has a running object to reason about, and this gate guaranteed there was no
+running object during the entire period when falsification could still change the product.
 
-**Precondition:** 5.3 exists, so there is more than one precondition to represent.
-**Changes:** "is this launchable **now**" is answered from the latest `ClientRuntimeObservationEntity`,
-not from `launchability_checked_at` being non-null.
-**Follows because:** §2 classes operability as a state about now.
-`ClientRuntimeObservationEntity` is already exactly the right object — `id`, `projectId`, `observedAt`,
-`launchSuccess`, append-only — satisfying both
+The original intent - do not fetch from GitHub for an empty repository - is preserved by asking
+**existence** instead of completeness: `mergedDeliverables > 0`. This is
+`RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER`: ask whether the object is there to be quantified over,
+never whether it is finished.
+
+**Falsifier:** projects begin failing Phase 0 noisily on nearly-empty repositories → the old gate was
+carrying a load beyond "is there anything there", and existence is too weak a predicate.
+
+**Verified:** `ProductLaunchabilityServiceTest` 11/11, `ClientRuntimeObservabilityServiceTest` 15/15.
+
+### 5.4 — WITHDRAWN: the timestamp never claimed to be a state
+
+**Change lives in:** nowhere. **It is about:** the plan itself.
+
+5.4 said `launchabilityCheckedAt` is "a verdict about the past used where a state about now is needed".
+**Measured 2026-08-19, and false.** The field has exactly two readers:
+
+```
+ClientRuntimeObservabilityService:93   if (getLaunchabilityCheckedAt() == null) return;   // has Phase 0 happened
+ProductLaunchabilityService:74         if (getLaunchabilityCheckedAt() != null) return;   // once-only guard
+```
+
+Both use it as a **bootstrap marker**, which is what it is, and neither asks it whether the product is
+launchable. Nothing reads it as a state, so there is no state being mis-read.
+
+"Is it up now" is already answered where it should be:
+`ClientRuntimeObservabilityService.summarize().lastObservationHealthy()`, derived from the append-only
+`ClientRuntimeObservationEntity` history — which satisfies both
 `RUT_BARKAN_MARKUS_01_ACTUAL_OBJECT_REGISTER` (owner, identity, lifecycle) and
-`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (*"show stable identifiers and replay evidence across time
-points"*). The defect is that a Phase-0 boolean is consulted where a history exists.
-**Falsifier:** the derived state never differs from the timestamp in practice → the timestamp was
-adequate and this is a defect on paper.
-**Mode:** `observe_only` — publish the derived state beside the existing one before anything reads it.
+`DEREK_PARFIT_01_PERSISTENCE_SNAPSHOT` (replay across time points). The model was already correct.
+
+I concluded a field was mis-used without reading its call sites. That is the same failure as reading a
+projection's silence as absence, and it is now in §7.
 
 ### 5.5 — Relaunch when main changes
 
@@ -274,6 +296,7 @@ Nothing in this order waits on a readiness number. The only sequencing is causal
 | "`stitch_api_key` is null" | `****9SCw` — set; I read `enabled`, which is null for all secrets | Read absence in the wrong field as absence in the data — the fifth instance that day |
 | "Launch should be a consequence of readiness" | The two are separate axes, deliberately (§2) | Proposed merging distinctions an incident had separated |
 | Reported "Jules will fix the tag" as though product content, delivery quality and factory code were one topic | Three contexts, each with a different owner and a different rule about who may act (§2.5) | Mixed factory, delivery and product in a single sentence - against an operator directive already encoded in `KaizenCategory` |
+| "`launchabilityCheckedAt` is a verdict about the past used where a state is needed" | Its only two readers use it as a bootstrap marker; nothing asks it for state | Judged a field mis-used without reading its call sites |
 
 ---
 
