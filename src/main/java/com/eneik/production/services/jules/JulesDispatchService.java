@@ -5016,7 +5016,16 @@ public class JulesDispatchService {
                     ? julesApiClient.sendMessage(externalSessionId, message, apiKey)
                     : julesApiClient.sendMessage(externalSessionId, message);
             if (sent) {
-                log.info("Sent {} message to Jules session {} for task {}", logLabel, externalSessionId, taskId);
+                // D2 instrumentation (2026-08-18), measurement only - no behaviour change. Three tasks once
+                // died to ~60 forced nudges each at a fixed 60-second interval against a configured bound of
+                // 2, and nothing in the log ever showed which count the sender believed it was at, so the
+                // divergence could not be attributed: a counter never read, never incremented, or a second
+                // path that never consults it are three different defects with one symptom. Recording the
+                // persisted attempt count and the configured bound at the moment of sending makes the next
+                // occurrence self-explaining. If attempts keeps climbing past max, the counter is read and
+                // ignored; if it stays at 0 or 1 while messages keep arriving, the sender is not this path.
+                log.info("Sent {} message to Jules session {} for task {} (forced-unblock attempts persisted: {} of max {})",
+                        logLabel, externalSessionId, taskId, session.getForcedUnblockAttempts(), forcedUnblockMaxAttempts);
                 saveJulesDialogueLog(taskId, externalSessionId, message, logLabel);
             } else {
                 log.warn("Failed to send {} message to Jules session {} for task {}", logLabel, externalSessionId, taskId);
