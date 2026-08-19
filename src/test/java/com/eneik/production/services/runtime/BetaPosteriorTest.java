@@ -78,22 +78,47 @@ class BetaPosteriorTest {
     }
 
     @Test
-    void nextCheckDelayIsProportionalToUncertaintyAndNeverBelowTheFloor() {
+    void uncertaintyIsSampledSoonerAndCertaintyIsSampledRarely() {
         Duration base = Duration.ofHours(24);
         Duration floor = Duration.ofHours(1);
 
-        // Wide interval (no evidence yet) -> close to the full base delay.
-        Duration wideDelay = BetaPosterior.UNINFORMATIVE_PRIOR.nextCheckDelay(base, floor);
-        assertTrue(wideDelay.toHours() >= 20, "uninformed posterior should check almost as often as the base delay");
+        // 2026-08-19: this test previously asserted the opposite, and it was the assertion that was wrong.
+        // nextCheckDelay's own contract - stated in its class javadoc - is "Wide interval (little/unstable
+        // evidence) -> check soon. Narrow, stable interval -> check rarely." The arithmetic implemented the
+        // reverse and this test locked it in, so doc and code contradicted each other with the test siding
+        // with the code.
+        //
+        // The decisive argument is not which reading is prettier, it is which one the observed behaviour
+        // punishes. Under the old arithmetic a HEALTHY product hit the one-hour floor and was probed every
+        // hour, while a product that had never launched successfully waited ~20 hours between attempts -
+        // measured live on test-forty-ninth, where the factory idled a full day with a known blocker it
+        // could not re-observe. Uncertainty that is not sampled never resolves.
 
-        // Narrow interval (lots of stable evidence) -> much shorter than base, but never below the floor.
+        // No evidence at all: maximum uncertainty -> sample as soon as the floor allows.
+        // The uninformative prior's width is 0.95 (asserted above), so the delay is 24h * 0.05 = 1h12m -
+        // just above the floor rather than clamped to it. Asserting exact equality with the floor was my
+        // own over-tight expectation, not the contract: what the contract requires is "soon", and near the
+        // floor is soon.
+        Duration uninformed = BetaPosterior.UNINFORMATIVE_PRIOR.nextCheckDelay(base, floor);
+        assertTrue(uninformed.compareTo(floor.multipliedBy(2)) < 0,
+                "with no evidence the next check must come close to the floor, not near the base delay");
+        assertTrue(uninformed.compareTo(floor) >= 0, "and never below it");
+
+        // One failure: still very uncertain -> still far below the base delay.
+        Duration afterOneFailure = BetaPosterior.UNINFORMATIVE_PRIOR.update(false).nextCheckDelay(base, floor);
+        assertTrue(afterOneFailure.compareTo(base.dividedBy(2)) < 0,
+                "a single failure leaves enough uncertainty that the next check must be well inside half the base delay");
+
+        // Lots of stable evidence: little left to learn -> check rarely, approaching the base delay.
         BetaPosterior confident = BetaPosterior.UNINFORMATIVE_PRIOR;
         for (int i = 0; i < 200; i++) {
             confident = confident.update(true);
         }
-        Duration narrowDelay = confident.nextCheckDelay(base, floor);
-        assertTrue(narrowDelay.compareTo(wideDelay) < 0, "more evidence must shorten the delay, never lengthen it");
-        assertTrue(narrowDelay.compareTo(floor) >= 0, "delay must never drop below the floor, however confident");
+        Duration settled = confident.nextCheckDelay(base, floor);
+        assertTrue(settled.compareTo(afterOneFailure) > 0,
+                "settled evidence must lengthen the delay, not shorten it");
+        assertTrue(settled.compareTo(floor) >= 0, "delay must never drop below the floor");
+        assertTrue(settled.compareTo(base) <= 0, "delay must never exceed the base delay");
     }
 
     @Test

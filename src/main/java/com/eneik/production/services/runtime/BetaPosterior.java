@@ -62,8 +62,23 @@ public record BetaPosterior(double alpha, double beta) {
      * saturated posterior still checks eventually rather than functionally stopping forever.
      */
     public Duration nextCheckDelay(Duration baseDelay, Duration minimumDelay) {
+        // 2026-08-19: the multiplier is (1 - width), not width. This method's own contract, stated eleven
+        // lines above, is "Wide interval (little/unstable evidence) -> check soon. Narrow, stable interval
+        // -> check rarely." The arithmetic did the opposite: delay = base * width means a wide interval
+        // produced the LONGEST delay and a narrow one the shortest, so the system sampled least exactly
+        // when it knew least - and uncertainty that is not sampled never resolves.
+        //
+        // Measured consequence on test-forty-ninth: one observation, launch_success=false, posterior
+        // Beta(1,2), width ~0.83 -> next check ~20 hours. A product that has NEVER launched successfully
+        // was checked once a day, while a product launching reliably (width -> 0) would have been checked
+        // every hour under the minimum clamp. The factory idled for a day with a known, unaddressed
+        // blocker because the constraint could not be re-observed.
+        //
+        // With (1 - width) the documented contract holds exactly: width -> 1 gives a delay below the
+        // minimum and is clamped to it (check soon), width -> 0 gives the full base delay (check rarely).
+        // No new constant, no new branch - the same two numbers, one of them subtracted from one.
         double width = credibleIntervalWidth();
-        Duration scaled = Duration.ofMillis(Math.round(baseDelay.toMillis() * width));
+        Duration scaled = Duration.ofMillis(Math.round(baseDelay.toMillis() * (1.0 - width)));
         return scaled.compareTo(minimumDelay) < 0 ? minimumDelay : scaled;
     }
 }
