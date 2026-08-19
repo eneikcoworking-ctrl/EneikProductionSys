@@ -56,7 +56,7 @@ services:
         ENEIK_BUILD_GIT_DIRTY: ${ENEIK_BUILD_GIT_DIRTY:-unknown}
         ENEIK_BUILD_TIME: ${ENEIK_BUILD_TIME:-unknown}
     environment:
-      JAVA_OPTS: "-Xmx1536m -Xms512m -XX:+UseG1GC"
+      JAVA_OPTS: "-Xmx1024m -Xms384m -XX:+UseG1GC"
       ML_SERVICE_URL: http://ml:8000
       RUNTIME_LAUNCHER_URL: ${RUNTIME_LAUNCHER_URL:-http://runtime-launcher:8091}
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1

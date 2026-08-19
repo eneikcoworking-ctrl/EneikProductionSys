@@ -470,3 +470,42 @@ product-value measure as an observation over the running instance, then factory 
 requirements that reached product value untouched. Delivery value already exists in readiness once its
 predicate is corrected.
 
+---
+
+## 13. The goal, stated so it can only be met or not met
+
+**Goal.** One row exists in `client_runtime_observations` for the ACTIVE project with
+`launch_success = true` **and** a non-null `health_status_code` returned by the product's own health
+endpoint, written by the factory's own launcher, with no human step in the launch.
+
+Not "the product is ready". Not "the scope is complete". Not "the blocker is fixed". One observation,
+made by the factory, of the product answering for itself. It is either in the table or it is not.
+
+**Why this and nothing else.** It is the only claim that belongs to all three value levels at once
+(§12): it is the first unit of product value (a running instance answering), it proves delivery reached
+reality rather than `main`, and it is factory value because the observation was produced without me. Any
+other formulation lets one level stand in for another, which §12 forbids.
+
+**It is not terminal.** The observation is a not-yet-refuted claim, refutable by the next observation.
+Falsification cycles continue after it, forever. Reaching it opens the loop; it does not close anything.
+
+### Measured state against the goal, 2026-08-19 18:36Z
+
+| Blocker | State |
+| --- | --- |
+| MinIO tag unresolvable | **gone.** Jules merged PR #118 `fix(docker): update MinIO image tag`; the task's own PR #120 carries code. `minio/minio:RELEASE.2023-11-01T18-37-25Z` and `postgres:15-alpine` are both pulled on the host, so the reference now resolves |
+| Host cannot fit factory + product | **fixed.** Backend heap 1536m -> 1024m; free memory 543 MB -> 1741 MB. Verified in the running process (`Xmx1024m` read from `/proc`), not in the compose file |
+| Launch attempt at 16:32 never completed | **open.** The launcher logged no `POST /launch` at all - uvicorn writes its access line on completion, so the request was still in flight when the backend gave up at 600 s. No product containers remain. Most likely the 576 MB of free memory at the time; now retestable |
+| The failure was recorded as the **product's** | **open, and it is a category error.** `runtime-launcher unreachable: Read timed out` is a fact about the instrument, not the object. It went into the posterior as `launch_success = false`, so an instrument fault now makes the factory believe the product is broken - and stretches the next check to ~9.7 h. This is `ACP-102` again: the criterion "the launch call returned success" is not the concept "the product launched" |
+| Next observation is ~9.7 h away | **open.** Beta(1,4) after three recorded failures, two of which the product did not cause |
+
+### The path, deterministic
+
+1. **Separate instrument failure from product failure.** An unreachable or timed-out launcher must not
+   update the product posterior at all - it is a missing observation, not a negative one. Without this the
+   goal is unreachable by construction: every instrument fault pushes the next attempt further away.
+2. **Observe on merge** (§11.2), so the fix that already landed gets tested now rather than after 09:00.
+3. **Retest.** With 1741 MB free the launch has room it did not have at 16:32.
+4. The role-relative delivery predicate (§12.1) and the routing fix (§11.1) stay queued behind these -
+   they protect future work, they do not stand between here and the goal.
+
