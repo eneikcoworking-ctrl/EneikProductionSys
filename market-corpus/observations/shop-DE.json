@@ -1,0 +1,83 @@
+{
+  "profileId": "shop",
+  "market": "DE",
+  "observedAt": "2026-08-14",
+  "method": "Selected 12 currently operating mid-market e-commerce products serving German consumers across diverse verticals (coffee, apparel, eco-products, spices, supplements, garden, eyewear/accessories). Visited each product live using Playwright in desktop (1280px) and mobile (375px) viewports with clean browser contexts. Examined cookie consent overlays on first visit, footer legal disclosures (Impressum, Widerrufsbelehrung, Kontakt), product pricing tax labels, responsive mobile rendering, and checkout/order confirmation flows.",
+  "productsExamined": [
+    "https://www.coffeecircle.com",
+    "https://www.snocks.com",
+    "https://www.avocadostore.de",
+    "https://www.ankerkraut.de",
+    "https://www.muskelmacher-shop.de",
+    "https://www.roastmarket.de",
+    "https://www.pfefferhaus.de",
+    "https://www.gartentraum.de",
+    "https://www.kapten-son.com",
+    "https://www.koroshop.de",
+    "https://www.justspices.de",
+    "https://www.mymuesli.com"
+  ],
+  "counts": [
+    {
+      "capability": "guest-checkout",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "prices-inc-tax",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "impressum",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "cookie-consent",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "order-confirmation-step",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "cancellation-after-fact",
+      "present": 6,
+      "absent": 0,
+      "unknown": 6
+    },
+    {
+      "capability": "status-notifications",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "returns-policy",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "usable-at-375px",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    },
+    {
+      "capability": "contact-human",
+      "present": 12,
+      "absent": 0,
+      "unknown": 0
+    }
+  ],
+  "notes": "Every examined product operates strictly under German e-commerce law (DDG, PAngV, BGB), resulting in 100% presence for statutory requirements (Impressum, tax disclosures, cookie consent, returns policy, order review step, human contact). Post-purchase order modification/cancellation before shipment was explicitly documented in customer help/terms for 6 shops and marked unknown for 6 shops where automated verification required an active placed order."
+}
