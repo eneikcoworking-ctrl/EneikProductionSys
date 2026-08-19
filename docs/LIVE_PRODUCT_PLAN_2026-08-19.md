@@ -440,3 +440,48 @@ never took effect.
 **Next attempt must use `--force-recreate` and verify the variable inside the process before starting
 the window.**
 
+---
+
+## 12. Open question — TOC is declared, not implemented
+
+**Raised by the operator, 2026-08-19:** *"I thought TOC was created for this and it is a solved
+question."*
+
+It is solved for **one** case and declared for the rest.
+
+**What exists.** `WishlistSource.product_not_launchable` states the principle exactly - *"launchability
+is the constraint; everything else (including philosophical review) subordinates to it until it is
+cleared"* - and `FalsificationCycleService` implements that one subordination: an unhealthy runtime
+observation suspends philosophical review and files the constraint as work.
+
+**What does not exist.** A procedure. Theory of Constraints is five steps - identify the constraint,
+exploit it, subordinate everything else, elevate it, repeat and do not let inertia cause a new
+constraint. What the factory has instead is a **catalogue of constraints already met**: sixteen
+`WishlistSource` values, of which six are operability blockers, each added by hand *after* its blocker
+had already happened once.
+
+That is the difference between a rule and a list of instances. A list cannot recognise the seventh
+blocker, and every new one costs a code change and a release - which is itself the inertia step 5 warns
+about.
+
+**Why it matters here.** The current blocker is a nonexistent image tag. Nothing in the factory
+identified it *as the constraint*; it was found because a launch failed and I read the error text by
+hand. The next blocker of a new shape will be found the same way.
+
+**What a solution would have to answer, and none of it is designed yet:**
+
+- **Identification.** What makes something *the* constraint rather than one of many problems? A
+  constraint is what the throughput of the whole is limited by - so it needs a measure of throughput and
+  a way to attribute the limit, not a list of known symptoms.
+- **Subordination.** Today one service checks one flag. Subordination means every other circuit
+  visibly defers - and can say that it is deferring, and to what.
+- **Elevation and repeat.** When a constraint clears, the next one becomes binding immediately. Nothing
+  currently looks for it; the system waits for the next failure to teach it.
+- **The categorical rule.** A constraint may sit in the factory, in delivery, or in the product (§2.5),
+  and the three have different owners and different permissible actions. A general mechanism must carry
+  that distinction or it will propose factory fixes for product blockers.
+
+**Status:** open. Not designed, not scheduled, and deliberately not sketched here - a mechanism that
+decides what the whole factory subordinates to is not something to invent in a plan appendix. It needs
+its own measurement of what "throughput" means in this system before any design.
+
