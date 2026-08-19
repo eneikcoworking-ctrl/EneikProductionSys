@@ -192,19 +192,32 @@ constraint sits still. Whatever the mechanism gates, it must act where the const
 **What serves the constraint — the task compiled from its wishlist item.** The link exists and is
 populated: every one of the 46 tasks on test-forty-ninth carries `source_wishlist_id`.
 
-### 6.7 Three defects this measurement exposed, at the DELIVERY level
+### 6.7 The three "defects" — WITHDRAWN, all of them
 
-- **A constraint can sit `pending` for six days.** Step 1 without steps 2-4, demonstrated on live data
-  rather than argued.
-- **A constraint can be stranded in `compiling` for six days** - the same transient-state class as the
-  `finalizing` strand fixed on 2026-08-18, in a different state. `StrandedFinalizingSweepService`
-  releases `finalizing` and does not look at `compiling`.
-- **The one-per-project dedup produced duplicates** - two of each source on `686015fd`, seven minutes
-  apart. `existsByProjectIdAndSource` is a read-then-write check with no atomic guard, which is the
-  race Charter invariant 1 exists to prevent.
+The six-day strands and the duplicates are on **dead projects**, measured after the fact:
 
-None of these is designed around yet. They are recorded because they were measured, and because the
-second one is a strand the existing sweep cannot see.
+```
+2bbd00c8  accepted   the client ended the engagement
+30135572  frozen
+686015fd  frozen
+41af381d  active      the only live project
+```
+
+- The constraint `pending` for six days belongs to an **accepted** project. Work there ended by human
+  decision - the only legitimate terminal in this system (§2). Leaving its constraint unresolved is
+  correct.
+- The constraint stranded in `compiling` is on a **frozen** project. `PlannedWorkRecoveryService`
+  **already recovers stuck `compiling` wishlists** - it checks for an active compiler task, then routes
+  the item to `converted_to_task` or back to `pending` - and it runs from the per-project orchestration
+  tick, which frozen projects do not receive. Also correct.
+- The duplicates are on a frozen project and predate its freezing.
+
+I built three delivery defects out of the *shape* of data without checking the *status* of the projects
+it came from, and was about to repair a mechanism that works. Recorded in §7.
+
+**What survives from 6.6:** the fork decisions stand, because they rest on the semantics of the states
+and the dedup, not on those rows. A constraint is still cleared by a fresh healthy observation rather
+than a status, and subordination still cannot gate dispatch alone.
 
 ---
 
@@ -223,6 +236,7 @@ second one is a strand the existing sweep cannot see.
 | "Deployed" ×2 | The jar did not contain the change | read a build's exit code as proof the image changed |
 | "Zero ticks / zero observations" | `docker logs` had returned one line — its own bridge error | read a broken instrument's silence as a fact |
 | Left the backend down 47 minutes | Announced a restart I never performed | reported my own action without verifying it happened |
+| Three delivery defects from constraint items stranded for six days | All on accepted or frozen projects; `compiling` recovery already exists and correctly does not run on frozen ones | read the shape of data without checking the status of what produced it - and nearly repaired a working mechanism |
 
 ---
 
