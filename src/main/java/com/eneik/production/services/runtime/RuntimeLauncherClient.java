@@ -30,7 +30,28 @@ public class RuntimeLauncherClient {
         this.baseUrl = baseUrl;
     }
 
-    public record LaunchResult(boolean success, long durationMs, String error, Integer externalPort) {
+    /**
+     * 2026-08-19: `success=false` used to carry two different facts - "the launcher answered and the
+     * launch failed" (about the PRODUCT) and "the launcher never answered" (about the INSTRUMENT). The
+     * second was written into the product's own observation history, so an instrument fault made the
+     * factory believe the product was broken, and - because each recorded failure narrows the posterior -
+     * pushed the next attempt further away. Feedback with the wrong sign. See ACP-102, Criterion Is Not
+     * The Concept: "the launch call returned success" is not "the product launched".
+     *
+     * {@code observed} is false only when no answer came back at all. A launch the launcher itself
+     * reports as failed is fully observed and stays a real negative observation.
+     */
+    public record LaunchResult(boolean success, long durationMs, String error, Integer externalPort,
+                               boolean observed) {
+        /** An answered call - whatever the answer was. */
+        static LaunchResult answered(boolean success, long durationMs, String error, Integer externalPort) {
+            return new LaunchResult(success, durationMs, error, externalPort, true);
+        }
+
+        /** No answer: nothing was learned about the product. Never a negative observation. */
+        static LaunchResult unobserved(String error) {
+            return new LaunchResult(false, 0, error, null, false);
+        }
     }
 
     public record HealthCheckResult(Integer statusCode, long latencyMs, String error) {
@@ -44,16 +65,17 @@ public class RuntimeLauncherClient {
             Map<String, Object> body = Map.of("repo_url", repoUrl, "ref", ref, "project_slug", projectSlug);
             var response = restTemplate.postForObject(baseUrl + "/launch", body, Map.class);
             if (response == null) {
-                return new LaunchResult(false, 0, "empty response from runtime-launcher", null);
+                // A 2xx with no body tells us nothing about the product either.
+                return LaunchResult.unobserved("empty response from runtime-launcher");
             }
             Object externalPort = response.get("external_port");
-            return new LaunchResult(
+            return LaunchResult.answered(
                     Boolean.TRUE.equals(response.get("success")),
                     ((Number) response.getOrDefault("duration_ms", 0)).longValue(),
                     (String) response.get("error"),
                     externalPort == null ? null : ((Number) externalPort).intValue());
         } catch (RestClientException e) {
-            return new LaunchResult(false, 0, "runtime-launcher unreachable: " + e.getMessage(), null);
+            return LaunchResult.unobserved("runtime-launcher unreachable: " + e.getMessage());
         }
     }
 

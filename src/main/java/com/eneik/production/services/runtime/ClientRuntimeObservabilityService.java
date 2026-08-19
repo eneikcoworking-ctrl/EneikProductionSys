@@ -102,8 +102,9 @@ public class ClientRuntimeObservabilityService {
         List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
         BetaPosterior posterior = posteriorFrom(history);
 
-        if (!history.isEmpty()) {
-            Instant lastObservedAt = history.get(0).getObservedAt();
+        java.util.Optional<ClientRuntimeObservationEntity> lastReal = lastRealObservation(history);
+        if (lastReal.isPresent()) {
+            Instant lastObservedAt = lastReal.get().getObservedAt();
             Duration sinceLast = Duration.between(lastObservedAt, Instant.now());
             Duration nextDelay = posterior.nextCheckDelay(Duration.ofHours(baseDelayHours), Duration.ofHours(minimumDelayHours));
             if (sinceLast.compareTo(nextDelay) < 0) {
@@ -143,6 +144,9 @@ public class ClientRuntimeObservabilityService {
 
         ClientRuntimeObservationEntity observation = new ClientRuntimeObservationEntity();
         observation.setProjectId(project.getId());
+        // 2026-08-19: what this row is a fact ABOUT. An unanswered launch call tells us nothing about the
+        // product - it is a missing observation, not a negative one (V104, ACP-102).
+        observation.setInstrumentFailure(!launch.observed());
         observation.setLaunchSuccess(launch.success());
         observation.setLaunchDurationMs(launch.durationMs());
         observation.setErrorText(launch.error());
@@ -198,6 +202,7 @@ public class ClientRuntimeObservabilityService {
     private void checkForRealShift(ProjectEntity project) {
         List<ClientRuntimeObservationEntity> fullHistory = observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
         List<Boolean> chronological = fullHistory.stream()
+                .filter(row -> !row.isInstrumentFailure())
                 .sorted((a, b) -> a.getObservedAt().compareTo(b.getObservedAt()))
                 .map(this::isHealthy)
                 .collect(Collectors.toList());
@@ -255,8 +260,13 @@ public class ClientRuntimeObservabilityService {
     public RuntimeHealthSummary summarize(java.util.UUID projectId) {
         List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(projectId);
         BetaPosterior posterior = posteriorFrom(history);
-        Boolean lastHealthy = history.isEmpty() ? null : isHealthy(history.get(0));
-        Instant lastAt = history.isEmpty() ? null : history.get(0).getObservedAt();
+        // Same rule as posteriorFrom: "how is the product" is answered by the last time the product was
+        // really looked at. A row where the launcher never answered says nothing about it, and reporting it
+        // as the product's last known health is how an instrument fault became a product verdict - the
+        // finding DeliveryRealityProducerService then turns into evidence.
+        java.util.Optional<ClientRuntimeObservationEntity> lastReal = lastRealObservation(history);
+        Boolean lastHealthy = lastReal.map(this::isHealthy).orElse(null);
+        Instant lastAt = lastReal.map(ClientRuntimeObservationEntity::getObservedAt).orElse(null);
         String liveUrl = currentLiveUrl(projectId).orElse(null);
         return new RuntimeHealthSummary(history.size(), posterior.mean(), posterior.credibleIntervalWidth(),
                 lastHealthy, lastAt, history, liveUrl);
@@ -282,12 +292,31 @@ public class ClientRuntimeObservabilityService {
         return "http://localhost:" + port + "/";
     }
 
+    /**
+     * 2026-08-19: rows where the launcher never answered are skipped entirely. Counting them was feedback
+     * with the wrong sign - each instrument fault narrowed the posterior, which lengthened the delay to the
+     * next attempt, so the more often the instrument failed the less often the product was tried. Measured:
+     * the 16:42Z launcher timeout took this project from Beta(1,3) to Beta(1,4) and the next check from 7.2
+     * to 9.7 hours. A launch the launcher itself reports as failed is fully observed and still counts.
+     */
     private BetaPosterior posteriorFrom(List<ClientRuntimeObservationEntity> history) {
         BetaPosterior posterior = BetaPosterior.UNINFORMATIVE_PRIOR;
         // Oldest-first replay so the posterior reflects the real chronological update sequence.
         for (int i = history.size() - 1; i >= 0; i--) {
-            posterior = posterior.update(isHealthy(history.get(i)));
+            ClientRuntimeObservationEntity row = history.get(i);
+            if (row.isInstrumentFailure()) {
+                continue;
+            }
+            posterior = posterior.update(isHealthy(row));
         }
         return posterior;
+    }
+
+    /** The most recent row that is actually an observation of the product - see {@link #posteriorFrom}.
+     * The cadence clock must run from when the product was last really looked at, not from when the
+     * instrument last failed to look. */
+    private static java.util.Optional<ClientRuntimeObservationEntity> lastRealObservation(
+            List<ClientRuntimeObservationEntity> history) {
+        return history.stream().filter(row -> !row.isInstrumentFailure()).findFirst();
     }
 }

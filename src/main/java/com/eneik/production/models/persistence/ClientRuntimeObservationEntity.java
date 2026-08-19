@@ -39,6 +39,15 @@ public class ClientRuntimeObservationEntity {
     @Column(name = "error_text", length = 4000)
     private String errorText;
 
+    /**
+     * What this row is a fact ABOUT. False - the normal case - means the launcher answered, so the row is
+     * a real observation of the product, whatever the answer was. True means no answer came back at all:
+     * the product was never tried, nothing was learned, and BetaPosterior must not count it. See V104 and
+     * ACP-102 (Criterion Is Not The Concept).
+     */
+    @Column(name = "instrument_failure", nullable = false)
+    private boolean instrumentFailure;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -50,6 +59,9 @@ public class ClientRuntimeObservationEntity {
 
     public boolean isLaunchSuccess() { return launchSuccess; }
     public void setLaunchSuccess(boolean launchSuccess) { this.launchSuccess = launchSuccess; }
+
+    public boolean isInstrumentFailure() { return instrumentFailure; }
+    public void setInstrumentFailure(boolean instrumentFailure) { this.instrumentFailure = instrumentFailure; }
 
     public Long getLaunchDurationMs() { return launchDurationMs; }
     public void setLaunchDurationMs(Long launchDurationMs) { this.launchDurationMs = launchDurationMs; }

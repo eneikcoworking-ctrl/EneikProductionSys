@@ -509,3 +509,36 @@ Falsification cycles continue after it, forever. Reaching it opens the loop; it 
 4. The role-relative delivery predicate (§12.1) and the routing fix (§11.1) stay queued behind these -
    they protect future work, they do not stand between here and the goal.
 
+---
+
+## 14. Move the factory to the Hetzner server - on command, not now
+
+Held deliberately: the host limit costs time, it does not block the goal in §13. Written down so it can be
+executed without re-deriving it.
+
+**What moves.** Four compose services - `backend` (8080), `frontend` (3000), `ml` (8000),
+`runtime-launcher` (8091) - plus three volumes: `./data`, `./project-workspaces`, and the repository
+itself mounted read-only at `/app/eneik-system` (the philosopher corpus and market corpus live there so a
+correction takes effect on restart rather than on rebuild).
+
+**First hard part - the state is one file.** `data/eneik_db.mv.db` is 1356 MB holding ~90 MB of live data;
+the whole `data/` directory is 5.5 GB. It must **not** be copied while the backend runs - doing exactly
+that on 2026-08-19 produced `File corrupted while reading record`. Stop the backend, let H2 close cleanly
+(it compacts on close), then copy: roughly 90 MB instead of 5.5 GB. Every credential the factory holds -
+per-account Jules keys, settings, flags - lives in that same file, so moving it moves the access with it.
+
+**Second hard part - the launcher holds the Docker socket.** `/var/run/docker.sock` is bind-mounted into
+`runtime-launcher` because it starts client products on the same host. On a public server that is root on
+the box: port 8091 must never be exposed, and neither must 8000.
+
+**Environment actually required:** `GEMINI_API_KEY`, `GITHUB_TOKEN`, `GITHUB_ORG`, `STITCH_API_KEY`, and
+Linear's three if used. The other ~30 compose variables have defaults.
+
+**Order:** Docker on the server -> stop the factory here and let the store close -> copy `data/` and
+`project-workspaces/` -> clone the repository, write `.env` -> `docker compose up -d --build` (Flyway
+migrates on boot) -> expose only 3000 and 8080, behind a reverse proxy with auth.
+
+**What it buys:** the host limit disappears. Today it cost a failed launch at 16:32Z and forces the
+backend down for every build. **What it does not buy:** every defect in this plan travels with the system
+unchanged. The server removes a physical constraint, not a logical one.
+
