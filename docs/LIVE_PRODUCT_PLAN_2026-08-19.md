@@ -121,6 +121,7 @@ source, not inferred.
 | 5.2 | `product_not_launchable` carries the observed cause, not just "not healthy" | factory / factory / product | 21/21, deployed |
 | 5.3a | launchability gate asks **existence** (`mergedDeliverables > 0`), not completeness | factory / delivery / product | 26/26, deployed |
 | 5.4a | observation cadence uses `(1 - width)`, matching its own documented contract | factory / delivery / product | 7/7, deployed; **confirmed live**: observation fired 09:12:32, six minutes after the 09:06 rollout, instead of the ~20 hours the old formula produced |
+| 5.5 | a failed launch becomes an **evidence node**, not only a stored observation (`produceRuntimeObservationEvidence`) | factory / delivery / product | deployed; **confirmed live**: launch-related nodes in the ACTIVE project's coherence graph went 0 -> 1, node `d545a8a7` NEGATIVE_FINDING |
 | 5.6 | `falsification_cycle_enabled` not to be touched — the engine is the philosophical track and it is on | — / — / factory | prohibition, recorded |
 
 ---
