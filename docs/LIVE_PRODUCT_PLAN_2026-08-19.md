@@ -311,9 +311,11 @@ Nothing in this order waits on a readiness number. The only sequencing is causal
 
 ---
 
-## 9. GATE — no restart without a new explicit human command
+## 9. GATE — LIFTED 2026-08-19 by the operator
 
-**Operator invariant, 2026-08-19.** Docker and the backend are not to be restarted, and configuration is
+**Withdrawn by the operator the same day** as issued in error: restarts and configuration changes are permitted at my discretion. The text below is kept as the record of what was briefly in force.
+
+**Former invariant.** Docker and the backend are not to be restarted, and configuration is
 not to be changed, without a fresh explicit instruction from a human. This is a **gate on the action**,
 not a rejection of the hypothesis behind it: the measurement below stays on the plan, blocked, until it
 is released.
@@ -406,3 +408,35 @@ All three outcomes are informative. There is no result that leaves the question 
 ### Status
 
 **BLOCKED by §9.** Awaiting one human decision: release or reject.
+
+---
+
+## 11. Measurement attempt 1 — VOID, and why
+
+**Ran 2026-08-19 06:05–06:17. The independent variable was never changed, so nothing was measured.**
+
+```
+env inside the container:  ORCHESTRATION_RATE_MS=        <- empty
+orchestration ticks in the window: 6 in 10 minutes       <- unchanged, ~1/min
+file: 1147.2 MB -> 1094.0 MB = MINUS 53.2 MB over 571 s
+```
+
+`docker compose up -d` reused the running container with its old environment; the one-line knob sat in
+the file and never reached the process. This is the same class as reading a build's exit code as proof
+the image changed - **I confirmed the config on disk and not the config in the process.**
+
+The window is therefore a baseline sample, not an experiment. And as a baseline it refutes something:
+**the file can shrink by 53 MB inside a normal 10-minute window.** Growth is not monotone even at
+minute scale, so any future rate measurement must span several compaction cycles or it will report the
+sign of whichever phase it happened to land in.
+
+**Consequence for the method:** the 5.5 MB/min figure from 02:55–03:00 is one 5-minute sample and now
+carries the same doubt. The growth over hours is real and measured repeatedly (97 MB → 1133 MB), but
+the per-minute rate is not established.
+
+Rolled back with `git checkout -- docker-compose.yml`. No restart was needed to undo it, because it
+never took effect.
+
+**Next attempt must use `--force-recreate` and verify the variable inside the process before starting
+the window.**
+
