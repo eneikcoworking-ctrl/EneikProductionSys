@@ -61,11 +61,31 @@ public class DeliveryRealityProducerService {
     /** VARCHAR(64) in V82 - a longer descriptor silently dropped the row before, see AutoMergeService. */
     private static final String NO_MERGE_EVIDENCE = "no merge evidence: never reached main";
 
+    /** VARCHAR(64) in V82 - kept short deliberately, see AutoMergeService. */
+    private static final String LAUNCH_FAILED_STATE = "runtime observation unhealthy: did not launch";
+
+    /**
+     * A launch failure belongs to the PROJECT, not to any one task, but OperationalRealityFindingEntity
+     * requires a task id. A fixed sentinel keeps the dedup/refresh logic identical to the per-task case
+     * without inventing a task that does not exist - the project id on the evidence node carries the real
+     * ownership.
+     */
+    private static final java.util.UUID RUNTIME_OBSERVATION_PSEUDO_TASK =
+            java.util.UUID.fromString("00000000-0000-0000-0000-00000000fa11");
+
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
     private final ClientDeliverableReadinessService readinessService;
     private final OperationalRealityFindingRepository operationalRealityFindingRepository;
     private final EvidenceNodeRepository evidenceNodeRepository;
+
+    /**
+     * Optional, field-injected for the same reason FactorySelfHealthService injects KaizenService that way:
+     * this producer must keep working, and stay unit-testable, when the collaborator is absent. Its absence
+     * degrades safely - the runtime-observation evidence is simply not produced.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.runtime.ClientRuntimeObservabilityService runtimeObservabilityService;
 
     public DeliveryRealityProducerService(ProjectRepository projectRepository,
                                           TaskRepository taskRepository,
@@ -98,6 +118,7 @@ public class DeliveryRealityProducerService {
     }
 
     private void produceForProject(ProjectEntity project) {
+        produceRuntimeObservationEvidence(project);
         int recorded = 0;
         int alreadyKnown = 0;
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
@@ -176,5 +197,85 @@ public class DeliveryRealityProducerService {
             }
         }
         return refreshed == 0 ? 1 : refreshed;
+    }
+
+    /**
+     * Turns an unhealthy runtime observation into evidence the reasoner can actually read.
+     *
+     * Measured 2026-08-19 on the only ACTIVE project: the launcher observed launchSuccess=false at
+     * 09:12:32Z and recorded it in ClientRuntimeObservationEntity - its own table, correctly, since that is
+     * the append-only history of what the product really did. But the coherence graph held 52 nodes and
+     * NOT ONE about launch, runtime, compose or the image: the observation is invisible to everything that
+     * reasons over evidence nodes, including the project observer, whose 24-hour window is exactly that
+     * graph.
+     *
+     * The consequence is not academic. The observer holds an action - triggerFalsificationRun - that pulls
+     * the philosophical cycle forward instead of waiting for its 2-daily cron, and that cycle is what files
+     * product_not_launchable. She has the instrument and no grounds to use it, so the constraint the whole
+     * architecture subordinates to waits on a schedule while the evidence for it already exists. That is
+     * D1: a fact the system holds but cannot represent in the medium its reasoner reads.
+     *
+     * Reuses the existing shape rather than adding one. An OperationalRealityFindingEntity is precisely
+     * "the record disagrees with reality" - expected launchable, actually failed - and since V103 it no
+     * longer presupposes a Jules session, which is what makes a launch failure expressible at all. One
+     * point of application: the same finding type, the same node type, the same producer.
+     *
+     * Idempotent per Charter invariant 4 and refreshed while the condition holds, exactly like the
+     * done-without-merge evidence above: one node per project for as long as the product is down, its
+     * timestamp tracking "last confirmed still true" rather than "first noticed".
+     */
+    private void produceRuntimeObservationEvidence(ProjectEntity project) {
+        if (runtimeObservabilityService == null) {
+            return;
+        }
+        try {
+            var health = runtimeObservabilityService.summarize(project.getId());
+            if (health == null || health.recentObservations() == null || health.recentObservations().isEmpty()) {
+                return;
+            }
+            if (!Boolean.FALSE.equals(health.lastObservationHealthy())) {
+                return; // healthy, or no verdict yet - nothing to report
+            }
+            var latest = health.recentObservations().get(0);
+            String cause = latest.getErrorText() == null ? "" : latest.getErrorText().trim();
+
+            List<OperationalRealityFindingEntity> existing =
+                    operationalRealityFindingRepository.findByTaskId(RUNTIME_OBSERVATION_PSEUDO_TASK);
+            if (!existing.isEmpty()) {
+                for (OperationalRealityFindingEntity f : existing) {
+                    for (EvidenceNodeEntity node : evidenceNodeRepository.findByOperationalRealityFindingId(f.getId())) {
+                        if (project.getId().equals(node.getProjectId())) {
+                            node.setCreatedAt(Instant.now());
+                            evidenceNodeRepository.save(node);
+                            return;
+                        }
+                    }
+                }
+            }
+
+            OperationalRealityFindingEntity finding = new OperationalRealityFindingEntity();
+            finding.setTaskId(RUNTIME_OBSERVATION_PSEUDO_TASK);
+            finding.setJulesSessionId(null);
+            finding.setExpectedStatus("launchable");
+            finding.setActualGithubState(LAUNCH_FAILED_STATE);
+            finding = operationalRealityFindingRepository.save(finding);
+
+            EvidenceNodeEntity node = new EvidenceNodeEntity();
+            node.setProjectId(project.getId());
+            node.setPolarity(EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+            node.setSummaryText("The delivered product's most recent runtime observation was not healthy: it "
+                    + "did not launch, or launched and failed its health check. Everything else - feature work, "
+                    + "design, philosophical review - is reasoning about a product that does not run."
+                    + (cause.isBlank() ? "" : " Observed cause, exactly as the launcher recorded it: " + cause));
+            node.setOperationalRealityFindingId(finding.getId());
+            evidenceNodeRepository.save(node);
+
+            log.warn("DeliveryRealityProducerService: project {} is not launchable - recorded runtime "
+                    + "observation as evidence so it is visible to reasoning, not only to the observation table",
+                    project.getName());
+        } catch (Exception e) {
+            log.debug("DeliveryRealityProducerService: could not record runtime-observation evidence for {}: {}",
+                    project.getId(), e.getMessage());
+        }
     }
 }
