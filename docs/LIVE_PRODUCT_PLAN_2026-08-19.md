@@ -166,14 +166,45 @@ A constraint lives at one of the three levels of §3, and **a product constraint
 kaizen**, nor the reverse. The predicate must carry the level or it will silence the wrong work. This
 is not decoration: it is the operator directive that keeps the two streams visibly separate.
 
-### 6.6 Deliberately not decided yet
+### 6.6 The three forks, decided by data
 
-- Whether "serves the constraint" means *the task compiled from that wishlist item* or something wider.
-- Whether subordination applies to dispatch only, or to compilation as well.
-- What clears a constraint: the item reaching a terminal status, or a fresh healthy observation.
+Measured 2026-08-19 across every project's constraint-class wishlist items:
 
-Each of those is a real fork, and choosing them from the armchair is how a mechanism that governs the
-whole factory becomes wrong everywhere at once.
+```
+2bbd00c8  product_not_launchable         pending           13 Aug 02:59   six days queued
+30135572  product_not_launchable         compiling         13 Aug 06:06   six days in a transient state
+686015fd  dockerfile_missing_build_stage converted_to_task 15 Aug 10:19
+686015fd  dockerfile_missing_build_stage converted_to_task 15 Aug 10:26   DUPLICATE, 7 min later
+686015fd  frontend_not_deployed          x2                10:19 / 10:26  DUPLICATE
+686015fd  product_not_launchable         x2                11:20 / 12:03  DUPLICATE
+```
+
+**What clears a constraint — a fresh healthy observation, not a status.** `2bbd00c8`'s item has been
+`pending` for six days, and `dismissed` items of this class exist. Since
+`existsByProjectIdAndSource` blocks a new filing regardless of status, a dismissed constraint would
+permanently prevent re-filing while the product stays broken. Only an observation speaks about now; a
+status speaks about a record.
+
+**Subordination cannot gate dispatch alone.** `30135572`'s constraint has been `compiling` for six
+days - it never reaches dispatch, so a dispatch-only gate would subordinate nothing while the
+constraint sits still. Whatever the mechanism gates, it must act where the constraint actually stalls.
+
+**What serves the constraint — the task compiled from its wishlist item.** The link exists and is
+populated: every one of the 46 tasks on test-forty-ninth carries `source_wishlist_id`.
+
+### 6.7 Three defects this measurement exposed, at the DELIVERY level
+
+- **A constraint can sit `pending` for six days.** Step 1 without steps 2-4, demonstrated on live data
+  rather than argued.
+- **A constraint can be stranded in `compiling` for six days** - the same transient-state class as the
+  `finalizing` strand fixed on 2026-08-18, in a different state. `StrandedFinalizingSweepService`
+  releases `finalizing` and does not look at `compiling`.
+- **The one-per-project dedup produced duplicates** - two of each source on `686015fd`, seven minutes
+  apart. `existsByProjectIdAndSource` is a read-then-write check with no atomic guard, which is the
+  race Charter invariant 1 exists to prevent.
+
+None of these is designed around yet. They are recorded because they were measured, and because the
+second one is a strand the existing sweep cannot see.
 
 ---
 
