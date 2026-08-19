@@ -430,3 +430,43 @@ Not on this list, deliberately: the store growth (F-6, measured and unexplained 
 cause), the hanging `/tree` endpoint (D-4, real but it costs the operator, not the product), and anything
 inside the client repository.
 
+---
+
+## 12. Three values, kept apart - the measure the factory does not yet have
+
+Operator correction, 2026-08-19: value is not code, and there is not one value. There are three, one per
+context (§3), and mixing any two is a category error. Each has a different bearer, a different declared
+denominator, and a different way of being refuted.
+
+| | Product value | Delivery value | Factory value |
+| --- | --- | --- | --- |
+| **Bearer** | the running instance | the engagement with the client | the factory itself |
+| **Counts** | capabilities a user can actually exercise | brief items answered by a real artifact | requirements carried to product value with no operator |
+| **Denominator** | capabilities the product claims | items in the client's brief | requirements attempted |
+| **Refuted by** | an observation of the live product where the capability fails | a brief item with no artifact answering it | any human intervention |
+| **Code vs content** | **the distinction vanishes** - a page with real copy works, a page with placeholder text does not; the observer cannot tell what produced it | **the distinction matters** - a copywriter's markdown is delivery even if it never becomes running behaviour | irrelevant - what is counted is who moved it |
+
+Three consequences that are not cosmetic:
+
+1. **`requiresCodeForDelivery` asks a code question about a delivery concept.** It has two answers, "code
+   required" and "exempt". It needs one answer per role: the artifact that constitutes *that* role's
+   delivery. See `ACP-102 - Criterion Is Not The Concept`
+   (`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, Frege), written up from this measurement.
+
+2. **The routing fix in §11.1 must be rebuilt on that predicate before it deploys.** As written it retires
+   a task whose merged PR has no *code*. A content role shipping markdown would be retired as having
+   delivered nothing, and its requirement re-minted until the retry bound was spent. Measured today the
+   active project has no such role in that state, so nothing has been damaged - but the trap is in the
+   code, not in the data.
+
+3. **Product value has no measure at all today.** Every counter the factory keeps - `done` 99, readiness
+   1.0, coherence 15.2, 274 kaizen proposals - is factory-internal. The honest reading of this project
+   right now is: product value **zero** (the product does not launch, so no capability is exercisable),
+   delivery value high, factory value near zero for every requirement I touched by hand this session.
+   Those three numbers disagreeing is the correct behaviour of three separate measures, not a defect.
+
+Build order for this section: the role-relative delivery predicate first (it unblocks §11.1), then the
+product-value measure as an observation over the running instance, then factory value as the fraction of
+requirements that reached product value untouched. Delivery value already exists in readiness once its
+predicate is corrected.
+

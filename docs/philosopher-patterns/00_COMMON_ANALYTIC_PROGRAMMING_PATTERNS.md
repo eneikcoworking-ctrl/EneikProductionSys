@@ -105,6 +105,7 @@ These patterns are intentionally shared. A concrete reusable practice belongs he
 | `ACP-099` | Shadow Traffic Verification | Run new behavior beside old behavior before user-visible cutover | Finds semantic differences without exposing clients. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-100` | Canary Invariant Monitor | Bind rollout progression to live invariant checks | Prevents a canary from advancing after hidden correctness drift. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 | `ACP-101` | Verdict Carries Its Subject | A recorded judgement stores what it examined, not only what it concluded | Stops two different acts of judgement from collapsing into one indistinguishable record, so a narrow verdict cannot be read as a broad one. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
+| `ACP-102` | Criterion Is Not The Concept | An operational test stands for a concept only over the class of bearers it was calibrated on | Stops a criterion that is co-extensional with a concept for one kind of subject from being applied to every kind, where it silently changes the truth value. | Retrieve as common background; do not copy into a philosopher's personal patterns. |
 
 ## RAG Retrieval Rule
 
@@ -176,3 +177,66 @@ Any field whose name is a past participle of judgement — `passed`, `approved`,
 `reviewed`, `accepted` — and which is written from more than one call site, or at more than one moment
 in an object's life. If the writes cannot be told apart afterwards, the record is incomplete even when
 every write was correct.
+
+---
+
+## ACP-102 — Criterion Is Not The Concept
+
+**Publication anchor:** Gottlob Frege, *Über Sinn und Bedeutung* — sense, reference and the failure of
+substitutivity outside a shared context. **Role grounding:** `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`,
+Готлоб Фреге, «Принцип разграничения смысла и значения»; anchored on
+`GOTLOB_FREGE_01_SUBSTITUTION_ORACLE` (D009 substitution failure) and
+`GOTLOB_FREGE_09_SENSE_REFERENCE_SPLIT`. **Added 2026-08-19** from a live measurement in this system.
+
+### The rule
+
+A concept the system reasons with — *delivered*, *done*, *healthy*, *complete*, *reviewed* — is normally
+operationalised by a concrete test: the PR contains code, the endpoint returned 200, the file exists. The
+test and the concept agree **only over the class of bearers the test was calibrated on**. Outside that
+class they come apart, and because the test keeps returning a clean boolean, nothing announces that it is
+now answering a different question.
+
+So: a criterion may be substituted for its concept only where the class of bearers is declared and the
+bearer belongs to it. Where bearers differ in kind, the criterion must be **relative to the bearer's
+declared kind**, not global.
+
+**Proof obligation:** name the class of bearers over which the criterion and the concept are
+co-extensional, and show what the criterion returns for a bearer outside that class. If that answer is
+wrong, the criterion is not the concept and must be indexed by kind.
+
+### Why it is not `ACP-101`, and not `GOTLOB_FREGE_06`
+
+`ACP-101` (Verdict Carries Its Subject) is about a **record** losing which act produced it. Here every
+record is complete and honest; the defect is upstream, in the **predicate** — it was never true of the
+whole domain it is applied to.
+
+`GOTLOB_FREGE_06_LEVEL_OF_ABSTRACTION_LOCK` forbids mixing claims from different abstraction levels. That
+is the special case where bearers differ **by level**. This pattern is the general case: bearers can
+differ by kind at the same level — a content role and an implementation role sit at the same level of the
+same flow and still have different delivery artifacts.
+
+### The incident that produced it
+
+`ClientDeliverableReadinessService.requiresCodeForDelivery` operationalises *delivered* as *the merged PR
+contains code*, exempting one role tag and the spec stages. `CodeChangeClassifier` decides "contains code"
+by a deny-list: `.md`, `README`, `design/draft|approved/`, `.eneik/` and generated artifacts are not code;
+everything else is.
+
+Both are correct for an implementation role. For a role whose delivery artifact is prose — copy, content,
+a written specification shipped as markdown — the same test reports *nothing delivered* about work that
+was fully delivered. Measured on the active project: of 99 tasks recorded `done`, 54 had no merged PR
+containing code; 47 of those are the DECISION stage, which is `specOnly` and therefore correct, and 5 are
+genuine phantom deliveries. The criterion happened to be right for 94 of 99 — which is exactly why it
+survived: a criterion that is nearly always co-extensional is the hardest kind to catch.
+
+The danger is not the miscount. It is that a repair built on that criterion — retire the attempt and put
+the requirement back in the flow — would have destroyed real content work as though nothing had arrived,
+repeatedly, until its retry bound was spent.
+
+### The general form for products
+
+Each role declares the artifact that constitutes **its** delivery: code, content, specification, build
+configuration, verification evidence. One predicate still owns the question (one point of application),
+but it asks the bearer what counts before it answers. There are then no roles "exempt from delivery" —
+only roles delivering different kinds of thing, which is the honest description of what was always true.
+
