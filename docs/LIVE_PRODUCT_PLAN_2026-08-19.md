@@ -59,6 +59,34 @@ about. They are frequently different.
 
 ---
 
+## 3.5 SCOPE — only the active project. Everything else is noise.
+
+**Operator directive, restated 2026-08-19 after I broke it again.** There are 22 projects. Exactly one
+is `active`:
+
+```
+41af381d  test-forty-ninth  ACTIVE      <- the only project that exists for this work
+2bbd00c8  test-forty-third  accepted    <- the client ended it; a human's terminal
+30135572  test-forty-fourth frozen
+686015fd  test-forty-sixth  frozen
+… 18 more, none active
+```
+
+**Rows from a non-active project are not evidence about the factory.** A frozen project is not ticked,
+so nothing recovers, advances or cleans it - and that is correct, not a defect. An accepted project
+ended by human decision, and its unfinished items are supposed to stay unfinished.
+
+I have now built findings out of dead-project rows **twice in this session**, and the second time I was
+one step from repairing a mechanism that works. The cost is not only wasted work: every such finding
+enters the plan as a real defect and has to be withdrawn, which is exactly the accumulation this plan
+exists to prevent.
+
+**Rule, from here on:** every query that reads project-scoped data filters to `status = active`, or
+states in the same breath why a dead project is being read on purpose. No exceptions - a measurement
+whose scope is not stated is not a measurement.
+
+---
+
 ## 4. Where the live system stands — measured 2026-08-19
 
 ```
@@ -237,6 +265,7 @@ than a status, and subordination still cannot gate dispatch alone.
 | "Zero ticks / zero observations" | `docker logs` had returned one line — its own bridge error | read a broken instrument's silence as a fact |
 | Left the backend down 47 minutes | Announced a restart I never performed | reported my own action without verifying it happened |
 | Three delivery defects from constraint items stranded for six days | All on accepted or frozen projects; `compiling` recovery already exists and correctly does not run on frozen ones | read the shape of data without checking the status of what produced it - and nearly repaired a working mechanism |
+| Read the observer journal and constraint history without filtering to the active project — twice | 21 of 22 projects are accepted or frozen; their rows say nothing about the live factory | ignored the scope rule this session opened with (§3.5) |
 
 ---
 
