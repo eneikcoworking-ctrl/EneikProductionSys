@@ -313,3 +313,120 @@ D-1 first: it loses work. D-2 second: it is cheap and it is the reason the log c
 because a hanging endpoint is what the operator feels. D-3 stays open and measured, not guessed at.
 None of these touch the product repository.
 
+---
+
+## 10. Where value stops reaching the user - measured 2026-08-19 16:10Z
+
+The question is not "is the factory busy". It is "what of the user's product actually changed". Every
+number below is scoped to the ACTIVE project and was read from the database, not from a projection.
+
+### F-1 Phantom deliveries: work declared done that put nothing in the product
+
+Of 99 `done` tasks, 54 have **no merged PR containing code**. 47 of those are legitimate - `BARCAN-TAG-09`
+is the DECISION stage and `EmsFlowStage` marks it `specOnly`, so a code-free merge is its correct shape.
+I checked that before reporting, because the raw 54 invites exactly the wrong alarm.
+
+Five are not legitimate - their role requires code and none arrived:
+
+| Task | Role | Title |
+| --- | --- | --- |
+| `b50a4511` | TAG-02 implementation | API Slice (77380b22) |
+| `32f8f498` | TAG-05 operations | Build Pipeline (e4f6126b) |
+| `1e169d70` | TAG-05 operations | Build Pipeline (ebfba197) |
+| `392deb2d` | TAG-05 operations | Recovery: Build Pipeline (ebfba197) |
+| `03777375` | TAG-07 implementation | Recovery: Access Guard (a38949b8) |
+
+**The live consequence.** Three of the five are `BARCAN-TAG-05` "Build Pipeline". Across the whole project
+TAG-05 delivers code in 7 of 10 completed tasks. The MinIO fix currently running is a TAG-05 task titled
+"Build Pipeline D4d84ab3". It is the same role, the same shape, and on the record so far it has roughly a
+one-in-three chance of merging empty - after which the blocker persists and nothing says so.
+
+This is the flow defect that matters most: the product's single blocker is being fixed by the role with
+the worst delivery record, and the failure mode is silent.
+
+### F-2 A declined delivery has nowhere to go
+
+Task `779705b2` (PR #107, merged, `hasCode=false`) sits at `pending_review` permanently. The 2026-08-18
+poka-yoke correctly refuses to certify it, and `AutoMergeService` re-enters the same refusal **4 times a
+minute, forever** (262 log lines in 65 minutes). Declining to certify and leaving the object where it
+stands are two obligations; the fix took the first and not the second. Same class as F-1: work quietly
+not done.
+
+### F-3 Kaizen produces proposals and never closes them
+
+274 proposals in `PROPOSED` since 2026-08-05. 31 `APPLIED` in the system's whole history. Two
+`STANDARDIZED`. And they are overwhelmingly the *same* proposal re-inserted:
+
+| Count | Title |
+| --- | --- |
+| 79 | Factory self-health: the orchestrator's own database is unhealthy |
+| 27 | u-chart out of control: qualityGate (epic 60677bf0) |
+| 25 | Factory self-health: lock contention on the orchestrator's own database |
+| 14 | u-chart out of control: taskRevival (epic c1be406c) |
+
+A recurring observation must revise one record, not insert another - Charter invariant 4, idempotency.
+As built, the improvement loop is a generator of duplicates, and the one `PRODUCT_RUNTIME_DEFECT`
+proposal that concerns the user's product is buried among 273 about the factory's own database.
+
+### F-4 The observer observes and cannot act
+
+Gemini wrote 66 journal entries in four days; the model was actually called for 54 of them. Total actions
+taken: **14** - and 11 of those were `nudgeStuckSession` on 2026-08-16. Two actions on 08-18, three on
+08-19. Her latest entries repeat the same sentence hourly, and the most recent one says it outright:
+
+> "I have exhausted my direct action capacity for these platform issues, as they require infra..."
+
+Fifty-four paid calls to restate a standing finding is overproduction in the exact lean sense. Two things
+are wrong and they are separable: she is called **on a timer rather than when the evidence changes**, and
+when she is called she has no instrument for what she keeps finding.
+
+### F-5 Generated artifacts still carry Cyrillic
+
+`u-chart out of control: qualityGate (эпик ...)` - 27 rows. Project artifacts are English-only; this
+string is produced by factory code, not typed in chat.
+
+### F-6 Store growth, still open and still measured, not guessed
+
+Sampled every two minutes: 1218 MB flat for four minutes, then 1218 -> 1336 MB in eight minutes, then
+flat again. Live data 88 MB. Growth is bursty, not steady, and the store does reclaim (an earlier sample
+fell 139 MB in five minutes). Row-level churn stays low. Cause still unnamed - deliberately.
+
+---
+
+## 11. What to build, in order, and why that order
+
+**1. Route the declined delivery (fixes F-2, closes the hole F-1 leaves open).**
+When a merged PR carries no code and the role requires code, one predicate already knows
+(`hasRequiredMergeEvidence`). The reconciler must not only decline to close - it must hand the task back
+to the flow: requeue it under the existing bounded-retry rule, or fail it loudly when retries are spent.
+Silence is the defect, not the refusal. This also ends the 4-per-minute loop, because the task stops
+being permanently un-repairable.
+
+**2. Observe on merge, not only on a timer.**
+A merge to `main` changes the object the posterior is about; the accumulated observations describe the
+previous product. The merge must mark the observation due, leaving the adaptive formula in charge of
+everything else. Without this, even a correct MinIO fix is invisible for up to seven hours.
+
+**3. Make the cadence asymmetric.**
+Present rule keys on interval width alone, so "confidently working" and "confidently broken" produce an
+identical delay - 14.3 h at six consistent observations either way. Rarity must be earned by evidence of
+health: key on the credible interval's lower bound. Six failures then give 1 h, six successes 14 h,
+ignorance 1 h.
+
+**4. Give Kaizen identity (fixes F-3).**
+Proposal identity = (category, target component, normalised title). A recurring finding updates its row
+and increments a recurrence count. 274 rows collapse to a few dozen, and the product-level proposal stops
+being buried.
+
+**5. Bury dead sessions (D-2).**
+Three `pr_opened` sessions whose Jules-side session returns 404 are polled forever. A 404 on the session
+itself is proof of absence - close the record.
+
+**6. Then, and only then, Gemini's cadence (F-4).**
+Call her when the evidence graph changes, not hourly. This is deliberately last: changing when she is
+called before items 1-5 exist would only make her restate the same standing finding faster.
+
+Not on this list, deliberately: the store growth (F-6, measured and unexplained - no fix without a
+cause), the hanging `/tree` endpoint (D-4, real but it costs the operator, not the product), and anything
+inside the client repository.
+
