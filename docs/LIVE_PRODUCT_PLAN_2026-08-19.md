@@ -542,3 +542,94 @@ migrates on boot) -> expose only 3000 and 8080, behind a reverse proxy with auth
 backend down for every build. **What it does not buy:** every defect in this plan travels with the system
 unchanged. The server removes a physical constraint, not a logical one.
 
+---
+
+## 15. The three values as mathematics, built on what already exists
+
+Written after re-reading `OPERATIONAL_MATH_ARCHITECTURE.md` and `ENGINEERING_INVARIANTS_CHARTER.md`
+rather than from memory. An earlier draft of this section was a taxonomy: it proposed measures that the
+system already has, ignored the promotion discipline that keeps new rules from breaking flow, and would
+have been dangerous to execute.
+
+### 15.0 What is already load-bearing
+
+| Already built | What it gives the value question |
+| --- | --- |
+| `OperationalTruthService` (651 lines) + `OperationalTruthController` | the read-only value layer the math document specifies, with the invariant catalogue already computed - `delivered_requires_evidence`, `done_is_not_delivery`, `closed_unmerged_is_not_delivery`, `agent_claims_are_weak_evidence` - in observe/warn status |
+| Evidence Algebra 0-5 (math doc) | a declared strength order. Merged PR = 5, runtime check = 3, agent prose = 1. "Activity evidence must not be treated as delivered value" is already law here |
+| `ClientDeliverableReadinessService.Readiness` | `totalFeatures / completeFeatures / totalDeliverables / mergedDeliverables / ratio`, with denominator exclusions already enumerated per invariant 8 |
+| `BetaPosterior` | exact conjugate Beta-Bernoulli with real Beta quantiles - the measure machinery for any repeated yes/no observation |
+| `RuntimeHealthShiftDetector` | exact two-sided binomial test against a baseline |
+| `LeverStage` + `LeverPromotionService` + 1185 `LEVER_OBSERVATIONS` | the promotion policy from the math doc, implemented: `OBSERVE_ONLY -> WARN_ONLY -> SOFT_GATE -> HARD_GATE -> AUTO_REMEDIATE` |
+| `WishlistSource.coverage_gap` (24 on this project) | the audit that asks whether the decomposition covers the client's brief |
+| `EvidenceCoherenceService` | Thagard ECHO activation + AGM revision over the evidence graph |
+
+The math document also already states the principle I wrote up as `ACP-102`: *"limits of substitutivity:
+`task done` cannot be substituted for `value delivered`"*. ACP-102 is its specialisation to the case
+where the substitution is legitimate over one class of bearers and silently wrong outside it.
+
+### 15.1 Product value
+
+**Today's measure is the degenerate case.** `BetaPosterior` maintains one Beta(α, β) over a single
+Bernoulli: did the stack boot and answer `/health`. That is |C| = 1, where C is the set of capabilities
+the product claims.
+
+**General form.** For each capability c ∈ C, one Beta(α_c, β_c), updated by one observation of c:
+
+    V_p = |{ c ∈ C : LCB_0.95(c) ≥ θ }|,   θ declared
+
+- **Popper.** LCB < 1 for every finite sample, so no capability is ever proven - only not yet refuted.
+  A single failing observation lowers LCB_c and the capability leaves the count. The measure can fall.
+- **Invariant 8, denominator.** |C| is declared from the client's brief, with exclusions enumerated -
+  not from the factory's own decomposition.
+- **Invariant 12, independent verification.** The witness is the launcher: external to the agent that
+  wrote the code, which is exactly what invariant 12 demands and what its own incident (a frontend
+  delivered with zero real backend calls) was about.
+- **Why the lower bound, not the mean.** The mean rewards ignorance; LCB makes confidence something
+  evidence has to earn. Same reason §11.3 keys the cadence on the lower bound.
+
+**Today:** |C| = 1, α = 1, β = 3, LCB ≈ 0.008, θ would be ≥ 0.5 on any honest setting. **V_p = 0.**
+
+### 15.2 Delivery value
+
+Both halves already exist and neither is a new measure:
+
+    V_d  =  ratio  ×  coverage
+    ratio    = mergedDeliverables / totalDeliverables      (built, invariant-8 clean)
+    coverage = brief items with >= 1 deliverable / brief items   (audited, never expressed as a number)
+
+`ratio` answers *did we merge what we planned*. The `coverage_gap` audit answers *did we plan what was
+asked* - it already runs and already produces wishlists, but it produces findings, not a fraction. Until
+it does, `ratio = 1.0` is read as delivery when it only ever meant "we finished what we set ourselves",
+which is self-attestation (invariant 12) at the level of scope.
+
+**The one real defect** is inside `ratio`'s merge predicate: `requiresCodeForDelivery` answers a code
+question about a delivery concept, correct for 10 of 13 roles and silently wrong for the rest (ACP-102,
+§12.1). Measured: 5 phantom deliveries, and a trap waiting for any content role.
+
+### 15.3 Factory value
+
+    V_f = |requirements that reached V_p with zero operator steps| / |requirements attempted|
+
+The machinery exists - `LeverPromotionService` already tracks Beta-Bernoulli evidence per lever and
+promotes through the five stages. What does not exist is the numerator's precondition: **nothing records
+that a human acted.** Restarts, reopened wishlists, edited settings, hand-triggered merges leave no row
+attributable to the requirement they touched. Until that exists V_f cannot be computed at all, and every
+autonomy claim about this factory is unfalsifiable.
+
+### 15.4 What could break, and the discipline that prevents it
+
+The math document's Non-Negotiable Boundary says the operational math layer must not mutate flow state.
+Two of the items below are write-side and therefore not "math layer" work at all - they change the write
+owner and must be treated as such.
+
+| Change | What it can break | Entry stage |
+| --- | --- | --- |
+| Role-relative delivery predicate (§12.1) | `ratio` feeds the `self_falsification` readiness gate and FlowSpine's DELIVERED status. Moving it silently can unblock work that should be blocked, or freeze the falsification mechanism that is this codebase's only authorised producer of replacement work for a dead task | `OBSERVE_ONLY`: compute old and new side by side, log the disagreements, promote only once the difference is understood and bounded |
+| Per-capability observation (§15.1) | |C| health checks per cycle instead of 1, on a 3.9 GB host that already failed one launch on memory | `OBSERVE_ONLY`, one capability per cycle round-robin - which is also what keeps the Beta updates independent |
+| Routing an uncertified merge (§11.1) | write-side: it moves `TaskStatus`. Absorbing-state rule (invariant 3) and CAS (invariant 1) both apply; the retry bound is the well-founded measure (invariant 7) | not a lever - a guarded write, already written, held until the predicate above is right |
+| Excluding instrument failures (§13) | changes cadence only; bounded, tested 25/25 | done |
+
+Nothing here is promoted past `OBSERVE_ONLY` without the math document's own four criteria: matches real
+incidents across cycles, false positives bounded, regression test exists, rollback is one setting.
+
