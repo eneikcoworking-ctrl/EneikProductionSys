@@ -266,6 +266,7 @@ than a status, and subordination still cannot gate dispatch alone.
 | "Zero ticks / zero observations" | `docker logs` had returned one line — its own bridge error | read a broken instrument's silence as a fact |
 | Left the backend down 47 minutes | Announced a restart I never performed | reported my own action without verifying it happened |
 | Three delivery defects from constraint items stranded for six days | All on accepted or frozen projects; `compiling` recovery already exists and correctly does not run on frozen ones | read the shape of data without checking the status of what produced it - and nearly repaired a working mechanism |
+| "Jules accepted the task and has not started" | Jules's own API answered `state: IN_PROGRESS`, prompt `Update MinIO image tag in Docker Compose` | inferred from the absence of a warning line that the poll had happened and succeeded - absence of a complaint is not evidence of a question asked |
 | Read the observer journal and constraint history without filtering to the active project — twice | 21 of 22 projects are accepted or frozen; their rows say nothing about the live factory | ignored the scope rule this session opened with (§3.5) |
 
 ---
@@ -278,3 +279,37 @@ than a status, and subordination still cannot gate dispatch alone.
 - No falsification track may be switched off as "finished."
 - No product content may be written directly into the client repo, bypassing wishlist → task → Jules.
 - No claim about the system from memory: read it, or do not say it.
+
+---
+
+## 9. Diagnostics 2026-08-19 15:45Z - measured waste, ACTIVE project only
+
+Method: one 65-minute log window (2119 lines), every WARN/ERROR normalised and counted, then each
+frequent one traced to its cause. Frequency is the measure - a defect that fires four times a minute
+forever costs more than one that fires once.
+
+| # | Waste | Measured | Cause, where established |
+| --- | --- | --- | --- |
+| D-1 | `AutoMergeService` re-enters the same repair forever | **262 log lines / 65 min** (4/min) for one task | task `779705b2`, PR #107 merged with `hasCode=false`. The 2026-08-18 poka-yoke correctly declines to close it, but leaves it at `pending_review` with no path onward, so `taskNeedsRepair` stays true and the early return never fires |
+| D-2 | Dead Jules sessions polled forever | 52 `activities fetch failed: 404` / 65 min | three sessions in `pr_opened` whose Jules-side session no longer exists. Verified directly: queried all nine live sessions with their own owning account keys - the five `running` ones answer 200, three of the four `pr_opened` ones answer 404 on both session and activities |
+| D-3 | H2 store far larger than its contents | file 1211-1271 MB, live data 88 MB (13.7x) | **not monotonic**: the file fell 139 MB in five minutes, so the store does reclaim. Row-level churn is low - `TASKS` 5 updates/h, `JULES_SESSIONS` 9/h, `PROJECT_EVENT_LOG` 298 inserts/h. Cause not isolated; a 30-minute size sampler is running |
+| D-4 | `GET /api/projects/{id}/tree` never answers | 90 s, `http=000` | not investigated. Correlates in time with the Hikari leak warnings; the dashboard is the likely caller, which would make this the lag felt in the UI |
+| D-5 | A design asset fetched and missed forever | 14 / 65 min | `design/approved/20260818165327-mockup/mockup.html` is requested on `main` and is not there |
+| D-6 | Connection-leak detections | 15 / 65 min | Hikari reports the connection later returned "unleaked", so these are slow queries crossing the leak threshold, not lost connections |
+
+### What D-1 actually means
+
+This is the one that costs delivery, not just log lines. A Jules session opened an **empty** PR, the PR
+merged, and the poka-yoke I added on 2026-08-18 refuses to call that delivery - correctly. But refusing
+is all it does. Nothing requeues the task, nothing fails it, nothing tells anyone. The work is silently
+not done, and the reconciler spends four cycles a minute rediscovering that it will not act.
+
+Declining to certify delivery and leaving the object where it stands are two different obligations. The
+fix owns the first and not the second.
+
+### Order
+
+D-1 first: it loses work. D-2 second: it is cheap and it is the reason the log cannot be read. D-4 next,
+because a hanging endpoint is what the operator feels. D-3 stays open and measured, not guessed at.
+None of these touch the product repository.
+
