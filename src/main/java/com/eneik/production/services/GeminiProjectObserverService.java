@@ -520,7 +520,10 @@ public class GeminiProjectObserverService {
             // fallback into her journal (that would be exactly the violation the operator flagged: "do not write anything into her log
             // yourself"). Skip this cycle entirely; "since" stays at the last real entry, so
             // nothing that happened during this failed cycle is lost - it just gets picked up next time.
-            log.warn("GeminiProjectObserverService: project {} - Gemini response could not be parsed, skipping this cycle (not writing to her journal)", project.getId());
+            String why = lastParseFailure != null ? lastParseFailure : "unknown";
+            log.warn("GeminiProjectObserverService: project {} - Gemini response could not be parsed ({}), "
+                            + "skipping this cycle. Her journal records the failed cycle, not words she did not write.",
+                    project.getId(), why);
             return;
         }
 
@@ -1293,8 +1296,33 @@ public class GeminiProjectObserverService {
      * the cycle entirely rather than substitute a Claude-authored stand-in (2026-07-25, operator directive:
      * "so from now on write nothing into her log yourself" - her journal only ever contains her own text, never mine).
      */
+    /**
+     * 2026-08-20: why a parse failed used to be unrecoverable from the outside - this method returned null
+     * for four different reasons and the caller logged one sentence for all of them. Measured: sixteen
+     * consecutive hourly cycles failed to parse, and because a failed parse also writes nothing to her
+     * journal, the whole run looked from outside like the observer had simply stopped. Same shape as the
+     * launcher's unanswered launch (V104): an instrument failure recorded as nothing at all is worse than
+     * one recorded as a failure, because nobody can even see the instrument is broken.
+     * {@code lastParseFailure} carries the reason out for the caller to log and journal.
+     */
+    private String lastParseFailure;
+
     private ObserverResponse parseResponse(String response) {
+        lastParseFailure = null;
         if (response == null || response.isBlank()) {
+            lastParseFailure = "model returned an empty body";
+            return null;
+        }
+        // 2026-08-20, measured: every cycle for sixteen hours logged "could not be parsed" while the real
+        // cause was HTTP 429 RESOURCE_EXHAUSTED - "Your prepayment credits are depleted" - on both the
+        // primary model and its fallback. An exhausted account is a fact about the INSTRUMENT, and calling
+        // it an unreadable answer sends the reader looking for a format bug that does not exist. Same
+        // category error as the launcher's unanswered launch being recorded as a failed product (V104).
+        String probe = response.toLowerCase(java.util.Locale.ROOT);
+        if (probe.contains("resource_exhausted") || probe.contains("credits are depleted")
+                || probe.contains("\"code\": 429") || probe.contains("http 429")) {
+            lastParseFailure = "the Gemini account is out of credit (HTTP 429 RESOURCE_EXHAUSTED) - "
+                    + "this is a billing state, not an unreadable answer; no observation was made";
             return null;
         }
         try {
@@ -1302,11 +1330,15 @@ public class GeminiProjectObserverService {
             int start = cleaned.indexOf('{');
             int end = cleaned.lastIndexOf('}');
             if (start < 0 || end < 0 || end <= start) {
+                lastParseFailure = "no JSON object in the body; it begins: "
+                        + cleaned.substring(0, Math.min(300, cleaned.length()));
                 return null;
             }
             JsonNode root = objectMapper.readTree(cleaned.substring(start, end + 1));
             String journalEntry = root.path("journalEntry").asText("");
             if (journalEntry.isBlank()) {
+                lastParseFailure = "JSON parsed but 'journalEntry' is absent or empty; keys present: "
+                        + iteratorToList(root.fieldNames());
                 return null;
             }
             if (journalEntry.length() > MAX_JOURNAL_ENTRY_CHARS) {
@@ -1342,4 +1374,13 @@ public class GeminiProjectObserverService {
             return null;
         }
     }
+
+    private static String iteratorToList(java.util.Iterator<String> it) {
+        List<String> names = new ArrayList<>();
+        while (it.hasNext()) {
+            names.add(it.next());
+        }
+        return names.toString();
+    }
+
 }
