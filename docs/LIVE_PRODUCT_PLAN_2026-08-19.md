@@ -463,27 +463,42 @@ because it got smarter but because the factory says more about itself.
 
 ---
 
-## 12. The order
+## 12. The order - all eight built, none yet running
 
-One list. It replaces the three that accumulated in the appended versions.
+Written and unit-verified against a stopped factory. Nothing below is live: the running image still
+contains only items 1 and 2. §12.1 is the deployment order.
 
-| # | Work | Level | Why here | Depends on |
+| # | Work | Level | Commit | State |
 | --- | --- | --- | --- | --- |
-| 1 | **Persist the invariant status vector** and write a row only on transition | factory | `pass -> warn` is undetectable in principle without a stored previous value; it is the wake signal for everything in §11.4, and its write-on-change shape is the §11.3 lesson applied at birth | - |
-| 2 | **Kaizen write-side identity** + recurrence count | factory | independent of everything; removes 337 of 347 rows going forward and gives kaizen refutability | - |
-| 3 | **Role-relative delivery predicate** (O-8) | delivery | unblocks nothing today (no bearer) but the trap is in the code, and it is the predicate §8.3 depends on | enters at `OBSERVE_ONLY`: compute old and new side by side |
-| 4 | **Observe on merge**, not only on a timer | delivery | a merge changes the object the posterior is about; without it a correct fix is invisible for up to a full delay | - |
-| 5 | **Bury dead sessions** (O-4) | factory | a 404 on the session itself is proof of absence; cheap, and it is why the log cannot be read | - |
-| 6 | **Move the auditor to the subscription agent**, gated on a refutation being present | factory | §11.4; deliberately after 1, because without stored transitions there is nothing to gate on | 1 |
-| 7 | **TOC subordination in the policy** (§7) | factory | subordinating everything to a constraint the system cannot yet observe reliably would subordinate it to a guess | 1, 4 |
-| 8 | **Declared capability register** -> real `V_p` (§8.2) | delivery + product | the denominator must come from the brief; the largest item, and worth nothing until the observation loop is trustworthy | 4 |
+| 1 | persist the invariant status vector, write only on transition | factory | `ef487fa` | **deployed and verified live** (§13.3) |
+| 2 | Kaizen write-side identity + recurrence count | factory | `ef487fa` | deployed; live verification waits for the factory to run |
+| 3 | role-relative delivery predicate - one source of truth | delivery | `8b3cba5` | built, 68/68 |
+| 4 | a merge may pull the observation forward, floor still binds | delivery | `5fb563c` | built, 21/21 |
+| 5 | bury sessions whose remote record is provably gone | factory | `cd2e68b` | built, 74/74 |
+| 6 | move the auditor's judgment to the subscription agent | factory | - | **not built** - needs a subscription and the operator's decision, and item 1 must accumulate transitions first |
+| 7 | TOC subordination, in shadow | factory | `0e6b525` | built, 10/10, decides nothing |
+| 8 | declared capability register -> real `V_p` and the product-layer Six Sigma opportunity | delivery + product | `b9f201c` | built, 30/30 |
 
-**Not on this list, deliberately:** O-5 (`/tree` hangs - costs the operator, not the product), O-6 (store
-growth - measured, cause not isolated, no fix without a cause), O-7 (missing design asset - noise), and
-anything inside the client repository.
+**Item 6 is the one deliberate omission.** It is not code in this repository: it is an agent running on a
+subscription, woken by the transitions item 1 now records. Building it before those transitions have
+accumulated would set its cadence from my estimate rather than from measurement - and the measurement is
+the whole reason item 1 came first.
 
-**O-1, the product's stack defect, is not on this list at all** - it is product work, already addressed to
-`BARCAN-TAG-00` with the runtime-contract DoD. The factory fixes it or the factory is not autonomous.
+### 12.1 Deployment order, when the operator gives the word
+
+1. Build once, verify the jar contains `V105`, `V106`, `V107`, `ProductCapabilityService`,
+   `TocSubordinationLever` - bytes, never a build's exit code.
+2. Start the backend alone; confirm all three migrations apply and nothing fails at startup.
+3. Start `ml` and `runtime-launcher`; the launcher is required for capability probing.
+4. Watch the first observation: it should carry `assembly:` with the app container's own log, and write
+   capability rows if any contract is declared.
+5. Read `GET /api/projects/{id}/product-value`. On this project `V_p` is expected to be **0** with
+   `declaredCapabilities` possibly also 0 - the product does not serve, and its features may declare no
+   OpenAPI contract at all. Both zeros are honest and mean different things; the endpoint distinguishes
+   them.
+
+**Not on this list, still:** O-5 (`/tree` hangs), O-6 (store growth, cause not isolated), O-7 (missing
+design asset). And O-1, the product's stack defect, remains product work addressed to `BARCAN-TAG-00`.
 
 ---
 
