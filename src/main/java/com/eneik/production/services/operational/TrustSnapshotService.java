@@ -36,15 +36,18 @@ public class TrustSnapshotService {
     private final OperationalTruthService operationalTruthService;
     private final TrustSignalSnapshotRepository snapshotRepository;
     private final ClientDeliverableReadinessService readinessService;
+    private final com.eneik.production.repositories.InvariantStatusChangeRepository invariantChangeRepository;
 
     public TrustSnapshotService(ProjectRepository projectRepository,
                                  OperationalTruthService operationalTruthService,
                                  TrustSignalSnapshotRepository snapshotRepository,
-                                 ClientDeliverableReadinessService readinessService) {
+                                 ClientDeliverableReadinessService readinessService,
+                                 com.eneik.production.repositories.InvariantStatusChangeRepository invariantChangeRepository) {
         this.projectRepository = projectRepository;
         this.operationalTruthService = operationalTruthService;
         this.snapshotRepository = snapshotRepository;
         this.readinessService = readinessService;
+        this.invariantChangeRepository = invariantChangeRepository;
     }
 
     @Scheduled(fixedRate = 7200000, initialDelay = 180000)
@@ -79,6 +82,59 @@ public class TrustSnapshotService {
         snapshot.setRecentDefectsCount(dto.defects().recentDefects());
         snapshot.setComputedScore(dto.trust().score());
         snapshotRepository.save(snapshot);
+
+        recordInvariantTransitions(projectId, dto);
+    }
+
+    /**
+     * 2026-08-20: the seven Charter invariants were evaluated here every two hours and discarded with the
+     * rest of the DTO. Without a stored previous value a move from `pass` to `warn` is undetectable in
+     * principle, so the one event that means "something this factory asserted about itself has stopped
+     * being true" could not be acted on by anything at all.
+     *
+     * Recorded on TRANSITION ONLY. A repeated evaluation of an unchanged status is a confirmation, and
+     * confirmations are free and unbounded - Popper's asymmetry is the whole reason this is worth storing.
+     * Writing a row per evaluation would also repeat, at birth, the defect measured the same day in
+     * KAIZEN_PROPOSALS: 347 rows carrying 10 distinct identities, because the write path had no identity
+     * while the read path deduplicated (Charter invariant 4 belongs at the write).
+     *
+     * Reuses this existing two-hourly pass rather than adding a schedule: `build()` stays a pure read and
+     * this is the one place that already calls it periodically.
+     */
+    private void recordInvariantTransitions(UUID projectId, OperationalTruthDto dto) {
+        for (OperationalTruthDto.InvariantStatus invariant : dto.invariants()) {
+            try {
+                String previous = invariantChangeRepository
+                        .findFirstByProjectIdAndInvariantKeyOrderByObservedAtDesc(projectId, invariant.key())
+                        .map(com.eneik.production.models.persistence.InvariantStatusChangeEntity::getStatus)
+                        .orElse(null);
+                if (invariant.status() != null && invariant.status().equals(previous)) {
+                    continue; // unchanged - a confirmation, not news
+                }
+                var change = new com.eneik.production.models.persistence.InvariantStatusChangeEntity();
+                change.setProjectId(projectId);
+                change.setInvariantKey(invariant.key());
+                change.setStatus(invariant.status());
+                change.setPreviousStatus(previous);
+                change.setStatement(truncate(invariant.statement(), 500));
+                change.setEvidence(truncate(invariant.evidence(), 2000));
+                change.setObservedAt(java.time.Instant.now());
+                invariantChangeRepository.save(change);
+                log.info("[INVARIANT] project {} - {} : {} -> {} ({})",
+                        projectId, invariant.key(), previous == null ? "<first>" : previous,
+                        invariant.status(), invariant.evidence());
+            } catch (Exception e) {
+                log.warn("[INVARIANT] could not record {} for project {}: {}",
+                        invariant.key(), projectId, e.getMessage());
+            }
+        }
+    }
+
+    private static String truncate(String value, int max) {
+        if (value == null || value.length() <= max) {
+            return value;
+        }
+        return value.substring(0, max);
     }
 
     void backfillResolvedOutcomes() {

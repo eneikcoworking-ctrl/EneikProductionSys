@@ -30,6 +30,19 @@ public class KaizenProposalEntity {
     @Column(name = "target_component")
     private String targetComponent;
 
+    /**
+     * How many times this same finding has been raised. 2026-08-20: before this the write path had no
+     * identity while the read path deduplicated by (category, target_component), so 347 rows carried 10
+     * real problems and a recurrence was indistinguishable from a new problem. The count is what makes an
+     * applied improvement refutable - if it keeps rising after a micro-step was applied, the improvement
+     * did not hold.
+     */
+    @Column(name = "recurrence_count", nullable = false)
+    private int recurrenceCount = 1;
+
+    @Column(name = "last_seen_at")
+    private java.time.Instant lastSeenAt;
+
     @Column(name = "action_description", columnDefinition = "TEXT")
     private String actionDescription;
 
@@ -68,6 +81,12 @@ public class KaizenProposalEntity {
 
     public String getTargetComponent() { return targetComponent; }
     public void setTargetComponent(String targetComponent) { this.targetComponent = targetComponent; }
+
+    public int getRecurrenceCount() { return recurrenceCount; }
+    public void setRecurrenceCount(int recurrenceCount) { this.recurrenceCount = recurrenceCount; }
+
+    public java.time.Instant getLastSeenAt() { return lastSeenAt; }
+    public void setLastSeenAt(java.time.Instant lastSeenAt) { this.lastSeenAt = lastSeenAt; }
 
     public String getActionDescription() { return actionDescription; }
     public void setActionDescription(String actionDescription) { this.actionDescription = actionDescription; }

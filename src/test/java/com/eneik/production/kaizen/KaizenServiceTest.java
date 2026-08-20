@@ -85,6 +85,10 @@ public class KaizenServiceTest {
         });
         when(kaizenProposalRepository.findAll()).thenAnswer(inv -> new ArrayList<>(proposalStore.values()));
         when(kaizenProposalRepository.findById(any())).thenAnswer(inv -> Optional.ofNullable(proposalStore.get(inv.getArgument(0))));
+        // 2026-08-20: without this the fake answered false to every existsById, so saveProposal's
+        // update path - the one testScanAndApplyPdcaCycle actually walks - was never exercised as it
+        // behaves in production.
+        when(kaizenProposalRepository.existsById(any())).thenAnswer(inv -> proposalStore.containsKey(inv.getArgument(0)));
         doAnswer(inv -> { proposalStore.remove(inv.getArgument(0)); return null; }).when(kaizenProposalRepository).deleteById(any());
 
         evidenceNodeRepository = mock(EvidenceNodeRepository.class);
@@ -244,4 +248,50 @@ public class KaizenServiceTest {
                 .findFirst().orElseThrow();
         assertThat(defectElimination.getTargetComponent()).isEqualTo("unit_tests");
     }
+
+    // 2026-08-20: identity moved from the read side to the write side. Measured that day: 347 rows
+    // carrying 10 distinct (category, target_component) pairs, because getDeduplicatedProposals keyed on
+    // that pair while the write path did not. Charter invariant 4 belongs at the write.
+    @Test
+    void aRecurringFindingRevisesItsRowInsteadOfAddingAnother() {
+        kaizenService.recordSystemicDefectProposal(null, "Global",
+                "Factory self-health: the orchestrator's own database is unhealthy", "13.7x bloat");
+        int afterFirst = kaizenProposalRepository.findAll().size();
+
+        kaizenService.recordSystemicDefectProposal(null, "Global",
+                "Factory self-health: the orchestrator's own database is unhealthy", "14.1x bloat");
+        kaizenService.recordSystemicDefectProposal(null, "Global",
+                "Factory self-health: the orchestrator's own database is unhealthy", "15.0x bloat");
+
+        List<KaizenProposalEntity> all = kaizenProposalRepository.findAll();
+        assertThat(all).hasSize(afterFirst);
+
+        KaizenProposalEntity row = all.stream()
+                .filter(e -> e.getTitle().contains("database is unhealthy"))
+                .findFirst().orElseThrow();
+        assertThat(row.getRecurrenceCount()).isEqualTo(3);
+        assertThat(row.getLastSeenAt()).isNotNull();
+    }
+
+    // The recurrence count is what makes an applied improvement refutable: if it keeps rising after the
+    // micro-step was applied, the improvement did not hold. That only works if APPLIED and STANDARDIZED
+    // are never revived by a later occurrence - they are conclusions about one specific act, and a new
+    // occurrence after them is genuinely new information deserving its own row.
+    @Test
+    void aRecurrenceNeverRevivesAProposalThatAlreadyLeftProposed() {
+        kaizenService.recordSystemicDefectProposal(null, "Global",
+                "Factory self-health: lock contention on the orchestrator's own database", "first sighting");
+        KaizenProposalEntity first = kaizenProposalRepository.findAll().stream()
+                .filter(e -> e.getTitle().contains("lock contention"))
+                .findFirst().orElseThrow();
+        first.setStatus("APPLIED");
+        kaizenProposalRepository.save(first);
+        int afterApply = kaizenProposalRepository.findAll().size();
+
+        kaizenService.recordSystemicDefectProposal(null, "Global",
+                "Factory self-health: lock contention on the orchestrator's own database", "it came back");
+
+        assertThat(kaizenProposalRepository.findAll()).hasSize(afterApply + 1);
+    }
+
 }

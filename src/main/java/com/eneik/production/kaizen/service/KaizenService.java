@@ -78,8 +78,63 @@ public class KaizenService {
         return kaizenProposalRepository.findAll().stream().map(KaizenProposalEntity::toDomain).toList();
     }
 
+    /**
+     * 2026-08-20: identity moved from the read side to the write side.
+     *
+     * Measured the same day: 347 rows carrying **10** distinct (category, target_component) pairs.
+     * {@link #getDeduplicatedProposals} already keyed on exactly that pair, so the operator's view was
+     * correct while the table was not - every cycle inserted another row for a condition already open,
+     * and those rows are part of the store growth this factory keeps rediscovering. Charter invariant 4,
+     * idempotency, belongs at the write: a recurring finding revises its row rather than adding one.
+     *
+     * The count is not bookkeeping. It is what makes an applied improvement **refutable**: after a
+     * micro-step is applied, a counter that keeps rising says the improvement did not hold, and today
+     * that cannot be known because a recurrence is indistinguishable from a new problem. A non-refutable
+     * improvement is not an improvement. It is also what SDCA needs to prove a gain was held.
+     *
+     * A proposal that has already left PROPOSED is never revived by a recurrence - APPLIED and
+     * STANDARDIZED are conclusions about a specific act, and a new occurrence after them is genuinely
+     * new information that deserves its own row.
+     */
     private void saveProposal(KaizenProposal p) {
-        kaizenProposalRepository.save(KaizenProposalEntity.fromDomain(p));
+        KaizenProposalEntity incoming = KaizenProposalEntity.fromDomain(p);
+        // 2026-08-20, caught by testScanAndApplyPdcaCycle before this ever ran live: saveProposal is the
+        // write path for BOTH a new finding and every subsequent state change of an existing one
+        // (applyMicroStep, evaluateAndStandardize). Treating an update as a possible recurrence made it
+        // hijack a sibling row and leave the proposal under test unchanged. Recurrence is a question only
+        // about a row that does not exist yet.
+        if (kaizenProposalRepository.existsById(incoming.getId())) {
+            kaizenProposalRepository.save(incoming);
+            return;
+        }
+        KaizenProposalEntity existing = findOpenSibling(incoming);
+        if (existing == null) {
+            incoming.setRecurrenceCount(1);
+            incoming.setLastSeenAt(java.time.Instant.now());
+            kaizenProposalRepository.save(incoming);
+            return;
+        }
+        existing.setRecurrenceCount(existing.getRecurrenceCount() + 1);
+        existing.setLastSeenAt(java.time.Instant.now());
+        // Keep the newest description - the condition is the same, its evidence may have moved on.
+        existing.setActionDescription(incoming.getActionDescription());
+        existing.setBaselineMetric(incoming.getBaselineMetric());
+        kaizenProposalRepository.save(existing);
+        log.info("Kaizen: recurrence {} of '{}' ({} / {}) - revised in place, not duplicated",
+                existing.getRecurrenceCount(), existing.getTitle(), existing.getCategory(),
+                existing.getTargetComponent());
+    }
+
+    /** The one already-open proposal this finding is a recurrence OF, or null if it is genuinely new. */
+    private KaizenProposalEntity findOpenSibling(KaizenProposalEntity incoming) {
+        return kaizenProposalRepository.findAll().stream()
+                .filter(e -> !Objects.equals(e.getId(), incoming.getId()))
+                .filter(e -> "PROPOSED".equals(e.getStatus()))
+                .filter(e -> Objects.equals(e.getCategory(), incoming.getCategory()))
+                .filter(e -> Objects.equals(e.getTargetComponent(), incoming.getTargetComponent()))
+                .filter(e -> Objects.equals(e.getProjectId(), incoming.getProjectId()))
+                .findFirst()
+                .orElse(null);
     }
 
     private Optional<KaizenProposal> findProposal(String id) {
