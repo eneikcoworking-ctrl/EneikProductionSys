@@ -40,6 +40,7 @@ public class SixSigmaAuditService {
     private final TocSentinelService tocSentinelService;
     private final com.eneik.production.repositories.FeatureRepository featureRepository;
     private final com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository;
+    private final com.eneik.production.repositories.CapabilityObservationRepository capabilityObservationRepository;
     private final com.eneik.production.repositories.FalsificationRunRepository falsificationRunRepository;
     private final LeverPromotionService leverPromotionService;
 
@@ -49,6 +50,7 @@ public class SixSigmaAuditService {
                                 TaskConflictRepository taskConflictRepository,
                                 TaskRepository taskRepository,
                                 OnboardingAuditFindingRepository onboardingAuditFindingRepository,
+                                com.eneik.production.repositories.CapabilityObservationRepository capabilityObservationRepository,
                                 com.eneik.production.repositories.ProjectRepository projectRepository,
                                 com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                 TocSentinelService tocSentinelService,
@@ -60,6 +62,7 @@ public class SixSigmaAuditService {
         this.taskConflictRepository = taskConflictRepository;
         this.taskRepository = taskRepository;
         this.onboardingAuditFindingRepository = onboardingAuditFindingRepository;
+        this.capabilityObservationRepository = capabilityObservationRepository;
         this.projectRepository = projectRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.tocSentinelService = tocSentinelService;
@@ -190,8 +193,11 @@ public class SixSigmaAuditService {
         // directly, with featureId=null - this naturally includes every attributed finding (regardless of
         // which feature) plus every unattributed one, each counted against its own run exactly once.
         DefectOpportunityCount ciCounts = computeCodeIntegrityFindingCounts(projectId, null);
-        totalOpportunities = qgOpp + prOpp + ciCounts.opportunities();
-        totalDefects = qgDef + prDef + ciCounts.defects();
+        // 2026-08-21: the fourth category, and the only one observed on the running product rather than
+        // read out of the factory's own records. See computeCapabilityObservationCounts.
+        DefectOpportunityCount capCounts = computeCapabilityObservationCounts(projectId);
+        totalOpportunities = qgOpp + prOpp + ciCounts.opportunities() + capCounts.opportunities();
+        totalDefects = qgDef + prDef + ciCounts.defects() + capCounts.defects();
         if (totalOpportunities == 0) {
             totalOpportunities = 10;
         }
@@ -204,6 +210,8 @@ public class SixSigmaAuditService {
         breakdown.put("qualityGateChecks", Map.of("opportunities", qgOpp, "defects", qgDef, "dpmo", calculateDpmo(qgDef, qgOpp)));
         breakdown.put("codeIntegrityFindings", Map.of("opportunities", ciCounts.opportunities(), "defects", ciCounts.defects(),
                 "dpmo", calculateDpmo(ciCounts.defects(), ciCounts.opportunities())));
+        breakdown.put("capabilityObservations", Map.of("opportunities", capCounts.opportunities(), "defects", capCounts.defects(),
+                "dpmo", calculateDpmo(capCounts.defects(), capCounts.opportunities())));
 
         String projectName = projectId != null
                 ? projectRepository.findById(projectId).map(com.eneik.production.models.persistence.ProjectEntity::getName)
@@ -308,6 +316,36 @@ public class SixSigmaAuditService {
      * takes priority (эпик is the u-chart subgroup - within one project, never mixed across projects).
      */
     public record DefectOpportunityCount(long defects, long opportunities) {}
+
+    /**
+     * The one defect category whose witness is outside the factory.
+     *
+     * 2026-08-21: the Layer 3 "Product" number already separates itself correctly from Layer 2 - it counts
+     * only non-dismissed features and deliberately excludes onboarding findings and runtime anomalies as
+     * platform noise. What it could not do was draw a defect from the product actually running: all three
+     * of its categories - quality gates, PR conflicts, code-integrity findings - are records THIS FACTORY
+     * created about its own work, inspected at build time. That is Charter invariant 12 at the level of the
+     * measure itself: the entity producing the result was the only source confirming it.
+     *
+     * A capability observation is one probe of one route the product's own OpenAPI contract DECLARES,
+     * performed by the launcher against the running instance. Opportunity = one such probe; defect = the
+     * declared capability did not answer. Added as a fourth category here rather than as a second DPMO
+     * elsewhere, so "the product's sigma" stays one number computed in one place.
+     */
+    public DefectOpportunityCount computeCapabilityObservationCounts(UUID projectId) {
+        if (projectId == null) {
+            return new DefectOpportunityCount(0, 0);
+        }
+        long opportunities = 0;
+        long defects = 0;
+        for (var row : capabilityObservationRepository.findByProjectIdOrderByObservedAtDesc(projectId)) {
+            opportunities++;
+            if (!row.isSatisfied()) {
+                defects++;
+            }
+        }
+        return new DefectOpportunityCount(defects, opportunities);
+    }
 
     public DefectOpportunityCount computeQualityGateCounts(UUID projectId, UUID featureId) {
         List<TaskEntity> tasks;

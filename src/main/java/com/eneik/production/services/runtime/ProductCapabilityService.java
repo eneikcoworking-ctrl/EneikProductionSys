@@ -42,10 +42,13 @@ import java.util.UUID;
  * of the count. The measure can fall, which is the whole point.
  *
  * <p><b>Six Sigma.</b> One observation of one capability is an <i>opportunity</i>; a capability that did not
- * work is a <i>defect</i>. That is the product-layer opportunity `SixSigmaAuditService` never had - its
- * "Product" number counts quality gates, PR conflicts and code-integrity findings, which are facts about
- * how the work was made rather than defects a user could experience. DPMO over capability observations is
- * the same arithmetic applied to the right population.
+ * work is a <i>defect</i>. The three-layer Factory/Delivery/Product model already exists and already
+ * separates correctly - Layer 3 counts only non-dismissed features and deliberately excludes onboarding
+ * findings and runtime anomalies as platform noise. What no layer had was a defect drawn from the product
+ * RUNNING: quality gates, PR conflicts and code-integrity findings are all records the factory created
+ * about its own work. Capability observations are added as a fourth category inside Layer 3
+ * ({@code SixSigmaAuditService.computeCapabilityObservationCounts}), never as a second sigma here - the
+ * product's sigma stays one number computed in one place.
  *
  * <p><b>Cost.</b> Probing happens inside the live-preview window the observation cycle already opens, so
  * the expensive part - `docker compose up` - is already paid. Each probe is one local HTTP call, which is
@@ -202,13 +205,22 @@ public class ProductCapabilityService {
         return satisfied;
     }
 
-    /** Product value and the Six Sigma population it feeds. */
+    /**
+     * Product value: how many declared capabilities are currently not-yet-refuted.
+     *
+     * 2026-08-21, corrected: this record carried its own `dpmo` field, which was a second product sigma
+     * standing beside SixSigmaAuditService's Layer 3 - exactly the parallel truth this codebase keeps
+     * paying for. The sigma belongs there and only there, where capability observations are now a fourth
+     * defect category alongside quality gates, PR conflicts and code-integrity findings. What lives here is
+     * the quantity Six Sigma does NOT express: a count of capabilities whose evidence currently clears the
+     * declared confidence threshold. `opportunities` and `defects` remain as the raw population, so a
+     * reader can see what the count rests on without recomputing a rate of their own.
+     */
     public record ProductValue(
             int declaredCapabilities,
             int workingCapabilities,
             long opportunities,
-            long defects,
-            double dpmo) {
+            long defects) {
     }
 
     /**
@@ -236,8 +248,7 @@ public class ProductCapabilityService {
                 working++;
             }
         }
-        double dpmo = opportunities == 0 ? 0.0 : ((double) defects / opportunities) * 1_000_000.0;
-        return new ProductValue(perCapability.size(), working, opportunities, defects, dpmo);
+        return new ProductValue(perCapability.size(), working, opportunities, defects);
     }
 
     private static final class BetaCounts {

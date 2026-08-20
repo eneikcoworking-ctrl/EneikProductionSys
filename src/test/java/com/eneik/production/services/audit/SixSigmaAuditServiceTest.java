@@ -76,6 +76,7 @@ public class SixSigmaAuditServiceTest {
                 taskConflictRepository,
                 taskRepository,
                 onboardingAuditFindingRepository,
+                mock(com.eneik.production.repositories.CapabilityObservationRepository.class),
                 projectRepository,
                 julesSessionRepository,
                 tocSentinelService,

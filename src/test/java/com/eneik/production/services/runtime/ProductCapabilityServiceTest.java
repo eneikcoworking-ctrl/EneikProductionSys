@@ -202,9 +202,10 @@ class ProductCapabilityServiceTest {
         var value = serviceWith(mock(FeatureRepository.class), mock(GitHubPullRequestService.class),
                 mock(RuntimeLauncherClient.class), observations).currentValue(projectId);
 
+        // The raw population only. The rate belongs to SixSigmaAuditService's Layer 3, where capability
+        // observations are a fourth defect category - a second dpmo here would be a parallel truth.
         assertEquals(4, value.opportunities());
         assertEquals(1, value.defects());
-        assertEquals(250_000.0, value.dpmo(), 0.001);
     }
 
     @Test
@@ -218,6 +219,6 @@ class ProductCapabilityServiceTest {
 
         assertEquals(0, value.workingCapabilities());
         assertEquals(0, value.opportunities());
-        assertEquals(0.0, value.dpmo(), 0.001);
+        assertEquals(0, value.defects());
     }
 }
