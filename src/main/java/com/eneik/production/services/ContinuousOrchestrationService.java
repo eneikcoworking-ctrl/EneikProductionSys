@@ -57,6 +57,7 @@ public class ContinuousOrchestrationService {
     // javadoc. Deliberately called from this existing per-project tick, not a new @Scheduled cron.
     private final com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService;
     private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
+    private final com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
                                          ProjectFlowService projectFlowService,
@@ -75,7 +76,8 @@ public class ContinuousOrchestrationService {
                                          OperationalPolicyService operationalPolicyService,
                                          com.eneik.production.services.accounts.AccountHealthService accountHealthService,
                                          com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService,
-                                         com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService) {
+                                         com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                                         com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
         this.accountRepository = accountRepository;
@@ -94,6 +96,7 @@ public class ContinuousOrchestrationService {
         this.accountHealthService = accountHealthService;
         this.productLaunchabilityService = productLaunchabilityService;
         this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
+        this.tocSubordinationLever = tocSubordinationLever;
     }
 
     @Scheduled(fixedRateString = "${orchestration.rate-ms:60000}")
@@ -255,7 +258,12 @@ public class ContinuousOrchestrationService {
                 log.info("Continuous Orchestration: policy denied {} for project {} in state {}: {}",
                         action, project.getName(), decision.state(), decision.reason());
             }
-            return decision.allowed();
+            // 2026-08-20, TOC step 3 in shadow: record what subordination WOULD decide against what the
+            // policy actually decided, and return the policy's answer unchanged. A subordination gate that
+            // is wrong freezes a whole project - measured once already, when one task in pending_review put
+            // the flow into SYSTEM_STALLED and dispatch was denied project-wide. observe_only first, per
+            // the operational-math promotion policy.
+            return tocSubordinationLever.observe(project, action, decision.allowed());
         } catch (Exception e) {
             log.warn("Continuous Orchestration: policy check failed for {} on project {}; failing closed: {}",
                     action, project.getId(), e.getMessage());

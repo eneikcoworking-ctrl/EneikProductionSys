@@ -76,7 +76,8 @@ class ContinuousOrchestrationServiceTest {
                 mock(OperationalPolicyService.class),
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
-                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class)
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class)
         );
 
         ContinuousOrchestrationService.SystemWorkSnapshot snapshot = service.systemWorkSnapshot();
@@ -116,7 +117,8 @@ class ContinuousOrchestrationServiceTest {
                 mock(OperationalPolicyService.class),
                 accountHealthService,
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
-                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class)
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class)
         );
 
         service.recoverStaleBlockedAccounts();
@@ -156,7 +158,8 @@ class ContinuousOrchestrationServiceTest {
                 mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
-                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class));
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
 
@@ -184,7 +187,8 @@ class ContinuousOrchestrationServiceTest {
                 mock(GitHubPullRequestService.class), mock(OperationalPolicyService.class),
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
-                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class));
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
 
