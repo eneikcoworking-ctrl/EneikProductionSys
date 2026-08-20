@@ -1091,6 +1091,22 @@ public class JulesDispatchService {
                 return;
             }
             if (root == null || !root.path("activities").isArray()) {
+                // 2026-08-20: a null here is not always "nothing happened". Measured on test-forty-ninth:
+                // 52 `activities fetch failed: status=404` per hour, forever, from three sessions sitting
+                // in `pr_opened` whose Jules-side session no longer exists. Verified directly by querying
+                // every live session with its OWN owning account key - the five running ones answered 200
+                // and three of the four pr_opened ones answered 404 on both the session and its activities.
+                //
+                // A 404 on the session resource itself is proof of absence, not a hiccup, and
+                // JulesApiClient.checkSessionRaw exists precisely to tell those apart - it returns the real
+                // status code where getSessionStatus swallows it. It had no callers until now.
+                //
+                // Anything other than a real 404 keeps the old behaviour exactly: not evidence of anything,
+                // try again next cycle. Refusing on ignorance would turn a reaper into a new way to lose
+                // live sessions.
+                if (root == null && buryIfSessionIsGone(session, apiKey)) {
+                    return;
+                }
                 // Genuine null (jules disabled, network hiccup, session skipped) - not evidence of
                 // anything, same as the pre-rewrite behavior: do nothing, try again next cycle.
                 return;
@@ -5089,6 +5105,36 @@ public class JulesDispatchService {
             dispatchReviewerFallbackBatch(java.util.List.of(new PendingFallbackReview(task, pr.url())));
             log.info("Reconciled abandoned PR {} for closed session {} (task {}) - queued for Jules fallback review.",
                     pr.url(), session.getExternalSessionId(), task.getId());
+        }
+    }
+
+
+    /**
+     * Closes a local session record whose remote Jules session is provably gone. Returns true only when a
+     * real 404 was observed for the session resource itself - never on a network failure, a disabled
+     * integration, or a missing key, because absence of an answer is not an answer (V104, the same rule
+     * that stopped an unanswered launch from being written into the product's history as a failed launch).
+     */
+    private boolean buryIfSessionIsGone(JulesSessionEntity session, String apiKey) {
+        if (apiKey == null || apiKey.isBlank() || session.getExternalSessionId() == null) {
+            return false;
+        }
+        try {
+            JulesApiClient.RawSessionCheckResult raw =
+                    julesApiClient.checkSessionRaw(session.getExternalSessionId(), apiKey);
+            if (raw == null || raw.statusCode() != 404) {
+                return false;
+            }
+            closeSessionAsNoCode(session,
+                    "Remote Jules session no longer exists (HTTP 404 on the session resource itself); "
+                            + "local record buried so it stops being polled forever");
+            log.info("Buried session {} - the remote session is gone (404), it had been polled every cycle",
+                    session.getExternalSessionId());
+            return true;
+        } catch (Exception e) {
+            log.warn("Could not check whether session {} still exists: {}",
+                    session.getExternalSessionId(), e.getMessage());
+            return false;
         }
     }
 
