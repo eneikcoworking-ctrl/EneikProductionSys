@@ -43,6 +43,7 @@ public class ClientRuntimeObservabilityService {
     private final DesignDriftMonitorService designDriftMonitorService;
     private final ProjectRepository projectRepository;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
+    private final ProductCapabilityService productCapabilityService;
 
     @Value("${client-runtime-observability.base-delay-hours:24}")
     private long baseDelayHours;
@@ -77,7 +78,8 @@ public class ClientRuntimeObservabilityService {
                                               KaizenService kaizenService,
                                               DesignDriftMonitorService designDriftMonitorService,
                                               ProjectRepository projectRepository,
-                                              com.eneik.production.repositories.TaskRepository taskRepository) {
+                                              com.eneik.production.repositories.TaskRepository taskRepository,
+                                              ProductCapabilityService productCapabilityService) {
         this.observationRepository = observationRepository;
         this.launcherClient = launcherClient;
         this.settingsService = settingsService;
@@ -85,6 +87,7 @@ public class ClientRuntimeObservabilityService {
         this.designDriftMonitorService = designDriftMonitorService;
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
+        this.productCapabilityService = productCapabilityService;
     }
 
     @Transactional
@@ -176,6 +179,22 @@ public class ClientRuntimeObservabilityService {
                     log.warn("ClientRuntimeObservabilityService: design drift check failed for project {}: {}",
                             project.getId(), e.getMessage(), e);
                 }
+            }
+
+            // 2026-08-20: while the instance is up, ask it about every capability the product DECLARES,
+            // not only whether it booted. `docker compose up` is the expensive part and it is already paid;
+            // each probe is one local HTTP call. This is the product-layer opportunity Six Sigma never had -
+            // an observation of a declared capability is an opportunity, a capability that did not work is a
+            // defect a user could experience, unlike a quality-gate check or a PR conflict.
+            //
+            // Probed whenever the launch succeeded, not only when /health passed: a product that serves its
+            // routes while missing a health endpoint is a real case, and refusing to look would make the
+            // measure depend on a convention rather than on the product.
+            try {
+                productCapabilityService.probeAll(project, "http://localhost:" + port);
+            } catch (Exception e) {
+                log.warn("ClientRuntimeObservabilityService: capability probing failed for project {}: {}",
+                        project.getId(), e.getMessage());
             }
 
             // Bounded live-preview window (2026-08-11): leave it running instead of tearing down right

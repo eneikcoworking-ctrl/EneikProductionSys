@@ -24,6 +24,7 @@ public class ProjectController {
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private final com.eneik.production.services.tree.ProjectTreeService projectTreeService;
     private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
+    private final com.eneik.production.services.runtime.ProductCapabilityService productCapabilityService;
     private final com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService;
     private final com.eneik.production.repositories.GeminiObserverJournalRepository geminiObserverJournalRepository;
 
@@ -35,6 +36,7 @@ public class ProjectController {
                              com.eneik.production.services.FalsificationCycleService falsificationCycleService,
                              com.eneik.production.services.tree.ProjectTreeService projectTreeService,
                              com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                             com.eneik.production.services.runtime.ProductCapabilityService productCapabilityService,
                              com.eneik.production.services.coherence.EvidenceCoherenceService evidenceCoherenceService,
                              com.eneik.production.repositories.GeminiObserverJournalRepository geminiObserverJournalRepository) {
         this.projectFlowService = projectFlowService;
@@ -45,6 +47,7 @@ public class ProjectController {
         this.falsificationCycleService = falsificationCycleService;
         this.projectTreeService = projectTreeService;
         this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
+        this.productCapabilityService = productCapabilityService;
         this.evidenceCoherenceService = evidenceCoherenceService;
         this.geminiObserverJournalRepository = geminiObserverJournalRepository;
     }
@@ -187,6 +190,19 @@ public class ProjectController {
     @GetMapping("/{projectId}/runtime-health")
     public com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth(@PathVariable UUID projectId) {
         return clientRuntimeObservabilityService.summarize(projectId);
+    }
+
+    /**
+     * Product value: how many of the capabilities the product DECLARES are observed working, with the Six
+     * Sigma population that measure feeds.
+     *
+     * Read-only and computed from recorded observations only - reading the measure can never change it.
+     * The denominator comes from the product's own OpenAPI contracts, so it is what the product asserts
+     * about itself rather than what the factory decomposed it into.
+     */
+    @GetMapping("/{projectId}/product-value")
+    public com.eneik.production.services.runtime.ProductCapabilityService.ProductValue productValue(@PathVariable UUID projectId) {
+        return productCapabilityService.currentValue(projectId);
     }
 
     // Read-only projection (2026-08-10, Кузница/Delivery room) - the evidence-coherence graph
