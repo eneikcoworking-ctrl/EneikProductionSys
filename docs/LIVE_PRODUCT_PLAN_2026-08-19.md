@@ -543,6 +543,41 @@ five hours.
 state. **Postcondition:** a product observed broken is re-checked at the floor; a product observed working
 earns a delay proportional to the confidence it has earned.
 
+
+### 13.3 Invariant transitions recorded, 2026-08-20 12:38Z - order item 1
+
+**Baseline.** `OperationalTruthService.invariants()` evaluated seven Charter invariants on every call and
+returned them in a DTO read only by the dashboard controller. Nothing persisted them, confirmed across
+every reference to `InvariantStatus`, so `pass -> warn` was undetectable in principle.
+
+**Intervention.** `ef487fa` - `V105` plus recording inside the existing two-hourly `TrustSnapshotService`
+pass. Rows are written on **transition only**.
+
+**Observed delta.** Seven rows on the first pass, one per invariant, each with `<first>` as its previous
+status. Immediately informative:
+
+```
+done_is_not_delivery      <first> -> warn      2 done task(s) lack local merged PR evidence
+defect_requires_...       <first> -> observed  15 recent defect(s) should be checked for capture
+five others               <first> -> pass
+```
+
+The `warn` is a live refutation of a standing Charter claim. Before this table it existed only inside a
+DTO nobody read.
+
+**Idempotency, verified live rather than only in the unit test.** The backend was restarted to force a
+second pass with nothing changed. Over the following seven minutes the table stayed at **7 rows** - the
+second pass wrote nothing. A confirmation leaves no trace, as designed.
+
+**Verdict: confirmed.** **Rollback:** revert `ef487fa`; `V105` leaves an unused table, which is inert.
+**Postcondition:** the row count rises only when an invariant's status actually changes. If it grows on a
+quiet cycle, the write-side identity has been lost - the exact defect this item was built to avoid
+repeating from `KAIZEN_PROPOSALS`.
+
+**Order item 2 (Kaizen write-side identity) is deployed and unit-verified (16/16); its live verification
+waits for the factory to run, since proposals are only generated on its own cycle.**
+
+
 ---
 
 ## 14. Corrections - my claims that measurement refuted
