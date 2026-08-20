@@ -807,3 +807,80 @@ product and none of them can be refuted by observing it. They measure the text a
 self-attestation (invariant 12) with extra arithmetic. The only admissible checks are the ones that can be
 falsified by the running product.
 
+---
+
+## 18. Verdict record - the pending_review blocker, 2026-08-20
+
+Recorded in the form the operator requires: baseline, intervention, observed delta, verdict, with an
+explicit rollback and postcondition. One changed factor per step.
+
+### Baseline, 05:26Z - 06:13Z
+
+| Quantity | Value |
+| --- | --- |
+| tasks in `pending_review` | **1** - `aaa599ac`, `BARCAN-TAG-05`, PR #113 merged with `hasCode=false` |
+| tasks `failed` | 9 |
+| Flow Core state | **`SYSTEM_STALLED`**, sustained ~151 min |
+| effect of that state | `DISPATCH_QUEUED_TASKS`, `DISPATCH_REVIEW_TASKS` and `RECOVER_FAILED_FRONTIER` denied for the **whole project** |
+| reconciler behaviour | `Poka-yoke: NOT closing task aaa599ac` re-entered every ~60 s, forever |
+
+Causal chain, established from code and log rather than inferred: the 2026-08-18 poka-yoke declines to
+close a task whose merged PR carries no code and leaves it standing; `checkForSystemStall` counts a
+`pending_review` task as actionable work; with idle Jules capacity present and no dispatch/merge progress
+past the threshold it sets `system_status=stalled`; `FlowSpineService` maps that to `SYSTEM_STALLED`;
+`OperationalPolicyService` then denies dispatch and recovery project-wide. **One task with nowhere to go
+froze the entire flow.**
+
+### Intervention
+
+Two commits, the second correcting a defect the first revealed in production:
+
+- `d6e6c17` - the declined delivery is routed rather than left standing: retire the attempt as `failed`
+  and reopen its source wishlist so the compiler mints a fresh task, bounded by the count of already-failed
+  siblings from that wishlist (invariant 7, a well-founded measure). Deliberately not `TaskStatus.blocked`:
+  `recoverBlockedWork` skips blocked tasks holding an active session and retires the rest with no child work.
+- `a86254e` - caught on the first live cycle: writing the status directly from the reconciler threw
+  `TransactionRequiredException` every minute, because that entry point is deliberately non-transactional
+  and a `@Modifying` query needs a transaction, while annotating the method would not help (the call arrives
+  by self-invocation and never crosses the proxy). Routed through `ClaimService.closeTaskAsFailed`, the
+  existing transactional owner of that transition - invariant 10, one point of application.
+
+A third thing was corrected without code: this fix had been held since 2026-08-19 over the `ACP-102`
+content-role trap. Re-checked against the actual role set - among the thirteen BARCAN roles the trap has
+**no bearer**: `TAG-03` and every spec stage are already exempt and no content-authoring role exists yet.
+The principle stands for when one is added (§17); it was not a reason to keep the flow frozen. Holding it
+was my error and it cost hours of a stalled project.
+
+### Observed delta, measured 06:14:10Z and still holding at 06:18Z
+
+| Quantity | Before | After |
+| --- | --- | --- |
+| `pending_review` | 1 | **0** |
+| `failed` | 9 | 10 |
+| Flow Core state | `SYSTEM_STALLED` | `DECOMPOSING` / `IMPLEMENTING` / `DELIVERED` |
+| `STALL` lines in a 5-minute window | present, sustained | **0** |
+| poka-yoke re-entry lines per 5 min | ~5 | **0** |
+
+The source wishlist `8d8b3665` was **not** reopened - it was already `dismissed`, having collapsed into a
+semantic duplicate at compile time, and the guard skipped it exactly as written. The requirement was not
+lost; it was never separately owed.
+
+### Verdict
+
+**Confirmed.** The blocker is closed, the loop it drove is gone, and the project-wide freeze it caused is
+lifted. Not a proof that the mechanism is correct in general - only that it is not yet refuted, on one
+real case, at the point where it mattered.
+
+### Rollback
+
+Revert `a86254e` then `d6e6c17`. The only persistent state either produced is task `aaa599ac` sitting at
+`failed` with its claim released - both inert and idempotent, and `failed` is an absorbing state
+(invariant 3), so nothing revisits it. No migration, no setting, no schema.
+
+### Postcondition to hold from here
+
+No task may remain in `pending_review` against a merged code-free PR for longer than one reconciler cycle.
+If one does, either the routing did not fire (check for an exception inside `routeUncertifiedMerge`, which
+is exactly how `a86254e` was found) or its role's delivery predicate is wrong for that role's artifact
+kind, which is §12.1 and §17.4.
+
