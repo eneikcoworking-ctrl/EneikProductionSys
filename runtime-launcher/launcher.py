@@ -211,8 +211,16 @@ def _assembly_report(max_chars: int = 2400) -> str:
         unhealthy = [r for r in rows
                      if str(r.get("State", "")).lower() not in ("running",)
                      or "unhealthy" in str(r.get("Health", "")).lower()]
+        # 2026-08-20, measured on the very first run of this report: at health-check time the app container
+        # was still State=running - a Spring Boot process that dies twelve seconds later on a bad datasource
+        # is "running" while it boots. Returning "every service reports running" was honest and useless: the
+        # health port refused, so SOMETHING is wrong, and the only place the reason can be is a running
+        # service's own log. "Up but not serving" is precisely the case the log is needed for.
         if not unhealthy:
-            return " | assembly: every service reports running - the failure is inside a running service"
+            unhealthy = rows[:3]
+            prefix = " | assembly: every service reports running, so the failure is inside one of them"
+        else:
+            prefix = " | assembly: "
 
         parts = []
         for row in unhealthy[:3]:
@@ -222,7 +230,7 @@ def _assembly_report(max_chars: int = 2400) -> str:
                         timeout_seconds=30)
             tail = (logs.stdout or logs.stderr or "").strip()[-1200:]
             parts.append(f"service '{service}' state={state}: {tail}")
-        return " | assembly: " + " || ".join(parts)[:max_chars]
+        return prefix + " || ".join(parts)[:max_chars]
     except Exception:  # noqa: BLE001 - diagnostics must never break the observation they explain
         return ""
 
