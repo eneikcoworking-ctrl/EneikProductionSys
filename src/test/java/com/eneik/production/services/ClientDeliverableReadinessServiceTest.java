@@ -826,4 +826,39 @@ class ClientDeliverableReadinessServiceTest {
         verify(featureRepository, never()).deleteById(any());
         verify(featureRepository, never()).save(any());
     }
+
+    // 2026-08-20, order item 3: delivery had two sources of truth about one role.
+    //
+    //   EmsFlowStage.EXPERIENCE(30, "experience", specOnly=false, "BARCAN-TAG-03", "BARCAN-TAG-11")
+    //   ClientDeliverableReadinessService.HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-03")
+    //
+    // The enum says TAG-03 produces code; the private set says it does not. The set wins because it is
+    // consulted first, so the enum - which every other part of the flow treats as the single source of
+    // truth for what a role is - is silently wrong about delivery. The cause is that `specOnly` is a
+    // criterion standing in for a different question: "does this role produce a specification" is not
+    // "what artifact constitutes this role's delivery" (ACP-102, criterion is not the concept). TAG-03's
+    // artifacts land in design/draft and design/approved, which CodeChangeClassifier already treats as
+    // non-code - it delivers design, and neither `specOnly=true` nor `specOnly=false` says that.
+    //
+    // This test asserts the property that must hold however the answer is expressed: the delivery
+    // predicate is fully determined by the role's declared stage, with no second list anywhere.
+    @Test
+    void everyRolesDeliveryArtifactIsDeclaredInExactlyOnePlace() {
+        for (String roleTag : List.of("BARCAN-TAG-00", "BARCAN-TAG-01", "BARCAN-TAG-02", "BARCAN-TAG-03",
+                "BARCAN-TAG-04", "BARCAN-TAG-05", "BARCAN-TAG-06", "BARCAN-TAG-07", "BARCAN-TAG-08",
+                "BARCAN-TAG-09", "BARCAN-TAG-10", "BARCAN-TAG-11", "BARCAN-TAG-12")) {
+            TaskEntity task = new TaskEntity();
+            RoleEntity role = new RoleEntity();
+            role.setTag(roleTag);
+            task.setRole(role);
+
+            boolean serviceSays = service.requiresCodeForDelivery(task);
+            boolean stageSays = com.eneik.production.services.EmsFlowStage.requiresCodeForDelivery(roleTag);
+
+            assertEquals(stageSays, serviceSays,
+                    "role " + roleTag + ": the delivery predicate and the flow stage disagree, so delivery "
+                            + "has two sources of truth for this role");
+        }
+    }
+
 }

@@ -945,7 +945,6 @@ public class ClientDeliverableReadinessService {
     // list that can silently drift from it - a role newly marked specOnly=true (ARCHITECTURE, COMPLIANCE
     // already are; any future one) is exempted automatically, closing the whole class instead of the one
     // instance found tonight.
-    private static final Set<String> HAS_CODE_EXEMPT_ROLE_TAGS = Set.of("BARCAN-TAG-03");
 
     /**
      * The single delivery predicate: a task counts as delivered when it reached main AND either its role
@@ -965,7 +964,10 @@ public class ClientDeliverableReadinessService {
      */
     public boolean requiresCodeForDelivery(TaskEntity task) {
         String roleTag = task != null && task.getRole() != null ? task.getRole().getTag() : "";
-        return !HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag) && !EmsFlowStage.isSpecStage(roleTag);
+        // 2026-08-20: this consulted a private exempt set FIRST and the flow stage second, and the two
+        // disagreed about BARCAN-TAG-03 - the set won silently, so delivery had two sources of truth for
+        // one role. The stage now declares each role's delivery artifact and this asks only that.
+        return EmsFlowStage.requiresCodeForDelivery(roleTag);
     }
 
     public boolean hasRequiredMergeEvidence(TaskEntity task) {
@@ -973,7 +975,7 @@ public class ClientDeliverableReadinessService {
             return false;
         }
         String roleTag = task.getRole() != null ? task.getRole().getTag() : "";
-        if (HAS_CODE_EXEMPT_ROLE_TAGS.contains(roleTag) || EmsFlowStage.isSpecStage(roleTag)) {
+        if (!EmsFlowStage.requiresCodeForDelivery(roleTag)) {
             return true;
         }
         boolean hasCode = mergedReviews(task.getId()).stream().anyMatch(review -> Boolean.TRUE.equals(review.getHasCode()));

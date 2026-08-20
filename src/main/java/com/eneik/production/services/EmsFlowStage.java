@@ -79,6 +79,45 @@ public enum EmsFlowStage {
      * parallel-guessing incident this stays scoped away from). Unknown role tags (forRoleTag returns null)
      * are never spec-only, matching the fail-closed default of the other *ForRoleTag helpers.
      */
+    /**
+     * What kind of artifact constitutes delivery for a role at this stage.
+     *
+     * 2026-08-20: delivery used to be decided in two places that disagreed. This enum declared
+     * EXPERIENCE (TAG-03, TAG-11) as {@code specOnly=false} - "produces code" - while
+     * ClientDeliverableReadinessService kept a private set exempting TAG-03, and the private set won
+     * because it was consulted first. The cause is that {@code specOnly} is a criterion standing in for a
+     * different question: "does this role produce a specification" is not "what artifact constitutes this
+     * role's delivery" (ACP-102 - a criterion agrees with its concept only over the bearers it was
+     * calibrated on). TAG-03's artifacts land in design/draft and design/approved, which
+     * CodeChangeClassifier already classifies as non-code: it delivers DESIGN, and neither value of
+     * {@code specOnly} can say so.
+     *
+     * Adding a content-authoring role later is now one value here, not an edit in two files.
+     */
+    public enum DeliveryArtifact {
+        /** Source that changes the product's behaviour. The merged PR must contain code. */
+        CODE,
+        /** A written decision, contract or compliance note. No code is expected. */
+        SPEC,
+        /** Mockups and approved design assets under design/. No code is expected. */
+        DESIGN
+    }
+
+    /**
+     * The single predicate for whether a role's delivery requires code. Every caller asks this and nothing
+     * keeps a second list - Charter invariant 10, one point of application.
+     */
+    public static boolean requiresCodeForDelivery(String roleTag) {
+        return deliveryArtifact(roleTag) == DeliveryArtifact.CODE;
+    }
+
+    public static DeliveryArtifact deliveryArtifact(String roleTag) {
+        if ("BARCAN-TAG-03".equals(roleTag)) {
+            return DeliveryArtifact.DESIGN;
+        }
+        return isSpecStage(roleTag) ? DeliveryArtifact.SPEC : DeliveryArtifact.CODE;
+    }
+
     public static boolean isSpecStage(String roleTag) {
         EmsFlowStage stage = forRoleTag(roleTag);
         return stage != null && stage.specOnly;
