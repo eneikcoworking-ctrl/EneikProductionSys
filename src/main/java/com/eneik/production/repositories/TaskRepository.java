@@ -221,6 +221,12 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<QueueDashboardDto.TagCountDto> queuedGroupedByProjectAndTag(@Param("projectId") UUID projectId);
 
     List<TaskEntity> findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(UUID projectId, TaskStatus status);
+
+    /** Has anything reached this status since the given instant? Used by ClientRuntimeObservabilityService
+     * to ask "did the object change since we last looked at it" without inventing a new timestamp: a task
+     * that is now `done` and was written after the last real observation means the product on main is not
+     * the product that observation was about. */
+    long countByProjectIdAndStatusAndUpdatedAtAfter(UUID projectId, TaskStatus status, java.time.Instant since);
     List<TaskEntity> findBySourceWishlistIdIn(List<UUID> sourceWishlistIds);
 
     // Creation-time duplicate guard (2026-07-26, operator directive after a live incident: a hardcoded bug

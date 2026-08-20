@@ -42,6 +42,7 @@ public class ClientRuntimeObservabilityService {
     private final KaizenService kaizenService;
     private final DesignDriftMonitorService designDriftMonitorService;
     private final ProjectRepository projectRepository;
+    private final com.eneik.production.repositories.TaskRepository taskRepository;
 
     @Value("${client-runtime-observability.base-delay-hours:24}")
     private long baseDelayHours;
@@ -75,13 +76,15 @@ public class ClientRuntimeObservabilityService {
                                               SystemSettingsService settingsService,
                                               KaizenService kaizenService,
                                               DesignDriftMonitorService designDriftMonitorService,
-                                              ProjectRepository projectRepository) {
+                                              ProjectRepository projectRepository,
+                                              com.eneik.production.repositories.TaskRepository taskRepository) {
         this.observationRepository = observationRepository;
         this.launcherClient = launcherClient;
         this.settingsService = settingsService;
         this.kaizenService = kaizenService;
         this.designDriftMonitorService = designDriftMonitorService;
         this.projectRepository = projectRepository;
+        this.taskRepository = taskRepository;
     }
 
     @Transactional
@@ -106,8 +109,9 @@ public class ClientRuntimeObservabilityService {
         if (lastReal.isPresent()) {
             Instant lastObservedAt = lastReal.get().getObservedAt();
             Duration sinceLast = Duration.between(lastObservedAt, Instant.now());
-            Duration nextDelay = posterior.nextCheckDelay(Duration.ofHours(baseDelayHours), Duration.ofHours(minimumDelayHours));
-            if (sinceLast.compareTo(nextDelay) < 0) {
+            Duration floor = Duration.ofHours(minimumDelayHours);
+            Duration nextDelay = posterior.nextCheckDelay(Duration.ofHours(baseDelayHours), floor);
+            if (sinceLast.compareTo(nextDelay) < 0 && !productChangedSince(project, lastObservedAt, sinceLast, floor)) {
                 return; // not due yet, per the adaptive-cadence formula - no hard-coded schedule anywhere here
             }
         }
@@ -319,4 +323,44 @@ public class ClientRuntimeObservabilityService {
             List<ClientRuntimeObservationEntity> history) {
         return history.stream().filter(row -> !row.isInstrumentFailure()).findFirst();
     }
+
+    /**
+     * 2026-08-20: the posterior is a belief about a specific object, and a merge to main replaces that
+     * object. Until now the only thing that could make an observation due was elapsed time, so a fix that
+     * had already landed stayed invisible for up to a full delay - measured on test-forty-ninth, where a
+     * merged MinIO fix waited while the cadence pointed at 09:11Z the next morning.
+     *
+     * No new timestamp is invented: a task that is now `done` and was written after the last real
+     * observation means the product on main is not the product that observation was about.
+     * {@code TaskEntity.updatedAt} already records that.
+     *
+     * **The floor still binds.** An event may pull the check forward to the minimum delay, never below it.
+     * That is deliberate: without the floor a busy merge stream would launch the product on every tick,
+     * which is the same overproduction the adaptive cadence exists to prevent - the trigger changes *when*
+     * we look, never *how often we are allowed to*.
+     */
+    private boolean productChangedSince(ProjectEntity project, Instant lastObservedAt,
+                                        Duration sinceLast, Duration floor) {
+        if (sinceLast.compareTo(floor) < 0) {
+            return false;
+        }
+        try {
+            long mergedSince = taskRepository.countByProjectIdAndStatusAndUpdatedAtAfter(
+                    project.getId(),
+                    com.eneik.production.models.persistence.TaskStatus.done,
+                    lastObservedAt);
+            if (mergedSince > 0) {
+                log.info("ClientRuntimeObservabilityService: project {} - {} task(s) reached done since the "
+                                + "last observation at {}; observing now rather than waiting out the timer",
+                        project.getId(), mergedSince, lastObservedAt);
+                return true;
+            }
+        } catch (Exception e) {
+            // A failure to answer "did anything change" must never suppress the ordinary timed cadence.
+            log.warn("ClientRuntimeObservabilityService: change check failed for project {}: {}",
+                    project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
 }
