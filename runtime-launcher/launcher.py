@@ -226,10 +226,16 @@ def _assembly_report(max_chars: int = 2400) -> str:
         for row in unhealthy[:3]:
             service = row.get("Service") or row.get("Name") or "<unnamed>"
             state = row.get("State", "<unknown>")
-            logs = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "logs", "--tail", "25", str(service)],
-                        timeout_seconds=30)
-            tail = (logs.stdout or logs.stderr or "").strip()[-1200:]
-            parts.append(f"service '{service}' state={state}: {tail}")
+            # 2026-08-20, measured: `docker compose -p NAME logs SERVICE` returned an empty body on every
+            # real run - without `-f <compose file>` the service name does not resolve, and the command
+            # fails quietly rather than erroring. The container's own name is already in this same `ps` row
+            # and `docker logs` needs no compose context at all, so ask the container directly.
+            container = row.get("Name") or service
+            logs = _run(["docker", "logs", "--tail", "40", str(container)], timeout_seconds=30)
+            tail = ((logs.stdout or "") + (logs.stderr or "")).strip()[-1200:]
+            if not tail:
+                tail = "<no output on this container's stdout/stderr>"
+            parts.append(f"service '{service}' (container '{container}') state={state}: {tail}")
         return prefix + " || ".join(parts)[:max_chars]
     except Exception:  # noqa: BLE001 - diagnostics must never break the observation they explain
         return ""
