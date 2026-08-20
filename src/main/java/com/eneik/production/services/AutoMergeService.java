@@ -11,6 +11,7 @@ import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.LeanValue;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.services.github.GitHubApiBudgetService;
@@ -2582,9 +2583,20 @@ public class AutoMergeService {
                         + "Prior failed attempts from wishlist {}: {}.",
                 task.getId(), mergedPrUrl, task.getStatus(), wishlistId, priorFailedAttempts);
 
-        int retired = taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
-        if (retired == 0) {
-            log.info("Poka-yoke: task {} reached a terminal status concurrently; left as it stands", task.getId());
+        // 2026-08-20, caught live on first deploy: calling taskRepository.writeStatusUnlessTerminal directly
+        // from here threw TransactionRequiredException every cycle - this reconciler's own entry point is
+        // deliberately NOT @Transactional (it makes several slow external calls), and a @Modifying query
+        // needs an active transaction. Annotating this method would not help either: the call arrives by
+        // plain self-invocation and never crosses the Spring proxy. ClaimService.closeTaskAsFailed is the
+        // existing, @Transactional, claim-aware owner of exactly this transition - it releases the claim,
+        // guards the write against a concurrent terminal status, and records the reason. One point of
+        // application (invariant 10) rather than a second retirement path here.
+        claimService.closeTaskAsFailed(task.getId(),
+                "Poka-yoke: merged PR " + mergedPrUrl + " carried no code for a role that requires it");
+        TaskStatus after = taskRepository.findById(task.getId()).map(TaskEntity::getStatus).orElse(null);
+        if (after != TaskStatus.failed) {
+            log.info("Poka-yoke: task {} did not retire (now {}); leaving its requirement alone",
+                    task.getId(), after);
             return;
         }
         task.setStatus(TaskStatus.failed);

@@ -1199,6 +1199,13 @@ class AutoMergeServiceTest {
     private static AutoMergeService serviceWith(
             com.eneik.production.repositories.TaskRepository tasks,
             com.eneik.production.repositories.WishlistRepository wishlists) {
+        return serviceWith(tasks, wishlists, mock(ClaimService.class));
+    }
+
+    private static AutoMergeService serviceWith(
+            com.eneik.production.repositories.TaskRepository tasks,
+            com.eneik.production.repositories.WishlistRepository wishlists,
+            ClaimService claims) {
         return new AutoMergeService(
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.JulesSessionRepository.class), tasks,
@@ -1215,7 +1222,7 @@ class AutoMergeServiceTest {
                 mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
                 mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
                 mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
-                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                claims, mock(com.eneik.production.repositories.ProjectRepository.class),
                 mock(ClientDeliverableReadinessService.class),
                 mock(com.eneik.production.services.GeminiContextService.class),
                 mock(com.eneik.production.services.ProjectFlowService.class),
@@ -1245,7 +1252,10 @@ class AutoMergeServiceTest {
         wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
 
         when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
-        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+        when(tasks.findById(task.getId())).thenAnswer(inv -> {
+            task.setStatus(TaskStatus.failed); // ClaimService.closeTaskAsFailed is what really writes this
+            return Optional.of(task);
+        });
         when(wishlists.findById(wishlistId)).thenReturn(Optional.of(wishlist));
 
         service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
@@ -1278,7 +1288,10 @@ class AutoMergeServiceTest {
 
         when(tasks.findBySourceWishlistIdIn(List.of(wishlistId)))
                 .thenReturn(List.of(task, firstFailure, secondFailure));
-        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+        when(tasks.findById(task.getId())).thenAnswer(inv -> {
+            task.setStatus(TaskStatus.failed);
+            return Optional.of(task);
+        });
 
         service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
 
@@ -1301,7 +1314,6 @@ class AutoMergeServiceTest {
 
         service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
 
-        verify(tasks, never()).writeStatusUnlessTerminal(any(), any());
         verify(wishlists, never()).save(any());
     }
 
@@ -1319,7 +1331,7 @@ class AutoMergeServiceTest {
         task.setSourceWishlistId(wishlistId);
 
         when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
-        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(0);
+        when(tasks.findById(task.getId())).thenReturn(Optional.of(task)); // stays pending_review
 
         service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
 
