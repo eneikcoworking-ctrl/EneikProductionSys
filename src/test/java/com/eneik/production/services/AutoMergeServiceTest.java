@@ -1195,4 +1195,136 @@ class AutoMergeServiceTest {
         review.setCiStatus(status);
         return review;
     }
+
+    private static AutoMergeService serviceWith(
+            com.eneik.production.repositories.TaskRepository tasks,
+            com.eneik.production.repositories.WishlistRepository wishlists) {
+        return new AutoMergeService(
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class), tasks,
+                mock(com.eneik.production.services.settings.SystemSettingsService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper(),
+                mock(com.eneik.production.services.advice.RoleAdviceLoopService.class),
+                mock(com.eneik.production.repositories.TaskConflictRepository.class),
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                mock(RoleCapabilityLoader.class), wishlists,
+                mock(MLPredictionServiceClient.class),
+                mock(com.eneik.production.services.github.GitHubPullRequestService.class),
+                new com.eneik.production.services.github.GitHubApiBudgetService(),
+                mock(com.eneik.production.services.video.VideoAssetService.class),
+                mock(com.eneik.production.services.dashboard.ProjectOperationalContextService.class),
+                mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
+                mock(CodeChangeClassifier.class), mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                mock(ClaimService.class), mock(com.eneik.production.repositories.ProjectRepository.class),
+                mock(ClientDeliverableReadinessService.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.services.ProjectFlowService.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                mock(com.eneik.production.repositories.OperationalRealityFindingRepository.class));
+    }
+
+    // 2026-08-19: the poka-yoke used to decline to close the task and stop there, which left task 779705b2
+    // at pending_review permanently while the reconciler re-entered the same refusal 262 times in 65
+    // minutes. Declining to certify a delivery and leaving the object where it stands are two different
+    // obligations - this covers the second one.
+    @Test
+    void anUncertifiedMergeRetiresTheAttemptAndReopensTheRequirement() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.pending_review);
+        task.setSourceWishlistId(wishlistId);
+
+        com.eneik.production.models.persistence.WishlistEntity wishlist =
+                new com.eneik.production.models.persistence.WishlistEntity();
+        wishlist.setId(wishlistId);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
+
+        when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
+        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+        when(wishlists.findById(wishlistId)).thenReturn(Optional.of(wishlist));
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
+
+        assertEquals(TaskStatus.failed, task.getStatus());
+        assertEquals(com.eneik.production.models.persistence.WishlistStatus.pending, wishlist.getStatus());
+        verify(wishlists).save(wishlist);
+    }
+
+    // The bound is a well-founded measure: failed siblings from the same wishlist only ever increase, so
+    // the requirement cannot be re-minted forever by a role that keeps merging empty PRs.
+    @Test
+    void aRequirementThatAlreadySpentItsAttemptsIsNotReopenedAgain() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.pending_review);
+        task.setSourceWishlistId(wishlistId);
+
+        TaskEntity firstFailure = new TaskEntity();
+        firstFailure.setId(UUID.randomUUID());
+        firstFailure.setStatus(TaskStatus.failed);
+        TaskEntity secondFailure = new TaskEntity();
+        secondFailure.setId(UUID.randomUUID());
+        secondFailure.setStatus(TaskStatus.failed);
+
+        when(tasks.findBySourceWishlistIdIn(List.of(wishlistId)))
+                .thenReturn(List.of(task, firstFailure, secondFailure));
+        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
+
+        assertEquals(TaskStatus.failed, task.getStatus());
+        verify(wishlists, never()).save(any());
+    }
+
+    // Idempotency (Charter invariant 4): the reconciler re-enters this path on every cycle over the same
+    // merged PR. A task it already retired must produce no second write and no second log line.
+    @Test
+    void anAlreadyRetiredAttemptIsNotRoutedTwice() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.failed);
+        task.setSourceWishlistId(UUID.randomUUID());
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
+
+        verify(tasks, never()).writeStatusUnlessTerminal(any(), any());
+        verify(wishlists, never()).save(any());
+    }
+
+    // A concurrent terminal write wins: the guarded status write reports zero rows and nothing else happens.
+    @Test
+    void aConcurrentlyTerminalTaskDoesNotReopenItsRequirement() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.pending_review);
+        task.setSourceWishlistId(wishlistId);
+
+        when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
+        when(tasks.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(0);
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/107");
+
+        assertEquals(TaskStatus.pending_review, task.getStatus());
+        verify(wishlists, never()).save(any());
+    }
+
 }

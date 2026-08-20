@@ -2324,10 +2324,8 @@ public class AutoMergeService {
         // would turn a safety net into a new way to strand tasks.
         boolean deliveredByTheOnePredicate = !roleNeedsCode || !Boolean.FALSE.equals(mergedPrHasCode);
         if (taskNeedsRepair && !deliveredByTheOnePredicate) {
-            log.warn("Poka-yoke: NOT closing task {} from merged PR {} - the merge carries no delivery "
-                            + "evidence for this role (hasRequiredMergeEvidence=false). Status left at {}.",
-                    task.getId(), mergedPrUrl, task.getStatus());
             taskNeedsRepair = false;
+            routeUncertifiedMerge(task, mergedPrUrl);
         }
         if (taskNeedsRepair) {
             task.setStatus(TaskStatus.done);
@@ -2535,4 +2533,81 @@ public class AutoMergeService {
         }
         return null;
     }
+
+    /** Attempts allowed per requirement before the flow stops re-minting a task for it. */
+    private static final int MAX_UNCERTIFIED_REATTEMPTS = 2;
+
+    /**
+     * 2026-08-19: declining to certify a delivery and leaving the task where it stands are two different
+     * obligations, and the 2026-08-18 poka-yoke above owned only the first. Measured on test-forty-ninth:
+     * task 779705b2 (PR #107 merged, hasCode=false) sat at pending_review permanently while this reconciler
+     * re-entered the identical refusal 262 times in 65 minutes - taskNeedsRepair is true for every non-done
+     * status, so the early return above can never fire. The work was silently not done and four log lines a
+     * minute were its only trace.
+     *
+     * The route is deliberately NOT TaskStatus.blocked. ProjectFlowService.recoverBlockedWork skips any
+     * blocked task that still has an active Jules session - this one has a pr_opened session, so it would be
+     * skipped forever - and its generic branch retires blocked tasks to failed "with no child work created".
+     * Both ends lose the requirement.
+     *
+     * What has to survive is the REQUIREMENT, not the task identity. So this retires the attempt and reopens
+     * the source wishlist, which is the same move recoverBlockedWork already makes for a blocked compiler
+     * task, and the same move that worked by hand on this project earlier today (readiness 0.833 -> 1.0 only
+     * after the wishlist item, not the task, was requeued - the reconciler re-derived `done` from the empty
+     * PR within fifty seconds every time the task itself was requeued). The compiler mints a fresh task from
+     * that wishlist on its next cycle.
+     *
+     * Bounded by a well-founded measure (Charter invariant 7): failed tasks already minted from the same
+     * wishlist only ever increase, so after MAX_UNCERTIFIED_REATTEMPTS the wishlist is left closed and the
+     * attempt simply ends as failed - visible in status counts and to the observer, rather than retried
+     * forever. Idempotent (invariant 4): the status write is a guarded compare-and-swap and a task already
+     * failed returns immediately, so a repeated cycle over the same merged PR neither logs nor writes twice.
+     */
+    // Package-private so AutoMergeServiceTest can exercise the routing directly - its only caller,
+    // repairTaskForConfirmedMerge, is private and reachable only through a full reconcile cycle.
+    void routeUncertifiedMerge(com.eneik.production.models.persistence.TaskEntity task, String mergedPrUrl) {
+        if (task.getStatus() == TaskStatus.failed) {
+            return;
+        }
+        UUID wishlistId = task.getSourceWishlistId();
+        long priorFailedAttempts = wishlistId == null
+                ? 0L
+                : taskRepository.findBySourceWishlistIdIn(List.of(wishlistId)).stream()
+                        .filter(sibling -> !sibling.getId().equals(task.getId()))
+                        .filter(sibling -> sibling.getStatus() == TaskStatus.failed)
+                        .count();
+
+        log.warn("Poka-yoke: NOT closing task {} from merged PR {} - the merge carries no code and this role "
+                        + "requires it (hasRequiredMergeEvidence=false). Was {}; retiring this attempt. "
+                        + "Prior failed attempts from wishlist {}: {}.",
+                task.getId(), mergedPrUrl, task.getStatus(), wishlistId, priorFailedAttempts);
+
+        int retired = taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
+        if (retired == 0) {
+            log.info("Poka-yoke: task {} reached a terminal status concurrently; left as it stands", task.getId());
+            return;
+        }
+        task.setStatus(TaskStatus.failed);
+
+        if (wishlistId == null || priorFailedAttempts >= MAX_UNCERTIFIED_REATTEMPTS) {
+            log.warn("Poka-yoke: not reopening a requirement for task {} - {}. The attempt ends as failed.",
+                    task.getId(),
+                    wishlistId == null
+                            ? "it has no source wishlist to reopen"
+                            : "its wishlist has already spent " + priorFailedAttempts + " attempts");
+            return;
+        }
+
+        wishlistRepository.findById(wishlistId).ifPresent(wishlist -> {
+            if (wishlist.getStatus() == WishlistStatus.dismissed || wishlist.getStatus() == WishlistStatus.pending) {
+                return;
+            }
+            wishlist.setStatus(WishlistStatus.pending);
+            wishlistRepository.save(wishlist);
+            log.warn("Poka-yoke: reopened wishlist {} to pending after task {} merged PR {} with no code - "
+                            + "the requirement re-enters the flow, not the task identity.",
+                    wishlist.getId(), task.getId(), mergedPrUrl);
+        });
+    }
+
 }
