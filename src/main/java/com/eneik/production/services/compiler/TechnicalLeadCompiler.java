@@ -720,7 +720,11 @@ public class TechnicalLeadCompiler {
                     paths.add("prisma/schema.prisma");
                     paths.add("src/lib/data/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".ts");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
-                    paths.add("src/app/layout.tsx");
+                    // Same reasoning as the Java branch above - the assembly, not a component.
+                    paths.add("docs/architecture/adr-002-runtime-contract.md");
+                    paths.add("docker-compose.yml");
+                    paths.add("Dockerfile");
+                    paths.add("package.json");
                 } else if ("BARCAN-TAG-09".equals(roleTag)) {
                     paths.add("docs/delivery/" + featureName.toLowerCase(java.util.Locale.ROOT) + ".md");
                 } else if ("BARCAN-TAG-10".equals(roleTag)) {
@@ -770,7 +774,19 @@ public class TechnicalLeadCompiler {
                     paths.add("src/main/resources/db/migration/V_NEXT__" + featureName.toLowerCase(java.util.Locale.ROOT) + ".sql");
                     paths.add("src/main/java/com/eneik/production/models/persistence/" + featureName + "Entity.java");
                 } else if ("BARCAN-TAG-00".equals(roleTag)) { // Code Guardian / Integration Task
-                    paths.add("src/main/java/com/eneik/production/services/" + featureName + "IntegrationService.java");
+                    // 2026-08-19: integration is not "write an integration class". This role owns the
+                    // ASSEMBLY: whether the artifacts agree with the runtime contract that declares what
+                    // the product runs against. Scoping it to a new service class meant that even when
+                    // dispatched it would add code rather than reconcile what already exists - which is
+                    // how test-forty-ninth ended up declaring PostgreSQL in compose, H2 in
+                    // application.properties and no PostgreSQL driver in pom.xml, each written correctly
+                    // by a different task twelve minutes apart. These are the files an assembly defect
+                    // actually lives in.
+                    paths.add("docs/architecture/adr-002-runtime-contract.md");
+                    paths.add("docker-compose.yml");
+                    paths.add("Dockerfile");
+                    paths.add("pom.xml");
+                    paths.add("src/main/resources/application.properties");
                 } else if ("BARCAN-TAG-09".equals(roleTag)) {
                     paths.add("docs/delivery/" + featureName + ".md");
                 } else if ("BARCAN-TAG-10".equals(roleTag)) {
@@ -1270,7 +1286,19 @@ public class TechnicalLeadCompiler {
             case "BARCAN-TAG-05" -> "Build/deployment configuration is updated and the relevant local verification command passes. Role: BARCAN-TAG-05";
             case "BARCAN-TAG-07" -> "Security, credentials, permissions, or access-control behavior is verified without exposing secrets. Role: BARCAN-TAG-07";
             case "BARCAN-TAG-08" -> "Data model, migration, storage, parsing, or retention behavior is implemented and verified with focused tests. Role: BARCAN-TAG-08";
-            case "BARCAN-TAG-00" -> "The slice is integrated across touched components, repository hygiene is clean, and the merge path is verified. Role: BARCAN-TAG-00";
+            // 2026-08-19: "integrated across touched components" is a claim about one slice. The defect this
+            // role exists to catch lives BETWEEN slices, each of them correct: test-forty-ninth declares
+            // PostgreSQL in docker-compose.yml, H2 in application.properties and no PostgreSQL driver in
+            // pom.xml, written twelve minutes apart by two tasks that were each right about their own brief.
+            // The condition that makes that checkable without the factory ever choosing a stack is a single
+            // declared runtime contract from which every other artifact follows.
+            case "BARCAN-TAG-00" -> "Every runtime artifact is derivable from the project's declared runtime contract "
+                    + "(docs/architecture/adr-002-runtime-contract.md, owned by BARCAN-TAG-01): docker-compose.yml, "
+                    + "the build manifest and the application configuration name the same services, the same "
+                    + "connection targets and the same drivers. Where the contract does not yet name a service the "
+                    + "product depends on, extend the contract first - never resolve a disagreement by changing one "
+                    + "artifact to match another. Repository hygiene is clean and the merge path is verified. "
+                    + "Role: BARCAN-TAG-00";
             case "BARCAN-TAG-09" -> "Delivery decision is recorded as a concise handoff note with one concrete next owner role and no implementation scope expansion. Role: BARCAN-TAG-09";
             case "BARCAN-TAG-10" -> "Compliance/legal/policy behavior or content is implemented with clear disclaimer boundaries and verification notes. Role: BARCAN-TAG-10";
             case "BARCAN-TAG-12" -> "A machine-readable API contract (OpenAPI/JSON Schema) exists, is grounded in the current data/domain model, and specifies endpoints, request/response shape, and error cases for both backend and frontend to build against. Role: BARCAN-TAG-12";

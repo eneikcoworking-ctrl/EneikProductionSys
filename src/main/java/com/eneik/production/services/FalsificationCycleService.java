@@ -803,7 +803,24 @@ public class FalsificationCycleService {
                 + "work) is grounded in a real, working product");
         wishlist.setAcceptanceCriteria("Given the project's runtime observation history, When the next "
                 + "observation cycle runs, Then launchSuccess=true and the health check returns 2xx");
-        wishlist.setDod("The product launches successfully and its health check passes");
+        // 2026-08-19: address this to the INTEGRATION role explicitly. Until now it named no role, so
+        // TechnicalLeadCompiler.targetRoleForWishlist fell through to keyword inference over this text -
+        // which contains no "merge"/"integration"/"artifact" - and routed it to whoever the wording
+        // happened to resemble. Measured on test-forty-ninth: the MinIO blocker became a TAG-05
+        // "Build Pipeline" task. Operations correctly fixed a symbol; the defect was an ASSEMBLY defect,
+        // and the assembly had no owner. BARCAN-TAG-00 (CODE-GUARDIAN, INTEGRATION, stage 70) is that
+        // owner and had 0 tasks on this project, 4 across the factory's whole history - not because it is
+        // unroutable, but because integration is nobody's requirement and a requirement-pulled
+        // decomposition cannot produce it. A product that will not run is the one case where the assembly
+        // itself is the work, so this is where the role gets reached.
+        wishlist.setSourceRoleTag("BARCAN-TAG-00");
+        wishlist.setDod("BARCAN-TAG-00: the product's artifacts agree with its declared runtime contract. "
+                + "The contract (docs/architecture/adr-002-runtime-contract.md, owned by BARCAN-TAG-01) is "
+                + "the single source of truth for which services this product runs against; docker-compose.yml, "
+                + "the build manifest and the application configuration must all be derivable from it. Where "
+                + "the contract does not yet name a service the product depends on, extending the contract is "
+                + "part of this work - do not pick a stack unilaterally in one artifact. Done when the product "
+                + "launches and its health check passes.");
         wishlistRepository.save(wishlist);
         log.info("FalsificationCycleService: created product_not_launchable wishlist for project {}", project.getId());
     }

@@ -23,6 +23,7 @@ live-drift check - same "GET a caller-given URL, no assumptions about the target
   POST /teardown     - `docker compose down -v --remove-orphans` the current run, always safe to call
                        even if nothing is running.
 """
+import json
 import shutil
 import subprocess
 import time
@@ -178,6 +179,54 @@ def launch(req: LaunchRequest) -> LaunchResponse:
         return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=str(e))
 
 
+# 2026-08-19: a health check that cannot connect reports the SYMPTOM - "connection refused". The CAUSE
+# sat in the app container's own log two steps away and nothing ever read it. Measured on
+# test-forty-ninth: `launch_success=true`, health refused on 18080, and the real reason was
+# `Driver org.h2.Driver claims to not accept jdbcUrl, jdbc:postgresql://db:5432/epidemiology_db` - the
+# product's compose declares PostgreSQL while its application config and build manifest declare H2.
+# Without the cause the factory can only route a guess: that blocker became an OPERATIONS task fixing a
+# symbol, when it is an ASSEMBLY defect. Naming the failing service and quoting its own log is what turns
+# the next observation into a verdict instead of a guess.
+def _assembly_report(max_chars: int = 2400) -> str:
+    """Which services of the current run are not up, and what their own logs say. Best-effort: any failure
+    here must never replace the health result itself - an empty report is honest, a crash is not."""
+    if _current_project_slug is None:
+        return ""
+    try:
+        ps = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "ps", "--format", "json"],
+                  timeout_seconds=30)
+        if ps.returncode != 0:
+            return ""
+        rows = []
+        for line in ps.stdout.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                parsed = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            rows.extend(parsed if isinstance(parsed, list) else [parsed])
+
+        unhealthy = [r for r in rows
+                     if str(r.get("State", "")).lower() not in ("running",)
+                     or "unhealthy" in str(r.get("Health", "")).lower()]
+        if not unhealthy:
+            return " | assembly: every service reports running - the failure is inside a running service"
+
+        parts = []
+        for row in unhealthy[:3]:
+            service = row.get("Service") or row.get("Name") or "<unnamed>"
+            state = row.get("State", "<unknown>")
+            logs = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "logs", "--tail", "25", str(service)],
+                        timeout_seconds=30)
+            tail = (logs.stdout or logs.stderr or "").strip()[-1200:]
+            parts.append(f"service '{service}' state={state}: {tail}")
+        return " | assembly: " + " || ".join(parts)[:max_chars]
+    except Exception:  # noqa: BLE001 - diagnostics must never break the observation they explain
+        return ""
+
+
 @app.post("/healthcheck", response_model=HealthCheckResponse)
 def healthcheck(req: HealthCheckRequest) -> HealthCheckResponse:
     started = time.monotonic()
@@ -185,7 +234,8 @@ def healthcheck(req: HealthCheckRequest) -> HealthCheckResponse:
         response = requests.get(req.url, timeout=req.timeout_seconds)
         return HealthCheckResponse(status_code=response.status_code, latency_ms=_elapsed_ms(started))
     except requests.RequestException as e:
-        return HealthCheckResponse(status_code=None, latency_ms=_elapsed_ms(started), error=str(e))
+        return HealthCheckResponse(status_code=None, latency_ms=_elapsed_ms(started),
+                                   error=str(e) + _assembly_report())
 
 
 @app.post("/fetch", response_model=FetchResponse)
