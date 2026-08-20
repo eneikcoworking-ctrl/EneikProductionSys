@@ -884,3 +884,98 @@ If one does, either the routing did not fire (check for an exception inside `rou
 is exactly how `a86254e` was found) or its role's delivery predicate is wrong for that role's artifact
 kind, which is §12.1 and §17.4.
 
+---
+
+## 19. Leaving Gemini entirely - what is actually there, and what replaces each part
+
+Written after reading every call site rather than from memory. The first finding changes the framing.
+
+### 19.1 There is no machine learning in this factory
+
+The `ml` service is a 547-line HTTP proxy to the Gemini API. Its entire dependency list is
+`fastapi`, `uvicorn`, `pydantic` - no sklearn, no torch, no numpy. Nothing is trained, no weights are
+stored. The name is historical.
+
+Even `predict/bottleneck`, which sounds like a model, asks Gemini to score WIP and cycle time and falls
+back on **exact arithmetic** for any failure:
+
+    risk = (min(wip/MAX_WIP, 1) + min(cycle/SLA, 1)) / 2
+
+with a logistic variant beside it. The mathematics is already written and always runs. The model call on
+top of it adds latency, cost and a parse failure mode, and cannot be more correct than the formula it
+falls back to.
+
+**So "abandoning ML" is not on the table - there is none. What is on the table is five API call sites.**
+
+### 19.2 The five call sites
+
+| Site | What it does | Replacement | Net |
+| --- | --- | --- | --- |
+| `GeminiProjectObserverService.chatWithTools` | hourly narrative observation | **drop.** The path it served - launch failure becomes addressed work - is now mechanism: evidence node -> `product_not_launchable` -> addressed to `BARCAN-TAG-00` with the container's own log as cause | gain: 24 paid calls/day removed, produced 3 actions in 3 days |
+| `JulesDispatchService.reviewPr` | PR review | **already removed** by operator directive 2026-07-25 after a cost incident; routed to the Jules reviewer batch | nothing to do |
+| `JulesDispatchService.chatCritical` | is a silent session looping or waiting? | **rules + escalation.** Timeouts and the circuit breaker already close sessions; what the model adds is which of two kinds of silence it is. Make the rule decide, and escalate a *repeated* misclassification to the judgment agent | small loss of precision on one classification, no loss of mechanism |
+| `OpsAuditorService.chatCritical` | evidence-only auditor: 2 evidence kinds in, 3 decisions out (`dismissOrphanedWishlist`, `createTargetedRecoveryTask`, `flagForHumanReview`) | **move to the subscription agent.** This is already the right shape - evidence-only, bounded action set, permitted to ABSTAIN. It *is* factory-level judgment, it just happens to be wired to a per-call API | gain: same function, flat cost, and it stops being a separate vocabulary |
+| `GeminiContextService.embed` / `FlowSpineService.embed` | vectors for corpus retrieval | **already paid.** 1525 chunks across 111 sources are indexed. Retrieval itself is local: exact cosine similarity with an Otsu-style dynamic floor - real linear algebra, no model involved | loss only for corpus files added *after* the cutoff |
+
+The embedding case is the one worth stating plainly: **the corpus is fixed and already indexed**. Only new
+material needs new vectors, and for that the codebase already contains a lexical matcher
+(`WishlistContentSimilarityMatcher`, Jaccard with the same Otsu-style threshold) built for a neighbouring
+purpose. Retrieval quality degrades for new files; it does not stop.
+
+### 19.3 Kaizen - the defect is write-side identity, and it is measurable
+
+347 rows. **10 distinct `(category, target_component)` pairs.** A 34:1 ratio of storage to signal.
+
+`getDeduplicatedProposals` already keys on exactly that pair - but **at read time only**. The operator's
+view is correct; the table is not. Every cycle re-inserts a row for a condition that is already open, and
+those rows are part of the store growth measured in §9 D-3.
+
+The fix is invariant 4, idempotency, applied at the write: a recurring finding **updates its row and
+increments a recurrence count**, it does not insert a second one. The identity is already chosen and
+already used - it just needs to move from the projection to the write.
+
+This is independent of Gemini. Of the 347 rows, the observer authored a minority; `FactorySelfHealthService`
+authored the 79-row database-health repetition by itself.
+
+### 19.4 What the subscription agent replaces, and how it reaches the backend
+
+It replaces **one** thing: `OpsAuditorService`'s judgment, plus the factory-level refutations nobody
+currently acts on (§18 postconditions, the invariant catalogue in `OperationalTruthService`).
+
+It needs no backend change. Everything is already exposed:
+
+    GET  /api/projects/{id}/runtime-health        product state
+    GET  /api/projects/{id}/coherence-graph       evidence
+    GET  /api/dashboard/operational-truth         invariants with pass/warn status
+    GET  /internal/tasks/status-counts            flow, project-scoped
+    POST /api/wishlist                            create work
+
+**The cost gate is the order of operations.** The agent runs on a timer but its first act is one cheap
+HTTP read: are there unhandled factory-level refutations? If not, it exits **without invoking a model at
+all**. A 15-minute cadence then costs one request per check, and the model runs only when something the
+factory asserted about itself has been refuted.
+
+That is the whole difference from the observer. She called the model *to find out whether there was news*.
+This asks the factory, and wakes judgment only when the answer is yes.
+
+### 19.5 The one thing that must be built first
+
+Invariant statuses are computed every cycle into a DTO and **never persisted** - confirmed by reading
+every reference to `InvariantStatus`. Without a stored previous value there is no transition, so
+`pass -> warn` is undetectable in principle. The factory computes its own refutation and forgets it,
+every cycle.
+
+Persisting that vector is the smallest possible first step and it is a prerequisite for everything above:
+it turns "how often does the factory contradict itself" from my estimate into a measured number, and that
+number decides whether the agent needs a 15-minute or a 4-hour cadence.
+
+### 19.6 Order
+
+1. Persist the invariant status vector. Measure transitions for 24 h. **No agent yet.**
+2. Kaizen write-side identity. Independent of everything else, removes 337 of 347 rows going forward.
+3. Rules for the silence classifier; escalate repeats rather than classify each one.
+4. Move the auditor's judgment to the subscription agent, gated on a refutation being present.
+5. Re-enable embeddings only if new corpus material is added.
+
+The observer stays off throughout. Nothing in this list restores it.
+
