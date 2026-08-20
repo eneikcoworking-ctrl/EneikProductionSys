@@ -734,3 +734,76 @@ extending it is part of the work. Not a Java class.
 The factory still chooses no stack. It requires that a stack be chosen once, declared, and that everything
 else follow from the declaration - which is checkable without knowing which choice is better.
 
+---
+
+## 17. Content as claims, not as an artifact that exists
+
+Operator directive, 2026-08-20: a content role needs a real mechanism of philosophical verification -
+actuality, relevance, SEO titles and metadata - not a presence check. Written here because a presence
+check is exactly what a stub is, and a stub would fail for the same reason the whole delivery predicate
+failed: it would substitute a criterion for the concept.
+
+### 17.1 The wrong question
+
+"Is there text in this field" is the content analogue of "does the PR contain code". It is satisfied by
+lorem ipsum, by a generated generic paragraph, and by a title naming a feature the product does not have.
+The Evidence Algebra already grades that at **0 - negative evidence**: *"Duplicate/fallback/generated
+generic content"*. The factory's own scale says filler is worse than absent, and no check currently
+enforces it.
+
+### 17.2 The right question, in three conditions
+
+Content is not an artifact that occupies a file. It is a set of **claims about the product**, addressed
+to a reader, and each claim is checkable against the product itself.
+
+**Reference** - `BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, Frege, sense and reference. Every
+substantive noun phrase in a heading, title or meta description must have a bearer in the product: a
+declared capability, a real route, a real entity. A `<title>` naming a capability the product does not
+expose is a name with perfect form and no bearer - structurally the same defect as
+`minio/minio:RELEASE.2023-09-20T22-40-07Z`, which was also a well-formed name for nothing. Checkable
+against the served HTML the launcher already fetches (`RuntimeLauncherClient.fetchHtml`, built for the
+design-drift check) plus the OpenAPI contract TAG-12 already produces.
+
+**Felicity** - Austin, already the anchor of `ACP-101`. A call to action is a performative: "Start free
+trial" commits the product to having a trial. Its felicity condition is that the act it names can be
+performed. Checkable: every CTA resolves to a reachable route on the running instance.
+
+**Actuality** - `BARCAN-TAG-01_ACTUALIST-OBJECT`, Ruth Barcan Marcus. Content must quantify over actual
+objects. Placeholder copy, generic filler and duplicated boilerplate quantify over an empty domain: the
+page is vacuously "filled" and delivers nothing, the same `forall x in empty set` structure as running a
+falsification cycle over a product that does not start.
+
+### 17.3 Relevance is not a property, it is a posterior
+
+A claim true when written can be false later: a price, a feature list, a capability that regressed.
+Content therefore gets exactly the treatment §15.1 gives capabilities - **one Beta posterior per claim**,
+updated by observing the live page, refuted the moment the page and the product disagree. Relevance is
+never proven; it is not yet refuted, and it decays without observation.
+
+This is the point where content stops being a separate concern. A content claim **is** a capability in
+the observable sense: something the product asserts it can do, checkable from outside by the launcher,
+counted in `V_p` under the same lower-bound rule. No second measure, no second vocabulary.
+
+### 17.4 Where it belongs in the flow
+
+No fourteenth role. The BARCAN taxonomy is fixed at thirteen and content is not a new stage - it is a
+delivery **artifact kind**, which is precisely what `ACP-102` says a role declares:
+
+| Stage | Role | Content obligation |
+| --- | --- | --- |
+| ARCHITECTURE (20) | TAG-01 | the runtime contract names where content lives and what serves it, as it must for any dependency |
+| EXPERIENCE (30) | TAG-11 `CLIENT-PERCEPTION` | authors the copy, headings and metadata - its delivery artifact is content, not code, and the delivery predicate must say so |
+| API_CONTRACT (27) | TAG-12 | the contract that gives the reference check its referents |
+| VERIFICATION (60) | TAG-06 | the three conditions above are its acceptance evidence, and `VerificationEvidenceGate` already exists as the place a QA role proves something without producing code |
+| observation | launcher | fetches the served page and refutes claims that no longer hold |
+
+`requiresCodeForDelivery` must therefore answer CONTENT for TAG-11, not CODE - and today it answers CODE,
+which is the trap §12.1 names. It has no bearer yet only because nothing has been filed as content work.
+
+### 17.5 What must not be built
+
+A keyword-density score, a readability index, a "SEO checklist" - none of them are claims about the
+product and none of them can be refuted by observing it. They measure the text against itself, which is
+self-attestation (invariant 12) with extra arithmetic. The only admissible checks are the ones that can be
+falsified by the running product.
+
