@@ -57,6 +57,15 @@ public record BetaPosterior(double alpha, double beta) {
     }
 
     /**
+     * Lower end of the same 95% credible interval: the pessimistic estimate of the true success
+     * probability - how well the product can be shown to work, never how well it might. 0 observations
+     * (alpha=1,beta=1): ~0.025. An unbroken run of successes drives it toward 1, never reaching it.
+     */
+    public double credibleIntervalLowerBound() {
+        return new BetaDistribution(alpha, beta).inverseCumulativeProbability(TAIL);
+    }
+
+    /**
      * The adaptive-cadence rule itself, agreed with the operator as the mandatory replacement for any
      * hard-coded schedule: delay is proportional to current uncertainty, bounded below so a truly
      * saturated posterior still checks eventually rather than functionally stopping forever.
@@ -77,8 +86,26 @@ public record BetaPosterior(double alpha, double beta) {
         // With (1 - width) the documented contract holds exactly: width -> 1 gives a delay below the
         // minimum and is clamped to it (check soon), width -> 0 gives the full base delay (check rarely).
         // No new constant, no new branch - the same two numbers, one of them subtracted from one.
-        double width = credibleIntervalWidth();
-        Duration scaled = Duration.ofMillis(Math.round(baseDelay.toMillis() * (1.0 - width)));
+        // 2026-08-20: the multiplier is the credible interval's LOWER BOUND, not (1 - width). Interval
+        // width measures how well the success probability is KNOWN and says nothing about which side of the
+        // scale it sits on, so "confidently working" and "confidently broken" produced the identical delay -
+        // computed across this posterior's whole range, six consecutive successes and six consecutive
+        // failures both gave 14.3 hours on a 24 h base. Measured consequence on test-forty-ninth: four
+        // recorded failures narrowed the interval to 0.596 and pushed the next check to 9.7 hours, so the
+        // product the factory was most certain was broken became the one it looked at least often - while a
+        // fix for it was already merged and waiting to be seen.
+        //
+        // The lower bound is the pessimistic estimate: rarity has to be EARNED by evidence of health, and
+        // uncertainty always counts against the product rather than for it. Same asymmetry the whole
+        // falsification stance rests on - a claim is never proven, only not yet refuted, so the interval's
+        // lower end is the only end that may buy silence. Beta(1,5) (four failures) now gives ~0.005 -> the
+        // floor; Beta(7,1) (six successes) gives ~0.59 -> 14.2 h. Ignorance, Beta(1,1), gives ~0.025 -> the
+        // floor, which is correct: nothing is known, so look soon.
+        //
+        // Rollback is this one expression: restore `(1.0 - credibleIntervalWidth())` and the previous
+        // behaviour returns exactly, with no other state to undo.
+        double confidenceItWorks = credibleIntervalLowerBound();
+        Duration scaled = Duration.ofMillis(Math.round(baseDelay.toMillis() * confidenceItWorks));
         return scaled.compareTo(minimumDelay) < 0 ? minimumDelay : scaled;
     }
 }

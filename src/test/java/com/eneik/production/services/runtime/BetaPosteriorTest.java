@@ -126,4 +126,65 @@ class BetaPosteriorTest {
         assertThrows(IllegalArgumentException.class, () -> new BetaPosterior(0, 1));
         assertThrows(IllegalArgumentException.class, () -> new BetaPosterior(1, -1));
     }
+
+    // 2026-08-20: the property the previous test could not see. Interval WIDTH is symmetric - it measures
+    // how well the success probability is known and not which side of the scale it sits on - so under the
+    // old (1 - width) rule six consecutive failures and six consecutive successes produced the identical
+    // delay, 14.3 h on a 24 h base. That is the arithmetic that made this factory look least often at the
+    // product it was most certain was broken, while a merged fix sat unobserved. This test fails under that
+    // rule and passes under the lower-bound rule; it is the whole reason for the change.
+    @Test
+    void beingCertainSomethingIsBrokenMustNotBuyTheSameSilenceAsBeingCertainItWorks() {
+        Duration base = Duration.ofHours(24);
+        Duration floor = Duration.ofHours(1);
+
+        BetaPosterior sixFailures = BetaPosterior.UNINFORMATIVE_PRIOR;
+        BetaPosterior sixSuccesses = BetaPosterior.UNINFORMATIVE_PRIOR;
+        for (int i = 0; i < 6; i++) {
+            sixFailures = sixFailures.update(false);
+            sixSuccesses = sixSuccesses.update(true);
+        }
+
+        // Identical interval width - which is exactly why width alone cannot decide cadence.
+        assertEquals(sixFailures.credibleIntervalWidth(), sixSuccesses.credibleIntervalWidth(), 1e-9,
+                "width is symmetric between a confidently broken and a confidently working product");
+
+        Duration afterFailures = sixFailures.nextCheckDelay(base, floor);
+        Duration afterSuccesses = sixSuccesses.nextCheckDelay(base, floor);
+
+        assertEquals(floor, afterFailures,
+                "a product repeatedly observed broken must be re-checked as soon as the floor allows");
+        assertTrue(afterSuccesses.compareTo(afterFailures.multipliedBy(6)) > 0,
+                "a product repeatedly observed working has earned a far longer silence");
+    }
+
+    // Rarity is earned by evidence of health, so the delay must rise monotonically with that evidence and
+    // never with its absence.
+    @Test
+    void everyAdditionalFailureShortensOrHoldsTheDelayAndEveryAdditionalSuccessLengthensIt() {
+        Duration base = Duration.ofHours(24);
+        Duration floor = Duration.ofHours(1);
+
+        BetaPosterior failing = BetaPosterior.UNINFORMATIVE_PRIOR;
+        Duration previousFailing = failing.nextCheckDelay(base, floor);
+        for (int i = 0; i < 5; i++) {
+            failing = failing.update(false);
+            Duration now = failing.nextCheckDelay(base, floor);
+            assertTrue(now.compareTo(previousFailing) <= 0,
+                    "a further failure must never push the next check further away");
+            previousFailing = now;
+        }
+
+        BetaPosterior working = BetaPosterior.UNINFORMATIVE_PRIOR;
+        Duration previousWorking = working.nextCheckDelay(base, floor);
+        for (int i = 0; i < 5; i++) {
+            working = working.update(true);
+            Duration now = working.nextCheckDelay(base, floor);
+            assertTrue(now.compareTo(previousWorking) >= 0,
+                    "a further success must never shorten the interval it has earned");
+            previousWorking = now;
+        }
+        assertTrue(previousWorking.compareTo(base) <= 0, "and never exceeds the base delay");
+    }
+
 }
