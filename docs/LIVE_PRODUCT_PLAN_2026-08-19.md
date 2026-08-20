@@ -633,3 +633,104 @@ owner and must be treated as such.
 Nothing here is promoted past `OBSERVE_ONLY` without the math document's own four criteria: matches real
 incidents across cycles, false positives bounded, regression test exists, rollback is one setting.
 
+---
+
+## 16. The assembly has no owner - diagnosis and the single change that gives it one
+
+### 16.1 What actually happened, to the minute
+
+`2026-08-16 05:58:50` - task *"feat(db): Add schema for search analytics events"* creates `pom.xml` and
+`application.properties` with `spring.datasource.driverClassName=org.h2.Driver`. Correct for its brief: a
+schema needs a database, in-memory H2 is the standard scaffold.
+
+`2026-08-16 06:10:38` - twelve minutes later, task *"Configure automated backup jobs and alerting
+mechanism"* creates `Dockerfile` and `docker-compose.yml`, declaring `postgres:15-alpine` and passing
+`SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/...`. Correct for its brief: backups cannot be
+demonstrated against an in-memory database.
+
+Neither wrote a wrong line. The second overrode the *URL* and not the *driver*, and never added the
+PostgreSQL dependency to `pom.xml` - because its subject was backups, not the application's datasource.
+`pom.xml` still contains only H2 today.
+
+The product therefore does not describe one stack. It describes two, and no stack can be raised from it.
+The application dies before opening its port:
+`Driver org.h2.Driver claims to not accept jdbcUrl, jdbc:postgresql://db:5432/epidemiology_db`.
+
+### 16.2 The factory can raise any stack, and should not choose one
+
+`RuntimeLauncherClient` runs `docker compose up` on the product's own file. It is already
+stack-agnostic and that is the right design - it raises whatever the repository declares. Java with
+PostgreSQL, Python with Mongo, anything.
+
+Which datastore is right is a **product** question and belongs to the specification: for one brief H2 is
+the better answer, for another PostgreSQL is. A factory rule of the form "always PostgreSQL" would be a
+patch. What holds universally, without prescribing any stack:
+
+> The runtime contract names every service the product runs against. `docker-compose.yml`, the build
+> manifest and the application configuration are **consequences** of that declaration, not independent
+> decisions.
+
+The artifact for this already exists in the product: `docs/architecture/adr-002-runtime-contract.md`,
+"Repository Execution Boundary and Runtime Contract", produced at the ARCHITECTURE stage (order 20,
+`BARCAN-TAG-01`). It fixes the backend boundary, the frontend boundary, and the install/run/test commands
+for both. It names **no datastore at all**. The place is right, the stage is right, the role is right;
+half the content is missing.
+
+`BARCAN-TAG-01` is `ACTUALIST-OBJECT` - Ruth Barcan Marcus: register only actual objects. A datastore no
+artifact declares is not an actual object, and three artifacts each presupposing a different one are a
+register of non-actual objects. The role whose principle is exactly this is the role that must own it.
+
+### 16.3 Why the integration role never runs - the structural cause
+
+`BARCAN-TAG-00` (CODE-GUARDIAN, INTEGRATION, order 70) has **0 tasks on this project** and **4 out of
+1375 across the whole factory's history**. Every other role worked.
+
+The cause is in `TechnicalLeadCompiler.targetRoleForWishlist`: a task exists only where a **wishlist**
+exists, and the role is taken from the wishlist's own tag, its DoD, or keyword inference over its text.
+Wishlists come from client intent, Gemini, coverage gaps and falsification.
+
+**Integration is not anyone's requirement.** It is a property of the assembly. A requirement-pulled
+decomposition cannot produce it - not because of a bug, but by construction. So the role exists, is
+routable, and is never reached.
+
+Two further findings confirm the role is not merely idle but mis-defined:
+
+- `product_not_launchable` sets no `sourceRoleTag` and names no role in its DoD, so it falls through to
+  keyword inference. Its text contains no "merge"/"integration"/"artifact", so it is **not** routed to
+  TAG-00. Measured: the MinIO blocker became a TAG-05 *Build Pipeline* task - operations fixing a symbol,
+  not integration fixing an assembly.
+- TAG-00's own file scope in the compiler is
+  `src/main/java/.../<Feature>IntegrationService.java`. The compiler believes integration means *writing
+  a class*. Even when dispatched, it would not check the assembly.
+
+### 16.4 Three absences, at three stages - not one defect
+
+| Stage | Whose work | What is absent |
+| --- | --- | --- |
+| ARCHITECTURE (20), TAG-01 | decide and declare the datastores in the runtime contract | the contract covers code only |
+| OPERATIONS (50), TAG-05 | build compose **from** the contract | built it from nothing and invented PostgreSQL |
+| INTEGRATION (70), TAG-00 | check the artifacts agree with the contract | never dispatched, and scoped to write a class if it were |
+
+The runtime observation is the last line, and today it is the only one that fired - at the most expensive
+point in the flow.
+
+### 16.5 The change
+
+One principle, applied in one place each. The factory already has the shape: factory-generated wishlist
+sources (`coverage_gap`, `self_falsification`, `product_not_launchable`) exist precisely to produce work
+no client asked for. What is missing is that assembly failure is addressed to nobody and carries no cause.
+
+**a. The launcher returns the failing service's own log.** A health failure today yields
+`connection refused` - the symptom. The cause sat in the container log two steps away and nothing read
+it. Without a cause there is nothing for an implementer to fix, and the factory can only guess.
+
+**b. `product_not_launchable` is addressed to `BARCAN-TAG-00` explicitly** and carries that cause, instead
+of being routed by keyword inference to whoever the text happens to resemble.
+
+**c. TAG-00's scope and definition of done become the assembly:** every artifact is derivable from the
+declared runtime contract, and where the contract does not name the services the product runs against,
+extending it is part of the work. Not a Java class.
+
+The factory still chooses no stack. It requires that a stack be chosen once, declared, and that everything
+else follow from the declaration - which is checkable without knowing which choice is better.
+
