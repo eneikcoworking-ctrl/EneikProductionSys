@@ -72,6 +72,50 @@ does not override the datasource, so the whole suite inherits
 **Every test, review and quality gate validated a configuration that is not the delivered one.** The reviews
 were not sloppy; they were pointed at the wrong thing.
 
+### Measured 2026-08-21 17:40 - the factory was given the cause and shipped a placebo
+
+The constraint carrying the exact SQL error reached the compiler, became tasks, and produced this, merged
+as PR #158 under the title *"Fix backend application startup failure and Flyway migration compatibility"*:
+
+```diff
+-CREATE ALIAS gen_random_uuid FOR "java.util.UUID.randomUUID";
++CREATE ALIAS IF NOT EXISTS gen_random_uuid FOR "java.util.UUID.randomUUID";
+```
+
+`IF NOT EXISTS` was added to a statement PostgreSQL does not have. The failure is a *syntax* error at
+`ALIAS`, character 8 - the parser never reaches the clause that was modified. The line is exactly as broken
+as before.
+
+The same PR added a migration:
+
+```sql
+-- Ensure database compatibility for backend startup and health checks
+SELECT 1;
+```
+
+and a test:
+
+```java
+@Test
+public void testContextLoads() {
+    assertNotNull(restTemplate);
+}
+```
+
+plus `assertEquals("UP", response.getBody().get("database"))` - a real assertion, pointed at H2.
+
+It passed. It merged. The task went `done`. The quality gates passed. The product still dies at character 8.
+
+**This is the whole mechanism behind "148 tasks done, 144 reviews merged, product never answered."** Not
+carelessness: a closed loop in which the evidence of success is manufactured against a different database
+than the one shipped. Every step behaved correctly given what it was allowed to see.
+
+Nothing in this sequence survives §2. That is the argument for the rule, and it is not theoretical.
+
+**Cycle 1 of 3 is spent.** The later attempt, `Fix backend server port binding for docker container health
+check` (17:25), is aimed at a symptom the app never reaches - it dies at Flyway long before any port is
+bound. Alongside it the factory shipped a frontend pagination feature and three bookkeeping commits.
+
 ---
 
 ## 4. Open defects
