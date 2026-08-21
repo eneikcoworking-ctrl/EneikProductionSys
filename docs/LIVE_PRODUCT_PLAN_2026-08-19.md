@@ -721,26 +721,44 @@ Ranked by whether they block §2. Full evidence for each is in the archive.
 
 ### Blocking §1.1 - the product answering for itself
 
-| id | defect |
-| --- | --- |
-| **O-1** | the product does not serve - §3 above |
-| **O-10** | the instrument has no denominator: nothing counts launcher availability, so 46 consecutive failures were indistinguishable from 46 real negatives. Same shape observed again 2026-08-21: the assembly report stated `<no output on this container's stdout/stderr>` for a container that had written 49 lines including a fatal stack trace. The cause reached the constraint only because PostgreSQL logged the same error itself. If acceptance depends on observation, this instrument stops being advisory. |
-| **O-13** | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are mutually exclusive |
-| **O-6** | store far larger than its contents: 2517 MiB against ~88 MB live, on the Windows filesystem via WSL. One `/api/settings` read takes 10.3 s, startup 354 s. Cleared 2026-08-21 on the operator's instruction: all four snapshots and the trace log deleted, 4.5 GB of Docker build cache pruned, host free space 8.7 GB -> 14 GB. **There is now no rollback snapshot at all**, so compacting the live store needs a fresh copy taken first, the compaction verified, and only then the copy removed. |
+Rows are the archive's, unabridged: the measurement and the level are not decoration. §11.5 - a
+claim with no written expectation cannot be refuted; a defect with no measurement is such a claim.
+§7 - a constraint carries its level or it silences the wrong work.
+
+| # | Defect | Measured | Level |
+| --- | --- | --- | --- |
+| O-1 | product does not serve: compose says PostgreSQL, config says H2, build has no PostgreSQL driver | `health_status_code` null in all 56 observations, 8 successful launches included | product |
+| O-10 | the instrument has no denominator - nothing counts launcher availability, so 46 consecutive failures produced zero findings | 46 rows written, posterior unchanged, dashboard clean | factory |
+| O-13 | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are serialised | 4 containers ~2.3 GB + a 2 GB test JVM against 3.9 GB total; measured 583 MB free before the run was killed | factory |
+| O-6 | store far larger than its contents, and it now costs the factory its responsiveness | 2231 MiB file, ~88 MB live; grew 311 MiB in one day, and O-9 is a named contributor. **Re-measured 2026-08-21 14:20Z: 2517 MiB**, on the Windows filesystem via WSL. Consequences measured the same minute, not inferred: startup 354 s (was 53 s that morning), `/actuator/health` 6 s, one `/api/settings` read 10.3 s, host load average 15.9 while the containers together used ~50% CPU - the rest is I/O wait. `data/` held 6.6 GB in total. **Cleared 2026-08-21 on the operator's instruction**: all four DB snapshots deleted (~4 GB) and the H2 trace log; 4.5 GB of Docker build cache pruned. Host free space 8.7 GB -> 14 GB. The live store is still 2517 MiB and there is now **no rollback snapshot at all**, so compacting it is a strictly riskier operation than it was this morning: it needs a fresh copy taken first, the compaction verified, and only then the copy removed | factory |
+
+**O-1 is expanded in §21** with the exact failing statement, which the row above predates.
+
+**O-6, re-measured 2026-08-21:** 2517 MiB against ~88 MB live, on the Windows filesystem via WSL -
+one `/api/settings` read 10.3 s, startup 354 s. Cleared on the operator's instruction: four DB
+snapshots and the trace log deleted, 4.5 GB of Docker build cache pruned, host free space 8.7 GB ->
+14 GB. **No rollback snapshot now exists**, so compacting the live store requires a fresh copy
+first, the compaction verified, and only then the copy removed.
+
+**O-10, second face measured 2026-08-21:** the assembly report stated `<no output on this
+container's stdout/stderr>` for a container that had written 49 lines including a fatal stack
+trace. The cause reached the constraint only because PostgreSQL logged the same error itself. Why
+the log read came back empty is **not established** - the code path reads both streams and names
+the right container. It needs one measurement beside a live observation, not a hypothesis.
 
 ### Not blocking §1.1
 
-| id | defect |
-| --- | --- |
-| O-3 | Kaizen has no write-side identity |
-| O-4 | dead Jules sessions polled forever |
-| O-5 | `GET /api/projects/{id}/tree` never answers |
-| O-7 | a design asset fetched and missed forever |
-| O-8 | `requiresCodeForDelivery` answers a code question about a delivery concept |
-| O-9 | the cadence clock counts measurements but limits attempts |
-| O-11 | the posterior counts observations, but its object only changes on merge |
-| O-12 | three tests red on `main`, unrelated to this session |
-| O-14 | the embedding path still routes to Gemini, whose quota is gone |
+| # | Defect | Measured | Level |
+| --- | --- | --- | --- |
+| O-3 | Kaizen has no write-side identity | 347 rows carrying **10** distinct `(category, target_component)` pairs | factory |
+| O-4 | dead Jules sessions polled forever | 52 `404`/hour; 3 of 4 `pr_opened` sessions answer 404 to their own account key | factory |
+| O-5 | `GET /api/projects/{id}/tree` never answers | 90 s, `http=000` | factory |
+| O-7 | a design asset fetched and missed forever | 14/hour, `design/approved/20260818165327-mockup/mockup.html` absent on main | delivery |
+| O-8 | `requiresCodeForDelivery` answers a code question about a delivery concept | 5 phantom deliveries measured; no bearer for the content case yet | delivery |
+| O-9 | the cadence clock counts measurements but limits attempts, so it stops limiting exactly when the instrument fails | 1/hour -> 28/hour at 11:40 when the launcher went unreachable; 45 calls into nothing | factory |
+| O-11 | the posterior counts observations, but the object it is a belief about only changes on merge | 7 identical readings of one unchanged artifact between 05h and 11h, each updating Beta | factory |
+| O-12 | three tests are red on `main`, unrelated to this session | `ProjectFlowServiceTest` x2, `DesignSystemFalsificationServiceTest` x1; reproduced with today's changes reverted | factory |
+| O-14 | the embedding path still routes to Gemini, whose quota is gone, and the D3 duplicate-content lever therefore fails **silent and open** - it reports nothing found, which is indistinguishable from having found nothing | `ML service embed call failed: 502 Bad Gateway: "Gemini embedding call failed: HTTP Error 429: Too Many Requests"`, 3 per orchestration tick, 2026-08-21 12:17Z. The LIVE duplicate detector is unaffected - it is `duplicateContent()`, exact-key based, no embeddings - so this is not a flow stoppage; what is dead is the lever's evidence supply, so D3 can never accumulate the samples its own promotion ladder requires and stays at `observe_only` forever | factory |
 
 ### Fixed 2026-08-21
 
