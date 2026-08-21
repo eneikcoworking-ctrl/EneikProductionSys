@@ -40,6 +40,9 @@ public class ProductLaunchabilityService {
     private static final String COMPOSE_FILE_PATH = "docker-compose.yml";
     private static final String DOCKERFILE_PATH = "Dockerfile";
     private static final String FRONTEND_MARKER_PATH = "frontend/package.json";
+    private static final String APPLICATION_PROPERTIES_PATH = "src/main/resources/application.properties";
+    private static final String POM_PATH = "pom.xml";
+    private static final String UNDECLARED = "UNDECLARED";
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -164,6 +167,203 @@ public class ProductLaunchabilityService {
      * ... AS` build-stage line in the same file - a real multi-stage build (see this system's own
      * Dockerfile.backend) always has one.
      */
+    /**
+     * Does the engine the application defaults to match the engine its compose stack actually provides?
+     *
+     * **This one is deliberately NOT behind `launchabilityCheckedAt`.** `checkOnce` runs exactly once per
+     * project, ever - the flag is set in `recordLaunchabilityResult` and never cleared - so every check it
+     * performs is a bootstrap gate that cannot see a defect introduced afterwards. Measured on
+     * test-forty-ninth (plan §10.1): `application.properties` was committed at 05:58 and
+     * `docker-compose.yml` at 06:10, twelve minutes later. By then this service had already run and would
+     * never look again, so the disagreement between them was invisible to the factory for five days while
+     * 148 tasks closed against a product that had never once answered.
+     *
+     * Two assertions, both decidable from the repository alone, no launch required:
+     *
+     *   A. the engine in `spring.datasource.url` is the engine compose provides
+     *   B. the build manifest carries a driver for the engine compose provides
+     *
+     * A is the one that mattered: when they differ, every test and every review exercises one database
+     * while delivery runs another, so an SQL statement valid in the first and meaningless in the second
+     * passes every gate the factory has. That is not hypothetical - `CREATE ALIAS`, an H2-only statement,
+     * survived 144 merged reviews and killed the product at character 8 of its first migration.
+     *
+     * Greenfield-safe by construction: no compose file, or a compose file declaring no datastore, means
+     * there is nothing to disagree with and nothing is filed. A project on day zero cannot trip this.
+     *
+     * Both are heuristics over text, and they are written to be **quiet when unsure**: an engine this
+     * cannot identify produces no claim rather than a guess.
+     */
+    public void checkDatastoreAgreement(ProjectEntity project) {
+        if (wishlistRepository.existsByProjectIdAndSource(project.getId(),
+                WishlistSource.datastore_artifacts_disagree)) {
+            return;
+        }
+        String compose = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), COMPOSE_FILE_PATH).orElse(null);
+        if (compose == null) {
+            return; // nothing ships yet - nothing to disagree with
+        }
+        String appProps = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), APPLICATION_PROPERTIES_PATH).orElse(null);
+        String pom = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), POM_PATH).orElse(null);
+
+        String shipped = datastoreProvidedByCompose(compose);
+        if (shipped == null) {
+            return; // the stack provides no datastore this check recognises - no claim
+        }
+        String defaulted = datastoreInDatasourceUrl(appProps);
+
+        // The contract is the single source of truth; the other artifacts are consequences of it. Read it
+        // FIRST, so a disagreement is reported against the declaration rather than as a quarrel between
+        // two files of equal standing. Absent - older projects, or one whose bootstrap predates ADR-002 -
+        // the check falls back to comparing the artifacts with each other, which is strictly weaker but
+        // still decides the case that mattered.
+        String contract = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(),
+                        com.eneik.production.services.ProjectFlowService.RUNTIME_CONTRACT_PATH)
+                .orElse(null);
+        String declared = datastoreDeclaredByContract(contract);
+
+        java.util.List<String> problems = new java.util.ArrayList<>();
+        if (UNDECLARED.equals(declared)) {
+            // The bootstrap wrote the question and nobody has answered it, yet the stack already provides
+            // an engine. The decision was taken somewhere other than where it belongs - which is exactly
+            // the shape ACP-104 describes, caught this time before it can rot.
+            problems.add("the runtime contract still declares `datastore: UNDECLARED`, while `"
+                    + COMPOSE_FILE_PATH + "` already provides **" + shipped + "**. The decision has been "
+                    + "taken outside the contract. ARCHITECTURE (BARCAN-TAG-01) owns it: declare the engine "
+                    + "there first, then make the other artifacts follow.");
+        } else if (declared != null && !declared.equals(shipped)) {
+            problems.add("the runtime contract declares **" + declared + "**, but `" + COMPOSE_FILE_PATH
+                    + "` provides **" + shipped + "**. The contract is the source of truth; compose is a "
+                    + "consequence of it.");
+        }
+        if (defaulted != null && !defaulted.equals(shipped)) {
+            problems.add("`" + APPLICATION_PROPERTIES_PATH + "` defaults the application to **" + defaulted
+                    + "**, while `" + COMPOSE_FILE_PATH + "` provides **" + shipped + "**. Every test and "
+                    + "every review therefore exercises " + defaulted + " while delivery runs " + shipped
+                    + ", so SQL that is valid in one and meaningless in the other passes every gate.");
+        }
+        if (pom != null && !buildManifestHasDriverFor(pom, shipped)) {
+            problems.add("the build manifest declares no driver for **" + shipped + "**, which is the engine "
+                    + "`" + COMPOSE_FILE_PATH + "` provides.");
+        }
+        if (problems.isEmpty()) {
+            return;
+        }
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.datastore_artifacts_disagree);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        // The assembly is the work here, not any one component - the same reasoning that routes
+        // product_not_launchable to this role. A datastore is a property of how the parts fit together.
+        wishlist.setSourceRoleTag("BARCAN-TAG-00");
+        wishlist.setCynefinDomain("clear");
+        wishlist.setContent("This product's runtime artifacts disagree about which datastore it runs "
+                + "against, which is decidable from the repository without launching anything:\n\n- "
+                + String.join("\n- ", problems)
+                + "\n\nDo not resolve this by picking a stack in one file. The runtime contract "
+                + "(docs/architecture/adr-002-runtime-contract.md) is the single source of truth for which "
+                + "services this product runs against; the compose file, the build manifest and the "
+                + "application configuration must all be derivable from it. Where the contract does not yet "
+                + "name the datastore, extending the contract is part of this work.");
+        wishlist.setJtbd("When my product is tested and reviewed, I want it exercised against the same "
+                + "datastore it is delivered with, so a passing test means the delivered product works "
+                + "rather than that a different configuration works");
+        wishlist.setAcceptanceCriteria("Given the repository at its default branch, When the runtime "
+                + "contract, the compose file, the build manifest and the application configuration are "
+                + "read, Then they all name the same datastore, and the test suite runs against that "
+                + "datastore rather than an in-memory substitute");
+        wishlist.setDod("BARCAN-TAG-00: the runtime contract names the datastore, and compose, the build "
+                + "manifest and the application configuration are consistent with it. The test suite runs "
+                + "against the shipped engine - an in-memory substitute is what let this defect through.");
+        wishlistRepository.save(wishlist);
+        log.warn("ProductLaunchabilityService: project {} - runtime artifacts disagree about the datastore "
+                + "({}); created datastore_artifacts_disagree wishlist", project.getId(), problems);
+    }
+
+    /** What the runtime contract declares. Null when there is no contract or no line to read. */
+    private String datastoreDeclaredByContract(String contract) {
+        if (contract == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("(?m)^\\s*datastore:\\s*([A-Za-z0-9_.:-]+)")
+                .matcher(contract);
+        if (!m.find()) {
+            return null;
+        }
+        String raw = m.group(1);
+        if (UNDECLARED.equalsIgnoreCase(raw)) {
+            return UNDECLARED;
+        }
+        // `postgresql:15` -> `postgresql`; the version is the contract's business, not this check's.
+        return normaliseEngine(raw.split(":")[0]);
+    }
+
+    /** The engine a compose stack actually provides. Null when it provides none this recognises. */
+    private String datastoreProvidedByCompose(String compose) {
+        // An explicit SPRING_DATASOURCE_URL override in compose is the most direct statement of what the
+        // application will really connect to, so it wins over guessing from image names.
+        java.util.regex.Matcher url = java.util.regex.Pattern
+                .compile("SPRING_DATASOURCE_URL\\s*[=:]\\s*jdbc:([a-zA-Z0-9]+):")
+                .matcher(compose);
+        if (url.find()) {
+            return normaliseEngine(url.group(1));
+        }
+        String lower = compose.toLowerCase(java.util.Locale.ROOT);
+        for (String image : new String[]{"postgres", "mariadb", "mysql", "mongo"}) {
+            if (lower.contains("image:") && lower.contains(image)) {
+                return normaliseEngine(image);
+            }
+        }
+        return null;
+    }
+
+    /** The engine the application defaults to. Null when the file is absent or names none. */
+    private String datastoreInDatasourceUrl(String applicationProperties) {
+        if (applicationProperties == null) {
+            return null;
+        }
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("spring\\.datasource\\.url\\s*[=:]\\s*jdbc:([a-zA-Z0-9]+):")
+                .matcher(applicationProperties);
+        return m.find() ? normaliseEngine(m.group(1)) : null;
+    }
+
+    private boolean buildManifestHasDriverFor(String pom, String engine) {
+        String lower = pom.toLowerCase(java.util.Locale.ROOT);
+        return switch (engine) {
+            case "postgresql" -> lower.contains("org.postgresql");
+            case "mysql" -> lower.contains("mysql-connector");
+            case "mariadb" -> lower.contains("mariadb-java-client");
+            case "mongodb" -> lower.contains("mongodb-driver") || lower.contains("spring-boot-starter-data-mongodb");
+            // An engine whose driver coordinates this does not know: say nothing rather than guess.
+            default -> true;
+        };
+    }
+
+    private String normaliseEngine(String raw) {
+        String e = raw.toLowerCase(java.util.Locale.ROOT);
+        if (e.startsWith("postgres")) {
+            return "postgresql";
+        }
+        if (e.startsWith("mariadb")) {
+            return "mariadb";
+        }
+        if (e.startsWith("mysql")) {
+            return "mysql";
+        }
+        if (e.startsWith("mongo")) {
+            return "mongodb";
+        }
+        return e;
+    }
+
     private void checkDockerfileIsSelfBuildable(ProjectEntity project, String dockerfile) {
         if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.dockerfile_missing_build_stage)) {
             return;

@@ -145,6 +145,15 @@ public class ContinuousOrchestrationService {
                 if (isAllowed(project, OperationalAction.CHECK_LAUNCHABILITY)) {
                     try {
                         productLaunchabilityService.checkOnce(project);
+                        // 2026-08-22: deliberately OUTSIDE checkOnce, which runs exactly once per project
+                        // for its whole life - `launchabilityCheckedAt` is set once and never cleared, so
+                        // every check inside it is a bootstrap gate blind to anything introduced later.
+                        // Measured: this product's application config landed at 05:58 and its compose file
+                        // at 06:10; by then checkOnce had run and would never look again, so the two
+                        // disagreeing about the datastore stayed invisible for five days while 148 tasks
+                        // closed against a product that had never once answered. Same authorisation, same
+                        // service, same tick - only the once-ever guard is not shared.
+                        productLaunchabilityService.checkDatastoreAgreement(project);
                     } catch (Exception e) {
                         log.error("Continuous Orchestration: launchability check failed for project {}", project.getId(), e);
                     }

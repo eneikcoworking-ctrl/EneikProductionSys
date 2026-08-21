@@ -2,6 +2,9 @@ package com.eneik.production.services.runtime;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import org.mockito.ArgumentCaptor;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.WishlistRepository;
@@ -48,6 +51,160 @@ class ProductLaunchabilityServiceTest {
         ProductLaunchabilityService service = new ProductLaunchabilityService(projects, wishlists, gitHub, readiness, null);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
         return service;
+    }
+
+    // --- the datastore-agreement check, 2026-08-22 ------------------------------------------------------
+    //
+    // Four tests, and the two that matter most are the ones asserting SILENCE. A check that fires on a
+    // greenfield repository would deadlock every new project, and a check that fires on a correctly
+    // configured one would train everybody to ignore it.
+
+    private static final String COMPOSE_POSTGRES = """
+            services:
+              app:
+                environment:
+                  - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/app
+              db:
+                image: postgres:15-alpine
+            """;
+
+    private ProductLaunchabilityService agreementService(WishlistRepository wishlists,
+                                                          GitHubPullRequestService gitHub) {
+        return newService(mock(ProjectRepository.class), wishlists, gitHub,
+                mock(ClientDeliverableReadinessService.class));
+    }
+
+    private void stubContract(GitHubPullRequestService gitHub, ProjectEntity project, String contract) {
+        when(gitHub.fetchFileContent(eq(project), eq("main"),
+                eq("docs/architecture/adr-002-runtime-contract.md")))
+                .thenReturn(java.util.Optional.ofNullable(contract));
+    }
+
+    private void stubRepoFiles(GitHubPullRequestService gitHub, ProjectEntity project,
+                                String compose, String props, String pom) {
+        stubContract(gitHub, project, null); // no contract unless a test says otherwise
+        when(gitHub.fetchFileContent(eq(project), eq("main"), eq("docker-compose.yml")))
+                .thenReturn(java.util.Optional.ofNullable(compose));
+        when(gitHub.fetchFileContent(eq(project), eq("main"), eq("src/main/resources/application.properties")))
+                .thenReturn(java.util.Optional.ofNullable(props));
+        when(gitHub.fetchFileContent(eq(project), eq("main"), eq("pom.xml")))
+                .thenReturn(java.util.Optional.ofNullable(pom));
+    }
+
+    @Test
+    void anApplicationDefaultingToADifferentEngineThanComposeShipsIsFiled() {
+        // The measured defect: application.properties said H2, compose shipped PostgreSQL, so every test
+        // and review exercised H2 while delivery ran PostgreSQL - and CREATE ALIAS, valid only in H2,
+        // passed 144 merged reviews and killed the product at character 8 of its first migration.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:h2:file:./data/appdb\nspring.jpa.hibernate.ddl-auto=validate\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+
+        service.checkDatastoreAgreement(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlists).save(captor.capture());
+        WishlistEntity filed = captor.getValue();
+        assertEquals(WishlistSource.datastore_artifacts_disagree, filed.getSource());
+        assertTrue(filed.getContent().contains("h2") && filed.getContent().contains("postgresql"),
+                "the finding must name both engines, or the reader has to re-derive it: " + filed.getContent());
+        // The assembly is the work - the same routing product_not_launchable uses.
+        assertEquals("BARCAN-TAG-00", filed.getSourceRoleTag());
+    }
+
+    @Test
+    void aMissingDriverForTheShippedEngineIsFiled() {
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>com.h2database</groupId></dependency></project>");
+
+        service.checkDatastoreAgreement(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlists).save(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("no driver"),
+                "was: " + captor.getValue().getContent());
+    }
+
+    @Test
+    void aProjectWithNoComposeFileIsNeverFiled() {
+        // Day zero. A greenfield repository has nothing to disagree with, and a check that fired here
+        // would put a constraint on every project the factory ever creates, before its first client wish.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, null,
+                "spring.datasource.url=jdbc:h2:file:./data/appdb\n", "<project/>");
+
+        service.checkDatastoreAgreement(project);
+
+        verify(wishlists, never()).save(any());
+    }
+
+    @Test
+    void aProjectWhoseArtifactsAgreeIsNeverFiled() {
+        // The check must be quiet when the product is right, or it becomes noise that everyone learns to
+        // skip - and a finding nobody reads is not a finding.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+
+        service.checkDatastoreAgreement(project);
+
+        verify(wishlists, never()).save(any());
+    }
+
+    @Test
+    void aStackThatShipsAnEngineTheContractHasNotDeclaredIsFiled() {
+        // ACP-104 caught at the moment it happens rather than five days later: the bootstrap wrote the
+        // question, compose answered it, and the contract - which owns the decision - was never told.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+        stubContract(gitHub, project, "```yaml\ndatastore: UNDECLARED\n```\n");
+
+        service.checkDatastoreAgreement(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlists).save(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("UNDECLARED"),
+                "the finding must say the decision was taken outside the contract: "
+                        + captor.getValue().getContent());
+    }
+
+    @Test
+    void aStackMatchingItsDeclaredContractIsNeverFiled() {
+        // The whole point: once the contract declares the engine and the artifacts follow from it, the
+        // check is silent. Anything else would punish a product for being correct.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+        stubContract(gitHub, project, "```yaml\ndatastore: postgresql:15\n```\n");
+
+        service.checkDatastoreAgreement(project);
+
+        verify(wishlists, never()).save(any());
     }
 
     @Test

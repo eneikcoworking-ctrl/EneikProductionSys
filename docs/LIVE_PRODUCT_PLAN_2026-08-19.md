@@ -394,6 +394,56 @@ Its dual, from 10.5: a proposal must also survive **the opposite brief**. "Scaff
 passes day zero and fails a brief whose product wants an embedded store - it would ship a server the
 product never uses. Both directions, every time.
 
+### 9.6 Scaffold the question, not the answer - ACP-104 resolved
+
+`BARCAN-TAG-01_ACTUALIST-OBJECT`. Two sentences, and the second is the one that makes this a construction
+rather than a deletion:
+
+> **The bootstrap writes only what is true of every product this factory could build.**
+> **What it cannot decide, it writes as an open question - never as an answer.**
+
+A datastore is not true of every product; a web server that answers is. So the scaffold now contains an
+application that builds and runs, and no persistence at all - no JPA, no migration tool, no driver, no
+`spring.datasource.*`. Writing `jdbc:h2:...` at a moment when the product's datastore existed neither as an
+object nor as a decision nor even as a question anyone had asked was **bringing a thing into being by
+notation**. §10.2 says a datastore no artifact declares is not an actual object; the dual is that one some
+artifact declares IS an actual object, default or not, and it then occupies the place where the decision
+should have been made.
+
+The second half: an absent line is silence, and §11.5 is explicit that a silent system is unrefutable and
+therefore unteachable - O-1 violated none of the seven invariants precisely because nothing asserted
+anything about these artifacts. So the bootstrap commits `docs/architecture/adr-002-runtime-contract.md`
+carrying
+
+```yaml
+datastore: UNDECLARED
+```
+
+`UNDECLARED` is not a placeholder. It is the open question made into an actual object: it exists, it is
+machine-readable, it names its owner (ARCHITECTURE, `BARCAN-TAG-01`, stage 20), and it can be refuted by
+the artifacts disagreeing with it. Answering it later is then a **declaration** rather than a contradiction
+of a file already on `main`.
+
+The contract lists its own consequences, and the fourth is the half nobody had:
+
+1. compose provides the declared engine,
+2. the build manifest declares its driver,
+3. the application configuration points at it,
+4. **the test suite runs against it** - because a migration written against one engine and verified against
+   that same engine passes every gate the factory has and is still meaningless in delivery. This is the
+   exact mechanism by which an H2-only `CREATE ALIAS` survived 144 merged reviews.
+
+`ProductLaunchabilityService.checkDatastoreAgreement` reads the `datastore:` line and reports against the
+declaration rather than refereeing a quarrel between two files of equal standing. A stack that ships an
+engine while the contract still says `UNDECLARED` is itself the finding: the decision was taken somewhere
+other than where it belongs, caught in the hour instead of in five days. Projects with no contract fall
+back to comparing the artifacts with each other - strictly weaker, and still decisive for the measured
+case.
+
+Deliberately not behind `launchabilityCheckedAt`: that flag is set once per project and never cleared, so
+everything inside `checkOnce` is a bootstrap gate blind to anything introduced later - which is why this
+defect survived. Same service, same authorisation, same tick; only the once-ever guard is not shared.
+
 ## 10. The assembly has no owner
 
 ### 10.1 What happened, to the minute

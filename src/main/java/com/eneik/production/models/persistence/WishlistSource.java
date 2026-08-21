@@ -40,5 +40,12 @@ public enum WishlistSource {
     // audit reasoning about a product that can't even start would be reasoning about nothing real. TOC:
     // launchability is the constraint; everything else (including philosophical review) subordinates to
     // it until it's cleared. Kano Must-Be by construction - not a taste judgment, a precondition.
+    /**
+     * The engine the application defaults to is not the engine its compose stack provides, or the build
+     * manifest carries no driver for the engine that ships. Both are checkable from the repository alone,
+     * without launching anything - which is the point: O-1 cost days precisely because nothing asserted
+     * that these artifacts agree, and a silent system is unrefutable (plan §11.5).
+     */
+    datastore_artifacts_disagree,
     product_not_launchable
 }

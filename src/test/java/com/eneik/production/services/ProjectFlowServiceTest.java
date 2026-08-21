@@ -217,6 +217,26 @@ class ProjectFlowServiceTest {
         verify(projectRepository, never()).save(project);
     }
 
+    @Test
+    void theBootstrapScaffoldDeclaresNoDatastoreAndWritesTheQuestionInstead() {
+        // ACP-104. The scaffold used to write jdbc:h2 with ddl-auto=validate and Flyway on, deciding a
+        // contingent fact about ONE brief before the stage that owns it had read the brief - and once it
+        // is a file on main, ARCHITECTURE can only contradict it, so the contract stayed silent about a
+        // question that looked answered. Measured cost: an H2-only CREATE ALIAS survived 144 merged
+        // reviews and killed the product at character 8 of its first migration.
+        String props = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service(), "javaScaffoldApplicationProperties");
+        assertFalse(props.contains("datasource"),
+                "the scaffold may only contain what is true of EVERY product; a datastore is not: " + props);
+        assertFalse(props.contains("h2"), props);
+
+        String contract = ProjectFlowService.javaScaffoldRuntimeContract();
+        assertTrue(contract.contains("datastore: UNDECLARED"),
+                "the open question must be written down as an actual object - an absent line is silence, "
+                        + "and a silent system is unrefutable");
+        assertTrue(contract.contains("BARCAN-TAG-01"), "the question must name its owner");
+    }
+
     private void stubNoManifestsExist(ProjectEntity project) {
         when(gitHubPullRequestService.fetchFileContent(eq(project), eq("main"), anyString()))
                 .thenReturn(Optional.empty());

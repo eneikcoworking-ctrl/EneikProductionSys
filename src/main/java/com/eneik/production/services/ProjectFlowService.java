@@ -816,15 +816,24 @@ public class ProjectFlowService {
                 project,
                 "src/main/resources/application.properties",
                 javaScaffoldApplicationProperties().getBytes(java.nio.charset.StandardCharsets.UTF_8),
-                "EMS bootstrap: minimal application.properties (file-based H2, safe defaults)"
+                "EMS bootstrap: minimal application.properties (no datastore - see ADR-002)"
         );
-        log.info("Deterministic backend scaffold for project {}: pom.xml={}, .gitignore={}, application.properties={}",
-                project.getId(), pomCommitted, gitignoreCommitted, applicationPropertiesCommitted);
+        boolean contractCommitted = gitHubPullRequestService.upsertFile(
+                project,
+                RUNTIME_CONTRACT_PATH,
+                javaScaffoldRuntimeContract().getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "EMS bootstrap: runtime contract with the datastore question left open for ARCHITECTURE"
+        );
+        log.info("Deterministic backend scaffold for project {}: pom.xml={}, .gitignore={}, "
+                        + "application.properties={}, runtime contract={}",
+                project.getId(), pomCommitted, gitignoreCommitted, applicationPropertiesCommitted,
+                contractCommitted);
 
         recordGlobalFileClaimIfCommitted(project, "pom.xml", pomCommitted);
         recordGlobalFileClaimIfCommitted(project, ".gitignore", gitignoreCommitted);
+        recordGlobalFileClaimIfCommitted(project, RUNTIME_CONTRACT_PATH, contractCommitted);
         recordGlobalFileClaimIfCommitted(project, "src/main/resources/application.properties", applicationPropertiesCommitted);
-        return pomCommitted && gitignoreCommitted && applicationPropertiesCommitted;
+        return pomCommitted && gitignoreCommitted && applicationPropertiesCommitted && contractCommitted;
     }
 
     // Feeds TechnicalLeadCompiler.applyCrossEpicCollisionGuard: a project-wide claim (taskId=null,
@@ -1064,22 +1073,13 @@ public class ProjectFlowService {
                             <artifactId>spring-boot-starter-web</artifactId>
                         </dependency>
                         <dependency>
-                            <groupId>org.springframework.boot</groupId>
-                            <artifactId>spring-boot-starter-data-jpa</artifactId>
-                        </dependency>
-                        <dependency>
                             <groupId>org.springframework.security</groupId>
                             <artifactId>spring-security-crypto</artifactId>
                         </dependency>
-                        <dependency>
-                            <groupId>org.flywaydb</groupId>
-                            <artifactId>flyway-core</artifactId>
-                        </dependency>
-                        <dependency>
-                            <groupId>com.h2database</groupId>
-                            <artifactId>h2</artifactId>
-                            <scope>runtime</scope>
-                        </dependency>
+                        <!-- No persistence here, deliberately. JPA, a migration tool and a driver are
+                             consequences of the datastore the runtime contract declares (ACP-104); until
+                             ARCHITECTURE declares one there is no datastore to depend on, and writing a
+                             default would BE the decision. -->
                         <dependency>
                             <groupId>org.springframework.boot</groupId>
                             <artifactId>spring-boot-starter-test</artifactId>
@@ -1113,15 +1113,74 @@ public class ProjectFlowService {
                 """;
     }
 
+    /**
+     * What is true of EVERY product this factory could build, and nothing else.
+     *
+     * It used to declare an H2 datasource here, with `ddl-auto=validate` and Flyway enabled. That is a
+     * contingent fact about one brief written at a moment when the product's datastore did not exist -
+     * not as an object, not as a decision, not even as a question anyone had asked. Writing it brought it
+     * into being by notation: §10.2 records that a datastore no artifact declares is not an actual object,
+     * and the dual (ACP-104) is that a datastore some artifact declares IS one, including when the
+     * artifact was written as a default. ARCHITECTURE, whose decision it is, could then only contradict a
+     * file already on `main`, so the runtime contract stayed silent about a question that looked answered.
+     *
+     * Measured cost of that silence: an H2-only `CREATE ALIAS` survived 144 merged reviews and killed the
+     * product at character 8 of its first migration, while 148 tasks closed against a product that had
+     * never once answered.
+     */
     private String javaScaffoldApplicationProperties() {
         return """
                 spring.application.name=app
                 server.port=8080
+                """;
+    }
 
-                spring.datasource.url=jdbc:h2:file:./data/appdb;AUTO_SERVER=TRUE
-                spring.datasource.driver-class-name=org.h2.Driver
-                spring.jpa.hibernate.ddl-auto=validate
-                spring.flyway.enabled=true
+    /**
+     * The other half, and the half that makes this a construction rather than a deletion.
+     *
+     * An absent line is silence, and §11.5 is explicit that a silent system is unrefutable and therefore
+     * unteachable - O-1 violated none of the seven invariants precisely because nothing asserted that the
+     * artifacts agree with anything. So the bootstrap writes the QUESTION as an actual object: it exists,
+     * it is machine-readable, it names its owner, and it can be refuted by the artifacts disagreeing with
+     * it. Answering it later is then a declaration rather than a contradiction.
+     *
+     * The `datastore:` line is the one ProductLaunchabilityService.checkDatastoreAgreement reads.
+     */
+    static String javaScaffoldRuntimeContract() {
+        return """
+                # ADR-002 - Runtime contract
+
+                Generated deterministically at project bootstrap. This file is the single source of truth
+                for which services this product runs against. `docker-compose.yml`, the build manifest and
+                the application configuration are CONSEQUENCES of what is declared here - never independent
+                decisions taken in one artifact.
+
+                ## Declared services
+
+                ```yaml
+                datastore: UNDECLARED
+                ```
+
+                `UNDECLARED` is not a placeholder to be ignored. It is the open question, written down so
+                that it is an actual object: readable, refutable, and owned. Its owner is ARCHITECTURE
+                (BARCAN-TAG-01, stage 20), which decides the datastore from the client's brief and replaces
+                this line with the engine and version - for example `postgresql:15`, `mysql:8`, or `none`
+                for a product that genuinely stores nothing.
+
+                The bootstrap does not choose. A datastore is a contingent fact about ONE brief; the
+                scaffold may only contain what is true of every product this factory could build.
+
+                ## Consequences of the declaration
+
+                Once the line above names an engine, all four of these must follow from it, and a check in
+                the factory reports it when they do not:
+
+                1. `docker-compose.yml` provides that engine.
+                2. The build manifest declares that engine's driver.
+                3. The application configuration points at that engine.
+                4. **The test suite runs against that engine.** This one is not optional and is the reason
+                   the other three were not enough: a migration written against one engine and verified
+                   against it will pass every gate the factory has and still be meaningless in delivery.
                 """;
     }
 
@@ -2694,6 +2753,9 @@ public class ProjectFlowService {
     // which is correct - the collision was always ACROSS different branches/workers, never within one) and
     // stashed in the dispatching task's own payload, same idiom as PR_REVIEW_FALLBACK_VERDICT_PATH_KEY.
     private static final String WISHLIST_COMPILER_PLAN_PATH = ".eneik/task-plan.json";
+    /** The single source of truth for which services a product runs against - see ACP-104. */
+    public static final String RUNTIME_CONTRACT_PATH = "docs/architecture/adr-002-runtime-contract.md";
+
     public static final String WISHLIST_COMPILER_PLAN_PATH_KEY = "taskPlanPath";
 
     private void dispatchWishlistCompiler(ProjectEntity project, java.util.List<WishlistEntity> wishlists) {
