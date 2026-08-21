@@ -3,6 +3,7 @@ package com.eneik.production.services;
 import com.eneik.production.models.persistence.*;
 import com.eneik.production.repositories.*;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.toc.LaunchabilityConstraintService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -89,6 +90,8 @@ public class FalsificationCycleService {
     private final com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository;
     private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
     private final com.eneik.production.services.runtime.RuntimeLauncherClient runtimeLauncherClient;
+    /** The constraint is identified here too, but this is no longer the only door - see the service's javadoc. */
+    private final LaunchabilityConstraintService launchabilityConstraintService;
 
     @org.springframework.beans.factory.annotation.Value("${falsification.readiness-threshold:0.9}")
     private double readinessThreshold;
@@ -124,7 +127,9 @@ public class FalsificationCycleService {
                                      com.eneik.production.repositories.CodeIntegrityFindingRepository codeIntegrityFindingRepository,
                                      com.eneik.production.repositories.EvidenceNodeRepository evidenceNodeRepository,
                                      com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
-                                     com.eneik.production.services.runtime.RuntimeLauncherClient runtimeLauncherClient) {
+                                     com.eneik.production.services.runtime.RuntimeLauncherClient runtimeLauncherClient,
+                                     LaunchabilityConstraintService launchabilityConstraintService) {
+        this.launchabilityConstraintService = launchabilityConstraintService;
         this.projectRepository = projectRepository;
         this.roleRepository = roleRepository;
         this.roleCapabilityLoader = roleCapabilityLoader;
@@ -386,7 +391,7 @@ public class FalsificationCycleService {
         // liveEvidenceBlock already draws on - never a second, independently-derived source of truth.
         var runtimeHealth = clientRuntimeObservabilityService.summarize(project.getId());
         if (runtimeHealth != null && Boolean.FALSE.equals(runtimeHealth.lastObservationHealthy())) {
-            ensureProductNotLaunchableWishlist(project, runtimeHealth);
+            launchabilityConstraintService.ensureOpen(project, latestErrorText(runtimeHealth));
             log.info("FalsificationCycleService: Project {} is not currently launchable/healthy - "
                             + "subordinating philosophical review to that constraint (TOC) instead of "
                             + "auditing a broken product this cycle",
@@ -784,101 +789,6 @@ public class FalsificationCycleService {
                 .orElse("");
     }
 
-    /** How long a finished, ineffective constraint attempt is left alone before the constraint is re-filed. */
-    @org.springframework.beans.factory.annotation.Value("${falsification-cycle.constraint-refile-cooldown-minutes:45}")
-    private long constraintRefileCooldownMinutes;
-
-    private void ensureProductNotLaunchableWishlist(ProjectEntity project,
-                                                    com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth) {
-        // 2026-08-21 (plan L-8): the guard used to be existsByProjectIdAndSource, which blocks re-filing
-        // REGARDLESS OF STATUS. §7 of the plan wrote down why that is wrong - "a constraint is cleared by a
-        // fresh healthy observation, not by a status" - and it went unconnected to what was on the
-        // dashboard until the factory sat idle with the constraint open.
-        //
-        // Measured live: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item finished
-        // 01:27Z, and at 02:09Z the product still answered nothing. The attempt had failed, the row was
-        // `converted_to_task`, and nothing could ever file it again - so the factory had zero queued work
-        // while its own highest-priority work was open. An idle factory with an unrefuted product is not
-        // "everything is done"; by §1 it means the system stopped looking.
-        //
-        // The caller reaches this method only when the newest REAL observation came back unhealthy, so
-        // "the constraint is open" is established by fresh evidence rather than by bookkeeping. What is
-        // guarded here is duplication of work in flight, not the constraint's existence.
-        List<WishlistEntity> existing = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
-                project.getId(), WishlistSource.product_not_launchable,
-                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.finalizing,
-                        WishlistStatus.converted_to_task, WishlistStatus.dismissed));
-        boolean alreadyBeingWorked = existing.stream().anyMatch(w -> w.getStatus() == WishlistStatus.pending
-                || w.getStatus() == WishlistStatus.compiling || w.getStatus() == WishlistStatus.finalizing);
-        if (alreadyBeingWorked) {
-            return; // an attempt is in flight - never a second one beside it
-        }
-        // A finished attempt that did not fix the product may be retried, but not on the very next tick:
-        // the cooldown is what keeps "keep working the constraint" from becoming a compile loop.
-        java.time.Instant newest = existing.stream()
-                .map(WishlistEntity::getCreatedAt)
-                .filter(java.util.Objects::nonNull)
-                .max(java.util.Comparator.naturalOrder())
-                .orElse(null);
-        if (newest != null && newest.isAfter(java.time.Instant.now()
-                .minus(java.time.Duration.ofMinutes(constraintRefileCooldownMinutes)))) {
-            log.info("FalsificationCycleService: project {} - the launchability constraint is still open, but the "
-                            + "last attempt was filed at {}; waiting out the {}-minute cooldown before re-filing",
-                    project.getId(), newest, constraintRefileCooldownMinutes);
-            return;
-        }
-        if (!existing.isEmpty()) {
-            log.info("FalsificationCycleService: project {} - the launchability constraint is STILL open after "
-                            + "{} finished attempt(s); re-filing it rather than leaving the factory idle",
-                    project.getId(), existing.size());
-        }
-        WishlistEntity wishlist = new WishlistEntity();
-        wishlist.setProjectId(project.getId());
-        wishlist.setSource(WishlistSource.product_not_launchable);
-        wishlist.setStatus(WishlistStatus.pending);
-        wishlist.setLeanValue(LeanValue.essential);
-        wishlist.setCynefinDomain("clear");
-        // 2026-08-19: carry the OBSERVED CAUSE, not only the fact of failure. The launcher already
-        // records exactly why the launch died in ClientRuntimeObservationEntity.errorText, and that text
-        // sits in this very summary's productObservations - measured live on test-forty-ninth:
-        // "object-storage Error failed to resolve reference minio/minio:RELEASE.2023-09-20T22-40-07Z:
-        // not found". Filing "it is not healthy" while holding that string asks the worker to rediscover
-        // what the system already knows, and it is the same defect the auditor's ABSTAIN fix removed on
-        // 2026-08-18: a claim must arrive with its witness, or the reader cannot act on it.
-        String observedCause = latestErrorText(runtimeHealth);
-        wishlist.setContent("The delivered product's most recent runtime observation was not healthy "
-                + "(launch failed, or launched but its health check failed). Fix this before any further "
-                + "philosophical review - reviewing a product that doesn't actually run produces no real "
-                + "evidence, only guesses."
-                + (observedCause.isBlank() ? ""
-                        : "\n\nObserved failure, exactly as the launcher recorded it - this is evidence, not a "
-                                + "hypothesis, so start here rather than by re-deriving it:\n" + observedCause));
-        wishlist.setJtbd("When the product doesn't currently launch or respond healthily, I want that "
-                + "fixed before anything else, so all other evaluation (philosophical, design, feature "
-                + "work) is grounded in a real, working product");
-        wishlist.setAcceptanceCriteria("Given the project's runtime observation history, When the next "
-                + "observation cycle runs, Then launchSuccess=true and the health check returns 2xx");
-        // 2026-08-19: address this to the INTEGRATION role explicitly. Until now it named no role, so
-        // TechnicalLeadCompiler.targetRoleForWishlist fell through to keyword inference over this text -
-        // which contains no "merge"/"integration"/"artifact" - and routed it to whoever the wording
-        // happened to resemble. Measured on test-forty-ninth: the MinIO blocker became a TAG-05
-        // "Build Pipeline" task. Operations correctly fixed a symbol; the defect was an ASSEMBLY defect,
-        // and the assembly had no owner. BARCAN-TAG-00 (CODE-GUARDIAN, INTEGRATION, stage 70) is that
-        // owner and had 0 tasks on this project, 4 across the factory's whole history - not because it is
-        // unroutable, but because integration is nobody's requirement and a requirement-pulled
-        // decomposition cannot produce it. A product that will not run is the one case where the assembly
-        // itself is the work, so this is where the role gets reached.
-        wishlist.setSourceRoleTag("BARCAN-TAG-00");
-        wishlist.setDod("BARCAN-TAG-00: the product's artifacts agree with its declared runtime contract. "
-                + "The contract (docs/architecture/adr-002-runtime-contract.md, owned by BARCAN-TAG-01) is "
-                + "the single source of truth for which services this product runs against; docker-compose.yml, "
-                + "the build manifest and the application configuration must all be derivable from it. Where "
-                + "the contract does not yet name a service the product depends on, extending the contract is "
-                + "part of this work - do not pick a stack unilaterally in one artifact. Done when the product "
-                + "launches and its health check passes.");
-        wishlistRepository.save(wishlist);
-        log.info("FalsificationCycleService: created product_not_launchable wishlist for project {}", project.getId());
-    }
 
     /**
      * 2026-08-11 (client runtime observability plan, Phase 5): reuses the SAME bounded live-preview

@@ -1,6 +1,7 @@
 package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ProjectEntity;
+import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
@@ -168,6 +169,52 @@ class ProjectFlowServiceTest {
         assertTrue(claims.stream().anyMatch(c -> "frontend/src/App.svelte".equals(c.getFilePath())));
         assertTrue(claims.stream().anyMatch(c -> "frontend/src/routes.js".equals(c.getFilePath())));
         assertTrue(claims.stream().allMatch(c -> c.getTaskId() == null && c.getFeatureId() == null));
+    }
+
+    // --- O-15 (2026-08-21): F42's termination guard, in the one place both admission paths reach --------
+    //
+    // Deliberately written against the guard rather than against one admission path: the defect being
+    // covered here IS that the guard lived on one path and not the other, so a test bound to a single
+    // caller would reproduce the very mistake it is meant to catch.
+
+    @Test
+    void aBriefThatExhaustedItsDecompositionBudgetIsWithheldFromDispatch() {
+        ProjectFlowService service = service();
+        ProjectEntity project = greenfieldProject();
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(UUID.randomUUID());
+        wishlist.setProjectId(project.getId());
+        wishlist.setCompileAttempts(3); // == WISHLIST_COMPILE_ATTEMPT_BUDGET, so mu = 0
+
+        Boolean withheld = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "withholdFromCompileDispatch", project, wishlist);
+
+        assertTrue(Boolean.TRUE.equals(withheld));
+        // F39: a finding nobody can retrieve is not a finding, so the withhold has to land where a human
+        // actually looks - not only in a log line.
+        assertTrue(project.getFactoryReport() != null
+                        && project.getFactoryReport().contains(wishlist.getId().toString()),
+                "the exhausted budget must be reported against this wishlist; factoryReport was: "
+                        + project.getFactoryReport());
+        verify(projectRepository).save(project);
+    }
+
+    @Test
+    void aBriefStillInsideItsDecompositionBudgetIsNotWithheld() {
+        // The guard is restrictive-only and must stay that way: it may remove a dispatch, never add one,
+        // and it must not remove one that F42's own budget still permits.
+        ProjectFlowService service = service();
+        ProjectEntity project = greenfieldProject();
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(UUID.randomUUID());
+        wishlist.setProjectId(project.getId());
+        wishlist.setCompileAttempts(2); // mu = 1
+
+        Boolean withheld = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "withholdFromCompileDispatch", project, wishlist);
+
+        assertFalse(Boolean.TRUE.equals(withheld));
+        verify(projectRepository, never()).save(project);
     }
 
     private void stubNoManifestsExist(ProjectEntity project) {

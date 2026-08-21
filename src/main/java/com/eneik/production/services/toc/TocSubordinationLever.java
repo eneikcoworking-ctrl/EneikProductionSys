@@ -5,16 +5,20 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.ClientRuntimeObservationRepository;
 import com.eneik.production.services.lever.LeverAgreement;
 import com.eneik.production.services.lever.LeverPromotionService;
+import com.eneik.production.services.lever.LeverStage;
 import com.eneik.production.services.operational.OperationalAction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import org.springframework.data.domain.Limit;
+
 import java.util.List;
 import java.util.Set;
 
 /**
- * Theory of Constraints, step 3 - subordinate - measured in shadow before it is allowed to decide anything.
+ * Theory of Constraints, step 3 - subordinate - measured in shadow first, and allowed to decide only once
+ * its own promotion ladder has carried it past `observe_only` on accumulated evidence.
  *
  * The factory identifies its constraint and then files it as an item in the ordinary queue, where it waits
  * its turn: `WishlistEntity` has no priority field and nothing orders selection by `leanValue`. But a
@@ -30,12 +34,23 @@ import java.util.Set;
  * skipped for the same reason they are skipped by the posterior (V104) - a launch nobody answered is not a
  * launch that failed.
  *
- * **Why this only observes.** A subordination gate that is wrong freezes an entire project - measured
- * exactly once already, when one task stuck in `pending_review` put the whole flow into `SYSTEM_STALLED`
- * and the policy denied dispatch project-wide. The operational-math document's own promotion policy
- * requires `observe_only` first: compute and display, promote on evidence. This class records what
- * subordination WOULD have decided against what the policy actually decided, into the same
- * `LeverPromotionService` machinery every other candidate rule uses, and changes nothing.
+ * **Why it observed first, and what changed (2026-08-21, plan L-6).** A subordination gate that is wrong
+ * freezes an entire project - measured exactly once already, when one task stuck in `pending_review` put
+ * the whole flow into `SYSTEM_STALLED` and the policy denied dispatch project-wide. The operational-math
+ * document's own promotion policy therefore requires `observe_only` first: compute and display, promote on
+ * evidence. That is still exactly what happens - what was missing was the second half. The ladder
+ * (`LeverStage`, `LeverPromotionService.evaluatePromotions`) already walks a lever from `observe_only` to
+ * `soft_gate` on its own accumulated agreement rate, and this lever was the one thing on it that could
+ * never arrive: it returned the incumbent's answer unconditionally, so no amount of evidence could ever
+ * change a decision. A promotion nothing acts on is not a promotion.
+ *
+ * So the rule now DECIDES, from `soft_gate` upward, and only in one direction: it may **remove** a
+ * permission the policy granted, never grant one the policy denied. Subordination means non-constraints
+ * idle; it can never mean a non-constraint is allowed something the flow state forbids. Below `soft_gate`
+ * the behaviour is bit-for-bit what it was - record the pair, return the incumbent - and promotion is
+ * reached only by agreeing with the policy at least `AGREEMENT_THRESHOLD` of the time over
+ * `MIN_RESOLVED_SAMPLES` real decisions, so what it enforces first are the rare disagreements of a rule
+ * that has already been measured to be right nearly always.
  */
 @Service
 public class TocSubordinationLever {
@@ -77,11 +92,17 @@ public class TocSubordinationLever {
     }
 
     /**
-     * Records one incumbent/candidate decision pair. Never changes what the caller does - the return value
-     * is the incumbent decision, passed straight back, so a call site can wrap its existing check without
-     * altering behaviour.
+     * Records one incumbent/candidate decision pair and returns the decision that should actually be acted
+     * on. Below {@link LeverStage#SOFT_GATE} that is the incumbent's own answer, unchanged; from
+     * {@code soft_gate} upward it is the incumbent's answer AND-ed with subordination's, so the rule can
+     * take a permission away and can never grant one.
+     *
+     * <p>Renamed from {@code observe} on 2026-08-21 with the change that gave it teeth: a method called
+     * "observe" that decides is a designator with a bearer it does not have, which is the same defect
+     * ACP-102 records against {@code recentObservations} elsewhere in this system. The name has to move
+     * when the behaviour does.
      */
-    public boolean observe(ProjectEntity project, OperationalAction action, boolean incumbentAllowed) {
+    public boolean subordinate(ProjectEntity project, OperationalAction action, boolean incumbentAllowed) {
         try {
             if (!constraintIsOpen(project)) {
                 return incumbentAllowed;
@@ -97,19 +118,32 @@ public class TocSubordinationLever {
                     candidateAllowed ? "allow" : "deny",
                     agreement,
                     null);
+            // The lever decides only from soft_gate upward, and only ever by taking a permission away:
+            // `incumbentAllowed && candidateAllowed` can turn an allow into a deny and can never turn a
+            // deny into an allow. Goldratt's subordinate is "non-constraints idle so the constraint never
+            // waits", which is a restriction on slack - it is never a licence for slack to do something
+            // the flow state already forbids.
+            LeverStage stage = leverPromotionService.currentStage(T1_TOC_SUBORDINATION);
+            // Null-safe on purpose: a lever with no state row yet has no evidence, and the safe reading
+            // of "no evidence" is the one that changes nothing.
+            boolean deciding = stage != null && stage.atLeast(LeverStage.SOFT_GATE);
+            boolean subordinated = deciding ? (incumbentAllowed && candidateAllowed) : incumbentAllowed;
             if (agreement == LeverAgreement.FALSE) {
-                log.info("[TOC-SUBORDINATION][shadow] project {} action {} - policy says {}, subordination "
-                                + "would say {} while the product's last real observation is unhealthy. "
-                                + "Recorded only; nothing was blocked.",
+                log.info("[TOC-SUBORDINATION][{}] project {} action {} - policy says {}, subordination says "
+                                + "{} while the product's last real observation is unhealthy. Effective "
+                                + "decision: {}.",
+                        deciding ? stage.wireValue() : "shadow",
                         project.getId(), action, incumbentAllowed ? "allow" : "deny",
-                        candidateAllowed ? "allow" : "deny");
+                        candidateAllowed ? "allow" : "deny", subordinated ? "allow" : "deny");
             }
+            return subordinated;
         } catch (Exception e) {
-            // A shadow measurement must never affect the decision it is measuring.
-            log.warn("[TOC-SUBORDINATION] shadow record failed for {} on project {}: {}",
+            // Measuring or enforcing must never be the reason a decision fails to be made: on any failure
+            // in here the incumbent's answer stands, exactly as before this rule existed.
+            log.warn("[TOC-SUBORDINATION] lever failed for {} on project {}; the policy's own answer stands: {}",
                     action, project.getId(), e.getMessage());
+            return incumbentAllowed;
         }
-        return incumbentAllowed;
     }
 
     /**
@@ -117,8 +151,13 @@ public class TocSubordinationLever {
      * Rows marked as instrument failures are skipped - nothing was learned from them (V104).
      */
     private boolean constraintIsOpen(ProjectEntity project) {
+        // Bounded read (2026-08-21): this now runs on the orchestrator's per-action policy check rather
+        // than once per shadow sample, and the unbounded variant loads the project's ENTIRE observation
+        // history to look at its newest rows. Only the newest non-instrument row can decide the answer, so
+        // a window is sufficient; an unscoped full-table read on a hot path is the exact shape that
+        // contributed to a real H2 out-of-memory here once already.
         List<ClientRuntimeObservationEntity> history =
-                observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
+                observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId(), Limit.of(20));
         for (ClientRuntimeObservationEntity row : history) {
             if (row.isInstrumentFailure()) {
                 continue;

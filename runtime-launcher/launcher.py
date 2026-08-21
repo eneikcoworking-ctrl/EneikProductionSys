@@ -203,9 +203,62 @@ def launch(req: LaunchRequest) -> LaunchResponse:
 # Without the cause the factory can only route a guess: that blocker became an OPERATIONS task fixing a
 # symbol, when it is an ASSEMBLY defect. Naming the failing service and quoting its own log is what turns
 # the next observation into a verdict instead of a guess.
-def _assembly_report(max_chars: int = 2400) -> str:
+def _silent_container_facts(container: str, row: dict) -> str:
+    """What can be SEEN about a container that wrote nothing, as checkable claims.
+
+    2026-08-21, measured on test-forty-ninth: the app container came up, logged not one line, and nothing
+    answered on the health port. The evidence handed to the next worker was
+    "<no output on this container's stdout/stderr>" - true, and worth almost no information. A worker
+    receiving it can only form a hypothesis, and by Popper a cycle that produces a hypothesis rather than
+    a refutation has not moved. Each iteration costs an hour of cadence, so the bits it carries are the
+    limiting factor, not the speed.
+
+    This sidecar is the only component in the factory holding the docker socket, so it is the only place
+    these facts are visible at all. They are the ones that explain silence: which ports the container
+    actually publishes (compare against what the application listens on), what command it was given (a
+    container that runs the wrong command runs quietly and forever), and whether it has been restarting.
+    Best-effort throughout - a diagnostic must never break the observation it explains."""
+    facts = []
+    publishers = row.get("Publishers")
+    if isinstance(publishers, list) and publishers:
+        mapped = []
+        for pub in publishers[:6]:
+            if not isinstance(pub, dict):
+                continue
+            published = pub.get("PublishedPort")
+            target = pub.get("TargetPort")
+            if published:
+                mapped.append(f"{published}->{target}/{pub.get('Protocol', 'tcp')}")
+            elif target:
+                mapped.append(f"(unpublished){target}/{pub.get('Protocol', 'tcp')}")
+        facts.append("published=[" + ", ".join(mapped) + "]" if mapped
+                     else "published=[] (the service declares no published port)")
+    else:
+        facts.append("published=[] (the service declares no published port)")
+
+    inspected = _run(
+        ["docker", "inspect", "-f",
+         "{{json .Config.Entrypoint}}|{{json .Config.Cmd}}|{{.RestartCount}}|{{.State.Status}}|{{.State.ExitCode}}",
+         str(container)],
+        timeout_seconds=20)
+    if inspected.returncode == 0 and inspected.stdout.strip():
+        pieces = inspected.stdout.strip().split("|")
+        if len(pieces) == 5:
+            facts.append(f"entrypoint={pieces[0]}")
+            facts.append(f"cmd={pieces[1]}")
+            facts.append(f"restarts={pieces[2]}")
+            facts.append(f"status={pieces[3]} exit={pieces[4]}")
+    return "<no output on this container's stdout/stderr; " + "; ".join(facts) + ">"
+
+
+def _assembly_report(max_chars: int = 3000) -> str:
     """Which services of the current run are not up, and what their own logs say. Best-effort: any failure
-    here must never replace the health result itself - an empty report is honest, a crash is not."""
+    here must never replace the health result itself - an empty report is honest, a crash is not.
+
+    The cap is 3000 and not larger on purpose: this string is concatenated onto the health-check error and
+    stored in client_runtime_observations.error_text, which is VARCHAR(4000). An overflow would not
+    truncate the diagnosis - it would fail the INSERT and lose the observation itself, turning a better
+    explanation into no observation at all."""
     if _current_project_slug is None:
         return ""
     try:
@@ -250,7 +303,8 @@ def _assembly_report(max_chars: int = 2400) -> str:
             logs = _run(["docker", "logs", "--tail", "40", str(container)], timeout_seconds=30)
             tail = ((logs.stdout or "") + (logs.stderr or "")).strip()[-1200:]
             if not tail:
-                tail = "<no output on this container's stdout/stderr>"
+                # Silence is not information. Say what can be seen instead - see _silent_container_facts.
+                tail = _silent_container_facts(str(container), row)
             parts.append(f"service '{service}' (container '{container}') state={state}: {tail}")
         return prefix + " || ".join(parts)[:max_chars]
     except Exception:  # noqa: BLE001 - diagnostics must never break the observation they explain

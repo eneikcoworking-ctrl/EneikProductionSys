@@ -258,12 +258,19 @@ public class ContinuousOrchestrationService {
                 log.info("Continuous Orchestration: policy denied {} for project {} in state {}: {}",
                         action, project.getName(), decision.state(), decision.reason());
             }
-            // 2026-08-20, TOC step 3 in shadow: record what subordination WOULD decide against what the
-            // policy actually decided, and return the policy's answer unchanged. A subordination gate that
-            // is wrong freezes a whole project - measured once already, when one task in pending_review put
-            // the flow into SYSTEM_STALLED and dispatch was denied project-wide. observe_only first, per
-            // the operational-math promotion policy.
-            return tocSubordinationLever.observe(project, action, decision.allowed());
+            // 2026-08-20, TOC step 3: record what subordination WOULD decide against what the policy
+            // actually decided. A subordination gate that is wrong freezes a whole project - measured once
+            // already, when one task in pending_review put the flow into SYSTEM_STALLED and dispatch was
+            // denied project-wide - so observe_only first, per the operational-math promotion policy.
+            //
+            // 2026-08-21 (plan L-6): this is still the ONLY place subordination is applied. It is not moved
+            // into OperationalPolicyService.authorize even though that is the more general predicate:
+            // authorize() is also consulted by read-only status endpoints under a readOnly transaction, and
+            // the lever writes an observation for every pair it sees. One point of application (invariant
+            // #10) means this one, where a decision is actually acted on - not everywhere the question is
+            // merely asked. The lever's own return contract is what changed: from soft_gate upward it may
+            // now take a permission away, and it can never grant one.
+            return tocSubordinationLever.subordinate(project, action, decision.allowed());
         } catch (Exception e) {
             log.warn("Continuous Orchestration: policy check failed for {} on project {}; failing closed: {}",
                     action, project.getId(), e.getMessage());

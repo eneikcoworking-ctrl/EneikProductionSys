@@ -10,6 +10,8 @@ import com.eneik.production.repositories.FalsificationRunRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.RoleRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.toc.LaunchabilityConstraintService;
+import org.springframework.test.util.ReflectionTestUtils;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.Test;
@@ -51,6 +53,7 @@ class FalsificationCycleServiceTest {
         ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
         when(readinessService.computeForProject(any())).thenReturn(
                 new ClientDeliverableReadinessService.Readiness(1, 1, 1.0));
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         return new FalsificationCycleService(
                 mock(ProjectRepository.class),
                 roleRepository,
@@ -68,8 +71,24 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class)
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService
         );
+    }
+
+    /**
+     * The REAL service, never a mock: FalsificationCycleService delegates constraint filing to it, so a
+     * mock here would silently no-op the wishlist writes these tests assert on. Built on whichever
+     * WishlistRepository the service under test is given, so both see the same rows.
+     *
+     * The cooldown is set explicitly because a @Value field is 0 in a plain unit test, and a 0-minute
+     * cooldown would make every finished attempt instantly re-fileable - the test would then pass for a
+     * reason that does not hold in production, which is worse than failing.
+     */
+    private static LaunchabilityConstraintService launchabilityConstraintService(WishlistRepository wishlistRepository) {
+        LaunchabilityConstraintService service = new LaunchabilityConstraintService(wishlistRepository);
+        ReflectionTestUtils.setField(service, "constraintRefileCooldownMinutes", 45L);
+        return service;
     }
 
     private RoleEntity role(String tag) {
@@ -210,6 +229,8 @@ class FalsificationCycleServiceTest {
         ClientDeliverableReadinessService readiness = mock(ClientDeliverableReadinessService.class);
         when(readiness.computeForProject(any())).thenReturn(
                 new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, false));
+
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class),
@@ -221,7 +242,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("still-decomposing");
@@ -245,6 +267,8 @@ class FalsificationCycleServiceTest {
             item.setId(UUID.randomUUID());
             return item;
         });
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
@@ -255,7 +279,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.JulesSessionRepository.class),
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
-                codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("bounded-cycle");
@@ -335,6 +360,8 @@ class FalsificationCycleServiceTest {
         task.setFeatureId(featureId);
         when(taskRepository.findById(taskId)).thenReturn(java.util.Optional.of(task));
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
@@ -343,7 +370,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.GeminiContextService.class),
                 taskRepository, julesSessionRepository,
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         List<FalsificationCycleService.AuditViolation> violations = List.of(
                 new FalsificationCycleService.AuditViolation(
@@ -445,6 +473,8 @@ class FalsificationCycleServiceTest {
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()))
                 .thenReturn(List.of(highImpactSibling, lowImpactSibling));
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
@@ -453,7 +483,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.GeminiContextService.class),
                 taskRepository, julesSessionRepository,
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         List<FalsificationCycleService.AuditViolation> violations = List.of(
                 new FalsificationCycleService.AuditViolation(
@@ -493,6 +524,8 @@ class FalsificationCycleServiceTest {
         });
         when(prReviewRepository.findAll()).thenReturn(List.of());
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runs, mock(SystemSettingsService.class),
@@ -502,7 +535,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.TaskRepository.class),
                 mock(com.eneik.production.repositories.JulesSessionRepository.class),
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
-                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                prReviewRepository, codeIntegrityFindingRepository, mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("unattributed-project");
@@ -577,6 +611,7 @@ class FalsificationCycleServiceTest {
         ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
         when(readinessService.computeForProject(any())).thenReturn(
                 new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         return new FalsificationCycleService(
                 mock(ProjectRepository.class), roleRepository, mock(RoleCapabilityLoader.class),
                 wishlistRepository, runRepository, settingsService,
@@ -588,7 +623,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
     }
 
     @Test
@@ -684,6 +720,8 @@ class FalsificationCycleServiceTest {
         when(flow.philosophicalAuditReportPath(carrierTask)).thenReturn(".eneik/records/philosophical-falsification-x.json");
         when(flow.dispatchToPhilosophicalAuditPersistentWorker(any(), any(), any(), any())).thenReturn(true);
 
+
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         FalsificationCycleService service = new FalsificationCycleService(
                 projectRepository, roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class), settings,
@@ -695,7 +733,8 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -739,6 +778,8 @@ class FalsificationCycleServiceTest {
                 com.eneik.production.models.persistence.PersistentWorkerPurpose.PHILOSOPHICAL_AUDIT))
                 .thenReturn(Optional.of(worker));
 
+
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         FalsificationCycleService service = new FalsificationCycleService(
                 projectRepository, roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class), settings,
@@ -750,7 +791,8 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -779,6 +821,8 @@ class FalsificationCycleServiceTest {
         // No active worker (Mockito default: empty Optional) - this fast path must never fall through to
         // starting a brand new 13-role discussion; that stays exclusively on the slow cron.
 
+
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         FalsificationCycleService service = new FalsificationCycleService(
                 projectRepository, roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class), settings,
@@ -790,7 +834,8 @@ class FalsificationCycleServiceTest {
                 workerSessionService,
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -806,6 +851,8 @@ class FalsificationCycleServiceTest {
         com.eneik.production.repositories.ProjectRepository projectRepository =
                 mock(com.eneik.production.repositories.ProjectRepository.class);
 
+
+        var constraintService = launchabilityConstraintService(mock(WishlistRepository.class));
         FalsificationCycleService service = new FalsificationCycleService(
                 projectRepository, roles, mock(RoleCapabilityLoader.class),
                 mock(WishlistRepository.class), mock(FalsificationRunRepository.class), settings,
@@ -817,7 +864,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.advanceInProgressPhilosophicalDiscussions();
 
@@ -884,6 +932,8 @@ class FalsificationCycleServiceTest {
                 eq(WishlistSource.product_not_launchable), any()))
                 .thenReturn(List.of());
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, mock(FalsificationRunRepository.class), settings,
@@ -897,7 +947,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
                 mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
                 clientRuntimeObservabilityService,
-                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.executePhilosophicalCycleForProject(project);
 
@@ -955,6 +1006,8 @@ class FalsificationCycleServiceTest {
                 eq(WishlistSource.product_not_launchable), any()))
                 .thenReturn(List.of(spent));
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, mock(FalsificationRunRepository.class), settings,
@@ -968,8 +1021,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
                 mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
                 clientRuntimeObservabilityService,
-                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "constraintRefileCooldownMinutes", 45L);
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.executePhilosophicalCycleForProject(project);
 
@@ -1006,6 +1059,8 @@ class FalsificationCycleServiceTest {
                 eq(WishlistSource.product_not_launchable), any()))
                 .thenReturn(List.of(fresh));
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, mock(FalsificationRunRepository.class), settings,
@@ -1019,8 +1074,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
                 mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
                 clientRuntimeObservabilityService,
-                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
-        org.springframework.test.util.ReflectionTestUtils.setField(service, "constraintRefileCooldownMinutes", 45L);
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.executePhilosophicalCycleForProject(project);
 
@@ -1069,6 +1124,8 @@ class FalsificationCycleServiceTest {
                 eq(WishlistSource.product_not_launchable), any()))
                 .thenReturn(List.of());
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, mock(FalsificationRunRepository.class), settings,
@@ -1082,7 +1139,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
                 mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
                 clientRuntimeObservabilityService,
-                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.executePhilosophicalCycleForProject(project);
 
@@ -1123,6 +1181,8 @@ class FalsificationCycleServiceTest {
                 eq(WishlistSource.product_not_launchable), any()))
                 .thenReturn(List.of(inFlight));
 
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
                 wishlistRepository, mock(FalsificationRunRepository.class), settings,
@@ -1136,7 +1196,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
                 mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
                 clientRuntimeObservabilityService,
-                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
 
         service.executePhilosophicalCycleForProject(project);
 
@@ -1204,6 +1265,8 @@ class FalsificationCycleServiceTest {
                 .thenReturn(List.of());
         when(wishlistRepository.countByProjectIdAndSourceAndStatus(any(), eq(WishlistSource.philosophical_falsification), any()))
                 .thenReturn(0L);
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), mock(RoleRepository.class), mock(RoleCapabilityLoader.class),
                 wishlistRepository, runRepository, mock(SystemSettingsService.class),
@@ -1215,7 +1278,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("clustering-project");
@@ -1282,6 +1346,8 @@ class FalsificationCycleServiceTest {
         });
         when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(any(), eq(WishlistSource.philosophical_falsification), any()))
                 .thenReturn(List.of());
+
+        var constraintService = launchabilityConstraintService(wishlistRepository);
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), mock(RoleRepository.class), mock(RoleCapabilityLoader.class),
                 wishlistRepository, runRepository, mock(SystemSettingsService.class),
@@ -1293,7 +1359,8 @@ class FalsificationCycleServiceTest {
                 mock(com.eneik.production.services.PersistentWorkerSessionService.class),
                 mock(com.eneik.production.repositories.PrReviewRepository.class),
                 mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
-                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class), mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class), mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                constraintService);
         ProjectEntity project = new ProjectEntity();
         project.setId(UUID.randomUUID());
         project.setName("watermark-independence-project");

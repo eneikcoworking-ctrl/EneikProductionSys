@@ -9,6 +9,7 @@ import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
@@ -1114,7 +1115,7 @@ class JulesDispatchServiceTest {
         task.setProject(project);
         task.setRole(role);
         task.setDescription("Implement a personal dashboard UI slice.");
-        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+        task.setStatus(TaskStatus.claimed);
 
         JulesSessionEntity session = new JulesSessionEntity();
         session.setId(sessionId);
@@ -1132,7 +1133,7 @@ class JulesDispatchServiceTest {
         verifyNoInteractions(mlPredictionServiceClient);
         // Nothing was written yet - the actual approve/block decision only lands once the Jules reviewer
         // session responds, via applyReviewVerdictToTask (covered by its own dedicated tests).
-        assertEquals(com.eneik.production.models.persistence.TaskStatus.claimed, task.getStatus());
+        assertEquals(TaskStatus.claimed, task.getStatus());
     }
 
     @Test
@@ -1357,6 +1358,192 @@ class JulesDispatchServiceTest {
         julesDispatchService.forceUnblockOverflowedSessions();
 
         verify(gitHubPullRequestService, never()).createPullRequest(any(), anyString(), anyString(), anyString(), anyString());
+    }
+
+    // --- Plan L-2: the UNAVAILABLE deferral is bounded (2026-08-21) --------------------------------------
+    //
+    // No stub for mlPredictionServiceClient.chatCritical is provided in either test below: an unstubbed
+    // mock returns null, isUsableAiAnswer(null) is false, and classifyBeforeClosing therefore returns
+    // UNAVAILABLE - exactly the shape of a reviewer that is not answering. That is the condition under
+    // test, so it is produced the same way production reaches it rather than by forcing an enum in.
+
+    @Test
+    void deferralIsPreservedWhileTheClassifierHasOnlyBeenUnavailableForAFewCycles() {
+        // An unreachable reviewer says nothing about the session, so the charitable reading must hold -
+        // this is the half of the rule that was already right and must not be broken by bounding it.
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/unavailable-early");
+        session.setStatus("revising");
+        session.setBlindCycleCount(0);
+        session.setForcedUnblockAttempts(2);
+        session.setCreatedAt(Instant.now().minus(400, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(300, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(i -> i.getArgument(0));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), anyString()))
+                .thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findBranchBySession(eq(project), anyString()))
+                .thenReturn(Optional.empty());
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals("revising", session.getStatus());
+        assertEquals(1, session.getBlindCycleCount());
+        verify(claimService, never()).closeTaskAsBlocked(eq(taskId), anyString());
+    }
+
+    @Test
+    void deferralEndsOnceTheClassifierHasBeenUnavailableForTheWholeBlindCycleThreshold() {
+        // The other half: unbounded, "retry next cycle" is an absorbing state once the reviewer is
+        // permanently gone, and the task defers forever. Measured live 2026-08-20/21 - one task sat
+        // `claimed` for 24h with SYSTEM_STALLED firing throughout, because the adjudicator's provider had
+        // been switched off and nothing counted how long it had been silent.
+        UUID taskId = UUID.randomUUID();
+        UUID projectId = UUID.randomUUID();
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/unavailable-exhausted");
+        session.setStatus("running");
+        session.setBlindCycleCount(5); // already at jules.forced-unblock-blind-cycle-threshold
+        session.setForcedUnblockAttempts(2);
+        session.setCreatedAt(Instant.now().minus(400, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(300, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(i -> i.getArgument(0));
+        when(gitHubPullRequestService.findOpenPullRequestBySession(eq(project), anyString()))
+                .thenReturn(Optional.empty());
+        when(gitHubPullRequestService.findBranchBySession(eq(project), anyString()))
+                .thenReturn(Optional.empty());
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        assertEquals("loop_closed", session.getStatus());
+        verify(claimService).closeTaskAsBlocked(eq(taskId), anyString());
+        // The closure must say WHY it fired, so a later reader is not misled into thinking the session's
+        // own writing was read and found wanting - it was not read at all.
+        assertTrue(session.getClosureReason().contains("classifier unavailable for"),
+                "closure reason must record that this closed on the reviewer's absence, not on evidence "
+                        + "about the session; was: " + session.getClosureReason());
+    }
+
+    // --- O-16 (2026-08-21): a terminal compiler task must not strand the brief it compiled ---------------
+
+    private JulesSessionEntity terminalCompilerScenario(ProjectEntity project, TaskEntity compilerTask,
+                                                         WishlistEntity wishlist) {
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(compilerTask.getId());
+        session.setExternalSessionId("sessions/compiler-terminal");
+        session.setStatus("running");
+        session.setBlindCycleCount(5);
+        session.setForcedUnblockAttempts(2);
+        session.setCreatedAt(Instant.now().minus(400, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(300, ChronoUnit.MINUTES));
+
+        when(julesSessionRepository.findByStatusIn(anyList())).thenReturn(List.of(session));
+        when(taskRepository.findById(compilerTask.getId())).thenReturn(Optional.of(compilerTask));
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(i -> i.getArgument(0));
+        when(wishlistRepository.findById(wishlist.getId())).thenReturn(Optional.of(wishlist));
+        when(projectFlowService.isWishlistCompilerTask(compilerTask)).thenReturn(true);
+        when(projectFlowService.compilerPlanPath(compilerTask)).thenReturn("docs/plan.json");
+        return session;
+    }
+
+    private static TaskEntity terminalCompilerTask(ProjectEntity project, UUID wishlistId,
+                                                    com.fasterxml.jackson.databind.ObjectMapper mapper) {
+        TaskEntity compilerTask = new TaskEntity();
+        compilerTask.setId(UUID.randomUUID());
+        compilerTask.setProject(project);
+        compilerTask.setStatus(TaskStatus.done); // terminal - this is the state the defect happens in
+        var payload = mapper.createObjectNode();
+        payload.putArray("compilesWishlistIds").add(wishlistId.toString());
+        compilerTask.setPayload(payload);
+        return compilerTask;
+    }
+
+    private static ProjectEntity activeProject() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+        return project;
+    }
+
+    @Test
+    void aTerminalCompilerTaskRebuildsItsStrandedBriefFromThePlanAlreadyMergedOnMain() {
+        // Measured live 2026-08-21: AutoMergeService's poka-yoke drove the compiler task to `done` from the
+        // merged PR before the session was ever seen in pr_opened, so completeWishlistCompilation - the one
+        // place a brief becomes converted_to_task or honestly dismissed - never ran. The compile really
+        // happened; its plan is on main; nothing read it.
+        ProjectEntity project = activeProject();
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(UUID.randomUUID());
+        wishlist.setProjectId(project.getId());
+        wishlist.setStatus(WishlistStatus.compiling); // stranded exactly as measured
+
+        TaskEntity compilerTask = terminalCompilerTask(project, wishlist.getId(), objectMapper);
+        terminalCompilerScenario(project, compilerTask, wishlist);
+
+        when(gitHubPullRequestService.fetchFileContent(project, "main", "docs/plan.json"))
+                .thenReturn(Optional.of("{\"epics\":[]}"));
+        List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics = List.of(
+                new com.eneik.production.services.MLPredictionServiceClient.EpicPlan(
+                        null, "Make the product start", "so it answers", "must_be", "clear",
+                        "launchability", "product_not_launchable", 0, List.of()));
+        when(projectFlowService.parseCompilerPlanContent(anyString(), eq(project))).thenReturn(epics);
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        // The batch is this task's OWN ids, in payload order: epicPlan.sourceIndex() is positional, so a
+        // batch collected any other way would attach these epics to a different brief.
+        verify(projectFlowService).buildTaskGraphFromSlices(eq(project), eq(List.of(wishlist)), eq(epics));
+    }
+
+    @Test
+    void aTerminalCompilerTaskThatStrandedNothingIsNotTouched() {
+        // The repair must be restrictive: a brief the normal completion path already resolved must not be
+        // re-decomposed, and no GitHub call should be spent looking for a plan nobody needs.
+        ProjectEntity project = activeProject();
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(UUID.randomUUID());
+        wishlist.setProjectId(project.getId());
+        wishlist.setStatus(WishlistStatus.converted_to_task); // already resolved normally
+
+        TaskEntity compilerTask = terminalCompilerTask(project, wishlist.getId(), objectMapper);
+        terminalCompilerScenario(project, compilerTask, wishlist);
+
+        julesDispatchService.forceUnblockOverflowedSessions();
+
+        verify(gitHubPullRequestService, never()).fetchFileContent(any(), anyString(), anyString());
+        verify(projectFlowService, never()).buildTaskGraphFromSlices(any(), any(), any());
     }
 
     @Test
@@ -1975,7 +2162,7 @@ class JulesDispatchServiceTest {
         task.setId(taskId);
         task.setProject(project);
         task.setRole(role);
-        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+        task.setStatus(TaskStatus.claimed);
 
         JulesSessionEntity session = new JulesSessionEntity();
         session.setId(sessionId);
@@ -2135,7 +2322,7 @@ class JulesDispatchServiceTest {
         task.setId(taskId);
         task.setProject(project);
         task.setRole(role);
-        task.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+        task.setStatus(TaskStatus.claimed);
         task.setCynefinDomain("chaotic");
 
         JulesSessionEntity session = new JulesSessionEntity();

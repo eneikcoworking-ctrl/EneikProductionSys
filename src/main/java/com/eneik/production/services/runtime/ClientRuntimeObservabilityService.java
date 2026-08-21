@@ -7,6 +7,7 @@ import com.eneik.production.repositories.ClientRuntimeObservationRepository;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.services.design.DesignDriftMonitorService;
 import com.eneik.production.services.settings.SystemSettingsService;
+import com.eneik.production.services.toc.LaunchabilityConstraintService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -44,6 +45,8 @@ public class ClientRuntimeObservabilityService {
     private final ProjectRepository projectRepository;
     private final com.eneik.production.repositories.TaskRepository taskRepository;
     private final ProductCapabilityService productCapabilityService;
+    /** Identification of the constraint belongs where its evidence is produced - see plan L-9. */
+    private final LaunchabilityConstraintService launchabilityConstraintService;
 
     @Value("${client-runtime-observability.base-delay-hours:24}")
     private long baseDelayHours;
@@ -83,7 +86,8 @@ public class ClientRuntimeObservabilityService {
                                               DesignDriftMonitorService designDriftMonitorService,
                                               ProjectRepository projectRepository,
                                               com.eneik.production.repositories.TaskRepository taskRepository,
-                                              ProductCapabilityService productCapabilityService) {
+                                              ProductCapabilityService productCapabilityService,
+                                              LaunchabilityConstraintService launchabilityConstraintService) {
         this.observationRepository = observationRepository;
         this.launcherClient = launcherClient;
         this.settingsService = settingsService;
@@ -92,6 +96,7 @@ public class ClientRuntimeObservabilityService {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.productCapabilityService = productCapabilityService;
+        this.launchabilityConstraintService = launchabilityConstraintService;
     }
 
     @Transactional
@@ -240,6 +245,27 @@ public class ClientRuntimeObservabilityService {
         log.info("ClientRuntimeObservabilityService: project {} observed - launchSuccess={} healthStatus={} instrumentFailure={}",
                 project.getId(), observation.isLaunchSuccess(), observation.getHealthStatusCode(),
                 observation.isInstrumentFailure());
+
+        // 2026-08-21 (plan L-9): the launchability constraint is identified HERE, at the moment the
+        // evidence exists, and no longer only inside the philosophical cycle's five gates on a two-day
+        // cron whose one accelerator is switched off. §7's rule is that a constraint is cleared by a fresh
+        // healthy observation, not by a status - so the observation is exactly where it should be asked.
+        //
+        // Measured 2026-08-21: every filing that day happened because a human triggered the cycle by hand,
+        // while the factory sat with an empty queue and the product answering nothing. An idle factory
+        // with an unrefuted product is not "everything is done"; by §1 it means the system stopped looking.
+        //
+        // Re-filing is bounded inside the service (an attempt in flight blocks a second; a finished one
+        // waits out a cooldown), so an hourly cadence cannot turn this into a compile loop.
+        if (!observation.isInstrumentFailure() && !isHealthy(observation)) {
+            try {
+                launchabilityConstraintService.ensureOpen(project, observation.getErrorText());
+            } catch (Exception e) {
+                // Never let identification break the observation that produced it.
+                log.warn("ClientRuntimeObservabilityService: could not ensure the launchability constraint for "
+                        + "project {}: {}", project.getId(), e.getMessage());
+            }
+        }
 
         if (observation.isInstrumentFailure()) {
             // Nothing was learned about the product, so the product's shift test has nothing to re-run on -

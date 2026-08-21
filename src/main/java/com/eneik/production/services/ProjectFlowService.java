@@ -641,26 +641,7 @@ public class ProjectFlowService {
                 // can remove a dispatch, never add one, which is why it cannot make anything worse than it
                 // already is. A brief still `compiling` with no slice yet is untouched and retries exactly
                 // as before.
-                if (alreadyDecomposed(project.getId(), wishlist.getId())) {
-                    log.info("ProjectFlowService: wishlist {} has already produced slices; decomposition is "
-                            + "established, not re-collecting it (F42)", wishlist.getId());
-                    continue;
-                }
-                if (wishlist.getCompileAttempts() >= WISHLIST_COMPILE_ATTEMPT_BUDGET) {
-                    // mu = 0 and the brief is still not decomposed. This is a WITHHOLD, not an abstention:
-                    // it is ESTABLISHED that decomposition failed inside its declared budget. Recorded where
-                    // a human actually looks rather than only in a log - F39 is the lesson that a finding
-                    // nobody can retrieve is not a finding. The status is deliberately left alone so no
-                    // downstream consumer changes behaviour; what stops is the re-dispatch.
-                    log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
-                                    + "without producing a single slice; no further compile will be dispatched "
-                                    + "for it (F42)",
-                            wishlist.getId(), WISHLIST_COMPILE_ATTEMPT_BUDGET);
-                    project.setFactoryReport(appendReportLine(project.getFactoryReport(),
-                            "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
-                                    + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
-                                    + "the brief needs a human reading, not another retry."));
-                    projectRepository.save(project);
+                if (withholdFromCompileDispatch(project, wishlist)) {
                     continue;
                 }
 
@@ -1765,6 +1746,51 @@ public class ProjectFlowService {
      * are both claims that decomposition was ATTEMPTED; a slice carrying this brief's id in
      * originWishlistId is the decomposition itself.
      */
+    /**
+     * F42's two termination guards, in ONE place because there are two admission paths and only one of them
+     * ever had them.
+     *
+     * Measured 2026-08-21 (O-15): the launchability constraint was dispatched to the compiler, its task
+     * reached `done` through AutoMergeService's poka-yoke merge reconciliation without its own completion
+     * handler ever running, the wishlist was left in `compiling`, recovered to `pending`, and dispatched
+     * again - twice in 25 minutes, merging a PR into the CLIENT repository each time. F42 already put a
+     * decreasing measure on exactly this loop after a brief was decomposed 16 times; it just was not on the
+     * path that ran. A rule with one consumer enumerated instead of all of them is ACP-103, and this is its
+     * fifth face.
+     *
+     * Restrictive-only, exactly as F42 argued: this can remove a dispatch and can never add one, so it
+     * cannot make anything worse than it already is.
+     */
+    private boolean withholdFromCompileDispatch(ProjectEntity project, WishlistEntity wishlist) {
+        // The exit condition is the referent, not the clock: compiled(w) <=> a slice exists whose
+        // originWishlistId is w. A slice is the artefact decomposition was supposed to produce, so its
+        // existence IS the effect. A brief still `compiling` with no slice yet is untouched and retries
+        // exactly as before.
+        if (alreadyDecomposed(project.getId(), wishlist.getId())) {
+            log.info("ProjectFlowService: wishlist {} has already produced slices; decomposition is "
+                    + "established, not re-collecting it (F42)", wishlist.getId());
+            return true;
+        }
+        if (wishlist.getCompileAttempts() >= WISHLIST_COMPILE_ATTEMPT_BUDGET) {
+            // mu = 0 and the brief is still not decomposed. This is a WITHHOLD, not an abstention: it is
+            // ESTABLISHED that decomposition failed inside its declared budget. Recorded where a human
+            // actually looks rather than only in a log - F39 is the lesson that a finding nobody can
+            // retrieve is not a finding. The status is deliberately left alone so no downstream consumer
+            // changes behaviour; what stops is the re-dispatch.
+            log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
+                            + "without producing a single slice; no further compile will be dispatched "
+                            + "for it (F42)",
+                    wishlist.getId(), WISHLIST_COMPILE_ATTEMPT_BUDGET);
+            project.setFactoryReport(appendReportLine(project.getFactoryReport(),
+                    "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
+                            + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
+                            + "the brief needs a human reading, not another retry."));
+            projectRepository.save(project);
+            return true;
+        }
+        return false;
+    }
+
     private boolean alreadyDecomposed(UUID projectId, UUID wishlistId) {
         if (wishlistId == null) {
             return false;
@@ -1823,6 +1849,12 @@ public class ProjectFlowService {
         for (WishlistEntity candidate : candidates) {
             if (admitted.size() >= projectBudget) {
                 break;
+            }
+            // O-15 (2026-08-21): this admission path had only the WIP limits and the cooldown below, and a
+            // cooldown bounds how OFTEN a compile runs, never how MANY TIMES. Same guard as the other
+            // admission path, so a brief cannot be re-dispatched forever just because it entered here.
+            if (withholdFromCompileDispatch(project, candidate)) {
+                continue;
             }
             Instant lastDispatched = candidate.getLastCompileDispatchedAt();
             if (lastDispatched != null && lastDispatched.isAfter(compileCooldownFloor)) {
@@ -2703,6 +2735,11 @@ public class ProjectFlowService {
         Instant now = Instant.now();
         for (WishlistEntity w : wishlists) {
             w.setLastCompileDispatchedAt(now);
+            // O-15 (2026-08-21): mu decreases HERE too, for the same reason the timestamp is recorded here -
+            // an attempt was made against this brief either way. Without this the one-shot route left
+            // compileAttempts constant, so F42's budget was unreachable and its javadoc's claim that mu
+            // "strictly decreases on every attempt" was false on exactly the path that looped.
+            w.setCompileAttempts(w.getCompileAttempts() + 1);
         }
         wishlistRepository.saveAll(wishlists);
 

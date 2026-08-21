@@ -151,10 +151,13 @@ Every row was verified by measurement, not by a build's exit code.
 | O-11 | the posterior counts observations, but the object it is a belief about only changes on merge | 7 identical readings of one unchanged artifact between 05h and 11h, each updating Beta | factory |
 | O-13 | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are serialised | 4 containers ~2.3 GB + a 2 GB test JVM against 3.9 GB total; measured 583 MB free before the run was killed | factory |
 | O-12 | three tests are red on `main`, unrelated to this session | `ProjectFlowServiceTest` x2, `DesignSystemFalsificationServiceTest` x1; reproduced with today's changes reverted | factory |
+| O-16 | **the cause under O-15**: a wishlist-compiler task can be driven terminal by `AutoMergeService`'s poka-yoke merge reconciliation before its session is ever seen in `pr_opened`, and `completeWishlistCompilation` - the ONLY place a compiled wishlist becomes `converted_to_task` or honestly `dismissed` - is reached exclusively from `handlePrOpenedWorkflowClaimed`. The compile genuinely happened and its plan is merged on `main`; nothing ever reads it | `completeWishlistCompilation` logged nothing at all across the whole backend log, and the string `pr_opened` appears zero times, while both compiler tasks reached `done` via `Poka-yoke: reconciled merged outcome ... repaired status=true` and their sessions were then closed *because the task is already terminal*. `closeSessionForTerminalTask` already repairs exactly this shape one layer down - it releases a dead persistent-worker carrier's stranded `finalizing` wishlists - and the one-shot compiler task is the same shape with no such handling | factory |
+| O-15 | a compiler task can reach `done` by a route that never runs its own completion handler, so its wishlist is left in `compiling`, recovered to `pending`, and dispatched again - forever, opening and merging a fresh PR into the CLIENT repository on every turn | Measured twice in a row on the same row `875cfb77` (2026-08-21): dispatch 12:17:38 -> `done` 12:24:24 via `AutoMergeService` poka-yoke (`repaired status=true`, PR #152 merged) -> session closed 12:24:46 *because the task is already terminal* -> `[RECOVERY] ... -> pending` 12:25:53 -> re-dispatch 12:34:34 -> `done` 12:41:32 (PR #153) -> `pending` 12:42:56. Period ~17 min. **Why the existing bound does not bind:** F42 already put a decreasing measure on this loop - `mu = WISHLIST_COMPILE_ATTEMPT_BUDGET - compileAttempts` - after one brief was decomposed 16 times. It was added to ONE admission path (`orchestrate`, line 649, together with the `alreadyDecomposed` skip). The iteration-admission path that actually re-dispatched here checks only the WIP limits and the 900 s cooldown, and a cooldown is not a decreasing quantity; the one-shot compiler dispatch writes `lastCompileDispatchedAt` but never increments `compileAttempts`, so on that route mu is constant and the budget can never be reached. ACP-103 again: the rule was introduced with one consumer enumerated instead of all of them | factory |
+| O-14 | the embedding path still routes to Gemini, whose quota is gone, and the D3 duplicate-content lever therefore fails **silent and open** - it reports nothing found, which is indistinguishable from having found nothing | `ML service embed call failed: 502 Bad Gateway: "Gemini embedding call failed: HTTP Error 429: Too Many Requests"`, 3 per orchestration tick, 2026-08-21 12:17Z. The LIVE duplicate detector is unaffected - it is `duplicateContent()`, exact-key based, no embeddings - so this is not a flow stoppage; what is dead is the lever's evidence supply, so D3 can never accumulate the samples its own promotion ladder requires and stays at `observe_only` forever | factory |
 | O-3 | Kaizen has no write-side identity | 347 rows carrying **10** distinct `(category, target_component)` pairs | factory |
 | O-4 | dead Jules sessions polled forever | 52 `404`/hour; 3 of 4 `pr_opened` sessions answer 404 to their own account key | factory |
 | O-5 | `GET /api/projects/{id}/tree` never answers | 90 s, `http=000` | factory |
-| O-6 | store far larger than its contents | 2231 MiB file, ~88 MB live; grew 311 MiB in one day, and O-9 is now a named contributor | factory |
+| O-6 | store far larger than its contents, and it now costs the factory its responsiveness | 2231 MiB file, ~88 MB live; grew 311 MiB in one day, and O-9 is a named contributor. **Re-measured 2026-08-21 14:20Z: 2517 MiB**, on the Windows filesystem via WSL. Consequences measured the same minute, not inferred: startup 354 s (was 53 s that morning), `/actuator/health` 6 s, one `/api/settings` read 10.3 s, host load average 15.9 while the containers together used ~50% CPU - the rest is I/O wait. `data/` holds 6.6 GB in total, ~4 GB of it stale snapshots kept deliberately by the operator | factory |
 | O-7 | a design asset fetched and missed forever | 14/hour, `design/approved/20260818165327-mockup/mockup.html` absent on main | delivery |
 | O-8 | `requiresCodeForDelivery` answers a code question about a delivery concept | 5 phantom deliveries measured; no bearer for the content case yet | delivery |
 
@@ -706,15 +709,98 @@ than by what is interesting.
 
 | # | Work | Why it blocks | State |
 | --- | --- | --- | --- |
-| L-1 | **Route `chatCritical` to the judgment sidecar** | Gemini was switched off (5.11) and its account is out of credit, but `MLPredictionServiceClient.chatCritical` still routes there - measured **39 × `502 Bad Gateway: Gemini`** in 600 log lines. Its two callers are exactly the two rows §11.2 listed as moving off Gemini. With no adjudicator, `JulesDispatchService` cannot decide whether a silent session is looping or waiting, so it defers forever | **in progress** |
-| L-2 | **Bound the deferral** | `closeLoopAndCreateFollowUps` returns without acting on `UNAVAILABLE`, by design, because an unreachable reviewer says nothing about the session. Correct while the reviewer is *transiently* down; an absorbing state once it is *permanently* gone. Same shape as the judgment layer's UNJUDGEABLE/UNAVAILABLE split | not built |
-| L-3 | **Retire the stuck task** | `13977462 UI Slice (00ce800b)`, `claimed` since 2026-08-20T11:08Z - ten hours before this session began. Forced unblock attempted twice without progress. It is the only non-terminal task, so `SYSTEM STALLED` has been firing for 252 minutes with nothing else to do | blocked on L-1/L-2 |
-| L-8 | **A constraint is cleared by a fresh healthy observation, not by a task status** | Measured live: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item finished 01:27Z - and at 02:09Z the product still answered nothing. The row is `converted_to_task`, and `existsByProjectIdAndSource` blocks re-filing **regardless of status**, so it can never be filed again while the product stays broken. §7 predicted this in writing and it went unconnected to what the dashboard was showing. The factory therefore sits idle while its own highest-priority work is open | not built |
-| L-9 | **An idle factory with an unrefuted product is a refutation of §1** | `queuedTasks=0, pendingOrCompilingWishlists=0` is not "everything is done" - it means the work generators have stopped. `falsification_cycle_enabled=false`, the philosophical cycle fires every two days, the Gemini observer is off, and the judgment agent waits on transitions that have not occurred. The factory is idle **by construction**. Operator, 2026-08-21: *"фабрике всегда должно что быть делать"* - and by §1 that is not a preference, it is what permanent falsification means | not built |
+| L-1 | **Route `chatCritical` to the judgment sidecar** | Gemini was switched off (5.11) and its account is out of credit, but `MLPredictionServiceClient.chatCritical` still routes there - measured **39 × `502 Bad Gateway: Gemini`** in 600 log lines. Its two callers are exactly the two rows §11.2 listed as moving off Gemini. With no adjudicator, `JulesDispatchService` cannot decide whether a silent session is looping or waiting, so it defers forever | **done, verified live 2026-08-21 09:19Z** - 502s went 39 -> 0 and the stuck session closed |
+| L-2 | **Bound the deferral** | `closeLoopAndCreateFollowUps` returns without acting on `UNAVAILABLE`, by design, because an unreachable reviewer says nothing about the session. Correct while the reviewer is *transiently* down; an absorbing state once it is *permanently* gone. Same shape as the judgment layer's UNJUDGEABLE/UNAVAILABLE split | **built 2026-08-21, not yet observed live** - see *L-2, as built* below |
+| L-3 | **Retire the stuck task** | `13977462 UI Slice (00ce800b)`, `claimed` since 2026-08-20T11:08Z - ten hours before this session began. Forced unblock attempted twice without progress. It is the only non-terminal task, so `SYSTEM STALLED` has been firing for 252 minutes with nothing else to do | **resolved, verified live 2026-08-21 12:5xZ** - the stuck session closed once L-1 gave the adjudicator a working reviewer, and no manual retirement was needed. Measured on `/flow-spine`: `currentState=DECOMPOSING`, `activeTasks=2`, `openSessions=2`, `compilingWishlist=1`, `bottlenecks=[]`, `blockingReason` empty. The factory is neither stalled nor idle |
+| L-8 | **A constraint is cleared by a fresh healthy observation, not by a task status** | Measured live: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item finished 01:27Z - and at 02:09Z the product still answered nothing. The row is `converted_to_task`, and `existsByProjectIdAndSource` blocks re-filing **regardless of status**, so it can never be filed again while the product stays broken. §7 predicted this in writing and it went unconnected to what the dashboard was showing. The factory therefore sits idle while its own highest-priority work is open | **done, verified live** - the row re-filed itself with `STILL open after 4 finished attempt(s)` |
+| L-9 | **An idle factory with an unrefuted product is a refutation of §1** - *fixed, see below* | `queuedTasks=0, pendingOrCompilingWishlists=0` is not "everything is done" - it means the work generators have stopped. `falsification_cycle_enabled=false`, the philosophical cycle fires every two days, the Gemini observer is off, and the judgment agent waits on transitions that have not occurred. The factory is idle **by construction**. Operator, 2026-08-21: *"фабрике всегда должно что быть делать"* - and by §1 that is not a preference, it is what permanent falsification means | **done, verified live 12:15Z** (§13.7) - filed by the observer 400 ms after the evidence, zero lines from the old door, `compiling` on the next tick |
 | L-4 | **O-1 through Jules** | The constraint is filed, compiled and its derived work item completed at 01:27Z, yet the product still answers nothing. Two observations on two different commits: `launch=true, health=null` | waiting on flow |
-| L-5 | Verify V109's collapse | Needs two observations of the *same* commit; `main` has moved between every pair so far. Not a failure - the case has not occurred | waiting on data |
-| L-6 | §7 policy predicate | Its precondition is met (§13.4, §13.5). Would remove the inversion where the constraint is identified by the process that must subordinate to it | not built |
-| L-7 | Commit the session's work | Every image so far is built `dirty`; nothing is in `main` | needs the operator's word |
+| L-5 | Verify V109's collapse | Needs two observations of the *same* commit; `main` has moved between every pair so far | **done, verified live** - 18 real observations, 6 of them on `74af88ee`, collapsed to 13 draws; posterior mean 0.066667 = Beta(1,14) exactly |
+| L-6 | §7 policy predicate | Its precondition is met (§13.4, §13.5). L-9 removed the *identification* half of §7's inversion; this is the *subordination* half - the rule that decides what may run while the constraint is open | **built 2026-08-21, not yet observed live** - see *L-6, as built* below |
+| L-7 | Commit the session's work | Every image so far is built `dirty`; nothing is in `main` | **done** - `eda4efd` on `main` |
+
+**L-9, as built.** Identification of the constraint moved out of `FalsificationCycleService` into
+`LaunchabilityConstraintService`, and `ClientRuntimeObservabilityService` now calls it the moment it
+writes an unhealthy observation of the product. The philosophical cycle still calls it too, so its
+subordination behaviour is unchanged - it is simply no longer the only door.
+
+The absurdity that was there is worth stating plainly, because it is the general shape of §7's inversion:
+the philosophical review is the process that must **stand aside** while the product is broken, and it was
+also the only process that **noticed** it was broken. If it did not run - and it runs every two days,
+behind five of its own gates, with its one accelerator switched off - nobody noticed, nothing was filed,
+and the factory had no work. Meanwhile the observer starts the product every hour and sees the answer
+with its own eyes; it knew first, it knew best, and it did nothing with what it knew.
+
+Cadence of identification: every two days and only if five unrelated conditions hold -> every hour and
+only that the product did not answer. Re-filing stays bounded inside the service (an attempt in flight
+blocks a second; a finished one waits out a cooldown), so an hourly cadence cannot become a compile loop.
+
+**L-2, as built.** The `UNAVAILABLE` branch of `closeLoopAndCreateFollowUps` now counts, and the count is
+`blindCycleCount` - not a new field. That counter already meant exactly this: consecutive cycles in which
+this session could not be SEEN. Its only previous cause was an activity log too large to read; a classifier
+that cannot answer is the same epistemic state reached by another route, and one source of truth is better
+than two. Below `jules.forced-unblock-blind-cycle-threshold` (5) the charitable reading is unchanged and
+nothing closes. At the threshold the deferral ends and control falls through to the circuit breaker that
+already exists - no second closure mechanism - and the closure reason says in words that the session was
+closed on the reviewer's absence and NOT on evidence about the session, so a later reader is not misled into
+thinking its writing was read and found wanting. **Rollback:** delete the increment and the threshold check;
+the branch returns to deferring unconditionally.
+
+**L-6, as built.** Nothing new was constructed. `TocSubordinationLever` has existed since `0e6b525`,
+`ContinuousOrchestrationService` has called it on every policy check since 2026-08-20, and the five-stage
+ladder (`LeverStage`, `LeverPromotionService.evaluatePromotions`) already promotes a rule on its own
+accumulated agreement rate. The one thing missing was that this lever could never arrive anywhere: it
+returned the incumbent's answer unconditionally, so no amount of evidence could ever change a decision. A
+promotion nothing acts on is not a promotion. From `soft_gate` upward the rule now decides, and in one
+direction only - `incumbentAllowed && candidateAllowed` can turn an allow into a deny and can never turn a
+deny into an allow, because subordinate means non-constraints idle, never that slack may do something the
+flow state forbids. `OBSERVE` and `CHECK_LAUNCHABILITY` stay outside the restriction for the reason §7 gives:
+only a fresh healthy observation clears the constraint, so suppressing the act that ends it would make it
+permanent.
+
+Two things were corrected while doing it rather than left as debt. The read of the observation history was
+unbounded, which is acceptable at one shadow sample per tick and is not acceptable on a per-action policy
+check - the bounded repository method already existed and is now used. And the method was still called
+`observe` while it had started to decide; it is `subordinate`. A method named "observe" that decides is a
+designator with a bearer it does not have, which is ACP-102 exactly, and the name has to move when the
+behaviour does.
+
+The application point did **not** move into `OperationalPolicyService.authorize`, though that is the more
+general predicate. `authorize` is also consulted by read-only status endpoints inside a readOnly
+transaction, and the lever writes an observation for every pair it sees. Invariant #10's "one point of
+application" means the place a decision is acted on, not every place the question is asked.
+
+**Rollback for both:** `git revert` the commit; neither touches a schema, and the ladder's stored stage is
+read-only to them.
+
+**O-15 and O-16, as built.** Two defects, one shape, found by watching the constraint L-9 had just made
+the factory file for itself.
+
+*O-15 - the bound that was not on every path.* F42 already put a decreasing measure on the compile loop
+after one brief was decomposed 16 times: `mu = WISHLIST_COMPILE_ATTEMPT_BUDGET - compileAttempts`. It sat on
+one admission path. The other checks the WIP limits and a 900 s cooldown, and a cooldown bounds how OFTEN,
+never how MANY TIMES; the one-shot compiler dispatch recorded its timestamp but never incremented
+`compileAttempts`, so on that route mu was constant and the budget unreachable. The guard is now one method
+that both admissions call, and mu decreases on every dispatch route. Nothing new was invented - F42's own
+WITHHOLD, with its `factoryReport` line for a human, is what fires.
+
+*O-16 - the cause.* `completeWishlistCompilation` is the only place a compiled brief becomes
+`converted_to_task` or honestly `dismissed`, and it is reachable only from the `pr_opened` handler. When
+`AutoMergeService`'s poka-yoke drives the compiler task terminal from the merged PR first, the session is
+closed for being terminal and that handler never runs. `closeSessionForTerminalTask` already repairs this
+exact shape one layer down - it releases a dead persistent-worker carrier's stranded briefs - so the
+one-shot compiler task now gets the same treatment: read the plan the compiler already merged to `main` and
+build the graph from it. `ingestPlanFromContent` was deliberately not reused despite doing almost this: it
+collects every pending/compiling brief in the project, and `epicPlan.sourceIndex()` is positional against
+the batch the prompt was built from, so it would attach one brief's epics to another.
+
+`AutoMergeService` was not touched. §12.1 records why, and nothing here needs it to change.
+
+**Falsifiable, both:** the constraint must receive at most three compiler dispatches, then
+`exhausted its decomposition budget (3 attempts)` with the same line in the project's `factoryReport`; and
+a compiler task that goes terminal early must log `O-16 recovery: ... rebuilt its N brief(s)` instead of the
+brief returning to `pending`. A fourth dispatch refutes O-15. A brief back in `pending` with no recovery
+line refutes O-16.
 
 **Not on this list and still open:** O-3..O-8 as recorded in §6, plus three signals read off
 `/api/system-status` at 02:11Z that nobody has looked into - `CI_STATUS=failing`,
@@ -955,6 +1041,49 @@ invariant_status_changes: 7 rows, 7 with previous_status IS NULL, 0 in the queue
 The queue is empty because every row is a baseline, and the cycle correctly invoked nothing. It will stay
 silent until an invariant actually stops holding - at the measured rate, 2.9 times a day.
 ---
+
+### 13.7 The constraint identified itself, 2026-08-21 12:15Z - L-9
+
+**The prediction, written before the deploy and falsifiable both ways.** After deploying, the
+`product_not_launchable` row must appear **by itself**, within an hour of an observation whose product
+did not answer, logged by `LaunchabilityConstraintService`. If a second line appeared from
+`FalsificationCycleService`, the old door was still open. If none appeared at all, the observer was not
+calling the service and L-9 was not built.
+
+**Observed, on the first observation after startup, with no human in the loop:**
+
+```
+12:15:39.503  ClientRuntimeObservabilityService : project 41af381d observed -
+              launchSuccess=true healthStatus=null instrumentFailure=false
+12:15:39.903  LaunchabilityConstraintService    : the launchability constraint is STILL open after
+              6 finished attempt(s); re-filing it rather than leaving the factory idle
+12:15:39.913  LaunchabilityConstraintService    : created product_not_launchable wishlist
+FalsificationCycleService constraint lines in the whole log: 0
+row status 84 seconds later: compiling
+```
+
+**Verdict: holds, both halves.** 400 ms from evidence to constraint, by the process that produced the
+evidence; the philosophical cycle - which fires every two days behind five of its own gates - was not
+involved and is no longer the only thing that can notice. The row was already `compiling` on the next
+compiler tick, so the identification is connected to the work generator and not merely written down.
+
+**Rollback:** delete the `ensureOpen` call in `ClientRuntimeObservabilityService`; the philosophical
+cycle's own call is untouched and restores exactly the previous behaviour.
+
+**What the constraint now carries as evidence** - the same run, quoted from the row's own `errorText`:
+
+```
+service 'app' (container 'runtime-observe-app-1') state=running:
+  <no output on this container's stdout/stderr; published=[18080->8080/tcp, 18080->8080/tcp];
+   entrypoint=["java","-jar","app.jar"]; cmd=null; restarts=0; status=running exit=0>
+health check -> localhost:18080/health : Connection refused
+```
+
+A JVM that is running, was given 397 s, published its port, never restarted, and wrote **not one line**
+to stdout while nothing listened on 8080. That refutes port-mismatch, crash-restart and never-started
+alike; the defect is inside the product's own image. It is O-1, it is product work, and it goes to Jules
+through the ordinary path - never edited here.
+
 
 ## 14. Corrections - my claims that measurement refuted
 

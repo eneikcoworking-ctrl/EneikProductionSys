@@ -1645,14 +1645,40 @@ public class JulesDispatchService {
         LoopClassification classification = classifyBeforeClosing(task, latestQuestion, responseHistory, closeReason);
 
         if (classification.verdict() == LoopVerdict.UNAVAILABLE) {
-            // Do not touch trust counters and do not close: we have no actual information about this
-            // session, so no decision is warranted. The next maintenance tick (~every
-            // jules.detect-stuck-rate-ms) re-attempts classification for real; this session is not
-            // "let off the hook" forever, it is simply not judged on a technical failure that isn't its own.
-            log.warn("Deep-read classifier unavailable for session {} task {} ({}); deferring - NOT closing "
-                            + "and NOT treating as stuck. Will retry on the next maintenance cycle.",
-                    session.getExternalSessionId(), task.getId(), closeReason);
-            return false;
+            // Do not judge the session on a technical failure that isn't its own: an unreachable reviewer
+            // says nothing about what the session did, so no decision is warranted on this tick.
+            //
+            // 2026-08-21 (plan L-2): but the deferral is now BOUNDED. Unbounded, it is correct only while
+            // the reviewer is *transiently* down; once the reviewer is permanently gone, "retry on the next
+            // maintenance cycle" is an absorbing state, and the session defers forever - measured live this
+            // session, when the adjudicator's provider was switched off and one task sat `claimed` for
+            // 24 hours with SYSTEM_STALLED firing the whole time.
+            //
+            // The bound reuses blindCycleCount rather than inventing a second counter, because it already
+            // means exactly this: consecutive cycles in which this session could not be SEEN. Its previous
+            // sole cause was an activity log too large to read; a classifier that cannot answer is the same
+            // epistemic state reached by a different route, and one source of truth is better than two.
+            // Past the same threshold that governs the oversized-log case, we stop deferring and fall
+            // through to the ordinary circuit breaker below - which is the existing closure mechanism, not
+            // a new one, and which records WHY it fired in the session's closure reason.
+            session.setBlindCycleCount(session.getBlindCycleCount() + 1);
+            julesSessionRepository.save(session);
+            if (session.getBlindCycleCount() < forcedUnblockBlindCycleThreshold) {
+                log.warn("Deep-read classifier unavailable for session {} task {} ({}); deferring - NOT closing "
+                                + "and NOT treating as stuck (blind cycle {}/{}). Will retry on the next "
+                                + "maintenance cycle.",
+                        session.getExternalSessionId(), task.getId(), closeReason,
+                        session.getBlindCycleCount(), forcedUnblockBlindCycleThreshold);
+                return false;
+            }
+            log.warn("Deep-read classifier has been unavailable for session {} task {} for {} consecutive "
+                            + "cycles ({}); the deferral is bounded, so this falls through to the circuit "
+                            + "breaker rather than deferring forever. The session is being closed on the "
+                            + "reviewer's absence, not on evidence about the session itself.",
+                    session.getExternalSessionId(), task.getId(), session.getBlindCycleCount(), closeReason);
+            closeReason = closeReason + " (classifier unavailable for " + session.getBlindCycleCount()
+                    + " consecutive cycles - closed on the reviewer's absence, NOT on evidence about this "
+                    + "session; verify against GitHub/DB state before treating the diagnosis as true)";
         }
 
         if (classification.verdict() == LoopVerdict.PROGRESSING) {
@@ -4580,8 +4606,90 @@ public class JulesDispatchService {
                                 "carrier task became terminal (" + task.getStatus() + ")");
                     });
         }
+        // O-16 (2026-08-21): the same shape as the persistent-worker repair above, one layer up. A one-shot
+        // wishlist-compiler task can be driven terminal by AutoMergeService's poka-yoke merge
+        // reconciliation before its session is ever seen in `pr_opened` - and completeWishlistCompilation,
+        // the ONLY place a compiled brief becomes converted_to_task or honestly dismissed, hangs off that
+        // one state. Measured live: two compiler tasks reached `done` that way, the string `pr_opened`
+        // never appeared in the backend log at all, the brief was recovered to `pending`, and it was
+        // re-dispatched every ~17 minutes, merging a fresh PR into the CLIENT repository each turn (O-15).
+        //
+        // The compile really happened and its plan is already merged on main. Reading it from there is not
+        // a new mechanism - it is the same buildTaskGraphFromSlices the normal completion path calls.
+        if (projectFlowService.isWishlistCompilerTask(task)) {
+            recoverCompilationFromMergedPlan(task);
+        }
         log.info("Session {} closed locally because task {} is already terminal ({})",
                 session.getExternalSessionId(), task.getId(), task.getStatus());
+    }
+
+    /**
+     * Builds the task graph for a compiler task that went terminal without its completion handler running,
+     * reading the plan the compiler already merged to `main`.
+     *
+     * The batch is passed as THIS task's own wishlist ids, in the order its payload recorded them, because
+     * {@code epicPlan.sourceIndex()} is positional against the batch the compiler prompt was built from.
+     * {@code ingestPlanFromContent} is deliberately not reused despite doing almost this: it collects every
+     * pending/compiling wishlist in the project, which would silently shift those positions and attach a
+     * brief's epics to a different brief.
+     *
+     * Never throws into the caller: this is a repair, and a repair that breaks the closure it is attached
+     * to leaves the system worse than the defect it fixes.
+     */
+    private void recoverCompilationFromMergedPlan(TaskEntity compilerTask) {
+        try {
+            List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
+            if (wishlistIds.isEmpty() || compilerTask.getProject() == null) {
+                return;
+            }
+            List<WishlistEntity> batch = new java.util.ArrayList<>();
+            for (UUID id : wishlistIds) {
+                WishlistEntity w = wishlistRepository.findById(id).orElse(null);
+                if (w == null) {
+                    // A position cannot be reconstructed, so the positional contract is broken and no
+                    // recovery is better than a misaligned one.
+                    log.warn("Compiler task {} went terminal with an unresolved batch, but wishlist {} no "
+                            + "longer exists; not recovering from the merged plan (positions would shift)",
+                            compilerTask.getId(), id);
+                    return;
+                }
+                batch.add(w);
+            }
+            boolean anyStranded = batch.stream().anyMatch(w -> w.getStatus() == WishlistStatus.compiling
+                    || w.getStatus() == WishlistStatus.finalizing);
+            if (!anyStranded) {
+                return; // the normal completion path resolved them; nothing was left behind
+            }
+            String planPath = projectFlowService.compilerPlanPath(compilerTask);
+            if (planPath == null || planPath.isBlank()) {
+                log.warn("Compiler task {} went terminal with {} stranded brief(s) and carries no plan path; "
+                        + "cannot recover", compilerTask.getId(), batch.size());
+                return;
+            }
+            Optional<String> content =
+                    gitHubPullRequestService.fetchFileContent(compilerTask.getProject(), "main", planPath);
+            if (content.isEmpty()) {
+                log.warn("Compiler task {} went terminal with {} stranded brief(s); its plan {} is not on "
+                        + "main, so there is nothing to read - the brief stays as it is rather than being "
+                        + "guessed at", compilerTask.getId(), batch.size(), planPath);
+                return;
+            }
+            var epicPlans = projectFlowService.parseCompilerPlanContent(content.get(), compilerTask.getProject());
+            if (epicPlans.isEmpty()) {
+                log.warn("Compiler task {}: its merged plan {} parsed to no epics; the compile produced "
+                        + "nothing usable and the brief is left for the decomposition budget to withhold "
+                        + "(O-15) rather than being retried blindly", compilerTask.getId(), planPath);
+                return;
+            }
+            boolean built = projectFlowService.buildTaskGraphFromSlices(
+                    compilerTask.getProject(), batch, epicPlans);
+            log.warn("O-16 recovery: compiler task {} was terminal before its completion handler ran; "
+                            + "rebuilt its {} brief(s) from the plan already merged at {} (built anything={})",
+                    compilerTask.getId(), batch.size(), planPath, built);
+        } catch (Exception e) {
+            log.warn("O-16 recovery failed for compiler task {}; the session closure itself is unaffected: {}",
+                    compilerTask.getId(), e.getMessage());
+        }
     }
 
     @Transactional
@@ -4660,7 +4768,9 @@ public class JulesDispatchService {
 
         for (JulesSessionEntity session : candidates) {
             // A "revising" session (sent back after a review rejection) used to only qualify here via
-            // blindCycleCount, which never increments unless its activity log is oversized - a session
+            // blindCycleCount, which until 2026-08-21 never incremented unless its activity log was
+            // oversized (it now also counts cycles where the deep-read classifier could not answer at all,
+            // plan L-2 - the same "could not be seen" state by another route) - a session
             // that simply went quiet after a rejection, with a normal-sized log, sat untouched for the
             // full stuck-close-threshold-minutes (120min) before anything happened. Nudging it as soon as
             // it's stale (same effective trust-window gate detectStuckSessions uses) closes that
