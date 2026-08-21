@@ -1,50 +1,416 @@
-# Working plan - the product must serve
+# Working plan - the factory keeps a running product under permanent falsification
 
-Compressed 2026-08-21 from 1184 lines. Everything removed is in
-`LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md`, whole and unedited - the derivations, the per-session verdict
-records, the Gemini removal, the TOC/Six Sigma material. Nothing was deleted. This file holds only what is
-needed to act.
+Operative rules first, then state. The per-session verdict records, the Gemini removal and the TOC/Six
+Sigma derivations are in `LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md`, whole and unedited.
 
----
-
-## 1. Goal
-
-**The delivered product answers a request.** Not "tasks are done", not "reviews merged", not "quality gates
-passed" - the product, launched from its own repository, returns 2xx.
-
-Everything below exists to serve that sentence. An item that does not move it belongs in the archive.
-
-**Measured 2026-08-21:** the factory has closed **148 tasks**, merged **144 reviews** and passed **62
-quality gates** for a product that has **never once answered**. Every internal number is green and the only
-external one is red. That gap is the subject of this plan.
+**2026-08-21, correction to the 2026-08-21 compression.** Sections 1, 2, 3, 7, 8, 9 and 10 were moved to
+the archive as "derivations". They are not derivations, they are the rules this work is judged by, and
+removing them caused real harm the same day: within an hour I proposed gating `done` on the product
+answering - which merges two axes §2 forbids, and which would deadlock any project started from zero,
+since a greenfield product cannot answer until late in its life. §10 already contained the correct
+analysis, to the minute and to the filename, and I re-derived it from scratch after archiving it. The
+same thing had already happened with O-1, recorded 2026-08-19 at position one and re-derived 2026-08-21.
+**These sections do not get compressed again.**
 
 ---
 
-## 2. The one acceptance rule
+> Section numbers follow the archive so every internal cross-reference (§2, §3, §7, §8, §10) still
+> resolves. The gaps at 4, 5 and 6 are sections whose content was superseded and now lives at §11-§14.
 
-> **A task may not reach `done`, and a PR may not merge, until the product has been observed answering on
-> the stack it actually ships with.**
+---
 
-This is not a new mechanism. `ClientRuntimeObservabilityService` already launches the product through its
-own `docker-compose.yml` and probes its health port; on 2026-08-21 it captured the exact failing SQL
-statement. What is missing is authority: its verdict files a wishlist and nothing else. Acceptance runs past
-it.
+## 1. Goal, and the epistemology under it
 
-**Why this rule and not the sixteen defects below.** They are about the factory not jamming. Every one could
-be fixed and the product would still not start, because none of them touches the reason. The factory's
-definition of done does not include running what it ships. That is one property, not a list.
+**The factory keeps a running product under permanent falsification.**
 
-### What it requires, in order
+"Finish the product" is not a goal because it is not a state. Product readiness is fitness to a market;
+fitness is never proven, only not yet refuted. A completeness metric measures how much of the
+**currently known** scope is delivered, and the next falsification enlarges that scope. A ratio falling
+after falsification is the system working.
 
-| # | Change | Why it is this one |
+This is forced, not chosen. A theory earns its keep by forbidding something observable; a claim that
+forbids nothing is empty. Falsification against a product that does not run is quantification over an
+empty domain - trivially satisfied, informative about nothing. The codebase already says so:
+
+> *"a philosophical audit reasoning about a product that can't even start would be reasoning about
+> nothing real. TOC: launchability is the constraint; everything else (including philosophical review)
+> subordinates to it until it's cleared. Kano Must-Be by construction - not a taste judgment, a
+> precondition."* - `WishlistSource.product_not_launchable`, 2026-08-11
+
+The constraint therefore has an **epistemic** ground, not a throughput one.
+
+### 1.1 The goal stated so it can only be met or not met
+
+**One row exists in `client_runtime_observations` for the ACTIVE project with `launch_success = true`
+and a non-null `health_status_code` returned by the product's own health endpoint, written by the
+factory's own launcher, with no human step in the launch.**
+
+Not "the product is ready". Not "the scope is complete". Not "the blocker is fixed". One observation,
+made by the factory, of the product answering for itself. It is either in the table or it is not.
+
+It belongs to all three value levels at once (§8): the first unit of product value, proof that delivery
+reached reality rather than `main`, and factory value because the observation was produced without me.
+
+**It is not terminal.** The observation is a not-yet-refuted claim, refutable by the next one.
+Falsification cycles continue after it, forever. Reaching it opens the loop; it closes nothing.
+
+---
+
+## 2. Three axes that must never be merged
+
+| Axis | Question | Category | Owner |
+| --- | --- | --- | --- |
+| **Scope delivery** | how much of currently known intent is built | quantity over a known set | `ClientDeliverableReadinessService` |
+| **Operability** | does it start and stay up | binary state about **now** | `ProductLaunchabilityService`, `ClientRuntimeObservabilityService` |
+| **Fitness** | does it match the market | hypothesis under permanent test | philosophical falsification, forever |
+
+Scope read as fitness closes the flow - **the error that broke this system twice in earlier sessions**.
+Verified in code: `acceptProject` is reachable only from `ProjectController`, a human action;
+`DELIVERED` names a state and stops nothing; `CHECK_LAUNCHABILITY` is gated on `activeProject` alone;
+`DesignShopCycleEntity` explicitly anticipates readiness *"dropping and rising again after a
+falsification round adds new features"*.
+
+---
+
+## 3. Three contexts - the levels I work at
+
+Operator directive, encoded in `KaizenProposal.KaizenCategory` whose comment records it verbatim:
+*"clearly marked as a product improvement, not mixed into the factory list."*
+
+| Level | What it is | Who may act | What I do here |
+| --- | --- | --- | --- |
+| **FACTORY** | EneikProductionSys' own parameters and source | me, review-only for source | write code, measure, fix its defects |
+| **DELIVERY** | wishlist -> compiler -> task -> Jules -> PR -> merge -> launch | me, in factory code only | fix how the process reports, decides and sequences |
+| **PRODUCT** | the client repository's content and runtime | Jules, through the ordinary path | **never touch directly** - the 2026-08-07..09 contamination came from exactly that bypass |
+
+Every item below names all three: where the change lives, where the defect belongs, what it is about.
+They are frequently different.
+
+### 3.1 Scope rule - only the active project
+
+There are 22 projects. Exactly one is `active`: `41af381d test-forty-ninth`. The rest are `accepted`
+(a human ended the engagement) or `frozen` (not ticked, so nothing recovers or advances them - correct,
+not a defect).
+
+**Rows from a non-active project are not evidence about the factory.** Every query that reads
+project-scoped data filters to `status = active`, or states in the same breath why a dead project is
+being read on purpose. A measurement whose scope is not stated is not a measurement.
+
+---
+
+## 7. TOC as a procedure, not a catalogue
+
+Theory of Constraints is five steps. The factory performs one and a fragment of another: it *identifies*
+(`product_not_launchable` is filed) and one consumer *subordinates* (philosophical review defers).
+Exploit, elevate and repeat are absent.
+
+**The category error.** A found constraint is filed as an item in the ordinary queue - the same pool as
+coverage gaps and client requests - and waits its turn. `WishlistEntity` has no priority field;
+`leanValue` is the only value-bearing column and nothing orders selection by it. But a constraint is not
+a high-priority item: it is what the throughput of the whole is limited by, and everything else is slack.
+
+**The proposal.** Subordination is a condition in the policy, not an `if` inside one service.
+`OperationalPolicyService.authorize(action, project)` is already the single place that decides what may
+run and already gates on states (`FROZEN`, `ACCEPTED`, `GITHUB_RATE_LIMITED`). A constraint belongs
+there, in the same shape: *while a constraint is open for a project, only actions that serve it are
+authorised.* That supplies exploit, subordinate, elevate and repeat at once, with one predicate rather
+than sixteen bespoke rules.
+
+Two constraints on the design, both established from data:
+
+- **A constraint is cleared by a fresh healthy observation, not by a status.** `existsByProjectIdAndSource`
+  blocks re-filing regardless of status, so a dismissed constraint would permanently prevent re-filing
+  while the product stays broken. Only an observation speaks about now.
+- **Subordination cannot gate dispatch alone.** A constraint can stall in `compiling` and never reach
+  dispatch, so a dispatch-only gate would subordinate nothing.
+
+And the rule that must not be lost: a constraint lives at one of the three levels of §3, and a product
+constraint must not stop factory kaizen, nor the reverse. The predicate carries the level or it silences
+the wrong work.
+
+**Not built.** The stated precondition - "subordinating everything to a constraint the system cannot yet
+observe reliably would subordinate it to a guess" - **is now met**: O-9 and O-10 are fixed and verified
+live (§13.4), and the constraint exists as a row carrying the product's own failure (§13.5). What blocks
+it is no longer epistemic, only unbuilt.
+
+One flow defect this work exposed, recorded here rather than fixed in passing: the constraint is filed
+**only** inside `executePhilosophicalCycleForProject`, behind five gates that all belong to philosophical
+review, on a cron that fires every two days - and its one accelerator, the Gemini observer, is switched
+off (5.11). So the identification of the constraint is a side effect of the very process that is supposed
+to subordinate to it. Measured: 95 wishlist rows for the active project and, until 2026-08-21, zero
+`product_not_launchable` - while the product had never once answered a health check. That inversion is
+what §7's policy predicate would remove, and it is the reason to build it.
+
+---
+
+## 8. The three values, as mathematics on existing machinery
+
+Value is not one quantity and it is not code. There are three, one per context (§3), and mixing any two
+is a category error. Each has a different bearer, a different declared denominator, and a different way
+of being refuted.
+
+| | Product value | Delivery value | Factory value |
+| --- | --- | --- | --- |
+| **Bearer** | the running instance | the engagement with the client | the factory itself |
+| **Counts** | capabilities a user can exercise | brief items answered by a real artifact | requirements carried to product value with no operator |
+| **Denominator** | capabilities the product claims | items in the client's brief | requirements attempted |
+| **Refuted by** | an observation where the capability fails | a brief item with no artifact answering it | any human intervention |
+| **Code vs content** | **the distinction vanishes** - a page with real copy works, one with placeholder text does not | **the distinction matters** - a copywriter's markdown is delivery even if it never becomes behaviour | irrelevant - what is counted is who moved it |
+
+### 8.1 What is already load-bearing
+
+| Built | What it gives the value question |
+| --- | --- |
+| `OperationalTruthService` (651 lines) | the read-only value layer the math document specifies, with the invariant catalogue already computed in observe/warn status |
+| Evidence Algebra 0-5 | a declared strength order: merged PR = 5, runtime check = 3, agent prose = 1, generated filler = 0 (negative) |
+| `ClientDeliverableReadinessService.Readiness` | `ratio`, `completeFeatures/totalFeatures`, with denominator exclusions enumerated per invariant 8 |
+| `BetaPosterior` | exact conjugate Beta-Bernoulli with real Beta quantiles |
+| `RuntimeHealthShiftDetector` | exact two-sided binomial test against a baseline |
+| `LeverStage` + `LeverPromotionService` + 1185 observations | the promotion policy, implemented: `OBSERVE_ONLY -> WARN_ONLY -> SOFT_GATE -> HARD_GATE -> AUTO_REMEDIATE` |
+| `WishlistSource.coverage_gap` | the audit asking whether the decomposition covers the brief |
+| `GeminiContextService` | exact cosine similarity with an Otsu-style dynamic floor - retrieval is local linear algebra |
+
+The math document already states the principle written up as `ACP-102`: *"limits of substitutivity:
+`task done` cannot be substituted for `value delivered`"*.
+
+### 8.2 Product value
+
+Today's measure is the degenerate case: one Beta(α, β) over a single Bernoulli - did the stack boot and
+answer `/health`. That is |C| = 1 where C is the set of capabilities the product claims. The general form
+keeps one posterior per capability:
+
+    V_p = |{ c ∈ C : LCB_0.95(c) ≥ θ }|,   θ declared
+
+- **Popper.** LCB < 1 for every finite sample, so no capability is ever proven - only not yet refuted. A
+  single failing observation lowers LCB_c and the capability leaves the count. The measure can fall.
+- **Invariant 8.** |C| is declared from the client's brief with exclusions enumerated, not from the
+  factory's own decomposition.
+- **Invariant 12.** The witness is the launcher - external to the agent that wrote the code, which is
+  what invariant 12 demands and what its own incident was about.
+- **Lower bound, not mean.** The mean rewards ignorance; the lower bound makes confidence something
+  evidence has to earn. Same reason 5.6 keys the cadence there.
+
+Today, read from the database 2026-08-21: |C| = 1, 57 attempts of which 10 observed the product, all unhealthy - Beta(1,11), mean 0.0833, LCB ≈ 0.0023. **V_p = 0.**
+
+### 8.3 Delivery value
+
+Both halves exist; neither is a new measure:
+
+    V_d      = ratio × coverage
+    ratio    = mergedDeliverables / totalDeliverables            (built, invariant-8 clean)
+    coverage = brief items with ≥ 1 deliverable / brief items    (audited, never expressed as a number)
+
+`ratio` answers *did we merge what we planned*. The `coverage_gap` audit answers *did we plan what was
+asked* - it runs and produces findings, but not a fraction. Until it does, `ratio = 1.0` reads as
+delivery when it only ever meant "we finished what we set ourselves", which is self-attestation
+(invariant 12) at the level of scope. The one defect inside `ratio` is O-8.
+
+### 8.4 Factory value
+
+    V_f = |requirements that reached V_p with zero operator steps| / |requirements attempted|
+
+The machinery exists - `LeverPromotionService` already tracks Beta-Bernoulli evidence per lever. What
+does not exist is the numerator's precondition: **nothing records that a human acted.** Restarts,
+reopened wishlists, edited settings leave no row attributable to the requirement they touched. Until that
+exists V_f cannot be computed, and every autonomy claim about this factory is unfalsifiable.
+
+---
+
+## 9. Patterns established this session
+
+### 9.1 ACP-102 - Criterion Is Not The Concept
+
+`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, Frege, sense and reference. Written into
+`docs/philosopher-patterns/00_COMMON_ANALYTIC_PROGRAMMING_PATTERNS.md`.
+
+A concept the system reasons with - *delivered*, *done*, *healthy* - is operationalised by a concrete
+test. The test and the concept agree **only over the class of bearers the test was calibrated on**.
+Outside it they come apart, and because the test keeps returning a clean boolean, nothing announces that
+it is now answering a different question. A criterion may be substituted for its concept only where the
+class of bearers is declared and the bearer belongs to it.
+
+Measured instances, all the same shape:
+- `requiresCodeForDelivery` answers a code question about a delivery concept (O-8)
+- an unanswered launch call recorded as a failed product (5.5)
+- a depleted API quota recorded as an unreadable answer (5.10)
+- "the launch call returned success" standing for "the product launched"
+
+The criterion was right for 94 of 99 cases, which is exactly why it survived: a criterion that is nearly
+always co-extensional is the hardest kind to catch.
+
+### 9.2 Content is a set of refutable claims, not an artifact that exists
+
+"Is there text in this field" is the content analogue of "does the PR contain code" - satisfied by lorem
+ipsum, by generated filler, and by a title naming a feature the product does not have. The Evidence
+Algebra already grades that at **0, negative evidence**. No check enforces it.
+
+Content is a set of **claims about the product**, each checkable against the product:
+
+- **Reference** (Frege, TAG-08): every substantive noun phrase in a heading, `<title>` or meta
+  description must have a bearer - a declared capability, a real route, a real entity. A `<title>` naming
+  a capability the product does not expose is a name with perfect form and no bearer, structurally the
+  same defect as the MinIO tag.
+- **Felicity** (Austin, the anchor of ACP-101): a call to action is a performative. "Start free trial"
+  commits the product to having a trial; its felicity condition is that the act it names can be performed.
+- **Actuality** (Barcan Marcus, TAG-01): content must quantify over actual objects. Placeholder copy
+  quantifies over an empty domain - the same `∀x ∈ ∅` structure as falsifying a product that does not
+  start.
+
+**Relevance is not a property, it is a posterior.** A claim true when written can be false later. Content
+gets exactly the treatment §8.2 gives capabilities: one Beta per claim, refuted when the page and the
+product disagree. A content claim **is** a capability in the observable sense - no second measure, no
+second vocabulary.
+
+No fourteenth role. Content is a delivery **artifact kind**, which is what ACP-102 says a role declares:
+TAG-11 authors it, TAG-12's contract supplies the referents, TAG-06 verifies via the existing
+`VerificationEvidenceGate`, the launcher refutes.
+
+**What must not be built:** keyword density, readability indices, SEO checklists. None is a claim about
+the product and none can be refuted by observing it. They measure the text against itself - invariant 12
+with extra arithmetic.
+
+### 9.3 ACP-103 - Reclassification Without Census
+
+`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, the same anchor as ACP-102 and its exact dual.
+
+ACP-102 is about a criterion silently answering a different question than the concept it stands for.
+ACP-103 is what happens **after you fix one**. When the system learns that a record means something
+other than it thought, the record's meaning changes for **every** reader at once. Fixing the reader that
+prompted the discovery leaves the others reading the old meaning - and they now read it wrongly, silently,
+with the same clean booleans as before. A reclassification is not complete until its consumers are
+enumerated and each one is asked which accounting it belongs to.
+
+The measured instance is item 5.5 of this plan, my own change.
+
+`V104` established that a row whose launcher never answered is a fact about the **instrument**, not about
+the product. That is right, and it fixed the posterior. `lastRealObservation` was written to carry the
+new classification, and its javadoc states the reason: *"The cadence clock must run from when the product
+was last really looked at, not from when the instrument last failed to look."* That sentence is the
+defect. The clock does not answer *when was the product last looked at*; it answers *when did we last
+spend an attempt*, because what it governs is the rate of attempts.
+
+The census, run 2026-08-21 across every reader of the classification:
+
+| Site | The question it actually answers | Belongs to |
 | --- | --- | --- |
-| 1 | **Let the factory fix O-1 itself.** The constraint carrying the exact error is already compiling. Bound the patience, not the task: **three cycles.** | If the factory cannot close a one-line error with the diagnosis handed to it, that is the answer about the factory, and it matters more than any fix. |
-| 2 | **The runtime observation gates `done`.** `healthStatus` gets the right to block the transition. | The single structural change that makes 2026-08-21 impossible. One lever instead of sixteen patches. |
-| 3 | **The product's tests run against PostgreSQL** (Testcontainers, or the compose `db` service). | The same rule from the product's side: an H2-only statement then cannot pass a test. |
+| `ClientRuntimeObservabilityService:111` cadence clock | when did we last **attempt** | the instrument - **was reading product rows** |
+| `:156` the write | what is this row a fact about | the classification itself |
+| `:228` shift-detector input | how has the **product's** health moved | the product |
+| `:290` frontend summary | how is the **product** | the product |
+| `:330` `posteriorFrom` | belief about the **product** | the product |
+| `TocSubordinationLever:123` | is the **product** constraint open | the product |
+
+Five of six ask about the product and were correct. Exactly one asks about the instrument, and it was
+the one left reading the product's rows. The consequence is not a rounding error: a rate limiter whose
+clock advances only on successful measurements stops limiting precisely when measurement stops working.
+
+    attempts per unit time  =  1 / max(floor, base x LCB)   while the instrument answers
+                            =  the tick rate                while it does not
+
+Measured on this project: **1/hour to 28/hour**, a 28x amplification arriving exactly when the thing
+being called was least able to serve it. Positive feedback, and invisible - the rows were written,
+correctly marked, correctly excluded from the posterior, and therefore absent from every number a human
+or an agent would have looked at.
+
+**The general rule this adds to the corpus.** A record carries a declared subject (invariant 8: state the
+denominator). ACP-103 says the declaration is only half of it - each **consumer** of the record must
+declare which accounting it is doing, and a consumer whose question is about a different bearer than the
+records it reads is broken no matter how correct the records are. When a subject is reclassified, the
+census is part of the change, not follow-up work.
+
+**The census must cover readers of the RECORD, not readers of the FIELD.** This was learned by getting
+it wrong the same evening. The census above enumerated every reader of `isInstrumentFailure` and
+`lastRealObservation` - and `FalsificationCycleService.latestErrorText` is neither: it reads
+`recentObservations().get(0)` and never touches the flag, so the grep that produced the table did not see
+it. It took the newest row of any kind while its caller's other input, `lastObservationHealthy`, is
+computed from the newest real one, and its own javadoc says it exists "precisely to stop a claim and its
+witness from drifting apart". Measured live at 23:25Z: the filed constraint cited
+`runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch` - this factory's own
+sidecar - as the evidence for what to fix in the CLIENT's repository, where no such component exists.
+A census keyed on the classification's field is a census of the wrong population.
+
+**What must not be concluded:** that instrument rows should go back into the posterior. They must not -
+V104 is right about the product's accounting. The instrument needs its own denominator (O-10), which is
+the second thing the census makes visible: nothing at all counts launcher availability, so a component
+that failed 46 consecutive times produced no finding, no lever observation and no invariant transition.
+An unmeasured bearer cannot be refuted, and by §1 that makes it unteachable.
+---
+
+## 10. The assembly has no owner
+
+### 10.1 What happened, to the minute
+
+`2026-08-16 05:58:50` - task *"feat(db): Add schema for search analytics events"* creates `pom.xml` and
+`application.properties` with the H2 driver. Correct for its brief: a schema needs a database, in-memory
+H2 is the standard scaffold.
+
+`2026-08-16 06:10:38` - twelve minutes later, task *"Configure automated backup jobs and alerting
+mechanism"* creates `docker-compose.yml` declaring `postgres:15-alpine` and passing
+`SPRING_DATASOURCE_URL`. Correct for its brief: backups cannot be demonstrated against an in-memory
+database.
+
+Neither wrote a wrong line. The second overrode the *URL* and not the *driver*, and never added the
+PostgreSQL dependency - because its subject was backups. **The defect lives between two correctly
+executed slices.**
+
+### 10.2 The factory can raise any stack, and must not choose one
+
+The launcher runs `docker compose up` on the product's own file: already stack-agnostic, and that is the
+right design. Which datastore is right is a **product** question belonging to the specification - for one
+brief H2 is the better answer, for another PostgreSQL is. "Always PostgreSQL" would be a patch. What
+holds universally:
+
+> The runtime contract names every service the product runs against. `docker-compose.yml`, the build
+> manifest and the application configuration are **consequences** of that declaration, not independent
+> decisions.
+
+The artifact exists: `docs/architecture/adr-002-runtime-contract.md`, produced at ARCHITECTURE (order 20,
+`BARCAN-TAG-01`). It fixes both code boundaries and the install/run/test commands. It names **no
+datastore at all**. The place is right, the stage is right, the role is right; half the content is
+missing. `TAG-01` is `ACTUALIST-OBJECT` - a datastore no artifact declares is not an actual object.
+
+### 10.3 Why the integration role never runs
+
+`BARCAN-TAG-00` (CODE-GUARDIAN, INTEGRATION, order 70) has **0 tasks on this project and 4 across the
+factory's whole history of 1375**. Every other role worked.
+
+`TechnicalLeadCompiler.targetRoleForWishlist` takes the role from the wishlist's tag, its DoD, or keyword
+inference. Wishlists come from client intent, Gemini, coverage gaps and falsification. **Integration is
+nobody's requirement** - it is a property of the assembly, and a requirement-pulled decomposition cannot
+produce it. Not a bug: a construction.
+
+Two confirmations that the role was also mis-defined: `product_not_launchable` named no role and fell to
+keyword inference, sending the MinIO blocker to OPERATIONS (a symbol fixed, not an assembly); and TAG-00's
+file scope was `<Feature>IntegrationService.java` - the compiler believed integration means writing a
+class. Both corrected in 5.9.
+
+### 10.4 Three absences at three stages
+
+| Stage | Whose work | What is absent |
+| --- | --- | --- |
+| ARCHITECTURE (20), TAG-01 | decide and declare the datastores in the runtime contract | the contract covers code only |
+| OPERATIONS (50), TAG-05 | build compose **from** the contract | built it from nothing |
+| INTEGRATION (70), TAG-00 | check the artifacts agree with the contract | never dispatched; now addressed and rescoped (5.9) |
+
+The runtime observation is the last line, and it is the only one that fired - at the most expensive point.
 
 ---
 
-## 3. O-1 - the reason the product does not serve
+## 11. State, measured 2026-08-21
+
+The goal is §1.1 and is not restated here - restating it is how it drifts.
+
+**Measured:** the factory has closed **148 tasks**, merged **144 reviews** and passed **62 quality gates**
+for a product with **no row in `client_runtime_observations` carrying a non-null `health_status_code`**.
+Every internal number is green and the only external one is red.
+
+By §2 this is an **operability** fact and says nothing about scope delivery or fitness. It does not mean
+the delivered scope is wrong, and it must not be allowed to gate scope delivery - that merge is the error
+§2 names as having broken this system twice.
+
+---
+
+## 12. O-1 - the reason the product does not serve
 
 Recorded since 2026-08-19 as the first open defect, and re-derived from scratch on 2026-08-21 without
 anyone having acted on it in between. **The plan already had the answer at position one.**
@@ -118,11 +484,11 @@ bound. Alongside it the factory shipped a frontend pagination feature and three 
 
 ---
 
-## 4. Open defects
+## 13. Open defects
 
 Ranked by whether they block §2. Full evidence for each is in the archive.
 
-### Blocking the acceptance rule
+### Blocking §1.1 - the product answering for itself
 
 | id | defect |
 | --- | --- |
@@ -131,7 +497,7 @@ Ranked by whether they block §2. Full evidence for each is in the archive.
 | **O-13** | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are mutually exclusive |
 | **O-6** | store far larger than its contents: 2517 MiB against ~88 MB live, on the Windows filesystem via WSL. One `/api/settings` read takes 10.3 s, startup 354 s. Cleared 2026-08-21 on the operator's instruction: all four snapshots and the trace log deleted, 4.5 GB of Docker build cache pruned, host free space 8.7 GB -> 14 GB. **There is now no rollback snapshot at all**, so compacting the live store needs a fresh copy taken first, the compaction verified, and only then the copy removed. |
 
-### Not blocking it
+### Not blocking §1.1
 
 | id | defect |
 | --- | --- |
@@ -159,7 +525,7 @@ refute them.
 
 ---
 
-## 5. Shipped this session, with verification
+## 14. Shipped this session, with verification
 
 | item | verification |
 | --- | --- |
@@ -178,7 +544,7 @@ claimed twice for a jar that did not contain the change (§6).
 
 ---
 
-## 6. Corrections - claims that measurement refuted
+## 15. Corrections - claims that measurement refuted
 
 Kept in full because the pattern is the point: every one is a claim made from reading a name, a flag or a
 memory instead of the thing itself.
@@ -197,7 +563,7 @@ memory instead of the thing itself.
 
 ---
 
-## 7. Forbidden by construction
+## 16. Forbidden by construction
 
 - No number may be treated as "the product is ready."
 - No number may close the flow. The only terminal is `acceptProject`, and it is a human's.
@@ -212,6 +578,6 @@ memory instead of the thing itself.
 
 ---
 
-## 8. Held, on command
+## 17. Held, on command
 
 Move the factory to a server. Details in the archive.
