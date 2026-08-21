@@ -386,6 +386,19 @@ public class JulesDispatchService {
     @Value("${jules.forced-unblock-blind-cycle-threshold:5}")
     private int forcedUnblockBlindCycleThreshold;
 
+    // O-17 (2026-08-21): charity is not infinite. The Davidson veto below refuses to close a session whose
+    // own writing shows real reasoning - correct, and deliberately generous - but it also restored the
+    // forced-unblock budget every time it fired, and that budget is the ONLY thing that closes a stale
+    // session and frees the WIP slot. Measured live: task 47aa70cb held IMPLEMENTING for 373 minutes
+    // against a 90-minute SLA without producing a PR, its counter running 1,2,1,2 because a PROGRESSING
+    // verdict reset it - a verdict about conversation that our own unblock message had just stirred up.
+    // Flow Core then correctly refuses to dispatch anything new while the slot is held, so one session
+    // blocked the whole project. Session age is monotone and this ceiling is fixed, so the veto now
+    // terminates. Default 6h = 3x the Davidson close window: past that, a session that still cannot show
+    // an artefact has had its chance.
+    @Value("${jules.davidson-veto-ceiling-minutes:360}")
+    private int davidsonVetoCeilingMinutes;
+
     @Value("${jules.forced-unblock-max-attempts:2}")
     private int forcedUnblockMaxAttempts;
 
@@ -1682,6 +1695,26 @@ public class JulesDispatchService {
         }
 
         if (classification.verdict() == LoopVerdict.PROGRESSING) {
+            // O-17: past the declared ceiling the veto stops restoring the budget. It still does not close
+            // anything itself - it simply stops holding the circuit breaker open, which is the same shape
+            // as the bounded classifier deferral above: the bound falls through to the EXISTING closure
+            // mechanism rather than inventing a second one.
+            long sessionAgeMinutes = session.getCreatedAt() == null
+                    ? 0L
+                    : Duration.between(session.getCreatedAt(), Instant.now()).toMinutes();
+            if (sessionAgeMinutes >= davidsonVetoCeilingMinutes) {
+                session.setBlindCycleCount(0);
+                julesSessionRepository.save(session);
+                log.warn("Davidson deep-read veto for session {} task {} is past its ceiling: the session has "
+                                + "been alive {} minutes (ceiling {}) and its writing still shows reasoning "
+                                + "rather than an artefact. NOT restoring the forced-unblock budget, so the "
+                                + "circuit breaker can fire. This closes on the bound, not on evidence that "
+                                + "the session failed - verify against GitHub/DB state before treating the "
+                                + "diagnosis as true.",
+                        session.getExternalSessionId(), task.getId(), sessionAgeMinutes,
+                        davidsonVetoCeilingMinutes);
+                return false;
+            }
             markSessionProgress(session);
             session.setForcedUnblockAttempts(0);
             session.setBlindCycleCount(0);

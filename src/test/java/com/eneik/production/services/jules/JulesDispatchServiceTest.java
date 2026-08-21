@@ -120,6 +120,7 @@ class JulesDispatchServiceTest {
         ReflectionTestUtils.setField(julesDispatchService, "loopCloseSimilarThreshold", 3);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockBlindCycleThreshold", 5);
         ReflectionTestUtils.setField(julesDispatchService, "forcedUnblockMaxAttempts", 2);
+        ReflectionTestUtils.setField(julesDispatchService, "davidsonVetoCeilingMinutes", 360);
         ReflectionTestUtils.setField(julesDispatchService, "activitiesPageSize", 20);
         ReflectionTestUtils.setField(julesDispatchService, "maxActivityPagesPerCycle", 20);
     }
@@ -1453,6 +1454,77 @@ class JulesDispatchServiceTest {
         assertTrue(session.getClosureReason().contains("classifier unavailable for"),
                 "closure reason must record that this closed on the reviewer's absence, not on evidence "
                         + "about the session; was: " + session.getClosureReason());
+    }
+
+    // --- O-17 (2026-08-21): the Davidson veto is generous, but it is not infinite ------------------------
+    //
+    // Driven straight at closeLoopAndCreateFollowUps, which is where the reset actually lives: the code
+    // reaches it only AFTER the forced-unblock budget is spent and it has decided to close. The classifier
+    // then says PROGRESSING, the budget is restored, and nothing closes - which is exactly how the live
+    // counter ran 1,2,1,2 for 373 minutes. An earlier version of these tests drove the whole
+    // forceUnblockOverflowedSessions path instead and never reached this branch at all; the paired
+    // below-the-ceiling test is what exposed that, which is the reason both directions are pinned.
+
+    private Object[] davidsonProgressingScenario(int sessionAgeMinutes) {
+        UUID taskId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(taskId);
+        session.setExternalSessionId("sessions/davidson-veto");
+        session.setStatus("revising");
+        session.setForcedUnblockAttempts(2); // budget already spent - this is why it is closing
+        session.setBlindCycleCount(0);
+        session.setCreatedAt(Instant.now().minus(sessionAgeMinutes, ChronoUnit.MINUTES));
+        session.setLastProgressAt(Instant.now().minus(300, ChronoUnit.MINUTES));
+
+        TaskEntity task = new TaskEntity();
+        task.setId(taskId);
+        task.setProject(project);
+        task.setStatus(TaskStatus.claimed);
+
+        when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(i -> i.getArgument(0));
+        // The session's own writing reads as real ongoing reasoning - the case the veto exists for.
+        when(mlPredictionServiceClient.chatCritical(anyString(), anyString()))
+                .thenReturn("VERDICT: PROGRESSING\nBLOCKER: n/a\nFIX: n/a");
+        return new Object[]{session, task};
+    }
+
+    @Test
+    void pastItsCeilingTheDavidsonVetoStopsRestoringTheForcedUnblockBudget() {
+        // Measured live 2026-08-21: task 47aa70cb held IMPLEMENTING for 373 minutes against a 90-minute SLA
+        // without ever producing a PR, because this branch handed its budget back every time. That budget is
+        // the ONLY thing that closes a stale session and frees the WIP slot, and Flow Core correctly refuses
+        // to dispatch anything new while the slot is held - so one session blocked the whole project.
+        Object[] scenario = davidsonProgressingScenario(400); // > jules.davidson-veto-ceiling-minutes
+        JulesSessionEntity session = (JulesSessionEntity) scenario[0];
+
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                julesDispatchService, "closeLoopAndCreateFollowUps",
+                session, scenario[1], "why are you quiet?", List.of(), "stuck_session_timeout");
+
+        assertEquals(2, session.getForcedUnblockAttempts(),
+                "past the ceiling the budget must NOT be restored, or mu never decreases and the circuit "
+                        + "breaker can never fire");
+    }
+
+    @Test
+    void belowItsCeilingTheDavidsonVetoStillRestoresTheBudget() {
+        // The charity is deliberate and must survive. The ceiling bounds the veto; it does not remove it,
+        // and a later edit that deletes the charity instead of bounding it must fail here.
+        Object[] scenario = davidsonProgressingScenario(30); // well under the ceiling
+        JulesSessionEntity session = (JulesSessionEntity) scenario[0];
+
+        org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                julesDispatchService, "closeLoopAndCreateFollowUps",
+                session, scenario[1], "why are you quiet?", List.of(), "stuck_session_timeout");
+
+        assertEquals(0, session.getForcedUnblockAttempts(),
+                "below the ceiling the veto must still reset the budget - removing the charity was never "
+                        + "the intent");
     }
 
     // --- O-16 (2026-08-21): a terminal compiler task must not strand the brief it compiled ---------------
