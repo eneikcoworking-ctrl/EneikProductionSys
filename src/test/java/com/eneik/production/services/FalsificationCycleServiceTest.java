@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.FalsificationRunEntity;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.repositories.FalsificationRunRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -879,8 +880,9 @@ class FalsificationCycleServiceTest {
         when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
                 new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
                         3, 0.1, 0.5, false, Instant.now(), List.of(), null));
-        when(wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable))
-                .thenReturn(false);
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()),
+                eq(WishlistSource.product_not_launchable), any()))
+                .thenReturn(List.of());
 
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
@@ -905,6 +907,194 @@ class FalsificationCycleServiceTest {
         assertEquals(WishlistSource.product_not_launchable, captor.getValue().getSource());
     }
 
+    /**
+     * ACP-103 in a consumer the census missed (plan section 9.3 and correction in section 14).
+     *
+     * The constraint is filed with the observed cause attached so a worker does not have to re-derive it.
+     * That cause must be about the PRODUCT. Measured live 2026-08-20 23:25Z: the filed row cited
+     * "runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch" - a fact about
+     * this factory's own sidecar - as the evidence for what to fix in the CLIENT's repository, where no
+     * such component exists. The row was deleted rather than dismissed, because
+     * existsByProjectIdAndSource is status-agnostic and a dismissed constraint can never be re-filed.
+     */
+    /**
+     * L-8, and the operator's own statement of it: "фабрике всегда должно что быть делать".
+     *
+     * Measured live 2026-08-21: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item
+     * finished 01:27Z, and at 02:09Z the product still answered nothing. The old guard was
+     * existsByProjectIdAndSource, which is status-agnostic, so the constraint could never be filed again -
+     * and the factory sat with zero queued work while its highest-priority work was open. §7 had written
+     * down that a constraint is cleared by a fresh healthy observation, not by a status.
+     */
+    @Test
+    void aFinishedAttemptThatDidNotFixTheProductLetsTheConstraintBeFiledAgain() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var clientRuntimeObservabilityService = mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class);
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("still-broken-project");
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+        when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
+                new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
+                        3, 0.1, 0.5, false, Instant.now(), List.of(), null));
+
+        // A previous attempt exists, it is finished, and it is older than the cooldown - so it demonstrably
+        // did not fix the product, whose newest real observation is still unhealthy.
+        var spent = new WishlistEntity();
+        spent.setStatus(WishlistStatus.converted_to_task);
+        spent.setCreatedAt(Instant.now().minusSeconds(7200));
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()),
+                eq(WishlistSource.product_not_launchable), any()))
+                .thenReturn(List.of(spent));
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                clientRuntimeObservabilityService,
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "constraintRefileCooldownMinutes", 45L);
+
+        service.executePhilosophicalCycleForProject(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository, times(1)).save(captor.capture());
+        assertEquals(WishlistSource.product_not_launchable, captor.getValue().getSource());
+    }
+
+    /** The same situation inside the cooldown must NOT re-file - working the constraint is not a compile loop. */
+    @Test
+    void aRecentlyFiledAttemptIsLeftAloneUntilTheCooldownHasPassed() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var clientRuntimeObservabilityService = mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class);
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("still-broken-project");
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+        when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
+                new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
+                        3, 0.1, 0.5, false, Instant.now(), List.of(), null));
+
+        var fresh = new WishlistEntity();
+        fresh.setStatus(WishlistStatus.converted_to_task);
+        fresh.setCreatedAt(Instant.now().minusSeconds(120));
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()),
+                eq(WishlistSource.product_not_launchable), any()))
+                .thenReturn(List.of(fresh));
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                clientRuntimeObservabilityService,
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "constraintRefileCooldownMinutes", 45L);
+
+        service.executePhilosophicalCycleForProject(project);
+
+        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
+    }
+
+    @Test
+    void theFiledConstraintCitesTheProductsOwnFailureNotTheInstrumentsY() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("philosophical_falsification_enabled")).thenReturn(true);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        var clientRuntimeObservabilityService = mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class);
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(1, 1, 1, 1, 1.0, true));
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("not-launchable-project");
+        when(roles.findAll()).thenReturn(List.of(role("BARCAN-TAG-01")));
+
+        // Newest first, exactly as the repository returns them: two unanswered launcher calls sitting on
+        // top of the last row that actually reached the product.
+        var instrumentRow = new com.eneik.production.models.persistence.ClientRuntimeObservationEntity();
+        instrumentRow.setObservedAt(Instant.now());
+        instrumentRow.setInstrumentFailure(true);
+        instrumentRow.setLaunchSuccess(false);
+        instrumentRow.setErrorText("runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch");
+        var olderInstrumentRow = new com.eneik.production.models.persistence.ClientRuntimeObservationEntity();
+        olderInstrumentRow.setObservedAt(Instant.now().minusSeconds(60));
+        olderInstrumentRow.setInstrumentFailure(true);
+        olderInstrumentRow.setErrorText("runtime-launcher unreachable: read timed out");
+        var productRow = new com.eneik.production.models.persistence.ClientRuntimeObservationEntity();
+        productRow.setObservedAt(Instant.now().minusSeconds(43200));
+        productRow.setInstrumentFailure(false);
+        productRow.setLaunchSuccess(true);
+        productRow.setErrorText("Connection refused on localhost:18080/health | assembly: every service reports running");
+
+        when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
+                new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
+                        3, 0.1, 0.5, false, Instant.now(),
+                        List.of(instrumentRow, olderInstrumentRow, productRow), null));
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()),
+                eq(WishlistSource.product_not_launchable), any()))
+                .thenReturn(List.of());
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),
+                wishlistRepository, mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readinessService,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                clientRuntimeObservabilityService,
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class));
+
+        service.executePhilosophicalCycleForProject(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository, times(1)).save(captor.capture());
+        String text = captor.getValue().getContent();
+        assertTrue(text.contains("Connection refused on localhost:18080/health"),
+                "the constraint must cite the product's own failure; it said: " + text);
+        assertFalse(text.contains("runtime-launcher unreachable"),
+                "a fact about this factory's sidecar is not evidence about the client's product; it said: " + text);
+    }
+
     @Test
     void philosophicalCycleSubordinationIsDedupGuardedAgainstAnAlreadyExistingWishlist() {
         RoleRepository roles = mock(RoleRepository.class);
@@ -924,8 +1114,14 @@ class FalsificationCycleServiceTest {
         when(clientRuntimeObservabilityService.summarize(project.getId())).thenReturn(
                 new com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary(
                         3, 0.1, 0.5, false, Instant.now(), List.of(), null));
-        when(wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable))
-                .thenReturn(true);
+        // L-8: the guard is "an attempt is already in flight", not "a row has ever existed". A pending row
+        // is work in flight, so no second constraint is filed beside it.
+        var inFlight = new WishlistEntity();
+        inFlight.setStatus(WishlistStatus.pending);
+        inFlight.setCreatedAt(Instant.now());
+        when(wishlistRepository.findByProjectIdAndSourceAndStatusIn(eq(project.getId()),
+                eq(WishlistSource.product_not_launchable), any()))
+                .thenReturn(List.of(inFlight));
 
         FalsificationCycleService service = new FalsificationCycleService(
                 mock(ProjectRepository.class), roles, mock(RoleCapabilityLoader.class),

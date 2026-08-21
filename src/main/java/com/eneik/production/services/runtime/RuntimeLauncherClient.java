@@ -42,15 +42,18 @@ public class RuntimeLauncherClient {
      * reports as failed is fully observed and stays a real negative observation.
      */
     public record LaunchResult(boolean success, long durationMs, String error, Integer externalPort,
-                               boolean observed) {
+                               boolean observed, String commitSha) {
         /** An answered call - whatever the answer was. */
-        static LaunchResult answered(boolean success, long durationMs, String error, Integer externalPort) {
-            return new LaunchResult(success, durationMs, error, externalPort, true);
+        static LaunchResult answered(boolean success, long durationMs, String error, Integer externalPort,
+                                     String commitSha) {
+            return new LaunchResult(success, durationMs, error, externalPort, true, commitSha);
         }
 
         /** No answer: nothing was learned about the product. Never a negative observation. */
         static LaunchResult unobserved(String error) {
-            return new LaunchResult(false, 0, error, null, false);
+            // No commit either: an unanswered call did not reach an artifact, so there is nothing for it
+            // to be an observation OF. Null here is the honest value, not a missing one.
+            return new LaunchResult(false, 0, error, null, false, null);
         }
     }
 
@@ -73,7 +76,10 @@ public class RuntimeLauncherClient {
                     Boolean.TRUE.equals(response.get("success")),
                     ((Number) response.getOrDefault("duration_ms", 0)).longValue(),
                     (String) response.get("error"),
-                    externalPort == null ? null : ((Number) externalPort).intValue());
+                    externalPort == null ? null : ((Number) externalPort).intValue(),
+                    // Absent from an older launcher build, so never assumed present - a null marker means
+                    // "which artifact is unknown", which is exactly what an un-upgraded sidecar can tell us.
+                    (String) response.get("commit_sha"));
         } catch (RestClientException e) {
             return LaunchResult.unobserved("runtime-launcher unreachable: " + e.getMessage());
         }

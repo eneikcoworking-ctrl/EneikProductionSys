@@ -401,6 +401,12 @@ export type RuntimeObservationDto = {
   healthStatusCode?: number;
   healthLatencyMs?: number;
   errorText?: string;
+  // 2026-08-21: what this row is a fact ABOUT. V104 taught the backend to tell an unanswered launcher
+  // call from a real product failure on 2026-08-19, and this type never carried the distinction - so
+  // every instrument outage reached the operator's own view looking like the product going down.
+  instrumentFailure?: boolean;
+  // Which artifact was observed; absent when the launcher never reached one.
+  commitSha?: string | null;
 };
 
 export type RuntimeHealthSummary = {
@@ -409,7 +415,10 @@ export type RuntimeHealthSummary = {
   credibleIntervalWidth: number;
   lastObservationHealthy: boolean | null;
   lastObservedAt: string | null;
-  recentObservations: RuntimeObservationDto[];
+  // Every ATTEMPT, of both kinds - not every observation. Filter on instrumentFailure before reading
+  // any of these as a fact about the product (see the backend's productObservations()/
+  // lastProductObservation() accessors, which are the same rule made unforgettable).
+  recentAttempts: RuntimeObservationDto[];
   // 2026-08-11 (bounded live-preview window): null unless a launched instance is still within its idle
   // window (client-runtime-observability.live-preview-idle-minutes, default 15) - null most of the time
   // by design, appears only right after a real successful launch, never a stale/dead link.

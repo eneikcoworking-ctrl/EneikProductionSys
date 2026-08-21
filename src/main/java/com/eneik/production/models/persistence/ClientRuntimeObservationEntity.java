@@ -60,6 +60,18 @@ public class ClientRuntimeObservationEntity {
     public boolean isLaunchSuccess() { return launchSuccess; }
     public void setLaunchSuccess(boolean launchSuccess) { this.launchSuccess = launchSuccess; }
 
+    /**
+     * The commit this row is an observation OF - null when unknown, never inferred.
+     *
+     * The posterior collapses consecutive rows carrying the same value into one draw (V109): a belief
+     * about an artifact may only be updated when the artifact changes.
+     */
+    @Column(name = "commit_sha", length = 64)
+    private String commitSha;
+
+    public String getCommitSha() { return commitSha; }
+    public void setCommitSha(String commitSha) { this.commitSha = commitSha; }
+
     public boolean isInstrumentFailure() { return instrumentFailure; }
     public void setInstrumentFailure(boolean instrumentFailure) { this.instrumentFailure = instrumentFailure; }
 

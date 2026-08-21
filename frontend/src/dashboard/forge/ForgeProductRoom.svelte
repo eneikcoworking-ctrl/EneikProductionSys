@@ -44,7 +44,12 @@
   $: sigmaTone = !sixSigma ? 'healthy' : sixSigma.sigmaLevel >= 4 ? 'healthy' : sixSigma.sigmaLevel >= 2 ? 'attention' : 'critical';
 
   // Chronological (oldest-first) so the pulse line reads left-to-right like a real strip chart.
-  $: chronological = runtimeHealth ? [...runtimeHealth.recentObservations].reverse() : [];
+  // Only rows that actually observed the product: a call that never reached the launcher says nothing
+  // about the product, and plotting it as a dip drew this factory's own sidecar outage as the client's
+  // product going down - 46 consecutive such rows on 2026-08-20 read as 46 product failures here.
+  $: chronological = runtimeHealth
+    ? [...runtimeHealth.recentAttempts].filter((o) => !o.instrumentFailure).reverse()
+    : [];
   $: pulsePoints = chronological
     .map((o, i) => {
       const x = chronological.length > 1 ? (i / (chronological.length - 1)) * 260 + 10 : 140;

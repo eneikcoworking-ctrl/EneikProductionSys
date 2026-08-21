@@ -194,6 +194,14 @@ public class SystemSettingsService {
         definitions.put("gemini_fallback_models", plain("gemini_fallback_models", "GEMINI_FALLBACK_MODELS", "gemini.fallback-models"));
         definitions.put("gemini_pro_model", plain("gemini_pro_model", "GEMINI_PRO_MODEL", "gemini.pro-model"));
         definitions.put("gemini_pro_fallback_models", plain("gemini_pro_fallback_models", "GEMINI_PRO_FALLBACK_MODELS", "gemini.pro-fallback-models"));
+        // 2026-08-21: factory-level judgment (FactoryJudgmentService). ONE flag and no credential at all -
+        // the judgment-sidecar runs the operator's already-paid Claude subscription, so there is nothing
+        // to supply. The first build of this registered judgment_agent_api_key alongside it, following the
+        // provider pattern; that was the wrong pattern, because it meant a metered API account and a
+        // balance, which is what the plan had promised NOT to require. Removed rather than left unused: a
+        // registered setting nobody can fill is a question the operator is asked forever.
+        definitions.put("judgment_agent_enabled", flag("judgment_agent_enabled",
+                "JUDGMENT_AGENT_ENABLED", "judgment-agent.enabled"));
         definitions.put("google_search_grounding_enabled", flag("google_search_grounding_enabled", "GOOGLE_SEARCH_GROUNDING_ENABLED", "google-search-grounding.enabled"));
         definitions.put("url_context_enabled", flag("url_context_enabled", "URL_CONTEXT_ENABLED", "url-context.enabled"));
         definitions.put("design_service_enabled", flag("design_service_enabled", "DESIGN_SERVICE_ENABLED", "design-service.enabled"));

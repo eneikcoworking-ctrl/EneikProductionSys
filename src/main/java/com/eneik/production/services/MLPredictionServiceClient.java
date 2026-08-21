@@ -27,11 +27,16 @@ public class MLPredictionServiceClient {
     private final String mlServiceUrl;
     private final SystemSettingsService settingsService;
     private final com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker;
+    /** Optional so every existing unit test that builds this class by hand keeps compiling and passing. */
+    private final com.eneik.production.services.judgment.JudgmentAgentClient judgmentAgentClient;
 
     public MLPredictionServiceClient(RestTemplateBuilder restTemplateBuilder,
                                      @Value("${ml.service.url}") String mlServiceUrl,
                                      SystemSettingsService settingsService,
-                                     com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker) {
+                                     com.eneik.production.services.monitor.AiHealthTracker aiHealthTracker,
+                                     @org.springframework.beans.factory.annotation.Autowired(required = false)
+                                     com.eneik.production.services.judgment.JudgmentAgentClient judgmentAgentClient) {
+        this.judgmentAgentClient = judgmentAgentClient;
         this.restTemplate = restTemplateBuilder
                 .setConnectTimeout(Duration.ofSeconds(2))
                 .setReadTimeout(Duration.ofSeconds(60))
@@ -172,7 +177,32 @@ public class MLPredictionServiceClient {
      * single choke point (PredictionService.py's gemini_candidate_models), not here, so it holds even for
      * any other caller of the ML service's chat endpoint, present or future.
      */
+    /**
+     * The factory's one point for "read this and judge it" - and since 2026-08-21 it runs on the
+     * operator's Claude subscription, not on Gemini.
+     *
+     * Both callers are the two rows §11.2 of the plan listed as moving off Gemini: OpsAuditorService's
+     * evidence-only auditor, and JulesDispatchService's classifier for a session that has gone quiet.
+     * The Gemini observer was switched off on 2026-08-20 and its account is out of credit; this method
+     * kept routing there and answering 502, measured 39 times in 600 log lines, which left the loop
+     * classifier permanently UNAVAILABLE and the factory stalled behind one claimed task for hours.
+     * Switching a provider off without connecting its replacement is not a replacement.
+     *
+     * Routed here rather than at the two call sites on purpose: this is the single place the question is
+     * asked, and Charter invariant 10 is one point of application. Neither caller changes.
+     */
     public String chatCritical(String prompt, String systemInstruction) {
+        if (judgmentAgentClient != null) {
+            String answer = judgmentAgentClient.judgeAsText(prompt, systemInstruction);
+            if (answer != null && !answer.isBlank()) {
+                aiHealthTracker.recordSuccess("chat");
+                return answer;
+            }
+            aiHealthTracker.recordFailure("chat", "judgment sidecar returned no answer");
+            // The same sentinel this class has always returned when the reviewer is unreachable, so
+            // isUsableAiAnswer keeps classifying it as "no information" rather than as a verdict.
+            return "The assistant is temporarily unavailable. Judgment sidecar returned no answer.";
+        }
         return chatWithTier(prompt, systemInstruction, "pro", "");
     }
 

@@ -1,0 +1,26 @@
+-- 2026-08-21: the posterior is a belief about an object, and N readings of one unchanged object are one
+-- draw, not N.
+--
+-- BetaPosterior is a conjugate Beta-Bernoulli model, and de Finetti's theorem is what licenses it: the
+-- sequence it folds over must be exchangeable - draws from a fixed unknown theta. Between merges that
+-- assumption is false in a specific, identifiable way. The outcome of a launch is determined by the
+-- artifact on main, which is constant until something merges, so within such a run X(n+1) = X(n) with
+-- probability 1. The model was reading seven identical readings of one commit as seven independent
+-- observations and concentrating its belief on the strength of repetition alone.
+--
+-- Measured on test-forty-ninth: between 05h and 11h on 2026-08-20, seven hourly observations of an
+-- unchanged artifact, each one updating Beta and each one pushing the credible interval's lower bound
+-- further down - which, since the cadence is keyed on that bound, made the next check sooner, which
+-- produced another identical reading. The same defect shape as O-9 in a different quantity.
+--
+-- This column records WHICH artifact a row is an observation of. It is the commit the launcher actually
+-- cloned, read with `git rev-parse HEAD` off the clone itself - the real bearer, not a proxy inferred
+-- from the factory's own task records (ACP-102: a criterion may stand for a concept only over the class
+-- of bearers it was calibrated on, and "the last task that reached done" is not the artifact).
+--
+-- Deliberately nullable and deliberately NOT backfilled. Null means "which artifact is unknown", which is
+-- the truth for every row written before this and for any row from a launcher build that predates it.
+-- Unknown artifacts are never collapsed: claiming two rows observed the same commit when nothing recorded
+-- which commit they observed would be the very substitution this column exists to prevent.
+ALTER TABLE client_runtime_observations
+    ADD COLUMN commit_sha VARCHAR(64);

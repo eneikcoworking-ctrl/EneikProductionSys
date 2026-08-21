@@ -230,13 +230,23 @@ public class DeliveryRealityProducerService {
         }
         try {
             var health = runtimeObservabilityService.summarize(project.getId());
-            if (health == null || health.recentObservations() == null || health.recentObservations().isEmpty()) {
+            if (health == null) {
                 return;
             }
             if (!Boolean.FALSE.equals(health.lastObservationHealthy())) {
                 return; // healthy, or no verdict yet - nothing to report
             }
-            var latest = health.recentObservations().get(0);
+            // 2026-08-21 (ACP-103): this used to read the newest row of ANY kind. The node it writes
+            // asserts "expected launchable, actually failed" about the PRODUCT, so an unanswered launcher
+            // call entering here put a fact about this factory's own sidecar into the coherence graph as
+            // a product failure. lastObservationHealthy was already computed from the last real
+            // observation; the cause must come from the same row, or the claim and its witness describe
+            // different things.
+            var latestOpt = health.lastProductObservation();
+            if (latestOpt.isEmpty()) {
+                return; // nothing has observed the product yet - there is no cause to cite
+            }
+            var latest = latestOpt.get();
             String cause = latest.getErrorText() == null ? "" : latest.getErrorText().trim();
 
             List<OperationalRealityFindingEntity> existing =

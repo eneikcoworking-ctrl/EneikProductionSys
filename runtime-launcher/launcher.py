@@ -64,6 +64,14 @@ class LaunchResponse(BaseModel):
     # The host port the backend/dashboard should actually reach the launched product on, after the
     # port-collision remap below. None only when the compose file declared no published ports at all.
     external_port: Optional[int] = None
+    # 2026-08-21: WHICH artifact this observation is about. The backend's posterior is a belief about a
+    # specific object, and between merges that object does not change - so N readings of one unchanged
+    # commit are one draw, not N (de Finetti requires an exchangeable sequence; a constant one is not).
+    # This is the real bearer, read off the clone itself, not a proxy inferred from the factory's own
+    # task records - see ACP-102 on criteria standing in for concepts.
+    # Present whenever the clone succeeded, including when `docker compose up` then failed: that is still
+    # a real observation of a known artifact.
+    commit_sha: Optional[str] = None
 
 
 class HealthCheckRequest(BaseModel):
@@ -156,10 +164,16 @@ def launch(req: LaunchRequest) -> LaunchResponse:
         if clone.returncode != 0:
             return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=f"git clone failed: {clone.stderr[-2000:]}")
 
+        # Never fatal: an unreadable SHA costs the caller the ability to collapse repeat readings, which is
+        # strictly better than failing an otherwise good launch over bookkeeping.
+        rev = _run(["git", "-C", str(workdir), "rev-parse", "HEAD"], timeout_seconds=30)
+        commit_sha = rev.stdout.strip() if rev.returncode == 0 else None
+
         compose_file = workdir / "docker-compose.yml"
         if not compose_file.exists():
             return LaunchResponse(success=False, duration_ms=_elapsed_ms(started),
-                                   error="docker-compose.yml not found at repo root after clone")
+                                   error="docker-compose.yml not found at repo root after clone",
+                                   commit_sha=commit_sha)
 
         port_map = _remap_ports(compose_file)
 
@@ -168,11 +182,13 @@ def launch(req: LaunchRequest) -> LaunchResponse:
             cwd=workdir, timeout_seconds=600,
         )
         if up.returncode != 0:
-            return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=f"docker compose up failed: {up.stderr[-2000:]}")
+            return LaunchResponse(success=False, duration_ms=_elapsed_ms(started),
+                                   error=f"docker compose up failed: {up.stderr[-2000:]}", commit_sha=commit_sha)
 
         _current_project_slug = req.project_slug
         primary_port = next(iter(port_map.values()), None)
-        return LaunchResponse(success=True, duration_ms=_elapsed_ms(started), external_port=primary_port)
+        return LaunchResponse(success=True, duration_ms=_elapsed_ms(started), external_port=primary_port,
+                               commit_sha=commit_sha)
     except subprocess.TimeoutExpired as e:
         return LaunchResponse(success=False, duration_ms=_elapsed_ms(started), error=f"timed out: {e}")
     except Exception as e:  # noqa: BLE001 - report every failure back as real observation evidence, never crash the sidecar

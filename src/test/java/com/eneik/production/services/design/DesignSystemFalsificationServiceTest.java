@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.*;
 
 /**
@@ -78,6 +79,36 @@ class DesignSystemFalsificationServiceTest {
         verifyNoInteractions(projectRepository);
     }
 
+    /**
+     * The second half of commit 7e1df40's contract: with no Stitch project on record the id is OMITTED,
+     * never substituted with something Stitch cannot resolve. Sending a wrong reference is worse than
+     * sending none - one fails loudly every cycle, the other silently attaches the design system to
+     * nothing. Nothing covered this branch, which is part of why the first half could go red unnoticed.
+     */
+    @Test
+    void withNoStitchProjectOnRecordTheDesignSystemIsCreatedUnattached() {
+        when(settingsService.effectiveBoolean("design_system_falsification_enabled")).thenReturn(true);
+        when(stitchClient.hasStitchKey()).thenReturn(true);
+        ProjectEntity project = activeProject();
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+
+        UUID featureId = UUID.randomUUID();
+        ClientDeliverableReadinessService.UiCodeEpic epic =
+                new ClientDeliverableReadinessService.UiCodeEpic(featureId, "Core Knowledge Base Portal");
+        when(readinessService.listEpicsWithMergedUiCode(project.getId())).thenReturn(List.of(epic));
+        when(wishlistRepository.existsByFeatureIdAndSource(featureId, WishlistSource.design_system_falsification))
+                .thenReturn(false);
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(java.util.Optional.empty());
+        when(stitchClient.createDesignSystem(isNull(), anyString(), anyString(), anyString(), anyString(), anyString()))
+                .thenReturn(new StitchClient.DesignSystemResult(true, "ok", "ds-43", "Created Stitch design system."));
+        when(stitchClient.applyDesignSystem(isNull(), eq("ds-43"), any()))
+                .thenReturn(new StitchClient.ApplyDesignSystemResult(true, "ok", "Applied design system."));
+
+        service.applyDesignSystemsToShippedEpics();
+
+        verify(stitchClient, times(1)).createDesignSystem(isNull(), anyString(), anyString(), anyString(), anyString(), anyString());
+    }
+
     @Test
     void eligibleEpicTriggersExactlyOneCreateAndApplyPairAndOneWishlistRecord() {
         when(settingsService.effectiveBoolean("design_system_falsification_enabled")).thenReturn(true);
@@ -92,14 +123,21 @@ class DesignSystemFalsificationServiceTest {
         when(wishlistRepository.existsByFeatureIdAndSource(featureId, WishlistSource.design_system_falsification))
                 .thenReturn(false);
 
-        when(stitchClient.createDesignSystem(eq(project.getId().toString()), anyString(), anyString(), anyString(), anyString(), anyString()))
+        // 2026-08-16, commit 7e1df40 ("send Stitch its own project id, or none at all"): the first argument
+        // is Stitch's project id, read off the design-shop cycle row - not this factory's own project UUID,
+        // which Stitch has never heard of. This test asserted the old contract and had been red since.
+        var cycle = new com.eneik.production.models.persistence.DesignShopCycleEntity();
+        cycle.setStitchProjectId("stitch-proj-7");
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(java.util.Optional.of(cycle));
+
+        when(stitchClient.createDesignSystem(eq("stitch-proj-7"), anyString(), anyString(), anyString(), anyString(), anyString()))
                 .thenReturn(new StitchClient.DesignSystemResult(true, "ok", "ds-42", "Created Stitch design system."));
         when(stitchClient.applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any()))
                 .thenReturn(new StitchClient.ApplyDesignSystemResult(true, "ok", "Applied design system."));
 
         service.applyDesignSystemsToShippedEpics();
 
-        verify(stitchClient, times(1)).createDesignSystem(eq(project.getId().toString()), anyString(), anyString(), anyString(), anyString(), anyString());
+        verify(stitchClient, times(1)).createDesignSystem(eq("stitch-proj-7"), anyString(), anyString(), anyString(), anyString(), anyString());
         verify(stitchClient, times(1)).applyDesignSystem(eq(project.getId().toString()), eq("ds-42"), any());
         ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
         verify(wishlistRepository).save(captor.capture());

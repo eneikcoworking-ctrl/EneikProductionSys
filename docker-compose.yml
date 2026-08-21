@@ -47,6 +47,31 @@ services:
       retries: 10
     restart: unless-stopped
 
+  # 2026-08-21: factory-level judgment, running on the operator's Claude SUBSCRIPTION rather than a
+  # metered API key. Verified by a real call from inside a Linux container using the credential minted by
+  # the Windows CLI - no key, no balance, no WSL interop (which was emitting accept4 failures on .exe
+  # calls that same hour, and has taken Docker down with it before).
+  #
+  # This is the ONLY component that holds the Claude credential, the same architecture decision the
+  # operator made for the docker socket above: contain a privilege in the smallest separately-reviewable
+  # surface (judgment-sidecar/server.js, ~70 lines), never in the much larger main backend.
+  #
+  # The credential is mounted READ-WRITE on purpose: Claude Code refreshes its OAuth token, and a
+  # read-only mount would work until the token expired and then fail silently for good.
+  judgment-sidecar:
+    build:
+      context: ./judgment-sidecar
+    volumes:
+      - ${CLAUDE_CREDENTIAL_DIR:-C:\Users\образ центр\.claude}:/home/judge/.claude
+    ports:
+      - "8092:8092"
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8092/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -59,6 +84,7 @@ services:
       JAVA_OPTS: "-Xmx1024m -Xms384m -XX:+UseG1GC"
       ML_SERVICE_URL: http://ml:8000
       RUNTIME_LAUNCHER_URL: ${RUNTIME_LAUNCHER_URL:-http://runtime-launcher:8091}
+      JUDGMENT_AGENT_URL: ${JUDGMENT_AGENT_URL:-http://judgment-sidecar:8092}
       SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
       ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system

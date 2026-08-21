@@ -757,25 +757,80 @@ public class FalsificationCycleService {
      * fact: the last real observation failed).
      */
     /**
-     * The most recent observation's error text, or blank when there is none.
+     * The most recent error text that is actually about the PRODUCT, or blank when there is none.
      *
      * Reads the summary already fetched by the caller rather than issuing a second query: two derivations
      * of the same fact are two things that can disagree, and this method exists precisely to stop a claim
      * and its witness from drifting apart.
+     *
+     * 2026-08-21: they had drifted apart anyway, and this method was where. It took the newest row of ANY
+     * kind while its caller's other input, {@code lastObservationHealthy}, is computed from the newest
+     * REAL observation. Measured live the same evening: the constraint was filed citing
+     * "runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch" - a fact about
+     * this factory's own sidecar - as the evidence for what a worker should fix in the CLIENT's
+     * repository, where no such component exists.
+     *
+     * This is ACP-103 (plan section 9.3) in a consumer the census missed: the audit enumerated readers of
+     * the {@code instrumentFailure} FIELD, and this method never touches that field - it reads the rows.
+     * A census of a reclassification must cover every reader of the RECORD, not only the readers of the
+     * flag that carries the classification.
      */
     private String latestErrorText(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth) {
-        if (runtimeHealth == null || runtimeHealth.recentObservations() == null
-                || runtimeHealth.recentObservations().isEmpty()) {
+        if (runtimeHealth == null) {
             return "";
         }
-        String text = runtimeHealth.recentObservations().get(0).getErrorText();
-        return text == null ? "" : text.trim();
+        return runtimeHealth.lastProductObservation()
+                .map(row -> row.getErrorText() == null ? "" : row.getErrorText().trim())
+                .orElse("");
     }
+
+    /** How long a finished, ineffective constraint attempt is left alone before the constraint is re-filed. */
+    @org.springframework.beans.factory.annotation.Value("${falsification-cycle.constraint-refile-cooldown-minutes:45}")
+    private long constraintRefileCooldownMinutes;
 
     private void ensureProductNotLaunchableWishlist(ProjectEntity project,
                                                     com.eneik.production.services.runtime.ClientRuntimeObservabilityService.RuntimeHealthSummary runtimeHealth) {
-        if (wishlistRepository.existsByProjectIdAndSource(project.getId(), WishlistSource.product_not_launchable)) {
+        // 2026-08-21 (plan L-8): the guard used to be existsByProjectIdAndSource, which blocks re-filing
+        // REGARDLESS OF STATUS. §7 of the plan wrote down why that is wrong - "a constraint is cleared by a
+        // fresh healthy observation, not by a status" - and it went unconnected to what was on the
+        // dashboard until the factory sat idle with the constraint open.
+        //
+        // Measured live: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item finished
+        // 01:27Z, and at 02:09Z the product still answered nothing. The attempt had failed, the row was
+        // `converted_to_task`, and nothing could ever file it again - so the factory had zero queued work
+        // while its own highest-priority work was open. An idle factory with an unrefuted product is not
+        // "everything is done"; by §1 it means the system stopped looking.
+        //
+        // The caller reaches this method only when the newest REAL observation came back unhealthy, so
+        // "the constraint is open" is established by fresh evidence rather than by bookkeeping. What is
+        // guarded here is duplication of work in flight, not the constraint's existence.
+        List<WishlistEntity> existing = wishlistRepository.findByProjectIdAndSourceAndStatusIn(
+                project.getId(), WishlistSource.product_not_launchable,
+                List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.finalizing,
+                        WishlistStatus.converted_to_task, WishlistStatus.dismissed));
+        boolean alreadyBeingWorked = existing.stream().anyMatch(w -> w.getStatus() == WishlistStatus.pending
+                || w.getStatus() == WishlistStatus.compiling || w.getStatus() == WishlistStatus.finalizing);
+        if (alreadyBeingWorked) {
+            return; // an attempt is in flight - never a second one beside it
+        }
+        // A finished attempt that did not fix the product may be retried, but not on the very next tick:
+        // the cooldown is what keeps "keep working the constraint" from becoming a compile loop.
+        java.time.Instant newest = existing.stream()
+                .map(WishlistEntity::getCreatedAt)
+                .filter(java.util.Objects::nonNull)
+                .max(java.util.Comparator.naturalOrder())
+                .orElse(null);
+        if (newest != null && newest.isAfter(java.time.Instant.now()
+                .minus(java.time.Duration.ofMinutes(constraintRefileCooldownMinutes)))) {
+            log.info("FalsificationCycleService: project {} - the launchability constraint is still open, but the "
+                            + "last attempt was filed at {}; waiting out the {}-minute cooldown before re-filing",
+                    project.getId(), newest, constraintRefileCooldownMinutes);
             return;
+        }
+        if (!existing.isEmpty()) {
+            log.info("FalsificationCycleService: project {} - the launchability constraint is STILL open after "
+                            + "{} finished attempt(s); re-filing it rather than leaving the factory idle",
+                    project.getId(), existing.size());
         }
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
@@ -785,7 +840,7 @@ public class FalsificationCycleService {
         wishlist.setCynefinDomain("clear");
         // 2026-08-19: carry the OBSERVED CAUSE, not only the fact of failure. The launcher already
         // records exactly why the launch died in ClientRuntimeObservationEntity.errorText, and that text
-        // sits in this very summary's recentObservations - measured live on test-forty-ninth:
+        // sits in this very summary's productObservations - measured live on test-forty-ninth:
         // "object-storage Error failed to resolve reference minio/minio:RELEASE.2023-09-20T22-40-07Z:
         // not found". Filing "it is not healthy" while holding that string asks the worker to rediscover
         // what the system already knows, and it is the same defect the auditor's ABSTAIN fix removed on

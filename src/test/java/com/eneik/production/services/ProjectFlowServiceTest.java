@@ -84,7 +84,7 @@ class ProjectFlowServiceTest {
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 
-        verify(gitHubPullRequestService, never()).commitFile(eq(project), anyString(), any(), anyString());
+        verify(gitHubPullRequestService, never()).upsertFile(eq(project), anyString(), any(), anyString());
     }
 
     @Test
@@ -97,7 +97,7 @@ class ProjectFlowServiceTest {
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 
-        verify(gitHubPullRequestService, never()).commitFile(eq(project), anyString(), any(), anyString());
+        verify(gitHubPullRequestService, never()).upsertFile(eq(project), anyString(), any(), anyString());
     }
 
     @Test
@@ -110,7 +110,7 @@ class ProjectFlowServiceTest {
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 
-        verify(gitHubPullRequestService, never()).commitFile(eq(project), anyString(), any(), anyString());
+        verify(gitHubPullRequestService, never()).upsertFile(eq(project), anyString(), any(), anyString());
     }
 
     @Test
@@ -123,7 +123,7 @@ class ProjectFlowServiceTest {
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 
-        verify(gitHubPullRequestService, never()).commitFile(eq(project), anyString(), any(), anyString());
+        verify(gitHubPullRequestService, never()).upsertFile(eq(project), anyString(), any(), anyString());
     }
 
     @Test
@@ -131,12 +131,12 @@ class ProjectFlowServiceTest {
         ProjectFlowService service = service();
         ProjectEntity project = greenfieldProject();
         stubNoManifestsExist(project);
-        when(gitHubPullRequestService.commitFile(eq(project), anyString(), any(), anyString())).thenReturn(true);
+        when(gitHubPullRequestService.upsertFile(eq(project), anyString(), any(), anyString())).thenReturn(true);
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 
         ArgumentCaptor<String> pathCaptor = ArgumentCaptor.forClass(String.class);
-        verify(gitHubPullRequestService, times(6)).commitFile(eq(project), pathCaptor.capture(), any(), anyString());
+        verify(gitHubPullRequestService, times(6)).upsertFile(eq(project), pathCaptor.capture(), any(), anyString());
         List<String> committedPaths = pathCaptor.getAllValues();
 
         assertTrue(committedPaths.contains("frontend/package.json"));
@@ -156,7 +156,7 @@ class ProjectFlowServiceTest {
         ProjectFlowService service = service();
         ProjectEntity project = greenfieldProject();
         stubNoManifestsExist(project);
-        when(gitHubPullRequestService.commitFile(eq(project), anyString(), any(), anyString())).thenReturn(true);
+        when(gitHubPullRequestService.upsertFile(eq(project), anyString(), any(), anyString())).thenReturn(true);
 
         service.commitDeterministicFrontendScaffoldIfAbsent(project);
 

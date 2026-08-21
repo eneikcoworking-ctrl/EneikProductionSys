@@ -55,6 +55,17 @@ public class InvariantStatusChangeEntity {
     @Column(name = "observed_at", nullable = false)
     private Instant observedAt = Instant.now();
 
+    /**
+     * When factory-level judgment ruled on this transition; null while it is still unread.
+     *
+     * The mark lives on the row rather than on a clock because the two are not equivalent: rows are
+     * written by whichever cycle observes the transition, so a row bearing an earlier observed_at can be
+     * inserted after a timestamp cursor has already moved past it, and would then be skipped forever.
+     * A ruling is a fact about this transition, so it is recorded on this transition.
+     */
+    @Column(name = "judged_at")
+    private Instant judgedAt;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
 
@@ -78,4 +89,7 @@ public class InvariantStatusChangeEntity {
 
     public Instant getObservedAt() { return observedAt; }
     public void setObservedAt(Instant observedAt) { this.observedAt = observedAt; }
+
+    public Instant getJudgedAt() { return judgedAt; }
+    public void setJudgedAt(Instant judgedAt) { this.judgedAt = judgedAt; }
 }

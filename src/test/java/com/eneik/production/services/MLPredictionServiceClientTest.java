@@ -31,7 +31,7 @@ public class MLPredictionServiceClientTest {
         when(settingsService.effectiveValue("gemini_api_key")).thenReturn("test-key");
 
         client = new MLPredictionServiceClient(new RestTemplateBuilder(), "http://localhost:8000",
-                settingsService, new com.eneik.production.services.monitor.AiHealthTracker());
+                settingsService, new com.eneik.production.services.monitor.AiHealthTracker(), null);
         RestTemplate restTemplate = (RestTemplate) ReflectionTestUtils.getField(client, "restTemplate");
         mockServer = MockRestServiceServer.bindTo(restTemplate).build();
     }
@@ -43,7 +43,7 @@ public class MLPredictionServiceClientTest {
         // own fallback, not on a mocked response. Sharing the class-level `client`/`mockServer` here would
         // make this call subject to the OTHER tests' explicit expectations instead of hitting the network.
         MLPredictionServiceClient standaloneClient = new MLPredictionServiceClient(new RestTemplateBuilder(),
-                "http://localhost:8000", null, new com.eneik.production.services.monitor.AiHealthTracker());
+                "http://localhost:8000", null, new com.eneik.production.services.monitor.AiHealthTracker(), null);
         Map<String, Object> result = standaloneClient.predictBottleneck(10, 1.5);
         assertNotNull(result);
         assertTrue(result.containsKey("is_bottleneck_predicted"));
@@ -137,7 +137,7 @@ public class MLPredictionServiceClientTest {
                 mock(com.eneik.production.services.settings.SystemSettingsService.class);
         when(disabledSettings.effectiveBoolean("gemini_enabled")).thenReturn(false);
         MLPredictionServiceClient disabledClient = new MLPredictionServiceClient(new RestTemplateBuilder(),
-                "http://localhost:8000", disabledSettings, new com.eneik.production.services.monitor.AiHealthTracker());
+                "http://localhost:8000", disabledSettings, new com.eneik.production.services.monitor.AiHealthTracker(), null);
 
         MLPredictionServiceClient.ToolLoopResult result = disabledClient.chatWithTools(
                 "prompt", "system", List.of(), (name, args) -> Map.of(), (r, n, t) -> true, 8);

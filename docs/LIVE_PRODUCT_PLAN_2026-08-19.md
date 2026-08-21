@@ -86,30 +86,37 @@ being read on purpose. A measurement whose scope is not stated is not a measurem
 
 ---
 
-## 4. State, measured 2026-08-20 11:30Z
+## 4. State, measured 2026-08-21 from the stopped database
+
+Read directly out of `data/eneik_db.mv.db` with the factory down, scoped to the active project
+`41af381d test-forty-ninth`. The previous block in this section was a dashboard snapshot taken at
+2026-08-20 11:30Z and it was wrong in three ways; the corrections are in §14.
 
 ```
-tasks       claimed 1 · done 130 · failed 10
-runtime     10 observations · last 10:38:43Z · launch=TRUE · health=null
-posterior   mean 0.091 · interval width 0.306
-flow        DECOMPOSING / IMPLEMENTING / DELIVERED (no SYSTEM_STALLED)
-host        1272 MB free of 3917 · store 1920 MB
+client_runtime_observations, project 41af381d
+  total 56 · launch_success=TRUE 8 · health_status_code NOT NULL 0 · instrument_failure 46
+  last row that actually observed the product   2026-08-20 11:39:59
+
+observations per hour
+  05..11h   1 · 1 · 1 · 1 · 1 · 1 · 1      (0 instrument failures)
+  12h      17                              (17 instrument failures)
+  13h      28                              (28 instrument failures)
+  13:34:16  last row of any kind - the factory was stopped
+
+posterior over the 10 rows that observed the product   Beta(1,11)
+  q(0.025) = 0.002299 · 24h x q = 3.3 min -> clamped to the 1h floor
+host   data/eneik_db.mv.db 2 339 028 992 bytes (2231 MiB), from 1920 MiB the day before
 ```
 
-**The product launches and does not serve.** Four containers come up - app, postgres, minio,
-backup-cron - and the application dies during startup:
+**`health_status_code` is null in all 56 rows.** Eight of them launched the stack; not one produced a
+product that answered for itself. §1.1's goal has therefore never been half-met in the sense of health -
+only the launch half has ever been true, and only ten times has the product been looked at at all.
 
-```
-Driver org.h2.Driver claims to not accept jdbcUrl, jdbc:postgresql://db:5432/epidemiology_db
-```
-
-`docker-compose.yml` declares PostgreSQL, `application.properties` declares H2, and `pom.xml` carries no
-PostgreSQL driver at all. This is a PRODUCT defect and goes through wishlist -> task -> Jules. Its
-diagnosis is §10.
-
-The previous blocker - an unresolvable MinIO image tag, a name with perfect form and no bearer - is
-**closed**: PRs #113, #118, #123 and #128 fixed and then verified it, and both
-`minio/minio:RELEASE.2023-11-01T18-37-25Z` and `postgres:15-alpine` are pulled on the host.
+**Between 11:40 and 13:34 the factory made 45 launcher calls that reached nothing.** Every one of them
+carries `runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch`. The
+observation rate went from 1/hour to 28/hour at exactly the moment the instrument stopped answering.
+That is not a coincidence and it is not the launcher's fault - §6 O-9 is the mechanism, and it is a
+defect this plan's own item 5.5 introduced.
 
 ---
 
@@ -138,17 +145,42 @@ Every row was verified by measurement, not by a build's exit code.
 
 | # | Defect | Measured | Level |
 | --- | --- | --- | --- |
-| O-1 | product does not serve: compose says PostgreSQL, config says H2, build has no PostgreSQL driver | every observation since 05:34Z | product |
-| O-2 | invariant statuses are computed every cycle and **never persisted**, so `pass -> warn` is undetectable in principle | confirmed across every reference to `InvariantStatus` | factory |
+| O-1 | product does not serve: compose says PostgreSQL, config says H2, build has no PostgreSQL driver | `health_status_code` null in all 56 observations, 8 successful launches included | product |
+| O-9 | the cadence clock counts measurements but limits attempts, so it stops limiting exactly when the instrument fails | 1/hour -> 28/hour at 11:40 when the launcher went unreachable; 45 calls into nothing | factory |
+| O-10 | the instrument has no denominator - nothing counts launcher availability, so 46 consecutive failures produced zero findings | 46 rows written, posterior unchanged, dashboard clean | factory |
+| O-11 | the posterior counts observations, but the object it is a belief about only changes on merge | 7 identical readings of one unchanged artifact between 05h and 11h, each updating Beta | factory |
+| O-13 | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are serialised | 4 containers ~2.3 GB + a 2 GB test JVM against 3.9 GB total; measured 583 MB free before the run was killed | factory |
+| O-12 | three tests are red on `main`, unrelated to this session | `ProjectFlowServiceTest` x2, `DesignSystemFalsificationServiceTest` x1; reproduced with today's changes reverted | factory |
 | O-3 | Kaizen has no write-side identity | 347 rows carrying **10** distinct `(category, target_component)` pairs | factory |
 | O-4 | dead Jules sessions polled forever | 52 `404`/hour; 3 of 4 `pr_opened` sessions answer 404 to their own account key | factory |
 | O-5 | `GET /api/projects/{id}/tree` never answers | 90 s, `http=000` | factory |
-| O-6 | store far larger than its contents | 1920 MB file, ~88 MB live; growth bursty, not monotonic; row churn low | factory |
+| O-6 | store far larger than its contents | 2231 MiB file, ~88 MB live; grew 311 MiB in one day, and O-9 is now a named contributor | factory |
 | O-7 | a design asset fetched and missed forever | 14/hour, `design/approved/20260818165327-mockup/mockup.html` absent on main | delivery |
 | O-8 | `requiresCodeForDelivery` answers a code question about a delivery concept | 5 phantom deliveries measured; no bearer for the content case yet | delivery |
 
-Closed since the last rewrite: the 4-per-minute reconciler loop (5.7), the instrument-failure pollution
-(5.5), the symmetric cadence (5.6), the unnamed launch failure (5.8).
+O-2 is closed: the invariant status vector is persisted and its transitions were verified live (§13.3).
+
+**A second consequence of O-13, learned by causing it.** Two `mvn` runs against the same bind-mounted
+`target/` are a race, not parallelism: one rewrites `target/test-classes` while the other's surefire reads
+it, and the second reports `No tests matching pattern` - a message that reads like a tooling quirk and is
+not one. Measured 2026-08-21: a run left going for 39 minutes, holding 654 MB, was still recompiling when
+the next one started. Serialise runs, and check `docker ps` before starting one - the host has room for
+exactly one.
+
+**O-13 is why §16 is not a convenience.** Every verification cycle in this session required stopping the
+factory first, and each stop/start pair costs about four minutes of startup plus whatever the factory did
+not do meanwhile. It is not a blocker for §1.1 - it is a tax on every measurement, paid repeatedly.
+Measured the same evening: a graceful stop also shrank the store 2 339 028 992 -> 2 248 667 136 bytes,
+because MVStore only reclaims pages on a clean close - so the tax is partly refunded, and a hard kill
+would forfeit it (O-6).
+
+**O-9, O-10 and O-11 are one defect seen three times**, and §9.3 states it once. They are listed
+separately because they are fixed in three different places, not because they are three ideas.
+
+**O-12 is stated here rather than fixed silently.** Three red tests on `main` mean the suite has not been
+a gate for at least some time, and a suite that is not a gate cannot refute anything - which makes every
+"68/68" and "27/27" in §12 a claim about a subset rather than about the build. It was found by reverting
+this session's changes and re-running, so its independence from today's work is measured, not assumed.
 
 ---
 
@@ -182,8 +214,18 @@ And the rule that must not be lost: a constraint lives at one of the three level
 constraint must not stop factory kaizen, nor the reverse. The predicate carries the level or it silences
 the wrong work.
 
-**Not built. Deliberately after the items in §11** - subordinating everything to a constraint the system
-cannot yet observe reliably would subordinate it to a guess.
+**Not built.** The stated precondition - "subordinating everything to a constraint the system cannot yet
+observe reliably would subordinate it to a guess" - **is now met**: O-9 and O-10 are fixed and verified
+live (§13.4), and the constraint exists as a row carrying the product's own failure (§13.5). What blocks
+it is no longer epistemic, only unbuilt.
+
+One flow defect this work exposed, recorded here rather than fixed in passing: the constraint is filed
+**only** inside `executePhilosophicalCycleForProject`, behind five gates that all belong to philosophical
+review, on a cron that fires every two days - and its one accelerator, the Gemini observer, is switched
+off (5.11). So the identification of the constraint is a side effect of the very process that is supposed
+to subordinate to it. Measured: 95 wishlist rows for the active project and, until 2026-08-21, zero
+`product_not_launchable` - while the product had never once answered a health check. That inversion is
+what §7's policy predicate would remove, and it is the reason to build it.
 
 ---
 
@@ -234,7 +276,7 @@ keeps one posterior per capability:
 - **Lower bound, not mean.** The mean rewards ignorance; the lower bound makes confidence something
   evidence has to earn. Same reason 5.6 keys the cadence there.
 
-Today: |C| = 1, Beta(1,10), LCB ≈ 0.003. **V_p = 0.**
+Today, read from the database 2026-08-21: |C| = 1, 57 attempts of which 10 observed the product, all unhealthy - Beta(1,11), mean 0.0833, LCB ≈ 0.0023. **V_p = 0.**
 
 ### 8.3 Delivery value
 
@@ -313,6 +355,71 @@ TAG-11 authors it, TAG-12's contract supplies the referents, TAG-06 verifies via
 the product and none can be refuted by observing it. They measure the text against itself - invariant 12
 with extra arithmetic.
 
+### 9.3 ACP-103 - Reclassification Without Census
+
+`BARCAN-TAG-08_SUBSTITUTIVITY-SALVA-VERITATE`, the same anchor as ACP-102 and its exact dual.
+
+ACP-102 is about a criterion silently answering a different question than the concept it stands for.
+ACP-103 is what happens **after you fix one**. When the system learns that a record means something
+other than it thought, the record's meaning changes for **every** reader at once. Fixing the reader that
+prompted the discovery leaves the others reading the old meaning - and they now read it wrongly, silently,
+with the same clean booleans as before. A reclassification is not complete until its consumers are
+enumerated and each one is asked which accounting it belongs to.
+
+The measured instance is item 5.5 of this plan, my own change.
+
+`V104` established that a row whose launcher never answered is a fact about the **instrument**, not about
+the product. That is right, and it fixed the posterior. `lastRealObservation` was written to carry the
+new classification, and its javadoc states the reason: *"The cadence clock must run from when the product
+was last really looked at, not from when the instrument last failed to look."* That sentence is the
+defect. The clock does not answer *when was the product last looked at*; it answers *when did we last
+spend an attempt*, because what it governs is the rate of attempts.
+
+The census, run 2026-08-21 across every reader of the classification:
+
+| Site | The question it actually answers | Belongs to |
+| --- | --- | --- |
+| `ClientRuntimeObservabilityService:111` cadence clock | when did we last **attempt** | the instrument - **was reading product rows** |
+| `:156` the write | what is this row a fact about | the classification itself |
+| `:228` shift-detector input | how has the **product's** health moved | the product |
+| `:290` frontend summary | how is the **product** | the product |
+| `:330` `posteriorFrom` | belief about the **product** | the product |
+| `TocSubordinationLever:123` | is the **product** constraint open | the product |
+
+Five of six ask about the product and were correct. Exactly one asks about the instrument, and it was
+the one left reading the product's rows. The consequence is not a rounding error: a rate limiter whose
+clock advances only on successful measurements stops limiting precisely when measurement stops working.
+
+    attempts per unit time  =  1 / max(floor, base x LCB)   while the instrument answers
+                            =  the tick rate                while it does not
+
+Measured on this project: **1/hour to 28/hour**, a 28x amplification arriving exactly when the thing
+being called was least able to serve it. Positive feedback, and invisible - the rows were written,
+correctly marked, correctly excluded from the posterior, and therefore absent from every number a human
+or an agent would have looked at.
+
+**The general rule this adds to the corpus.** A record carries a declared subject (invariant 8: state the
+denominator). ACP-103 says the declaration is only half of it - each **consumer** of the record must
+declare which accounting it is doing, and a consumer whose question is about a different bearer than the
+records it reads is broken no matter how correct the records are. When a subject is reclassified, the
+census is part of the change, not follow-up work.
+
+**The census must cover readers of the RECORD, not readers of the FIELD.** This was learned by getting
+it wrong the same evening. The census above enumerated every reader of `isInstrumentFailure` and
+`lastRealObservation` - and `FalsificationCycleService.latestErrorText` is neither: it reads
+`recentObservations().get(0)` and never touches the flag, so the grep that produced the table did not see
+it. It took the newest row of any kind while its caller's other input, `lastObservationHealthy`, is
+computed from the newest real one, and its own javadoc says it exists "precisely to stop a claim and its
+witness from drifting apart". Measured live at 23:25Z: the filed constraint cited
+`runtime-launcher unreachable: I/O error on POST http://runtime-launcher:8091/launch` - this factory's own
+sidecar - as the evidence for what to fix in the CLIENT's repository, where no such component exists.
+A census keyed on the classification's field is a census of the wrong population.
+
+**What must not be concluded:** that instrument rows should go back into the posterior. They must not -
+V104 is right about the product's accounting. The instrument needs its own denominator (O-10), which is
+the second thing the census makes visible: nothing at all counts launcher availability, so a component
+that failed 46 consecutive times produced no finding, no lever observation and no invariant transition.
+An unmeasured bearer cannot be refuted, and by §1 that makes it unteachable.
 ---
 
 ## 10. The assembly has no owner
@@ -395,7 +502,7 @@ cannot be more correct than the formula it falls back to.
 | `GeminiProjectObserverService` | hourly narrative observation | **dropped (5.11).** The path it served is now mechanism | 24 paid calls/day removed; it produced 3 actions in 3 days |
 | `JulesDispatchService.reviewPr` | PR review | **already removed** 2026-07-25 after a cost incident | nothing to do |
 | `JulesDispatchService.chatCritical` | is a silent session looping or waiting? | rules + escalate a *repeated* misclassification | small loss of precision, no loss of mechanism |
-| `OpsAuditorService.chatCritical` | evidence-only auditor: 2 evidence kinds in, 3 decisions out, may ABSTAIN | **move to the subscription agent** - it already is factory-level judgment | same function, flat cost |
+| `OpsAuditorService.chatCritical` | evidence-only auditor: 2 evidence kinds in, 3 decisions out, may ABSTAIN | **move to the subscription agent** - it already is factory-level judgment | same function, **on the subscription already paid for** - see the correction below |
 | `GeminiContextService.embed` | vectors for retrieval | **already paid**: 1525 chunks, 111 sources indexed; retrieval is local cosine similarity | degrades only for corpus files added later |
 
 ### 11.3 Kaizen is not being reduced - its bookkeeping is being fixed
@@ -415,25 +522,61 @@ Moving that identity to the write gives kaizen three things it does not have:
 
 Independent of Gemini: `FactorySelfHealthService` authored the 79-row database-health repetition itself.
 
-### 11.4 The subscription agent - what it replaces and how it reaches the backend
+### 11.4 The subscription agent - what it replaces, and what it turned out to be
 
-It replaces **one** thing: `OpsAuditorService`'s judgment, plus the factory-level refutations nobody acts
-on. It needs no backend change - everything is exposed:
+**Correction, 2026-08-21.** The row above said "flat cost", and the first build did not deliver it: it
+called `/v1/messages` with an `sk-ant-` key, which is metered per token and needs a balance on an API
+account. That is not a subscription, and replacing a metered API whose credit had run out (Gemini) with
+another metered API is not an improvement. The operator was right to call it what it was.
 
-    GET  /api/dashboard/operational-truth      invariants with pass/warn status
-    GET  /api/projects/{id}/runtime-health     product state
-    GET  /api/projects/{id}/coherence-graph    evidence
-    GET  /internal/tasks/status-counts         flow, project-scoped
-    POST /api/wishlist                         create work
+What was missed is that the subscription is **already on this machine**: Claude Code is installed at
+`/usr/local/bin/claude` and authenticated against the operator's own account. Verified by a real call,
+not by reading documentation - a Linux container with `@anthropic-ai/claude-code` installed via npm and
+the existing OAuth credential mounted returned a schema-bounded verdict:
 
-**The cost gate is the order of operations.** It runs on a timer, but its first act is one cheap HTTP
-read: are there unhandled factory-level refutations? If not, it exits **without invoking a model at all**.
-The observer called the model *to find out whether there was news*; this asks the factory, and wakes
+```
+structured_output: {"verdict":"ABSTAIN","reason":"linux container probe"}
+provider: firstParty   canonicalModel: claude-opus-5
+```
+
+No key, no balance, and no WSL interop - which was emitting `accept4 failed 110` on `.exe` calls that
+same hour, and has taken Docker down with it before.
+
+Two costs stated plainly, so "flat" is not claimed twice. A cold invocation loads Claude Code's own
+context first: 6-14k tokens before the prompt is read. `--bare` would cut that and cannot be used - its
+own help says "OAuth and keychain are never read", so it works only with an API key, which is the thing
+being avoided. On a subscription this is limit consumption rather than money, and at the measured 2.9
+wakeups a day it is accepted.
+
+It replaces **one** thing: `OpsAuditorService`'s judgment, plus the factory-level refutations nobody
+acts on.
+
+**The design in this section was wrong about where it lives, and the code corrected it.** It was written
+as an external process polling five HTTP endpoints. Built, it is `FactoryJudgmentService` inside the
+factory, reading `invariant_status_changes` directly. The reason is the contract with the operator, not
+convenience: an external process needs its own host, its own scheduler, its own credential store and its
+own deploy - four operator steps, and by §8.4 a path that needs the operator scores zero factory value by
+construction, permanently. In-process, the operator supplies a key and nothing else, exactly as
+`jules_api_key` has worked since that pattern began.
+
+**The cost gate is the order of operations, and it survived unchanged.** The cycle's first act is one
+indexed query: are there unjudged factory-level refutations? If not it returns having invoked no model at
+all. The observer called the model *to find out whether there was news*; this asks the factory, and wakes
 judgment only when the answer is yes.
 
-**Its output is bounded to two kinds**: a factory-level wishlist, or a plan correction. Never prose, never
-a journal entry, never product work. Prose without one of those two outcomes is the overproduction the
-observer was switched off for.
+**Its output is bounded by a schema on the request, not by a request inside the prompt.**
+a JSON schema travelling with the request (`--json-schema`), `additionalProperties: false` and a
+two-valued verdict enum: ABSTAIN, or one factory-level finding filed into the sink the factory already
+has. Never prose, never a journal entry,
+never product work. ACP-102 applies to the agent as much as to anything it reads - an answer that merely
+looks like a verdict is not one.
+
+**Two non-answers, kept apart.** An endpoint that cannot be reached is a fact about the instrument and
+leaves the transition unjudged for retry; an answer that is declined or off-schema is a fact about that
+input and will be declined identically forever, so the row is marked read. Collapsing them made one row
+an absorbing state at the head of a FIFO queue - the same shape as O-9, caught in review before it ran.
+And because a quiet drain is worse than a visible block, a cycle that rules on nothing files a finding
+against the judgment layer itself.
 
 ### 11.5 Wake on refutation, not on change - measured
 
@@ -463,10 +606,12 @@ because it got smarter but because the factory says more about itself.
 
 ---
 
-## 12. The order - all eight built, none yet running
+## 12. The work - one defect, its consequences, and the deployment
 
-Written and unit-verified against a stopped factory. Nothing below is live: the running image still
-contains only items 1 and 2. §12.1 is the deployment order.
+### 12.1 What was already built, and is still not running
+
+Nine pieces of work are in `main` and unit-verified. The running image contains items 1 and 2 only.
+Nothing else below has ever been observed doing anything.
 
 | # | Work | Level | Commit | State |
 | --- | --- | --- | --- | --- |
@@ -475,31 +620,112 @@ contains only items 1 and 2. §12.1 is the deployment order.
 | 3 | role-relative delivery predicate - one source of truth | delivery | `8b3cba5` | built, 68/68 |
 | 4 | a merge may pull the observation forward, floor still binds | delivery | `5fb563c` | built, 21/21 |
 | 5 | bury sessions whose remote record is provably gone | factory | `cd2e68b` | built, 74/74 |
-| 6 | move the auditor's judgment to the subscription agent | factory | - | **not built** - needs a subscription and the operator's decision, and item 1 must accumulate transitions first |
+| 6 | factory-level judgment, woken by refutation, **operator supplies nothing** | factory | working tree | rebuilt onto the subscription 2026-08-21 - **off by default** |
 | 7 | TOC subordination, in shadow | factory | `0e6b525` | built, 10/10, decides nothing |
 | 8 | declared capability register -> real `V_p` and the product-layer Six Sigma opportunity | delivery + product | `b9f201c` | built, 30/30 |
 
-**Item 6 is the one deliberate omission.** It is not code in this repository: it is an agent running on a
-subscription, woken by the transitions item 1 now records. Building it before those transitions have
-accumulated would set its cadence from my estimate rather than from measurement - and the measurement is
-the whole reason item 1 came first.
+Item 6 is no longer the deliberate omission it was. It is `judgment-sidecar` (the Claude Code CLI plus
+~70 lines of Node, holding the operator's OAuth credential and nothing else), `JudgmentAgentClient`,
+`FactoryJudgmentService` and `V108`. `SystemSettingsService` registers **one** key for it,
+`judgment_agent_enabled` - there is no credential to supply, because the subscription is already paid.
+Cadence, cursor, retry and the disposal of every ruling belong to the factory. Its wake signal is item 1's
+transitions; with no unjudged transition a cycle costs one indexed query and invokes no model at all.
 
-### 12.1 Deployment order, when the operator gives the word
+The credential is mounted into that sidecar and nowhere else - the same decision the operator made for the
+docker socket, recorded in `docker-compose.yml`: a privilege belongs in the smallest separately-reviewable
+surface, never in the 346-file backend.
 
-1. Build once, verify the jar contains `V105`, `V106`, `V107`, `ProductCapabilityService`,
-   `TocSubordinationLever` - bytes, never a build's exit code.
-2. Start the backend alone; confirm all three migrations apply and nothing fails at startup.
-3. Start `ml` and `runtime-launcher`; the launcher is required for capability probing.
-4. Watch the first observation: it should carry `assembly:` with the app container's own log, and write
-   capability rows if any contract is declared.
-5. Read `GET /api/projects/{id}/product-value`. On this project `V_p` is expected to be **0** with
-   `declaredCapabilities` possibly also 0 - the product does not serve, and its features may declare no
-   OpenAPI contract at all. Both zeros are honest and mean different things; the endpoint distinguishes
-   them.
+### 12.2 The correction this session's measurement forces
 
-**Not on this list, still:** O-5 (`/tree` hangs), O-6 (store growth, cause not isolated), O-7 (missing
-design asset). And O-1, the product's stack defect, remains product work addressed to `BARCAN-TAG-00`.
+The measurement in §4 refuted three of my own claims (§14) and exposed one defect wearing three faces.
+It is stated once as **ACP-103** in §9.3: a reclassification is not complete until its consumers are
+enumerated. The work is not three patches; it is one census carried through to the three places the
+census points at.
 
+**a. The cadence clock must run on attempts.** `ClientRuntimeObservabilityService:111` is the single
+consumer of the instrument/product classification that asks an instrument question. It reads
+`lastRealObservation`; it must read the newest row of any kind. The posterior, the shift detector, the
+frontend summary and `TocSubordinationLever` keep reading real observations only - V104 is right about
+the product's accounting and is not touched. One clock moves; five stay.
+
+**b. The instrument needs a denominator.** Invariant 8 applies to the launcher as much as to delivery:
+nothing counts its availability, so 46 consecutive failures were correctly recorded, correctly excluded,
+and therefore invisible. A run of instrument failures is a factory defect and must surface as one -
+through the sink the factory already has, keyed to the launcher so it stands as one standing finding
+rather than one per row.
+
+**c. The posterior counts observations; it should count artifacts.** De Finetti licenses the Beta
+posterior only over an exchangeable sequence. Between merges the artifact on `main` is constant and the
+outcome is deterministic, so seven readings of one unchanged object are not seven draws. The sufficient
+statistic is over distinct artifacts observed, and `productChangedSince` already detects the boundary -
+it just only ever pulls the check forward, never holds it back. Identity at the write, invariant 4, the
+same lesson as V105 and Kaizen. The floor stays: `BetaPosterior`'s own contract forbids ever functionally
+stopping, and that is not being weakened.
+
+**e. The designator, not the readers.** Three consumers read `RuntimeHealthSummary.recentObservations()`
+and took `get(0)` as a fact about the product: this file's own cadence clock (a), the constraint's cited
+cause, and `DeliveryRealityProducerService`, which wrote it into the coherence graph as "expected
+launchable, actually failed". Patching each reader is the wrong shape - the fourth reader would repeat it.
+The component carries every ATTEMPT, so it is named `recentAttempts`, and the summary exposes
+`productObservations()` / `lastProductObservation()`, whose names state the bearer and which physically
+cannot return an instrument row. ACP-102: a designator must pick out what it denotes; `recentObservations`
+was a name with a bearer it did not have. §15 is a list of things forbidden by discipline - this is one
+moved into the construction, where forgetting is not possible. The frontend reads the same field and is
+renamed with it.
+
+**d. Three red tests on `main` (O-12).** Established by reverting this session's changes and reproducing
+them. Until they are green the suite is not a gate, and every count in §12.1 is a claim about a subset.
+
+### 12.3 Deployment, once 12.2 is green
+
+Deploying before (a) is deploying a measured 28x amplifier: the next time the launcher is slow or late to
+start, the hammering resumes on the first tick, and it will present as "everything is lagging" rather
+than as a line in a log.
+
+1. Build once. Verify by **bytes** that the jar carries `V104`-`V109`, `ProductCapabilityService`,
+   `TocSubordinationLever`, `FactoryJudgmentService`, and the named members of the day's fixes
+   (`oneDrawPerArtifact`, `reportInstrumentOutage`, `lastProductObservation`) - never a build's exit code.
+2. Start the backend alone; confirm every migration applies and startup is clean. `judgment_agent_enabled`
+   is `false`, so the judgment cycle must log nothing at all.
+3. Start `runtime-launcher` **before** anything can observe. Confirm it answers, then start `ml`.
+4. Watch the first observation: it must carry `assembly:` with the app container's own log, and the
+   attempt clock must now hold the cadence at the floor even if the launcher is down - the direct
+   refutation of O-9, and the thing to watch for first.
+5. Read `GET /api/projects/{id}/product-value`. `V_p` is expected to be **0**, with
+   `declaredCapabilities` possibly 0 too. Both zeros are honest and mean different things.
+6. Only then O-1, the constraint, through the ordinary path: wishlist -> task -> Jules. It is product
+   work addressed to `BARCAN-TAG-00` and is never touched directly.
+
+**Still not on this list:** O-5 (`/tree` hangs), O-6 (store growth - O-9 is now a named contributor but
+not proven to be the whole of it), O-7 (missing design asset).
+
+### 12.4 What is left, 2026-08-21 07:45Z
+
+Written after the factory was found stalled, so the list is ordered by what is blocking the goal rather
+than by what is interesting.
+
+| # | Work | Why it blocks | State |
+| --- | --- | --- | --- |
+| L-1 | **Route `chatCritical` to the judgment sidecar** | Gemini was switched off (5.11) and its account is out of credit, but `MLPredictionServiceClient.chatCritical` still routes there - measured **39 × `502 Bad Gateway: Gemini`** in 600 log lines. Its two callers are exactly the two rows §11.2 listed as moving off Gemini. With no adjudicator, `JulesDispatchService` cannot decide whether a silent session is looping or waiting, so it defers forever | **in progress** |
+| L-2 | **Bound the deferral** | `closeLoopAndCreateFollowUps` returns without acting on `UNAVAILABLE`, by design, because an unreachable reviewer says nothing about the session. Correct while the reviewer is *transiently* down; an absorbing state once it is *permanently* gone. Same shape as the judgment layer's UNJUDGEABLE/UNAVAILABLE split | not built |
+| L-3 | **Retire the stuck task** | `13977462 UI Slice (00ce800b)`, `claimed` since 2026-08-20T11:08Z - ten hours before this session began. Forced unblock attempted twice without progress. It is the only non-terminal task, so `SYSTEM STALLED` has been firing for 252 minutes with nothing else to do | blocked on L-1/L-2 |
+| L-8 | **A constraint is cleared by a fresh healthy observation, not by a task status** | Measured live: the constraint was filed 00:44Z, compiled 01:15Z, its derived work item finished 01:27Z - and at 02:09Z the product still answered nothing. The row is `converted_to_task`, and `existsByProjectIdAndSource` blocks re-filing **regardless of status**, so it can never be filed again while the product stays broken. §7 predicted this in writing and it went unconnected to what the dashboard was showing. The factory therefore sits idle while its own highest-priority work is open | not built |
+| L-9 | **An idle factory with an unrefuted product is a refutation of §1** | `queuedTasks=0, pendingOrCompilingWishlists=0` is not "everything is done" - it means the work generators have stopped. `falsification_cycle_enabled=false`, the philosophical cycle fires every two days, the Gemini observer is off, and the judgment agent waits on transitions that have not occurred. The factory is idle **by construction**. Operator, 2026-08-21: *"фабрике всегда должно что быть делать"* - and by §1 that is not a preference, it is what permanent falsification means | not built |
+| L-4 | **O-1 through Jules** | The constraint is filed, compiled and its derived work item completed at 01:27Z, yet the product still answers nothing. Two observations on two different commits: `launch=true, health=null` | waiting on flow |
+| L-5 | Verify V109's collapse | Needs two observations of the *same* commit; `main` has moved between every pair so far. Not a failure - the case has not occurred | waiting on data |
+| L-6 | §7 policy predicate | Its precondition is met (§13.4, §13.5). Would remove the inversion where the constraint is identified by the process that must subordinate to it | not built |
+| L-7 | Commit the session's work | Every image so far is built `dirty`; nothing is in `main` | needs the operator's word |
+
+**Not on this list and still open:** O-3..O-8 as recorded in §6, plus three signals read off
+`/api/system-status` at 02:11Z that nobody has looked into - `CI_STATUS=failing`,
+`roleDoctrineReadiness=blocked`, and `dpmoCodeTasksOnly=655172`, which is 65% defect density on code tasks
+and deserves its own analysis rather than a line here.
+
+**The honest accounting of the stall.** The task has been stuck since 11:08Z on 2026-08-20, ten hours
+before this session. What this session added was not the stall but the reason it cannot clear: Gemini was
+switched off here and the replacement §11.2 named was never connected. Switching a provider off without
+wiring its replacement is not a replacement, and pointing at the absent provider is pointing at my own
+unfinished work.
 ---
 
 ## 13. Verdict records
@@ -593,6 +819,141 @@ repeating from `KAIZEN_PROPOSALS`.
 waits for the factory to run, since proposals are only generated on its own cycle.**
 
 
+### 13.4 The cadence clock and the instrument's denominator, 2026-08-20 23:10Z - O-9 and O-10
+
+**Baseline, measured off the stopped database.** The launcher stopped answering at 11:40 and the
+observation rate went from 1/hour (05h..11h, one row each) to 17/hour and then 28/hour, 45 calls reaching
+nothing between 11:40 and 13:34. Every row correctly marked `instrument_failure=TRUE`, correctly excluded
+from the posterior, and therefore absent from every number a reader would consult. 46 consecutive
+instrument failures produced zero findings.
+
+**Intervention.** One clock moved (`ClientRuntimeObservabilityService:111`): the cadence gate now runs on
+the newest row of any kind, because what it limits is attempts and an unanswered call is an attempt. Five
+other consumers of the instrument/product classification were audited and left alone - they ask about the
+product and were already right (ACP-103 census, section 9.3). Separately the instrument gained a
+denominator: N consecutive unanswered calls file one standing factory finding keyed to the launcher.
+
+**Observed, backend up and launcher deliberately still down - the exact condition that produced the 28/hour.**
+
+```
+23:10:18  "2 task(s) reached done since the last observation at 11:39:59Z; observing now
+           rather than waiting out the timer"
+23:10:21  project 41af381d observed - launchSuccess=false healthStatus=null instrumentFailure=true
+23:10:21  "the runtime launcher has failed to answer 3 consecutive times; reporting it as a
+           factory defect"
+attempts in the following 6.5 minutes: 1        (the old clock would have attempted on every tick)
+```
+
+**Verdict: both hold.** The single attempt was pulled forward by a real product change, not by a frozen
+clock - the correct reason - and the limiter then held. `GET /api/kaizen/factory` returns the finding
+`[SYSTEMIC_DEFECT] target='runtime-launcher'` standing beside three others with distinct
+`targetComponent` values, which is also the first live confirmation that the 2026-08-17 dedup fix keeps
+distinct factory findings from displacing one another.
+
+**Rollback:** revert the clock to `lastRealObservation` and set
+`client-runtime-observability.instrument-outage-threshold` beyond reach. **Postcondition to watch:** with
+the launcher up, observations must remain rate-limited rather than resuming per-tick - the floor is one
+hour and nothing in this change weakens it.
+
+**Not yet verified:** V109's artifact collapse. It needs two observations that reach the launcher and
+carry a real `commit_sha`, and no row in the table has one yet.
+### 13.5 The constraint cites the right bearer, 2026-08-21 00:44Z - ACP-103's fourth face
+
+**Baseline, measured on the artifact rather than the log line.** At 23:25Z the factory filed the
+constraint through its own mechanism and the row read, verbatim:
+
+```
+Observed failure, exactly as the launcher recorded it - this is evidence, not a hypothesis:
+runtime-launcher unreachable: I/O error on POST request for "http://runtime-launcher:8091/launch"
+```
+
+That is a fact about this factory's own sidecar, offered as the evidence for what to fix in the CLIENT's
+repository, where no such component exists. `TechnicalLeadCompiler` classes `product_not_launchable` as
+defect work at weight 1.0, so the next compile would have carried it to a task and to Jules.
+
+**Why the census missed it.** The audit in §9.3 enumerated readers of `isInstrumentFailure` and
+`lastRealObservation`. `latestErrorText` is neither: it read `recentObservations().get(0)` and never
+touched the flag. Two further readers of the same rows were found the same way once the census was
+re-run over the RECORD - `DeliveryRealityProducerService`, which wrote the cause into the coherence graph
+as "expected launchable, actually failed", and the dashboard's own pulse line, whose DTO did not carry
+`instrumentFailure` at all, so every instrument outage has been drawn to the operator as the product
+going down since V104 shipped.
+
+**Intervention - the designator, not the readers.** `RuntimeHealthSummary.recentObservations` is renamed
+`recentAttempts`, because that is what it holds, and the summary gained `productObservations()` /
+`lastProductObservation()`, which cannot return an instrument row. All three Java readers and the
+frontend now go through them. Patching four call sites would have left the fifth.
+
+**Rollback:** revert the record component name and the three call sites. **Row handling:** the 23:25Z row
+was **deleted, not dismissed** - `existsByProjectIdAndSource` is status-agnostic, so a dismissed
+constraint could never be re-filed while the product stays broken (§7). Deleting undid an action this
+session caused rather than editing what the factory had written.
+
+**Observed, same input, same mechanism, corrected code:**
+
+```
+00:44:49  created product_not_launchable wishlist for project 41af381d
+00:44:49  "not currently launchable/healthy - subordinating philosophical review to that
+           constraint (TOC) instead of auditing a broken product this cycle"
+
+cited evidence  HTTPConnectionPool(host='localhost', port=18080) ... [Errno 111] Connection refused
+                | assembly: every service reports running, so ...
+mentions launcher outage : False        (was True)
+mentions product failure : True
+sourceRoleTag            : BARCAN-TAG-00
+```
+
+**Verdict: holds.** The constraint is filed, addressed to the assembly role, and carries the product's own
+failure - which is O-1's signature, and the first time the constraint has existed as a row at all.
+### 13.6 The judgment layer's first cycle refuted its own input, 2026-08-21 02:20Z
+
+**Setup.** `judgment-sidecar` up and healthy, running the operator's Claude subscription with no
+credential supplied by anyone; `judgment_agent_enabled` flipped to true at 02:07Z; seven rows sat
+unjudged in `invariant_status_changes`, left that way by V108 on purpose because they were real records
+the factory had never acted on.
+
+**Observed.**
+
+```
+02:20:40  7 unjudged invariant transition(s); ruling on up to 5 this cycle
+02:22:04  ABSTAIN delivered_requires_evidence          (null -> pass)
+02:22:43  ABSTAIN done_is_not_delivery                 (null -> warn)
+02:22:57  ABSTAIN closed_unmerged_is_not_delivery      (null -> pass)
+02:23:14  ABSTAIN runtime_status_affects_trust         (null -> pass)
+02:23:28  ABSTAIN duplicate_content_blocks_throughput_trust (null -> pass)
+all five rows carry judged_at; two remain, also null -> X
+```
+
+**Verdict: the loop works and the queue was wrong.** Every ruling landed, the cursor was written, and
+nothing was judged twice - that half holds. What the agent then said, five times in its own words, is
+that it had been handed nothing to rule on: *"a baseline entry into pass is not a transition away from an
+asserted property and carries no signal of a factory defect."* All seven rows are `previous_status = null`
+- first-ever registrations, not transitions. V105 exists because of Popper's asymmetry, and a baseline is
+a confirmation with no predecessor: the least informative row the table can hold. Roughly $0.30 per
+ruling, five times, on rows that were knowably uninformative before they were sent.
+
+**Whose defect.** Mine, and the same shape as O-9 and ACP-103 for the third time: one table holds two
+kinds of fact - baseline registration and real transition - and the reader took them as one.
+`findByJudgedAtIsNullOrderByObservedAtAsc` did not distinguish them.
+
+**Intervention.** The query is replaced by
+`findByJudgedAtIsNullAndPreviousStatusIsNotNullOrderByObservedAtAsc`, and the old one is **deleted** from
+the repository rather than left beside it. Same principle as `recentAttempts` in §12.2(e): the exclusion
+belongs in the type, not in a filter each caller must remember. The two remaining baselines are left
+unjudged and out of scope, which is what they always were.
+
+**Rollback:** restore the previous derived query. **Postcondition, verified 2026-08-21 03:01Z:** the cycle
+ran for sixteen minutes across at least one tick and wrote no line at all. Silence alone would not prove
+it - an unfired scheduler looks identical - so the input was measured directly rather than inferred from
+the absence of output:
+
+```
+judgment_agent_enabled = true (database)
+invariant_status_changes: 7 rows, 7 with previous_status IS NULL, 0 in the queue, 5 judged
+```
+
+The queue is empty because every row is a baseline, and the cycle correctly invoked nothing. It will stay
+silent until an invariant actually stops holding - at the measured rate, 2.9 times a day.
 ---
 
 ## 14. Corrections - my claims that measurement refuted
@@ -618,6 +979,14 @@ waits for the factory to run, since proposals are only generated on its own cycl
 | "The parse failure is a format problem" | HTTP 429 `RESOURCE_EXHAUSTED` - the account is out of credit | began diagnosing a mechanism before checking the instrument's preconditions |
 | "12 transitions over 12 days = 1.0/day" | The snapshots span 4.13 days: **2.9/day** | divided by a period I had not read off the data I was quoting |
 | "Kaizen has no deduplication" | It deduplicates by `(category, target_component)` - at **read** time | checked one side of a mechanism and described it as the whole |
+| "State: 10 observations, launch=TRUE, health=null" | 56 observations; 8 launched; `health_status_code` null in **all 56**; 46 are instrument failures | quoted §4's own dashboard snapshot as if it were the table, for a whole day after it went stale |
+| "The observer costs 24 launches/day producing 0 bits" | True only while the launcher answers. It had been at **28/hour** since 11:40 the previous day | computed the designed behaviour and presented it as the observed one - without opening the table |
+| "The dominant defect is the posterior's exchangeability" | The dominant defect is the cadence clock (O-9), an order of magnitude larger and introduced by my own item 5.5 | analysed the model before measuring the mechanism, and found the more elegant defect rather than the bigger one |
+| "V104 fixed the instrument/product confusion" | It fixed one of six consumers and never enumerated the rest - **ACP-103**, §9.3 | treated a reclassification as a value change rather than as a change to every reader of that value |
+| "The census found all six consumers" | A seventh, `FalsificationCycleService.latestErrorText`, reads the rows without touching the flag - found only by reading the artifact the factory actually produced | enumerated readers of the FIELD and called it a census of the RECORD - ACP-103 applied to itself, and failed |
+| Filed the constraint by triggering the cycle by hand | It filed real evidence about the wrong bearer, and would have sent Jules to fix the factory's sidecar inside the client's repo | acted on a mechanism before reading what that mechanism produces |
+| "The subscription agent replaces the auditor at **flat cost**" (§11.2) | The first build called `/v1/messages` with an `sk-ant-` key - metered per token, needs an API balance. Swapping a metered API whose credit had run out for another metered API | promised a billing model I had not checked, and built to the promise instead of to the requirement |
+| "Denying the agent its tools will cut the cost" | Same prompt: $0.33 with tools, **$0.81 without**. Denying tools moves spend into reasoning | predicted a number from a mechanism I had not measured. The change is still right - the agent was reading the sidecar's own filesystem and judging nearly blind - but for the correctness reason only |
 
 ---
 

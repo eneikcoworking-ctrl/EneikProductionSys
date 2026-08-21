@@ -51,6 +51,10 @@ public class ClientRuntimeObservabilityService {
     @Value("${client-runtime-observability.minimum-delay-hours:1}")
     private long minimumDelayHours;
 
+    /** Consecutive unanswered launcher calls that turn a blip into a reportable factory defect (O-10). */
+    @Value("${client-runtime-observability.instrument-outage-threshold:3}")
+    private int instrumentOutageThreshold;
+
     // 2026-08-11 (live incident, test-forty-third): the old defaults (/actuator/health on 8090) never
     // matched a single real generated project - no client project depends on spring-boot-actuator, and
     // none exposes a separate management port. The client's own Dockerfile HEALTHCHECK directive already
@@ -109,12 +113,32 @@ public class ClientRuntimeObservabilityService {
         BetaPosterior posterior = posteriorFrom(history);
 
         java.util.Optional<ClientRuntimeObservationEntity> lastReal = lastRealObservation(history);
-        if (lastReal.isPresent()) {
-            Instant lastObservedAt = lastReal.get().getObservedAt();
-            Duration sinceLast = Duration.between(lastObservedAt, Instant.now());
+
+        // 2026-08-21 (ACP-103, plan section 9.3): the clock below runs on the newest row of ANY kind, not
+        // on the newest row that observed the product. What this gate governs is the rate of ATTEMPTS, and
+        // an unanswered launcher call is an attempt - it cost a real POST. Clocking a rate limiter on
+        // successful measurements means it stops limiting exactly when measurement stops working:
+        // `lastRealObservation` freezes, `sinceLast` grows without bound, and the condition is true on
+        // every tick.
+        //
+        // Measured on test-forty-ninth, 2026-08-20: the launcher became unreachable at 11:40 and the
+        // observation rate went from 1/hour to 28/hour - 45 calls into nothing, each correctly recorded,
+        // correctly excluded from the posterior, and therefore invisible in every number anyone looks at.
+        // Positive feedback aimed at the component least able to serve it.
+        //
+        // V104 is untouched and remains right: instrument rows stay out of the PRODUCT's accounting. This
+        // is the one consumer of that classification whose question is about the instrument.
+        if (!history.isEmpty()) {
+            Instant lastAttemptAt = history.get(0).getObservedAt();
+            Duration sinceAttempt = Duration.between(lastAttemptAt, Instant.now());
             Duration floor = Duration.ofHours(minimumDelayHours);
             Duration nextDelay = posterior.nextCheckDelay(Duration.ofHours(baseDelayHours), floor);
-            if (sinceLast.compareTo(nextDelay) < 0 && !productChangedSince(project, lastObservedAt, sinceLast, floor)) {
+            // "Did the product change" is a product question, so it still measures from the last time the
+            // product was actually looked at; the floor is applied against the attempt clock so a merge
+            // stream can pull the check forward but never past the rate limit.
+            boolean changed = lastReal.isPresent()
+                    && productChangedSince(project, lastReal.get().getObservedAt(), sinceAttempt, floor);
+            if (sinceAttempt.compareTo(nextDelay) < 0 && !changed) {
                 return; // not due yet, per the adaptive-cadence formula - no hard-coded schedule anywhere here
             }
         }
@@ -154,6 +178,9 @@ public class ClientRuntimeObservabilityService {
         // 2026-08-19: what this row is a fact ABOUT. An unanswered launch call tells us nothing about the
         // product - it is a missing observation, not a negative one (V104, ACP-102).
         observation.setInstrumentFailure(!launch.observed());
+        // Which artifact this row is an observation of (V109). Null when the launcher did not reach one,
+        // or when it predates the field - never inferred from anything else.
+        observation.setCommitSha(launch.commitSha());
         observation.setLaunchSuccess(launch.success());
         observation.setLaunchDurationMs(launch.durationMs());
         observation.setErrorText(launch.error());
@@ -210,10 +237,57 @@ public class ClientRuntimeObservabilityService {
         }
 
         observationRepository.save(observation);
-        log.info("ClientRuntimeObservabilityService: project {} observed - launchSuccess={} healthStatus={}",
-                project.getId(), observation.isLaunchSuccess(), observation.getHealthStatusCode());
+        log.info("ClientRuntimeObservabilityService: project {} observed - launchSuccess={} healthStatus={} instrumentFailure={}",
+                project.getId(), observation.isLaunchSuccess(), observation.getHealthStatusCode(),
+                observation.isInstrumentFailure());
+
+        if (observation.isInstrumentFailure()) {
+            // Nothing was learned about the product, so the product's shift test has nothing to re-run on -
+            // it would only re-read the whole history to filter this row back out. What DID happen is an
+            // attempt that reached nothing, and that belongs to the instrument's accounting.
+            reportInstrumentOutage(project);
+            return;
+        }
 
         checkForRealShift(project);
+    }
+
+    /**
+     * The instrument's own denominator (plan O-10, ACP-103).
+     *
+     * Invariant 8 applies to the launcher as much as to delivery: a bearer nothing counts cannot be
+     * refuted. Measured 2026-08-20 on test-forty-ninth - 46 consecutive unanswered launcher calls produced
+     * zero findings, zero lever observations and zero invariant transitions, because every one of them was
+     * correctly classified as "not about the product" and then belonged to no other accounting at all.
+     *
+     * A run, not a rate: what makes this a defect rather than noise is consecutiveness. One unreachable
+     * call is a blip on a shared host; {@code instrumentOutageThreshold} in a row is a component that is
+     * down. Keyed to the launcher so the Kaizen read path (category + targetComponent) holds it as one
+     * standing finding instead of one per failed call.
+     */
+    private void reportInstrumentOutage(ProjectEntity project) {
+        int threshold = Math.max(2, instrumentOutageThreshold);
+        List<ClientRuntimeObservationEntity> head = observationRepository
+                .findByProjectIdOrderByObservedAtDesc(project.getId(), org.springframework.data.domain.Limit.of(threshold));
+        if (head.size() < threshold) {
+            return;
+        }
+        for (ClientRuntimeObservationEntity row : head) {
+            if (!row.isInstrumentFailure()) {
+                return;
+            }
+        }
+        log.warn("ClientRuntimeObservabilityService: the runtime launcher has failed to answer {} consecutive "
+                + "times for project {}; reporting it as a factory defect", threshold, project.getId());
+        kaizenService.recordSystemicDefectProposal(
+                null,
+                "Global",
+                "runtime-launcher",
+                "Runtime launcher unreachable for " + threshold + " consecutive observation attempts",
+                "Every recent launch attempt returned without reaching the launcher, so the product has not "
+                        + "been observed at all - the posterior is unchanged and the dashboard is clean while "
+                        + "nothing is being measured. Check that the runtime-launcher container is running and "
+                        + "answering on its own port before reading any runtime number as a fact about the product.");
     }
 
     /**
@@ -277,8 +351,36 @@ public class ClientRuntimeObservabilityService {
      */
     public record RuntimeHealthSummary(int observationCount, double posteriorMean, double credibleIntervalWidth,
                                         Boolean lastObservationHealthy, Instant lastObservedAt,
-                                        List<ClientRuntimeObservationEntity> recentObservations,
-                                        String liveUrl) {}
+                                        List<ClientRuntimeObservationEntity> recentAttempts,
+                                        String liveUrl) {
+
+        /**
+         * The rows that actually observed the product, newest first.
+         *
+         * 2026-08-21: this component used to be called `recentObservations` and it was not one. It carries
+         * every ATTEMPT, and an attempt that never reached the launcher observed nothing. The name said
+         * otherwise, and three separate consumers read `get(0)` from it believing they held a fact about
+         * the product: this file's own cadence clock, FalsificationCycleService.latestErrorText, and
+         * DeliveryRealityProducerService.produceRuntimeObservationEvidence - which wrote it into the
+         * coherence graph as "expected launchable, actually failed". Measured live: the constraint filed
+         * at 23:25Z cited "runtime-launcher unreachable" as the thing to fix in the CLIENT's repository.
+         *
+         * The names are the fix, not a rule to remember. A caller asking what the product did calls a
+         * method whose name says "product" and physically cannot receive an instrument row; a caller
+         * asking how often we tried calls one whose name says "attempts". ACP-102: a designator must pick
+         * out what it denotes. This is why the rename is not cosmetic - `recentObservations` was a name
+         * with a bearer it did not have.
+         */
+        public List<ClientRuntimeObservationEntity> productObservations() {
+            return recentAttempts == null ? List.of()
+                    : recentAttempts.stream().filter(row -> !row.isInstrumentFailure()).toList();
+        }
+
+        /** The newest row that observed the product, empty when nothing has yet reached it. */
+        public java.util.Optional<ClientRuntimeObservationEntity> lastProductObservation() {
+            return productObservations().stream().findFirst();
+        }
+    }
 
     public RuntimeHealthSummary summarize(java.util.UUID projectId) {
         List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(projectId);
@@ -325,14 +427,51 @@ public class ClientRuntimeObservabilityService {
     private BetaPosterior posteriorFrom(List<ClientRuntimeObservationEntity> history) {
         BetaPosterior posterior = BetaPosterior.UNINFORMATIVE_PRIOR;
         // Oldest-first replay so the posterior reflects the real chronological update sequence.
+        for (ClientRuntimeObservationEntity row : oneDrawPerArtifact(history)) {
+            posterior = posterior.update(isHealthy(row));
+        }
+        return posterior;
+    }
+
+    /**
+     * The sequence the posterior is entitled to fold over (V109).
+     *
+     * BetaPosterior is a conjugate Beta-Bernoulli model and de Finetti is what licenses it: the sequence
+     * must be exchangeable, draws from one fixed unknown probability. Between merges that is false. The
+     * outcome is determined by the artifact on main, which is constant until something merges, so inside
+     * such a run the next reading equals the last one with probability 1 - and folding it in again is
+     * counting the same fact twice, not gathering evidence.
+     *
+     * Measured on test-forty-ninth: seven hourly readings of one unchanged commit between 05h and 11h on
+     * 2026-08-20, each pushing the credible interval's lower bound down, which - since the cadence is
+     * keyed on that bound - brought the next check sooner, which produced another identical reading.
+     *
+     * Two exclusions, both deliberate:
+     * - instrument failures, which are not observations of the product at all (V104);
+     * - nothing else. A row whose commit is unknown is never collapsed into its neighbour, because
+     *   claiming two rows saw the same artifact when neither recorded which artifact it saw is exactly
+     *   the substitution this method exists to prevent (ACP-102).
+     *
+     * The last reading of a run is kept rather than the first: it is what the factory most recently knows
+     * about that artifact.
+     */
+    private List<ClientRuntimeObservationEntity> oneDrawPerArtifact(List<ClientRuntimeObservationEntity> history) {
+        List<ClientRuntimeObservationEntity> draws = new java.util.ArrayList<>();
         for (int i = history.size() - 1; i >= 0; i--) {
             ClientRuntimeObservationEntity row = history.get(i);
             if (row.isInstrumentFailure()) {
                 continue;
             }
-            posterior = posterior.update(isHealthy(row));
+            if (!draws.isEmpty()) {
+                String previous = draws.get(draws.size() - 1).getCommitSha();
+                if (previous != null && previous.equals(row.getCommitSha())) {
+                    draws.set(draws.size() - 1, row); // same artifact, still one draw - keep the newest
+                    continue;
+                }
+            }
+            draws.add(row);
         }
-        return posterior;
+        return draws;
     }
 
     /** The most recent row that is actually an observation of the product - see {@link #posteriorFrom}.
