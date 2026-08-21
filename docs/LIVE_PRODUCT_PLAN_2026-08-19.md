@@ -15,7 +15,8 @@ same thing had already happened with O-1, recorded 2026-08-19 at position one an
 ---
 
 > Section numbers follow the archive so every internal cross-reference (§2, §3, §7, §8, §10) still
-> resolves. The gaps at 4, 5 and 6 are sections whose content was superseded and now lives at §11-§14.
+> resolves. The gaps at 4, 5 and 6 are sections whose content was superseded and now lives at
+> §11-§15. §9.4, §9.5 and §10.5 were added 2026-08-21 and exist in no archive copy.
 
 ---
 
@@ -336,6 +337,55 @@ that failed 46 consecutive times produced no finding, no lever observation and n
 An unmeasured bearer cannot be refuted, and by §1 that makes it unteachable.
 ---
 
+### 9.4 ACP-104 - A Default Is A Decision
+
+`BARCAN-TAG-01_ACTUALIST-OBJECT`. 10.2 states its ground already: *a datastore no artifact declares is not
+an actual object.* The dual is the pattern: **a datastore some artifact declares IS an actual object -
+including when the artifact was written as a default.**
+
+A default committed to a repository stops being a default the moment it is committed. It is a file on
+`main`, indistinguishable from a deliberate choice to every later reader, every later stage and every
+agent. A stage whose job is to **decide** something cannot decide it once an earlier, cheaper step has
+already written an answer: it can only *contradict committed files*, which reads as a change requiring
+justification rather than as a decision being made. The earlier default therefore silences the later
+stage - and the silence appears, to anyone auditing, as an omission at the later stage rather than as a
+consequence of the earlier one.
+
+The measured instance is 10.5. The bootstrap scaffold writes an H2 datasource and an H2-only build
+manifest into every new project before any task runs. ARCHITECTURE (order 20) is the stage that owns the
+datastore decision; its contract names no datastore. Read alone, that is a gap in the ARCHITECTURE prompt.
+Read with 10.5, it is the predictable result of the question having been answered two steps earlier, in
+files the stage would have to contradict. Fixing the prompt would not have fixed it.
+
+**The general rule this adds to the corpus.** A deterministic bootstrap may produce only what is invariant
+across every brief the factory could receive. Anything a later stage is supposed to decide must be either
+absent, or present in a form that is **explicitly marked provisional and checked against the later
+declaration**. "It is only a default" is not a defence: a repository has no type for provisional, so the
+mark has to be carried by an artifact that something actually reads.
+
+The test that catches it: **for each thing the bootstrap writes, name the stage that owns that decision.
+If a stage owns it, the bootstrap is pre-empting a decision.**
+
+### 9.5 Every structural proposal is checked against a project starting from zero
+
+Added 2026-08-21 after my own failure, recorded here rather than in 15 because it is a standing check and
+not a one-off correction.
+
+Having archived 2 and 10, I proposed that no task may reach `done` until the product answers. It is wrong
+twice over, and both are visible in one question - *what does this do to a project that starts from zero?*
+
+- A greenfield product cannot answer until late in its life, so no task could ever close. **The rule
+  forbids its own precondition:** the factory could never build the thing that would eventually answer.
+- It makes scope delivery depend on operability, the merge 2 names as having broken this system twice.
+
+The check is cheap and mechanical, and it is now part of proposing anything structural: state the
+proposal, then run it against an empty repository on day zero and say what happens on the first task. A
+proposal that cannot survive that question does not get spoken aloud, let alone built.
+
+Its dual, from 10.5: a proposal must also survive **the opposite brief**. "Scaffold PostgreSQL instead"
+passes day zero and fails a brief whose product wants an embedded store - it would ship a server the
+product never uses. Both directions, every time.
+
 ## 10. The assembly has no owner
 
 ### 10.1 What happened, to the minute
@@ -388,11 +438,47 @@ class. Both corrected in 5.9.
 
 | Stage | Whose work | What is absent |
 | --- | --- | --- |
+| **BOOTSTRAP (before 20), the factory itself** | **leave the datastore undecided, so ARCHITECTURE can decide it** | **it decides it instead - see 10.5** |
 | ARCHITECTURE (20), TAG-01 | decide and declare the datastores in the runtime contract | the contract covers code only |
 | OPERATIONS (50), TAG-05 | build compose **from** the contract | built it from nothing |
 | INTEGRATION (70), TAG-00 | check the artifacts agree with the contract | never dispatched; now addressed and rescoped (5.9) |
 
 The runtime observation is the last line, and it is the only one that fired - at the most expensive point.
+
+### 10.5 The scaffold pre-empts the declaration - measured 2026-08-21
+
+10.1 attributes the H2 half to a Jules task on 2026-08-16 05:58. That is no longer the whole account.
+Read in the factory's own source today:
+
+- `ProjectFlowService.commitDeterministicJavaScaffoldIfAbsent` commits `pom.xml`, `.gitignore` and
+  `src/main/resources/application.properties` into **every new project**, deterministically, before any
+  Jules task runs.
+- `javaScaffoldPomXml()` declares `com.h2database:h2` and `flyway-core`. **No PostgreSQL driver. No
+  Testcontainers.**
+- `javaScaffoldApplicationProperties()` writes `spring.datasource.url=jdbc:h2:file:./data/appdb`,
+  `spring.datasource.driver-class-name=org.h2.Driver`, and alongside them
+  `spring.jpa.hibernate.ddl-auto=validate` and `spring.flyway.enabled=true` - a strict configuration
+  aimed at a database that will not be shipped.
+- The factory writes no `docker-compose.yml` at all. It is authored later by `BARCAN-TAG-00`, together
+  with the runtime contract itself.
+- `ProjectFactoryService.registerStandardHotspots` registers `application.properties` and
+  `docker-compose.yml` as standard hotspots for every project: **the factory already knows these two are
+  the pair that matters.** Nothing requires them to agree.
+
+**Why this changes the diagnosis rather than adding to it.** 10.2 says the factory must not choose a
+stack. It chooses one, at bootstrap, in committed files. ARCHITECTURE then cannot *decide* the datastore -
+it can only contradict files already on `main` - so the contract stays silent about a question that looks
+already answered. The silence at stage 20 is a **consequence** of the decision at bootstrap, not an
+independent omission.
+
+This makes the repair cheaper and more certain than 10.4 implies: the first row is one deterministic
+method in the factory, not agent behaviour. It also makes the defect **structural for every new project** -
+a greenfield repository acquires it at creation, before the first client wish exists.
+
+**What it does not license.** "Scaffold PostgreSQL instead" is the patch 10.2 forbids, and it fails the
+greenfield test in the other direction: a brief that wants an embedded store would then carry a server it
+never uses. The scaffold's job is to leave the question open while still producing something that builds -
+not to answer it earlier and differently.
 
 ---
 
@@ -407,6 +493,13 @@ Every internal number is green and the only external one is red.
 By §2 this is an **operability** fact and says nothing about scope delivery or fitness. It does not mean
 the delivered scope is wrong, and it must not be allowed to gate scope delivery - that merge is the error
 §2 names as having broken this system twice.
+
+**The factory is fully stopped as of 2026-08-21 18:40Z**, on the operator's instruction, with the plan to
+be finished first and the factory examined together afterwards. Nothing is running: no backend, no
+launcher, no sidecar, no ephemeral product stack.
+
+**Cycle 1 of 3 is spent, and its result is recorded in §13:** handed the exact failing statement, the
+factory shipped a placebo that passed, merged and closed a task. The killer line is unchanged on `main`.
 
 ---
 
@@ -559,6 +652,9 @@ memory instead of the thing itself.
 | Announced a restart I never performed | backend was down 47 minutes | reported my own action without verifying it |
 | "O-16: `completeWishlistCompilation` is unreachable; `pr_opened` appears zero times" | `reconcileStrandedPrOpenedWorkflows` runs every 60 s and did the conversion | absence of an event in one log window read as proof of impossibility |
 | "The O-17 fix is verified" (twice) | first the test never reached the branch; then `@Value` fields are not injected in a unit test, so the ceiling was silently 0 and both cases took the same path | a green test read as evidence without checking it could ever have been red |
+| Compressed the plan 1184 -> 173 lines, archiving §1, §2, §3, §7, §8, §9, §10 as "derivations" | within the hour I proposed a rule §2 forbids and §10 had already answered, and re-derived §10 from scratch | treated the rules the work is judged by as background material |
+| "A task may not reach `done` until the product answers" | it merges operability into scope delivery, and deadlocks any project from zero - the rule forbids its own precondition | proposed a gate without asking what it does on day one of an empty repository (§9.5) |
+| "The scaffold is innocent; H2 came from a Jules slice" (implicit in §10.1) | the factory's own deterministic scaffold writes the H2 datasource and an H2-only manifest into every new project before any task runs | read a dated narrative as current behaviour without re-reading the code |
 | "The app container logged nothing, the report was too early" | the app wrote 49 lines starting at second one; the report ran after them | a plausible mechanism asserted before measuring it |
 
 ---
@@ -578,6 +674,30 @@ memory instead of the thing itself.
 
 ---
 
-## 17. Held, on command
+## 17. Decisions held for the operator
+
+The repair for §10.4/§10.5 is not mine to choose. Three questions, each with the trade-off stated, to be
+settled together with the factory in front of us:
+
+1. **The scaffold's default.** Keep a working datastore marked provisional, so `mvn test` works on day
+   one and ARCHITECTURE may replace it - or write no datasource at all, and accept that a new project does
+   not build until the contract exists? The first is safe and keeps a committed answer on `main` that
+   ACP-104 says will read as a decision; the second is clean and makes day one non-functional.
+
+2. **The scope of the agreement check.** Compare all four - contract, `pom.xml`,
+   `application.properties`, `docker-compose.yml` - or begin with the pair the factory already registers
+   as hotspots, where the defect actually lives?
+
+3. **Where the declaration comes from.** Require the datastore in the ARCHITECTURE role's prompt - which
+   changes agent behaviour and can be ignored silently - or generate the declaration deterministically and
+   let the agent fill it, which cannot be ignored but fixes its shape in advance?
+
+Constraint on all three answers, from §2 and §9.5: whatever is built files a **constraint** when artifacts
+disagree. It does not block dispatch, review or `done`. An operability defect that stops scope delivery is
+the merge that broke this system twice.
+
+---
+
+## 18. Held, on command
 
 Move the factory to a server. Details in the archive.
