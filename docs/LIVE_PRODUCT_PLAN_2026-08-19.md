@@ -14,9 +14,17 @@ same thing had already happened with O-1, recorded 2026-08-19 at position one an
 
 ---
 
-> Section numbers follow the archive so every internal cross-reference (§2, §3, §7, §8, §10) still
-> resolves. The gaps at 4, 5 and 6 are sections whose content was superseded and now lives at
-> §11-§15. §9.4, §9.5 and §10.5 were added 2026-08-21 and exist in no archive copy.
+> **Numbering.** 1-16 are the archive's own numbers, so every cross-reference inside the restored
+> sections still resolves. Present here: 1, 2, 3, 7, 8, 9, 10, 11. The rest live only in
+> `LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md` and are always cited as "archive §N" - a bare §N always
+> means a section of this file. Sections added after the 2026-08-21 compression start at 20, so no
+> number ever means two different things. §9.4, §9.5 and §10.5 are new and exist in no archive copy.
+>
+> **What stays archived, and why.** Only records of past sessions: archive §12 (that session's
+> deployment steps, now carried out - see §20) and archive §13 (per-session verdict records). Rules,
+> patterns and standing analysis are here. The 2026-08-21 compression got this line wrong in one
+> direction and the harm is recorded above; the rule now is that anything a future reader would be
+> judged against stays in this file.
 
 ---
 
@@ -131,13 +139,13 @@ the wrong work.
 
 **Not built.** The stated precondition - "subordinating everything to a constraint the system cannot yet
 observe reliably would subordinate it to a guess" - **is now met**: O-9 and O-10 are fixed and verified
-live (§13.4), and the constraint exists as a row carrying the product's own failure (§13.5). What blocks
+live (archive §13.4), and the constraint exists as a row carrying the product's own failure (archive §13.5). What blocks
 it is no longer epistemic, only unbuilt.
 
 One flow defect this work exposed, recorded here rather than fixed in passing: the constraint is filed
 **only** inside `executePhilosophicalCycleForProject`, behind five gates that all belong to philosophical
 review, on a cron that fires every two days - and its one accelerator, the Gemini observer, is switched
-off (5.11). So the identification of the constraint is a side effect of the very process that is supposed
+off (archive 5.11). So the identification of the constraint is a side effect of the very process that is supposed
 to subordinate to it. Measured: 95 wishlist rows for the active project and, until 2026-08-21, zero
 `product_not_launchable` - while the product had never once answered a health check. That inversion is
 what §7's policy predicate would remove, and it is the reason to build it.
@@ -232,8 +240,8 @@ class of bearers is declared and the bearer belongs to it.
 
 Measured instances, all the same shape:
 - `requiresCodeForDelivery` answers a code question about a delivery concept (O-8)
-- an unanswered launch call recorded as a failed product (5.5)
-- a depleted API quota recorded as an unreadable answer (5.10)
+- an unanswered launch call recorded as a failed product (archive 5.5)
+- a depleted API quota recorded as an unreadable answer (archive 5.10)
 - "the launch call returned success" standing for "the product launched"
 
 The criterion was right for 94 of 99 cases, which is exactly why it survived: a criterion that is nearly
@@ -441,7 +449,7 @@ class. Both corrected in 5.9.
 | **BOOTSTRAP (before 20), the factory itself** | **leave the datastore undecided, so ARCHITECTURE can decide it** | **it decides it instead - see 10.5** |
 | ARCHITECTURE (20), TAG-01 | decide and declare the datastores in the runtime contract | the contract covers code only |
 | OPERATIONS (50), TAG-05 | build compose **from** the contract | built it from nothing |
-| INTEGRATION (70), TAG-00 | check the artifacts agree with the contract | never dispatched; now addressed and rescoped (5.9) |
+| INTEGRATION (70), TAG-00 | check the artifacts agree with the contract | never dispatched; now addressed and rescoped (archive 5.9) |
 
 The runtime observation is the last line, and it is the only one that fired - at the most expensive point.
 
@@ -482,7 +490,131 @@ not to answer it earlier and differently.
 
 ---
 
-## 11. State, measured 2026-08-21
+## 11. Leaving Gemini entirely
+
+### 11.1 There is no machine learning in this factory
+
+The `ml` service is a 547-line HTTP proxy to the Gemini API. Its entire dependency list is `fastapi`,
+`uvicorn`, `pydantic` - no sklearn, no torch, no numpy. Nothing is trained. Even `predict/bottleneck`
+asks Gemini to score WIP and cycle time and falls back on exact arithmetic for any failure:
+
+    risk = (min(wip/MAX_WIP, 1) + min(cycle/SLA, 1)) / 2
+
+with a logistic variant beside it. The mathematics is written and always runs; the model on top of it
+cannot be more correct than the formula it falls back to.
+
+### 11.2 The five call sites
+
+| Site | What it does | Replacement | Net |
+| --- | --- | --- | --- |
+| `GeminiProjectObserverService` | hourly narrative observation | **dropped (5.11).** The path it served is now mechanism | 24 paid calls/day removed; it produced 3 actions in 3 days |
+| `JulesDispatchService.reviewPr` | PR review | **already removed** 2026-07-25 after a cost incident | nothing to do |
+| `JulesDispatchService.chatCritical` | is a silent session looping or waiting? | rules + escalate a *repeated* misclassification | small loss of precision, no loss of mechanism |
+| `OpsAuditorService.chatCritical` | evidence-only auditor: 2 evidence kinds in, 3 decisions out, may ABSTAIN | **move to the subscription agent** - it already is factory-level judgment | same function, **on the subscription already paid for** - see the correction below |
+| `GeminiContextService.embed` | vectors for retrieval | **already paid**: 1525 chunks, 111 sources indexed; retrieval is local cosine similarity | degrades only for corpus files added later |
+
+### 11.3 Kaizen is not being reduced - its bookkeeping is being fixed
+
+347 rows, **10 distinct `(category, target_component)` pairs**: 34:1 storage to signal.
+`getDeduplicatedProposals` already keys on exactly that pair, but **at read time only**. The operator's
+view is correct; the table is not, and those rows are part of O-6.
+
+Moving that identity to the write gives kaizen three things it does not have:
+
+- **a recurrence count** - "this problem occurred 79 times" is a measure of severity, today invisible
+  because every recurrence is indistinguishable from a new problem;
+- **refutability** - after applying a micro-step, a counter that keeps rising says the improvement did not
+  hold. Today that cannot be known. A non-refutable improvement is not an improvement;
+- **standardisation that means something** - SDCA requires proving the gain was held, and "the counter
+  stopped rising since X" is that proof.
+
+Independent of Gemini: `FactorySelfHealthService` authored the 79-row database-health repetition itself.
+
+### 11.4 The subscription agent - what it replaces, and what it turned out to be
+
+**Correction, 2026-08-21.** The row above said "flat cost", and the first build did not deliver it: it
+called `/v1/messages` with an `sk-ant-` key, which is metered per token and needs a balance on an API
+account. That is not a subscription, and replacing a metered API whose credit had run out (Gemini) with
+another metered API is not an improvement. The operator was right to call it what it was.
+
+What was missed is that the subscription is **already on this machine**: Claude Code is installed at
+`/usr/local/bin/claude` and authenticated against the operator's own account. Verified by a real call,
+not by reading documentation - a Linux container with `@anthropic-ai/claude-code` installed via npm and
+the existing OAuth credential mounted returned a schema-bounded verdict:
+
+```
+structured_output: {"verdict":"ABSTAIN","reason":"linux container probe"}
+provider: firstParty   canonicalModel: claude-opus-5
+```
+
+No key, no balance, and no WSL interop - which was emitting `accept4 failed 110` on `.exe` calls that
+same hour, and has taken Docker down with it before.
+
+Two costs stated plainly, so "flat" is not claimed twice. A cold invocation loads Claude Code's own
+context first: 6-14k tokens before the prompt is read. `--bare` would cut that and cannot be used - its
+own help says "OAuth and keychain are never read", so it works only with an API key, which is the thing
+being avoided. On a subscription this is limit consumption rather than money, and at the measured 2.9
+wakeups a day it is accepted.
+
+It replaces **one** thing: `OpsAuditorService`'s judgment, plus the factory-level refutations nobody
+acts on.
+
+**The design in this section was wrong about where it lives, and the code corrected it.** It was written
+as an external process polling five HTTP endpoints. Built, it is `FactoryJudgmentService` inside the
+factory, reading `invariant_status_changes` directly. The reason is the contract with the operator, not
+convenience: an external process needs its own host, its own scheduler, its own credential store and its
+own deploy - four operator steps, and by §8.4 a path that needs the operator scores zero factory value by
+construction, permanently. In-process, the operator supplies a key and nothing else, exactly as
+`jules_api_key` has worked since that pattern began.
+
+**The cost gate is the order of operations, and it survived unchanged.** The cycle's first act is one
+indexed query: are there unjudged factory-level refutations? If not it returns having invoked no model at
+all. The observer called the model *to find out whether there was news*; this asks the factory, and wakes
+judgment only when the answer is yes.
+
+**Its output is bounded by a schema on the request, not by a request inside the prompt.**
+a JSON schema travelling with the request (`--json-schema`), `additionalProperties: false` and a
+two-valued verdict enum: ABSTAIN, or one factory-level finding filed into the sink the factory already
+has. Never prose, never a journal entry,
+never product work. ACP-102 applies to the agent as much as to anything it reads - an answer that merely
+looks like a verdict is not one.
+
+**Two non-answers, kept apart.** An endpoint that cannot be reached is a fact about the instrument and
+leaves the transition unjudged for retry; an answer that is declined or off-schema is a fact about that
+input and will be declined identically forever, so the row is marked read. Collapsing them made one row
+an absorbing state at the head of a FIFO queue - the same shape as O-9, caught in review before it ran.
+And because a quiet drain is worse than a visible block, a cycle that rules on nothing files a finding
+against the judgment layer itself.
+
+### 11.5 Wake on refutation, not on change - measured
+
+Waking on every merge is 40 wakeups/day, which reproduces polling with a different clock. Confirmations
+are free and infinite; a theory earns attention when it is **refuted**.
+
+Reconstructed from `TRUST_SIGNAL_SNAPSHOTS` - 74 snapshots for the active project, 2026-08-16 to
+2026-08-20, every two hours, no waiting required:
+
+```
+closed unmerged PRs (failing_reviews > 0)   0 transitions
+duplicate content                           2
+uncaptured defects (recent > 0)             0
+quality gate failures                       0
+trust score below 0.5                      10
+                                     total 12 over 4.13 days  ->  2.9 per day
+```
+
+**2.9 wakeups per day against 40.** And each one, by construction, carries information: it means the
+system was wrong about itself.
+
+**The limit that must be stated.** Refutation is visible only where an expectation is written. The stack
+defect O-1 violated none of the seven invariants, because nothing asserted that the artifacts agree with
+the contract. A silent system is unrefutable and therefore unteachable - so **every change must leave
+behind a new checkable assertion.** The set of expectations grows, and the agent wakes more precisely not
+because it got smarter but because the factory says more about itself.
+
+---
+
+## 20. State, measured 2026-08-21
 
 The goal is §1.1 and is not restated here - restating it is how it drifts.
 
@@ -498,12 +630,18 @@ the delivered scope is wrong, and it must not be allowed to gate scope delivery 
 be finished first and the factory examined together afterwards. Nothing is running: no backend, no
 launcher, no sidecar, no ephemeral product stack.
 
-**Cycle 1 of 3 is spent, and its result is recorded in §13:** handed the exact failing statement, the
+**Archive §12.1 is now closed.** It listed nine pieces of work in `main` that had never run, with the
+image containing items 1 and 2 only. Today's image was built from `main` at `fc4ce0c` and every commit it
+named - `ef487fa`, `8b3cba5`, `5fb563c`, `cd2e68b`, `0e6b525`, `b9f201c` - is an ancestor of it, verified
+by `git merge-base --is-ancestor`. All of it has now run at least once. What each piece *does* in the
+running system is still mostly unobserved; being in the image is not evidence of behaviour.
+
+**Cycle 1 of 3 is spent, and its result is recorded in §22:** handed the exact failing statement, the
 factory shipped a placebo that passed, merged and closed a task. The killer line is unchanged on `main`.
 
 ---
 
-## 12. O-1 - the reason the product does not serve
+## 21. O-1 - the reason the product does not serve
 
 Recorded since 2026-08-19 as the first open defect, and re-derived from scratch on 2026-08-21 without
 anyone having acted on it in between. **The plan already had the answer at position one.**
@@ -577,7 +715,7 @@ bound. Alongside it the factory shipped a frontend pagination feature and three 
 
 ---
 
-## 13. Open defects
+## 22. Open defects
 
 Ranked by whether they block §2. Full evidence for each is in the archive.
 
@@ -618,7 +756,7 @@ refute them.
 
 ---
 
-## 14. Shipped this session, with verification
+## 23. Shipped this session, with verification
 
 | item | verification |
 | --- | --- |
@@ -633,11 +771,11 @@ refute them.
 | **L-4 the constraint reaches a running product** | **OPEN - this is §1** |
 
 Verification means bytes in the built jar, not a build's exit code. That rule exists because "deployed" was
-claimed twice for a jar that did not contain the change (§6).
+claimed twice for a jar that did not contain the change (§24).
 
 ---
 
-## 15. Corrections - claims that measurement refuted
+## 24. Corrections - claims that measurement refuted
 
 Kept in full because the pattern is the point: every one is a claim made from reading a name, a flag or a
 memory instead of the thing itself.
@@ -659,7 +797,7 @@ memory instead of the thing itself.
 
 ---
 
-## 16. Forbidden by construction
+## 25. Forbidden by construction
 
 - No number may be treated as "the product is ready."
 - No number may close the flow. The only terminal is `acceptProject`, and it is a human's.
@@ -674,7 +812,7 @@ memory instead of the thing itself.
 
 ---
 
-## 17. Decisions held for the operator
+## 26. Decisions held for the operator
 
 The repair for §10.4/§10.5 is not mine to choose. Three questions, each with the trade-off stated, to be
 settled together with the factory in front of us:
@@ -698,6 +836,6 @@ the merge that broke this system twice.
 
 ---
 
-## 18. Held, on command
+## 27. Held, on command
 
 Move the factory to a server. Details in the archive.
