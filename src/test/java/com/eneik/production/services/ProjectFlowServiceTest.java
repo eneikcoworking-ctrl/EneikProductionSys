@@ -237,6 +237,44 @@ class ProjectFlowServiceTest {
         assertTrue(contract.contains("BARCAN-TAG-01"), "the question must name its owner");
     }
 
+    @Test
+    void theClientBriefQuotesOnlyEntriesTheClientActuallyWrote() {
+        // Measured 2026-08-22: 19 rows on test-forty-ninth carried source=client, but 18 of them read
+        // "Internal work item N (BARCAN-TAG-09) from wishlist ..." and carried a role tag. A client does
+        // not address a role - it does not know this factory has any. Quoting all 19 buries the referent
+        // under the factory's own decomposition, which §8.2 forbids by name.
+        java.util.UUID projectId = java.util.UUID.randomUUID();
+        ProjectEntity project = greenfieldProject();
+        org.springframework.test.util.ReflectionTestUtils.setField(project, "id", projectId);
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+
+        WishlistEntity fromClient = new WishlistEntity();
+        fromClient.setProjectId(projectId);
+        fromClient.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+        fromClient.setContent("Разработать веб-систему для каталогизации материалов");
+
+        WishlistEntity fromFactory = new WishlistEntity();
+        fromFactory.setProjectId(projectId);
+        fromFactory.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+        fromFactory.setSourceRoleTag("BARCAN-TAG-09");
+        fromFactory.setContent("Internal work item 1 (BARCAN-TAG-09) from wishlist 56484b6d");
+
+        WishlistRepository wishlists = mock(WishlistRepository.class);
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of(fromClient, fromFactory));
+        ProjectFlowService service = serviceWithWishlists(wishlists);
+        when(gitHubPullRequestService.fetchFileContent(any(), any(), eq("docs/PROJECT_BRIEF.md")))
+                .thenReturn(Optional.empty());
+
+        service.syncClientBriefToRepository(project);
+
+        ArgumentCaptor<byte[]> captor = ArgumentCaptor.forClass(byte[].class);
+        verify(gitHubPullRequestService).upsertFile(any(), eq("docs/PROJECT_BRIEF.md"), captor.capture(), anyString());
+        String written = new String(captor.getValue(), java.nio.charset.StandardCharsets.UTF_8);
+        assertTrue(written.contains("каталогизации"), "the client's own words must be there: " + written);
+        assertFalse(written.contains("BARCAN-TAG-09"),
+                "the factory's own decomposition must not be quoted as the client's brief: " + written);
+    }
+
     private void stubNoManifestsExist(ProjectEntity project) {
         when(gitHubPullRequestService.fetchFileContent(eq(project), eq("main"), anyString()))
                 .thenReturn(Optional.empty());
@@ -252,9 +290,13 @@ class ProjectFlowServiceTest {
     }
 
     private ProjectFlowService service() {
+        return serviceWithWishlists(mock(WishlistRepository.class));
+    }
+
+    private ProjectFlowService serviceWithWishlists(WishlistRepository wishlistRepository) {
         ProjectFlowService service = new ProjectFlowService(
                 projectRepository,
-                mock(WishlistRepository.class),
+                wishlistRepository,
                 mock(AccountRepository.class),
                 mock(TaskRepository.class),
                 mock(ClaimRepository.class),

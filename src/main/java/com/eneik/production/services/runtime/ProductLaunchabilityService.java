@@ -359,6 +359,14 @@ public class ProductLaunchabilityService {
             if (!path.endsWith(".svelte") && !path.endsWith(".js") && !path.endsWith(".ts")) {
                 continue;
             }
+            // Test files are excluded, and this is not a convenience: a fixture is a record-shaped literal
+            // by definition, and that is what fixtures are FOR. Measured 2026-08-22 on the first live run
+            // of this check - it named ProtocolSearch.test.js and ProtocolSearchE2E.test.js alongside the
+            // three real offenders. A check that reports healthy code is noise, and noise is what teaches
+            // people to skip findings.
+            if (isTestSource(path)) {
+                continue;
+            }
             String body = gitHubPullRequestService
                     .fetchFileContent(project, project.getDefaultBranch(), path).orElse(null);
             if (body != null && carriesRecordShapedLiterals(body)) {
@@ -402,6 +410,14 @@ public class ProductLaunchabilityService {
         wishlistRepository.save(wishlist);
         log.warn("ProductLaunchabilityService: project {} - frontend carries domain records in {} file(s) {}; "
                 + "created frontend_unbacked_records wishlist", project.getId(), offenders.size(), offenders);
+    }
+
+    /** A fixture is a record-shaped literal by design; only shipped sources make claims to a user. */
+    private boolean isTestSource(String path) {
+        String p = path.toLowerCase(java.util.Locale.ROOT);
+        return p.contains(".test.") || p.contains(".spec.") || p.contains("__tests__/")
+                || p.contains("/tests/") || p.contains("/__mocks__/") || p.endsWith(".stories.js")
+                || p.endsWith(".stories.ts");
     }
 
     /**

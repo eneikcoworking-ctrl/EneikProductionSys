@@ -1212,6 +1212,14 @@ public class ProjectFlowService {
         java.util.List<WishlistEntity> clientWishes = wishlistRepository.findByProjectId(project.getId()).stream()
                 .filter(w -> w.getSource() == WishlistSource.client)
                 .filter(w -> w.getContent() != null && !w.getContent().isBlank())
+                // A client does not address a role. The client does not know this factory HAS roles, so an
+                // entry carrying a role tag was written by the factory for the factory - measured
+                // 2026-08-22: of 19 rows marked `client` on test-forty-ninth, 18 carried a BARCAN tag and
+                // read "Internal work item N (BARCAN-TAG-09) from wishlist ...", and exactly one carried
+                // none - the client's own sentence. Quoting the other 18 into the brief would bury the
+                // referent under the factory's own decomposition, which is precisely what §8.2 forbids:
+                // |C| is declared from the CLIENT's brief, "not from the factory's own decomposition".
+                .filter(w -> w.getSourceRoleTag() == null || w.getSourceRoleTag().isBlank())
                 .sorted(java.util.Comparator.comparing(WishlistEntity::getCreatedAt,
                         java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
                 .toList();
