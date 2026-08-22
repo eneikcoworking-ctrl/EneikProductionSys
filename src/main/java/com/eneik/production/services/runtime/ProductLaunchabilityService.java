@@ -44,6 +44,7 @@ public class ProductLaunchabilityService {
     private static final String POM_PATH = "pom.xml";
     private static final String UNDECLARED = "UNDECLARED";
     private static final String TEST_PROPERTIES_PATH = "src/test/resources/application.properties";
+    private static final String FRONTEND_SRC_PATH = "frontend/src";
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -320,6 +321,107 @@ public class ProductLaunchabilityService {
         }
         // `postgresql:15` -> `postgresql`; the version is the contract's business, not this check's.
         return normaliseEngine(raw.split(":")[0]);
+    }
+
+    /**
+     * Does the frontend render records it carries itself, instead of records the product produced?
+     *
+     * Measured 2026-08-22 on this factory's own client product: the page stated "Showing 1-10 of 12
+     * materials" and listed twelve documents - titles, authors, dates, tags, per-document Download buttons
+     * - while `/api/v1/materials/search` returned `totalElements: 0`. Twelve names of perfect form with no
+     * bearer. Frege's reference test, and the plan states it in §9.2: every substantive noun phrase must
+     * have a bearer - a declared capability, a real route, or a real entity.
+     *
+     * **Why this and not a content check.** Nothing here reads prose, counts keywords or judges wording;
+     * those measure the text against itself. This asks one structural question with a decidable answer:
+     * can the page display a list of domain records with the server switched off? If it can, the list is
+     * an assertion the product cannot support.
+     *
+     * **What is deliberately NOT flagged.** Static text that names the interface itself - button labels,
+     * section headings, empty-state copy, filter names - is legitimate design content whose bearer is a
+     * capability or a route. Only record-shaped literals are flagged: array elements carrying an
+     * identifier together with a human-facing field, which is the shape of a claim about the world.
+     *
+     * Greenfield-safe: a project with no `frontend/src` produces no claim.
+     */
+    public void checkFrontendRendersOnlyProducedRecords(ProjectEntity project) {
+        if (wishlistRepository.existsByProjectIdAndSource(project.getId(),
+                WishlistSource.frontend_unbacked_records)) {
+            return;
+        }
+        java.util.List<String> sources = gitHubPullRequestService
+                .listFilePaths(project, project.getDefaultBranch(), FRONTEND_SRC_PATH);
+        if (sources == null || sources.isEmpty()) {
+            return; // no frontend yet - nothing can be claimed
+        }
+        java.util.List<String> offenders = new java.util.ArrayList<>();
+        for (String path : sources) {
+            if (!path.endsWith(".svelte") && !path.endsWith(".js") && !path.endsWith(".ts")) {
+                continue;
+            }
+            String body = gitHubPullRequestService
+                    .fetchFileContent(project, project.getDefaultBranch(), path).orElse(null);
+            if (body != null && carriesRecordShapedLiterals(body)) {
+                offenders.add(path);
+            }
+            if (offenders.size() >= 5) {
+                break; // enough to act on; the finding is the file list, not a census
+            }
+        }
+        if (offenders.isEmpty()) {
+            return;
+        }
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.frontend_unbacked_records);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        wishlist.setSourceRoleTag("BARCAN-TAG-11");
+        wishlist.setCynefinDomain("clear");
+        wishlist.setContent("The frontend carries domain records in its own source and renders them, so the "
+                + "page asserts things the product cannot support. Files: " + String.join(", ", offenders)
+                + ".\n\nMeasured on this product on 2026-08-22: the page stated \"Showing 1-10 of 12 "
+                + "materials\" and listed twelve documents with titles, authors, dates and per-document "
+                + "Download buttons, while the search endpoint returned zero rows. Each of those twelve "
+                + "titles is a name with no bearer.\n\nReplace the built-in records with the server's "
+                + "answer, and give every data view its four states - empty, loading, error, present. An "
+                + "empty catalogue that says it is empty is a true claim; twelve invented documents are "
+                + "twelve false ones.\n\nThe decidable form of this: with the backend stopped, the page "
+                + "must be able to show no domain records at all. Static text naming the interface itself - "
+                + "labels, headings, empty-state copy - is not affected and must stay.");
+        wishlist.setJtbd("When I look at the product, I want everything it shows me to be something it "
+                + "actually holds, so that what I see is evidence about the product rather than about its "
+                + "source code");
+        wishlist.setAcceptanceCriteria("Given the product running with its backend stopped, When the page "
+                + "is loaded, Then no domain record is displayed and the empty or error state is shown "
+                + "instead");
+        wishlist.setDod("BARCAN-TAG-11: no record-shaped literal remains in frontend sources; every data "
+                + "view renders the server's response and declares empty, loading, error and present "
+                + "states.");
+        wishlistRepository.save(wishlist);
+        log.warn("ProductLaunchabilityService: project {} - frontend carries domain records in {} file(s) {}; "
+                + "created frontend_unbacked_records wishlist", project.getId(), offenders.size(), offenders);
+    }
+
+    /**
+     * A record-shaped literal is an object literal carrying an identifier together with a human-facing
+     * field. That pair is what makes it a claim about the world rather than interface furniture: a label
+     * has no id, and an id alone is a key, not an assertion.
+     */
+    private boolean carriesRecordShapedLiterals(String body) {
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("\\{[^{}]{0,400}?\\b(id|uuid|documentId|docId)\\s*:[^{}]{0,400}?"
+                        + "\\b(title|name|heading|label|description|summary)\\s*:", java.util.regex.Pattern.DOTALL)
+                .matcher(body);
+        int hits = 0;
+        while (m.find()) {
+            hits++;
+            if (hits >= 2) {
+                return true; // one is a fixture or a default; a list of them is a rendered claim
+            }
+        }
+        return false;
     }
 
     /** The engine a compose stack actually provides. Null when it provides none this recognises. */

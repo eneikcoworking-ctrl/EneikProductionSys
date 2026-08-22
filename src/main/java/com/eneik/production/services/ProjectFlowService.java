@@ -1184,6 +1184,68 @@ public class ProjectFlowService {
                 """;
     }
 
+    /**
+     * Puts the client's own words into the product's repository, and keeps them there.
+     *
+     * §8.2 derives |C| - the set of capabilities the product claims - from the CLIENT's brief, "declared
+     * from the client's brief with exclusions enumerated, not from the factory's own decomposition". The
+     * repository's `docs/PROJECT_BRIEF.md` is written at workspace creation, before the client has said
+     * anything, so it could only ever be boilerplate about production constraints. Measured on
+     * test-forty-ninth 2026-08-22: the client asked, in Russian, for a web system for cataloguing
+     * epidemiological materials, protocols and data. That sentence existed only in this factory's
+     * database. The product's own repository contained no statement of what the client wanted, so every
+     * role downstream - architecture, contracts, frontend - worked without a referent, and the page ended
+     * up naming twelve documents that do not exist.
+     *
+     * Verbatim and untranslated, deliberately. English is the factory's working notation for
+     * decomposition; the client's brief is evidence, and evidence is quoted, not paraphrased. Which
+     * languages the PRODUCT speaks is a separate capability with its own bearers - a string catalogue and
+     * a font covering the script - decided at design time.
+     *
+     * Idempotent: writes only when the rendered content differs from what is already on the branch, so it
+     * is safe on every orchestration tick and produces no commit when nothing changed.
+     */
+    public void syncClientBriefToRepository(ProjectEntity project) {
+        if (project == null || project.getStatus() != ProjectStatus.active) {
+            return;
+        }
+        java.util.List<WishlistEntity> clientWishes = wishlistRepository.findByProjectId(project.getId()).stream()
+                .filter(w -> w.getSource() == WishlistSource.client)
+                .filter(w -> w.getContent() != null && !w.getContent().isBlank())
+                .sorted(java.util.Comparator.comparing(WishlistEntity::getCreatedAt,
+                        java.util.Comparator.nullsLast(java.util.Comparator.naturalOrder())))
+                .toList();
+        if (clientWishes.isEmpty()) {
+            return; // the client has not spoken yet - nothing to quote, and inventing one is the defect
+        }
+
+        StringBuilder body = new StringBuilder();
+        body.append("# Project Brief\n\n## Customer Job\n\n");
+        body.append("The client's own entries, quoted verbatim and in the client's own language. This file is\n");
+        body.append("maintained by the factory from the wishlist and must not be edited by hand or translated -\n");
+        body.append("it is the referent every later artifact is checked against.\n\n");
+        int n = 0;
+        for (WishlistEntity w : clientWishes) {
+            n++;
+            body.append(n).append(". ").append(w.getContent().strip().replace("\n", "\n   ")).append("\n\n");
+        }
+        body.append("---\n\n");
+        body.append("Entries: ").append(clientWishes.size()).append(". Anything this product claims - a page\n");
+        body.append("heading, a filter, a capability - must trace to one of them or to a declared route.\n");
+
+        String rendered = body.toString();
+        String existing = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), CLIENT_BRIEF_PATH).orElse(null);
+        if (rendered.equals(existing)) {
+            return;
+        }
+        boolean written = gitHubPullRequestService.upsertFile(project, CLIENT_BRIEF_PATH,
+                rendered.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                "Client brief: the client's own entries, verbatim, as the referent for every later artifact");
+        log.info("ProjectFlowService: project {} - client brief synced to {} ({} entr(ies), written={})",
+                project.getId(), CLIENT_BRIEF_PATH, clientWishes.size(), written);
+    }
+
     private String bootstrapDocContent(ProjectEntity project) {
         return """
                 # Repository Execution Boundary and Runtime Contract
@@ -2755,6 +2817,9 @@ public class ProjectFlowService {
     private static final String WISHLIST_COMPILER_PLAN_PATH = ".eneik/task-plan.json";
     /** The single source of truth for which services a product runs against - see ACP-104. */
     public static final String RUNTIME_CONTRACT_PATH = "docs/architecture/adr-002-runtime-contract.md";
+
+    /** The client's own words, in the product's own repository - the referent for §8.2's |C|. */
+    public static final String CLIENT_BRIEF_PATH = "docs/PROJECT_BRIEF.md";
 
     public static final String WISHLIST_COMPILER_PLAN_PATH_KEY = "taskPlanPath";
 

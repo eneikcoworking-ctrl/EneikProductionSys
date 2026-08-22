@@ -365,6 +365,58 @@ public class GitHubPullRequestService {
      * read back the JSON task-plan file a Jules wishlist-compiler session writes into its PR branch,
      * since Jules sessions communicate their structured result as a committed file, not a direct reply.
      */
+    /**
+     * Every file path under a directory, recursively. Uses the git trees API rather than walking
+     * `/contents` one directory at a time: one request instead of N, and the recursive form already
+     * returns the whole tree flattened.
+     *
+     * Returns an empty list rather than failing when the directory does not exist - a project with no
+     * frontend is not an error, it is a project with no frontend, and callers decide what that means.
+     */
+    public java.util.List<String> listFilePaths(ProjectEntity project, String ref, String directoryPrefix) {
+        if (project == null || ref == null || ref.isBlank()) {
+            return java.util.List.of();
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return java.util.List.of();
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return java.util.List.of();
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return java.util.List.of();
+        }
+        try {
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo())
+                    + "/git/trees/" + encode(ref) + "?recursive=1";
+            HttpResponse<String> response = sendGitHub(baseRequest(urlPath, token).GET().build());
+            if (response.statusCode() != 200) {
+                log.warn("GitHub tree listing failed for {}/{} ref={}: status={}",
+                        repoRef.owner(), repoRef.repo(), ref, response.statusCode());
+                return java.util.List.of();
+            }
+            com.fasterxml.jackson.databind.JsonNode tree =
+                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(response.body()).path("tree");
+            java.util.List<String> paths = new java.util.ArrayList<>();
+            String prefix = directoryPrefix == null ? "" : directoryPrefix;
+            for (com.fasterxml.jackson.databind.JsonNode node : tree) {
+                if (!"blob".equals(node.path("type").asText(""))) {
+                    continue;
+                }
+                String p = node.path("path").asText("");
+                if (!p.isBlank() && p.startsWith(prefix)) {
+                    paths.add(p);
+                }
+            }
+            return paths;
+        } catch (Exception e) {
+            log.warn("GitHub tree listing failed for project {}: {}", project.getId(), e.getMessage());
+            return java.util.List.of();
+        }
+    }
+
     public Optional<String> fetchFileContent(ProjectEntity project, String ref, String path) {
         return fetchFileBytes(project, ref, path).map(bytes -> new String(bytes, StandardCharsets.UTF_8));
     }

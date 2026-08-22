@@ -148,7 +148,16 @@ public class ProjectWorkspaceFactoryService {
 
                 ## Customer Job
 
-                The client needs this project to produce a concrete product outcome that can be reviewed, accepted, and paid for without hidden engineering ambiguity.
+                <!-- NOT-YET-STATED. Written from the client's own wishlist entries, in the client's
+                     own words and language, by ProjectFlowService.syncClientBriefToRepository as soon
+                     as the first client entry exists. Empty here on purpose.
+
+                     Not a template for an agent to fill. A brief invented before the client spoke is
+                     a decision taken in the wrong place: 8.2 derives |C|, the set of capabilities the
+                     product claims, from the CLIENT's brief - so boilerplate here leaves nothing to
+                     derive |C| from, and every later claim about the product ends up without a
+                     bearer. Measured on test-forty-ninth: the client asked, in Russian, for a web
+                     system for cataloguing epidemiological materials; this file said none of it. -->
 
                 ## Production Constraints
 

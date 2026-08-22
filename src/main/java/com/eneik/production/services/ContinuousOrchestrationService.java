@@ -154,6 +154,13 @@ public class ContinuousOrchestrationService {
                         // closed against a product that had never once answered. Same authorisation, same
                         // service, same tick - only the once-ever guard is not shared.
                         productLaunchabilityService.checkDatastoreAgreement(project);
+                        // Same tick, same authorisation: a page that renders records the product cannot
+                        // produce is an operability fact about the delivered product, decidable from the
+                        // repository without launching anything.
+                        productLaunchabilityService.checkFrontendRendersOnlyProducedRecords(project);
+                        // The client's own words into the product's repository, so |C| has somewhere to be
+                        // derived FROM (8.2). Idempotent - no commit when nothing changed.
+                        projectFlowService.syncClientBriefToRepository(project);
                     } catch (Exception e) {
                         log.error("Continuous Orchestration: launchability check failed for project {}", project.getId(), e);
                     }

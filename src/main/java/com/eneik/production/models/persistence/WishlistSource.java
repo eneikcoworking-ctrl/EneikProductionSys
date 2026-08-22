@@ -47,5 +47,14 @@ public enum WishlistSource {
      * that these artifacts agree, and a silent system is unrefutable (plan §11.5).
      */
     datastore_artifacts_disagree,
+
+    /**
+     * The frontend renders records it carries itself instead of records the product produced. Measured
+     * 2026-08-22: the page stated "Showing 1-10 of 12 materials" and listed twelve documents with titles,
+     * authors and dates while the API returned zero rows. Twelve names of perfect form and no bearer -
+     * a Fregean reference failure, decidable from the repository alone, and the reason a product can look
+     * finished while `V_p` stays at its degenerate |C| = 1.
+     */
+    frontend_unbacked_records,
     product_not_launchable
 }

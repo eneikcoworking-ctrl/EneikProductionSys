@@ -255,6 +255,86 @@ class ProductLaunchabilityServiceTest {
         verify(wishlists, never()).save(any());
     }
 
+    // --- records the product cannot produce, 2026-08-22 -------------------------------------------------
+
+    private static final String FAKE_RECORDS = """
+            const documents = [
+              { id: '123e4567-e89b-12d3-a456-426614174000', title: 'Standard Protocol for Influenza', author: 'Epidemiology Research Group' },
+              { id: '223e4567-e89b-12d3-a456-426614174001', title: 'Q3 Surveillance Report 2023', author: 'WHO' }
+            ];
+            """;
+
+    private static final String HONEST_COMPONENT = """
+            <script>
+              export let results = [];
+              let loading = false;
+            </script>
+            <h1>EpiGuard Catalog</h1>
+            <button data-testid="search-submit">Search</button>
+            {#if loading}<p>Loading...</p>{:else if results.length === 0}<p>No materials yet</p>{/if}
+            """;
+
+    private void stubFrontend(GitHubPullRequestService gitHub, ProjectEntity project,
+                               java.util.List<String> paths, String bodyForAll) {
+        when(gitHub.listFilePaths(eq(project), eq("main"), eq("frontend/src"))).thenReturn(paths);
+        for (String p : paths) {
+            when(gitHub.fetchFileContent(eq(project), eq("main"), eq(p)))
+                    .thenReturn(java.util.Optional.ofNullable(bodyForAll));
+        }
+    }
+
+    @Test
+    void aFrontendCarryingItsOwnDomainRecordsIsFiled() {
+        // Measured 2026-08-22: the page stated "Showing 1-10 of 12 materials" and listed twelve documents
+        // with titles, authors and dates while the search endpoint returned zero rows. Twelve names of
+        // perfect form and no bearer.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubFrontend(gitHub, project, java.util.List.of("frontend/src/MaterialSearch.svelte"), FAKE_RECORDS);
+
+        service.checkFrontendRendersOnlyProducedRecords(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlists).save(captor.capture());
+        assertEquals(WishlistSource.frontend_unbacked_records, captor.getValue().getSource());
+        assertTrue(captor.getValue().getContent().contains("MaterialSearch.svelte"),
+                "the finding must name the file: " + captor.getValue().getContent());
+        assertEquals("BARCAN-TAG-11", captor.getValue().getSourceRoleTag());
+    }
+
+    @Test
+    void aFrontendWithLabelsButNoRecordsIsNeverFiled() {
+        // The half that must not be broken. Static text naming the interface itself - headings, button
+        // labels, empty-state copy - is legitimate design content whose bearer is a capability or a route.
+        // A check that flagged it would make every honest frontend a defect.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubFrontend(gitHub, project, java.util.List.of("frontend/src/App.svelte"), HONEST_COMPONENT);
+
+        service.checkFrontendRendersOnlyProducedRecords(project);
+
+        verify(wishlists, never()).save(any());
+    }
+
+    @Test
+    void aProjectWithNoFrontendIsNeverFiled() {
+        // Day zero.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        when(gitHub.listFilePaths(eq(project), eq("main"), eq("frontend/src")))
+                .thenReturn(java.util.List.of());
+
+        service.checkFrontendRendersOnlyProducedRecords(project);
+
+        verify(wishlists, never()).save(any());
+    }
+
     @Test
     void neverChecksAProjectThatIsNotYetDelivered() {
         var projects = mock(ProjectRepository.class);
