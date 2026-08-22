@@ -880,94 +880,116 @@ memory instead of the thing itself.
 
 ---
 
-## 26. The order of work, stated so each step can only be done or not done
+## 26. The order of work, as mathematics on §8
 
-Every item below has an owner, a trigger, a decidable done-condition, and the observation that refutes it.
-No item gates dispatch, review or `done` - §2: operability may not be merged into scope delivery. Each
-produces a **finding with its witness**, never a score - §1: a completeness metric is not a goal.
+§1.1 is one row in `client_runtime_observations` with a non-null `health_status_code`. In §8.2's terms the
+product is still the degenerate case, |C| = 1, and the single Bernoulli is *did the stack boot and answer*.
+Read from the database today: **57 attempts, 10 real observations, 0 successes.** Every step below is
+justified by what it does to that posterior, and none of them gates dispatch, review or `done` - §2.
 
-### 26.1 End the incompatibility sequence - factory, in flight
+### 26.1 Give the sequence a denominator
+
+Three incompatibilities of one family have been found by launching: `CREATE ALIAS`, then `file_data`
+twice. A launch is a **sequential** refuter: Hibernate stops at the first mismatch, so one launch reveals
+at most one defect. With N remaining, the two strategies cost
+
+    launch-and-fix        N x (T_launch + T_fix),   N unknown throughout
+    suite on the shipped engine   T_migrate + N x T_fix,   N measured in one run
+
+The difference is not a constant factor. In the first, **N is never known** - after each fix the remaining
+count is exactly as unknown as before, so no statement about remaining work can be made, let alone
+refuted. That is invariant 8 violated at the level of the work itself: *a measurement without its
+denominator*. The second gives the sequence a denominator in one pass, because schema validation reports
+every mismatch at once and the suite exercises every migration and mapping.
+
+This is why 26.1 is not "the faster option". It is the only option under which the remaining work is a
+quantity.
 
 | | |
 | --- | --- |
-| Owner | `BARCAN-TAG-00`, via the already-decomposed task of 2026-08-21 22:10 |
-| Trigger | already open |
+| Owner | `BARCAN-TAG-00`, task decomposed 2026-08-21 22:10 |
 | Done when | `src/test/resources/application.properties` names the engine `docker-compose.yml` provides, and the suite passes against it |
 | Refuted by | a fourth incompatibility of this family found by launching after the suite is green |
 
-Three have been found by launching, one per hour: `CREATE ALIAS`, then `file_data` twice. Fixing them one
-at a time is unbounded because each passes a suite that runs on a substitute. This is the only step that
-ends the sequence rather than shortening it.
+There is a second reading, in the Evidence Algebra of §8.1. A suite run against a substitute engine cannot
+fail on this defect class at all - its evidential strength for that class is **0**, not 1. Migrating it is
+not "better testing"; it turns a measurement that could not refute into one that can.
 
-### 26.2 Measure after every fix - mine, until 26.1 lands
+### 26.2 Keep the posterior fed while 26.1 is in flight
+
+Each launch is one Bernoulli trial and costs 75 s warm. Reading `runtime-observe-app-1` before teardown
+converts a failure from *the health port refused* - which names no bearer - into the failing statement
+itself. §8.2's invariant 12 is satisfied either way, since the launcher is external to the agent that
+wrote the code; what changes is whether the trial also yields an attributable cause.
 
 | | |
 | --- | --- |
-| Owner | me |
+| Owner | me, until 26.1 lands |
 | Trigger | any merge to the product's `main` |
-| Done when | 26.1 lands, after which the suite reports faster than a launch can |
-| Refuted by | a launch whose failure I report without the app container's own log |
+| Refuted by | a failure I report without the app container's own log |
 
-**Nothing runs beside a launch.** A product stack is four containers on a 3.9 GB host (O-13). The factory
-stops first, and no suite, build or second launch runs at the same time. Violated on 2026-08-21 by
-launching while a full suite was in progress: 1051 MB available against a 700 MB floor. It did not crash,
-which is not the same as being safe - the store has no rollback snapshot and an OOM during a write is how
-it gets corrupted.
+**Nothing runs beside a launch.** Four containers on a 3.9 GB host (O-13): the factory stops first, and no
+suite, build or second launch runs alongside. Violated 2026-08-21 - 1051 MB available against a 700 MB
+floor. It did not crash, which is not the same as being safe: the store has no rollback snapshot, and an
+OOM during a write is how it becomes corrupt.
 
-`POST /launch` on the factory's own launcher, read `runtime-observe-app-1` before teardown, file the exact
-text as a constraint. Cost measured: 75 s once images are warm, against ~1 h of waiting for the cadence.
-A claim arrives with its witness or it is not filed.
+### 26.3 Give the test suite a denominator
 
-### 26.3 Refutable verification - factory first, product second
+`V_p` has a declared denominator, |C| from the client's brief. **The test suite has none.** "908 tests
+pass" is a numerator with nothing under it: out of what? Line coverage answers *which lines ran*, which is
+confirmation, and §1 says confirmations are free and infinite.
+
+The denominator that makes the suite refutable is the set of behaviour-changing perturbations:
+
+    V_t = |mutants killed| / |mutants that change behaviour|
+
+and the exclusion is the same one §8.2 already makes. A mutant that changes no behaviour has **no bearer**;
+counting it is O-10 - an instrument without a denominator, reporting confidently about nothing. Equivalent
+mutants are counted separately and never appear in either position.
+
+The perturbation is of the **claim**, not the syntax. Every task carries a JTBD and a Definition of Done;
+the question is whether code violating the DoD survives the suite. ACP-102: a mutation score is the
+criterion, refutability of the stated promise is the concept, and today's placebo is what the gap looks
+like - `IF NOT EXISTS` on a statement that does not exist, a migration whose body is `SELECT 1`, and a test
+asserting an injected field is non-null. All three are unkillable by construction: they forbid nothing.
+
+The output is never a number. It is the **surviving diff** - an executable demonstration that the system
+can be wrong and nothing notices. §11.5: a change must leave behind a new checkable assertion, and a
+survivor is the proof that it did not.
 
 | | |
 | --- | --- |
-| Owner | me |
-| Trigger | 26.1 done |
-| Done when | the PR review pipeline files a finding carrying the surviving diff, for every changed file whose behaviour no test distinguishes |
-| Refuted by | running it over `assertNotNull(restTemplate)`, the `SELECT 1` migration and this session's two vacuous green tests without flagging them |
+| Owner | me, after 26.1 |
+| Home | the existing PR review pipeline; the judgment sidecar is already an independent reviewer |
+| Refuted by | failing to flag `assertNotNull(restTemplate)`, the `SELECT 1` migration, or this session's two vacuous green tests |
 
-Not a mutation score. The output is the survivor: an executable demonstration that the system can be wrong
-and nothing notices. Mutants that change no behaviour have no bearer and are counted separately - O-10:
-an instrument without a denominator reports confidently and says nothing.
+**Where the breaking happens.** A mutation is deliberately broken code. It is applied to a throwaway clone
+outside the repository - never a working tree, never a branch, never anything a commit can reach - and the
+directory is deleted afterwards. One mutation at a time, factory stopped, nothing else running (O-13). A
+run whose failure cannot be attributed to the mutation is discarded rather than counted: an instrument
+that cannot tell its own failure from its subject's is the defect this section exists to avoid.
 
-Perturb the **claim**, not the syntax: each task carries a JTBD and a Definition of Done, and the question
-is whether code violating the DoD survives the suite. ACP-102 - the criterion is not the concept; a
-mutation score is a criterion, refutability of the stated promise is the concept.
+### 26.4 Why §1.1 must come before the factory writes its own next version
 
-Built into the existing PR review pipeline. Calibrated on the factory, where the answer is known in
-advance, before it is pointed at a client product.
+§8.4 defines factory value as
 
-**Where the breaking happens, stated because the previous version of this section did not.** A mutation is
-deliberately broken code. It is applied to a **throwaway clone**, never to a working tree, never to a
-branch, never to anything a commit can reach. Concretely: `git clone` into a scratch directory outside the
-repository, patch there, run the suite there, delete the directory. Nothing is written back, no branch is
-created, and no test run inside the real repository is ever left in a mutated state.
+    V_f = |requirements that reached V_p with zero operator steps| / |requirements attempted|
 
-Two further constraints, both from measured cost rather than caution:
+The numerator refers to `V_p` - a **client product** answering. A version of the factory judged by the
+previous version's gates would put `V_f` inside its own numerator: a fixed point with no external
+referent, unfalsifiable by construction. Every blind spot of v0 would be inherited by v1 and arrive
+carrying a merged review in its favour.
 
-- **One mutation at a time, one process at a time.** This host has 3.9 GB and cannot hold the factory and
-  a full suite together (O-13). A mutation run is a suite run: the factory stops first, and nothing else -
-  no product launch, no second build - runs beside it. Violated twice on 2026-08-21, once by starting a
-  product stack while a suite was already running, leaving 1051 MB available against a 700 MB floor.
-- **A run that cannot be attributed is discarded.** If the suite fails for a reason unrelated to the
-  mutation - the host, a flake, a timeout - the result is thrown away rather than counted as a survivor or
-  a kill. An instrument that cannot tell its own failure from its subject's is O-10, and this section
-  exists to avoid repeating it.
-
-### 26.4 The rule for any future version of the factory
-
-A factory that writes its own next version verifies it with its own gates - the configuration that ships
-nowhere. §1: falsification against a product that does not run is quantification over an empty domain,
-and the same holds one level up.
+Measured basis, not analogy: for five days every internal number was green - 148 tasks done, 144 reviews
+merged, 62 quality gates passed - while `V_p = 0` throughout, because the gates ran in a configuration
+that ships nowhere.
 
 > **A new version of the factory is judged by whether a client product answers under it. Never by whether
 > the previous version's gates pass.**
 
-This is why §1.1 must be reached before any such attempt: until one product has answered, the system has
-no external referent and cannot distinguish an improvement from a confirmation of its own blind spots.
-Measured basis: for five days every internal number was green while the delivered product had never once
-started.
+This is the whole reason to finish version 0. Its code will be rewritten; what cannot be rewritten is the
+first row in `client_runtime_observations` with a real status code. Until one exists, the system has no
+quantity that falls when it is wrong, and by §1 a measure that cannot fall is not a measure.
 
 ---
 
