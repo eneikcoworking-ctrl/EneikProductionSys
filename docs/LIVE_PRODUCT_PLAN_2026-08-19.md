@@ -1,32 +1,11 @@
 # Working plan - the factory keeps a running product under permanent falsification
 
-Operative rules first, then state. The per-session verdict records, the Gemini removal and the TOC/Six
-Sigma derivations are in `LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md`, whole and unedited.
+Per-session verdict records, the Gemini removal and the TOC/Six Sigma derivations are in
+`LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md`, whole and unedited.
 
-**2026-08-21, correction to the 2026-08-21 compression.** Sections 1, 2, 3, 7, 8, 9 and 10 were moved to
-the archive as "derivations". They are not derivations, they are the rules this work is judged by, and
-removing them caused real harm the same day: within an hour I proposed gating `done` on the product
-answering - which merges two axes §2 forbids, and which would deadlock any project started from zero,
-since a greenfield product cannot answer until late in its life. §10 already contained the correct
-analysis, to the minute and to the filename, and I re-derived it from scratch after archiving it. The
-same thing had already happened with O-1, recorded 2026-08-19 at position one and re-derived 2026-08-21.
-**These sections do not get compressed again.**
-
----
-
-> **Numbering.** 1-16 are the archive's own numbers, so every cross-reference inside the restored
-> sections still resolves. Present here: 1, 2, 3, 7, 8, 9, 10, 11. The rest live only in
-> `LIVE_PRODUCT_PLAN_2026-08-19_ARCHIVE.md` and are always cited as "archive §N" - a bare §N always
-> means a section of this file. Sections added after the 2026-08-21 compression start at 20, so no
-> number ever means two different things. §9.4, §9.5 and §10.5 are new and exist in no archive copy.
->
-> **What stays archived, and why.** Only records of past sessions: archive §12 (that session's
-> deployment steps, now carried out - see §20) and archive §13 (per-session verdict records). Rules,
-> patterns and standing analysis are here. The 2026-08-21 compression got this line wrong in one
-> direction and the harm is recorded above; the rule now is that anything a future reader would be
-> judged against stays in this file.
-
----
+> **Numbering.** 1-16 are the archive's own numbers, so every cross-reference inside these sections still
+> resolves; present here are 1, 2, 3, 7, 8, 9, 10, 11. Archive material is always cited as "archive §N";
+> a bare §N means a section of this file. Sections recording work done after 2026-08-19 start at 20.
 
 ## 1. Goal, and the epistemology under it
 
@@ -345,104 +324,6 @@ that failed 46 consecutive times produced no finding, no lever observation and n
 An unmeasured bearer cannot be refuted, and by §1 that makes it unteachable.
 ---
 
-### 9.4 ACP-104 - A Default Is A Decision
-
-`BARCAN-TAG-01_ACTUALIST-OBJECT`. 10.2 states its ground already: *a datastore no artifact declares is not
-an actual object.* The dual is the pattern: **a datastore some artifact declares IS an actual object -
-including when the artifact was written as a default.**
-
-A default committed to a repository stops being a default the moment it is committed. It is a file on
-`main`, indistinguishable from a deliberate choice to every later reader, every later stage and every
-agent. A stage whose job is to **decide** something cannot decide it once an earlier, cheaper step has
-already written an answer: it can only *contradict committed files*, which reads as a change requiring
-justification rather than as a decision being made. The earlier default therefore silences the later
-stage - and the silence appears, to anyone auditing, as an omission at the later stage rather than as a
-consequence of the earlier one.
-
-The measured instance is 10.5. The bootstrap scaffold writes an H2 datasource and an H2-only build
-manifest into every new project before any task runs. ARCHITECTURE (order 20) is the stage that owns the
-datastore decision; its contract names no datastore. Read alone, that is a gap in the ARCHITECTURE prompt.
-Read with 10.5, it is the predictable result of the question having been answered two steps earlier, in
-files the stage would have to contradict. Fixing the prompt would not have fixed it.
-
-**The general rule this adds to the corpus.** A deterministic bootstrap may produce only what is invariant
-across every brief the factory could receive. Anything a later stage is supposed to decide must be either
-absent, or present in a form that is **explicitly marked provisional and checked against the later
-declaration**. "It is only a default" is not a defence: a repository has no type for provisional, so the
-mark has to be carried by an artifact that something actually reads.
-
-The test that catches it: **for each thing the bootstrap writes, name the stage that owns that decision.
-If a stage owns it, the bootstrap is pre-empting a decision.**
-
-### 9.5 Every structural proposal is checked against a project starting from zero
-
-Added 2026-08-21 after my own failure, recorded here rather than in 15 because it is a standing check and
-not a one-off correction.
-
-Having archived 2 and 10, I proposed that no task may reach `done` until the product answers. It is wrong
-twice over, and both are visible in one question - *what does this do to a project that starts from zero?*
-
-- A greenfield product cannot answer until late in its life, so no task could ever close. **The rule
-  forbids its own precondition:** the factory could never build the thing that would eventually answer.
-- It makes scope delivery depend on operability, the merge 2 names as having broken this system twice.
-
-The check is cheap and mechanical, and it is now part of proposing anything structural: state the
-proposal, then run it against an empty repository on day zero and say what happens on the first task. A
-proposal that cannot survive that question does not get spoken aloud, let alone built.
-
-Its dual, from 10.5: a proposal must also survive **the opposite brief**. "Scaffold PostgreSQL instead"
-passes day zero and fails a brief whose product wants an embedded store - it would ship a server the
-product never uses. Both directions, every time.
-
-### 9.6 Scaffold the question, not the answer - ACP-104 resolved
-
-`BARCAN-TAG-01_ACTUALIST-OBJECT`. Two sentences, and the second is the one that makes this a construction
-rather than a deletion:
-
-> **The bootstrap writes only what is true of every product this factory could build.**
-> **What it cannot decide, it writes as an open question - never as an answer.**
-
-A datastore is not true of every product; a web server that answers is. So the scaffold now contains an
-application that builds and runs, and no persistence at all - no JPA, no migration tool, no driver, no
-`spring.datasource.*`. Writing `jdbc:h2:...` at a moment when the product's datastore existed neither as an
-object nor as a decision nor even as a question anyone had asked was **bringing a thing into being by
-notation**. §10.2 says a datastore no artifact declares is not an actual object; the dual is that one some
-artifact declares IS an actual object, default or not, and it then occupies the place where the decision
-should have been made.
-
-The second half: an absent line is silence, and §11.5 is explicit that a silent system is unrefutable and
-therefore unteachable - O-1 violated none of the seven invariants precisely because nothing asserted
-anything about these artifacts. So the bootstrap commits `docs/architecture/adr-002-runtime-contract.md`
-carrying
-
-```yaml
-datastore: UNDECLARED
-```
-
-`UNDECLARED` is not a placeholder. It is the open question made into an actual object: it exists, it is
-machine-readable, it names its owner (ARCHITECTURE, `BARCAN-TAG-01`, stage 20), and it can be refuted by
-the artifacts disagreeing with it. Answering it later is then a **declaration** rather than a contradiction
-of a file already on `main`.
-
-The contract lists its own consequences, and the fourth is the half nobody had:
-
-1. compose provides the declared engine,
-2. the build manifest declares its driver,
-3. the application configuration points at it,
-4. **the test suite runs against it** - because a migration written against one engine and verified against
-   that same engine passes every gate the factory has and is still meaningless in delivery. This is the
-   exact mechanism by which an H2-only `CREATE ALIAS` survived 144 merged reviews.
-
-`ProductLaunchabilityService.checkDatastoreAgreement` reads the `datastore:` line and reports against the
-declaration rather than refereeing a quarrel between two files of equal standing. A stack that ships an
-engine while the contract still says `UNDECLARED` is itself the finding: the decision was taken somewhere
-other than where it belongs, caught in the hour instead of in five days. Projects with no contract fall
-back to comparing the artifacts with each other - strictly weaker, and still decisive for the measured
-case.
-
-Deliberately not behind `launchabilityCheckedAt`: that flag is set once per project and never cleared, so
-everything inside `checkOnce` is a bootstrap gate blind to anything introduced later - which is why this
-defect survived. Same service, same authorisation, same tick; only the once-ever guard is not shared.
 
 ## 10. The assembly has no owner
 
@@ -666,30 +547,21 @@ because it got smarter but because the factory says more about itself.
 
 ## 20. State, measured 2026-08-21
 
-The goal is §1.1 and is not restated here - restating it is how it drifts.
+The goal is §1.1 and is not restated here.
 
-**Measured:** the factory has closed **148 tasks**, merged **144 reviews** and passed **62 quality gates**
-for a product with **no row in `client_runtime_observations` carrying a non-null `health_status_code`**.
-Every internal number is green and the only external one is red.
+**`V_p` = 0.** 57 launch attempts, 10 real observations, no row in `client_runtime_observations` with a
+non-null `health_status_code`. Against that: 157 tasks `done`, 144 reviews merged, 62 quality gates passed.
 
-By §2 this is an **operability** fact and says nothing about scope delivery or fitness. It does not mean
-the delivered scope is wrong, and it must not be allowed to gate scope delivery - that merge is the error
-§2 names as having broken this system twice.
+**Why every gate was green while `V_p` stayed 0.** The product's test suite runs on `jdbc:h2:mem:testdb`;
+`docker-compose.yml` ships `postgres:15-alpine`. Verification therefore happens in a configuration that is
+never delivered, so for this class of defect the suite's evidential strength is 0 - it cannot fail on it.
 
-**The factory is fully stopped as of 2026-08-21 18:40Z**, on the operator's instruction, with the plan to
-be finished first and the factory examined together afterwards. Nothing is running: no backend, no
-launcher, no sidecar, no ephemeral product stack.
+**Incompatibilities of that class found by launching, one per launch:** `CREATE ALIAS` (H2-only, removed
+by the factory), then `file_data` twice - `bytea` against an entity expecting `oid`. A launch stops at the
+first mismatch, so the number remaining is not known after any of them.
 
-**Archive §12.1 is now closed.** It listed nine pieces of work in `main` that had never run, with the
-image containing items 1 and 2 only. Today's image was built from `main` at `fc4ce0c` and every commit it
-named - `ef487fa`, `8b3cba5`, `5fb563c`, `cd2e68b`, `0e6b525`, `b9f201c` - is an ancestor of it, verified
-by `git merge-base --is-ancestor`. All of it has now run at least once. What each piece *does* in the
-running system is still mostly unobserved; being in the image is not evidence of behaviour.
-
-**Cycle 1 of 3 is spent, and its result is recorded in §22:** handed the exact failing statement, the
-factory shipped a placebo that passed, merged and closed a task. The killer line is unchanged on `main`.
-
----
+By §2 all of the above is an **operability** fact. It says nothing about scope delivery or fitness, and it
+must not gate them.
 
 ## 21. O-1 - the reason the product does not serve
 
@@ -880,143 +752,6 @@ memory instead of the thing itself.
 
 ---
 
-## 26. The order of work, as mathematics on §8
-
-§1.1 is one row in `client_runtime_observations` with a non-null `health_status_code`. In §8.2's terms the
-product is still the degenerate case, |C| = 1, and the single Bernoulli is *did the stack boot and answer*.
-Read from the database today: **57 attempts, 10 real observations, 0 successes.** Every step below is
-justified by what it does to that posterior, and none of them gates dispatch, review or `done` - §2.
-
-### 26.1 Give the sequence a denominator
-
-Three incompatibilities of one family have been found by launching: `CREATE ALIAS`, then `file_data`
-twice. A launch is a **sequential** refuter: Hibernate stops at the first mismatch, so one launch reveals
-at most one defect. With N remaining, the two strategies cost
-
-    launch-and-fix        N x (T_launch + T_fix),   N unknown throughout
-    suite on the shipped engine   T_migrate + N x T_fix,   N measured in one run
-
-The difference is not a constant factor. In the first, **N is never known** - after each fix the remaining
-count is exactly as unknown as before, so no statement about remaining work can be made, let alone
-refuted. That is invariant 8 violated at the level of the work itself: *a measurement without its
-denominator*. The second gives the sequence a denominator in one pass, because schema validation reports
-every mismatch at once and the suite exercises every migration and mapping.
-
-This is why 26.1 is not "the faster option". It is the only option under which the remaining work is a
-quantity.
-
-| | |
-| --- | --- |
-| Owner | `BARCAN-TAG-00`, task decomposed 2026-08-21 22:10 |
-| Done when | `src/test/resources/application.properties` names the engine `docker-compose.yml` provides, and the suite passes against it |
-| Refuted by | a fourth incompatibility of this family found by launching after the suite is green |
-
-There is a second reading, in the Evidence Algebra of §8.1. A suite run against a substitute engine cannot
-fail on this defect class at all - its evidential strength for that class is **0**, not 1. Migrating it is
-not "better testing"; it turns a measurement that could not refute into one that can.
-
-### 26.2 Keep the posterior fed while 26.1 is in flight
-
-Each launch is one Bernoulli trial and costs 75 s warm. Reading `runtime-observe-app-1` before teardown
-converts a failure from *the health port refused* - which names no bearer - into the failing statement
-itself. §8.2's invariant 12 is satisfied either way, since the launcher is external to the agent that
-wrote the code; what changes is whether the trial also yields an attributable cause.
-
-| | |
-| --- | --- |
-| Owner | me, until 26.1 lands |
-| Trigger | any merge to the product's `main` |
-| Refuted by | a failure I report without the app container's own log |
-
-**Nothing runs beside a launch.** Four containers on a 3.9 GB host (O-13): the factory stops first, and no
-suite, build or second launch runs alongside. Violated 2026-08-21 - 1051 MB available against a 700 MB
-floor. It did not crash, which is not the same as being safe: the store has no rollback snapshot, and an
-OOM during a write is how it becomes corrupt.
-
-### 26.3 Give the test suite a denominator
-
-`V_p` has a declared denominator, |C| from the client's brief. **The test suite has none.** "908 tests
-pass" is a numerator with nothing under it: out of what? Line coverage answers *which lines ran*, which is
-confirmation, and §1 says confirmations are free and infinite.
-
-The denominator that makes the suite refutable is the set of behaviour-changing perturbations:
-
-    V_t = |mutants killed| / |mutants that change behaviour|
-
-and the exclusion is the same one §8.2 already makes. A mutant that changes no behaviour has **no bearer**;
-counting it is O-10 - an instrument without a denominator, reporting confidently about nothing. Equivalent
-mutants are counted separately and never appear in either position.
-
-The perturbation is of the **claim**, not the syntax. Every task carries a JTBD and a Definition of Done;
-the question is whether code violating the DoD survives the suite. ACP-102: a mutation score is the
-criterion, refutability of the stated promise is the concept, and today's placebo is what the gap looks
-like - `IF NOT EXISTS` on a statement that does not exist, a migration whose body is `SELECT 1`, and a test
-asserting an injected field is non-null. All three are unkillable by construction: they forbid nothing.
-
-The output is never a number. It is the **surviving diff** - an executable demonstration that the system
-can be wrong and nothing notices. §11.5: a change must leave behind a new checkable assertion, and a
-survivor is the proof that it did not.
-
-| | |
-| --- | --- |
-| Owner | me, after 26.1 |
-| Home | the existing PR review pipeline; the judgment sidecar is already an independent reviewer |
-| Refuted by | failing to flag `assertNotNull(restTemplate)`, the `SELECT 1` migration, or this session's two vacuous green tests |
-
-**Where the breaking happens.** A mutation is deliberately broken code. It is applied to a throwaway clone
-outside the repository - never a working tree, never a branch, never anything a commit can reach - and the
-directory is deleted afterwards. One mutation at a time, factory stopped, nothing else running (O-13). A
-run whose failure cannot be attributed to the mutation is discarded rather than counted: an instrument
-that cannot tell its own failure from its subject's is the defect this section exists to avoid.
-
-### 26.4 Why §1.1 must come before the factory writes its own next version
-
-§8.4 defines factory value as
-
-    V_f = |requirements that reached V_p with zero operator steps| / |requirements attempted|
-
-The numerator refers to `V_p` - a **client product** answering. A version of the factory judged by the
-previous version's gates would put `V_f` inside its own numerator: a fixed point with no external
-referent, unfalsifiable by construction. Every blind spot of v0 would be inherited by v1 and arrive
-carrying a merged review in its favour.
-
-Measured basis, not analogy: for five days every internal number was green - 148 tasks done, 144 reviews
-merged, 62 quality gates passed - while `V_p = 0` throughout, because the gates ran in a configuration
-that ships nowhere.
-
-> **A new version of the factory is judged by whether a client product answers under it. Never by whether
-> the previous version's gates pass.**
-
-This is the whole reason to finish version 0. Its code will be rewritten; what cannot be rewritten is the
-first row in `client_runtime_observations` with a real status code. Until one exists, the system has no
-quantity that falls when it is wrong, and by §1 a measure that cannot fall is not a measure.
-
----
-
-## 27. Decisions held for the operator
-
-The repair for §10.4/§10.5 is not mine to choose. Three questions, each with the trade-off stated, to be
-settled together with the factory in front of us:
-
-1. **The scaffold's default.** Keep a working datastore marked provisional, so `mvn test` works on day
-   one and ARCHITECTURE may replace it - or write no datasource at all, and accept that a new project does
-   not build until the contract exists? The first is safe and keeps a committed answer on `main` that
-   ACP-104 says will read as a decision; the second is clean and makes day one non-functional.
-
-2. **The scope of the agreement check.** Compare all four - contract, `pom.xml`,
-   `application.properties`, `docker-compose.yml` - or begin with the pair the factory already registers
-   as hotspots, where the defect actually lives?
-
-3. **Where the declaration comes from.** Require the datastore in the ARCHITECTURE role's prompt - which
-   changes agent behaviour and can be ignored silently - or generate the declaration deterministically and
-   let the agent fill it, which cannot be ignored but fixes its shape in advance?
-
-Constraint on all three answers, from §2 and §9.5: whatever is built files a **constraint** when artifacts
-disagree. It does not block dispatch, review or `done`. An operability defect that stops scope delivery is
-the merge that broke this system twice.
-
----
-
-## 28. Held, on command
+## 26. Held, on command
 
 Move the factory to a server. Details in the archive.
