@@ -80,9 +80,15 @@ class ProductLaunchabilityServiceTest {
                 .thenReturn(java.util.Optional.ofNullable(contract));
     }
 
+    private void stubTestProps(GitHubPullRequestService gitHub, ProjectEntity project, String props) {
+        when(gitHub.fetchFileContent(eq(project), eq("main"), eq("src/test/resources/application.properties")))
+                .thenReturn(java.util.Optional.ofNullable(props));
+    }
+
     private void stubRepoFiles(GitHubPullRequestService gitHub, ProjectEntity project,
                                 String compose, String props, String pom) {
-        stubContract(gitHub, project, null); // no contract unless a test says otherwise
+        stubContract(gitHub, project, null);   // no contract unless a test says otherwise
+        stubTestProps(gitHub, project, null);  // no test datasource unless a test says otherwise
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("docker-compose.yml")))
                 .thenReturn(java.util.Optional.ofNullable(compose));
         when(gitHub.fetchFileContent(eq(project), eq("main"), eq("src/main/resources/application.properties")))
@@ -201,6 +207,48 @@ class ProductLaunchabilityServiceTest {
                 "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
                 "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
         stubContract(gitHub, project, "```yaml\ndatastore: postgresql:15\n```\n");
+
+        service.checkDatastoreAgreement(project);
+
+        verify(wishlists, never()).save(any());
+    }
+
+    @Test
+    void aTestSuiteRunningOnADifferentEngineThanIsShippedIsFiled() {
+        // The mechanism behind every incompatibility this factory has actually measured. Both CREATE ALIAS
+        // and `bytea (Types#VARBINARY)` were valid in H2, passed the entire suite, and killed the product
+        // in delivery. Checking compose, the manifest and the application config while leaving this
+        // unchecked catches symptoms and leaves the cause intact.
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+        stubContract(gitHub, project, "```yaml\ndatastore: postgresql:15\n```\n");
+        // Everything delivered is consistent; only the tests are pointed elsewhere.
+        stubTestProps(gitHub, project, "spring.datasource.url=jdbc:h2:mem:testdb\n");
+
+        service.checkDatastoreAgreement(project);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlists).save(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("test suite runs against"),
+                "was: " + captor.getValue().getContent());
+    }
+
+    @Test
+    void aTestSuiteOnTheShippedEngineIsNeverFiled() {
+        var wishlists = mock(WishlistRepository.class);
+        var gitHub = mock(GitHubPullRequestService.class);
+        var service = agreementService(wishlists, gitHub);
+        ProjectEntity project = deliveredProject();
+        stubRepoFiles(gitHub, project, COMPOSE_POSTGRES,
+                "spring.datasource.url=jdbc:postgresql://db:5432/app\n",
+                "<project><dependency><groupId>org.postgresql</groupId></dependency></project>");
+        stubContract(gitHub, project, "```yaml\ndatastore: postgresql:15\n```\n");
+        stubTestProps(gitHub, project, "spring.datasource.url=jdbc:postgresql://db:5432/app\n");
 
         service.checkDatastoreAgreement(project);
 

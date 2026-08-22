@@ -880,7 +880,75 @@ memory instead of the thing itself.
 
 ---
 
-## 26. Decisions held for the operator
+## 26. The order of work, stated so each step can only be done or not done
+
+Every item below has an owner, a trigger, a decidable done-condition, and the observation that refutes it.
+No item gates dispatch, review or `done` - §2: operability may not be merged into scope delivery. Each
+produces a **finding with its witness**, never a score - §1: a completeness metric is not a goal.
+
+### 26.1 End the incompatibility sequence - factory, in flight
+
+| | |
+| --- | --- |
+| Owner | `BARCAN-TAG-00`, via the already-decomposed task of 2026-08-21 22:10 |
+| Trigger | already open |
+| Done when | `src/test/resources/application.properties` names the engine `docker-compose.yml` provides, and the suite passes against it |
+| Refuted by | a fourth incompatibility of this family found by launching after the suite is green |
+
+Three have been found by launching, one per hour: `CREATE ALIAS`, then `file_data` twice. Fixing them one
+at a time is unbounded because each passes a suite that runs on a substitute. This is the only step that
+ends the sequence rather than shortening it.
+
+### 26.2 Measure after every fix - mine, until 26.1 lands
+
+| | |
+| --- | --- |
+| Owner | me |
+| Trigger | any merge to the product's `main` |
+| Done when | 26.1 lands, after which the suite reports faster than a launch can |
+| Refuted by | a launch whose failure I report without the app container's own log |
+
+`POST /launch` on the factory's own launcher, read `runtime-observe-app-1` before teardown, file the exact
+text as a constraint. Cost measured: 75 s once images are warm, against ~1 h of waiting for the cadence.
+A claim arrives with its witness or it is not filed.
+
+### 26.3 Refutable verification - factory first, product second
+
+| | |
+| --- | --- |
+| Owner | me |
+| Trigger | 26.1 done |
+| Done when | the PR review pipeline files a finding carrying the surviving diff, for every changed file whose behaviour no test distinguishes |
+| Refuted by | running it over `assertNotNull(restTemplate)`, the `SELECT 1` migration and this session's two vacuous green tests without flagging them |
+
+Not a mutation score. The output is the survivor: an executable demonstration that the system can be wrong
+and nothing notices. Mutants that change no behaviour have no bearer and are counted separately - O-10:
+an instrument without a denominator reports confidently and says nothing.
+
+Perturb the **claim**, not the syntax: each task carries a JTBD and a Definition of Done, and the question
+is whether code violating the DoD survives the suite. ACP-102 - the criterion is not the concept; a
+mutation score is a criterion, refutability of the stated promise is the concept.
+
+Built into the existing PR review pipeline. Calibrated on the factory, where the answer is known in
+advance, before it is pointed at a client product.
+
+### 26.4 The rule for any future version of the factory
+
+A factory that writes its own next version verifies it with its own gates - the configuration that ships
+nowhere. §1: falsification against a product that does not run is quantification over an empty domain,
+and the same holds one level up.
+
+> **A new version of the factory is judged by whether a client product answers under it. Never by whether
+> the previous version's gates pass.**
+
+This is why §1.1 must be reached before any such attempt: until one product has answered, the system has
+no external referent and cannot distinguish an improvement from a confirmation of its own blind spots.
+Measured basis: for five days every internal number was green while the delivered product had never once
+started.
+
+---
+
+## 27. Decisions held for the operator
 
 The repair for §10.4/§10.5 is not mine to choose. Three questions, each with the trade-off stated, to be
 settled together with the factory in front of us:
@@ -904,6 +972,6 @@ the merge that broke this system twice.
 
 ---
 
-## 27. Held, on command
+## 28. Held, on command
 
 Move the factory to a server. Details in the archive.

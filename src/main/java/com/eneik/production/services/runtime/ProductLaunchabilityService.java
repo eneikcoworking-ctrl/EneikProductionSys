@@ -43,6 +43,7 @@ public class ProductLaunchabilityService {
     private static final String APPLICATION_PROPERTIES_PATH = "src/main/resources/application.properties";
     private static final String POM_PATH = "pom.xml";
     private static final String UNDECLARED = "UNDECLARED";
+    private static final String TEST_PROPERTIES_PATH = "src/test/resources/application.properties";
 
     private final ProjectRepository projectRepository;
     private final WishlistRepository wishlistRepository;
@@ -208,6 +209,8 @@ public class ProductLaunchabilityService {
                 .fetchFileContent(project, project.getDefaultBranch(), APPLICATION_PROPERTIES_PATH).orElse(null);
         String pom = gitHubPullRequestService
                 .fetchFileContent(project, project.getDefaultBranch(), POM_PATH).orElse(null);
+        String testProps = gitHubPullRequestService
+                .fetchFileContent(project, project.getDefaultBranch(), TEST_PROPERTIES_PATH).orElse(null);
 
         String shipped = datastoreProvidedByCompose(compose);
         if (shipped == null) {
@@ -245,6 +248,20 @@ public class ProductLaunchabilityService {
                     + "**, while `" + COMPOSE_FILE_PATH + "` provides **" + shipped + "**. Every test and "
                     + "every review therefore exercises " + defaulted + " while delivery runs " + shipped
                     + ", so SQL that is valid in one and meaningless in the other passes every gate.");
+        }
+        // The fourth consequence, and the one that produced every incompatibility measured on this
+        // factory. Both `CREATE ALIAS` and `bytea (Types#VARBINARY)` passed the whole suite and died in
+        // delivery for the same reason: the suite ran on an in-memory substitute. Checking compose, the
+        // manifest and the application config while leaving this unchecked catches the symptom and leaves
+        // the mechanism intact - which is why it is read here rather than only stated in the contract.
+        String tested = datastoreInDatasourceUrl(testProps);
+        if (tested != null && !tested.equals(shipped)) {
+            problems.add("the test suite runs against **" + tested + "** (`" + TEST_PROPERTIES_PATH
+                    + "`) while `" + COMPOSE_FILE_PATH + "` ships **" + shipped + "**. Every migration and "
+                    + "every entity mapping is therefore verified against an engine that is never "
+                    + "delivered, so an incompatibility passes every gate and only appears at runtime - "
+                    + "measured twice on this factory, as `CREATE ALIAS` and as "
+                    + "`bytea (Types#VARBINARY)`.");
         }
         if (pom != null && !buildManifestHasDriverFor(pom, shipped)) {
             problems.add("the build manifest declares no driver for **" + shipped + "**, which is the engine "
