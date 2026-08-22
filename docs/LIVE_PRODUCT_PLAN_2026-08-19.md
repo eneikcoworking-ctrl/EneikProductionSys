@@ -908,6 +908,12 @@ ends the sequence rather than shortening it.
 | Done when | 26.1 lands, after which the suite reports faster than a launch can |
 | Refuted by | a launch whose failure I report without the app container's own log |
 
+**Nothing runs beside a launch.** A product stack is four containers on a 3.9 GB host (O-13). The factory
+stops first, and no suite, build or second launch runs at the same time. Violated on 2026-08-21 by
+launching while a full suite was in progress: 1051 MB available against a 700 MB floor. It did not crash,
+which is not the same as being safe - the store has no rollback snapshot and an OOM during a write is how
+it gets corrupted.
+
 `POST /launch` on the factory's own launcher, read `runtime-observe-app-1` before teardown, file the exact
 text as a constraint. Cost measured: 75 s once images are warm, against ~1 h of waiting for the cadence.
 A claim arrives with its witness or it is not filed.
@@ -931,6 +937,23 @@ mutation score is a criterion, refutability of the stated promise is the concept
 
 Built into the existing PR review pipeline. Calibrated on the factory, where the answer is known in
 advance, before it is pointed at a client product.
+
+**Where the breaking happens, stated because the previous version of this section did not.** A mutation is
+deliberately broken code. It is applied to a **throwaway clone**, never to a working tree, never to a
+branch, never to anything a commit can reach. Concretely: `git clone` into a scratch directory outside the
+repository, patch there, run the suite there, delete the directory. Nothing is written back, no branch is
+created, and no test run inside the real repository is ever left in a mutated state.
+
+Two further constraints, both from measured cost rather than caution:
+
+- **One mutation at a time, one process at a time.** This host has 3.9 GB and cannot hold the factory and
+  a full suite together (O-13). A mutation run is a suite run: the factory stops first, and nothing else -
+  no product launch, no second build - runs beside it. Violated twice on 2026-08-21, once by starting a
+  product stack while a suite was already running, leaving 1051 MB available against a 700 MB floor.
+- **A run that cannot be attributed is discarded.** If the suite fails for a reason unrelated to the
+  mutation - the host, a flake, a timeout - the result is thrown away rather than counted as a survivor or
+  a kill. An instrument that cannot tell its own failure from its subject's is O-10, and this section
+  exists to avoid repeating it.
 
 ### 26.4 The rule for any future version of the factory
 
