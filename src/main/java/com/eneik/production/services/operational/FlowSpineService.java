@@ -404,11 +404,24 @@ public class FlowSpineService {
                 .filter(reviewEntity -> FAILING_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
                 .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .count();
-        int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isQualityGatePassed).count();
+        // 2026-08-22: these counted a boolean that answers two different questions. GateOrchestrator
+        // writes the same flag from runTaskSpecGate at task CREATION and from runQualityGate when an
+        // implementer FINISHES, and measured on test-forty-ninth every task in the project carries a gate
+        // log written 2-5 seconds after creation. So "72 passed" was 72 well-specified tasks, not 72
+        // verified deliveries, and "114 failed" mixed real failures with tasks nothing had ever asked -
+        // a primitive boolean defaulting to false has no place to put "not measured", which is O-10 at
+        // the level of acceptance. The subject was already in the report's `stages`; this is the reader
+        // that asks it.
+        int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isVerifiedForDelivery).count();
         int qualityGateFailed = (int) tasks.stream()
-                .filter(task -> task.getQualityGateReport() != null)
-                .filter(task -> !task.isQualityGatePassed())
+                .filter(task -> !task.isDeliveryVerificationAbsent())
+                .filter(task -> !task.isVerifiedForDelivery())
                 .count();
+        int deliveryVerificationAbsent = (int) tasks.stream()
+                .filter(TaskEntity::isDeliveryVerificationAbsent)
+                .count();
+        log.info("FlowSpine: delivery verification - passed={} failed={} NEVER ASKED={} of {} tasks",
+                qualityGatePassed, qualityGateFailed, deliveryVerificationAbsent, tasks.size());
 
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,

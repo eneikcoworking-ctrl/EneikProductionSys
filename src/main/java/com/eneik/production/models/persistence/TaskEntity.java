@@ -119,6 +119,55 @@ public class TaskEntity {
     public void setQualityGatePassed(boolean qualityGatePassed) { this.qualityGatePassed = qualityGatePassed; }
     public int getRetryCount() { return retryCount; }
     public void setRetryCount(int retryCount) { this.retryCount = retryCount; }
+    /**
+     * Was this task verified for DELIVERY, as opposed to verified for being well specified?
+     *
+     * `qualityGatePassed` cannot answer that. GateOrchestrator has two entry points writing the same
+     * boolean into the same field: runTaskSpecGate at task CREATION, and runQualityGate when an
+     * implementer FINISHES. Both writes are true statements, which is what makes the substitution
+     * invisible - it cannot be caught by asking whether the value is correct, only by asking what it is
+     * about (ACP-102). Measured on test-forty-ninth: every task in the project has a gate log written
+     * 2-5 seconds after creation, so a `done` task with the flag raised may never have been looked at
+     * after its work was produced.
+     *
+     * The subject is already recorded - GateOrchestrator writes the stages into the report - and the
+     * 2026-08-18 change that added it said plainly that no reader had been changed to ask. This is that
+     * reader. A verdict about specification is not evidence about delivery, and by the Evidence Algebra
+     * the absence of a check is 0, never 5.
+     */
+    public boolean isVerifiedForDelivery() {
+        if (qualityGateReport == null || !qualityGatePassed) {
+            return false;
+        }
+        JsonNode stages = qualityGateReport.path("stages");
+        if (!stages.isArray()) {
+            return false;
+        }
+        for (JsonNode stage : stages) {
+            if ("IMPLEMENTATION_RESULT".equals(stage.asText(""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** True when nothing has ever asked this task's delivery question - neither pass nor fail. */
+    public boolean isDeliveryVerificationAbsent() {
+        if (qualityGateReport == null) {
+            return true;
+        }
+        JsonNode stages = qualityGateReport.path("stages");
+        if (!stages.isArray()) {
+            return true;
+        }
+        for (JsonNode stage : stages) {
+            if ("IMPLEMENTATION_RESULT".equals(stage.asText(""))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     public JsonNode getQualityGateReport() { return qualityGateReport; }
     public void setQualityGateReport(JsonNode qualityGateReport) { this.qualityGateReport = qualityGateReport; }
     public int getPriority() { return priority; }
