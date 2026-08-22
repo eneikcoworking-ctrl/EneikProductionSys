@@ -48,14 +48,37 @@ public class GateOrchestrator {
         boolean buildPhase = task.getProject() != null
                 && readinessService.isBuildPhase(task.getProject().getId());
 
-        List<GateResult> results = gateChecks.stream()
+        List<GateCheck> applicable = gateChecks.stream()
                 .filter(check -> stages.contains(check.stage()))
                 .filter(check -> check.supports(task))
                 .filter(check -> !(buildPhase && check.isBuildPhaseExempt()))
-                .map(check -> check.check(task))
                 .toList();
+        List<GateResult> results = applicable.stream().map(check -> check.check(task)).toList();
 
+        // 2026-08-22 (ACP-105): `allMatch` on an empty list returns true. A task whose role no gate
+        // supports produces an empty `results` here - eight of the thirteen roles have no gate at all -
+        // and it is then recorded as having passed every applicable check when none was applied. That is
+        // the same structure §1 rejects for falsifying a product that does not run: quantification over an
+        // empty domain, trivially satisfied and informative about nothing.
+        //
+        // `allMatch` is a fraction in disguise. It says "N of N passed", and at N=0 it reports 0/0 as
+        // success. Invariant 8 - state the denominator - was applied to ratios and never to booleans,
+        // because a boolean does not look like it has one.
+        //
+        // The boolean is deliberately NOT changed. Making it false when nothing applied would fail every
+        // task of eight roles and stop the factory - a fix that damages rather than strengthens. What is
+        // added is the denominator, so a reader that needs real evidence can ask for it; see
+        // TaskEntity.isVerifiedForDelivery, which now requires both the stage and a non-zero count.
         boolean allPassed = results.stream().allMatch(GateResult::passed);
+        // Per STAGE, not in total. `stages` below records the stages REQUESTED, and runQualityGate always
+        // requests all of them - so "IMPLEMENTATION_RESULT is in stages" says only that it was asked for,
+        // never that any check for it applied. Counting all applicable checks together repeats the very
+        // substitution this change exists to remove: a task with a TASK_SPEC check and no delivery check
+        // would show a positive count beside a requested delivery stage, and read as verified for
+        // delivery. The count has to be per stage or it answers the wrong question.
+        java.util.Map<GateStage, Long> appliedByStage = applicable.stream()
+                .collect(java.util.stream.Collectors.groupingBy(GateCheck::stage,
+                        java.util.stream.Collectors.counting()));
 
         ObjectNode report = objectMapper.createObjectNode();
         report.put("passed", allPassed);
@@ -77,6 +100,10 @@ public class GateOrchestrator {
         // the boolean is untouched; what changes is that "verified" can now be asked of a specific
         // question. A task whose only gate log carries stages [TASK_SPEC] has never been verified for
         // delivery, and that is now a fact anything can read rather than an inference from timestamps.
+        ObjectNode appliedNode = report.putObject("applicableChecksByStage");
+        for (GateStage stage : GateStage.values()) {
+            appliedNode.put(stage.name(), appliedByStage.getOrDefault(stage, 0L));
+        }
         ArrayNode stageNames = report.putArray("stages");
         stages.stream().map(Enum::name).sorted().forEach(stageNames::add);
 

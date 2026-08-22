@@ -89,6 +89,47 @@ class GateOrchestratorIntegrationTest {
     private GitHubPullRequestService gitHubPullRequestService;
 
     @Test
+    void aRoleNoGateSupportsIsRecordedAsUnaskedRatherThanPassed() {
+        // ACP-105. `allMatch` on an empty list returns true, so a task of a role no gate supports was
+        // recorded as having passed every applicable check when none was applied - eight of the thirteen
+        // roles have no gate at all. Same structure §1 rejects for falsifying a product that does not run:
+        // a universal over an empty domain, trivially satisfied and informative about nothing.
+        //
+        // The boolean deliberately stays true: making it false would fail every task of eight roles and
+        // stop the factory. What must be true is that the verdict now carries its denominator, so a reader
+        // needing real evidence can tell "all passed" from "nobody was asked".
+        TaskEntity task = createTask("BARCAN-TAG-09", basePayload());   // Technical Product Manager - no gate
+        markProjectPastBuildPhase(task.getProject());
+
+        gateOrchestrator.runQualityGate(task);
+
+        TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(refreshed.getQualityGateReport().path("applicableChecksByStage").path("IMPLEMENTATION_RESULT").asInt(-1))
+                .as("the delivery-stage denominator must travel with the verdict; the total would hide a spec-only check")
+                .isZero();
+        assertThat(refreshed.isVerifiedForDelivery())
+                .as("nothing was asked, so nothing was verified")
+                .isFalse();
+        assertThat(refreshed.isDeliveryVerificationAbsent())
+                .as("this is the third state a boolean has nowhere to put")
+                .isTrue();
+    }
+
+    @Test
+    void aRoleWithAGateCarriesANonZeroDenominator() {
+        // The other side: where checks do apply, the count is positive and the verdict means what it says.
+        // Without this, ACP-105 could be "satisfied" by reporting zero everywhere.
+        TaskEntity task = createTask("BARCAN-TAG-11", basePayload());
+        markProjectPastBuildPhase(task.getProject());
+        stubDesignScreenshotsForTask(task);
+
+        gateOrchestrator.runQualityGate(task);
+
+        TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
+        assertThat(refreshed.getQualityGateReport().path("applicableChecksByStage").path("IMPLEMENTATION_RESULT").asInt(-1)).isPositive();
+    }
+
+    @Test
     void fullGateRunsDesignGateForUiTaskPastBuildPhase() {
         TaskEntity task = createTask("BARCAN-TAG-11", basePayload());
         markProjectPastBuildPhase(task.getProject());

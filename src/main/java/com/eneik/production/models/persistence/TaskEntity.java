@@ -139,16 +139,20 @@ public class TaskEntity {
         if (qualityGateReport == null || !qualityGatePassed) {
             return false;
         }
-        JsonNode stages = qualityGateReport.path("stages");
-        if (!stages.isArray()) {
-            return false;
+        // The `stages` array records the stages REQUESTED, and runQualityGate always requests all of
+        // them - so finding IMPLEMENTATION_RESULT there says it was asked for, never that any check for
+        // it applied. Only the per-stage count answers the delivery question (ACP-105): `allMatch` over
+        // an empty list returns true, so a task whose role no delivery gate supports was recorded as
+        // having passed every applicable check when none was applied.
+        return deliveryChecksApplied() > 0;
+    }
+
+    /** How many checks of the delivery stage actually applied. Zero means nobody was asked. */
+    private int deliveryChecksApplied() {
+        if (qualityGateReport == null) {
+            return 0;
         }
-        for (JsonNode stage : stages) {
-            if ("IMPLEMENTATION_RESULT".equals(stage.asText(""))) {
-                return true;
-            }
-        }
-        return false;
+        return qualityGateReport.path("applicableChecksByStage").path("IMPLEMENTATION_RESULT").asInt(0);
     }
 
     /** True when nothing has ever asked this task's delivery question - neither pass nor fail. */
@@ -156,16 +160,7 @@ public class TaskEntity {
         if (qualityGateReport == null) {
             return true;
         }
-        JsonNode stages = qualityGateReport.path("stages");
-        if (!stages.isArray()) {
-            return true;
-        }
-        for (JsonNode stage : stages) {
-            if ("IMPLEMENTATION_RESULT".equals(stage.asText(""))) {
-                return false;
-            }
-        }
-        return true;
+        return deliveryChecksApplied() == 0;
     }
 
     public JsonNode getQualityGateReport() { return qualityGateReport; }

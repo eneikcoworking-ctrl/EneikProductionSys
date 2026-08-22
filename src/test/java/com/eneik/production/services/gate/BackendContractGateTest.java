@@ -44,13 +44,14 @@ class BackendContractGateTest {
     }
 
     @Test
-    void shouldPassNonBackendTask() {
+    // 2026-08-22 (ACP-105): this asserted that check() returns passed for a role the gate does
+    // not apply to. GateOrchestrator never calls check() without supports(), so that path existed
+    // only here - and it encoded the Evidence Algebra inverted: an unasked check counted as a
+    // passed one, 5 where the corpus says 0. What production actually relies on is the line that
+    // remains: supports() rejects the task, so the check is never reached.
+    void doesNotSupportATaskOfAnotherRole() {
         TaskEntity task = createTask("BARCAN-TAG-11", null);
         assertThat(gate.supports(task)).isFalse();
-
-        GateResult result = gate.check(task);
-        assertThat(result.passed()).isTrue();
-        assertThat(result.checkName()).isEqualTo("not applicable");
     }
 
     @Test

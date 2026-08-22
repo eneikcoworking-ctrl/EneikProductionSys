@@ -72,11 +72,10 @@ public class VerificationEvidenceGate implements GateCheck {
 
     @Override
     public GateResult check(TaskEntity task) {
-        String roleTag = task.getRole().getTag();
-        if (!QA_TAGS.contains(roleTag)) {
-            return new GateResult(true, CHECK_NAME, List.of("not applicable to this role"));
-        }
-
+        // 2026-08-22 (ACP-105): the "not applicable -> passed" branch was removed. GateOrchestrator
+        // already filters by supports(), so it was unreachable through the only caller - but it encoded
+        // the idea that an unasked check is a passed one, which is the Evidence Algebra inverted: the
+        // absence of a check is 0, never 5. Nothing is lost; supports() does this work.
         JulesSessionEntity session = resolveSessionWithPr(task);
         Integer pullNumber = session != null ? gitHubPullRequestService.parsePullNumber(session.getPrUrl()) : null;
         if (task.getProject() == null || pullNumber == null) {

@@ -325,6 +325,48 @@ An unmeasured bearer cannot be refuted, and by §1 that makes it unteachable.
 ---
 
 
+### 9.4 ACP-105 - A Universal Claim Must Declare Its Domain
+
+`BARCAN-TAG-01_ACTUALIST-OBJECT`. §1 rejects falsifying a product that does not run because it is
+quantification over an empty domain - "trivially satisfied, informative about nothing". The same structure
+was sitting one level down, in the machinery that decides whether work was verified.
+
+`GateOrchestrator` computed its verdict as
+
+    boolean allPassed = results.stream().allMatch(GateResult::passed);
+
+`allMatch` on an empty list returns `true`. A task whose role no gate supports - **eight of the thirteen
+roles have no gate at all** - produced an empty `results` and was recorded as having passed every
+applicable check when none was applied.
+
+**`allMatch` is a fraction in disguise.** It says "N of N passed", and at N = 0 it reports 0/0 as success.
+Invariant 8 - state the denominator - had been applied to every ratio in this system and to no boolean,
+because a boolean does not look like it has one.
+
+> **Where a domain can be empty, "all passed" and "nothing was asked" are different values, and the
+> cardinality travels with the verdict.**
+
+**What was built, and what was deliberately not.** The boolean is unchanged: making it false when nothing
+applied would fail every task of eight roles and stop the factory, which is a repair that damages. What
+was added is the denominator - `applicableChecksByStage` - and readers that need real evidence ask it.
+
+**Per stage, and this is not a detail.** The first version counted all applicable checks together, and the
+`stages` array records the stages *requested* - `runQualityGate` always requests all of them. So a task
+with a TASK_SPEC check and no delivery check showed a positive count beside a requested delivery stage and
+read as verified for delivery: the same substitution the change exists to remove, rebuilt an hour later by
+the person removing it. Found only by checking what the field *means*, after checking who writes it and
+who reads it had already returned "safe".
+
+**Three gates were returning `GateResult(true, "not applicable")`.** Unreachable through the orchestrator,
+which filters by `supports()` first - but reachable from three tests named `shouldPassNonXTask`, which
+asserted it. The defect was pinned by a test, so removing it looked like breakage. The tests now assert
+what production actually relies on: `supports()` rejects the task, so the check is never reached.
+
+**The mechanical form, for any future code.** Find `allMatch`, `anyMatch`, `noneMatch`, a ratio or a
+percentage, and ask what it yields on the empty set. If the answer is success, that is `∀x ∈ ∅`, and the
+cardinality belongs beside it.
+
+
 ## 10. The assembly has no owner
 
 ### 10.1 What happened, to the minute

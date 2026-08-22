@@ -49,11 +49,10 @@ public class BackendContractGate implements GateCheck {
 
     @Override
     public GateResult check(TaskEntity task) {
-        String roleTag = task.getRole().getTag();
-        if (!BACKEND_TAGS.contains(roleTag)) {
-            return new GateResult(true, "not applicable", List.of());
-        }
-
+        // 2026-08-22 (ACP-105): the "not applicable -> passed" branch was removed. GateOrchestrator
+        // already filters by supports(), so it was unreachable through the only caller - but it encoded
+        // the idea that an unasked check is a passed one, which is the Evidence Algebra inverted: the
+        // absence of a check is 0, never 5.
         List<String> failureReasons = new ArrayList<>();
         JsonNode payload = task.getPayload();
         if (payload == null) {
