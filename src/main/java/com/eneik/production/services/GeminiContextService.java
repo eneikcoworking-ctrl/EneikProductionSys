@@ -107,6 +107,24 @@ public class GeminiContextService {
                 + "model changed. Reindexing now rather than waiting for the nightly run, because until it "
                 + "finishes the corpus is invisible to every prompt.", stale, probe.length);
         reindexStandingKnowledge();
+
+        // 2026-08-23. Whatever is still at the old dimension after a full reindex has no source left to be
+        // rebuilt from - brief and requirement chunks of projects that are finished and gone. The dimension
+        // filter already excludes them from retrieval, so they mislead nothing; they do occupy the store and
+        // inflate every count taken over it, which is how "1399 of 1543 chunks invisible" read as an alarm
+        // when it was a graveyard. Deleted by the system rather than by hand, so the store's contents stay
+        // something the system maintains rather than something an operator remembers to clean.
+        List<ContextChunkEntity> orphaned = repository.findAll().stream()
+                .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
+                .toList();
+        if (!orphaned.isEmpty()) {
+            java.util.Set<String> refs = orphaned.stream()
+                    .map(ContextChunkEntity::getSourceRef)
+                    .collect(java.util.stream.Collectors.toSet());
+            refs.forEach(repository::deleteBySourceRef);
+            log.warn("GeminiContextService: removed {} chunk(s) across {} source(s) that no reindex could "
+                    + "rebuild - their source documents no longer exist.", orphaned.size(), refs.size());
+        }
     }
 
     @Scheduled(cron = "${gemini-context.reindex-cron:0 0 3 * * ?}")

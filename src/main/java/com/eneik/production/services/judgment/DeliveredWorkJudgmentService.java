@@ -73,8 +73,15 @@ public class DeliveredWorkJudgmentService {
             Answer with a first line that is exactly one of these words and nothing else:
               SATISFIED   - every criterion is met by something you can point to in this diff.
               REFUTED     - at least one criterion is not met by this diff.
-              UNDECIDABLE - the criteria cannot be tested against a diff at all, because they describe a \
-            runtime behaviour or an artefact this diff does not contain.
+              UNDECIDABLE - the criteria cannot be settled from what you were given, because they describe \
+            a runtime behaviour, or an artefact neither the diff nor the repository listing can show.
+
+            You are given the repository's file listing as well as the diff. Use it for what a diff cannot \
+            express: a criterion is often unmet not because something is wrong in the change, but because \
+            something the criterion names does not exist anywhere. Say which file you looked for and did \
+            not find. A REFUTED that names only what the diff did, while the real failure is an absence \
+            elsewhere in the repository, is a correct verdict resting on an incomplete reason - and the \
+            next worker repairs what you named instead of what is missing.
 
             Then a blank line, then at most four lines of reason. For REFUTED, name the criterion that fails \
             and what the diff does instead. For SATISFIED, name where each criterion is met.
@@ -295,6 +302,7 @@ public class DeliveredWorkJudgmentService {
                      DESCRIPTION_CHAR_LIMIT)
                 + "\n\nACCEPTANCE CRITERIA THIS TASK CARRIED\n" + cap(task.getAcceptanceCriteria(), 4_000)
                 + "\n\nMERGED PULL REQUEST\n" + prUrl
+                + repositoryState(task)
                 + warning
                 + "\n\nDIFF\n" + bounded;
 
@@ -315,6 +323,41 @@ public class DeliveredWorkJudgmentService {
      * frequently Cyrillic and every one of those characters costs two bytes where the limit counts bytes.
      */
     private static final int PROMPT_CHAR_LIMIT = 40_000;
+
+    /**
+     * What the repository contains on main, alongside what this pull request changed.
+     *
+     * 2026-08-23. The judge saw only a diff, and a diff cannot show what is ABSENT. Measured on
+     * test-fiftieth: the criterion was "all services start and report healthy", the judge ruled REFUTED and
+     * named the override that replaces the backend with a bare JRE image - correct, and incomplete, because
+     * the base compose declares no application service at all and nothing in that diff could have revealed
+     * it. Formally: the judge decides soundly only when the artefacts the criterion speaks of are contained
+     * in the artefacts the diff touches, and for a criterion about the product as a whole they are not.
+     *
+     * Paths only, never contents: enough to see that a thing is missing, bounded enough to fit a channel
+     * that has already been overrun once. Failure returns nothing rather than throwing - the state of the
+     * index must not decide whether a delivery gets judged.
+     */
+    private String repositoryState(TaskEntity task) {
+        try {
+            java.util.List<String> paths = gitHubPullRequestService.listFilePaths(task.getProject(), "main", "");
+            if (paths.isEmpty()) {
+                return "";
+            }
+            java.util.List<String> shown = paths.size() > REPOSITORY_PATHS_SHOWN
+                    ? paths.subList(0, REPOSITORY_PATHS_SHOWN) : paths;
+            return "\n\nWHAT THE REPOSITORY CONTAINS ON MAIN (" + paths.size() + " file(s)"
+                    + (paths.size() > shown.size() ? ", first " + shown.size() + " shown" : "")
+                    + ") - use this to judge what is ABSENT, which a diff cannot show:\n"
+                    + String.join("\n", shown);
+        } catch (Exception e) {
+            log.warn("[DELIVERY-JUDGMENT] could not read repository state for task {}: {}",
+                    task.getId(), e.getMessage());
+            return "";
+        }
+    }
+
+    private static final int REPOSITORY_PATHS_SHOWN = 200;
 
     private String cap(String text, int limit) {
         if (text == null) {
