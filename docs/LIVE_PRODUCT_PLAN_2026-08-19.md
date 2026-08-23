@@ -1104,3 +1104,35 @@ different fact from a finding whose parent was dropped.
 
 **The check:** any new wishlist filer must answer which epic its work belongs to. "None, and here is why"
 is a valid answer. Silence is not.
+
+### 28.10 Correction: the falsification flags were never blank
+
+Recorded 2026-08-23 and corrected the same day, before it could be acted on.
+
+I reported that `falsification_cycle_enabled`, `philosophical_falsification_enabled` and
+`design_system_falsification_enabled` all held an empty string, and concluded that the core of the method
+was off because nobody had decided it. That was read from `GET /api/settings`, where `value` came back
+null for each.
+
+`value` is null for every boolean flag by design - `toDto` masks it and puts the answer in `enabled`
+instead. I read the masked field and treated its emptiness as the value. Measured properly, on the live
+system:
+
+- `philosophical_falsification_enabled` = **true**, source database
+- `design_system_falsification_enabled` = **true**, source database
+- `falsification_cycle_enabled` = **false**, source database - a decision someone made and stored, not an
+  absence
+
+All 41 settings show `value: null` in that response, including `github_token` and `jules_api_key`, without
+which the factory could not have run at all. That alone refuted the reading, and I had it in front of me
+before I drew the conclusion.
+
+The two commits that came out of this stand on their own merits and are not withdrawn: a boolean flag may
+no longer be stored blank, and `reportValuelessBooleanFlags` now asks whether anyone decided rather than
+whether a row exists. Both close a real gap - `design_system_falsification_enabled` had genuinely been lost
+that way once before, which is written in that class's own javadoc. What is withdrawn is the claim that it
+had happened again, and the alarm raised on it.
+
+**The check:** before reporting a value as absent, confirm the field being read is the one that carries it.
+A masked field is not an empty one, and a report drawn from the wrong field is a claim about the API's
+shape dressed as a claim about the system.
