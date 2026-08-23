@@ -1091,7 +1091,7 @@ public class ClientDeliverableReadinessService {
         if (dependency == null) {
             return true;
         }
-        if (isTaskMerged(dependency.getId())) {
+        if (isTaskMerged(dependency)) {
             return true;
         }
         // A `complex`-Cynefin spike's deliverable IS its decision record/handoff note, not shippable code -
@@ -1116,7 +1116,7 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getRole() != null && roleTag.equals(t.getRole().getTag()))
                 .filter(t -> dependency.getFeatureId().equals(t.getFeatureId()))
                 .filter(t -> semanticKey.equals(payloadText(t, "ems_semantic_key")))
-                .anyMatch(t -> isTaskMerged(t.getId()));
+                .anyMatch(this::isTaskMerged);
     }
 
     private String payloadText(TaskEntity task, String key) {
@@ -1126,9 +1126,30 @@ public class ClientDeliverableReadinessService {
         return task.getPayload().path(key).asText("");
     }
 
-    /** Real merged state, independent of TaskStatus.done. */
+    /**
+     * Delivered, in the one sense this system recognises: merged after review, on main.
+     *
+     * 2026-08-23. This was `!mergedReviews(taskId).isEmpty()` under a comment claiming "real merged state"
+     * - any merged review at all, including one that landed on a feature branch and never reached main. It
+     * was therefore a strictly weaker answer to the question `reachedMain` already answered, and its three
+     * callers - work recovery, dependency satisfaction, replacement of a failed task - all ask whether the
+     * work is DELIVERED, not whether some pull request somewhere closed. Two predicates for one concept let
+     * the system believe at once that a task is delivered and that it is not, which is how
+     * `done_not_reached_main` could stand for a month as a dashboard label instead of as the contradiction
+     * it names.
+     *
+     * One concept, one predicate, one place of application (invariant 10). The witness is GitHub, because
+     * it is the only thing in reach that cannot be authored from inside this factory.
+     */
     public boolean isTaskMerged(UUID taskId) {
-        return !mergedReviews(taskId).isEmpty();
+        // The id overload is kept for callers that hold only an id; those that hold the task itself should
+        // use reachedMain directly rather than paying for a lookup of a row they already have.
+        return taskRepository.findById(taskId).map(this::reachedMain).orElse(false);
+    }
+
+    /** Same predicate, for a caller that already holds the task. */
+    public boolean isTaskMerged(TaskEntity task) {
+        return task != null && reachedMain(task);
     }
 
     /**
