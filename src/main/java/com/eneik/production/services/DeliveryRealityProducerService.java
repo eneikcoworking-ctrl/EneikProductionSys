@@ -78,6 +78,7 @@ public class DeliveryRealityProducerService {
     private final ClientDeliverableReadinessService readinessService;
     private final OperationalRealityFindingRepository operationalRealityFindingRepository;
     private final EvidenceNodeRepository evidenceNodeRepository;
+    private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
 
     /**
      * Optional, field-injected for the same reason FactorySelfHealthService injects KaizenService that way:
@@ -91,12 +92,68 @@ public class DeliveryRealityProducerService {
                                           TaskRepository taskRepository,
                                           ClientDeliverableReadinessService readinessService,
                                           OperationalRealityFindingRepository operationalRealityFindingRepository,
-                                          EvidenceNodeRepository evidenceNodeRepository) {
+                                          EvidenceNodeRepository evidenceNodeRepository,
+                                          com.eneik.production.repositories.WishlistRepository wishlistRepository) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.readinessService = readinessService;
         this.operationalRealityFindingRepository = operationalRealityFindingRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
+        this.wishlistRepository = wishlistRepository;
+    }
+
+    /**
+     * The work that never landed, ordered again.
+     *
+     * 2026-08-23. Detection has existed since 2026-07-25 and evidence since 2026-08-17, and neither ever
+     * became work: the finding was written, the evidence node was written, and every hour after that this
+     * producer reported "0 new findings, 1 already recorded" - correctly, and to no effect. Measured on
+     * test-fiftieth: `Runtime Contract 9b58412d` stood done-without-merge for ten and a half hours and held
+     * assembly at 17 of 18 merged tasks while all of that machinery worked exactly as designed.
+     *
+     * Evidence from which no action follows is not evidence in this system. A signal with a reader and no
+     * actor is the same defect as a signal with no reader, one step further along, and it is the third of
+     * that shape found in a single day - after the auditor's flagForHumanReview and the gates that recorded
+     * a pass where no check had applied.
+     */
+    private void fileTheMissingWorkAsScope(ProjectEntity project, TaskEntity task) {
+        String marker = "task " + task.getId();
+        boolean alreadyFiled = wishlistRepository
+                .findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending)
+                .stream()
+                .anyMatch(existing -> existing.getSource() == com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main
+                        && existing.getContent() != null && existing.getContent().contains(marker));
+        if (alreadyFiled) {
+            return;
+        }
+
+        String title = com.eneik.production.services.task.TaskTitleBuilder.displayTitle(task);
+        com.eneik.production.models.persistence.WishlistEntity wishlist =
+                new com.eneik.production.models.persistence.WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
+        wishlist.setCynefinDomain("clear");
+        wishlist.setSourceRoleTag("BARCAN-TAG-00");
+        wishlist.setContent("Work that was reported as delivered never reached the main branch.\n\n"
+                + "The closed " + marker + " (\"" + title + "\") has status done, and no merge evidence "
+                + "exists for it at all - no merged pull request, nothing on main. Its own status is the "
+                + "only thing asserting that the work was delivered.\n\n"
+                + "Deliver what that task was for. Do not reopen it and do not restate its goal as new "
+                + "scope: what is missing is the change itself, on main.");
+        wishlist.setJtbd("When a task says done while nothing it produced reached main, I want the work "
+                + "itself delivered, so that done means the change is on main rather than meaning that a "
+                + "row says so.");
+        wishlist.setAcceptanceCriteria("Given the task named above, When this finding is delivered, Then a "
+                + "merged pull request exists on main carrying the change that task was for, and it is "
+                + "named here.");
+        wishlist.setDod("BARCAN-TAG-00: the change the named task was for is present on main in a merged "
+                + "pull request, and the task's status is no longer the only evidence of delivery.");
+        wishlistRepository.save(wishlist);
+
+        log.warn("DeliveryRealityProducerService: filed missing delivery of task {} ({}) as scope - status "
+                + "said done, nothing reached main", task.getId(), title);
     }
 
     @Scheduled(cron = "${delivery-reality-producer.cron:0 20 * * * ?}")
@@ -153,6 +210,7 @@ public class DeliveryRealityProducerService {
                     + "Its own status is the only thing asserting the work was delivered.");
             node.setOperationalRealityFindingId(finding.getId());
             evidenceNodeRepository.save(node);
+            fileTheMissingWorkAsScope(project, task);
             recorded++;
 
             log.warn("DeliveryRealityProducerService: task {} in project {} reports done with no merge "

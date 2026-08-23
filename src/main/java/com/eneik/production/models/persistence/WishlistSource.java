@@ -75,5 +75,16 @@ public enum WishlistSource {
      * UI Slice Fd6672c6 sat failed and flagged with nothing able to move it. The auditor's judgement is
      * kept; only its consequence changes, from a sentence addressed to nobody into scope the factory owes.
      */
-    auditor_unresolved
+    auditor_unresolved,
+
+    /**
+     * A task reports done while nothing it produced ever reached main.
+     *
+     * Detected since 2026-07-25 as `done_not_reached_main`, turned into evidence on 2026-08-17 by
+     * DeliveryRealityProducerService - and stopped there. Evidence from which no action follows is not
+     * evidence in this system, it is the placebo the whole method exists to refuse. Measured 2026-08-23:
+     * `Runtime Contract 9b58412d` sat done-without-merge for over ten hours, holding assembly at 17 of 18
+     * merged tasks, while the producer correctly reported "0 new findings, 1 already recorded" every hour.
+     */
+    delivery_never_reached_main
 }

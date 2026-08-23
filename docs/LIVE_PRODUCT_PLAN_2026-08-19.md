@@ -1056,3 +1056,26 @@ corpus in which ACP-102 lives. That is also why nobody looked again: the plan as
 that argument does not survive contact with the measurement either: 3685 MB were free when it was made,
 and a small multilingual model needs roughly 600 MB. Deferring the system's own method for a sixth of the
 free memory is not a trade.
+
+### 28.8 The shape that recurred three times in one day - to be checked for, not rediscovered
+
+A signal is detected, given a name, and written somewhere a person could read. Nothing acts on it. Each
+stage looks like progress and the chain never reaches work.
+
+- **Gates.** A task of a role no gate supports recorded a pass. Detected as "applicable checks = 0" on
+  2026-08-22 and made visible; no actor until the delivery judge on 2026-08-23.
+- **`flagForHumanReview`.** The auditor's judgement was written to the log, addressed to a human this
+  system does not have. Detected the moment it was read, 2026-08-23; four subjects had accumulated.
+- **`done_not_reached_main`.** Detected 2026-07-25, labelled, shown on the dashboard. Turned into evidence
+  2026-08-17 by `DeliveryRealityProducerService`, whose own javadoc says "a signal with no reader is not
+  monitoring". A reader was built. An actor was not. `Runtime Contract 9b58412d` then stood
+  done-without-merge for ten and a half hours, holding assembly at 17 of 18, while the producer reported
+  "0 new findings, 1 already recorded" every hour - correctly, and to no effect.
+
+**The check to run on any future detector, before it is called finished:** name the row in
+`wishlist` it produces. If the answer is an evidence node, a log line, a dashboard field or a metric, the
+detector is not finished - it has a reader and no actor, and that is the same defect as having no reader,
+one step further along. Evidence from which no action follows is not evidence in this system.
+
+Fixed 2026-08-23: the producer now files `WishlistSource.delivery_never_reached_main` alongside the
+evidence, so the work that never landed is ordered again through the one path that produces work.
