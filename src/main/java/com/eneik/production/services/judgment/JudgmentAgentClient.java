@@ -105,10 +105,38 @@ public class JudgmentAgentClient {
      * either. Collapsing the two makes one such row an absorbing state at the head of a FIFO queue and
      * stops all judgment permanently.
      */
+    /**
+     * The width of this channel, enforced here because it is a property of the channel and not of any
+     * caller.
+     *
+     * 2026-08-23: the sidecar hands the prompt to a spawned process as a single argument, and a single
+     * argument has a hard kernel limit. Fifty-five restarts with `spawn E2BIG` before this existed, and
+     * four more in the fifteen minutes after a caller-side cap was deployed - because bounding one caller
+     * leaves every other caller able to kill the same shared instrument. The content is frequently
+     * Cyrillic, where the limit counts bytes and each character costs two, so this sits well below the
+     * kernel's figure rather than near it.
+     *
+     * Truncation is announced inside the prompt, never silent: a judge that cannot see it has been cut will
+     * rule on the fragment as though it were the whole, which is worse than refusing to rule.
+     */
+    private static final int PROMPT_CHAR_LIMIT = 40_000;
+
+    private static String withinChannel(String prompt) {
+        if (prompt == null || prompt.length() <= PROMPT_CHAR_LIMIT) {
+            return prompt;
+        }
+        log.warn("[JUDGMENT] prompt of {} characters exceeds the {} the channel can carry; truncating",
+                prompt.length(), PROMPT_CHAR_LIMIT);
+        return prompt.substring(0, PROMPT_CHAR_LIMIT)
+                + "\n\n[THIS INPUT WAS TRUNCATED to fit the judgment channel. You are seeing the first "
+                + PROMPT_CHAR_LIMIT + " characters. Do not rule as though you had seen the whole: if what "
+                + "you need to decide could lie in the part you cannot see, say so instead of deciding.]";
+    }
+
     public Ruling judge(String userPrompt) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("prompt", SYSTEM_PROMPT + "\n\n" + userPrompt);
+            body.put("prompt", withinChannel(SYSTEM_PROMPT + "\n\n" + userPrompt));
             body.set("schema", verdictSchema());
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(sidecarUrl + "/judge"))
@@ -144,7 +172,8 @@ public class JudgmentAgentClient {
     public String judgeAsText(String prompt, String systemInstruction) {
         try {
             ObjectNode body = objectMapper.createObjectNode();
-            body.put("prompt", (systemInstruction == null ? "" : systemInstruction + "\n\n") + prompt);
+            body.put("prompt", withinChannel(
+                    (systemInstruction == null ? "" : systemInstruction + "\n\n") + prompt));
             body.set("schema", objectMapper.createObjectNode()); // no schema: the caller parses its own format
 
             HttpRequest request = HttpRequest.newBuilder(URI.create(sidecarUrl + "/judge"))

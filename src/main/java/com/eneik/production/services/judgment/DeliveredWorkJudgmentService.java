@@ -245,13 +245,38 @@ public class DeliveredWorkJudgmentService {
                 + diff.length() + ". Do not answer SATISFIED on a partial diff: if a criterion's evidence "
                 + "could lie in the part you cannot see, answer UNDECIDABLE and say which criterion it was.\n"
                 : "";
-        return "TASK TITLE\n" + task.getTitle()
+        String prompt = "TASK TITLE\n" + task.getTitle()
                 + "\n\nWHAT THIS TASK WAS ASKED TO DO\n"
-                + (task.getDescription() == null ? "(no description recorded)" : task.getDescription())
-                + "\n\nACCEPTANCE CRITERIA THIS TASK CARRIED\n" + task.getAcceptanceCriteria()
+                + cap(task.getDescription() == null ? "(no description recorded)" : task.getDescription(),
+                     DESCRIPTION_CHAR_LIMIT)
+                + "\n\nACCEPTANCE CRITERIA THIS TASK CARRIED\n" + cap(task.getAcceptanceCriteria(), 4_000)
                 + "\n\nMERGED PULL REQUEST\n" + prUrl
                 + warning
                 + "\n\nDIFF\n" + bounded;
+
+        // 2026-08-23, second pass. The first fix capped the DIFF and called the channel bounded, and the
+        // sidecar went on dying: four more `spawn E2BIG` in the fifteen minutes after that deploy. What the
+        // channel carries is the SUM, and the compiler writes task descriptions that are themselves
+        // thousands of characters. Bounding one addend is not bounding the total - the same substitution of
+        // a part for the whole that this service exists to catch in other people's work. This last cap is
+        // the one that is actually true of the argument handed to spawn.
+        return cap(prompt, PROMPT_CHAR_LIMIT);
+    }
+
+    private static final int DESCRIPTION_CHAR_LIMIT = 6_000;
+
+    /**
+     * The whole prompt, system instruction included, must survive being handed to a spawned process as one
+     * argument. Kept well under the kernel's per-argument limit rather than near it, because the content is
+     * frequently Cyrillic and every one of those characters costs two bytes where the limit counts bytes.
+     */
+    private static final int PROMPT_CHAR_LIMIT = 40_000;
+
+    private String cap(String text, int limit) {
+        if (text == null) {
+            return "";
+        }
+        return text.length() <= limit ? text : text.substring(0, limit) + "\n[truncated]";
     }
 
     private void record(TaskEntity task, String verdict, String reason) {
