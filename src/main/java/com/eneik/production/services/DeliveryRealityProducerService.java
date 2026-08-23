@@ -189,6 +189,13 @@ public class DeliveryRealityProducerService {
             }
             if (!operationalRealityFindingRepository.findByTaskId(task.getId()).isEmpty()) {
                 alreadyKnown += refreshStandingEvidence(task);
+                // 2026-08-23, second pass. The scope filing below sat AFTER this continue, so it could only
+                // ever run for a finding recorded for the first time - and the task it was written for had
+                // been recorded the day before. Measured: `Runtime Contract 9b58412d` stayed blocked for
+                // 11.9 hours with the fix deployed and unreachable. A repair placed on the path the defect
+                // does not take is not a repair. It belongs on both paths, because the question "has this
+                // work been ordered again" is independent of whether the finding is new.
+                fileTheMissingWorkAsScope(project, task);
                 continue;
             }
             OperationalRealityFindingEntity finding = new OperationalRealityFindingEntity();
