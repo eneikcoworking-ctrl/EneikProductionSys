@@ -2227,6 +2227,25 @@ public class AutoMergeService {
         }
     }
 
+    /**
+     * Which of two review rows for the same session is the one to reason about.
+     *
+     * A merged row beats an unmerged one, because the question every caller of this map asks is whether the
+     * session's pull request landed. Between two rows that agree on that, the newer one wins. Total and
+     * deterministic: the same two rows always produce the same answer, which is the whole point - the
+     * previous merge function returned whichever row arrived last from an unordered query.
+     */
+    private static PrReviewEntity preferTheReviewThatReflectsTheMerge(PrReviewEntity first, PrReviewEntity second) {
+        boolean firstMerged = Boolean.TRUE.equals(first.getMerged());
+        boolean secondMerged = Boolean.TRUE.equals(second.getMerged());
+        if (firstMerged != secondMerged) {
+            return firstMerged ? first : second;
+        }
+        Instant firstAt = first.getCreatedAt() == null ? Instant.EPOCH : first.getCreatedAt();
+        Instant secondAt = second.getCreatedAt() == null ? Instant.EPOCH : second.getCreatedAt();
+        return secondAt.isAfter(firstAt) ? second : first;
+    }
+
     private void repairTaskForConfirmedMerge(com.eneik.production.models.persistence.TaskEntity task,
             com.eneik.production.models.persistence.JulesSessionEntity winningSession, String mergedPrUrl) {
         List<com.eneik.production.models.persistence.JulesSessionEntity> taskSessions =
@@ -2236,12 +2255,28 @@ public class AutoMergeService {
                 .filter(session -> List.of("queued", "running", "revising", "stuck", "pr_opened")
                         .contains(session.getStatus()))
                 .toList();
+        // 2026-08-23. This map assumes one review per session and the data does not guarantee it: a session
+        // that reached pr_opened more than once owns a row per pull request. The merge function was
+        // `(first, second) -> second`, which keeps whichever row `findAll()` happened to return last, and
+        // that query has no ORDER BY - so the row inspected here was chosen non-deterministically.
+        //
+        // The consequence, measured on test-fiftieth: `reviewNeedsUpdate` was true on every tick for two
+        // tasks, because each pass repaired whichever row surfaced and the next pass surfaced a different
+        // one. The guard below can therefore never return, and the reconciler logged a completed
+        // reconciliation - `repaired status=false, retired sessions=0, superseded reviews=0`, three zeros -
+        // fifty times in twenty-five minutes for each of the two tasks, 100 of 118 merge lines in the log.
+        // The repair could not reach the fixed point it was testing for, because the test read a different
+        // object each time it ran.
+        //
+        // Deterministic now, and ordered by what the question actually is: the row that reflects the merge
+        // wins over one that does not, and among equals the newest wins. Nothing else changes - which rows
+        // exist, what is written to them, and when a repair happens are all untouched.
         Map<UUID, PrReviewEntity> reviewBySession = prReviewRepository.findAll().stream()
                 .filter(review -> review.getJulesSessionId() != null)
                 .collect(java.util.stream.Collectors.toMap(
                         PrReviewEntity::getJulesSessionId,
                         review -> review,
-                        (first, second) -> second));
+                        AutoMergeService::preferTheReviewThatReflectsTheMerge));
         List<PrReviewEntity> staleReviews = taskSessions.stream()
                 .filter(session -> winningSession == null || !session.getId().equals(winningSession.getId()))
                 .map(session -> reviewBySession.get(session.getId()))

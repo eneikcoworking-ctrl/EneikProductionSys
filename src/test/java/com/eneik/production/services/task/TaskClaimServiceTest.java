@@ -193,7 +193,7 @@ public class TaskClaimServiceTest {
         assertThat(preserved.getStatus()).isEqualTo(TaskStatus.done);
         assertThat(released.getReleasedAt()).isNotNull();
         assertThat(released.getResultStatus()).isEqualTo(ClaimResultStatus.done);
-        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(task.getId())).isEmpty();
+        assertThat(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(task.getId())).isEmpty();
     }
 
     @Test
@@ -236,7 +236,7 @@ public class TaskClaimServiceTest {
         taskClaimService.fail(task.getId());
 
         assertThat(taskRepository.findById(task.getId()).orElseThrow().getStatus()).isEqualTo(TaskStatus.done);
-        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(task.getId())).isEmpty();
+        assertThat(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(task.getId())).isEmpty();
     }
 
     // Proves the atomic guard TaskRepository.writeStatusUnlessTerminal actually closes the race window

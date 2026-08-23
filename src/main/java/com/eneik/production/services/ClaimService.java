@@ -234,7 +234,7 @@ public class ClaimService {
 
     @Transactional(readOnly = true)
     public boolean hasActiveClaim(UUID taskId) {
-        return claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).isPresent();
+        return claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).isPresent();
     }
 
     @Transactional
@@ -294,7 +294,7 @@ public class ClaimService {
             log.info("Poka-yoke: ignored blocked transition for terminal task {} ({})", taskId, currentTask.getStatus());
             return;
         }
-        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+        claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
@@ -323,7 +323,7 @@ public class ClaimService {
             log.info("Poka-yoke: ignored failed transition for terminal task {} ({})", taskId, currentTask.getStatus());
             return;
         }
-        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+        claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
@@ -349,7 +349,7 @@ public class ClaimService {
             log.info("Poka-yoke: ignored requeue transition for terminal task {} ({})", taskId, currentTask.getStatus());
             return;
         }
-        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+        claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
@@ -381,7 +381,7 @@ public class ClaimService {
             log.info("Poka-yoke: ignored amended-brief requeue for terminal task {} ({})", taskId, currentTask.getStatus());
             return;
         }
-        claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).ifPresent(claim -> {
+        claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).ifPresent(claim -> {
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.failed);
             claimRepository.save(claim);
@@ -402,7 +402,7 @@ public class ClaimService {
     }
 
     private ClaimEntity findActiveClaimByTaskId(UUID taskId) {
-        return claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)
+        return claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)
                 .orElseThrow(() -> new IllegalStateException("No active claim for task " + taskId));
     }
 
@@ -431,7 +431,7 @@ public class ClaimService {
             if (!isTerminal(task.getStatus())) {
                 return;
             }
-            claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)
+            claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)
                     .ifPresent(claim -> closeClaimForTerminalTask(claim, task, "task reached terminal status"));
         });
     }
@@ -456,7 +456,7 @@ public class ClaimService {
      * This compensates for the lack of a partial unique index in the H2 test environment.
      */
     public void validateTaskAvailability(UUID taskId) {
-        boolean hasActiveClaim = claimRepository.findByTaskIdAndReleasedAtIsNull(taskId).isPresent();
+        boolean hasActiveClaim = claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId).isPresent();
 
         if (hasActiveClaim) {
             throw new IllegalStateException("Task " + taskId + " already has an active claim.");

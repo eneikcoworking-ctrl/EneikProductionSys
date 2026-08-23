@@ -184,7 +184,7 @@ class AutonomousPipelineIntegrationTest {
         TaskEntity refreshedAudit = taskRepository.findById(audit.getId()).orElseThrow();
         assertThat(refreshedAudit.getStatus()).isEqualTo(TaskStatus.queued);
         assertThat(refreshedAudit.getJulesDispatchStatus()).isEqualTo("Waiting for client-scope decomposition to finish");
-        assertThat(claimRepository.findByTaskIdAndReleasedAtIsNull(audit.getId())).isEmpty();
+        assertThat(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(audit.getId())).isEmpty();
         assertThat(julesSessionRepository.findByTaskId(audit.getId())).isEmpty();
     }
 

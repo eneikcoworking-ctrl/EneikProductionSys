@@ -149,7 +149,7 @@ public class InternalTaskController {
 
     @GetMapping("/{id}/active-claim")
     public ResponseEntity<ClaimEntity> getActiveClaim(@PathVariable UUID id) {
-        return claimRepository.findByTaskIdAndReleasedAtIsNull(id)
+        return claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(id)
                 .map(ResponseEntity::ok)
                 .orElse(ResponseEntity.notFound().build());
     }

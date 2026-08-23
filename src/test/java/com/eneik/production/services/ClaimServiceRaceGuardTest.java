@@ -64,7 +64,7 @@ class ClaimServiceRaceGuardTest {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = nonTerminalTask(taskId);
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)).thenReturn(Optional.of(activeClaim(task)));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.of(activeClaim(task)));
         // Simulates a concurrent transaction terminal-izing the row between this read and this write.
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.queued))).thenReturn(0);
 
@@ -79,7 +79,7 @@ class ClaimServiceRaceGuardTest {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = nonTerminalTask(taskId);
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)).thenReturn(Optional.of(activeClaim(task)));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.of(activeClaim(task)));
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.queued))).thenReturn(0);
 
         assertDoesNotThrow(() -> claimService.fail(taskId));
@@ -92,7 +92,7 @@ class ClaimServiceRaceGuardTest {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = nonTerminalTask(taskId);
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)).thenReturn(Optional.of(activeClaim(task)));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.of(activeClaim(task)));
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.queued))).thenReturn(0);
 
         assertDoesNotThrow(() -> claimService.reopenWithAmendedBrief(taskId, "amended brief", "reason"));
@@ -105,7 +105,7 @@ class ClaimServiceRaceGuardTest {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = nonTerminalTask(taskId);
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)).thenReturn(Optional.of(activeClaim(task)));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.of(activeClaim(task)));
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.failed))).thenReturn(0);
 
         assertDoesNotThrow(() -> claimService.closeTaskAsFailed(taskId, "should never be written"));
@@ -118,7 +118,7 @@ class ClaimServiceRaceGuardTest {
         UUID taskId = UUID.randomUUID();
         TaskEntity task = nonTerminalTask(taskId);
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
-        when(claimRepository.findByTaskIdAndReleasedAtIsNull(taskId)).thenReturn(Optional.of(activeClaim(task)));
+        when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)).thenReturn(Optional.of(activeClaim(task)));
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(0);
 
         assertDoesNotThrow(() -> claimService.closeTaskAsBlocked(taskId, "should never be written"));
