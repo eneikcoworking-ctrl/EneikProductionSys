@@ -352,7 +352,6 @@ public class TechnicalLeadCompiler {
         payload.put("toc_constraint_ref", wishlist.getTocConstraintRef());
         payload.put("six_sigma_metric", wishlist.getSixSigmaMetric());
         payload.put("dod", dod);
-        payload.put("acceptance_criteria", englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist)));
         payload.put("ems_management_system", "Eneik Management System");
         payload.put("ems_semantic_key", emsMetadata.semanticKey());
         payload.put("ems_graph_key", emsMetadata.graphKey() == null ? "" : emsMetadata.graphKey());
@@ -368,6 +367,9 @@ public class TechnicalLeadCompiler {
         payload.put("depends_on", dependsOn != null ? dependsOn.getId().toString() : "");
         payload.set("impact_coefficients", createImpactMatrix(roleTag, extractedRoles));
         task.setPayload(payload);
+        // Through the entity rather than into the node directly, so a task has exactly one writer of
+        // its own falsifier and the blank case is refused in one place instead of being possible here.
+        task.setAcceptanceCriteria(acceptanceCriteriaFor(wishlist));
 
         task.setStatus(TaskStatus.queued);
         task.setCynefinDomain(cynefin);
@@ -1127,7 +1129,7 @@ public class TechnicalLeadCompiler {
                                         String dod, String kano, String cynefin,
                                         FlywayVersionReservation flywayCache) {
         String jtbd = englishMetadata(wishlist.getJtbd(), fallbackJtbd(wishlist));
-        String acceptanceCriteria = englishMetadata(wishlist.getAcceptanceCriteria(), fallbackAcceptanceCriteria(wishlist));
+        String acceptanceCriteria = acceptanceCriteriaFor(wishlist);
 
         java.util.Set<String> extractedRoles = extractRoleTags(wishlist);
         if (extractedRoles.isEmpty() && roleTag != null) {
@@ -1547,6 +1549,23 @@ public class TechnicalLeadCompiler {
 
     private String fallbackJtbd(WishlistEntity wishlist) {
         return "When this slice is delivered, the user can complete one small verifiable capability safely, so project progress is measurable without a long Jules session.";
+    }
+
+    // ACP-104 - a default is a decision. This went through englishMetadata, which substitutes the fallback
+    // whenever containsNonEnglishSignal fires, so on a project whose client writes in Russian every criterion
+    // the client stated was replaced before the task ever reached the agent. What arrived instead were three
+    // statements about process - the diff is small, the scope is clean, a blocker is recorded - and not one of
+    // them can be false of a product that does nothing the client asked for. A criterion that cannot be false
+    // is not a criterion. The stated one is now kept verbatim and the process statements are appended rather
+    // than swapped in, so the task carries a falsifier about the product as well as about the work.
+    private String acceptanceCriteriaFor(WishlistEntity wishlist) {
+        String stated = wishlist.getAcceptanceCriteria();
+        if (stated == null || stated.isBlank()) {
+            // Unreachable through compileWishlist: validateDefinitionOfReady step 7 refuses a blank criterion
+            // before any task is built. Kept as the answer for any future caller that has not been through it.
+            return fallbackAcceptanceCriteria(wishlist);
+        }
+        return compactLines(stated, 1_000) + "\n" + fallbackAcceptanceCriteria(wishlist);
     }
 
     private String fallbackAcceptanceCriteria(WishlistEntity wishlist) {

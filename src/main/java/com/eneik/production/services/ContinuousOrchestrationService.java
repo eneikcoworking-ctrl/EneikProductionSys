@@ -57,6 +57,7 @@ public class ContinuousOrchestrationService {
     // javadoc. Deliberately called from this existing per-project tick, not a new @Scheduled cron.
     private final com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService;
     private final com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService;
+    private final com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService;
     private final com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever;
 
     public ContinuousOrchestrationService(ProjectRepository projectRepository,
@@ -77,6 +78,7 @@ public class ContinuousOrchestrationService {
                                          com.eneik.production.services.accounts.AccountHealthService accountHealthService,
                                          com.eneik.production.services.runtime.ProductLaunchabilityService productLaunchabilityService,
                                          com.eneik.production.services.runtime.ClientRuntimeObservabilityService clientRuntimeObservabilityService,
+                                         com.eneik.production.services.judgment.DeliveredWorkJudgmentService deliveredWorkJudgmentService,
                                          com.eneik.production.services.toc.TocSubordinationLever tocSubordinationLever) {
         this.projectRepository = projectRepository;
         this.projectFlowService = projectFlowService;
@@ -96,6 +98,7 @@ public class ContinuousOrchestrationService {
         this.accountHealthService = accountHealthService;
         this.productLaunchabilityService = productLaunchabilityService;
         this.clientRuntimeObservabilityService = clientRuntimeObservabilityService;
+        this.deliveredWorkJudgmentService = deliveredWorkJudgmentService;
         this.tocSubordinationLever = tocSubordinationLever;
     }
 
@@ -170,6 +173,20 @@ public class ContinuousOrchestrationService {
                         clientRuntimeObservabilityService.maybeObserve(project);
                     } catch (Exception e) {
                         log.error("Continuous Orchestration: runtime observability failed for project {}", project.getId(), e);
+                    }
+                }
+
+                if (isAllowed(project, OperationalAction.JUDGE_DELIVERED_WORK)) {
+                    try {
+                        // 2026-08-23: the one question nothing was asking. Measured on test-fiftieth the day
+                        // before: 26 of 26 tasks closed with IMPLEMENTATION_RESULT checks applied = 0, because
+                        // runQualityGate stands on one of the five paths that write done and covers five of
+                        // thirteen roles. This asks each closed task its OWN acceptance criteria instead, which
+                        // every task carries and which say what the client asked for rather than what a role
+                        // generally owes. Records a verdict, files scope when one is refuted, blocks nothing.
+                        deliveredWorkJudgmentService.judgeDeliveredWork(project);
+                    } catch (Exception e) {
+                        log.error("Continuous Orchestration: delivery judgment failed for project {}", project.getId(), e);
                     }
                 }
 

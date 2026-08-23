@@ -69,7 +69,8 @@ public class OperationalPolicyService {
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
-            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY, OBSERVE_CLIENT_RUNTIME -> activeProject
+            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY, OBSERVE_CLIENT_RUNTIME,
+                    JUDGE_DELIVERED_WORK -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             // Deliberately narrower than hardBlocked (2026-07-31, same shape as DISPATCH_QUEUED_TASKS

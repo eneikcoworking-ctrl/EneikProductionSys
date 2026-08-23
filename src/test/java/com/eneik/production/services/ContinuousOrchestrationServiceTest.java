@@ -77,6 +77,7 @@ class ContinuousOrchestrationServiceTest {
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
                 mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
                 mock(com.eneik.production.services.toc.TocSubordinationLever.class)
         );
 
@@ -118,6 +119,7 @@ class ContinuousOrchestrationServiceTest {
                 accountHealthService,
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
                 mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
                 mock(com.eneik.production.services.toc.TocSubordinationLever.class)
         );
 
@@ -159,6 +161,7 @@ class ContinuousOrchestrationServiceTest {
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
                 mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
                 mock(com.eneik.production.services.toc.TocSubordinationLever.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);
@@ -188,6 +191,7 @@ class ContinuousOrchestrationServiceTest {
                 mock(com.eneik.production.services.accounts.AccountHealthService.class),
                 mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
                 mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
                 mock(com.eneik.production.services.toc.TocSubordinationLever.class));
 
         boolean duplicated = ReflectionTestUtils.invokeMethod(service, "checkForDuplicateTaskContent", project);

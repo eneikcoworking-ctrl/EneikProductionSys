@@ -367,6 +367,31 @@ percentage, and ask what it yields on the empty set. If the answer is success, t
 cardinality belongs beside it.
 
 
+### 9.5 ACP-106 - A Name Is A Claim
+
+`BARCAN-TAG-02_RIGID-DESIGNATOR`. The name of a mechanism asserts what it does. When the name asserts a
+guarantee the mechanism does not provide, it does not merely mislead - it **suppresses the question**,
+because the guarantee reads as already answered.
+
+`AutoMergeService` calls its task-closing reconciler a **poka-yoke**. Poka-yoke is the guarantee that a
+defect cannot be accepted by the receiving side: the corner of a SIM card is cut at manufacture, so the
+wrong orientation is not detected - it is unperformable. What the reconciler does is the reverse. It writes
+
+    task.setStatus(TaskStatus.done);
+
+because a sibling pull request merged, with no test of what the task promised. Error acceptance under the
+name of error proofing.
+
+Measured 2026-08-23: four tasks of `test-fiftieth` closed through that path. Two hours before the code was
+read, this assistant reported the mechanism to the operator **by its name**, as though the name were the
+explanation, and the operator refused it - poka-yoke is not a patch or a stub, it is the highest grade of
+the guarantee. The word had stood in for the check for a month, including in the report of the one auditing
+it.
+
+The lesson is not to rename things. It is that a name asserting a guarantee is a claim like any other in
+this plan and must be held to it - and where it cannot be held, the guarantee gets built rather than the
+word kept. What was built is §27.
+
 ## 10. The assembly has no owner
 
 ### 10.1 What happened, to the minute
@@ -797,3 +822,84 @@ memory instead of the thing itself.
 ## 26. Held, on command
 
 Move the factory to a server. Details in the archive.
+
+## 27. Delivery is judged against the task's own criterion - built 2026-08-23
+
+### 27.1 The measurement
+
+`test-fiftieth`, 26 tasks, 13 merged pull requests, and
+`applicableChecksByStage.IMPLEMENTATION_RESULT = 0` on all 26. Nothing had asked a single closed task
+whether it did what it promised.
+
+The gates were not weak. They were unreachable, for two reasons measured directly in the source:
+
+- `gateOrchestrator.runQualityGate` is called from **one** of the **five** places that write
+  `TaskStatus.done` - `ClaimService:200`. The other four (`AutoMergeService:1818` and `:2332`,
+  `PlannedWorkRecoveryService:324`, `ProjectFlowService:761`) write it directly.
+- `VerificationEvidenceGate.supports()` admits one role, and only **5 of the 13** roles have any gate.
+
+Adding gates for the remaining eight would have been eight more inspections of finished output, which is
+the practice poka-yoke replaces rather than an instance of it (§9.5).
+
+### 27.2 The instrument that already existed
+
+A task's own acceptance criteria are a better instrument than any per-role gate: they state what **this
+client asked for**, not what a role generally owes, and every compiled task already carried them in
+`payload.acceptance_criteria`, written by `TechnicalLeadCompiler` and enforced by
+`validateDefinitionOfReady` step 7, which refuses a wishlist that states none.
+
+They were never read back. The only readers were the compiler building the agent's prompt, and the
+dashboard displaying it. The criterion was uttered as a directive and never as a claim that could be false.
+
+### 27.3 Two substitutions at the source
+
+**Thirteen of the fourteen places that construct a `TaskEntity` set no criterion at all.** Only the
+compiler did. Every internal task - compiler workers, falsification audits, coverage audits, PR review
+fallbacks, design review, design implementation, triage, recovery, market research - was work whose
+doneness had no statement, and therefore could not be judged by anything downstream.
+
+**Every criterion written in the client's language was replaced before dispatch.**
+`buildTaskDescription` passed the criterion through `englishMetadata`, which returns
+`fallbackAcceptanceCriteria` whenever `containsNonEnglishSignal` fires. On a project whose client writes in
+Russian, that is every criterion the client stated. What reached the agent instead were three statements
+about process - the diff is small, the scope is clean, a blocker is recorded - and not one of them can be
+false of a product that does nothing the client asked for. ACP-104: a default is a decision.
+
+### 27.4 What was built
+
+**At the source.** `TaskEntity.getAcceptanceCriteria` / `setAcceptanceCriteria` make a task's falsifier
+reachable and refuse a blank one, with `payload.acceptance_criteria` kept as the single home rather than a
+second column that can disagree with it. All fourteen construction sites now state what would refute the
+task they build - the compiler through the same accessor, so the fact has exactly one writer.
+
+**The device.** `TaskAcceptanceCriteriaGuardTest` fails the build when any `new TaskEntity()` reaches its
+save without stating a criterion. Build time, not runtime: a running factory must not be stopped by a
+check, and a defect that cannot be built costs less than one that has to be noticed. On its first run it
+refused `TechnicalLeadCompiler:282` - the compiler was writing the key straight into the JSON node, a
+second writer of the one fact - which is the first thing it was built to catch.
+
+**The substitution removed.** `acceptanceCriteriaFor` keeps the stated criterion verbatim and appends the
+process statements instead of swapping them in.
+
+**The judgment.** `DeliveredWorkJudgmentService` reads each done task's own criteria against the diff
+merged for it and records `SATISFIED`, `REFUTED`, `UNDECIDABLE` or `NOT_JUDGED_NO_DIFF` - the last recorded
+as a fact, never as a pass. A refutation is filed as scope (`WishlistSource.delivery_refuted`) carrying the
+criterion, the pull request and the judgment's own words, so the worker does not rediscover what the system
+already knows.
+
+It rules at the **DELIVERY** level and could not reuse `JudgmentAgentClient.judge()`, whose system prompt
+rules on the FACTORY and says in as many words that delivery is not its subject. Reusing it would have
+merged two of the three contexts §3 keeps apart, so it uses `judgeAsText` with its own instruction and its
+own reply contract.
+
+**It blocks nothing.** No transition is refused. Refusing on ignorance turns a safety net into a new way to
+strand tasks - the reasoning already written into `AutoMergeService` on 2026-08-18 - and eight of thirteen
+roles would be refused on ignorance from the first tick. Work already accepted is corrected the way the
+operator directed: through falsification, not by reopening what is closed.
+
+### 27.5 What this does not do
+
+It does not make a defect unable to pass. It makes work whose doneness has no statement unable to be
+**built**, and work whose statement is refuted unable to pass **silently**. The remaining step - refusing
+the transition itself - becomes available one role at a time, as each role's criteria prove testable in
+practice, and is not taken here.

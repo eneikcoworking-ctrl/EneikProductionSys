@@ -1,6 +1,8 @@
 package com.eneik.production.models.persistence;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.persistence.*;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
@@ -107,6 +109,32 @@ public class TaskEntity {
     public void setTitle(String title) { this.title = title; }
     public JsonNode getPayload() { return payload; }
     public void setPayload(JsonNode payload) { this.payload = payload; }
+
+    // The statement this task's completion can be refuted against. It has always been written into
+    // payload.acceptance_criteria by TechnicalLeadCompiler, but only ever read back to build the agent's
+    // prompt - never to test what came back. These accessors make a task's own falsifier reachable to
+    // whatever has to judge delivery, and keep payload the single home of the fact rather than adding a
+    // second column that can disagree with it.
+    public String getAcceptanceCriteria() {
+        if (payload == null) { return null; }
+        String value = payload.path("acceptance_criteria").asText(null);
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    // Blank is refused rather than stored: a task whose doneness has no statement is the defect this
+    // accessor exists to make unconstructible, and accepting an empty string here would reintroduce it
+    // in the one place meant to prevent it.
+    public void setAcceptanceCriteria(String acceptanceCriteria) {
+        if (acceptanceCriteria == null || acceptanceCriteria.isBlank()) {
+            throw new IllegalArgumentException(
+                    "A task may not carry blank acceptance criteria: " + title);
+        }
+        ObjectNode node = (payload instanceof ObjectNode existing)
+                ? existing
+                : JsonNodeFactory.instance.objectNode();
+        node.put("acceptance_criteria", acceptanceCriteria);
+        this.payload = node;
+    }
     public TaskStatus getStatus() { return status; }
     public void setStatus(TaskStatus status) { this.status = status; }
     public String getLinearIssueId() { return linearIssueId; }

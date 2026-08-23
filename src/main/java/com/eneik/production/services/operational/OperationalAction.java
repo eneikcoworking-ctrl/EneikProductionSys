@@ -58,5 +58,10 @@ public enum OperationalAction {
     // closeSessionForTerminalTask now retires the worker automatically the moment its carrier task goes
     // terminal, but that only covers ONE way a worker can get wedged; this gives the observer the same
     // power for any other shape of the same underlying desync she independently notices.
-    RETIRE_STUCK_WORKER
+    RETIRE_STUCK_WORKER,
+
+    // 2026-08-23: reads a done task's own acceptance criteria against the diff merged for it. Subordinated
+    // like the other read-only observations rather than like a dispatch, because it writes no code, claims
+    // no slot and blocks no transition - it records a verdict and, when one is refuted, files scope.
+    JUDGE_DELIVERED_WORK
 }

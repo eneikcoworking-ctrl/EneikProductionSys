@@ -464,6 +464,9 @@ public class OpsAuditorService {
         payload.put(RECOVERS_FAILED_TASK_ID_KEY, failedTaskId.toString());
         recovery.setPayload(payload);
 
+        recovery.setAcceptanceCriteria(failedTask.getAcceptanceCriteria() != null
+                ? failedTask.getAcceptanceCriteria()
+                : "Given the goal of the task this replaces, When this attempt ends, Then that goal is met and the failure recorded against the original does not recur, shown by the artefact the original was to produce.");
         recovery = taskRepository.save(recovery);
         log.info("OpsAuditorService: created recovery task {} (role={}, feature={}) for failed task {} in project {} "
                         + "- Gemini's reasoning: {}",

@@ -2188,6 +2188,7 @@ public class ProjectFlowService {
             idsArray.add(w.getId().toString());
         }
         carrierTask.setPayload(payload);
+        carrierTask.setAcceptanceCriteria("Given the wishlist ids recorded in this task's payload, When this worker's session ends, Then none of them is still waiting to be compiled: each has either produced tasks or carries a recorded refusal naming what it lacked.");
         carrierTask = taskRepository.save(carrierTask);
 
         dispatchCompilerTask(carrierTask);
@@ -2878,6 +2879,7 @@ public class ProjectFlowService {
         }
         wishlistRepository.saveAll(wishlists);
 
+        compilerTask.setAcceptanceCriteria("Given the wishlist ids recorded in this task's payload, When this compilation ends, Then a task graph exists for each of them or a recorded refusal names what it lacked, and the plan file at the recorded path exists.");
         compilerTask = taskRepository.save(compilerTask);
         dispatchCompilerTask(compilerTask);
     }
@@ -3838,6 +3840,7 @@ public class ProjectFlowService {
         }
         auditTask.setPayload(payload);
 
+        auditTask.setAcceptanceCriteria("Given the report path recorded in this task's payload, When this audit ends, Then a report exists there naming either a concrete refutation with the artefact it was found in, or the refusal criteria that were checked and survived.");
         return taskRepository.save(auditTask);
     }
 
@@ -3921,6 +3924,7 @@ public class ProjectFlowService {
         }
         auditTask.setPayload(payload);
 
+        auditTask.setAcceptanceCriteria("Given the report path recorded in this task's payload, When this critique ends, Then a report exists there naming at least one claim the product makes and the evidence that would refute it, rather than prose about quality.");
         return taskRepository.save(auditTask);
     }
 
@@ -4079,6 +4083,7 @@ public class ProjectFlowService {
             payload.put(PHILOSOPHICAL_AUDIT_REPORT_PATH_KEY, reportPath);
         }
         carrierTask.setPayload(payload);
+        carrierTask.setAcceptanceCriteria("Given this worker keeps the philosophical audit running, When its session ends, Then a critique report exists at the recorded path naming claims with their refuting evidence, not an account of what the worker attempted.");
         carrierTask = taskRepository.save(carrierTask);
 
         dispatchCompilerTask(carrierTask);
@@ -4461,6 +4466,7 @@ public class ProjectFlowService {
         }
         auditTask.setPayload(payload);
 
+        auditTask.setAcceptanceCriteria("Given the wishlist and report path recorded in this task's payload, When this audit ends, Then the report states for every requirement of that wishlist whether shipped code covers it, and names the file or merged PR that shows it.");
         auditTask = taskRepository.save(auditTask);
         dispatchToGeneralPool(auditTask);
         log.info("Dispatched coverage audit task {} for fully-merged client wishlist {} (one task per wishlist, checked against real code on main, watermark PR #{})",
@@ -4625,6 +4631,7 @@ public class ProjectFlowService {
         }
         reviewTask.setPayload(payload);
 
+        reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this review ends, Then every one of them carries a verdict naming what was inspected, and the verdict file at the recorded path exists.");
         reviewTask = taskRepository.save(reviewTask);
         dispatchToGeneralPool(reviewTask);
         return reviewTask.getId();
@@ -4674,6 +4681,7 @@ public class ProjectFlowService {
         }
         reviewTask.setPayload(payload);
 
+        reviewTask.setAcceptanceCriteria("Given the pull request urls recorded in this task's payload, When this worker's session ends, Then none of them is left without a verdict, and each verdict names what was inspected rather than that a review was performed.");
         reviewTask = taskRepository.save(reviewTask);
         dispatchToGeneralPool(reviewTask);
         return reviewTask.getId();
@@ -4790,6 +4798,7 @@ public class ProjectFlowService {
         payload.put(DESIGN_REVIEW_VERDICT_PATH_KEY, verdictPath);
         reviewTask.setPayload(payload);
 
+        reviewTask.setAcceptanceCriteria("Given the draft and verdict paths recorded in this task's payload, When this review ends, Then a verdict exists at the recorded path stating whether the draft satisfies the charter, and naming the specific element that fails when it does not.");
         reviewTask = taskRepository.save(reviewTask);
         dispatchToGeneralPool(reviewTask);
         log.info("Dispatched design review task {} for draft {} in project {}", reviewTask.getId(), draftPath, project.getName());
@@ -4841,6 +4850,7 @@ public class ProjectFlowService {
                 + approvedDesignPath + "/mockup.html");
         implementationTask.setStatus(TaskStatus.queued);
 
+        implementationTask.setAcceptanceCriteria("Given the approved design reference, When this implementation is delivered, Then the shipped screen matches it element for element, and any deviation is named in the pull request with the reason it was necessary.");
         implementationTask = taskRepository.save(implementationTask);
         dispatchToGeneralPool(implementationTask);
         log.info("Dispatched design implementation task {} for approved design {} in project {}",
@@ -4881,6 +4891,7 @@ public class ProjectFlowService {
         payload.put(DESIGN_CONCERN_TRIAGE_RECORD_PATH_KEY, recordPath);
         triageTask.setPayload(payload);
 
+        triageTask.setAcceptanceCriteria("Given the concerns and record path recorded in this task's payload, When this triage ends, Then the record exists and gives every raised concern a disposition - accepted, refused with a reason, or deferred with what it waits on - leaving none unaddressed.");
         triageTask = taskRepository.save(triageTask);
         dispatchToGeneralPool(triageTask);
         log.info("Dispatched design concern triage task {} for mockup {} in project {}",

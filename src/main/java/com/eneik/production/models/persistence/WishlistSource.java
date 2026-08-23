@@ -56,5 +56,14 @@ public enum WishlistSource {
      * finished while `V_p` stays at its degenerate |C| = 1.
      */
     frontend_unbacked_records,
-    product_not_launchable
+    product_not_launchable,
+
+    /**
+     * Work was accepted that does not satisfy the acceptance criteria the task itself carried.
+     *
+     * Filed by DeliveredWorkJudgmentService, which reads a done task's own criteria against the diff that
+     * was merged for it. This is a DELIVERY fact and belongs on the scope axis: it says a requirement is
+     * still owed, never that the product is unhealthy or that the factory is defective.
+     */
+    delivery_refuted
 }

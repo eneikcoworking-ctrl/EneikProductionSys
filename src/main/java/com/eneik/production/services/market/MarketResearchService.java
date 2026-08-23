@@ -78,6 +78,7 @@ public class MarketResearchService {
         task.setStatus(TaskStatus.queued);
         task.setTitle("Market research " + profileId + " " + market);
         task.setDescription(researchPrompt(profileId, market, boundedSample));
+        task.setAcceptanceCriteria("Given the market and sample size this task names, When the research ends, Then it reports counts observed in that many real products with the date and the method used, and marks any figure it could not source as absent rather than estimating it.");
         task = taskRepository.save(task);
 
         log.info("MarketResearchService: created research task {} for profile={} market={} sample={}",
