@@ -61,6 +61,7 @@ class DeliveredWorkJudgmentServiceTest {
         ReflectionTestUtils.setField(service, "enabled", true);
         ReflectionTestUtils.setField(service, "maxPerCycle", 5);
         ReflectionTestUtils.setField(service, "diffCharLimit", 60_000);
+        ReflectionTestUtils.setField(service, "maxConsecutiveSilences", 2);
 
         project = new ProjectEntity();
         project.setId(UUID.randomUUID());
@@ -112,7 +113,7 @@ class DeliveredWorkJudgmentServiceTest {
     }
 
     @Test
-    @DisplayName("silence from the sidecar records nothing, so the task is judged again next tick")
+    @DisplayName("one silence records no verdict, so the task is judged again next tick")
     void sidecarSilenceLeavesTheTaskUnjudged() {
         TaskEntity task = deliveredTask(CRITERION);
         givenMergedPullRequest(task, "https://github.com/acme/app/pull/52", "diff --git a/App.java");
@@ -120,7 +121,12 @@ class DeliveredWorkJudgmentServiceTest {
 
         service.judgeDeliveredWork(project);
 
-        verify(taskRepository, never()).save(any());
+        // Updated 2026-08-23 with F11. A single silence is still read as a fact about the instrument, so no
+        // verdict is written and the task stays in the queue - that part is unchanged and is what this test
+        // has always pinned. What changed is that the silence is now COUNTED, because a silence that keeps
+        // repeating is a fact about the input instead, and the old contract of writing nothing at all is
+        // exactly what let one oversized task retry for ever and crash the shared sidecar each time.
+        assertThat(task.getPayload().path("acceptance_verdict").asText(null)).isNull();
         verify(wishlistRepository, never()).save(any());
     }
 
@@ -151,6 +157,51 @@ class DeliveredWorkJudgmentServiceTest {
 
         verify(judgmentAgentClient, never()).judgeAsText(anyString(), anyString());
         verify(taskRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("a criterion that is only the compiler's process boilerplate is undecidable, and costs nothing")
+    void fabricatedCriterionIsUndecidableAndNeverReachesTheSidecar() {
+        // D3, 2026-08-23. Until today englishMetadata replaced the client's stated criterion with three
+        // process statements whenever it was written in the client's own language - on this project, every
+        // one. None of them can be false of a product that does nothing the client asked for, so a
+        // SATISFIED against them is a verdict about tidiness. Decided before any diff is fetched: an
+        // unfalsifiable input is not worth a network call, let alone a paid one.
+        TaskEntity task = deliveredTask(
+                com.eneik.production.services.compiler.TechnicalLeadCompiler.PROCESS_ACCEPTANCE_CRITERIA);
+
+        service.judgeDeliveredWork(project);
+
+        verify(judgmentAgentClient, never()).judgeAsText(anyString(), anyString());
+        verify(gitHubPullRequestService, never()).fetchDiffText(any(), anyInt());
+        assertThat(task.getPayload().path("acceptance_verdict").asText())
+                .isEqualTo(DeliveredWorkJudgmentService.UNDECIDABLE);
+    }
+
+    @Test
+    @DisplayName("silence that repeats becomes a fact about the input, not another retry of it")
+    void repeatedSilenceStopsBeingTreatedAsAnUnavailableInstrument() {
+        // F11, 2026-08-23. Measured: task d94c75cb killed the shared sidecar three times out of three with
+        // `spawn E2BIG`, because its diff does not fit the argument the sidecar spawns. Every null was read
+        // as "the instrument is down", so the input that breaks it was retried for ever - the absorbing
+        // state at the head of the queue that JudgmentAgentClient's own javadoc warns against.
+        TaskEntity task = deliveredTask(CRITERION);
+        givenMergedPullRequest(task, "https://github.com/acme/app/pull/60", "diff --git a/Huge.java");
+        when(judgmentAgentClient.judgeAsText(anyString(), anyString())).thenReturn(null);
+
+        service.judgeDeliveredWork(project);
+
+        // First silence: still a fact about the instrument, so no verdict and the task stays in the queue.
+        assertThat(task.getPayload().path("acceptance_verdict").asText(null)).isNull();
+        assertThat(task.getPayload().path("acceptance_silence_count").asInt()).isEqualTo(1);
+
+        service.judgeDeliveredWork(project);
+
+        // Second: the input is what cannot be carried, and saying so is what lets the queue move on.
+        assertThat(task.getPayload().path("acceptance_verdict").asText())
+                .isEqualTo(DeliveredWorkJudgmentService.UNDECIDABLE);
+        assertThat(task.getPayload().path("acceptance_verdict_reason").asText())
+                .contains("could not carry this input");
     }
 
     private TaskEntity deliveredTask(String criterion) {

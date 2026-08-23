@@ -11,6 +11,7 @@ import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
+import com.eneik.production.services.compiler.TechnicalLeadCompiler;
 import com.eneik.production.services.github.GitHubPullRequestService;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
@@ -101,8 +102,26 @@ public class DeliveredWorkJudgmentService {
     @Value("${delivered-work-judgment.max-per-cycle:1}")
     private int maxPerCycle;
 
-    @Value("${delivered-work-judgment.diff-char-limit:60000}")
+    /**
+     * 2026-08-23 (F11). The sidecar hands the prompt to a spawned process as a single argument, and a
+     * single argument has a hard kernel limit. At 60000 characters of diff - Cyrillic content costing two
+     * bytes each - task d94c75cb crossed it and killed the sidecar with `spawn E2BIG` three times, three
+     * times out of three attempts. That sidecar is shared with the factory's own judgment layer, so an
+     * unbounded value from this caller took down an instrument that is not this caller's to break.
+     */
+    @Value("${delivered-work-judgment.diff-char-limit:12000}")
     private int diffCharLimit;
+
+    /**
+     * How many times a task may return silence before the silence is recorded as a fact about the task
+     * rather than about the instrument. JudgmentAgentClient's own javadoc names the failure this prevents:
+     * treating "the endpoint could not answer" and "this input cannot be ruled on" as one thing makes the
+     * offending row an absorbing state at the head of the queue and stops all judgment. This service made
+     * exactly that mistake - every null was read as an unavailable sidecar, so the input that crashes it
+     * was retried forever.
+     */
+    @Value("${delivered-work-judgment.max-consecutive-silences:2}")
+    private int maxConsecutiveSilences;
 
     public DeliveredWorkJudgmentService(TaskRepository taskRepository,
                                         JulesSessionRepository julesSessionRepository,
@@ -120,10 +139,22 @@ public class DeliveredWorkJudgmentService {
         if (!enabled) {
             return;
         }
-        List<TaskEntity> awaiting = taskRepository
-                .findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.done)
-                .stream()
+        List<TaskEntity> closed = taskRepository
+                .findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.done);
+        List<TaskEntity> judgeable = closed.stream()
                 .filter(task -> task.getAcceptanceCriteria() != null)
+                .toList();
+
+        // 2026-08-23 (D2). State the denominator. This service's population is closed tasks CARRYING a
+        // criterion, not closed tasks - measured 15 of 21 on test-fiftieth, because thirteen of the
+        // fourteen places that build a task set none until today. Reporting verdicts against the larger
+        // number would repeat the substitution this whole layer exists to remove: the difference is a debt,
+        // not a zero, and it has to be visible to be paid.
+        long judged = judgeable.stream().filter(task -> verdictOf(task) != null).count();
+        log.info("[DELIVERY-JUDGMENT] project {}: {} of {} closed tasks carry a criterion; {} of those judged",
+                project.getId(), judgeable.size(), closed.size(), judged);
+
+        List<TaskEntity> awaiting = judgeable.stream()
                 .filter(task -> verdictOf(task) == null)
                 .limit(Math.max(1, maxPerCycle))
                 .toList();
@@ -138,6 +169,21 @@ public class DeliveredWorkJudgmentService {
     }
 
     private void judgeOne(ProjectEntity project, TaskEntity task) {
+        // 2026-08-23 (D3). Decided before any diff is fetched and before a single token is spent. Until
+        // today englishMetadata replaced the client's stated criterion with three process statements
+        // whenever it was written in the client's own language, which on this project was every one of
+        // them. Those statements - the change passes, the diff is clean, a blocker is recorded - cannot be
+        // false of a product that does nothing the client asked for, so a SATISFIED against them is a
+        // verdict about the work's tidiness and says nothing about delivery. Recording that as UNDECIDABLE
+        // is the honest reading; recording it as passed is what this layer was built to stop.
+        if (TechnicalLeadCompiler.PROCESS_ACCEPTANCE_CRITERIA.trim()
+                .equals(task.getAcceptanceCriteria().trim())) {
+            record(task, UNDECIDABLE, "this task carries only the compiler's process criteria and no claim "
+                    + "about the product, because the criterion the client stated was substituted before "
+                    + "dispatch; delivery cannot be tested against statements that no delivery can falsify");
+            return;
+        }
+
         Optional<String> prUrl = julesSessionRepository.findByTaskId(task.getId()).stream()
                 .map(JulesSessionEntity::getPrUrl)
                 .filter(url -> url != null && !url.isBlank())
@@ -159,8 +205,19 @@ public class DeliveredWorkJudgmentService {
 
         String answer = judgmentAgentClient.judgeAsText(prompt(task, prUrl.get(), diff.get()), SYSTEM_INSTRUCTION);
         if (answer == null || answer.isBlank()) {
-            // A fact about the sidecar, not about this task. Nothing is recorded, so the next tick retries.
-            log.info("[DELIVERY-JUDGMENT] sidecar gave no answer for task {}; leaving it unjudged", task.getId());
+            int silences = silenceCountOf(task) + 1;
+            if (silences >= Math.max(1, maxConsecutiveSilences)) {
+                record(task, UNDECIDABLE, "the judgment channel could not carry this input after "
+                        + silences + " attempts; the merged diff of " + prUrl.get() + " does not fit the "
+                        + "sidecar's argument limit, so this delivery cannot be tested against its criteria "
+                        + "from a diff alone");
+                log.warn("[DELIVERY-JUDGMENT] task {} recorded UNDECIDABLE after {} silences - the input, "
+                        + "not the instrument, is what cannot be carried", task.getId(), silences);
+                return;
+            }
+            recordSilence(task, silences);
+            log.info("[DELIVERY-JUDGMENT] sidecar gave no answer for task {} (silence {} of {}); retrying",
+                    task.getId(), silences, maxConsecutiveSilences);
             return;
         }
 
@@ -181,14 +238,19 @@ public class DeliveredWorkJudgmentService {
     }
 
     private String prompt(TaskEntity task, String prUrl, String diff) {
-        String bounded = diff.length() > diffCharLimit
-                ? diff.substring(0, diffCharLimit) + "\n[diff truncated at " + diffCharLimit + " characters]"
-                : diff;
+        boolean truncated = diff.length() > diffCharLimit;
+        String bounded = truncated ? diff.substring(0, diffCharLimit) : diff;
+        String warning = truncated
+                ? "\n\nTHIS DIFF IS INCOMPLETE. You are seeing the first " + diffCharLimit + " characters of "
+                + diff.length() + ". Do not answer SATISFIED on a partial diff: if a criterion's evidence "
+                + "could lie in the part you cannot see, answer UNDECIDABLE and say which criterion it was.\n"
+                : "";
         return "TASK TITLE\n" + task.getTitle()
                 + "\n\nWHAT THIS TASK WAS ASKED TO DO\n"
                 + (task.getDescription() == null ? "(no description recorded)" : task.getDescription())
                 + "\n\nACCEPTANCE CRITERIA THIS TASK CARRIED\n" + task.getAcceptanceCriteria()
                 + "\n\nMERGED PULL REQUEST\n" + prUrl
+                + warning
                 + "\n\nDIFF\n" + bounded;
     }
 
@@ -199,6 +261,21 @@ public class DeliveredWorkJudgmentService {
         payload.put(VERDICT_KEY, verdict);
         payload.put(VERDICT_REASON_KEY, reason == null ? "" : reason);
         payload.put(VERDICT_AT_KEY, Instant.now().toString());
+        task.setPayload(payload);
+        taskRepository.save(task);
+    }
+
+    private static final String SILENCE_COUNT_KEY = "acceptance_silence_count";
+
+    private int silenceCountOf(TaskEntity task) {
+        return task.getPayload() == null ? 0 : task.getPayload().path(SILENCE_COUNT_KEY).asInt(0);
+    }
+
+    private void recordSilence(TaskEntity task, int silences) {
+        ObjectNode payload = task.getPayload() instanceof ObjectNode node
+                ? node
+                : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        payload.put(SILENCE_COUNT_KEY, silences);
         task.setPayload(payload);
         taskRepository.save(task);
     }

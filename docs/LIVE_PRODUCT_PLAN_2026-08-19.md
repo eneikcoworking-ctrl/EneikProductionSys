@@ -903,3 +903,125 @@ It does not make a defect unable to pass. It makes work whose doneness has no st
 **built**, and work whose statement is refuted unable to pass **silently**. The remaining step - refusing
 the transition itself - becomes available one role at a time, as each role's criteria prove testable in
 practice, and is not taken here.
+
+## 28. Fixed repair plan - 2026-08-23, by level, deterministic
+
+Not a menu. Each item names one edit, one place, and one falsifier. No item offers an alternative: where a
+choice existed it has been made here and is not reopened during execution.
+
+The three levels are §3's three contexts and are never merged. **Nothing at the PRODUCT level is edited by
+this plan** - product content reaches the repository only through wishlist to task to Jules, so product
+defects appear here as scope the factory owes, never as an edit.
+
+### 28.1 PRODUCT - owed as scope, not edited
+
+- **P1.** `docker-compose.yml` declares only `db` and `backup`. No application service exists. The `backend`
+  appears once, in `docker-compose.override.yml`, as `image: eclipse-temurin:21-jre-alpine` with no `build`,
+  no jar and no command. This is the whole of why `health_status_code` is null.
+- **P2.** The documents migration mixes `AUTO_INCREMENT` (MySQL/H2) with `TIMESTAMP WITH TIME ZONE`
+  (PostgreSQL). Found by the delivery judge on PR #20.
+
+Both are carried by `delivery_refuted` findings; nine such findings had become tasks by 03:20.
+
+### 28.2 DELIVERY
+
+- **D1 (batch 2).** The judge reads a diff, so a criterion whose subject is the repository is undecidable to
+  it. Formally: it rules correctly only when C is a subset of D, C the artefacts the criterion speaks of and
+  D the artefacts of the diff. For "all services start" C is the repository and D is one pull request; the
+  verdict was right by luck and incomplete in fact - it named the override and could not see that the base
+  compose declares no application at all. Edit: pass repository state via the existing `listFilePaths`, plus
+  the content of files the criterion names; `UNDECIDABLE` becomes the honest answer where C is not within D.
+- **D2 (batch 1).** The judge's denominator is "closed tasks carrying a criterion", not "closed tasks".
+  Measured 15 of 21. Edit: log and report both numbers; their difference is a debt, not a zero.
+- **D3 (batch 1).** Tasks compiled before 2026-08-23 carry the fabricated process criteria. Edit: a
+  criterion textually equal to `fallbackAcceptanceCriteria` yields `UNDECIDABLE` with the reason that no
+  product claim is present, and is filed as scope.
+- **D4 (debt, not scheduled).** `runQualityGate` stands on one of the five writers of `TaskStatus.done` and
+  covers five of thirteen roles. Untouched here.
+
+### 28.3 FACTORY - batch 1, one restart
+
+- **F1.** `OBSERVE_CLIENT_RUNTIME` moves to its own arm of `OperationalPolicyService.authorize`, requiring
+  `"DELIVERED".equals(snapshot.currentState())`. Observing operability during assembly merges two of §2's
+  axes and biases V_p downward monotonically - measured 0.2, 0.167, 0.143 over three assembly-phase
+  observations - and that bias drives `product_not_launchable`, so a phase error manufactures work.
+  Falsifier: below `DELIVERED` no new observation row and no `product_not_launchable`; at `DELIVERED`
+  observation resumes within one tick.
+- **F2.** `KaizenService.saveProposal` returns the persisted entity; the evidence node is written under that
+  identity. On recurrence it persists the sibling while the caller holds the discarded id, so
+  `EVIDENCE_NODES` violates its foreign key and the finding that repeats most loses its evidence - an
+  inversion of the evidence algebra. Introduced by ef487fa, 2026-08-20. Falsifier: a forced duplicate
+  systemic finding produces no constraint violation and one evidence row against the survivor.
+- **F3.** `flagForHumanReview` files `WishlistSource.auditor_unresolved` carrying the auditor's reasoning
+  verbatim. Today it logs and nothing more, which in a system with no human is an absorbing state of the
+  task chain with no outgoing edge. Falsifier: a flagged subject appears as pending scope within one tick.
+- **F4-A.** A breaker in `MLPredictionServiceClient`: after N consecutive 429/502 the client stops calling
+  for a cooldown and returns no answer, which every caller already handles. Expected yield while the quota
+  is exhausted is exactly zero and expected cost is strictly positive, so no retry parameters make calling
+  correct. Measured 196 error lines in the `ml` container in three hours. Falsifier: zero 429/502 in a
+  thirty-minute window while the quota is exhausted.
+- **F5.** `ProductReadinessDto` carries `measures = "assembly"`. It counts features and merged tasks, which
+  is assembly, and its name asserts otherwise (ACP-106). The rename itself is not in this batch.
+- **F6.** `linear_team_id` is validated as a UUID when the setting is written. It currently holds a team
+  name, so every project silently skips Linear. Falsifier: the present value is refused on save.
+- **F7.** `githubRepositoryStatus` carries the warnings themselves rather than the fact that warnings
+  existed - a summary without its witness is the same defect as "26 of 26 passed".
+- **F8.** `HttpRequestMethodNotSupportedException` is answered 405 and logged at WARN. As an ERROR it was
+  one of three errors in a forty-five minute window, a third of the noise in a metric decisions rest on.
+- **F9.** `restart: unless-stopped` for the frontend. It exited cleanly and lay dead for forty-nine minutes
+  with nothing noticing. The cause of that exit is **not established** - no OOM event was recorded, and the
+  earlier attribution to memory pressure was inference, not measurement.
+- **F10.** A rotating file log driver for every service. Recreating the backend destroyed its whole log
+  history, which erases the evidence window at exactly the moment something changed.
+- **F11.** The judgment channel has a width and it must be respected. `diff-char-limit` drops to a size that
+  passes `spawn` argv together with the system instruction, the truncation is declared inside the prompt so
+  no `SATISFIED` is returned on a partial input, and consecutive silences are counted per task: after the
+  second the task records `UNDECIDABLE` rather than being retried forever. Measured: task
+  `d94c75cb` killed the shared sidecar three times with `spawn E2BIG`, and `JudgmentAgentClient`'s own
+  javadoc names this exact failure - collapsing "the instrument is down" into "this input cannot be ruled
+  on" produces an absorbing state at the head of the queue. Falsifier: that task receives a verdict and the
+  sidecar's restart count over an hour is zero.
+- **F12.** The launcher's diagnostic concludes "every service reports running, so the failure is inside one
+  of them" while its own evidence lists the published ports and none of them is the port being probed. The
+  disjunction ranges over declared services and presupposes the probe's target is among them. Edit: before
+  that conclusion, test whether any declared service publishes the probed port; when none does the verdict
+  is that no service in this topology serves it, and that is an ASSEMBLY defect - the distinction the file's
+  own 2026-08-19 comment says decides whether the next task is routed to operations or to assembly.
+- **F13.** `launch_success` is true whenever `docker compose up` returns zero. A compose that starts a
+  database and a backup and nothing that serves is not a successful launch of a product. Edit: false when no
+  declared service publishes the probed port, with F12's verdict as the reason.
+
+### 28.4 FACTORY - batch 3, after the server move
+
+- **F4-B.** Embeddings move to a local multilingual model inside the `ml` service, which today carries only
+  `fastapi`, `uvicorn` and `pydantic` and is a proxy to Gemini. Retrieval is not judgment and must not go to
+  the sidecar - three cents and a three hundred second timeout per call against roughly three thousand
+  chunks is not a retrieval path, and routing it there would be ACP-102 in its plainest form. Lexical
+  retrieval is refused because the corpus is bilingual and Russian morphology degrades it silently. All
+  embeddings already pass through `MLPredictionServiceClient.embed`, so the change is one handler and no
+  Java. Two conditions are inseparable from the switch: `ContextChunkEntity` records vector dimension and
+  model name and `cosineSimilarity` **refuses** a mismatch rather than returning a meaningless number, and
+  the corpus is fully reindexed before the model is enabled. It waits for the move because the model needs
+  roughly six hundred megabytes on a host that has already lost a container to memory.
+
+### 28.5 Closed by measurement, not carried forward
+
+The factory database was suspected of runaway growth after two readings four minutes apart showed 484 then
+522 MiB. Sampled over five minutes it went 547 to 533 MiB - it shrank. H2 reallocates chunks; there is no
+growth defect. Recorded here so the suspicion is not raised a third time.
+
+### 28.6 Seen while repairing, not repaired - recorded so it is not lost
+
+- **F16.** `KaizenService.evaluateAndStandardize` calls
+  `deleteMatching(category, targetComponent, proposal.getId())` immediately after `saveProposal`. That third
+  argument is the row to KEEP, and after deduplication the id the caller holds is not always the id that was
+  persisted - which is the whole of F2. On the standardise path the proposal already exists, so the two
+  coincide today and nothing is lost; the coupling is latent, not live. Left alone deliberately: the edit
+  deletes rows, and a change to which row survives must be measured before it is made, not reasoned into.
+- **F17.** `runtime-launcher-workspace` holds 133 MB across six clones - `test-forty-third`,
+  `test-forty-ninth`, `probe2`, `manual-check`, `test-forty-fourth`, `test-forty-sixth`. The directory is
+  documented as throwaway and rebuilt on demand, and nothing ever removes a clone of a finished project.
+- **F18.** Every factory-internal task now carries a criterion, and none of them has a pull request, so all
+  of them record `NOT_JUDGED_NO_DIFF`. Their criteria speak of report files and repository state, not of
+  diffs; judging them from a diff is the wrong instrument rather than a missing one. This is the same gap as
+  D1 seen from the other side, and it closes with D1 or not at all.

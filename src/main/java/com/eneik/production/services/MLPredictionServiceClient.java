@@ -122,7 +122,33 @@ public class MLPredictionServiceClient {
      * on any failure - Gemini disabled, no API key, network error, malformed response - so callers can
      * treat "no vector" as an unambiguous, safe no-op signal rather than guessing from an empty array.
      */
+    // 2026-08-23 (F4-A). A breaker, because calling a dependency known to be refusing is not a retry
+    // policy, it is waste with a name. Measured: 196 error lines in the ml container in three hours, 134
+    // of them in two, every one HTTP 429 - the quota is exhausted and the corpus is re-indexed chunk by
+    // chunk against it on every tick. While the quota is out, expected yield is exactly zero and expected
+    // cost is strictly positive, so no value of any retry parameter makes the call correct; the only
+    // correct action is to stop making it. Callers already treat null as no answer and always have, so
+    // opening the breaker changes what is spent and nothing about what is believed.
+    private static final int EMBED_FAILURES_BEFORE_OPEN = 5;
+    private static final java.time.Duration EMBED_BREAKER_COOLDOWN = java.time.Duration.ofMinutes(15);
+    private final java.util.concurrent.atomic.AtomicInteger consecutiveEmbedFailures =
+            new java.util.concurrent.atomic.AtomicInteger();
+    private volatile java.time.Instant embedBreakerOpenUntil = java.time.Instant.EPOCH;
+
+    private boolean embedBreakerIsOpen() {
+        if (java.time.Instant.now().isBefore(embedBreakerOpenUntil)) {
+            return true;
+        }
+        // Cooldown passed: one call is let through, and the counter is deliberately NOT reset, so a still-
+        // dead dependency reopens the breaker on that single failure instead of after another five.
+        embedBreakerOpenUntil = java.time.Instant.EPOCH;
+        return false;
+    }
+
     public float[] embed(String text) {
+        if (embedBreakerIsOpen()) {
+            return null;
+        }
         if (!geminiEnabled()) {
             aiHealthTracker.recordFailure("embed", "gemini disabled by setting");
             return null;
@@ -147,9 +173,17 @@ public class MLPredictionServiceClient {
                 vector[i] = ((Number) values.get(i)).floatValue();
             }
             aiHealthTracker.recordSuccess("embed");
+            consecutiveEmbedFailures.set(0);
             return vector;
         } catch (Exception e) {
-            LOGGER.warning("ML service embed call failed: " + e.getMessage());
+            int failures = consecutiveEmbedFailures.incrementAndGet();
+            if (failures >= EMBED_FAILURES_BEFORE_OPEN) {
+                embedBreakerOpenUntil = java.time.Instant.now().plus(EMBED_BREAKER_COOLDOWN);
+                LOGGER.warning("ML service embed: " + failures + " consecutive failures, breaker open for "
+                        + EMBED_BREAKER_COOLDOWN.toMinutes() + " minutes. Last: " + e.getMessage());
+            } else {
+                LOGGER.warning("ML service embed call failed: " + e.getMessage());
+            }
             aiHealthTracker.recordFailure("embed", e.getMessage());
             return null;
         }

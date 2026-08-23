@@ -1,5 +1,7 @@
 package com.eneik.production.services;
 
+import org.mockito.ArgumentCaptor;
+import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.TaskEntity;
@@ -15,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.UUID;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -143,8 +146,23 @@ class OpsAuditorServiceTest {
 
         service.runAuditCycle();
 
-        verify(wishlistRepository, never()).save(any(WishlistEntity.class));
-        assertEquals(WishlistStatus.converted_to_task, wishlist.getStatus());
+        // Updated 2026-08-23 with F3. What this test pins is that flagging does not DISMISS the subject,
+        // and that still holds exactly: the wishlist keeps its status untouched. `never().save(any())` was
+        // a coarse stand-in for that claim and stopped being true when the tool gained a consequence - the
+        // auditor now files a NEW finding, which is the opposite of discarding the old one. Before, it
+        // wrote one log line addressed to a human this system does not have, and the subject left the flow
+        // permanently: measured on test-fiftieth, task UI Slice Fd6672c6 sat failed and flagged with
+        // nothing in the factory able to move it.
+        assertEquals(WishlistStatus.converted_to_task, wishlist.getStatus(),
+                "flagging must not dismiss or otherwise alter the subject it could not resolve");
+
+        ArgumentCaptor<WishlistEntity> filed = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(filed.capture());
+        assertEquals(WishlistSource.auditor_unresolved, filed.getValue().getSource());
+        assertTrue(filed.getValue().getContent().contains(wishlistId.toString()),
+                "the finding must name the subject the auditor could not resolve");
+        assertTrue(filed.getValue().getContent().contains("not confident this is truly superseded"),
+                "and must carry the auditor's own words rather than a summary of them");
     }
 
     @Test

@@ -65,5 +65,15 @@ public enum WishlistSource {
      * was merged for it. This is a DELIVERY fact and belongs on the scope axis: it says a requirement is
      * still owed, never that the product is unhealthy or that the factory is defective.
      */
-    delivery_refuted
+    delivery_refuted,
+
+    /**
+     * The operations auditor reached a subject it could not resolve with the tools it holds.
+     *
+     * 2026-08-23 (F3): its only other answer was `flagForHumanReview`, which logged a line and stopped.
+     * In a system with no human that is an absorbing state of the task chain - measured, task
+     * UI Slice Fd6672c6 sat failed and flagged with nothing able to move it. The auditor's judgement is
+     * kept; only its consequence changes, from a sentence addressed to nobody into scope the factory owes.
+     */
+    auditor_unresolved
 }

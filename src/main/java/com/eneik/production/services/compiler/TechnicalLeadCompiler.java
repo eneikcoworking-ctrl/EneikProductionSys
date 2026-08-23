@@ -1568,10 +1568,20 @@ public class TechnicalLeadCompiler {
         return compactLines(stated, 1_000) + "\n" + fallbackAcceptanceCriteria(wishlist);
     }
 
+    /**
+     * The three process statements appended to every task's criterion, and - until 2026-08-23 - substituted
+     * for it whenever the client wrote in a language englishMetadata rejected. Public because
+     * DeliveredWorkJudgmentService has to be able to recognise a criterion that consists of nothing else:
+     * every task compiled before that date carries this text alone, and a task judged SATISFIED against it
+     * has been judged against statements that cannot be false of a product that does nothing at all.
+     */
+    public static final String PROCESS_ACCEPTANCE_CRITERIA =
+            "Given this role completes the Atomic Goal, When the relevant verification command runs, Then the change passes without unrelated scope.\n"
+                    + "Given the change is reviewed, When the PR diff is inspected, Then it contains only source, config, test, or documentation files needed for this slice.\n"
+                    + "Given a blocker remains after one objective attempt, When the Jules session would otherwise loop, Then the agent stops and records one concrete blocker or follow-up.";
+
     private String fallbackAcceptanceCriteria(WishlistEntity wishlist) {
-        return "Given this role completes the Atomic Goal, When the relevant verification command runs, Then the change passes without unrelated scope.\n"
-                + "Given the change is reviewed, When the PR diff is inspected, Then it contains only source, config, test, or documentation files needed for this slice.\n"
-                + "Given a blocker remains after one objective attempt, When the Jules session would otherwise loop, Then the agent stops and records one concrete blocker or follow-up.";
+        return PROCESS_ACCEPTANCE_CRITERIA;
     }
 
     // 2026-08-07 (Gricean quantity-optimal grounding, ACP-101). `wishlist` here is always a compiler-

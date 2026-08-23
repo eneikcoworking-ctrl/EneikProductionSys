@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.env.Environment;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -93,6 +94,24 @@ class SystemSettingsServiceTest {
                 "these setting keys are read by production code but are not registered in "
                         + "SystemSettingsService, so every call site throws IllegalArgumentException at "
                         + "runtime before any fallback can apply: " + unregistered);
+    }
+
+    @Test
+    void aLinearTeamIdThatIsNotATeamIdIsRefusedAtTheBoundary() {
+        // F6, 2026-08-23. The stored value is "Eneik Production System" - the team NAME, where Linear
+        // requires the team UUID. LinearProjectFactoryClient detects this correctly and skips, on every
+        // project, silently, for as long as the value stands. The check existed; it was asked at the one
+        // moment nothing could be done about it. A designator that picks out no object is not an id.
+        SystemSettingsService settings =
+                new SystemSettingsService(mock(JdbcTemplate.class), mock(Environment.class));
+
+        IllegalArgumentException refusal = assertThrows(IllegalArgumentException.class,
+                () -> settings.save("linear_team_id", "Eneik Production System"));
+        assertTrue(refusal.getMessage().contains("must be a Linear team UUID"));
+
+        // The pair: a real team id is stored without complaint, so this refuses the malformed value only.
+        assertDoesNotThrow(
+                () -> settings.save("linear_team_id", "3f2504e0-4f89-11d3-9a0c-0305e82c3301"));
     }
 
     @Test

@@ -5508,7 +5508,8 @@ public class ProjectFlowService {
                 falsificationEligible,
                 falsificationEligible ? "ready_for_falsification"
                         : (productReadiness.decompositionComplete() ? "building" : "decomposing"),
-                computeBlockedItems(allTaskEntities)
+                computeBlockedItems(allTaskEntities),
+                "assembly"
         );
 
         return new ProjectDashboardDto(

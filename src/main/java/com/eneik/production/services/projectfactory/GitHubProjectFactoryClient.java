@@ -96,9 +96,16 @@ public class GitHubProjectFactoryClient {
                         .filter(result -> !"invitation_sent".equals(result.status()) && !"already_has_access".equals(result.status()))
                         .map(result -> "collaborator " + result.username() + " " + result.status() + " " + result.detail())
                         .forEach(warnings::add);
+                // 2026-08-23 (F7). The warnings themselves, not the fact that there were some. This string
+                // is what the operator dashboard shows, and "with configuration warnings" is a summary with
+                // its witness removed - the same shape as "26 of 26 passed": true, and carrying nothing
+                // anyone can act on. The list is right here; there is no reason to drop it and make the
+                // next reader go find it.
                 String status = warnings.isEmpty()
                         ? "created repository and configured protections"
-                        : "created repository with configuration warnings";
+                        : "created repository with configuration warnings: "
+                          + String.join("; ", warnings.subList(0, Math.min(warnings.size(), 5)))
+                          + (warnings.size() > 5 ? " (and " + (warnings.size() - 5) + " more)" : "");
                 return new GitHubProvisioningResult(status, repoUrl, repoId, warnings, collaborators);
             }
 

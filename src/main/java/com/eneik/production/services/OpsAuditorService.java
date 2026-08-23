@@ -4,7 +4,9 @@ import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.ProjectStatus;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
+import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.WishlistSource;
 import com.eneik.production.models.persistence.WishlistStatus;
 import com.eneik.production.repositories.ProjectRepository;
 import com.eneik.production.repositories.TaskRepository;
@@ -349,11 +351,57 @@ public class OpsAuditorService {
         switch (decision.tool()) {
             case "dismissOrphanedWishlist" -> dismissOrphanedWishlist(project, decision);
             case "createTargetedRecoveryTask" -> self.createTargetedRecoveryTask(project, decision);
-            case "flagForHumanReview" -> log.warn("OpsAuditorService: FLAGGED FOR HUMAN REVIEW - project {} subject {} - {}",
-                    project.getName(), decision.subjectId(), decision.reasoning());
+            case "flagForHumanReview" -> fileUnresolvedSubjectAsScope(project, decision);
             default -> log.warn("OpsAuditorService: Gemini requested unknown tool '{}' (subject {}) - ignored, not in the whitelist",
                     decision.tool(), decision.subjectId());
         }
+    }
+
+    /**
+     * 2026-08-23 (F3). This tool used to write one warning line and stop. There is no human in this system,
+     * so a subject routed here left the flow permanently: measured on test-fiftieth, task UI Slice
+     * Fd6672c6 sat `failed` and flagged with nothing in the factory able to move it - an absorbing state
+     * with no outgoing edge. An obligation addressed to an agent that does not exist is not an obligation.
+     *
+     * The auditor's judgement is not second-guessed; only the consequence changes. Its reasoning is carried
+     * verbatim, because a finding filed without its witness makes the next worker re-derive what the system
+     * already knows.
+     */
+    private void fileUnresolvedSubjectAsScope(ProjectEntity project, AuditorDecision decision) {
+        String marker = "subject " + decision.subjectId();
+        boolean alreadyFiled = wishlistRepository
+                .findByProjectIdAndStatus(project.getId(), WishlistStatus.pending).stream()
+                .anyMatch(existing -> existing.getSource() == WishlistSource.auditor_unresolved
+                        && existing.getContent() != null && existing.getContent().contains(marker));
+        if (alreadyFiled) {
+            return;
+        }
+
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.auditor_unresolved);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        wishlist.setCynefinDomain("complicated");
+        wishlist.setSourceRoleTag("BARCAN-TAG-00");
+        wishlist.setContent("The operations auditor reached a subject it cannot resolve with the tools it "
+                + "holds, and this factory has no human to hand it to.\n\n"
+                + "The " + marker + " is stuck.\n\n"
+                + "What the auditor found, in its own words - this is the evidence, not a summary of it:\n"
+                + (decision.reasoning() == null || decision.reasoning().isBlank()
+                        ? "(no reasoning recorded)" : decision.reasoning()) + "\n\n"
+                + "Move that subject out of the state it is stuck in. Do not re-run the auditor and do not "
+                + "restate the finding as new work: what blocks it is named above.");
+        wishlist.setJtbd("When a subject is stuck in a state no automated tool can leave, I want the block "
+                + "named above removed, so that work does not accumulate in a state with no exit.");
+        wishlist.setAcceptanceCriteria("Given the subject named above, When this finding is delivered, Then "
+                + "that subject is no longer in the state the auditor reported, and what changed is named.");
+        wishlist.setDod("BARCAN-TAG-00: the named subject has left its stuck state, and the change that "
+                + "moved it is identified in the pull request.");
+        wishlistRepository.save(wishlist);
+
+        log.warn("OpsAuditorService: unresolved subject {} of project {} filed as scope - {}",
+                decision.subjectId(), project.getName(), decision.reasoning());
     }
 
     /**

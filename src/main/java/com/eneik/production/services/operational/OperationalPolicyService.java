@@ -69,7 +69,7 @@ public class OperationalPolicyService {
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
-            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY, OBSERVE_CLIENT_RUNTIME,
+            case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY,
                     JUDGE_DELIVERED_WORK -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
@@ -84,6 +84,16 @@ public class OperationalPolicyService {
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
+            // 2026-08-23 (F1). Operability is not sampled while scope is still being assembled. This sat
+            // with the checks above, which need only an active project, so the launcher ran on every tick
+            // from the first commit onward. V_p is a Beta posterior over "the product answers"; an
+            // observation taken during assembly is not noise but bias, because the answer is necessarily
+            // no - measured 0.2, 0.167, 0.143 across three such samples, falling monotonically. That
+            // posterior drives LaunchabilityConstraintService, so the phase error manufactures scope out
+            // of nothing. DELIVERED is the flow's own name for assembly being finished, and subordination
+            // belongs here as one predicate rather than as an `if` inside the observing service (§7).
+            case OBSERVE_CLIENT_RUNTIME -> activeProject
+                    && "DELIVERED".equals(snapshot.currentState());
             case SYNC_GITHUB -> activeProject && !"GITHUB_RATE_LIMITED".equals(snapshot.currentState());
             case CLEANUP_TERMINAL_PROJECT -> true;
             case NUDGE_SESSION, BOOST_PRIORITY -> activeProject && !hardBlocked;

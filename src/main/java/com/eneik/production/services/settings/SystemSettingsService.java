@@ -103,6 +103,7 @@ public class SystemSettingsService {
     @Transactional
     public SettingDto save(String key, String value) {
         SettingDefinition definition = requireDefinition(key);
+        rejectIfMalformed(definition.key(), value);
         int updated = jdbcTemplate.update(
                 "UPDATE system_settings SET \"value\" = ?, updated_at = CURRENT_TIMESTAMP WHERE \"key\" = ?",
                 value,
@@ -116,6 +117,33 @@ public class SystemSettingsService {
             );
         }
         return toDto(definition.key());
+    }
+
+    /**
+     * Validate at the boundary, once, loudly - instead of at every use, forever, quietly.
+     *
+     * 2026-08-23 (F6). `linear_team_id` holds the string "Eneik Production System", a team NAME where
+     * Linear's ProjectCreateInput.teamIds requires a UUID. LinearProjectFactoryClient detects this
+     * perfectly well and skips - on every project, silently, for as long as the value stands. The check was
+     * always there; it was simply asked at the moment nothing could be done about it. A value that can
+     * never be correct should not be storable, and a designator that picks out no object is not an
+     * identifier no matter how readable it is.
+     */
+    private void rejectIfMalformed(String key, String value) {
+        if (value == null || value.isBlank()) {
+            return;
+        }
+        if ("linear_team_id".equals(key)) {
+            try {
+                java.util.UUID.fromString(value.trim());
+            } catch (IllegalArgumentException e) {
+                throw new IllegalArgumentException(
+                        "linear_team_id must be a Linear team UUID, not '" + value + "'. Linear's "
+                        + "ProjectCreateInput.teamIds takes the id, not the team's name or key - open the "
+                        + "team in Linear and copy the id out of its settings URL. Stored as it is, every "
+                        + "project silently skips Linear.");
+            }
+        }
     }
 
     private EffectiveSetting effectiveSetting(String key) {

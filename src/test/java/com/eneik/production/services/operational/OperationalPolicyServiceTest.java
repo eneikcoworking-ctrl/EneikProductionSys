@@ -36,6 +36,23 @@ class OperationalPolicyServiceTest {
     }
 
     @Test
+    void runtimeObservationWaitsForAssemblyToFinishAndThenRuns() {
+        // F1, 2026-08-23. Operability is a different axis from scope delivery and is not sampled while
+        // scope is still being assembled. V_p is a Beta posterior over "the product answers"; a sample
+        // taken mid-assembly is not noise but bias, because the answer is necessarily no - measured 0.2,
+        // 0.167, 0.143 on test-fiftieth as three such samples arrived. That posterior drives the
+        // launchability constraint, so the phase error manufactures scope out of nothing.
+        FlowCoreDto building = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 0, 0);
+        assertFalse(service.authorize(building, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
+                "the product must not be launched and probed while its scope is still being assembled");
+
+        // The pair: once assembly is done the observation is not merely permitted, it is the point.
+        FlowCoreDto delivered = core("DELIVERED", "active", 0, 0, 0, 0, 0);
+        assertTrue(service.authorize(delivered, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
+                "at DELIVERED the observation is exactly what decides whether the product answers");
+    }
+
+    @Test
     void deliveredStateDoesNotGenerateMoreScopeWithoutPendingDemand() {
         FlowCoreDto core = core("DELIVERED", "active", 0, 0, 0, 0, 0);
 

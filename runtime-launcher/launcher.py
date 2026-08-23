@@ -111,21 +111,76 @@ def _run(args: list[str], cwd: Optional[Path] = None, timeout_seconds: int = 600
     )
 
 
-def _remap_ports(compose_file: Path) -> dict[str, int]:
+# Ports a product publishes in order to be spoken to over HTTP, and ports that by their nature cannot
+# answer one. Neither list is a guess about this product: both are properties of the protocols themselves.
+HTTP_TARGET_PORTS = {80, 443, 3000, 4200, 5000, 8000, 8080, 8081, 8443, 8888, 9000}
+NON_HTTP_TARGET_PORTS = {1433, 1521, 2181, 3306, 5432, 5672, 6379, 9042, 9092, 9200, 11211, 27017}
+
+
+def _resolve_topology(workdir: Path, base: Path) -> Path:
+    """The product's whole declared topology as one file, override included.
+
+    Docker loads docker-compose.override.yml automatically ONLY when no `-f` is given, and this launcher
+    always gives one. Every product whose application service lives in its override was therefore launched
+    without an application at all. Compose itself performs the merge here, so this adds no opinion about how
+    the two files combine; the result is written to a new file in the ephemeral clone and the client's own
+    files are left untouched. Best-effort: if the merge cannot be produced, the base file is used exactly as
+    before, because a launch on the base topology is still better than no launch."""
+    override = next((workdir / n for n in ("docker-compose.override.yml", "docker-compose.override.yaml")
+                     if (workdir / n).exists()), None)
+    if override is None:
+        return base
+    cfg = _run(["docker", "compose", "-f", str(base), "-f", str(override), "config"],
+               cwd=workdir, timeout_seconds=60)
+    if cfg.returncode != 0 or not cfg.stdout.strip():
+        return base
+    resolved = workdir / "docker-compose.resolved.yml"
+    resolved.write_text(cfg.stdout)
+    return resolved
+
+
+def _http_port(port_map: dict) -> Optional[int]:
+    """The external port of the service that can actually answer an HTTP health check, or None.
+
+    None is a real answer and not a failure of this function: a product that publishes only a database has
+    nothing for a health check to address, and saying so is worth more than probing the database and
+    reporting its refusal as the product's health."""
+    candidates = []
+    for _service, value in port_map.items():
+        external, target = value
+        try:
+            target_port = int(str(target).split("/")[0])
+        except ValueError:
+            continue
+        if target_port in NON_HTTP_TARGET_PORTS:
+            continue
+        if target_port in HTTP_TARGET_PORTS:
+            return external
+        candidates.append(external)
+    # Nothing on a well-known HTTP port. One remaining candidate that is not a datastore is unambiguous;
+    # several are not, and guessing between them is how the wrong port got probed in the first place.
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _remap_ports(compose_file: Path) -> dict[str, tuple[int, str]]:
     """Rewrite every published host port in the compose file IN PLACE to a fixed range starting at
     EXTERNAL_PORT_BASE. A separate override file passed via a second `-f` does NOT work for this: Docker
     Compose concatenates `ports:` lists across merged files rather than replacing by target port (confirmed
     live - `-f base.yml -f override.yml` left BOTH 8080 and 18080 in the resolved config, and the compose
     file's own 8080 entry still failed to bind against this factory's own backend). Rewriting the compose
     file itself, once, in the ephemeral clone (never the client's real repo) is the only way that actually
-    works. Returns {service_name: external_port}, empty if the compose file declares no published ports."""
+    works.
+
+    Returns {service_name: (external_port, container_port)}. The container port is carried because an
+    external port number alone cannot tell you what it serves, and choosing what to probe without that was
+    F15 - the factory addressed PostgreSQL with an HTTP health check for the life of a project."""
     try:
         spec = yaml.safe_load(compose_file.read_text()) or {}
     except Exception:
         return {}
 
     services = spec.get("services") or {}
-    port_map: dict[str, int] = {}
+    port_map: dict[str, tuple[int, str]] = {}
     next_port = EXTERNAL_PORT_BASE
     changed = False
 
@@ -139,7 +194,7 @@ def _remap_ports(compose_file: Path) -> dict[str, int]:
         for entry in ports:
             container_port = str(entry).split(":")[-1]
             new_ports.append(f"{next_port}:{container_port}")
-            port_map[name] = next_port
+            port_map[name] = (next_port, container_port)
             next_port += 1
         service["ports"] = new_ports
         changed = True
@@ -175,6 +230,18 @@ def launch(req: LaunchRequest) -> LaunchResponse:
                                    error="docker-compose.yml not found at repo root after clone",
                                    commit_sha=commit_sha)
 
+        # 2026-08-23 (F14). Passing `-f docker-compose.yml` suppresses Docker's automatic loading of
+        # docker-compose.override.yml, so the launcher was starting a topology the product does not have.
+        # Measured on test-fiftieth: the base compose declares only `db` and `backup`, and the ONLY service
+        # that serves HTTP is declared in the override - which was never read. Nothing that answers was ever
+        # started, on any run, for the life of the project.
+        #
+        # The reason the override was dropped is real and is preserved: Compose concatenates `ports:` across
+        # merged files instead of replacing them, so `-f base -f override` left both the original and the
+        # remapped port in the resolved config. Resolving first and remapping the RESULT removes that
+        # entirely, because _remap_ports replaces each service's whole `ports` list and a concatenated
+        # duplicate collapses with it.
+        compose_file = _resolve_topology(workdir, compose_file)
         port_map = _remap_ports(compose_file)
 
         up = _run(
@@ -186,7 +253,21 @@ def launch(req: LaunchRequest) -> LaunchResponse:
                                    error=f"docker compose up failed: {up.stderr[-2000:]}", commit_sha=commit_sha)
 
         _current_project_slug = req.project_slug
-        primary_port = next(iter(port_map.values()), None)
+
+        # 2026-08-23 (F15). This was `next(iter(port_map.values()))` - the first published port of whatever
+        # service happened to come first. Measured on test-fiftieth, that was the DATABASE: the base compose
+        # publishes ${POSTGRES_PORT:-5432}:5432 and nothing else, so the factory has been sending an HTTP
+        # health request to PostgreSQL and recording the refusal as the product's health. A port is not
+        # interchangeable with another port merely because both are published; what it serves is the whole
+        # of what makes it the right one to probe.
+        primary_port = _http_port(port_map)
+        if primary_port is None:
+            return LaunchResponse(
+                success=False, duration_ms=_elapsed_ms(started), commit_sha=commit_sha,
+                error="no service in this product publishes a port that serves HTTP - published targets are "
+                      + ", ".join(f"{svc}:{tgt}" for svc, (_, tgt) in sorted(port_map.items()))
+                      + ". A health check has nothing to address here. This is an assembly defect: the "
+                        "product declares data services and no application surface.")
         return LaunchResponse(success=True, duration_ms=_elapsed_ms(started), external_port=primary_port,
                                commit_sha=commit_sha)
     except subprocess.TimeoutExpired as e:
@@ -251,6 +332,21 @@ def _silent_container_facts(container: str, row: dict) -> str:
     return "<no output on this container's stdout/stderr; " + "; ".join(facts) + ">"
 
 
+def _declared_services() -> set:
+    """Service names the product's own compose declares, as opposed to the ones that materialised.
+
+    Best-effort like everything else in this diagnostic: on any failure it returns an empty set, which makes
+    the caller fall through to its previous behaviour rather than claim something it could not check."""
+    try:
+        cfg = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "config", "--services"],
+                   timeout_seconds=30)
+        if cfg.returncode != 0:
+            return set()
+        return {line.strip() for line in cfg.stdout.splitlines() if line.strip()}
+    except Exception:
+        return set()
+
+
 def _assembly_report(max_chars: int = 3000) -> str:
     """Which services of the current run are not up, and what their own logs say. Best-effort: any failure
     here must never replace the health result itself - an empty report is honest, a crash is not.
@@ -262,7 +358,13 @@ def _assembly_report(max_chars: int = 3000) -> str:
     if _current_project_slug is None:
         return ""
     try:
-        ps = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "ps", "--format", "json"],
+        # 2026-08-23 (F12): `--all`. Without it this listing shows only RUNNING containers, which hides
+        # exactly the ones that explain a refused health port - a service that exits on startup is absent
+        # from the output entirely, so `unhealthy` comes back empty and the report concludes that every
+        # service is running. Measured on test-fiftieth: the compose override declares a `backend` that is
+        # a bare JRE image with no command, its container exits at once, and the diagnosis handed to the
+        # factory named only `db` and `backup` and said the fault was inside one of them.
+        ps = _run(["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "ps", "--all", "--format", "json"],
                   timeout_seconds=30)
         if ps.returncode != 0:
             return ""
@@ -285,6 +387,26 @@ def _assembly_report(max_chars: int = 3000) -> str:
         # is "running" while it boots. Returning "every service reports running" was honest and useless: the
         # health port refused, so SOMETHING is wrong, and the only place the reason can be is a running
         # service's own log. "Up but not serving" is precisely the case the log is needed for.
+        # 2026-08-23 (F12): a service the compose declares and for which no container exists at all is a
+        # different fact from a service that is up and misbehaving, and it is decided before the disjunction
+        # below. The old branch quantified over the services it could see and concluded the fault was inside
+        # one of them - a claim that presupposes the failing service is among them. When the product declares
+        # a service that never materialised, the defect is ASSEMBLY, and the launcher's own 2026-08-19 note
+        # says that distinction is what decides whether the next task is routed to operations or to assembly.
+        declared = _declared_services()
+        present = {str(r.get("Service") or "") for r in rows}
+        missing = sorted(name for name in declared if name and name not in present)
+        if missing:
+            # Capped like the normal path below, and for the same reason: this string is concatenated onto
+            # the health error and stored in client_runtime_observations.error_text, a VARCHAR(4000). An
+            # overflow does not truncate the diagnosis, it fails the INSERT and loses the observation - a
+            # better explanation traded for no observation at all.
+            return (" | assembly: the compose declares service(s) " + ", ".join(missing)
+                    + " for which no container exists at all - not stopped, not unhealthy, absent. Nothing "
+                    + "in this topology can answer on the health port. This is an assembly defect: the "
+                    + "service is declared but never built or started, so no operations change can fix it."
+                    )[:max_chars]
+
         if not unhealthy:
             unhealthy = rows[:3]
             prefix = " | assembly: every service reports running, so the failure is inside one of them"

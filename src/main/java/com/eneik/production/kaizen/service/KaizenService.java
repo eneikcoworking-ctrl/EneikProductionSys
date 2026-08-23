@@ -96,7 +96,19 @@ public class KaizenService {
      * STANDARDIZED are conclusions about a specific act, and a new occurrence after them is genuinely
      * new information that deserves its own row.
      */
-    private void saveProposal(KaizenProposal p) {
+    /**
+     * Returns the id that is actually in the database after this write, which is not always the id the
+     * caller handed in.
+     *
+     * 2026-08-23 (F2): on recurrence this method persists the SIBLING and leaves `incoming` unwritten,
+     * while the caller went on to write an evidence node against `incoming.getId()` - a foreign key onto a
+     * row that was never created. Measured live on test-fiftieth: three violations of
+     * FK_EVIDENCE_NODES_KAIZEN_PROPOSAL in two hours, every one of them a `kz-systemic-` proposal. The
+     * consequence inverts the evidence algebra: the finding that recurs most often is the one left with no
+     * evidence at all, because only recurrences take this path. An identifier must designate the same
+     * object in every context it is used in, and after deduplication the caller's id designates nothing.
+     */
+    private String saveProposal(KaizenProposal p) {
         KaizenProposalEntity incoming = KaizenProposalEntity.fromDomain(p);
         // 2026-08-20, caught by testScanAndApplyPdcaCycle before this ever ran live: saveProposal is the
         // write path for BOTH a new finding and every subsequent state change of an existing one
@@ -105,14 +117,14 @@ public class KaizenService {
         // about a row that does not exist yet.
         if (kaizenProposalRepository.existsById(incoming.getId())) {
             kaizenProposalRepository.save(incoming);
-            return;
+            return incoming.getId();
         }
         KaizenProposalEntity existing = findOpenSibling(incoming);
         if (existing == null) {
             incoming.setRecurrenceCount(1);
             incoming.setLastSeenAt(java.time.Instant.now());
             kaizenProposalRepository.save(incoming);
-            return;
+            return incoming.getId();
         }
         existing.setRecurrenceCount(existing.getRecurrenceCount() + 1);
         existing.setLastSeenAt(java.time.Instant.now());
@@ -123,6 +135,7 @@ public class KaizenService {
         log.info("Kaizen: recurrence {} of '{}' ({} / {}) - revised in place, not duplicated",
                 existing.getRecurrenceCount(), existing.getTitle(), existing.getCategory(),
                 existing.getTargetComponent());
+        return existing.getId();
     }
 
     /** The one already-open proposal this finding is a recurrence OF, or null if it is genuinely new. */
@@ -159,8 +172,9 @@ public class KaizenService {
      * (STANDARDIZED -> POSITIVE_CONFIRMATION, REVERTED -> NEGATIVE_FINDING) - a still-PROPOSED/APPLIED
      * micro-tuning proposal is speculative, not yet real evidence.
      */
-    private void writeEvidenceNode(KaizenProposal p, EvidenceNodeEntity.Polarity polarity) {
-        writeEvidenceNode(p, polarity, null);
+    private void writeEvidenceNode(String persistedProposalId, KaizenProposal p,
+                                   EvidenceNodeEntity.Polarity polarity) {
+        writeEvidenceNode(persistedProposalId, p, polarity, null);
     }
 
     /**
@@ -179,7 +193,8 @@ public class KaizenService {
      * The proposal itself is unaffected: it is still recorded, still review-only, still reaches
      * GET /api/kaizen/factory. Only what the evidence graph believes the fact IS has changed.
      */
-    private void writeEvidenceNode(KaizenProposal p, EvidenceNodeEntity.Polarity polarity,
+    private void writeEvidenceNode(String persistedProposalId, KaizenProposal p,
+                                   EvidenceNodeEntity.Polarity polarity,
                                    java.util.UUID geminiFindingId) {
         EvidenceNodeEntity node = new EvidenceNodeEntity();
         node.setProjectId(p.getProjectId());
@@ -188,7 +203,7 @@ public class KaizenService {
         if (geminiFindingId != null) {
             node.setGeminiFindingId(geminiFindingId);
         } else {
-            node.setKaizenProposalId(p.getId());
+            node.setKaizenProposalId(persistedProposalId);
         }
         evidenceNodeRepository.save(node);
     }
@@ -480,7 +495,7 @@ public class KaizenService {
      *
      * {@code geminiFindingId} points at the persisted assertion, so the evidence node this writes is typed
      * GEMINI_FINDING - what the fact IS - instead of KAIZEN_PROPOSAL - where the fact was filed. See
-     * {@link #writeEvidenceNode(KaizenProposal, EvidenceNodeEntity.Polarity, java.util.UUID)} for why that
+     * {@link #writeEvidenceNode(String, KaizenProposal, EvidenceNodeEntity.Polarity, java.util.UUID)} for why that
      * distinction changes what the coherence graph concludes.
      */
     public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
@@ -498,8 +513,7 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        saveProposal(proposal);
-        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, geminiFindingId);
+        writeEvidenceNode(saveProposal(proposal), proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING, geminiFindingId);
         log.info("[KAIZEN-SYSTEMIC] Recorded review-only systemic defect proposal '{}' from project {} (evidence typed {}): {}",
                 propId, projectId, geminiFindingId != null ? "GEMINI_FINDING" : "KAIZEN_PROPOSAL", title);
         return proposal;
@@ -535,8 +549,7 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        saveProposal(proposal);
-        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        writeEvidenceNode(saveProposal(proposal), proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         log.info("[KAIZEN-PRODUCT-RUNTIME] Recorded review-only product runtime defect proposal '{}' from project {}: {}",
                 propId, projectId, title);
         return proposal;
@@ -565,8 +578,7 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        saveProposal(proposal);
-        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        writeEvidenceNode(saveProposal(proposal), proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         log.info("[KAIZEN-KNOWN-PATTERN] Recorded review-only known-pattern-violation proposal '{}' from project {}: charter #{} ({})",
                 propId, projectId, rootCausePatternId, patternName);
         return proposal;
@@ -600,8 +612,7 @@ public class KaizenService {
                 projectId,
                 projectName == null ? "Global" : projectName
         );
-        saveProposal(proposal);
-        writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+        writeEvidenceNode(saveProposal(proposal), proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
         log.info("[KAIZEN-ROLE-DRIFT] Recorded review-only role-quality-drift proposal '{}' for project {}: role {} {} -> {}",
                 propId, projectId, drift.roleTag(), drift.historicalAverage(), drift.recentAverage());
         return proposal;
@@ -716,15 +727,14 @@ public class KaizenService {
 
         if (improved) {
             proposal.setStatus(KaizenProposal.ProposalStatus.STANDARDIZED);
-            saveProposal(proposal);
+            String persistedProposalId = saveProposal(proposal);
             deleteMatching(proposal.getCategory(), proposal.getTargetComponent(), proposal.getId());
-            writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.POSITIVE_CONFIRMATION);
+            writeEvidenceNode(persistedProposalId, proposal, EvidenceNodeEntity.Polarity.POSITIVE_CONFIRMATION);
             log.info("[KAIZEN-PDCA][ACT] Standardized micro-improvement '{}'! Post-metric: {} (Baseline: {}).",
                     proposal.getTitle(), postMetric, proposal.getBaselineMetric() != null ? proposal.getBaselineMetric() : 0.0);
         } else {
             proposal.setStatus(KaizenProposal.ProposalStatus.REVERTED);
-            saveProposal(proposal);
-            writeEvidenceNode(proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
+            writeEvidenceNode(saveProposal(proposal), proposal, EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
             log.warn("[KAIZEN-PDCA][ACT] Reverted micro-improvement '{}' due to insufficient gain.", proposal.getTitle());
         }
 

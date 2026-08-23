@@ -24,6 +24,20 @@ public class GlobalExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
+    /**
+     * 2026-08-23 (F8). A request naming a real path with the wrong verb is a 405, not a defect of this
+     * factory. Reaching the catch-all logged it at ERROR with a stack trace: measured, one of three ERROR
+     * lines in a forty-five minute window, a third of the noise in a count that this system and its Kaizen
+     * layer both read as a health signal. An error taxonomy that cannot tell a client's mistake from the
+     * server's own makes every recovery decision downstream of it a guess.
+     */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<Map<String, Object>> handleMethodNotAllowed(
+            org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        log.warn("Method not allowed: {}", e.getMessage());
+        return body(HttpStatus.METHOD_NOT_ALLOWED, e.getMessage());
+    }
+
     @ExceptionHandler(NoSuchElementException.class)
     public ResponseEntity<Map<String, Object>> handleNotFound(NoSuchElementException e) {
         return body(HttpStatus.NOT_FOUND, e.getMessage());
