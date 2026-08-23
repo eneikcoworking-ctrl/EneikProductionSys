@@ -132,6 +132,15 @@ public class DeliveryRealityProducerService {
                 new com.eneik.production.models.persistence.WishlistEntity();
         wishlist.setProjectId(project.getId());
         wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        // 2026-08-23. A finding inherits the epic of the task it is about. Without this the wishlist it
+        // produces compiles into a task with no feature, and a feature closes when ITS tasks close - so the
+        // work exists, runs, merges, and moves nothing. Measured on test-fiftieth: eighty-two tasks, four
+        // epics closed, and the one epic that carries what the client actually asked for - upload, search,
+        // download - stuck at 6 of 7 while task after task completed beside it. Repairing delivery of a
+        // task and detaching that repair from the task's own feature is delivering into a void.
+        wishlist.setFeatureId(task.getFeatureId());
+        wishlist.setOriginFeatureId(task.getOriginFeatureId() != null
+                ? task.getOriginFeatureId() : task.getFeatureId());
         wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
         wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
         wishlist.setCynefinDomain("clear");

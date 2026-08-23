@@ -367,6 +367,25 @@ public class OpsAuditorService {
      * verbatim, because a finding filed without its witness makes the next worker re-derive what the system
      * already knows.
      */
+    /** The epic of the auditor's subject, which is a wishlist for one evidence kind and a task for the other. */
+    private java.util.Optional<java.util.UUID> epicOfAuditorSubject(String subjectId) {
+        java.util.UUID id;
+        try {
+            id = java.util.UUID.fromString(subjectId);
+        } catch (Exception e) {
+            return java.util.Optional.empty();
+        }
+        java.util.Optional<java.util.UUID> fromWishlist = wishlistRepository.findById(id)
+                .map(WishlistEntity::getFeatureId)
+                .filter(java.util.Objects::nonNull);
+        if (fromWishlist.isPresent()) {
+            return fromWishlist;
+        }
+        return taskRepository.findById(id)
+                .map(com.eneik.production.models.persistence.TaskEntity::getFeatureId)
+                .filter(java.util.Objects::nonNull);
+    }
+
     private void fileUnresolvedSubjectAsScope(ProjectEntity project, AuditorDecision decision) {
         String marker = "subject " + decision.subjectId();
         boolean alreadyFiled = wishlistRepository
@@ -380,6 +399,15 @@ public class OpsAuditorService {
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
         wishlist.setSource(WishlistSource.auditor_unresolved);
+        // 2026-08-23. Inherit the epic of whatever the auditor could not resolve, so the work this filing
+        // produces belongs to the same feature as the thing it is unblocking. A feature closes when ITS
+        // tasks close; scope filed without one compiles into a task that runs, merges, and moves no epic.
+        // The subject is a wishlist id for an orphaned item and a task id for a dead dependency chain, so
+        // both are tried and neither is assumed.
+        epicOfAuditorSubject(decision.subjectId()).ifPresent(featureId -> {
+            wishlist.setFeatureId(featureId);
+            wishlist.setOriginFeatureId(featureId);
+        });
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);
         wishlist.setCynefinDomain("complicated");

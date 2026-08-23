@@ -1079,3 +1079,28 @@ one step further along. Evidence from which no action follows is not evidence in
 
 Fixed 2026-08-23: the producer now files `WishlistSource.delivery_never_reached_main` alongside the
 evidence, so the work that never landed is ordered again through the one path that produces work.
+
+### 28.9 Scope filed without an epic is work that moves nothing
+
+A feature closes when ITS tasks close. A wishlist filed with no `featureId` compiles into a task with no
+feature, so that task runs, merges, and advances no epic - it adds to the project's task count and to
+nothing else.
+
+Measured on test-fiftieth 2026-08-23: eighty-two tasks, four of five epics closed, and the one epic
+carrying what the client actually asked for - `Core Knowledge Base (Upload, Search, Download)` - stuck at
+6 of 7 merged while task after task completed beside it. Four of the ten wishlist filers set no epic, three
+of them added the same day: the delivery judge, the operations auditor, and the delivery-reality producer.
+The irony is exact: machinery built to make delivery real was filing repairs that could not close the
+feature whose delivery had failed.
+
+Fixed by inheritance, never by invention. Task-derived findings take the epic of the task they are about;
+the auditor takes the epic of its subject, which is a wishlist for one evidence kind and a task for the
+other, and takes neither on assumption.
+
+`ProductLaunchabilityService` and `LaunchabilityConstraintService` are deliberately left without one: their
+findings are about the product as a whole, not about any one feature, and stamping them with an arbitrary
+epic would be a false attribution rather than a missing one. A finding with no natural parent is a
+different fact from a finding whose parent was dropped.
+
+**The check:** any new wishlist filer must answer which epic its work belongs to. "None, and here is why"
+is a valid answer. Silence is not.

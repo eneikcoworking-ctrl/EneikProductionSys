@@ -89,6 +89,7 @@ public class DeliveredWorkJudgmentService {
     private final GitHubPullRequestService gitHubPullRequestService;
     private final JudgmentAgentClient judgmentAgentClient;
     private final WishlistRepository wishlistRepository;
+    private final com.eneik.production.services.GeminiContextService geminiContextService;
 
     @Value("${delivered-work-judgment.enabled:true}")
     private boolean enabled;
@@ -127,12 +128,14 @@ public class DeliveredWorkJudgmentService {
                                         JulesSessionRepository julesSessionRepository,
                                         GitHubPullRequestService gitHubPullRequestService,
                                         JudgmentAgentClient judgmentAgentClient,
-                                        WishlistRepository wishlistRepository) {
+                                        WishlistRepository wishlistRepository,
+                                        com.eneik.production.services.GeminiContextService geminiContextService) {
         this.taskRepository = taskRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.gitHubPullRequestService = gitHubPullRequestService;
         this.judgmentAgentClient = judgmentAgentClient;
         this.wishlistRepository = wishlistRepository;
+        this.geminiContextService = geminiContextService;
     }
 
     public void judgeDeliveredWork(ProjectEntity project) {
@@ -203,7 +206,31 @@ public class DeliveredWorkJudgmentService {
             return;
         }
 
-        String answer = judgmentAgentClient.judgeAsText(prompt(task, prUrl.get(), diff.get()), SYSTEM_INSTRUCTION);
+        // 2026-08-23. The judge was ruling on delivery out of general programming knowledge, with the
+        // corpus that holds this system's method nowhere in the prompt - measured, zero references to it in
+        // this whole class. That is precisely what the corpus itself calls inert: something an AI wrote from
+        // general knowledge carries no weight here. A verdict formed outside the method is not this
+        // system's verdict, however reasonable it sounds, and every consequence downstream inherits that -
+        // including scope filed without the epic the charter requires, because the judge had never read the
+        // charter.
+        //
+        // Role-scoped first, because a task is delivered BY a role and its refusal criteria are that role's
+        // own; the common patterns follow, because ACP-102 and the invariants bind every role alike.
+        String method = safeContext(
+                () -> geminiContextService.buildRoleScopedContext(task.getRole(), task.getAcceptanceCriteria(), 4))
+                + safeContext(
+                () -> geminiContextService.buildCommonPatternContext(task.getAcceptanceCriteria(), 3));
+        String instruction = method.isBlank()
+                ? SYSTEM_INSTRUCTION
+                : SYSTEM_INSTRUCTION + "\n\nTHE METHOD THIS FACTORY JUDGES BY - these are not suggestions, "
+                        + "they are the criteria this system's own work is held to, and your ruling is held "
+                        + "to them too:\n" + method;
+        if (method.isBlank()) {
+            log.warn("[DELIVERY-JUDGMENT] task {} judged with no method retrieved - the corpus returned "
+                    + "nothing for this role. The verdict rests on general knowledge, which this system "
+                    + "treats as inert.", task.getId());
+        }
+        String answer = judgmentAgentClient.judgeAsText(prompt(task, prUrl.get(), diff.get()), instruction);
         if (answer == null || answer.isBlank()) {
             int silences = silenceCountOf(task) + 1;
             if (silences >= Math.max(1, maxConsecutiveSilences)) {
@@ -234,6 +261,23 @@ public class DeliveredWorkJudgmentService {
 
         if (REFUTED.equals(verdict)) {
             fileRefutation(project, task, prUrl.get(), reason);
+        }
+    }
+
+    /**
+     * Retrieval that cannot take a verdict down with it.
+     *
+     * The method must reach the judge, and its absence must be visible - the warning below the call site
+     * does that. But a failure to retrieve is a fact about the index, not about this delivery, and letting
+     * it throw would turn a corpus problem into a task that never gets judged at all.
+     */
+    private String safeContext(java.util.function.Supplier<String> retrieval) {
+        try {
+            String context = retrieval.get();
+            return context == null ? "" : context;
+        } catch (Exception e) {
+            log.warn("[DELIVERY-JUDGMENT] method retrieval failed: {}", e.getMessage());
+            return "";
         }
     }
 
@@ -328,6 +372,15 @@ public class DeliveredWorkJudgmentService {
         WishlistEntity wishlist = new WishlistEntity();
         wishlist.setProjectId(project.getId());
         wishlist.setSource(WishlistSource.delivery_refuted);
+        // 2026-08-23. A finding inherits the epic of the task it is about. Without this the wishlist it
+        // produces compiles into a task with no feature, and a feature closes when ITS tasks close - so the
+        // work exists, runs, merges, and moves nothing. Measured on test-fiftieth: eighty-two tasks, four
+        // epics closed, and the one epic that carries what the client actually asked for - upload, search,
+        // download - stuck at 6 of 7 while task after task completed beside it. Repairing delivery of a
+        // task and detaching that repair from the task's own feature is delivering into a void.
+        wishlist.setFeatureId(task.getFeatureId());
+        wishlist.setOriginFeatureId(task.getOriginFeatureId() != null
+                ? task.getOriginFeatureId() : task.getFeatureId());
         wishlist.setStatus(WishlistStatus.pending);
         wishlist.setLeanValue(LeanValue.essential);
         wishlist.setCynefinDomain("clear");

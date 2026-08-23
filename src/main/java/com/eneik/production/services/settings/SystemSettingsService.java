@@ -92,9 +92,36 @@ public class SystemSettingsService {
         return effectiveSetting(key).value();
     }
 
+    /**
+     * 2026-08-23. `Boolean.parseBoolean` maps a blank, a null and the string "off" all to false, so a flag
+     * that was never given a value is indistinguishable from a flag someone deliberately turned off. That
+     * is not a parsing detail, it is a decision taken by a default (ACP-104): measured on test-fiftieth,
+     * `falsification_cycle_enabled`, `philosophical_falsification_enabled` and
+     * `design_system_falsification_enabled` all held an empty string in the database, and the log said
+     * "Falsification cycle is disabled via feature flag" - true of what the code did, false about anyone
+     * having chosen it. The core of this system's method was off because nobody had said it was on.
+     *
+     * `reportValuelessBooleanFlags` exists for this and could not have caught it: it looks for flags whose
+     * source is "none", and these had a row in the database with an empty value - a source, and no content.
+     *
+     * The value is still false. What changes is that the absence is now audible the first time it decides
+     * anything, so an unmade decision cannot go on being made silently.
+     */
     public boolean effectiveBoolean(String key) {
-        return Boolean.parseBoolean(effectiveValue(key));
+        String value = effectiveValue(key);
+        if (value == null || value.isBlank()) {
+            if (unreportedBlankFlags.add(key)) {
+                log.warn("SystemSettingsService: flag '{}' has no value, so it reads as false - and nothing "
+                        + "on record says anyone chose that. If it should be on, set it; if it should be "
+                        + "off, set it to false so the decision is a decision.", key);
+            }
+            return false;
+        }
+        return Boolean.parseBoolean(value);
     }
+
+    /** One warning per key per boot: audible, never a flood. */
+    private final java.util.Set<String> unreportedBlankFlags = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     public String sourceOf(String key) {
         return effectiveSetting(key).source();
