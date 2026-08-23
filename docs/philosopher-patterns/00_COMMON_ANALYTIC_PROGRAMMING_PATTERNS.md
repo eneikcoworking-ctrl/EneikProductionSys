@@ -240,3 +240,76 @@ configuration, verification evidence. One predicate still owns the question (one
 but it asks the bearer what counts before it answers. There are then no roles "exempt from delivery" —
 only roles delivering different kinds of thing, which is the honest description of what was always true.
 
+## ACP-107 — Retrieval Is Local, Judgment Is Subscribed
+
+### The rule
+
+A product that reasons over its own corpus - market data, competitors, demand, customer records, its own
+documents - splits that work in two and never lets the halves share a dependency.
+
+**Retrieval runs locally, always, for free.** Embeddings come from a small ONNX model shipped inside the
+product. No account, no key, no quota, no network. Search, ranking, clustering and "find me things like
+this" work on day one, offline, for every user, forever.
+
+**Judgment is subscribed, and the subscription is the customer's.** Anything that forms an opinion - reads
+the retrieved material and rules on it - runs against a model the user connects in the admin panel with
+their own subscription. The product ships with no vendor key and meters nothing.
+
+### Why the two must not share a dependency
+
+They are different kinds of act and only one of them can be false.
+
+Retrieval answers *what is relevant*, and its output is a ranked list that the next step can check.
+Judgment answers *what follows*, and its output is a claim. Routing retrieval through a judgment model
+looks like an upgrade and is a category error: it makes every search a paid, slow, rate-limited opinion,
+and it makes the product stop working entirely when the account behind it lapses.
+
+Measured, 2026-08-20 to 2026-08-23, in the factory that produced this pattern. Retrieval over a 140-file
+corpus embedded the QUERY through a metered API on every call and returned an empty list when that call
+failed:
+
+    float[] queryVector = mlPredictionServiceClient.embed(query);
+    if (queryVector == null) {
+        return List.of();
+    }
+
+The account ran out of credit. For three days every prompt in the system went out with no corpus behind it
+at all - no pattern, no role definition, none of the method the system exists to apply. Nothing raised an
+alarm, because an empty list is also what "nothing relevant was found" looks like. **A failure state that
+is indistinguishable from a healthy one cannot be refuted, and therefore cannot be noticed.**
+
+### What it buys the product
+
+The product is fully useful with no AI account attached: it searches, it groups, it measures, it compares.
+Then the customer connects their own subscription in the admin panel and the same product starts forming
+opinions on top of what it already retrieves. Nothing about the base product degrades if they never do, and
+nothing about it stops if they cancel.
+
+For the vendor this removes per-user metering entirely - the expensive half is paid for by whoever uses it.
+For the customer it removes the question of what the vendor does with their key.
+
+### Choosing the local model
+
+By measured size against measured need, never by name. In the reference implementation fastembed offered
+three multilingual models: 384 dimensions at 0.22 GB, 768 at 1.0 GB, and 1024 at 2.24 GB. The smallest was
+chosen because the host had already lost a container to memory pressure - the ranking quality difference
+did not outweigh a fivefold difference in footprint. ONNX rather than torch for the same reason: about
+200 MB against roughly 1.5 GB.
+
+Multilingual is not optional where the corpus or the customer is not English. An English-only model does
+not refuse a Russian query - it ranks it badly and silently, which is this same pattern's own failure one
+level down.
+
+### The invariant that comes with it
+
+Vectors from two different models cannot be compared, and the comparison **does not fail**: cosine
+similarity over mismatched dimensions returns 0.0, which reads as "not similar". Any product using this
+pattern must store the embedding model's identity and dimension alongside every vector, refuse comparison
+across a mismatch loudly rather than scoring it zero, and reindex when the model changes rather than
+waiting to be told.
+
+### Where to apply it
+
+Every Eneik product that measures a market, ranks competitors, groups customer feedback, or searches its
+own documents. The admin panel exposes one screen: connect your model subscription. Everything below that
+screen already works.

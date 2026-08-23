@@ -526,21 +526,50 @@ async def assistant_chat_endpoint(request: ChatRequest):
         raise HTTPException(status_code=502, detail=f"Gemini call failed: {e}") from e
 
 
+# Chosen by measurement against what fastembed actually serves, not by name: of its three multilingual
+# models this one is 384 dimensions and 0.22 GB, against 1.0 GB for mpnet-base and 2.24 GB for
+# e5-large. On a host that has already lost a container to memory, that difference decides it.
+LOCAL_EMBEDDING_MODEL = os.getenv(
+    "LOCAL_EMBEDDING_MODEL", "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+_local_embedder = None
+
+
+def local_embed(text: str) -> list[float]:
+    """A vector produced here, on this machine, with no account behind it.
+
+    2026-08-23. Retrieval used to embed through Gemini, and not only when indexing: GeminiContextService
+    embeds the QUERY on every single call and returns an empty list when that comes back null. The account
+    ran out of credit on 2026-08-20, so from that day the philosopher corpus - 140 files, every role
+    definition, every ACP - reached no prompt at all. Nothing raised an alarm because an empty result is
+    also what "nothing relevant was found" looks like.
+
+    The model is multilingual on purpose: this corpus and this project's clients write in Russian, and an
+    English-only model would degrade retrieval quietly rather than refuse it loudly, which is the same
+    failure one level down. ONNX rather than torch, because 200 MB fits on a host that has already lost a
+    container to memory and 1.5 GB does not."""
+    global _local_embedder
+    if _local_embedder is None:
+        from fastembed import TextEmbedding
+        _local_embedder = TextEmbedding(model_name=LOCAL_EMBEDDING_MODEL)
+        print(f"Local embedding model loaded: {LOCAL_EMBEDDING_MODEL}")
+    return [float(v) for v in next(iter(_local_embedder.embed([text])))]
+
+
 @app.post("/api/v1/embed", response_model=EmbedResponse)
 async def embed_endpoint(request: EmbedRequest):
-    # Backs GeminiContextService's RAG retrieval (2026-07-25) - a real embedding vector via Gemini's
-    # embedContent API, no mock/fallback text response like assistant_chat_endpoint has, because a fake
-    # vector would silently corrupt cosine-similarity ranking rather than visibly failing.
+    # No mock and no fallback, for the reason the 2026-07-25 note gave and which still holds: a fabricated
+    # vector corrupts cosine ranking silently instead of failing visibly. What changed is where the real
+    # vector comes from - this machine rather than a metered account that has been empty since 2026-08-20.
     try:
-        vector = ask_gemini_embedding(request.text, request.apiKey)
+        vector = local_embed(request.text)
         if not vector:
-            raise HTTPException(status_code=502, detail="Gemini embedding call returned no vector (no API key configured, or empty input text).")
+            raise HTTPException(status_code=502, detail="Local embedding returned no vector (empty input text).")
         return EmbedResponse(embedding=vector)
     except HTTPException:
         raise
     except Exception as e:
         print(f"Embed Exception: {e}")
-        raise HTTPException(status_code=502, detail=f"Gemini embedding call failed: {e}") from e
+        raise HTTPException(status_code=502, detail=f"Local embedding call failed: {e}") from e
 
 
 if __name__ == "__main__":

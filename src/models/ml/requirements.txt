@@ -1,3 +1,7 @@
 fastapi
 uvicorn
 pydantic
+# 2026-08-23: local embeddings. fastembed runs ONNX and pulls no torch - roughly 200 MB against
+# 1.5 GB for sentence-transformers, which matters on a host that has already lost a container to
+# memory. The model is multilingual because this project's corpus and its clients write in Russian.
+fastembed

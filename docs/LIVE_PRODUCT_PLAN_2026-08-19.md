@@ -509,7 +509,7 @@ cannot be more correct than the formula it falls back to.
 | `JulesDispatchService.reviewPr` | PR review | **already removed** 2026-07-25 after a cost incident | nothing to do |
 | `JulesDispatchService.chatCritical` | is a silent session looping or waiting? | rules + escalate a *repeated* misclassification | small loss of precision, no loss of mechanism |
 | `OpsAuditorService.chatCritical` | evidence-only auditor: 2 evidence kinds in, 3 decisions out, may ABSTAIN | **move to the subscription agent** - it already is factory-level judgment | same function, **on the subscription already paid for** - see the correction below |
-| `GeminiContextService.embed` | vectors for retrieval | **already paid**: 1525 chunks, 111 sources indexed; retrieval is local cosine similarity | degrades only for corpus files added later |
+| `GeminiContextService.embed` | vectors for retrieval | **REFUTED 2026-08-23 - see 28.7.** This row was false when written | retrieval has returned an empty list on every call since the quota ran out |
 
 ### 11.3 Kaizen is not being reduced - its bookkeeping is being fixed
 
@@ -1025,3 +1025,34 @@ growth defect. Recorded here so the suspicion is not raised a third time.
   of them record `NOT_JUDGED_NO_DIFF`. Their criteria speak of report files and repository state, not of
   diffs; judging them from a diff is the wrong instrument rather than a missing one. This is the same gap as
   D1 seen from the other side, and it closes with D1 or not at all.
+
+### 28.7 The corpus has not reached a prompt since 2026-08-20
+
+The row in 11.2 above said retrieval was already paid for and local. It is not local.
+`GeminiContextService.retrieve` embeds the QUERY on every call:
+
+    float[] queryVector = mlPredictionServiceClient.embed(query);
+    if (queryVector == null) {
+        return List.of();
+    }
+
+The 1525 stored chunk vectors cannot be compared against anything without a query vector, so with the
+Gemini account out of credit - switched off 2026-08-20, recorded in `JudgmentAgentClient`'s own javadoc -
+every retrieval has returned an empty list. Not degraded. Empty.
+
+Nothing raised an alarm because an empty list is what "nothing relevant was found" also looks like. The
+absence is unobservable from the outside, which is the same shape as the gate that reported a pass when no
+check had applied: a value that is indistinguishable from the healthy case cannot refute anything.
+
+The consequence is not a performance loss. For three days every Jules dispatch, every audit, every
+compilation has been grounded in nothing - no philosopher pattern, no role definition, no ACP. The corpus
+that holds this project's method has not been part of the method.
+
+**How the false row got written.** Its author checked that the chunks were indexed and concluded that
+retrieval worked. The criterion was substituted for the concept - ACP-102, written in the plan, about the
+corpus in which ACP-102 lives. That is also why nobody looked again: the plan asserted this was safe.
+
+**This moves to the front of the queue.** It was scheduled after the server move on a memory argument, and
+that argument does not survive contact with the measurement either: 3685 MB were free when it was made,
+and a small multilingual model needs roughly 600 MB. Deferring the system's own method for a sixth of the
+free memory is not a trade.

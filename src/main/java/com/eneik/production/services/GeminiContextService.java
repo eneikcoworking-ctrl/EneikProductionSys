@@ -79,6 +79,36 @@ public class GeminiContextService {
      * or on demand. A no-op when the repo root isn't mounted (e.g. a local unit-test context) or the
      * feature flag is off.
      */
+    /**
+     * Reindex the corpus when the embedding model behind it has changed underneath it.
+     *
+     * 2026-08-23. Vectors from two different models cannot be compared, and the comparison does not fail -
+     * it returns zero, which reads as "not similar". Without this, switching the model would leave
+     * retrieval empty for up to a day until the nightly cron, and empty is exactly the state that went
+     * unnoticed for three days after the Gemini account ran out. A dimension probe is one call and settles
+     * the question at boot rather than leaving it to be discovered.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void reindexIfEmbeddingModelChanged() {
+        float[] probe = mlPredictionServiceClient.embed("dimension probe");
+        if (probe == null) {
+            log.warn("GeminiContextService: the embedding service gave no vector at startup, so whether the "
+                    + "corpus matches the current model is unknown. Retrieval will return nothing until it "
+                    + "answers - this is the condition that hid for three days once already.");
+            return;
+        }
+        long stale = repository.findAll().stream()
+                .filter(chunk -> parseEmbedding(chunk.getEmbedding()).length != probe.length)
+                .count();
+        if (stale == 0) {
+            return;
+        }
+        log.warn("GeminiContextService: {} chunk(s) are stored at a dimension other than {} - the embedding "
+                + "model changed. Reindexing now rather than waiting for the nightly run, because until it "
+                + "finishes the corpus is invisible to every prompt.", stale, probe.length);
+        reindexStandingKnowledge();
+    }
+
     @Scheduled(cron = "${gemini-context.reindex-cron:0 0 3 * * ?}")
     public void reindexStandingKnowledge() {
         if (!settingsService.effectiveBoolean("gemini_context_learning_enabled")) {
@@ -279,11 +309,32 @@ public class GeminiContextService {
             return List.of();
         }
 
+        // 2026-08-23. cosineSimilarity returns 0.0 when two vectors have different lengths - a value that
+        // cannot be told apart from "not similar at all", so a corpus stored under a different embedding
+        // model would rank uniformly at zero and retrieval would come back empty for a reason nobody could
+        // see. That is the same shape as the empty list this method returned for three days after the
+        // Gemini quota ran out. Incomparable chunks are now excluded by dimension and counted out loud.
+        int queryDimension = queryVector.length;
         List<RetrievedChunk> scored = corpus.stream()
-                .map(chunk -> new RetrievedChunk(chunk.getSourceRef(), chunk.getContent(),
-                        cosineSimilarity(queryVector, parseEmbedding(chunk.getEmbedding()))))
+                .map(chunk -> java.util.Map.entry(chunk, parseEmbedding(chunk.getEmbedding())))
+                .filter(entry -> entry.getValue().length == queryDimension)
+                .map(entry -> new RetrievedChunk(entry.getKey().getSourceRef(), entry.getKey().getContent(),
+                        cosineSimilarity(queryVector, entry.getValue())))
                 .sorted(Comparator.comparingDouble(RetrievedChunk::similarity).reversed())
                 .collect(Collectors.toList());
+
+        if (scored.isEmpty()) {
+            log.warn("GeminiContextService: none of the {} stored chunks is comparable with a query vector "
+                    + "of dimension {} - the corpus was indexed under a different embedding model and "
+                    + "must be reindexed before retrieval can return anything. Retrieval is EMPTY, and "
+                    + "that is a fact about the index, not about the query.", corpus.size(), queryDimension);
+            return List.of();
+        }
+        if (scored.size() < corpus.size()) {
+            log.warn("GeminiContextService: {} of {} chunks were skipped as stored at a different dimension "
+                    + "than {}; they are invisible to retrieval until reindexed.",
+                    corpus.size() - scored.size(), corpus.size(), queryDimension);
+        }
 
         double floor = dynamicSimilarityFloor(scored.stream().map(RetrievedChunk::similarity).toList());
         return scored.stream()
