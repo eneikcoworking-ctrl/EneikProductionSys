@@ -156,6 +156,21 @@ public class DeliveryRealityProducerService {
                 + "said done, nothing reached main", task.getId(), title);
     }
 
+    /**
+     * Also at startup, not only on the hour.
+     *
+     * 2026-08-23. An hourly cron was this detector's only trigger, so after any deploy the system stayed
+     * wrong for up to an hour before anything looked - and a repair could not be shown to work without
+     * waiting out a dead interval. Measured twice today on the same task: `Runtime Contract 9b58412d` sat
+     * blocked while two successive versions of its fix were deployed and neither had yet been given a tick.
+     * A producer that reconciles reality with the record has no reason to wait for a clock when the record
+     * has just changed underneath it.
+     */
+    @org.springframework.context.event.EventListener(org.springframework.boot.context.event.ApplicationReadyEvent.class)
+    public void produceOnStartup() {
+        produce();
+    }
+
     @Scheduled(cron = "${delivery-reality-producer.cron:0 20 * * * ?}")
     public void produce() {
         List<ProjectEntity> active = projectRepository.findAll().stream()
