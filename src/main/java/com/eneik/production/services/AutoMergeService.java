@@ -2386,10 +2386,27 @@ public class AutoMergeService {
                     taskConflictRepository.save(conflict);
                 });
 
-        log.info("Poka-yoke: reconciled merged outcome for task {} from PR {}; repaired status={}, "
-                        + "retired sessions={}, superseded reviews={}",
-                task.getId(), mergedPrUrl, taskNeedsRepair,
-                activeDuplicates.size(), staleReviews.size());
+        // 2026-08-23. Two changes, both about what this line asserts.
+        //
+        // It used to be written unconditionally, so a pass that changed nothing announced a completed
+        // reconciliation - "repaired status=false, retired sessions=0, superseded reviews=0", three zeros -
+        // and it did so a hundred times in twenty-five minutes for two tasks. A confirmation carries no
+        // information; only a transition does. Reporting an event that did not occur is a false claim, and
+        // an operator counting these lines reads a busy factory where nothing happened.
+        //
+        // It also named three of the four conditions that bring this method past its guard, and stayed
+        // silent about the fourth. The three it named were all zero every time, so the cause was
+        // necessarily reviewNeedsUpdate - and the line could not say so. A diagnostic that omits the only
+        // variable that can explain what it reports leaves the reader to guess, which is how this loop
+        // survived long enough to be counted as merge activity.
+        boolean changedSomething = taskNeedsRepair || reviewNeedsUpdate
+                || !activeDuplicates.isEmpty() || !staleReviews.isEmpty();
+        if (changedSomething) {
+            log.info("Poka-yoke: reconciled merged outcome for task {} from PR {}; repaired status={}, "
+                            + "review updated={}, retired sessions={}, superseded reviews={}",
+                    task.getId(), mergedPrUrl, taskNeedsRepair, reviewNeedsUpdate,
+                    activeDuplicates.size(), staleReviews.size());
+        }
     }
 
     private boolean classifyHasCodeForPr(String prUrl) {
