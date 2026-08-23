@@ -65,7 +65,17 @@ public class SystemSettingsService {
         try {
             valueless = DEFINITIONS.values().stream()
                     .filter(SettingDefinition::enabledFlag)
-                    .filter(d -> "none".equals(effectiveSetting(d.key()).source()))
+                    // 2026-08-23: source "none" was too narrow, and the gap is exactly where this defect
+                    // lives. A flag written once and then cleared keeps its row, so its source is
+                    // "database" while its value is empty - a source, and no content. Measured: all three
+                    // falsification flags sat in that state, this reporter said nothing because each had a
+                    // source, and the core of the method was off on every project. The question is whether
+                    // anyone ever DECIDED, and an empty value answers it as plainly as a missing row.
+                    .filter(d -> {
+                        EffectiveSetting setting = effectiveSetting(d.key());
+                        return "none".equals(setting.source())
+                                || setting.value() == null || setting.value().isBlank();
+                    })
                     .map(SettingDefinition::key)
                     .sorted()
                     .toList();
@@ -157,9 +167,31 @@ public class SystemSettingsService {
      * identifier no matter how readable it is.
      */
     private void rejectIfMalformed(String key, String value) {
+        // The blank case does NOT return early here. Blank is precisely the value this guard exists to
+        // refuse for a flag, and putting the exemption first would have made the check unreachable for its
+        // own defect - the same shape of mistake as a repair placed on the path the defect does not take.
+        // Format checks that only apply to content still skip a blank below.
+        // 2026-08-23. A boolean flag may not be stored blank. This has cost real capability three times -
+        // design_system_falsification_enabled, then all three falsification flags together - and every
+        // time the mechanism was the same: a row exists, its value is empty, effectiveBoolean reads false,
+        // and nothing distinguishes that from someone deciding false. Refusing the write is the only point
+        // where the two can still be told apart; afterwards the information is simply gone. Whoever means
+        // off writes "false", and the decision survives as a decision.
+        SettingDefinition definition = DEFINITIONS.get(key);
+        if (definition != null && definition.enabledFlag()) {
+            String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+            if (!"true".equals(normalized) && !"false".equals(normalized)) {
+                throw new IllegalArgumentException(
+                        "Flag '" + key + "' must be stored as true or false, not '" + value + "'. A flag "
+                        + "with an empty or unrecognised value reads as false, and nothing afterwards can "
+                        + "tell that apart from someone having chosen false.");
+            }
+        }
+
         if (value == null || value.isBlank()) {
             return;
         }
+
         if ("linear_team_id".equals(key)) {
             try {
                 java.util.UUID.fromString(value.trim());

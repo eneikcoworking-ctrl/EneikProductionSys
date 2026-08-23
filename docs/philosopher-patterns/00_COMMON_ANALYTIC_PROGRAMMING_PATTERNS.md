@@ -313,3 +313,37 @@ waiting to be told.
 Every Eneik product that measures a market, ranks competitors, groups customer feedback, or searches its
 own documents. The admin panel exposes one screen: connect your model subscription. Everything below that
 screen already works.
+
+## ACP-108 — A Guard Must Be Reachable From Its Own Defect
+
+### The rule
+
+A check placed on a path the defect does not take is not a check. Before a guard is called finished, state
+the exact input it exists to refuse, and trace whether that input reaches it. If an earlier branch returns
+first, the guard is decoration.
+
+This is not carelessness. It is a specific and recurring shape, because guards are naturally written where
+the surrounding code is already looking - and the defect is, by definition, somewhere the code was not.
+
+### Three instances in one day
+
+Measured 2026-08-23, all three in the same system, all three found only by watching the repair fail:
+
+- A producer filed missing work inside the branch for a *newly recorded* finding. The task it was written
+  for had been recorded the previous day, so the fix ran for every case except its own. Eleven and a half
+  hours with the repair deployed and unreachable.
+- `rejectIfMalformed` began with `if (value == null || value.isBlank()) return;` and was then extended to
+  refuse a blank flag value. Blank was the one input it was added for, and blank left first.
+- `reportValuelessBooleanFlags` looked for flags whose source was `none`. The flags that were actually
+  valueless had a database row holding an empty string - a source, and no content - so the reporter built
+  for exactly this defect had never once seen it.
+
+### The check
+
+For every guard, write the sentence: *"this refuses X."* Then find X in the caller and follow it forward. If
+it returns, throws, or `continue`s before reaching the guard, the guard is not installed - it is adjacent to
+the problem.
+
+The strongest form does not need the trace at all: make the defective state unrepresentable rather than
+refused (see poka-yoke, and `ACP-002`). Where a runtime guard is genuinely required, its reachability from
+its own defect is part of the guard, not a detail of where it happens to sit.
