@@ -162,6 +162,38 @@ public class GeminiContextService {
     }
 
     /** @param tailChars if positive, only the last this-many characters of the file are indexed. */
+    /**
+     * Whether this source's stored vectors were produced by the model that is answering now.
+     *
+     * 2026-08-23. The skip above is content-addressed - a cost fix from 2026-07-26, correct while every
+     * vector was billed. It cannot see that the EMBEDDING MODEL changed rather than the text, and vectors
+     * from two models are not comparable: cosine similarity across dimensions returns 0.0, which reads as
+     * "not similar" rather than "cannot be compared". Measured on the first switch: of the whole corpus
+     * only the two files that happened to be edited that day were reindexed, and the other 1523 chunks
+     * stayed invisible while every log line said the reindex had run.
+     *
+     * Cheap by construction: one probe embedding for the whole pass, and one chunk read per source.
+     */
+    private boolean storedAtCurrentDimension(String sourceRef) {
+        float[] probe = currentDimensionProbe();
+        if (probe == null) {
+            return true;   // Unknown, so do not force work on a guess; the dimension filter still protects retrieval.
+        }
+        return repository.findBySourceRef(sourceRef).stream()
+                .findFirst()
+                .map(chunk -> parseEmbedding(chunk.getEmbedding()).length == probe.length)
+                .orElse(false);
+    }
+
+    private float[] probeCache;
+
+    private float[] currentDimensionProbe() {
+        if (probeCache == null) {
+            probeCache = mlPredictionServiceClient.embed("dimension probe");
+        }
+        return probeCache;
+    }
+
     private void indexFileIfPresent(Path file, String sourceType, int tailChars) {
         if (!Files.isRegularFile(file)) {
             return;
@@ -189,7 +221,8 @@ public class GeminiContextService {
             return;
         }
         String contentHash = sha256Hex(content);
-        if (repository.existsBySourceRefAndContentHash(sourceRef, contentHash)) {
+        if (repository.existsBySourceRefAndContentHash(sourceRef, contentHash)
+                && storedAtCurrentDimension(sourceRef)) {
             log.debug("GeminiContextService: {} unchanged since last index, skipping re-embed", sourceRef);
             return;
         }
