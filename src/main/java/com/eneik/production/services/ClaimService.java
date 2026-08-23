@@ -40,17 +40,20 @@ public class ClaimService {
     private final AccountRepository accountRepository;
     private final JulesSessionRepository julesSessionRepository;
     private final GateOrchestrator gateOrchestrator;
+    private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
 
     public ClaimService(ClaimRepository claimRepository,
                             TaskRepository taskRepository,
                             AccountRepository accountRepository,
                             JulesSessionRepository julesSessionRepository,
-                            GateOrchestrator gateOrchestrator) {
+                            GateOrchestrator gateOrchestrator,
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.gateOrchestrator = gateOrchestrator;
+        this.readinessService = readinessService;
     }
 
     /**
@@ -193,6 +196,23 @@ public class ClaimService {
         TaskEntity task = claim.getTask();
         // If it was already in review (AI Reviewer finished), then mark as done
         if (task.getStatus() == TaskStatus.review) {
+            // 2026-08-23 (poka-yoke, not inspection). This is the only transition into done, and it is
+            // reached from the GitHub merge webhook - so at this point the merge either happened or it did
+            // not, and asking costs nothing. A role that must deliver code and has no merge on main has
+            // not delivered, and recording done for it would make the row itself the only evidence that
+            // the work exists. Measured: `Runtime Contract 9b58412d` held the client's own epic at 6 of 7
+            // for fourteen hours in exactly that state.
+            //
+            // Scoped by role, deliberately: EmsFlowStage.requiresCodeForDelivery says which roles owe code,
+            // and spec roles deliver documents. Refusing them would deadlock them for ever, which is the
+            // repair that damages. The task stays in review and the flow's own recovery paths keep working
+            // on it, rather than being closed on a status nothing backs.
+            if (readinessService.requiresCodeForDelivery(task) && !readinessService.hasRequiredMergeEvidence(task)) {
+                log.warn("Task {} ({}) was not marked done: its role must deliver code and nothing reached "
+                        + "main for it. Left in review - done would be the only evidence the work exists.",
+                        task.getId(), task.getRole() != null ? task.getRole().getTag() : "?");
+                return;
+            }
             claim.setReleasedAt(Instant.now());
             claim.setResultStatus(ClaimResultStatus.done);
             claimRepository.save(claim);

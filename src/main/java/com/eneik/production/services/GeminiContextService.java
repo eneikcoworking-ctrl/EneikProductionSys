@@ -379,6 +379,19 @@ public class GeminiContextService {
     // Common corpus/type constants shared by buildRoleAndPatternContext below and reindexStandingKnowledge
     // above - kept as a single list here so a future third common-knowledge file only needs to be added in
     // one place.
+    /**
+     * The corpus that holds this system's METHOD, as opposed to the material any one project happens to be
+     * about. Anything reasoning about how this factory should work draws from here and from nowhere else.
+     */
+    private static final List<String> METHOD_SOURCE_TYPES = List.of(
+            "philosopher_pattern", "philosopher_pattern_common", "role_charter", "engineering_charter",
+            "operational_failure_patterns", "ai_review_guidelines", "claude_operator_notes",
+            // The observer log is this factory's own record of itself, standing knowledge alongside the
+            // charters - not the material of any one project. Omitting it was an error in this list,
+            // caught by a test that had been asserting its retrievability all along.
+            "observer_log",
+            "parallel_development_conflict_prevention");
+
     private static final List<String> ROLE_INDEPENDENT_PATTERN_SOURCE_TYPES =
             List.of("philosopher_pattern_common", "parallel_development_conflict_prevention");
     private static final int RAW_FALLBACK_MAX_CHARS = 8000;
@@ -530,8 +543,20 @@ public class GeminiContextService {
     }
 
     /** Convenience wrapper: retrieves with the default top-k and formats a ready-to-inject prompt block. */
+    /**
+     * 2026-08-23. This retrieved across the ENTIRE index, so the method this factory judges by competed for
+     * ranking slots with client briefs and requirement text - including those of finished test projects,
+     * which outnumber the method roughly ten to one. The three contexts of section 3 are FACTORY, DELIVERY
+     * and PRODUCT, and they are not merged; storing them in one table and ranking them with one cosine
+     * merges them at retrieval, which is the same error one layer down. A chunk of an old brief outranking
+     * a Frege pattern is not a relevance failure, it is a category error.
+     *
+     * The role-scoped and common-pattern builders were already restricted by source type. This one, used by
+     * the operations auditor, was not - so the only reasoner without a scope was the one ruling on the
+     * factory itself.
+     */
     public String buildContextBlock(String query) {
-        List<RetrievedChunk> retrieved = retrieveRelevantContext(query, DEFAULT_TOP_K);
+        List<RetrievedChunk> retrieved = retrieveRelevantContextBySourceTypes(query, DEFAULT_TOP_K, METHOD_SOURCE_TYPES);
         if (retrieved.isEmpty()) {
             return "";
         }

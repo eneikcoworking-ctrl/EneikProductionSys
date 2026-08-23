@@ -260,7 +260,10 @@ class GeminiContextServiceTest {
 
     private static ContextChunkEntity chunk(String content, String sourceRef, float[] embedding) {
         ContextChunkEntity entity = new ContextChunkEntity();
-        entity.setSourceType("test");
+        // 2026-08-23: was "test", which buildContextBlock now filters out - it draws only from the METHOD
+        // corpus so client briefs cannot outrank a charter in the same ranking. The fixture stands for the
+        // observer log it names, so it carries that type.
+        entity.setSourceType("observer_log");
         entity.setSourceRef(sourceRef);
         entity.setChunkIndex(0);
         entity.setContent(content);

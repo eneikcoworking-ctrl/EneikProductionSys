@@ -37,8 +37,11 @@ class ClaimServiceRaceGuardTest {
     private final AccountRepository accountRepository = mock(AccountRepository.class);
     private final JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
     private final GateOrchestrator gateOrchestrator = mock(GateOrchestrator.class);
+    private final com.eneik.production.services.ClientDeliverableReadinessService readinessService =
+            mock(com.eneik.production.services.ClientDeliverableReadinessService.class);
     private final ClaimService claimService = new ClaimService(
-            claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator);
+            claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator,
+            readinessService);
 
     private TaskEntity nonTerminalTask(UUID id) {
         TaskEntity task = new TaskEntity();

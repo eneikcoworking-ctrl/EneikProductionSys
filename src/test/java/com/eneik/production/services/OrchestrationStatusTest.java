@@ -58,6 +58,9 @@ public class OrchestrationStatusTest {
     private JulesSessionRepository julesSessionRepository;
 
     @Autowired
+    private com.eneik.production.repositories.PrReviewRepository prReviewRepository;
+
+    @Autowired
     private com.eneik.production.repositories.RoleRepository roleRepository;
 
     @Autowired
@@ -146,13 +149,38 @@ public class OrchestrationStatusTest {
 
         assertThat(accountRepository.findById(revId).orElseThrow().getStatus()).isEqualTo(AccountStatus.busy);
 
-        // 8. Complete reviewer claim
+        // 8. Complete reviewer claim.
+        //
+        // 2026-08-23: pinned from both sides, because ClaimService now refuses to record done for a role
+        // that owes code when nothing reached main - the row would otherwise be the only evidence the work
+        // exists. BARCAN-TAG-00 owes code, so with no merge the task must stay in review.
         claimService.complete(taskId);
-
-
-
         task = taskRepository.findById(taskId).orElseThrow();
-        assertThat(task.getStatus()).isEqualTo(TaskStatus.done);
+        assertThat(task.getStatus())
+                .as("a code-owing role with no merge on main must not be recorded as done")
+                .isEqualTo(TaskStatus.review);
+
+        // And the other side: once the merge exists, the same call completes the task.
+        var session = new com.eneik.production.models.persistence.JulesSessionEntity();
+        session.setTaskId(taskId);
+        session.setPrUrl("https://github.com/acme/app/pull/1");
+        session.setStatus("pr_opened");
+        session = julesSessionRepository.save(session);
+        var review = new com.eneik.production.models.persistence.PrReviewEntity();
+        review.setJulesSessionId(session.getId());
+        review.setPrUrl("https://github.com/acme/app/pull/1");
+        review.setMerged(true);
+        review.setHasCode(true);
+        review.setBaseRef("main");
+        review.setCiStatus("success");
+        review.setRiskLevel("LOW");
+        prReviewRepository.save(review);
+
+        claimService.complete(taskId);
+        task = taskRepository.findById(taskId).orElseThrow();
+        assertThat(task.getStatus())
+                .as("with a merged pull request on main, the same transition completes")
+                .isEqualTo(TaskStatus.done);
 
         // Some asynchronous operations might take time to release the claim. Just wait a tiny bit or force it if it's meant to be idle.
         // Actually, if it's 'busy' in the DB, Awaitility will help.
