@@ -611,196 +611,66 @@ behind a new checkable assertion.** The set of expectations grows, and the agent
 because it got smarter but because the factory says more about itself.
 
 ---
+## 20. Where the current state is read from
 
-## 20. State, measured 2026-08-21
+Not stored here. Every snapshot written into this plan was stale within a day and then argued from as if it
+were not - twice. The live numbers come from `/api/projects/{id}/dashboard`, the backend log, and
+`docker ps`, and they are read at the moment of the question.
 
-The goal is §1.1 and is not restated here.
+What is recorded here instead is what measurement established and what remains owed.
 
-**`V_p` = 0.** 57 launch attempts, 10 real observations, no row in `client_runtime_observations` with a
-non-null `health_status_code`. Against that: 157 tasks `done`, 144 reviews merged, 62 quality gates passed.
+---
 
-**Why every gate was green while `V_p` stayed 0.** The product's test suite runs on `jdbc:h2:mem:testdb`;
-`docker-compose.yml` ships `postgres:15-alpine`. Verification therefore happens in a configuration that is
-never delivered, so for this class of defect the suite's evidential strength is 0 - it cannot fail on it.
+## 21. Why the product did not serve - corrected 2026-08-23
 
-**Incompatibilities of that class found by launching, one per launch:** `CREATE ALIAS` (H2-only, removed
-by the factory), then `file_data` twice - `bytea` against an entity expecting `oid`. A launch stops at the
-first mismatch, so the number remaining is not known after any of them.
+The first diagnosis, carried at position one from 2026-08-19, was a datastore disagreement: compose said
+PostgreSQL, application config said H2. That was real, and it was not the reason.
 
-By §2 all of the above is an **operability** fact. It says nothing about scope delivery or fitness, and it
-must not gate them.
+**The reason, measured:** `docker-compose.yml` of `test-fiftieth` declares two services, `db` and `backup`,
+both `postgres:15-alpine`. There is no application service in it at all. The `backend` appears once, in
+`docker-compose.override.yml`, as a bare `eclipse-temurin:21-jre-alpine` with no build, no jar and no
+command. And the launcher ran `docker compose -f docker-compose.yml`, which suppresses Docker's automatic
+loading of the override - so the only service that could serve HTTP was never started, on any run, for the
+life of the project. `_remap_ports` then took the first published port it found, which was PostgreSQL's, and
+the factory sent an HTTP health check to the database.
 
-## 21. O-1 - the reason the product does not serve
-
-Recorded since 2026-08-19 as the first open defect, and re-derived from scratch on 2026-08-21 without
-anyone having acted on it in between. **The plan already had the answer at position one.**
-
-**Precise cause, captured from the app container's own log on 2026-08-21 at 16:53:53.882Z:**
-
-```
-ERROR: syntax error at or near "ALIAS" at character 8
-STATEMENT: CREATE ALIAS IF NOT EXISTS gen_random_uuid FOR "java.util.UUID.randomUUID"
-Location: db/migration/V20260816054204525__create_categories_and_tags_schema.sql
-```
-
-`CREATE ALIAS` exists only in H2. The compose stack runs `postgres:15-alpine`, where `gen_random_uuid()` is
-built in and needs no shim. Flyway fails on the first statement of the first migration, the Spring context
-never initialises, the container dies, nothing answers the health port, the observer records
-`healthStatus=null`, files `product_not_launchable`, and the cycle repeats identically.
-
-**Correction to the older O-1 text:** it said "the build has no PostgreSQL driver". Measured 2026-08-21 -
-`pom.xml` declares `org.postgresql:postgresql`. The driver is present; the killer is the H2-only statement
-above.
-
-**Why 144 merged reviews did not catch one line.** The product's `src/test/resources/application.properties`
-does not override the datasource, so the whole suite inherits
-`spring.datasource.url=jdbc:h2:mem:testdb` from the main config. There is no Testcontainers dependency.
-**Every test, review and quality gate validated a configuration that is not the delivered one.** The reviews
-were not sloppy; they were pointed at the wrong thing.
-
-### Measured 2026-08-21 17:40 - the factory was given the cause and shipped a placebo
-
-The constraint carrying the exact SQL error reached the compiler, became tasks, and produced this, merged
-as PR #158 under the title *"Fix backend application startup failure and Flyway migration compatibility"*:
-
-```diff
--CREATE ALIAS gen_random_uuid FOR "java.util.UUID.randomUUID";
-+CREATE ALIAS IF NOT EXISTS gen_random_uuid FOR "java.util.UUID.randomUUID";
-```
-
-`IF NOT EXISTS` was added to a statement PostgreSQL does not have. The failure is a *syntax* error at
-`ALIAS`, character 8 - the parser never reaches the clause that was modified. The line is exactly as broken
-as before.
-
-The same PR added a migration:
-
-```sql
--- Ensure database compatibility for backend startup and health checks
-SELECT 1;
-```
-
-and a test:
-
-```java
-@Test
-public void testContextLoads() {
-    assertNotNull(restTemplate);
-}
-```
-
-plus `assertEquals("UP", response.getBody().get("database"))` - a real assertion, pointed at H2.
-
-It passed. It merged. The task went `done`. The quality gates passed. The product still dies at character 8.
-
-**This is the whole mechanism behind "148 tasks done, 144 reviews merged, product never answered."** Not
-carelessness: a closed loop in which the evidence of success is manufactured against a different database
-than the one shipped. Every step behaved correctly given what it was allowed to see.
-
-Nothing in this sequence survives §2. That is the argument for the rule, and it is not theoretical.
-
-**Cycle 1 of 3 is spent.** The later attempt, `Fix backend server port binding for docker container health
-check` (17:25), is aimed at a symptom the app never reaches - it dies at Flyway long before any port is
-bound. Alongside it the factory shipped a frontend pagination feature and three bookkeeping commits.
+Fixed in the launcher 2026-08-23: the topology is resolved by Compose itself before ports are renumbered,
+and the probed port is chosen by what it serves.
 
 ---
 
 ## 22. Open defects
 
-Ranked by whether they block §2. Full evidence for each is in the archive.
-
-### Blocking §1.1 - the product answering for itself
-
-Rows are the archive's, unabridged: the measurement and the level are not decoration. §11.5 - a
-claim with no written expectation cannot be refuted; a defect with no measurement is such a claim.
-§7 - a constraint carries its level or it silences the wrong work.
-
-| # | Defect | Measured | Level |
+| # | Defect | Level | State |
 | --- | --- | --- | --- |
-| O-1 | product does not serve: compose says PostgreSQL, config says H2, build has no PostgreSQL driver | `health_status_code` null in all 56 observations, 8 successful launches included | product |
-| O-10 | the instrument has no denominator - nothing counts launcher availability, so 46 consecutive failures produced zero findings | 46 rows written, posterior unchanged, dashboard clean | factory |
-| O-13 | the host cannot hold the factory and a full `mvn test` at once, so verification and operation are serialised | 4 containers ~2.3 GB + a 2 GB test JVM against 3.9 GB total; measured 583 MB free before the run was killed | factory |
-| O-6 | store far larger than its contents, and it now costs the factory its responsiveness | 2231 MiB file, ~88 MB live; grew 311 MiB in one day, and O-9 is a named contributor. **Re-measured 2026-08-21 14:20Z: 2517 MiB**, on the Windows filesystem via WSL. Consequences measured the same minute, not inferred: startup 354 s (was 53 s that morning), `/actuator/health` 6 s, one `/api/settings` read 10.3 s, host load average 15.9 while the containers together used ~50% CPU - the rest is I/O wait. `data/` held 6.6 GB in total. **Cleared 2026-08-21 on the operator's instruction**: all four DB snapshots deleted (~4 GB) and the H2 trace log; 4.5 GB of Docker build cache pruned. Host free space 8.7 GB -> 14 GB. The live store is still 2517 MiB and there is now **no rollback snapshot at all**, so compacting it is a strictly riskier operation than it was this morning: it needs a fresh copy taken first, the compaction verified, and only then the copy removed | factory |
-
-**O-1 is expanded in §21** with the exact failing statement, which the row above predates.
-
-**O-6, re-measured 2026-08-21:** 2517 MiB against ~88 MB live, on the Windows filesystem via WSL -
-one `/api/settings` read 10.3 s, startup 354 s. Cleared on the operator's instruction: four DB
-snapshots and the trace log deleted, 4.5 GB of Docker build cache pruned, host free space 8.7 GB ->
-14 GB. **No rollback snapshot now exists**, so compacting the live store requires a fresh copy
-first, the compaction verified, and only then the copy removed.
-
-**O-10, second face measured 2026-08-21:** the assembly report stated `<no output on this
-container's stdout/stderr>` for a container that had written 49 lines including a fatal stack
-trace. The cause reached the constraint only because PostgreSQL logged the same error itself. Why
-the log read came back empty is **not established** - the code path reads both streams and names
-the right container. It needs one measurement beside a live observation, not a hypothesis.
-
-### Not blocking §1.1
-
-| # | Defect | Measured | Level |
-| --- | --- | --- | --- |
-| O-3 | Kaizen has no write-side identity | 347 rows carrying **10** distinct `(category, target_component)` pairs | factory |
-| O-4 | dead Jules sessions polled forever | 52 `404`/hour; 3 of 4 `pr_opened` sessions answer 404 to their own account key | factory |
-| O-5 | `GET /api/projects/{id}/tree` never answers | 90 s, `http=000` | factory |
-| O-7 | a design asset fetched and missed forever | 14/hour, `design/approved/20260818165327-mockup/mockup.html` absent on main | delivery |
-| O-8 | `requiresCodeForDelivery` answers a code question about a delivery concept | 5 phantom deliveries measured; no bearer for the content case yet | delivery |
-| O-9 | the cadence clock counts measurements but limits attempts, so it stops limiting exactly when the instrument fails | 1/hour -> 28/hour at 11:40 when the launcher went unreachable; 45 calls into nothing | factory |
-| O-11 | the posterior counts observations, but the object it is a belief about only changes on merge | 7 identical readings of one unchanged artifact between 05h and 11h, each updating Beta | factory |
-| O-12 | three tests are red on `main`, unrelated to this session | `ProjectFlowServiceTest` x2, `DesignSystemFalsificationServiceTest` x1; reproduced with today's changes reverted | factory |
-| O-14 | the embedding path still routes to Gemini, whose quota is gone, and the D3 duplicate-content lever therefore fails **silent and open** - it reports nothing found, which is indistinguishable from having found nothing | `ML service embed call failed: 502 Bad Gateway: "Gemini embedding call failed: HTTP Error 429: Too Many Requests"`, 3 per orchestration tick, 2026-08-21 12:17Z. The LIVE duplicate detector is unaffected - it is `duplicateContent()`, exact-key based, no embeddings - so this is not a flow stoppage; what is dead is the lever's evidence supply, so D3 can never accumulate the samples its own promotion ladder requires and stays at `observe_only` forever | factory |
-
-### Fixed 2026-08-21
-
-| id | defect | commit |
-| --- | --- | --- |
-| O-15 | the decomposition budget sat on one of two admission paths, so a brief was re-dispatched every ~17 min, merging a PR into the client repository each time | `e6cb928` |
-| O-16 | a compiler task could go terminal before its own completion handler ran | `e6cb928` |
-| O-17 | the forced-unblock budget - the only thing that closes a stale session - was restored by the verdict our own unblock message provoked; one session held the WIP slot 373 min against a 90 min SLA | `fc4ce0c` |
-
-All three are the same shape: **a rule introduced with one consumer enumerated instead of all of them.**
-Live proof that they changed outcomes is not yet in hand; the predictions are written so observation can
-refute them.
+| O-13 | the host cannot hold the factory and a full `mvn test` at once | factory | mitigated, not fixed: WSL capped at 3500 MB with six containers inside it; the tests still need the containers stopped |
+| D-4 | `runQualityGate` is called from one of the five writers of `TaskStatus.done`, and covers five of thirteen roles | delivery | open, untouched by design - changing it moves every role at once |
+| F-16 | `KaizenService.evaluateAndStandardize` passes the caller's id to `deleteMatching` as the row to KEEP, and after deduplication that id is not always the persisted one | factory | latent, not live; the edit deletes rows, so which row survives must be measured before it is changed |
+| F-17 | `runtime-launcher-workspace` keeps clones of finished projects; nothing removes them | factory | open, harmless |
+| F-18 | factory-internal tasks carry criteria about report files, so a diff is the wrong instrument for judging them | delivery | open; closes with D-1 or not at all |
+| P-1 | the frontend of `test-fiftieth` has no bundler, so 55 generated design artefacts and the Svelte components written against them cannot reach the runtime | product | open, owed as scope - found by the parallel session 2026-08-26 |
 
 ---
 
-## 23. Shipped this session, with verification
+## 23. Shipped
 
-| item | verification |
-| --- | --- |
-| L-1 route `chatCritical` to the judgment sidecar | confirmed live |
-| L-2 bound the deferral when the classifier is unavailable | 899 tests; in `e6cb928`; bytes verified in the jar |
-| L-3 retire the stuck task | confirmed live |
-| L-5 verify V109's collapse | confirmed live |
-| L-6 the subordination lever decides from `soft_gate`, restrictive-only | in `e6cb928`; running at `shadow` |
-| L-7 commit the session's work | `e6cb928`, `fc4ce0c`, both pushed |
-| L-8 a constraint is cleared by a fresh healthy observation | confirmed live |
-| L-9 the observer files `product_not_launchable` itself | fired live; the constraint carried the exact SQL error |
-| **L-4 the constraint reaches a running product** | **OPEN - this is §1** |
-
-Verification means bytes in the built jar, not a build's exit code. That rule exists because "deployed" was
-claimed twice for a jar that did not contain the change (§24).
+In git history with its verification in each commit message, from `19abf10` to `92f4c2f`. Not restated here.
 
 ---
 
 ## 24. Corrections - claims that measurement refuted
 
-Kept in full because the pattern is the point: every one is a claim made from reading a name, a flag or a
-memory instead of the thing itself.
+Kept because each one is a claim this plan asserted and measurement then killed. The list is the record of
+how this system is wrong, which is the only thing that makes it teachable.
 
-| I claimed | Measurement showed | The error |
-| --- | --- | --- |
-| "Nobody launches; the constraint is never acted on" | `ClientRuntimeObservabilityService` calls the launcher | read a service's role from its name |
-| "The main falsification engine is off" | it is the philosophical track, and it is on | inferred a component's role from a flag's name |
-| "`stitch_api_key` is null" | `****9SCw` - I had read `enabled` | absence in the wrong field read as absence in data |
-| "Deployed" ×2 | the jar did not contain the change | read a build's exit code as proof the image changed |
-| "Zero observations" | `docker logs` had returned one line - its own bridge error | read a broken instrument's silence as a fact |
-| Announced a restart I never performed | backend was down 47 minutes | reported my own action without verifying it |
-| "O-16: `completeWishlistCompilation` is unreachable; `pr_opened` appears zero times" | `reconcileStrandedPrOpenedWorkflows` runs every 60 s and did the conversion | absence of an event in one log window read as proof of impossibility |
-| "The O-17 fix is verified" (twice) | first the test never reached the branch; then `@Value` fields are not injected in a unit test, so the ceiling was silently 0 and both cases took the same path | a green test read as evidence without checking it could ever have been red |
-| Compressed the plan 1184 -> 173 lines, archiving §1, §2, §3, §7, §8, §9, §10 as "derivations" | within the hour I proposed a rule §2 forbids and §10 had already answered, and re-derived §10 from scratch | treated the rules the work is judged by as background material |
-| "A task may not reach `done` until the product answers" | it merges operability into scope delivery, and deadlocks any project from zero - the rule forbids its own precondition | proposed a gate without asking what it does on day one of an empty repository (§9.5) |
-| "The scaffold is innocent; H2 came from a Jules slice" (implicit in §10.1) | the factory's own deterministic scaffold writes the H2 datasource and an H2-only manifest into every new project before any task runs | read a dated narrative as current behaviour without re-reading the code |
-| "The app container logged nothing, the report was too early" | the app wrote 49 lines starting at second one; the report ran after them | a plausible mechanism asserted before measuring it |
+| claim | what refuted it |
+| --- | --- |
+| a completion handler was unreachable, because `pr_opened` appeared zero times in one log window | a 60-second replay job did the work; absence in a bounded window is not impossibility |
+| gating `done` on the product answering | merges two of §2's axes and deadlocks any project from zero - the rule forbids its own precondition |
+| the scaffold pre-empted the runtime declaration on `test-forty-ninth` | the scaffold returns at its first line for non-greenfield projects and had never run |
+| retrieval was "already paid for and local" (§11.2) | it embeds the QUERY on every call; with the quota exhausted every retrieval returned an empty list, and the corpus reached no prompt for three days |
+| the three falsification flags were blank, so the method was off | `value` is null for every boolean flag by design - it is masked, and the answer is in `enabled`. Two were true, one was a stored `false` |
+| observation must wait for `DELIVERED`, because assembly-phase samples bias `V_p` downward | §25 forbids it in as many words: **no launch may wait on a completeness metric**. The measurement was right and the conclusion was wrong - see §29 |
 
 ---
 
@@ -823,316 +693,72 @@ memory instead of the thing itself.
 
 Move the factory to a server. Details in the archive.
 
-## 27. Delivery is judged against the task's own criterion - built 2026-08-23
+---
 
-### 27.1 The measurement
+## 27. Delivery is judged against the task's own criterion
 
-`test-fiftieth`, 26 tasks, 13 merged pull requests, and
-`applicableChecksByStage.IMPLEMENTATION_RESULT = 0` on all 26. Nothing had asked a single closed task
-whether it did what it promised.
+Built 2026-08-23, running. A closed task is read against the acceptance criteria it carries and the diff
+merged for it, plus the repository's file listing on main - because a diff cannot show what is absent. The
+verdict is `SATISFIED`, `REFUTED`, `UNDECIDABLE` or `NOT_JUDGED_NO_DIFF`, the last recorded as a fact and
+never as a pass. A refutation is filed as scope carrying the criterion, the pull request and the judgment's
+own words.
 
-The gates were not weak. They were unreachable, for two reasons measured directly in the source:
+It rules at the DELIVERY level and does not reuse `JudgmentAgentClient.judge()`, whose system prompt rules
+on the FACTORY and says delivery is not its subject. It blocks no transition: refusing on ignorance turns a
+safety net into a new way to strand tasks.
 
-- `gateOrchestrator.runQualityGate` is called from **one** of the **five** places that write
-  `TaskStatus.done` - `ClaimService:200`. The other four (`AutoMergeService:1818` and `:2332`,
-  `PlannedWorkRecoveryService:324`, `ProjectFlowService:761`) write it directly.
-- `VerificationEvidenceGate.supports()` admits one role, and only **5 of the 13** roles have any gate.
+**Why it exists.** Measured on `test-fiftieth`: 26 tasks, 13 merged pull requests, and
+`applicableChecksByStage.IMPLEMENTATION_RESULT = 0` on all 26. The gates were not weak, they were
+unreachable - D-4 above.
 
-Adding gates for the remaining eight would have been eight more inspections of finished output, which is
-the practice poka-yoke replaces rather than an instance of it (§9.5).
+---
 
-### 27.2 The instrument that already existed
+## 28. Findings that outlived their repairs
 
-A task's own acceptance criteria are a better instrument than any per-role gate: they state what **this
-client asked for**, not what a role generally owes, and every compiled task already carried them in
-`payload.acceptance_criteria`, written by `TechnicalLeadCompiler` and enforced by
-`validateDefinitionOfReady` step 7, which refuses a wishlist that states none.
+The repairs themselves are in git. These are the three that are checks to run, not fixes to remember.
 
-They were never read back. The only readers were the compiler building the agent's prompt, and the
-dashboard displaying it. The criterion was uttered as a directive and never as a claim that could be false.
+**A detector with a reader and no actor is the same defect as one with no reader.** `done_not_reached_main`
+was detected from 2026-07-25, turned into evidence 2026-08-17, and became work only on 2026-08-23. The check
+before any detector is called finished: name the `wishlist` row it produces. An evidence node, a log line, a
+dashboard field or a metric is not that row.
 
-### 27.3 Two substitutions at the source
+**A guard must be reachable from its own defect** (ACP-108). Three instances in one day, each found only by
+watching the repair fail. State the input the guard refuses, then trace it forward from the caller.
 
-**Thirteen of the fourteen places that construct a `TaskEntity` set no criterion at all.** Only the
-compiler did. Every internal task - compiler workers, falsification audits, coverage audits, PR review
-fallbacks, design review, design implementation, triage, recovery, market research - was work whose
-doneness had no statement, and therefore could not be judged by anything downstream.
+**Scope filed without an epic is work that moves nothing.** A feature closes when ITS tasks close. Inherited
+from the task the finding is about, never invented; a finding with no natural parent keeps none, and says so.
 
-**Every criterion written in the client's language was replaced before dispatch.**
-`buildTaskDescription` passed the criterion through `englishMetadata`, which returns
-`fallbackAcceptanceCriteria` whenever `containsNonEnglishSignal` fires. On a project whose client writes in
-Russian, that is every criterion the client stated. What reached the agent instead were three statements
-about process - the diff is small, the scope is clean, a blocker is recorded - and not one of them can be
-false of a product that does nothing the client asked for. ACP-104: a default is a decision.
+---
 
-### 27.4 What was built
+## 29. Two sessions, one system - 2026-08-27
 
-**At the source.** `TaskEntity.getAcceptanceCriteria` / `setAcceptanceCriteria` make a task's falsifier
-reachable and refuse a blank one, with `payload.acceptance_criteria` kept as the single home rather than a
-second column that can disagree with it. All fourteen construction sites now state what would refute the
-task they build - the compiler through the same accessor, so the fact has exactly one writer.
+A parallel session worked this factory from 25 to 27 August and its record is
+`docs/E3_EPISTEMIC_ENGINE_PLAN.md`, `docs/architecture/SYSTEM_ARCHITECTURE.md` and
+`FLOW_FAILURES_JOURNAL.md`. What it established, and where the two lines of work meet:
 
-**The device.** `TaskAcceptanceCriteriaGuardTest` fails the build when any `new TaskEntity()` reaches its
-save without stating a criterion. Build time, not runtime: a running factory must not be stopped by a
-check, and a defect that cannot be built costs less than one that has to be noticed. On its first run it
-refused `TechnicalLeadCompiler:282` - the compiler was writing the key straight into the JSON node, a
-second writer of the one fact - which is the first thing it was built to catch.
+**Stratification.** `ℋ = ℋ_Product ∪̇ ℋ_Factory ∪̇ ℋ_Doctrine`, Russell types under a Tarski hierarchy. A
+product worker retrieves from `ℋ_Product ∪ ℋ_Doctrine` only, so factory meta-language has measure zero in
+its prompts. Diagnosed from PR blockers #298, #300 and #302, where Jules refused to merge on
+`Φ_task ∧ ℐ_onto ⊢ ⊥` - a task naming `AutoMergeService` inside the client repository is unsatisfiable.
 
-**The substitution removed.** `acceptanceCriteriaFor` keeps the stated criterion verbatim and appends the
-process statements instead of swapping them in.
+This composes with the source-type restriction made here on 2026-08-23 rather than colliding with it. The
+three lists nest strictly: `ROLE_INDEPENDENT (2) ⊂ PRODUCT_WORKER (5) ⊂ METHOD (9)`, and the difference
+between the outer two is exactly the four meta-language types. The factory's own auditor reads the
+meta-language; a product worker does not.
 
-**The judgment.** `DeliveredWorkJudgmentService` reads each done task's own criteria against the diff
-merged for it and records `SATISFIED`, `REFUTED`, `UNDECIDABLE` or `NOT_JUDGED_NO_DIFF` - the last recorded
-as a fact, never as a pass. A refutation is filed as scope (`WishlistSource.delivery_refuted`) carrying the
-criterion, the pull request and the judgment's own words, so the worker does not rediscover what the system
-already knows.
+**The observation gate, reversed.** `OBSERVE_CLIENT_RUNTIME` no longer requires `DELIVERED`. §25 forbids
+gating a launch on a completeness metric, and that rule predates the gate that broke it.
 
-It rules at the **DELIVERY** level and could not reuse `JudgmentAgentClient.judge()`, whose system prompt
-rules on the FACTORY and says in as many words that delivery is not its subject. Reusing it would have
-merged two of the three contexts §3 keeps apart, so it uses `judgeAsText` with its own instruction and its
-own reply contract.
+The measurement behind the gate still stands, and it is not an argument for the gate: `V_p` fell
+0.2 → 0.167 → 0.143 across three assembly-phase samples, and that posterior drives
+`LaunchabilityConstraintService`, so a phase error manufactures scope. The defect is not the observing, it
+is pooling two populations into one estimator. Assembly-phase and delivered-phase observations are not
+samples of the same quantity, and Invariant 8 applies: state the denominator. **Owed: `V_p` stratified by
+phase, observation left continuous.**
 
-**It blocks nothing.** No transition is refused. Refusing on ignorance turns a safety net into a new way to
-strand tasks - the reasoning already written into `AutoMergeService` on 2026-08-18 - and eight of thirteen
-roles would be refused on ignorance from the first tick. Work already accepted is corrected the way the
-operator directed: through falsification, not by reopening what is closed.
+**Environment, as the parallel session left it.** `judgment-proxy:8093` replaces the sidecar after the
+weekly Claude limit was exhausted. `judgment-sidecar` and `frontend` deliberately down. Four core containers
+plus two client containers inside a 3500 MB WSL cap. Host disk recovered to 41 GB. `nano_banana_enabled` and
+`gemini_project_observer_enabled` set false.
 
-### 27.5 What this does not do
-
-It does not make a defect unable to pass. It makes work whose doneness has no statement unable to be
-**built**, and work whose statement is refuted unable to pass **silently**. The remaining step - refusing
-the transition itself - becomes available one role at a time, as each role's criteria prove testable in
-practice, and is not taken here.
-
-## 28. Fixed repair plan - 2026-08-23, by level, deterministic
-
-Not a menu. Each item names one edit, one place, and one falsifier. No item offers an alternative: where a
-choice existed it has been made here and is not reopened during execution.
-
-The three levels are §3's three contexts and are never merged. **Nothing at the PRODUCT level is edited by
-this plan** - product content reaches the repository only through wishlist to task to Jules, so product
-defects appear here as scope the factory owes, never as an edit.
-
-### 28.1 PRODUCT - owed as scope, not edited
-
-- **P1.** `docker-compose.yml` declares only `db` and `backup`. No application service exists. The `backend`
-  appears once, in `docker-compose.override.yml`, as `image: eclipse-temurin:21-jre-alpine` with no `build`,
-  no jar and no command. This is the whole of why `health_status_code` is null.
-- **P2.** The documents migration mixes `AUTO_INCREMENT` (MySQL/H2) with `TIMESTAMP WITH TIME ZONE`
-  (PostgreSQL). Found by the delivery judge on PR #20.
-
-Both are carried by `delivery_refuted` findings; nine such findings had become tasks by 03:20.
-
-### 28.2 DELIVERY
-
-- **D1 (batch 2).** The judge reads a diff, so a criterion whose subject is the repository is undecidable to
-  it. Formally: it rules correctly only when C is a subset of D, C the artefacts the criterion speaks of and
-  D the artefacts of the diff. For "all services start" C is the repository and D is one pull request; the
-  verdict was right by luck and incomplete in fact - it named the override and could not see that the base
-  compose declares no application at all. Edit: pass repository state via the existing `listFilePaths`, plus
-  the content of files the criterion names; `UNDECIDABLE` becomes the honest answer where C is not within D.
-- **D2 (batch 1).** The judge's denominator is "closed tasks carrying a criterion", not "closed tasks".
-  Measured 15 of 21. Edit: log and report both numbers; their difference is a debt, not a zero.
-- **D3 (batch 1).** Tasks compiled before 2026-08-23 carry the fabricated process criteria. Edit: a
-  criterion textually equal to `fallbackAcceptanceCriteria` yields `UNDECIDABLE` with the reason that no
-  product claim is present, and is filed as scope.
-- **D4 (debt, not scheduled).** `runQualityGate` stands on one of the five writers of `TaskStatus.done` and
-  covers five of thirteen roles. Untouched here.
-
-### 28.3 FACTORY - batch 1, one restart
-
-- **F1.** `OBSERVE_CLIENT_RUNTIME` moves to its own arm of `OperationalPolicyService.authorize`, requiring
-  `"DELIVERED".equals(snapshot.currentState())`. Observing operability during assembly merges two of §2's
-  axes and biases V_p downward monotonically - measured 0.2, 0.167, 0.143 over three assembly-phase
-  observations - and that bias drives `product_not_launchable`, so a phase error manufactures work.
-  Falsifier: below `DELIVERED` no new observation row and no `product_not_launchable`; at `DELIVERED`
-  observation resumes within one tick.
-- **F2.** `KaizenService.saveProposal` returns the persisted entity; the evidence node is written under that
-  identity. On recurrence it persists the sibling while the caller holds the discarded id, so
-  `EVIDENCE_NODES` violates its foreign key and the finding that repeats most loses its evidence - an
-  inversion of the evidence algebra. Introduced by ef487fa, 2026-08-20. Falsifier: a forced duplicate
-  systemic finding produces no constraint violation and one evidence row against the survivor.
-- **F3.** `flagForHumanReview` files `WishlistSource.auditor_unresolved` carrying the auditor's reasoning
-  verbatim. Today it logs and nothing more, which in a system with no human is an absorbing state of the
-  task chain with no outgoing edge. Falsifier: a flagged subject appears as pending scope within one tick.
-- **F4-A.** A breaker in `MLPredictionServiceClient`: after N consecutive 429/502 the client stops calling
-  for a cooldown and returns no answer, which every caller already handles. Expected yield while the quota
-  is exhausted is exactly zero and expected cost is strictly positive, so no retry parameters make calling
-  correct. Measured 196 error lines in the `ml` container in three hours. Falsifier: zero 429/502 in a
-  thirty-minute window while the quota is exhausted.
-- **F5.** `ProductReadinessDto` carries `measures = "assembly"`. It counts features and merged tasks, which
-  is assembly, and its name asserts otherwise (ACP-106). The rename itself is not in this batch.
-- **F6.** `linear_team_id` is validated as a UUID when the setting is written. It currently holds a team
-  name, so every project silently skips Linear. Falsifier: the present value is refused on save.
-- **F7.** `githubRepositoryStatus` carries the warnings themselves rather than the fact that warnings
-  existed - a summary without its witness is the same defect as "26 of 26 passed".
-- **F8.** `HttpRequestMethodNotSupportedException` is answered 405 and logged at WARN. As an ERROR it was
-  one of three errors in a forty-five minute window, a third of the noise in a metric decisions rest on.
-- **F9.** `restart: unless-stopped` for the frontend. It exited cleanly and lay dead for forty-nine minutes
-  with nothing noticing. The cause of that exit is **not established** - no OOM event was recorded, and the
-  earlier attribution to memory pressure was inference, not measurement.
-- **F10.** A rotating file log driver for every service. Recreating the backend destroyed its whole log
-  history, which erases the evidence window at exactly the moment something changed.
-- **F11.** The judgment channel has a width and it must be respected. `diff-char-limit` drops to a size that
-  passes `spawn` argv together with the system instruction, the truncation is declared inside the prompt so
-  no `SATISFIED` is returned on a partial input, and consecutive silences are counted per task: after the
-  second the task records `UNDECIDABLE` rather than being retried forever. Measured: task
-  `d94c75cb` killed the shared sidecar three times with `spawn E2BIG`, and `JudgmentAgentClient`'s own
-  javadoc names this exact failure - collapsing "the instrument is down" into "this input cannot be ruled
-  on" produces an absorbing state at the head of the queue. Falsifier: that task receives a verdict and the
-  sidecar's restart count over an hour is zero.
-- **F12.** The launcher's diagnostic concludes "every service reports running, so the failure is inside one
-  of them" while its own evidence lists the published ports and none of them is the port being probed. The
-  disjunction ranges over declared services and presupposes the probe's target is among them. Edit: before
-  that conclusion, test whether any declared service publishes the probed port; when none does the verdict
-  is that no service in this topology serves it, and that is an ASSEMBLY defect - the distinction the file's
-  own 2026-08-19 comment says decides whether the next task is routed to operations or to assembly.
-- **F13.** `launch_success` is true whenever `docker compose up` returns zero. A compose that starts a
-  database and a backup and nothing that serves is not a successful launch of a product. Edit: false when no
-  declared service publishes the probed port, with F12's verdict as the reason.
-
-### 28.4 FACTORY - batch 3, after the server move
-
-- **F4-B.** Embeddings move to a local multilingual model inside the `ml` service, which today carries only
-  `fastapi`, `uvicorn` and `pydantic` and is a proxy to Gemini. Retrieval is not judgment and must not go to
-  the sidecar - three cents and a three hundred second timeout per call against roughly three thousand
-  chunks is not a retrieval path, and routing it there would be ACP-102 in its plainest form. Lexical
-  retrieval is refused because the corpus is bilingual and Russian morphology degrades it silently. All
-  embeddings already pass through `MLPredictionServiceClient.embed`, so the change is one handler and no
-  Java. Two conditions are inseparable from the switch: `ContextChunkEntity` records vector dimension and
-  model name and `cosineSimilarity` **refuses** a mismatch rather than returning a meaningless number, and
-  the corpus is fully reindexed before the model is enabled. It waits for the move because the model needs
-  roughly six hundred megabytes on a host that has already lost a container to memory.
-
-### 28.5 Closed by measurement, not carried forward
-
-The factory database was suspected of runaway growth after two readings four minutes apart showed 484 then
-522 MiB. Sampled over five minutes it went 547 to 533 MiB - it shrank. H2 reallocates chunks; there is no
-growth defect. Recorded here so the suspicion is not raised a third time.
-
-### 28.6 Seen while repairing, not repaired - recorded so it is not lost
-
-- **F16.** `KaizenService.evaluateAndStandardize` calls
-  `deleteMatching(category, targetComponent, proposal.getId())` immediately after `saveProposal`. That third
-  argument is the row to KEEP, and after deduplication the id the caller holds is not always the id that was
-  persisted - which is the whole of F2. On the standardise path the proposal already exists, so the two
-  coincide today and nothing is lost; the coupling is latent, not live. Left alone deliberately: the edit
-  deletes rows, and a change to which row survives must be measured before it is made, not reasoned into.
-- **F17.** `runtime-launcher-workspace` holds 133 MB across six clones - `test-forty-third`,
-  `test-forty-ninth`, `probe2`, `manual-check`, `test-forty-fourth`, `test-forty-sixth`. The directory is
-  documented as throwaway and rebuilt on demand, and nothing ever removes a clone of a finished project.
-- **F18.** Every factory-internal task now carries a criterion, and none of them has a pull request, so all
-  of them record `NOT_JUDGED_NO_DIFF`. Their criteria speak of report files and repository state, not of
-  diffs; judging them from a diff is the wrong instrument rather than a missing one. This is the same gap as
-  D1 seen from the other side, and it closes with D1 or not at all.
-
-### 28.7 The corpus has not reached a prompt since 2026-08-20
-
-The row in 11.2 above said retrieval was already paid for and local. It is not local.
-`GeminiContextService.retrieve` embeds the QUERY on every call:
-
-    float[] queryVector = mlPredictionServiceClient.embed(query);
-    if (queryVector == null) {
-        return List.of();
-    }
-
-The 1525 stored chunk vectors cannot be compared against anything without a query vector, so with the
-Gemini account out of credit - switched off 2026-08-20, recorded in `JudgmentAgentClient`'s own javadoc -
-every retrieval has returned an empty list. Not degraded. Empty.
-
-Nothing raised an alarm because an empty list is what "nothing relevant was found" also looks like. The
-absence is unobservable from the outside, which is the same shape as the gate that reported a pass when no
-check had applied: a value that is indistinguishable from the healthy case cannot refute anything.
-
-The consequence is not a performance loss. For three days every Jules dispatch, every audit, every
-compilation has been grounded in nothing - no philosopher pattern, no role definition, no ACP. The corpus
-that holds this project's method has not been part of the method.
-
-**How the false row got written.** Its author checked that the chunks were indexed and concluded that
-retrieval worked. The criterion was substituted for the concept - ACP-102, written in the plan, about the
-corpus in which ACP-102 lives. That is also why nobody looked again: the plan asserted this was safe.
-
-**This moves to the front of the queue.** It was scheduled after the server move on a memory argument, and
-that argument does not survive contact with the measurement either: 3685 MB were free when it was made,
-and a small multilingual model needs roughly 600 MB. Deferring the system's own method for a sixth of the
-free memory is not a trade.
-
-### 28.8 The shape that recurred three times in one day - to be checked for, not rediscovered
-
-A signal is detected, given a name, and written somewhere a person could read. Nothing acts on it. Each
-stage looks like progress and the chain never reaches work.
-
-- **Gates.** A task of a role no gate supports recorded a pass. Detected as "applicable checks = 0" on
-  2026-08-22 and made visible; no actor until the delivery judge on 2026-08-23.
-- **`flagForHumanReview`.** The auditor's judgement was written to the log, addressed to a human this
-  system does not have. Detected the moment it was read, 2026-08-23; four subjects had accumulated.
-- **`done_not_reached_main`.** Detected 2026-07-25, labelled, shown on the dashboard. Turned into evidence
-  2026-08-17 by `DeliveryRealityProducerService`, whose own javadoc says "a signal with no reader is not
-  monitoring". A reader was built. An actor was not. `Runtime Contract 9b58412d` then stood
-  done-without-merge for ten and a half hours, holding assembly at 17 of 18, while the producer reported
-  "0 new findings, 1 already recorded" every hour - correctly, and to no effect.
-
-**The check to run on any future detector, before it is called finished:** name the row in
-`wishlist` it produces. If the answer is an evidence node, a log line, a dashboard field or a metric, the
-detector is not finished - it has a reader and no actor, and that is the same defect as having no reader,
-one step further along. Evidence from which no action follows is not evidence in this system.
-
-Fixed 2026-08-23: the producer now files `WishlistSource.delivery_never_reached_main` alongside the
-evidence, so the work that never landed is ordered again through the one path that produces work.
-
-### 28.9 Scope filed without an epic is work that moves nothing
-
-A feature closes when ITS tasks close. A wishlist filed with no `featureId` compiles into a task with no
-feature, so that task runs, merges, and advances no epic - it adds to the project's task count and to
-nothing else.
-
-Measured on test-fiftieth 2026-08-23: eighty-two tasks, four of five epics closed, and the one epic
-carrying what the client actually asked for - `Core Knowledge Base (Upload, Search, Download)` - stuck at
-6 of 7 merged while task after task completed beside it. Four of the ten wishlist filers set no epic, three
-of them added the same day: the delivery judge, the operations auditor, and the delivery-reality producer.
-The irony is exact: machinery built to make delivery real was filing repairs that could not close the
-feature whose delivery had failed.
-
-Fixed by inheritance, never by invention. Task-derived findings take the epic of the task they are about;
-the auditor takes the epic of its subject, which is a wishlist for one evidence kind and a task for the
-other, and takes neither on assumption.
-
-`ProductLaunchabilityService` and `LaunchabilityConstraintService` are deliberately left without one: their
-findings are about the product as a whole, not about any one feature, and stamping them with an arbitrary
-epic would be a false attribution rather than a missing one. A finding with no natural parent is a
-different fact from a finding whose parent was dropped.
-
-**The check:** any new wishlist filer must answer which epic its work belongs to. "None, and here is why"
-is a valid answer. Silence is not.
-
-### 28.10 Correction: the falsification flags were never blank
-
-Recorded 2026-08-23 and corrected the same day, before it could be acted on.
-
-I reported that `falsification_cycle_enabled`, `philosophical_falsification_enabled` and
-`design_system_falsification_enabled` all held an empty string, and concluded that the core of the method
-was off because nobody had decided it. That was read from `GET /api/settings`, where `value` came back
-null for each.
-
-`value` is null for every boolean flag by design - `toDto` masks it and puts the answer in `enabled`
-instead. I read the masked field and treated its emptiness as the value. Measured properly, on the live
-system:
-
-- `philosophical_falsification_enabled` = **true**, source database
-- `design_system_falsification_enabled` = **true**, source database
-- `falsification_cycle_enabled` = **false**, source database - a decision someone made and stored, not an
-  absence
-
-All 41 settings show `value: null` in that response, including `github_token` and `jules_api_key`, without
-which the factory could not have run at all. That alone refuted the reading, and I had it in front of me
-before I drew the conclusion.
-
-The two commits that came out of this stand on their own merits and are not withdrawn: a boolean flag may
-no longer be stored blank, and `reportValuelessBooleanFlags` now asks whether anyone decided rather than
-whether a row exists. Both close a real gap - `design_system_falsification_enabled` had genuinely been lost
-that way once before, which is written in that class's own javadoc. What is withdrawn is the claim that it
-had happened again, and the alarm raised on it.
-
-**The check:** before reporting a value as absent, confirm the field being read is the one that carries it.
-A masked field is not an empty one, and a report drawn from the wrong field is a claim about the API's
-shape dressed as a claim about the system.
+**Not to be repeated, by the operator's instruction:** do not switch off working mechanisms of the factory.
