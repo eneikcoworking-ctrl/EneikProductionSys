@@ -20,6 +20,13 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    # 2026-08-28. Bounded because it was not: §4.4 of the action plan added a limit to `backend` alone,
+    # and four services stayed unbounded on a WSL VM capped at 3500 MB.
+    # The number is derived, not guessed: PredictionService.py records the embedding model as 0.22 GB,
+    # measured against its alternatives (1.0 GB for mpnet-base, 2.24 GB for e5-large), and that model is
+    # loaded lazily into this process. 220 MB of weights plus onnxruntime and the Python interpreter is
+    # the whole resident set; 768m leaves room for the inference arena without room for a second model.
+    mem_limit: 768m
     restart: unless-stopped
 
   # 2026-08-09 (Phase 1, client runtime observability plan) - the ONLY component in the whole factory
@@ -45,6 +52,12 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    # 2026-08-28. This limit binds the launcher process and NOTHING IT STARTS. The service runs
+    # `docker compose up --build -d` against a client repository through the host socket, so the client's
+    # containers and BuildKit are siblings on the same daemon, outside every cgroup in this file. That is
+    # the one unbounded path left in the factory, and no value here closes it - only the
+    # client_runtime_observability_enabled flag does. 256m covers Python, FastAPI and the docker CLI.
+    mem_limit: 256m
     restart: unless-stopped
 
   # 2026-08-28: Primary Autonomous Judgment Service (Gemini REST API + Shadow Arbiter Fallback).
@@ -67,6 +80,9 @@ services:
       interval: 10s
       timeout: 3s
       retries: 10
+    # 2026-08-28. A Node HTTP proxy that forwards to the Gemini REST API and writes shadow files: it holds
+    # one request body at a time and no model. 256m is the default Node heap's own neighbourhood.
+    mem_limit: 256m
     restart: unless-stopped
 
   backend:
@@ -81,7 +97,10 @@ services:
       # Heap is DERIVED from the container limit, never stated independently (2026-08-28). Two numbers
       # for one quantity is how they drift: Dockerfile.backend said -Xmx1536m while this file said
       # -Xmx1024m, and which one won could only be learned by experiment. MaxRAMPercentage reads the
-      # cgroup limit set by mem_limit below, so there is exactly one number to change.
+      # cgroup limit set by mem_limit below, so there is exactly one number to change. That claim was
+      # false until 2026-08-28: Dockerfile.backend still carried its own -Xmx1536m, invisible only
+      # because this file replaces JAVA_OPTS wholesale. It has been removed there rather than
+      # overridden here.
       #
       # -Xmx bounds the HEAP only. Real RSS is heap + metaspace + code cache + thread stacks + direct
       # buffers + GC structures; for this app (49 JPA repositories, a 24-connection Hikari pool, an H2
@@ -102,6 +121,15 @@ services:
       # to Spring alone lets the @PreDestroy hook find the database open.
       SPRING_DATASOURCE_URL: jdbc:h2:file:/var/lib/eneik/eneik_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DEFRAG_ALWAYS=TRUE;AUTO_COMPACT_FILL_RATE=80
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
+      # 2026-08-28, §5b item 5. Hikari was 24 connections against an EMBEDDED H2 - a library in this same
+      # JVM, not a server. Connections buy no parallelism there; what they buy is 24 transactions able to
+      # hold their result sets in the heap at once, inside a cgroup of 1 GB whose heap is 55% of that.
+      # 12 is derived rather than picked: the scheduler pool is 10 threads
+      # (spring.task.scheduling.pool.size), every periodic reader runs on one of them, and the remaining 2
+      # cover the dashboard's own requests, which arrive from a single operator browser. If a scheduled
+      # task ever blocks waiting for a connection it will say so in the Hikari log, and that log entry is
+      # the measurement this number should be corrected by.
+      DB_POOL_SIZE: 12
       ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system
       # 2026-08-14: the market corpus lives in the repository (market-corpus/), which is mounted read-only
       # at /app/eneik-system - not baked into the image. Pointing at the mount rather than copying it in
@@ -188,6 +216,10 @@ services:
       - "3000:3000"
     depends_on:
       - backend
+    # 2026-08-28. nginx:alpine serving a directory of static files built at image time - no Node at
+    # runtime. 128m is generous for it and is here so that "every service is bounded" is checkable by
+    # reading the file rather than remembered.
+    mem_limit: 128m
     restart: unless-stopped
 
 volumes:

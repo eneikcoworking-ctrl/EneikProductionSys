@@ -27,7 +27,13 @@ LABEL org.opencontainers.image.revision=$ENEIK_BUILD_GIT_SHA \
 ENV ENEIK_BUILD_GIT_SHA=$ENEIK_BUILD_GIT_SHA \
     ENEIK_BUILD_GIT_DIRTY=$ENEIK_BUILD_GIT_DIRTY \
     ENEIK_BUILD_TIME=$ENEIK_BUILD_TIME
-ENV JAVA_OPTS="-Xms512m -Xmx1536m -XX:+UseG1GC"
+# No JAVA_OPTS here (2026-08-28). This line declared -Xmx1536m while docker-compose.yml declared its
+# own value, and which one applied could only be learned by experiment: compose replaces the whole
+# variable, so this one silently lost - but it still applied to anyone who ran the image without
+# that file, against a 1 GB mem_limit it knew nothing about. Two numbers for one quantity is the
+# defect; hiding one of them is not a fix. Sizing now comes from the cgroup via
+# -XX:MaxRAMPercentage in docker-compose.yml, and an image run without it gets the JVM's own
+# container-aware default (25% of the limit) rather than a stale number from 2026.
 EXPOSE 8080
 # `exec` matters (2026-08-28): without it `sh` stays PID 1 and java runs as its child, so the SIGTERM
 # Docker sends on `compose stop` is delivered to sh, which does not forward it. Java never saw a
