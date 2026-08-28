@@ -5173,7 +5173,29 @@ public class ProjectFlowService {
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
-        List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
+        // §11: a carrier whose description was composed by a prompt builder this factory no longer has
+        // can never be sent - the recipient will refuse the text and no work of ours changes that. By
+        // invariant 8 it must leave the set that DECIDES, not merely be refused at the end of it: refusing
+        // at dispatch still costs a claim, an account, a session row and a tick, every tick, forever.
+        //
+        // Placed here rather than as a status write because the write cannot happen here: this tick is
+        // deliberately non-transactional (see the comment on the tick itself), and a @Modifying query needs
+        // a transaction - measured 2026-08-29, the write threw "No EntityManager with actual transaction
+        // available" while the refusal beside it worked. Excluding from the denominator needs no write at
+        // all, which is the cheaper and more honest form of the same requirement.
+        List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued)
+                .stream()
+                .filter(t -> {
+                    String trace = com.eneik.production.services.jules.JulesDispatchService
+                            .removedBuilderTrace(t.getDescription());
+                    if (trace != null) {
+                        log.warn("Task {} is not offered for dispatch: its description was composed by a builder "
+                                        + "this factory no longer has (trace \"{}\"). This is the factory's own "
+                                        + "defect (\u00a711).", t.getId(), trace);
+                    }
+                    return trace == null;
+                })
+                .toList();
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
         // The hard block that used to stand here is gone (2026-08-28). Its intent - client scope first,
         // housekeeping on leftover capacity - is already achieved by queuedDispatchClass below, which the

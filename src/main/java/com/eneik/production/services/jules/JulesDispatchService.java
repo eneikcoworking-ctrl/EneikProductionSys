@@ -609,9 +609,12 @@ public class JulesDispatchService {
                             + "longer has (trace \"{}\", {} chars). This is the factory's own defect, not the "
                             + "account's and not the task's subject (\u00a711).",
                     task.getId(), removedBuilderTrace, task.getDescription().length());
+            // No task-status write here: this path is not transactional and a @Modifying query throws
+            // ("No EntityManager with actual transaction available", measured 2026-08-29). The exclusion
+            // that matters happens where tasks are SELECTED - ProjectFlowService's queued list - so this
+            // stays as the last line of defence for callers that reach dispatch by another route.
             session.setStatus("failed");
             session.setClosureReason("composed_by_removed_builder: " + removedBuilderTrace);
-            taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
             return julesSessionRepository.save(session);
         }
 
@@ -3337,9 +3340,9 @@ public class JulesDispatchService {
      * the request. Measured 2026-08-29: 31 tasks carry it, 30 already terminal, one live at 1 788 060
      * characters.
      */
-    static final java.util.List<String> REMOVED_BUILDER_TRACES = java.util.List.of("Diff to review:");
+    public static final java.util.List<String> REMOVED_BUILDER_TRACES = java.util.List.of("Diff to review:");
 
-    static String removedBuilderTrace(String description) {
+    public static String removedBuilderTrace(String description) {
         if (description == null) {
             return null;
         }
