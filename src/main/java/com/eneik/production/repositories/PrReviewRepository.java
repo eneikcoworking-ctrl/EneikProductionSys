@@ -29,4 +29,6 @@ public interface PrReviewRepository extends JpaRepository<PrReviewEntity, UUID> 
     java.util.List<PrReviewEntity> findByMergedTrueAndJulesSessionIdIsNotNull();
     java.util.List<PrReviewEntity> findByJulesSessionIdIn(java.util.List<UUID> julesSessionIds);
     java.util.List<PrReviewEntity> findByJulesSessionIdIsNotNull();
+    // FalsificationCycleService.resolveTaskForPrNumber filtered the whole table down to one PR number.
+    java.util.List<PrReviewEntity> findByPrNumber(Integer prNumber);
 }

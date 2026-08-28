@@ -412,7 +412,8 @@ class AutoMergeServiceTest {
         session.setTaskId(taskId);
 
         when(settings.effectiveBoolean("github_enabled")).thenReturn(true);
-        when(prReviews.findAll()).thenReturn(List.of(review));
+        when(prReviews.findByMergedTrueAndJulesSessionIdIsNotNull()).thenReturn(List.of(review));
+        when(prReviews.findByJulesSessionIdIsNotNull()).thenReturn(List.of(review));
         when(julesSessions.findById(sessionId)).thenReturn(Optional.of(session));
         when(tasks.findById(taskId)).thenReturn(Optional.of(task));
 
@@ -534,7 +535,8 @@ class AutoMergeServiceTest {
         oldConflict.setPrUrl("https://github.com/org/repo/pull/old");
         oldConflict.setMerged(false);
 
-        when(prReviews.findAll()).thenReturn(List.of(merged, oldConflict));
+        when(prReviews.findByMergedTrueAndJulesSessionIdIsNotNull()).thenReturn(List.of(merged, oldConflict));
+        when(prReviews.findByJulesSessionIdIsNotNull()).thenReturn(List.of(merged, oldConflict));
         when(sessions.findById(winner.getId())).thenReturn(Optional.of(winner));
         when(sessions.findByTaskId(taskId)).thenReturn(List.of(winner, duplicate));
         when(tasks.findById(taskId)).thenReturn(Optional.of(task));
@@ -616,7 +618,7 @@ class AutoMergeServiceTest {
                 .thenReturn(List.of(project));
         when(gitHub.pullRequestSnapshot(project)).thenReturn(new GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(), List.of(mergedPr), null));
-        when(sessions.findAll()).thenReturn(List.of());
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(tasks.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
         when(sessions.findByTaskId(taskId)).thenReturn(List.of(strandedSession));
         when(conflicts.findFirstByTaskIdAndResolutionStatus(taskId, "pending")).thenReturn(Optional.empty());
@@ -709,10 +711,11 @@ class AutoMergeServiceTest {
                 .thenReturn(List.of(project));
         when(gitHub.pullRequestSnapshot(project)).thenReturn(new GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(), List.of(mergedPr), null));
-        when(sessions.findAll()).thenReturn(List.of());
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(tasks.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
         when(sessions.findByTaskId(taskId)).thenReturn(List.of(winningSession));
-        when(prReviews.findAll()).thenReturn(List.of(staleUnmergedReview));
+        when(prReviews.findByMergedTrueAndJulesSessionIdIsNotNull()).thenReturn(List.of(staleUnmergedReview));
+        when(prReviews.findByJulesSessionIdIsNotNull()).thenReturn(List.of(staleUnmergedReview));
         when(conflicts.findFirstByTaskIdAndResolutionStatus(taskId, "pending")).thenReturn(Optional.empty());
 
         service.reconcileMergedGitHubPullRequests();
@@ -812,10 +815,11 @@ class AutoMergeServiceTest {
         // Session's own prUrl already points at the REAL PR (#34), not the closeout PR - the exact-match
         // pass finds nothing new to do since #34 never shows up in mergedPrUrls (only the closeout PR is
         // in this GitHub snapshot). The branch-token fallback pass is what must refuse to touch it.
-        when(sessions.findAll()).thenReturn(List.of(session));
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(session));
         when(tasks.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
         when(sessions.findByTaskId(taskId)).thenReturn(List.of(session));
-        when(prReviews.findAll()).thenReturn(List.of(realReview));
+        when(prReviews.findByMergedTrueAndJulesSessionIdIsNotNull()).thenReturn(List.of(realReview));
+        when(prReviews.findByJulesSessionIdIsNotNull()).thenReturn(List.of(realReview));
 
         service.reconcileMergedGitHubPullRequests();
 
@@ -895,7 +899,7 @@ class AutoMergeServiceTest {
                 new GitHubPullRequestService.MergeableState(true, "CLEAN")));
         when(gitHub.pullRequestChecks(project, 10)).thenReturn(
                 new GitHubPullRequestService.PullRequestChecks(true, true, "success", "All checks passed"));
-        when(sessions.findAll()).thenReturn(List.of(stuckSession));
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(stuckSession));
         when(tasks.findById(taskId)).thenReturn(Optional.of(task));
         when(prReviews.existsByJulesSessionId(sessionId)).thenReturn(false);
         when(realityFindings.save(any())).thenAnswer(inv -> {
@@ -994,7 +998,7 @@ class AutoMergeServiceTest {
                 .thenReturn(List.of(project));
         when(gitHub.pullRequestSnapshot(project)).thenReturn(new GitHubPullRequestService.PullRequestSnapshot(
                 true, "org", "repo", List.of(openPr), List.of(), null));
-        when(sessions.findAll()).thenReturn(List.of(healthySession));
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(healthySession));
         when(tasks.findById(taskId)).thenReturn(Optional.of(task));
         when(prReviews.existsByJulesSessionId(sessionId)).thenReturn(true);
 
@@ -1071,7 +1075,7 @@ class AutoMergeServiceTest {
                 .thenReturn(List.of(project));
         when(gitHub.pullRequestSnapshot(project)).thenReturn(new GitHubPullRequestService.PullRequestSnapshot(
                 true, "eneikdru", "test-forty-third", List.of(openPr), List.of(), null));
-        when(sessions.findAll()).thenReturn(List.of(closedSession));
+        when(sessions.findByPrUrlIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(closedSession));
         when(tasks.findById(taskId)).thenReturn(Optional.of(task));
 
         service.reconcileOpenGitHubPullRequests();

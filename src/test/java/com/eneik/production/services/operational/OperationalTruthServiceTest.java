@@ -112,7 +112,7 @@ class OperationalTruthServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(deadTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(deadTaskId))).thenReturn(List.of(deadSession));
-        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(deadReview));
         when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
                 .thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
@@ -170,7 +170,7 @@ class OperationalTruthServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(requeuedTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(requeuedTaskId))).thenReturn(List.of(supersededSession));
-        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(deadReview));
         when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
                 .thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
@@ -222,7 +222,7 @@ class OperationalTruthServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(carrierTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(carrierTaskId))).thenReturn(List.of());
-        when(reviews.findAll()).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
                 .thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
@@ -265,7 +265,7 @@ class OperationalTruthServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(realTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(realTaskId))).thenReturn(List.of());
-        when(reviews.findAll()).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
                 .thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());

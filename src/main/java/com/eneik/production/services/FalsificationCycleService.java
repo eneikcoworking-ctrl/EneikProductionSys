@@ -1518,8 +1518,8 @@ public class FalsificationCycleService {
         if (prNumber == null) {
             return java.util.Optional.empty();
         }
-        return prReviewRepository.findAll().stream()
-                .filter(review -> prNumber.equals(review.getPrNumber()))
+        // Pushed into the query (2026-08-28): one PR number, asked for by number.
+        return prReviewRepository.findByPrNumber(prNumber).stream()
                 .filter(review -> review.getJulesSessionId() != null)
                 .map(review -> julesSessionRepository.findById(review.getJulesSessionId()))
                 .filter(java.util.Optional::isPresent)

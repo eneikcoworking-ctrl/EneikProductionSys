@@ -347,7 +347,7 @@ class FalsificationCycleServiceTest {
         com.eneik.production.models.persistence.PrReviewEntity review = new com.eneik.production.models.persistence.PrReviewEntity();
         review.setJulesSessionId(sessionId);
         review.setPrNumber(47);
-        when(prReviewRepository.findAll()).thenReturn(List.of(review));
+        when(prReviewRepository.findByPrNumber(org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(review));
 
         com.eneik.production.models.persistence.JulesSessionEntity session = new com.eneik.production.models.persistence.JulesSessionEntity();
         session.setId(sessionId);
@@ -428,7 +428,7 @@ class FalsificationCycleServiceTest {
         com.eneik.production.models.persistence.PrReviewEntity review = new com.eneik.production.models.persistence.PrReviewEntity();
         review.setJulesSessionId(sessionId);
         review.setPrNumber(47);
-        when(prReviewRepository.findAll()).thenReturn(List.of(review));
+        when(prReviewRepository.findByPrNumber(org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of(review));
 
         com.eneik.production.models.persistence.JulesSessionEntity session = new com.eneik.production.models.persistence.JulesSessionEntity();
         session.setId(sessionId);
@@ -522,7 +522,7 @@ class FalsificationCycleServiceTest {
             run.setId(UUID.randomUUID());
             return run;
         });
-        when(prReviewRepository.findAll()).thenReturn(List.of());
+        when(prReviewRepository.findByPrNumber(org.mockito.ArgumentMatchers.anyInt())).thenReturn(List.of());
 
 
         var constraintService = launchabilityConstraintService(wishlistRepository);

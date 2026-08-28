@@ -20,6 +20,13 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     List<TaskEntity> findByStatusIn(List<TaskStatus> statuses);
 
     long countByStatus(TaskStatus status);
+    // 2026-08-28, query-cost work. KaizenService counted stale tasks by materialising every task row as an
+    // entity and counting in Java; a count is the one question that never needs the rows at all.
+    long countByCreatedAtBefore(java.time.Instant createdBefore);
+    long countByProjectIdAndCreatedAtBefore(UUID projectId, java.time.Instant createdBefore);
+    // Same service asked for a project's NAME by loading every task in the database and taking the first
+    // one that belonged to it.
+    java.util.Optional<TaskEntity> findFirstByProjectId(UUID projectId);
     long countByProjectIdAndStatus(UUID projectId, TaskStatus status);
     List<TaskEntity> findByProjectIdOrderByCreatedAtDesc(UUID projectId);
     Optional<TaskEntity> findByProjectIdAndDescription(UUID projectId, String description);

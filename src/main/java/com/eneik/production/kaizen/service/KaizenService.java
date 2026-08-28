@@ -216,10 +216,12 @@ public class KaizenService {
 
         // 1. Check for stale tasks waiting > 1 hour (Muda waste)
         Instant oneHourAgo = Instant.now().minus(1, ChronoUnit.HOURS);
-        long staleQueuedCount = taskRepository.findAll().stream()
-                .filter(t -> (targetProjectId == null || (t.getProject() != null && targetProjectId.equals(t.getProject().getId()))))
-                .filter(t -> t.getCreatedAt() != null && t.getCreatedAt().isBefore(oneHourAgo))
-                .count();
+        // Counted in the database (2026-08-28). This loaded every task ever created as a JPA entity in
+        // order to produce a single number, on a path that runs on a schedule. A count is the one question
+        // that never needs the rows.
+        long staleQueuedCount = (targetProjectId == null)
+                ? taskRepository.countByCreatedAtBefore(oneHourAgo)
+                : taskRepository.countByProjectIdAndCreatedAtBefore(targetProjectId, oneHourAgo);
 
         if (staleQueuedCount > 0) {
             defectJournalService.recordDefect(
@@ -313,10 +315,9 @@ public class KaizenService {
 
         String projectName = "Global";
         if (targetProjectId != null) {
-            var projectOpt = taskRepository.findAll().stream()
-                    .filter(t -> t.getProject() != null && targetProjectId.equals(t.getProject().getId()))
-                    .map(t -> t.getProject().getName())
-                    .findFirst();
+            // Asked by id (2026-08-28) instead of reading every task in the database to find one name.
+            var projectOpt = taskRepository.findFirstByProjectId(targetProjectId)
+                    .map(t -> t.getProject().getName());
             if (projectOpt.isPresent()) projectName = projectOpt.get();
         }
 

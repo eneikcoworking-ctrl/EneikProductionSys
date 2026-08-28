@@ -194,9 +194,9 @@ public class OperationalTruthService {
 
     private List<PrReviewEntity> reviewsForSessions(List<JulesSessionEntity> sessions) {
         List<UUID> sessionIds = sessions.stream().map(JulesSessionEntity::getId).toList();
-        return sessionIds.isEmpty() ? List.of() : prReviewRepository.findAll().stream()
-                .filter(review -> sessionIds.contains(review.getJulesSessionId()))
-                .toList();
+        // Pushed into the query (2026-08-28): the filter below WAS the question, so asking for exactly
+        // these sessions costs the answer instead of every review ever written.
+        return sessionIds.isEmpty() ? List.of() : prReviewRepository.findByJulesSessionIdIn(sessionIds);
     }
 
     private OperationalTruthDto.Delivery delivery(ClientDeliverableReadinessService.Readiness readiness) {

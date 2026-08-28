@@ -187,7 +187,7 @@ class FlowSpineServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(deadTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(deadTaskId))).thenReturn(List.of(deadSession));
-        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(deadReview));
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
         when(systemStatus.getStatus(projectId)).thenReturn(
                 Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
@@ -242,7 +242,7 @@ class FlowSpineServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(liveTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(liveTaskId))).thenReturn(List.of(liveSession));
-        when(reviews.findAll()).thenReturn(List.of(liveReview));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(liveReview));
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
         when(systemStatus.getStatus(projectId)).thenReturn(
                 Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
@@ -299,7 +299,7 @@ class FlowSpineServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(requeuedTask));
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(List.of(requeuedTaskId))).thenReturn(List.of(supersededSession));
-        when(reviews.findAll()).thenReturn(List.of(deadReview));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of(deadReview));
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
         when(systemStatus.getStatus(projectId)).thenReturn(
                 Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
@@ -347,7 +347,7 @@ class FlowSpineServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(duplicates);
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
-        when(reviews.findAll()).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
         when(systemStatus.getStatus(projectId)).thenReturn(
                 Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
@@ -389,7 +389,7 @@ class FlowSpineServiceTest {
         when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(duplicates);
         when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
         when(sessions.findByTaskIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
-        when(reviews.findAll()).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
         when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
         when(systemStatus.getStatus(projectId)).thenReturn(
                 Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
