@@ -346,6 +346,11 @@ class ProjectFlowServiceTest {
     }
 
     private ProjectFlowService serviceWithWishlists(WishlistRepository wishlistRepository) {
+        return serviceWithWishlistsAndWorker(wishlistRepository, mock(PersistentWorkerSessionService.class));
+    }
+
+    private ProjectFlowService serviceWithWishlistsAndWorker(WishlistRepository wishlistRepository,
+            PersistentWorkerSessionService persistentWorkerSessionService) {
         ProjectFlowService service = new ProjectFlowService(
                 projectRepository,
                 wishlistRepository,
@@ -375,7 +380,7 @@ class ProjectFlowServiceTest {
                 gitHubPullRequestService,
                 mock(ClientDeliverableReadinessService.class),
                 mock(FeatureService.class),
-                mock(PersistentWorkerSessionService.class),
+                persistentWorkerSessionService,
                 mock(SelfFalsificationEpicMatcher.class),
                 mock(OperationalPolicyService.class),
                 projectFileClaimRepository,
@@ -389,5 +394,120 @@ class ProjectFlowServiceTest {
                 null);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
         return service;
+    }
+
+    // --- restoreUnreachedBriefs (§4.2): the restoring half of the REFUSED/UNREACHED split -------------
+    //
+    // Written 2026-08-28 because it had no test at all, and it is the half that must not be got wrong in
+    // either direction. Reviving a brief the compiler DID answer would resurrect an absorbing state and
+    // break the variant function that gives decomposition its termination (§4.2). Failing to revive one
+    // the compiler never saw would leave the factory's own busy-ness recorded as a verdict about the
+    // brief - the defect the whole split exists to fix.
+
+    private WishlistEntity brief(UUID projectId, int attempts, java.time.Instant dispatchedAt,
+            java.time.Instant reachedAt) {
+        WishlistEntity w = new WishlistEntity();
+        w.setId(UUID.randomUUID());
+        w.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+        w.setCompileAttempts(attempts);
+        w.setLastCompileDispatchedAt(dispatchedAt);
+        w.setLastCompileReachedAt(reachedAt);
+        return w;
+    }
+
+    private void worker(PersistentWorkerSessionService workerService, UUID projectId,
+            java.time.Instant lastMessageSentAt) {
+        com.eneik.production.models.persistence.PersistentWorkerSessionEntity session =
+                new com.eneik.production.models.persistence.PersistentWorkerSessionEntity();
+        session.setLastMessageSentAt(lastMessageSentAt);
+        when(workerService.findActiveWorker(eq(projectId),
+                eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
+                .thenReturn(Optional.of(session));
+    }
+
+    @Test
+    void unreachedBriefIsRestoredOnceTheChannelHasBeenLiveSinceItsLastAttempt() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        java.time.Instant dispatched = java.time.Instant.parse("2026-08-28T10:00:00Z");
+        java.time.Instant watermark = dispatched.plusSeconds(3600);
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        worker(workerService, projectId, watermark);
+
+        WishlistEntity unreached = brief(projectId, 3, dispatched, null);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
+
+        int restored = serviceWithWishlistsAndWorker(wishlistRepository, workerService)
+                .restoreUnreachedBriefs(project);
+
+        assertEquals(1, restored);
+        assertEquals(0, unreached.getCompileAttempts());
+        verify(wishlistRepository).saveAll(List.of(unreached));
+    }
+
+    @Test
+    void briefTheCompilerActuallyAnsweredIsNeverRestored() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        java.time.Instant dispatched = java.time.Instant.parse("2026-08-28T10:00:00Z");
+        java.time.Instant watermark = dispatched.plusSeconds(3600);
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        worker(workerService, projectId, watermark);
+
+        // Budget spent AND the compiler was reached: decompositionRefused, an absorbing verdict about the
+        // brief itself. Restoring it would make an absorbing state non-absorbing.
+        WishlistEntity refused = brief(projectId, 3, dispatched, dispatched.plusSeconds(1));
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(refused));
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService)
+                .restoreUnreachedBriefs(project));
+        assertEquals(3, refused.getCompileAttempts());
+        verify(wishlistRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void unreachedBriefIsNotRestoredWhileTheChannelHasNotMovedSinceItsAttempt() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        // Watermark BEFORE the attempt: nothing has gone down the channel since, so there is no new
+        // evidence and restoring would be a retry loop with no monotone marker behind it (§2, invariant 7).
+        java.time.Instant watermark = java.time.Instant.parse("2026-08-28T10:00:00Z");
+        java.time.Instant dispatched = watermark.plusSeconds(3600);
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        worker(workerService, projectId, watermark);
+
+        when(wishlistRepository.findByProjectId(projectId))
+                .thenReturn(List.of(brief(projectId, 3, dispatched, null)));
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService)
+                .restoreUnreachedBriefs(project));
+        verify(wishlistRepository, never()).saveAll(any());
+    }
+
+    @Test
+    void noActiveCompilerWorkerMeansNoWatermarkAndNothingIsRestored() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        when(workerService.findActiveWorker(any(), any())).thenReturn(Optional.empty());
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService)
+                .restoreUnreachedBriefs(project));
+        verify(wishlistRepository, never()).saveAll(any());
     }
 }

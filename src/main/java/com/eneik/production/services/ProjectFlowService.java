@@ -2248,7 +2248,11 @@ public class ProjectFlowService {
      * brief settles into {@code decompositionRefused()} within B answers, which is absorbing. The system
      * converges on a decided verdict instead of cycling; F42's variant function is untouched.
      */
-    private int restoreUnreachedBriefs(ProjectEntity project) {
+    // Package-private rather than private so ProjectFlowServiceTest can call it directly, the same
+    // convention JulesDispatchService.reviewFallbackTargetsInFlight already follows. This is the
+    // restoring half of the REFUSED/UNREACHED split (§4.2) and it had no test at all: a mechanism
+    // that is registered and never shown to fire is muda until proven otherwise (§2).
+    int restoreUnreachedBriefs(ProjectEntity project) {
         Optional<PersistentWorkerSessionEntity> workerOpt = persistentWorkerSessionService
                 .findActiveWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER);
         Instant watermark = workerOpt.map(PersistentWorkerSessionEntity::getLastMessageSentAt).orElse(null);
