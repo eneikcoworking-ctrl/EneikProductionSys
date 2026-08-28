@@ -187,6 +187,19 @@ public class WishlistEntity {
      * busy, so nothing was ever sent, and the factory nonetheless concluded "the brief needs a human
      * reading" - a claim about the brief drawn from evidence about the factory.
      */
+    /**
+     * The factory task this brief was filed about, when it was filed about one (V116, §9).
+     *
+     * <p>Exists so that the identifier can stop travelling inside the brief's prose. It is the factory's
+     * own bookkeeping and is never rendered into text an agent in the client's zone reads - that leak is
+     * what turned one missing delivery into seven review sessions on 2026-08-28.
+     */
+    @Column(name = "source_task_id")
+    private UUID sourceTaskId;
+
+    public UUID getSourceTaskId() { return sourceTaskId; }
+    public void setSourceTaskId(UUID sourceTaskId) { this.sourceTaskId = sourceTaskId; }
+
     @Column(name = "last_compile_reached_at")
     private Instant lastCompileReachedAt;
 

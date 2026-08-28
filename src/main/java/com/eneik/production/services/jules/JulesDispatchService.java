@@ -3100,7 +3100,9 @@ public class JulesDispatchService {
      * one session per PR. A PR whose diff can't be fetched (e.g. GitHub also disabled) is dropped from
      * this batch and left exactly as-is for a retry next cycle rather than guessing.
      */
-    private void dispatchReviewerFallbackBatch(List<PendingFallbackReview> items) {
+    // Package-private so ScheduledQueryCost-style application tests can call it directly, the same
+    // convention reviewFallbackTargetsInFlight and ProjectFlowService.restoreUnreachedBriefs follow.
+    void dispatchReviewerFallbackBatch(List<PendingFallbackReview> items) {
         if (items == null || items.isEmpty()) {
             return;
         }
@@ -3118,10 +3120,35 @@ public class JulesDispatchService {
         List<String> fetchedPrUrls = new java.util.ArrayList<>();
         List<String> fetchedDiffs = new java.util.ArrayList<>();
         List<String> fetchedDiffHashes = new java.util.ArrayList<>();
+
+        // §9 of ENGINEERING_PHILOSOPHY_ACTION_PLAN.md, observed 2026-08-28: seven Jules sessions spent
+        // reviewing pull request 170 of test-fiftieth, which was CLOSED without a merge. The dedup key
+        // below is keyed on the diff's content hash - correctly, because a new revision genuinely is not
+        // covered by a review of an older one. But the producer of new revisions is this same loop, so
+        // every round lifted the bound: a limit the limited thing can raise.
+        //
+        // The fact that ends it was never read by any predicate. isTerminalTask above asks about the
+        // TASK; a task stays non-terminal while its PR is closed. Closure without a merge IS the verdict -
+        // there is nothing left to review and no further revision can ever appear - so the target leaves
+        // the admission set permanently, with no counter and no number to choose (Charter invariant 8,
+        // the same shape decompositionRefused already gives briefs in §4.2).
+        //
+        // Costs nothing: the snapshot is already taken every tick by both AutoMergeService reconcilers,
+        // GitHubPullRequest carries `merged`, and all items in a batch share one project by construction
+        // (the caller groups by project). Unavailable snapshot does NOT block - same policy the diff fetch
+        // below already follows: leave the item exactly as-is for the next cycle rather than guess.
+        java.util.Set<String> reviewablePrUrls = reviewablePrUrls(items.get(0).task().getProject());
+
         for (PendingFallbackReview item : items) {
             if (isTerminalTask(item.task())) {
                 log.info("PR review fallback: target task {} is already terminal; skipping obsolete review dispatch.",
                         item.task().getId());
+                continue;
+            }
+            if (reviewablePrUrls != null && !reviewablePrUrls.contains(item.prUrl())) {
+                log.info("PR review fallback: PR {} is closed without a merge; its verdict is already settled, "
+                                + "so no review is dispatched for task {} (§9).",
+                        item.prUrl(), item.task().getId());
                 continue;
             }
             Integer pullNumber = parsePullNumber(item.prUrl());
@@ -3245,6 +3272,28 @@ public class JulesDispatchService {
                     }
                 });
         return keys;
+    }
+
+    /**
+     * The set of PR urls still worth reviewing for this project: open, or closed AND merged.
+     *
+     * <p>Returns null when GitHub could not be reached, which callers must read as "unknown, do not
+     * block" rather than as "nothing is reviewable" - an empty set would silently stop every review the
+     * moment GitHub hiccuped, turning an outage into a permanent halt (§2, the exact shape invariant 8
+     * warns about in the other direction).
+     */
+    java.util.Set<String> reviewablePrUrls(com.eneik.production.models.persistence.ProjectEntity project) {
+        var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+        if (snapshot == null || !snapshot.available() || snapshot.open() == null) {
+            return null;
+        }
+        java.util.Set<String> urls = new java.util.HashSet<>();
+        snapshot.open().forEach(pr -> urls.add(pr.url()));
+        if (snapshot.closed() != null) {
+            snapshot.closed().stream().filter(GitHubPullRequestService.GitHubPullRequest::merged)
+                    .forEach(pr -> urls.add(pr.url()));
+        }
+        return urls;
     }
 
     boolean reviewFallbackTargetsAreTerminal(TaskEntity reviewTask) {

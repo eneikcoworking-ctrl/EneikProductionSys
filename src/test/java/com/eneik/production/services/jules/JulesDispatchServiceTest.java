@@ -31,6 +31,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
@@ -3143,5 +3144,94 @@ class JulesDispatchServiceTest {
         verify(gitHubPullRequestService).mergeRecordPullRequest(eq(project), eq(openPr), any());
         verify(persistentWorkerSessionService).retire(eq(worker), any());
         verify(claimService).complete(taskId);
+    }
+
+    // --- §9: a PR closed without a merge is not worth a review session ---------------------------------
+    //
+    // Observed 2026-08-28: seven Jules sessions reviewing test-fiftieth PR 170, which was CLOSED and never
+    // merged. The dedup key is keyed on the diff hash, so each new revision of the same PR legitimately
+    // unlocked one more review - a bound the bounded thing could raise. Closure is the fact that ends it,
+    // and no predicate read it. These four pin both halves of invariant 10: that the predicate is right,
+    // AND that it is applied where the dispatch decision is made.
+
+    private com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest pr(
+            String url, int number, boolean merged) {
+        return new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                url, number, "PR " + number, "jules/" + number, "jules", merged, "main", false, Instant.now());
+    }
+
+    private void snapshot(ProjectEntity project,
+            List<com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest> open,
+            List<com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest> closed) {
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                        true, "org", "repo", open, closed, null));
+    }
+
+    @Test
+    void reviewableSetHoldsOpenAndMergedPrsButNotOnesClosedWithoutAMerge() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        snapshot(project,
+                List.of(pr("https://github.com/org/repo/pull/1", 1, false)),
+                List.of(pr("https://github.com/org/repo/pull/2", 2, true),
+                        pr("https://github.com/org/repo/pull/170", 170, false)));
+
+        Set<String> reviewable = julesDispatchService.reviewablePrUrls(project);
+
+        assertTrue(reviewable.contains("https://github.com/org/repo/pull/1"), "an open PR is reviewable");
+        assertTrue(reviewable.contains("https://github.com/org/repo/pull/2"), "a merged PR is reviewable");
+        assertFalse(reviewable.contains("https://github.com/org/repo/pull/170"),
+                "a PR closed without a merge carries its verdict already");
+    }
+
+    @Test
+    void unreachableGitHubMeansUnknownRatherThanNothingIsReviewable() {
+        // An empty set here would turn a GitHub outage into a permanent halt of all review. Null is read
+        // by the caller as "do not block", the same policy the diff fetch already follows.
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                        false, null, null, null, null, "rate limited"));
+
+        assertNull(julesDispatchService.reviewablePrUrls(project));
+    }
+
+    @Test
+    void closedUnmergedPrNeverEvenGetsItsDiffFetched() {
+        // Application, not just the predicate: the check sits ahead of the diff fetch, so a settled PR
+        // costs neither a GitHub call nor a session.
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.review);
+        snapshot(project, List.of(), List.of(pr("https://github.com/org/repo/pull/170", 170, false)));
+
+        julesDispatchService.dispatchReviewerFallbackBatch(List.of(
+                new JulesDispatchService.PendingFallbackReview(task, "https://github.com/org/repo/pull/170")));
+
+        verify(gitHubPullRequestService, never()).fetchDiffText(any(), anyInt());
+    }
+
+    @Test
+    void openPrStillReachesTheDiffFetch() {
+        // The guard must not be so strict that it stops real work - the failure mode opposite to the one
+        // it was written for.
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.review);
+        snapshot(project, List.of(pr("https://github.com/org/repo/pull/9", 9, false)), List.of());
+        when(gitHubPullRequestService.fetchDiffText(project, 9)).thenReturn(Optional.empty());
+
+        julesDispatchService.dispatchReviewerFallbackBatch(List.of(
+                new JulesDispatchService.PendingFallbackReview(task, "https://github.com/org/repo/pull/9")));
+
+        verify(gitHubPullRequestService).fetchDiffText(project, 9);
     }
 }

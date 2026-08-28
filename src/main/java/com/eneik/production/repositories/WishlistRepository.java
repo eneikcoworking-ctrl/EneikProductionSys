@@ -59,4 +59,13 @@ public interface WishlistRepository extends JpaRepository<WishlistEntity, UUID> 
     // Idempotency check for DesignSystemFalsificationService (2026-08-04, Phase B): has this epic already
     // had a design-system pass recorded, so the per-epic cron never reapplies one twice.
     boolean existsByFeatureIdAndSource(UUID featureId, WishlistSource source);
+
+    // V116, §9: exact deduplication for delivery_never_reached_main briefs. It replaces a scan of every
+    // pending wishlist in the project followed by a substring match inside the brief's own prose - both
+    // fragile (any rewording of the text silently produced a duplicate) and the reason a factory task id
+    // had to appear in text an agent in the client's zone reads.
+    boolean existsByProjectIdAndSourceAndSourceTaskId(
+            java.util.UUID projectId,
+            com.eneik.production.models.persistence.WishlistSource source,
+            java.util.UUID sourceTaskId);
 }

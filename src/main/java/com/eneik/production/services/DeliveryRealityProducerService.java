@@ -116,14 +116,18 @@ public class DeliveryRealityProducerService {
      * that shape found in a single day - after the auditor's flagForHumanReview and the gates that recorded
      * a pass where no check had applied.
      */
-    private void fileTheMissingWorkAsScope(ProjectEntity project, TaskEntity task) {
-        String marker = "task " + task.getId();
-        boolean alreadyFiled = wishlistRepository
-                .findByProjectIdAndStatus(project.getId(), com.eneik.production.models.persistence.WishlistStatus.pending)
-                .stream()
-                .anyMatch(existing -> existing.getSource() == com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main
-                        && existing.getContent() != null && existing.getContent().contains(marker));
-        if (alreadyFiled) {
+    // Package-private for P5 (§9): the split of marker's two jobs has to be asserted on BOTH halves,
+    // and breaking one side of a boundary without noticing the other is this session's recurring defect.
+    void fileTheMissingWorkAsScope(ProjectEntity project, TaskEntity task) {
+        // Deduplicated on the identifier, not on a substring of the brief's own prose (V116, §9). The
+        // old form did both jobs with one string: it matched `"task " + id` inside the text, which meant
+        // the id HAD to be in text an agent working in the client's codebase reads. That is the zone
+        // boundary of §2's first invariant, and crossing it is what made a nonsense pull request the only
+        // action available to that agent. The link now lives in a column; the text no longer carries it.
+        if (wishlistRepository.existsByProjectIdAndSourceAndSourceTaskId(
+                project.getId(),
+                com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main,
+                task.getId())) {
             return;
         }
 
@@ -132,6 +136,7 @@ public class DeliveryRealityProducerService {
                 new com.eneik.production.models.persistence.WishlistEntity();
         wishlist.setProjectId(project.getId());
         wishlist.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        wishlist.setSourceTaskId(task.getId());
         // 2026-08-23. A finding inherits the epic of the task it is about. Without this the wishlist it
         // produces compiles into a task with no feature, and a feature closes when ITS tasks close - so the
         // work exists, runs, merges, and moves nothing. Measured on test-fiftieth: eighty-two tasks, four
@@ -146,7 +151,7 @@ public class DeliveryRealityProducerService {
         wishlist.setCynefinDomain("clear");
         wishlist.setSourceRoleTag("BARCAN-TAG-00");
         wishlist.setContent("Work that was reported as delivered never reached the main branch.\n\n"
-                + "The closed " + marker + " (\"" + title + "\") has status done, and no merge evidence "
+                + "The closed task \"" + title + "\" has status done, and no merge evidence "
                 + "exists for it at all - no merged pull request, nothing on main. Its own status is the "
                 + "only thing asserting that the work was delivered.\n\n"
                 + "Deliver what that task was for. Do not reopen it and do not restate its goal as new "
