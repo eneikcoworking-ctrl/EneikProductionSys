@@ -71,6 +71,15 @@ public class FeatureEntity {
     @Column(name = "canonical_feature_id")
     private UUID canonicalFeatureId;
 
+    // E3 Epistemic Entrenchment (2026-08-26, Quine-Gärdenfors web): the calculated epistemic entrenchment
+    // score in [0.0, 100.0] synthesizing Cynefin domain, Kano class, and EMS flow stage.
+    @Column(name = "epistemic_score")
+    private Double epistemicScore;
+
+    // Epistemic layer: CORE (>= 75.0), CONTRACT (45.0 .. 74.9), PERIPHERY (< 45.0)
+    @Column(name = "epistemic_layer", length = 32)
+    private String epistemicLayer;
+
     public UUID getId() { return id; }
     public void setId(UUID id) { this.id = id; }
     public UUID getProjectId() { return projectId; }
@@ -97,4 +106,8 @@ public class FeatureEntity {
     public void setDismissedAt(Instant dismissedAt) { this.dismissedAt = dismissedAt; }
     public UUID getCanonicalFeatureId() { return canonicalFeatureId; }
     public void setCanonicalFeatureId(UUID canonicalFeatureId) { this.canonicalFeatureId = canonicalFeatureId; }
+    public Double getEpistemicScore() { return epistemicScore; }
+    public void setEpistemicScore(Double epistemicScore) { this.epistemicScore = epistemicScore; }
+    public String getEpistemicLayer() { return epistemicLayer; }
+    public void setEpistemicLayer(String epistemicLayer) { this.epistemicLayer = epistemicLayer; }
 }

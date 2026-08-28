@@ -113,7 +113,7 @@ class JulesDispatchServiceTest {
         // "claim succeeds" (1) so every existing handlePrOpenedWorkflow test below still reaches its real
         // handler logic; Mockito's own default for an unstubbed int-returning method is 0, which would
         // silently skip all of them. A dedicated test overrides this to exercise the "already claimed" path.
-        when(julesSessionRepository.claimPrOpenedWorkflow(any(), any())).thenReturn(1);
+        when(julesSessionRepository.claimPrOpenedWorkflow(any(), any(), any())).thenReturn(1);
         ReflectionTestUtils.setField(julesDispatchService, "stuckThresholdMinutes", 30);
         ReflectionTestUtils.setField(julesDispatchService, "stuckCloseThresholdMinutes", 120);
         ReflectionTestUtils.setField(julesDispatchService, "maxAgentDialogResponses", 8);
@@ -963,7 +963,13 @@ class JulesDispatchServiceTest {
                 .thenReturn(new JulesApiClient.CreateSessionResult("sessions/new", 200, ""));
         when(julesSessionRepository.save(any(JulesSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(roleCapabilityLoader.loadRules("BARCAN-TAG-02")).thenReturn(null);
-        when(geminiContextService.buildContextBlock(anyString())).thenReturn("""
+        // Tarski demarcation L0 / L_factory (2026-08-27): a task whose targetContext is PRODUCT_CODEBASE is
+        // a product worker, and its retrieval must go through buildProductWorkerContextBlock, which filters
+        // the factory's own metalanguage out of the corpus before the agent ever sees it. Only
+        // factory-scoped tasks take the unfiltered buildContextBlock path. This task sets no targetContext,
+        // which JulesDispatchService.appendRetrievedSystemKnowledge treats as PRODUCT_CODEBASE - so the
+        // product-worker overload is the one under test here.
+        when(geminiContextService.buildProductWorkerContextBlock(any(RoleEntity.class), anyString())).thenReturn("""
                 RELEVANT SYSTEM KNOWLEDGE (retrieved from the indexed knowledge base):
                 - [01_PARALLEL_DEVELOPMENT_CONFLICT_PREVENTION.md] Single Writer Ownership and Contract-First Parallelism.
                 """);
@@ -973,9 +979,11 @@ class JulesDispatchServiceTest {
         assertTrue(result.dispatched());
 
         ArgumentCaptor<String> queryCaptor = ArgumentCaptor.forClass(String.class);
-        verify(geminiContextService).buildContextBlock(queryCaptor.capture());
+        verify(geminiContextService).buildProductWorkerContextBlock(eq(role), queryCaptor.capture());
         assertTrue(queryCaptor.getValue().contains("roleTag=BARCAN-TAG-02"));
         assertTrue(queryCaptor.getValue().contains("contract-first account ingestion"));
+        // The unfiltered corpus must never be consulted for a product task - that is the demarcation.
+        verify(geminiContextService, never()).buildContextBlock(anyString());
 
         verify(julesApiClient).createSessionDetailed(eq("prefix/repo"), anyString(), argThat(context ->
                 context.contains("## Retrieved System Knowledge")
@@ -2265,7 +2273,7 @@ class JulesDispatchServiceTest {
         session.setTaskId(UUID.randomUUID());
         session.setStatus("pr_opened");
 
-        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any())).thenReturn(0);
+        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any(), any())).thenReturn(0);
 
         julesDispatchService.handlePrOpenedWorkflow(session);
 
@@ -2284,7 +2292,7 @@ class JulesDispatchServiceTest {
         session.setTaskId(taskId);
         session.setStatus("pr_opened");
 
-        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any())).thenReturn(1);
+        when(julesSessionRepository.claimPrOpenedWorkflow(eq(sessionId), any(), any())).thenReturn(1);
         when(taskRepository.findById(taskId)).thenThrow(new RuntimeException("simulated DB failure mid-processing"));
 
         assertThrows(RuntimeException.class, () -> julesDispatchService.handlePrOpenedWorkflow(session));

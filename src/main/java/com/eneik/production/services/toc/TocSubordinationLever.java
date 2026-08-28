@@ -1,6 +1,7 @@
 package com.eneik.production.services.toc;
 
 import com.eneik.production.models.persistence.ClientRuntimeObservationEntity;
+import com.eneik.production.models.persistence.LeverObservation;
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.repositories.ClientRuntimeObservationRepository;
 import com.eneik.production.services.lever.LeverAgreement;
@@ -85,6 +86,16 @@ public class TocSubordinationLever {
     private final ClientRuntimeObservationRepository observationRepository;
     private final LeverPromotionService leverPromotionService;
 
+    /**
+     * Optional so every existing construction site keeps compiling; without it the lever records as before
+     * and simply never resolves, which is the state it was already in.
+     */
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.repositories.LeverObservationRepository leverObservationRepository;
+
+    /** How many pending observations one call may resolve. Bounded for the reason the query documents. */
+    static final int RESOLVE_BATCH = 100;
+
     public TocSubordinationLever(ClientRuntimeObservationRepository observationRepository,
                                   LeverPromotionService leverPromotionService) {
         this.observationRepository = observationRepository;
@@ -104,13 +115,23 @@ public class TocSubordinationLever {
      */
     public boolean subordinate(ProjectEntity project, OperationalAction action, boolean incumbentAllowed) {
         try {
+            resolvePendingObservations(project);
             if (!constraintIsOpen(project)) {
                 return incumbentAllowed;
             }
             boolean candidateAllowed = SERVES_A_LAUNCH_CONSTRAINT.contains(action);
-            LeverAgreement agreement = incumbentAllowed == candidateAllowed
-                    ? LeverAgreement.TRUE
-                    : LeverAgreement.FALSE;
+            // NEITHER, because at decision time nothing has happened yet that could say who was right
+            // (2026-08-28). This line previously wrote TRUE when the two rules merely COINCIDED and FALSE
+            // when they differed - a different variable from the one the promotion ladder measures.
+            // LeverPromotionService counts TRUE as "the candidate was right and the incumbent was not";
+            // supplying rule-coincidence instead meant the rate measured redundancy, and promotion could
+            // only ever be earned by echoing the policy - the opposite of the reason this lever exists.
+            // Measured before the change: TRUE 1408, FALSE 1978, rate 0.416 against a 0.80 threshold.
+            // The truth arrives later, from the product itself - see resolvePendingObservations.
+            LeverAgreement agreement = LeverAgreement.compare(
+                    incumbentAllowed ? "allow" : "deny",
+                    candidateAllowed ? "allow" : "deny",
+                    null);
             leverPromotionService.recordObservation(
                     T1_TOC_SUBORDINATION,
                     project.getId() + ":" + action.name(),
@@ -150,6 +171,78 @@ public class TocSubordinationLever {
      * Open exactly while the latest observation that actually observed the product came back unhealthy.
      * Rows marked as instrument failures are skipped - nothing was learned from them (V104).
      */
+    /**
+     * Ground truth for one subordination decision, and how it is obtained.
+     *
+     * <p>The lever only ever records while the constraint is open - the product's latest real observation
+     * came back unhealthy. What the decision claimed was: non-constraint work should idle until that
+     * clears. The next real observation says whether it cleared:
+     *
+     * <pre>
+     *   truth = "deny"   the product is STILL unhealthy  -> the constraint persisted, withholding
+     *                                                       slack work was the right call
+     *   truth = "allow"  the product became healthy      -> the constraint cleared anyway, withholding
+     *                                                       it was unnecessary
+     * </pre>
+     *
+     * <p>Then {@link LeverAgreement#compare} turns the pair into the quantity the ladder actually
+     * measures: TRUE only when the candidate was right and the policy was not.
+     *
+     * <p><b>This is a declared definition, not a measurement</b>, and it is falsifiable: if a promoted
+     * lever starts removing permissions on projects whose product recovered regardless, the definition is
+     * wrong and the ladder's own demotion (first FALSE after promotion) will pull it back down. That is
+     * the intended way for it to be refuted.
+     *
+     * <p>Instrument failures are skipped, for the same reason the posterior skips them (V104): a launch
+     * nobody answered is not a launch that failed.
+     */
+    private void resolvePendingObservations(ProjectEntity project) {
+        if (leverObservationRepository == null) {
+            return;
+        }
+        ClientRuntimeObservationEntity latest = latestRealObservation(project);
+        if (latest == null || latest.getObservedAt() == null) {
+            return;
+        }
+        String truth = isHealthy(latest) ? "allow" : "deny";
+        List<LeverObservation> pending = leverObservationRepository
+                .findByLeverKeyAndSubjectIdStartingWithAndGroundTruthOutcomeIsNullAndObservedAtBeforeOrderByObservedAtAsc(
+                        T1_TOC_SUBORDINATION, project.getId() + ":", latest.getObservedAt(),
+                        Limit.of(RESOLVE_BATCH));
+        if (pending.isEmpty()) {
+            return;
+        }
+        for (LeverObservation observation : pending) {
+            observation.setGroundTruthOutcome(truth);
+            observation.setAgreement(LeverAgreement.compare(
+                    observation.getIncumbentDecision(), observation.getCandidateDecision(), truth).name());
+        }
+        leverObservationRepository.saveAll(pending);
+        log.info("[TOC-SUBORDINATION][RESOLVE] project {} - {} observation(s) resolved against a {} product "
+                        + "observation at {}",
+                project.getId(), pending.size(), truth.equals("allow") ? "healthy" : "still-unhealthy",
+                latest.getObservedAt());
+    }
+
+    /** Newest observation that actually observed the product, or null if there is none. */
+    private ClientRuntimeObservationEntity latestRealObservation(ProjectEntity project) {
+        for (ClientRuntimeObservationEntity row
+                : observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId(), Limit.of(20))) {
+            if (!row.isInstrumentFailure()) {
+                return row;
+            }
+        }
+        return null;
+    }
+
+    /** One definition of health, shared by the constraint predicate and by truth resolution. */
+    private static boolean isHealthy(ClientRuntimeObservationEntity row) {
+        return row.isLaunchSuccess()
+                && row.getHealthStatusCode() != null
+                && row.getHealthStatusCode() >= 200
+                && row.getHealthStatusCode() < 300;
+    }
+
     private boolean constraintIsOpen(ProjectEntity project) {
         // Bounded read (2026-08-21): this now runs on the orchestrator's per-action policy check rather
         // than once per shadow sample, and the unbounded variant loads the project's ENTIRE observation
@@ -162,11 +255,7 @@ public class TocSubordinationLever {
             if (row.isInstrumentFailure()) {
                 continue;
             }
-            boolean healthy = row.isLaunchSuccess()
-                    && row.getHealthStatusCode() != null
-                    && row.getHealthStatusCode() >= 200
-                    && row.getHealthStatusCode() < 300;
-            return !healthy;
+            return !isHealthy(row);
         }
         return false; // never observed - nothing is known, so nothing is subordinated
     }

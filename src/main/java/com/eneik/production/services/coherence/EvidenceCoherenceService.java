@@ -117,6 +117,16 @@ public class EvidenceCoherenceService {
         log.info("[COHERENCE-INIT] EvidenceCoherenceService (Thagard/ECHO + Gärdenfors/AGM + Bovens-Hartmann) initialized.");
     }
 
+    // Optional on purpose: the 6-arg constructor above is what EvidenceCoherenceServiceTest builds, and
+    // the <=_EE guard below degrades to "no guard" without it rather than forcing every caller to supply
+    // a repository it has no other use for.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.repositories.FeatureRepository featureRepository;
+
+    void setFeatureRepositoryForTest(com.eneik.production.repositories.FeatureRepository featureRepository) {
+        this.featureRepository = featureRepository;
+    }
+
     enum EdgeRelation { COOPERATE, COMPETE, NONE }
 
     /**
@@ -361,6 +371,22 @@ public class EvidenceCoherenceService {
                 log.info("[COHERENCE-AGM] Cluster {} revised: POSITIVE_CONFIRMATION side rejected (entrenchment {} < {})",
                         entry.getKey(), posEntrenchment, negEntrenchment);
             } else if (posEntrenchment > negEntrenchment) {
+                // Phase 1.3 (2026-08-27): the <=_EE preorder enters here. Source-type entrenchment alone
+                // may not discard a negative finding about a CORE-layer feature - that is the one class of
+                // belief AGM's principle of minimum mutilation says must survive revision, and discarding
+                // it is how a core invariant gets contradicted quietly. The negative side is kept and the
+                // contradiction left standing, which is the honest state: unresolved, and visible.
+                //
+                // Reachable at all only since the entrenchment formula stopped returning a constant. While
+                // every feature scored 46.25 there was no CORE feature in existence, so this guard would
+                // have been unreachable code dressed as a safeguard.
+                if (isCoreLayerCluster(clusterNodes)) {
+                    log.info("[COHERENCE-AGM] Cluster {} NOT revised: NEGATIVE_FINDING side is less entrenched "
+                                    + "({} < {}) but the feature sits in the CORE layer - minimum mutilation "
+                                    + "forbids pruning a contradiction against a core invariant.",
+                            entry.getKey(), negEntrenchment, posEntrenchment);
+                    continue;
+                }
                 negativeAccepted.forEach(node -> result.put(node.getId(), false));
                 log.info("[COHERENCE-AGM] Cluster {} revised: NEGATIVE_FINDING side rejected (entrenchment {} < {})",
                         entry.getKey(), negEntrenchment, posEntrenchment);
@@ -368,6 +394,25 @@ public class EvidenceCoherenceService {
             // Tie: AGM minimal-change principle - leave ECHO's own raw verdict alone for both sides.
         }
         return result;
+    }
+
+    /**
+     * True when this cluster's feature is entrenched at the CORE layer (EE >= 75) - see
+     * FeatureService.calculateEpistemicEntrenchment. False whenever that cannot be established: a
+     * PR-keyed cluster with no feature, an unknown feature, an unscored feature, or no repository at all.
+     * Unknown never protects, because a guard that fires on ignorance would freeze every revision.
+     */
+    private boolean isCoreLayerCluster(List<EvidenceNodeEntity> clusterNodes) {
+        if (featureRepository == null || clusterNodes.isEmpty()) {
+            return false;
+        }
+        UUID featureId = clusterNodes.get(0).getFeatureId();
+        if (featureId == null) {
+            return false;
+        }
+        return featureRepository.findById(featureId)
+                .map(feature -> "CORE".equalsIgnoreCase(feature.getEpistemicLayer()))
+                .orElse(false);
     }
 
     Object clusterKey(EvidenceNodeEntity node) {
@@ -509,4 +554,60 @@ public class EvidenceCoherenceService {
     private static double sigmoid(double x) {
         return 1.0 / (1.0 + Math.exp(-x));
     }
+
+    /**
+     * E3 Epistemic Engine (Phase 1): Evaluates a proposed feature/wishlist hypothesis against
+     * the active Evidence graph for the project before task decomposition.
+     *
+     * Computes harmonic coherence with existing accepted evidence nodes and checks if any
+     * strong negative contradiction (e.g. active defect finding) attacks this hypothesis.
+     */
+    public HypothesisEvaluationResult evaluateFeatureHypothesis(UUID projectId, String featureTitle,
+                                                               double epistemicScore, String epistemicLayer) {
+        if (projectId == null || featureTitle == null || featureTitle.isBlank()) {
+            return new HypothesisEvaluationResult(true, 1.0, List.of(), "Empty hypothesis accepted by default");
+        }
+
+        List<EvidenceNodeEntity> activeNodes = evidenceNodeRepository.findByProjectId(projectId);
+        if (activeNodes == null || activeNodes.isEmpty()) {
+            return new HypothesisEvaluationResult(true, 1.0, List.of(), "No existing evidence constraints; hypothesis accepted");
+        }
+
+        List<String> contradictingFindings = new ArrayList<>();
+        double netPull = specialUnitWeight;
+
+        for (EvidenceNodeEntity node : activeNodes) {
+            String summary = node.getSummaryText() != null ? node.getSummaryText() : "";
+            double similarity = similarityMatcher.similarity(featureTitle, summary);
+
+            if (similarity >= 0.25) {
+                if (node.getPolarity() == EvidenceNodeEntity.Polarity.NEGATIVE_FINDING) {
+                    // Contradiction / Defect evidence: negative pull
+                    netPull -= (strongEdgeWeight * similarity);
+                    contradictingFindings.add(node.sourceType() + ": " + summary);
+                } else {
+                    // Positive corroboration
+                    netPull += (strongEdgeWeight * similarity);
+                }
+            }
+        }
+
+        // AGM Principle of Minimum Mutilation: CORE layers (EE >= 75) strictly resist contradiction
+        boolean nogood = "CORE".equals(epistemicLayer) && !contradictingFindings.isEmpty() && netPull < 0;
+        boolean accepted = !nogood;
+
+        double normalizedConfidence = sigmoid(netPull * 10.0);
+        String explanation = accepted
+                ? "Hypothesis accepted into " + epistemicLayer + " layer (coherence pull: " + String.format(java.util.Locale.US, "%.3f", netPull) + ")"
+                : "Hypothesis flagged as NOGOOD due to contradiction with active core evidence: " + String.join("; ", contradictingFindings);
+
+        return new HypothesisEvaluationResult(accepted, normalizedConfidence, contradictingFindings, explanation);
+    }
+
+    public record HypothesisEvaluationResult(
+            boolean accepted,
+            double confidence,
+            List<String> contradictions,
+            String explanation
+    ) {}
 }

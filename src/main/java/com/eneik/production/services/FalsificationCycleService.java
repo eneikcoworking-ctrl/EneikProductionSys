@@ -11,7 +11,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Service
@@ -382,17 +384,13 @@ public class FalsificationCycleService {
             return;
         }
 
-        // TOC subordination (2026-08-11, reliability-strengthening plan): launchability is the real
-        // constraint on this whole pipeline (see ProductLaunchabilityService's own javadoc - "everything
-        // else is meaningless if the product can't even be started"). A philosophical review of a
-        // product that isn't currently launching/healthy would be reasoning about nothing real - only
-        // ever gates STARTING a new discussion (never interrupts one already in flight, same discipline
-        // as the readiness/pending-count gates above). Reuses the exact same signal Phase 5's
-        // liveEvidenceBlock already draws on - never a second, independently-derived source of truth.
+        // TOC subordination & JIT Reactive Verification: Ensure we have a fresh, real observation of the
+        // current artifact rather than passively failing against stale multi-day-old failures.
+        clientRuntimeObservabilityService.ensureFreshObservation(project);
         var runtimeHealth = clientRuntimeObservabilityService.summarize(project.getId());
         if (runtimeHealth != null && Boolean.FALSE.equals(runtimeHealth.lastObservationHealthy())) {
             launchabilityConstraintService.ensureOpen(project, latestErrorText(runtimeHealth));
-            log.info("FalsificationCycleService: Project {} is not currently launchable/healthy - "
+            log.info("FalsificationCycleService: Project {} is not currently launchable/healthy (verified via JIT probe) - "
                             + "subordinating philosophical review to that constraint (TOC) instead of "
                             + "auditing a broken product this cycle",
                     project.getName());
@@ -679,13 +677,11 @@ public class FalsificationCycleService {
                 Must-Be and say plainly which link broke and what you observed. If the path is unbroken,
                 say that too - it is real evidence, not an absence of findings.
 
-                STEP 1c - check the obligations this product cannot legally ship without. These are not
-                opinions and are not subject to a philosopher's taste: they are duties for the German and
-                US markets this product is built for, and the client is not expected to have asked for
-                them. Look for each in the RUNNING product and in its code, and report every one you find
-                missing as a Must-Be critique with the act named as evidence. A missing legal disclosure is
-                not a style question - in Germany it is a standard target for paid cease-and-desist
-                letters, and the bill goes to the client.
+                STEP 1c - check statutory and domain compliance obligations for this product. These are not
+                subjective opinions or stylistic preferences: they are binding duties derived from empirical market
+                corpus research and the product's detected profile. Look for each in the RUNNING product and in its
+                code, and report every genuine violation you find missing as a Must-Be critique with the concrete
+                evidence and statutory/domain basis named.
                 %s
 
                 LIVE EVIDENCE - already fetched from the factory's own currently-running instance of this
@@ -749,7 +745,7 @@ public class FalsificationCycleService {
                 %s
 
                 %s
-                """.formatted(screenshotDir, regulatoryChecklistFromCorpus(), liveEvidenceBlock(project),
+                """.formatted(screenshotDir, regulatoryChecklistFromCorpus(project), liveEvidenceBlock(project),
                         activeRoles.size(), totalActiveRoleCount,
                         reportPath, screenshotDir, charters, knownContext);
     }
@@ -845,21 +841,65 @@ public class FalsificationCycleService {
     private static final List<String> KANO_ASSERTIVENESS_ORDER = List.of("Attractive", "Performance", "Must-Be", "Indifferent", "Reverse");
 
     /**
-     * The statutory duties for the markets this factory builds for, rendered from the versioned corpus.
+     * The statutory duties for the product's declared markets and detected profiles, rendered from the versioned corpus.
      * Only statutory entries appear - MarketCorpusService.influentialExpectations enforces that, so the
      * unverified guesses in the corpus can never be presented to an auditor as legal obligations.
-     * Empty string when no corpus is available, which leaves the audit exactly as it was before.
+     * Filtered strictly by profilesInEvidence and targetMarkets to avoid cross-domain contamination (e.g. ecommerce duties in an archive).
      */
-    private String regulatoryChecklistFromCorpus() {
-        if (marketCorpusService == null) {
-            return "";
+    private String regulatoryChecklistFromCorpus(ProjectEntity project) {
+        if (marketCorpusService == null || !marketCorpusService.isAvailable()) {
+            return "                  * No statutory market-corpus is active. Evaluate domain-level structural integrity and compliance from the project's own evidence.";
         }
+
+        List<String> targetMarkets = new ArrayList<>();
+        if (project != null && project.getTargetMarkets() != null && !project.getTargetMarkets().isBlank()) {
+            for (String m : project.getTargetMarkets().split(",")) {
+                String trimmed = m.trim().toUpperCase(Locale.ROOT);
+                if (!trimmed.isBlank()) {
+                    targetMarkets.add(trimmed);
+                }
+            }
+        }
+        if (targetMarkets.isEmpty()) {
+            targetMarkets = List.of("DE", "US");
+        }
+
+        StringBuilder contextBuilder = new StringBuilder();
+        if (project != null) {
+            if (project.getName() != null) contextBuilder.append(project.getName()).append(" ");
+            if (project.getSlug() != null) contextBuilder.append(project.getSlug()).append(" ");
+            if (project.getFactoryReport() != null) contextBuilder.append(project.getFactoryReport()).append(" ");
+            try {
+                for (var w : wishlistRepository.findByProjectId(project.getId())) {
+                    if (w.getContent() != null) {
+                        contextBuilder.append(w.getContent()).append(" ");
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+        }
+        String contextText = contextBuilder.toString().toLowerCase(Locale.ROOT);
+        List<String> profilesInEvidence = marketCorpusService.profilesInEvidence(contextText);
+
         java.util.LinkedHashSet<String> lines = new java.util.LinkedHashSet<>();
-        for (String market : List.of("DE", "US")) {
+        for (String market : targetMarkets) {
             for (var expectation : marketCorpusService.influentialExpectations(market)) {
                 if (!"statutory".equals(expectation.status())) {
                     continue;
                 }
+                List<String> scope = expectation.appliesToProfiles();
+                boolean profileMatches = (scope == null || scope.isEmpty() || scope.contains("*")
+                        || (!profilesInEvidence.isEmpty() && scope.stream().anyMatch(profilesInEvidence::contains)));
+                if (!profileMatches) {
+                    continue;
+                }
+                List<String> conditionWords = expectation.appliesWhenKeywords();
+                boolean conditionMatches = (conditionWords == null || conditionWords.isEmpty()
+                        || conditionWords.stream().anyMatch(w -> com.eneik.production.services.market.MarketCorpusService.mentions(contextText, w)));
+                if (!conditionMatches) {
+                    continue;
+                }
+
                 StringBuilder line = new StringBuilder("                  * ");
                 if (expectation.market() != null && !expectation.market().isBlank()) {
                     line.append("[").append(expectation.market()).append("] ");
@@ -873,6 +913,11 @@ public class FalsificationCycleService {
                 }
                 lines.add(line.toString());
             }
+        }
+        if (lines.isEmpty()) {
+            return "                  * No statutory market-corpus obligations apply to the detected product profile ("
+                    + (profilesInEvidence.isEmpty() ? "domain-specific" : String.join(", ", profilesInEvidence))
+                    + "). Evaluate domain-level structural integrity and data compliance from the project's own evidence.";
         }
         return String.join("\n", lines);
     }

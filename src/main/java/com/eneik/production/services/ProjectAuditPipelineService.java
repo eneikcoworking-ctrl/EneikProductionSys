@@ -151,7 +151,7 @@ public class ProjectAuditPipelineService {
 
     private boolean triggerSingleStitchGeneration(ProjectEntity project) {
         try {
-            List<WishlistStatus> openStatuses = List.of(WishlistStatus.pending, WishlistStatus.compiling);
+            List<WishlistStatus> openStatuses = List.of(WishlistStatus.pending, WishlistStatus.compiling); // filtered by movable() below
             List<WishlistEntity> relevant = new ArrayList<>();
             relevant.addAll(wishlistRepository.findByProjectIdAndSourceAndStatusIn(
                     project.getId(), WishlistSource.self_falsification, openStatuses));

@@ -74,6 +74,12 @@ public class AutoMergeService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.toc.service.TocSentinelService tocSentinelService;
 
+    // Optional on purpose: the constructor already takes 25 arguments and every unit test builds this
+    // service by hand, so the poka-yoke's defect record must not become a 26th required parameter. A null
+    // here degrades the record, never the rejection.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.kaizen.service.DefectJournalService defectJournalService;
+
     // Declared ownership, the ground substitutable() stands on - see its javadoc.
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
@@ -471,9 +477,8 @@ public class AutoMergeService {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
-        List<TaskConflictEntity> escalated = taskConflictRepository.findAll().stream()
-                .filter(c -> "escalated".equalsIgnoreCase(c.getResolutionStatus()))
-                .toList();
+        // Pushed into the query (2026-08-28): this ran every 60s and loaded the whole conflict table.
+        List<TaskConflictEntity> escalated = taskConflictRepository.findByResolutionStatusIgnoreCase("escalated");
         for (TaskConflictEntity conflict : escalated) {
             try {
                 // 2026-07-26 fix: conflict.getTask() is a Hibernate proxy from a repository call whose own
@@ -824,13 +829,14 @@ public class AutoMergeService {
             for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
                 var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
                 if (snapshot != null && snapshot.available() && snapshot.open() != null) {
+                    // Scoped to this project's tasks (2026-08-28). This previously loaded every session
+                    // in the store and then issued one findById per session to discover its project - a
+                    // full-table read plus an N+1, on a path that runs every 60 seconds for every project.
                     List<com.eneik.production.models.persistence.JulesSessionEntity> projectSessions =
-                            julesSessionRepository.findAll().stream()
-                                    .filter(session -> taskRepository.findById(session.getTaskId())
-                                            .map(task -> task.getProject() != null
-                                                    && project.getId().equals(task.getProject().getId()))
-                                            .orElse(false))
-                                    .toList();
+                            julesSessionRepository.findByTaskIdIn(
+                                    taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                                            .map(com.eneik.production.models.persistence.TaskEntity::getId)
+                                            .toList());
                     for (var pr : snapshot.open()) {
                         String prUrl = pr.url();
                         if (prUrl == null || prUrl.isBlank()) {
@@ -1076,6 +1082,13 @@ public class AutoMergeService {
                 log.info("AutoMergeService: PR {} was already merged (not necessarily by this service); recording as merged instead of re-attempting.", review.getPrUrl());
                 alreadyMergedExternally = true;
             } else {
+            // Ontological stratification, output side (2026-08-27, Phase 2): a PR carrying the factory's
+            // own metalanguage, or announcing an agent's refusal in its title, is rejected here - before
+            // the token/CI gates, because neither of those can tell the difference between work and a
+            // report that the work was refused.
+            if (rejectByFactoryPokaYoke(review, reviewTask, reviewSession, pullRequestTarget, githubPr)) {
+                return;
+            }
             if (!GitHubPullRequestService.matchesSessionToken(githubPr, reviewSession.getExternalSessionId())) {
                 review.setCiStatus("owner_mismatch");
                 prReviewRepository.save(review);
@@ -1280,8 +1293,8 @@ public class AutoMergeService {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return;
         }
-        List<PrReviewEntity> unmerged = prReviewRepository.findAll().stream()
-                .filter(r -> !Boolean.TRUE.equals(r.getMerged()))
+        // Pushed into the query (2026-08-28): the merged/unmerged split is a column, not a stream filter.
+        List<PrReviewEntity> unmerged = prReviewRepository.findByMergedFalseOrMergedIsNull().stream()
                 .filter(this::belongsToActiveProject)
                 .toList();
         for (PrReviewEntity review : unmerged) {
@@ -1393,6 +1406,13 @@ public class AutoMergeService {
                         prReviewRepository.save(review);
                         gitHubPullRequestService.deleteBranch(task.getProject(), pr.headRef());
                     });
+            if (task.getFeatureId() != null) {
+                featureThreadRepository.findByProjectIdAndFeatureId(task.getProject().getId(), task.getFeatureId())
+                        .ifPresent(t -> {
+                            t.setAbandonedAt(java.time.Instant.now());
+                            featureThreadRepository.save(t);
+                        });
+            }
             session.setStatus("closed_no_code");
             session.setClosedAt(java.time.Instant.now());
             session.setClosureReason("Merged PR contained no product code (process/config/docs only); branch deleted.");
@@ -1849,7 +1869,9 @@ public class AutoMergeService {
     }
 
     void reconcileMergedTaskOutcomes() {
-        List<PrReviewEntity> reviews = prReviewRepository.findAll();
+        // Pushed into the query (2026-08-28): the loop below skips everything that is not merged with a
+        // session, so asking for exactly that costs the answer instead of the whole table.
+        List<PrReviewEntity> reviews = prReviewRepository.findByMergedTrueAndJulesSessionIdIsNotNull();
 
         for (PrReviewEntity mergedReview : reviews) {
             if (!Boolean.TRUE.equals(mergedReview.getMerged()) || mergedReview.getJulesSessionId() == null) {
@@ -1916,9 +1938,8 @@ public class AutoMergeService {
                 }
 
                 List<com.eneik.production.models.persistence.JulesSessionEntity> mergedSessions =
-                        julesSessionRepository.findAll().stream()
-                                .filter(session -> session.getPrUrl() != null && mergedPrUrls.contains(session.getPrUrl()))
-                                .toList();
+                        // Pushed into the query (2026-08-28): the PR url set is already known here.
+                        julesSessionRepository.findByPrUrlIn(java.util.List.copyOf(mergedPrUrls));
                 for (var session : mergedSessions) {
                     com.eneik.production.models.persistence.TaskEntity task =
                             taskRepository.findById(session.getTaskId()).orElse(null);
@@ -2014,9 +2035,8 @@ public class AutoMergeService {
                                 GitHubPullRequestService.GitHubPullRequest::url, pr -> pr, (a, b) -> b));
 
                 List<com.eneik.production.models.persistence.JulesSessionEntity> sessionsWithOpenPr =
-                        julesSessionRepository.findAll().stream()
-                                .filter(session -> session.getPrUrl() != null && openPrByUrl.containsKey(session.getPrUrl()))
-                                .toList();
+                        // Pushed into the query (2026-08-28): the PR url set is already known here.
+                        julesSessionRepository.findByPrUrlIn(java.util.List.copyOf(openPrByUrl.keySet()));
                 for (var session : sessionsWithOpenPr) {
                     com.eneik.production.models.persistence.TaskEntity task =
                             taskRepository.findById(session.getTaskId()).orElse(null);
@@ -2165,8 +2185,8 @@ public class AutoMergeService {
                     // report/plan) is almost always trivially mergeable, so without this check it would get
                     // merged and effectively terminated after its very first cycle. Same session-token
                     // lookup BranchGarbageCollectorService already uses to find a PR's owning task.
-                    boolean isPersistentWorkerCarrier = julesSessionRepository.findAll().stream()
-                            .filter(s -> s.getExternalSessionId() != null && !s.getExternalSessionId().isBlank())
+                    boolean isPersistentWorkerCarrier = julesSessionRepository.findByExternalSessionIdIsNotNull().stream()
+                            .filter(s -> !s.getExternalSessionId().isBlank())
                             .filter(s -> GitHubPullRequestService.matchesSessionToken(openPr, s.getExternalSessionId()))
                             .findFirst()
                             .flatMap(s -> taskRepository.findById(s.getTaskId()))
@@ -2196,7 +2216,12 @@ public class AutoMergeService {
             return;
         }
         try {
-            List<com.eneik.production.models.persistence.TaskEntity> stuckTasks = taskRepository.findAll().stream()
+            // Status pushed into the query (2026-08-28): only three statuses can be stuck, and asking for
+            // them costs the answer rather than the whole task table on every 60-second tick.
+            List<com.eneik.production.models.persistence.TaskEntity> stuckTasks = taskRepository.findByStatusIn(
+                            java.util.List.of(com.eneik.production.models.persistence.TaskStatus.review,
+                                    com.eneik.production.models.persistence.TaskStatus.pending_review,
+                                    com.eneik.production.models.persistence.TaskStatus.claimed)).stream()
                     .filter(t -> t.getProject() != null && t.getProject().getStatus() == com.eneik.production.models.persistence.ProjectStatus.active)
                     .filter(t -> !"chaotic".equalsIgnoreCase(t.getCynefinDomain()) && !"complex".equalsIgnoreCase(t.getCynefinDomain()))
                     .filter(t -> t.getStatus() == com.eneik.production.models.persistence.TaskStatus.review 
@@ -2213,9 +2238,9 @@ public class AutoMergeService {
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
                     taskRepository.save(task);
 
-                    prReviewRepository.findAll().stream()
-                            .filter(r -> r.getJulesSessionId() != null)
-                            .filter(r -> sessions.stream().anyMatch(s -> s.getId().equals(r.getJulesSessionId())))
+                    prReviewRepository.findByJulesSessionIdIn(
+                                    sessions.stream().map(com.eneik.production.models.persistence.JulesSessionEntity::getId).toList())
+                            .stream()
                             .forEach(r -> {
                                 r.setMerged(true);
                                 prReviewRepository.save(r);
@@ -2271,8 +2296,7 @@ public class AutoMergeService {
         // Deterministic now, and ordered by what the question actually is: the row that reflects the merge
         // wins over one that does not, and among equals the newest wins. Nothing else changes - which rows
         // exist, what is written to them, and when a repair happens are all untouched.
-        Map<UUID, PrReviewEntity> reviewBySession = prReviewRepository.findAll().stream()
-                .filter(review -> review.getJulesSessionId() != null)
+        Map<UUID, PrReviewEntity> reviewBySession = prReviewRepository.findByJulesSessionIdIsNotNull().stream()
                 .collect(java.util.stream.Collectors.toMap(
                         PrReviewEntity::getJulesSessionId,
                         review -> review,
@@ -2406,6 +2430,171 @@ public class AutoMergeService {
                             + "review updated={}, retired sessions={}, superseded reviews={}",
                     task.getId(), mergedPrUrl, taskNeedsRepair, reviewNeedsUpdate,
                     activeDuplicates.size(), staleReviews.size());
+        }
+    }
+
+    /**
+     * Titles a Jules agent uses when it is reporting that it will NOT do the work: "Blocker: ...",
+     * "Architectural contradiction: ...", "Halt: ...". Four such PRs (#304, #306, #307, #308 on
+     * eneikdru/test-fiftieth) were auto-merged into the client's main branch as delivered work.
+     */
+    private static final java.util.regex.Pattern BLOCKER_PR_TITLE = java.util.regex.Pattern.compile(
+            "(?i)(^|\\W)(blocker|halt|contradiction|blocked by|cannot proceed)(\\W|$)");
+
+    /**
+     * Why the PR is (or is not) refused, separated from how it was fetched so the decision itself can be
+     * tested without a GitHub round-trip. {@code ciStatus} is kept to 16 characters because that is the
+     * declared length of PrReviewEntity.ciStatus - the plan's REJECTED_METADATA_CONTAMINATION does not
+     * fit there, so the full wording lives in {@code reason} (diffSummary + defect journal) instead.
+     */
+    record PokaYokeVerdict(boolean rejected, String ciStatus, String reason) {
+        static PokaYokeVerdict pass() {
+            return new PokaYokeVerdict(false, null, null);
+        }
+    }
+
+    static PokaYokeVerdict judgeFactoryPokaYoke(List<String> changedFiles, String prTitle,
+                                                CodeChangeClassifier classifier) {
+        List<String> contamination = new ArrayList<>();
+        if (changedFiles != null) {
+            for (String path : changedFiles) {
+                if (classifier.isFactoryArtifact(path)) {
+                    contamination.add(path);
+                }
+            }
+        }
+        if (!contamination.isEmpty()) {
+            return new PokaYokeVerdict(true, "contaminated",
+                    "REJECTED_METADATA_CONTAMINATION: PR carries factory metalanguage (L_factory) files: "
+                            + contamination);
+        }
+        String title = prTitle == null ? "" : prTitle;
+        if (BLOCKER_PR_TITLE.matcher(title).find()) {
+            return new PokaYokeVerdict(true, "blocker_pr",
+                    "Blocker PR rejected by factory poka-yoke: the title announces a refusal, not a change: "
+                            + title);
+        }
+        return PokaYokeVerdict.pass();
+    }
+
+    /**
+     * The merge-time poka-yoke: enforces Code(t) INTERSECT L_factory = EMPTY on the ARTIFACT, not on the
+     * prompt. Returns true when the PR was rejected and the caller must abandon the merge.
+     *
+     * <p>Two independent grounds for rejection, both unambiguous:
+     * <ol>
+     *   <li><b>Metalanguage contamination</b> - the PR changes a file belonging to the factory's own
+     *       submission harness ({@code _temp_submit*.sh}, {@code final_submit*.sh}, {@code prep.sh},
+     *       {@code *harness.html}). See {@link CodeChangeClassifier#isFactoryArtifact}.</li>
+     *   <li><b>Blocker PR</b> - the title announces a refusal rather than a change.</li>
+     * </ol>
+     *
+     * <p>The action plan lists a third ground: "the PR contains no line of product code". That one is
+     * deliberately NOT implemented as a merge block, and the reason is measured, not stylistic - a no-code
+     * merge is a legitimate outcome for every role EmsFlowStage.requiresCodeForDelivery says does not owe
+     * code (spec, design, compliance, QA-with-nothing-to-test), and classifyAndHandleBranch already treats
+     * it as a normal terminal state. Blocking it here would stall every spec-stage task in the factory.
+     * The false-delivery half of that concern is already owned, downstream and precisely, by
+     * requiresCodeForDelivery + routeUncertifiedMerge: a code-owing role whose PR carries no code does not
+     * get its task closed as done. Adding a second, blunter point of application would not make that
+     * stricter, only ambiguous.
+     *
+     * <p>Fail-open on ignorance: no token, or an unreadable file list, means this gate declines to judge.
+     * A gate that rejects when it cannot see is a new way to strand work, not a safety net.
+     */
+    boolean rejectByFactoryPokaYoke(PrReviewEntity review,
+                                    com.eneik.production.models.persistence.TaskEntity task,
+                                    com.eneik.production.models.persistence.JulesSessionEntity session,
+                                    PullRequestTarget target,
+                                    GitHubPullRequestService.GitHubPullRequest githubPr) {
+        if (target == null) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        List<String> changedFiles = fetchPrFiles(token, target.owner(), target.repo(), target.pullNumber());
+        String title = githubPr == null || githubPr.title() == null ? "" : githubPr.title();
+        PokaYokeVerdict verdict = judgeFactoryPokaYoke(changedFiles, title, codeChangeClassifier);
+
+        if (!verdict.rejected()) {
+            // Clean product PR: strip the factory's transient record files off the branch before it merges,
+            // so main receives the product and not the factory's bookkeeping. Best-effort by design - a
+            // failed cleanup never blocks a legitimate merge.
+            stripFactoryRecordFiles(task, githubPr, changedFiles);
+            return false;
+        }
+
+        String ciStatus = verdict.ciStatus();
+        String reason = verdict.reason();
+
+        review.setCiStatus(ciStatus);
+        review.setMerged(false);
+        review.setHasCode(false);
+        review.setDiffSummary(reason.length() > 2000 ? reason.substring(0, 2000) : reason);
+        prReviewRepository.save(review);
+
+        if (task != null) {
+            task.setStatus(TaskStatus.blocked);
+            taskRepository.save(task);
+        }
+        if (session != null) {
+            session.setStatus("closed_rejected");
+            session.setClosedAt(Instant.now());
+            session.setClosureReason(reason);
+            julesSessionRepository.save(session);
+        }
+
+        if (task != null && task.getProject() != null && githubPr != null) {
+            gitHubPullRequestService.closeSinglePullRequest(task.getProject(), githubPr, reason);
+        }
+
+        if (defectJournalService != null && task != null && task.getProject() != null) {
+            try {
+                defectJournalService.recordDefect(
+                        task.getProject().getId(), task.getFeatureId(), null,
+                        "high", "ontological_stratification", "AutoMergeService",
+                        ciStatus, reason + " [PR " + target.url() + ", task " + task.getId() + "]", null);
+            } catch (Exception e) {
+                log.warn("AutoMergeService: poka-yoke rejected PR {} but could not journal the defect: {}",
+                        target.url(), e.getMessage());
+            }
+        }
+
+        log.warn("AutoMergeService: POKA-YOKE REJECT for PR {} - {}. Task {} moved to blocked, PR closed unmerged.",
+                target.url(), reason, task == null ? "<none>" : task.getId());
+        return true;
+    }
+
+    /**
+     * Removes `.eneik/*` record files from a product PR's own branch before it merges. These are the
+     * factory's bookkeeping (task plans, review verdicts) - legitimately produced, which is why their
+     * presence never rejects a PR, but they still do not belong in the client's main branch alongside the
+     * product. Silent and best-effort: any failure is logged and ignored.
+     */
+    private void stripFactoryRecordFiles(com.eneik.production.models.persistence.TaskEntity task,
+                                         GitHubPullRequestService.GitHubPullRequest githubPr,
+                                         List<String> changedFiles) {
+        if (task == null || task.getProject() == null || githubPr == null || githubPr.headRef() == null) {
+            return;
+        }
+        List<String> records = new ArrayList<>();
+        for (String path : changedFiles) {
+            if (codeChangeClassifier.isFactoryRecordFile(path)) {
+                records.add(path);
+            }
+        }
+        // A PR that carries ONLY record files IS the record PR - stripping it would empty it. Only strip
+        // when there is real product code alongside, i.e. when the records are the incidental part.
+        if (records.isEmpty() || records.size() == changedFiles.size()) {
+            return;
+        }
+        for (String path : records) {
+            boolean removed = gitHubPullRequestService.deleteFileOnBranch(task.getProject(), githubPr.headRef(),
+                    path, "chore: strip factory record file " + path + " before merge (L_factory not product code)");
+            log.info("AutoMergeService: poka-yoke cleanup of {} on branch {}: {}",
+                    path, githubPr.headRef(), removed ? "removed" : "could not remove (ignored)");
         }
     }
 
@@ -2554,7 +2743,7 @@ public class AutoMergeService {
         return null;
     }
 
-    private record PullRequestTarget(String url, String owner, String repo, String pullNumber) {}
+    record PullRequestTarget(String url, String owner, String repo, String pullNumber) {}
 
     private String getLocalWorkspaceDiff(com.eneik.production.models.persistence.ProjectEntity project) {
         if (project.getWorkspacePath() != null && !project.getWorkspacePath().isBlank()) {

@@ -289,6 +289,58 @@ class ProjectFlowServiceTest {
         return project;
     }
 
+    @Test
+    void purgesOrchestratorRecordsFromMainAndLeavesProductCodeAlone() {
+        // 2026-08-27, strict onto-separation. Measured on test-fiftieth: 168 of 491 files on main lived
+        // under `.eneik/` - the factory's own coverage audits and falsification reports inside the client's
+        // product. Nothing reads them from main; every consumer takes a headRef, so the branch is the
+        // transport and the merge was never part of it.
+        ProjectEntity project = new ProjectEntity();
+        org.springframework.test.util.ReflectionTestUtils.setField(project, "id", java.util.UUID.randomUUID());
+        project.setName("test-fiftieth");
+
+        ProjectFlowService service = service();
+        // Without this the @Value field is 0 in a unit test, the loop breaks on its first iteration, and the
+        // assertions below would pass against a method that did nothing.
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "orchestratorRecordPurgeBatch", 25);
+
+        when(gitHubPullRequestService.listFilePaths(eq(project), eq("main"), eq(".eneik/")))
+                .thenReturn(java.util.List.of(
+                        ".eneik/records/coverage-audit-1.json",
+                        ".eneik/records/philosophical-falsification-2.json"));
+        when(gitHubPullRequestService.deleteFile(eq(project), anyString(), anyString())).thenReturn(true);
+
+        service.purgeOrchestratorRecordsFromClientRepo(project);
+
+        verify(gitHubPullRequestService).deleteFile(eq(project), eq(".eneik/records/coverage-audit-1.json"), anyString());
+        verify(gitHubPullRequestService).deleteFile(eq(project), eq(".eneik/records/philosophical-falsification-2.json"), anyString());
+    }
+
+    @Test
+    void purgeNeverDeletesProductCodeEvenWhenItIsHandedSome() {
+        // The other side, without which the test above proves only that a method can delete something.
+        ProjectEntity project = new ProjectEntity();
+        org.springframework.test.util.ReflectionTestUtils.setField(project, "id", java.util.UUID.randomUUID());
+        project.setName("test-fiftieth");
+
+        ProjectFlowService service = service();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "orchestratorRecordPurgeBatch", 25);
+
+        // Product paths are fed in deliberately. listFilePaths filters by prefix in production, so trusting
+        // it here would test the mock rather than the method: this pins the guard inside the loop, which is
+        // what stands between a purge and deleting the client's delivered work - scripts/backup.sh is the
+        // shipped result of the closed "System Backups and Resilience" epic.
+        when(gitHubPullRequestService.listFilePaths(eq(project), eq("main"), eq(".eneik/")))
+                .thenReturn(java.util.List.of(
+                        "scripts/backup.sh",
+                        "src/main/java/com/eneik/epidemiology/document/Document.java",
+                        "docker-compose.yml"));
+
+        service.purgeOrchestratorRecordsFromClientRepo(project);
+
+        verify(gitHubPullRequestService, never()).deleteFile(eq(project), anyString(), anyString());
+    }
+
     private ProjectFlowService service() {
         return serviceWithWishlists(mock(WishlistRepository.class));
     }

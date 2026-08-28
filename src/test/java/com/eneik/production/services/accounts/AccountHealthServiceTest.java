@@ -57,6 +57,8 @@ class AccountHealthServiceTest {
         ReflectionTestUtils.setField(service, "defaultDailyCapacity", 15);
         ReflectionTestUtils.setField(service, "dailyCapacityProbeStep", 5);
         ReflectionTestUtils.setField(service, "dailyCapacityBackoffFactor", 0.7);
+        ReflectionTestUtils.setField(service, "fullJitter", false);
+        ReflectionTestUtils.setField(service, "offlineRelaxationMinutes", 15);
         when(defectJournalRepository.findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(any(), any()))
                 .thenReturn(Collections.emptyList());
         when(defectJournalRepository.findByDefectTypeOrderByCreatedAtDesc(any()))
@@ -75,14 +77,15 @@ class AccountHealthServiceTest {
     }
 
     @Test
-    void successAfterBeingBlockedRecordsRecoveryDurationAndResetsCounter() {
+    void successAfterBeingBlockedRecordsRecoveryDurationAndDecaysCounter() {
         AccountEntity blocked = account("acc-1", AccountStatus.api_blocked, 3, Instant.now().minus(45, ChronoUnit.MINUTES));
         when(accountRepository.findById(blocked.getId())).thenReturn(Optional.of(blocked));
         UUID projectId = UUID.randomUUID();
 
         service.reportDispatchOutcome(blocked.getId(), projectId, AccountHealthService.DispatchOutcome.SUCCESS, null);
 
-        assertEquals(0, blocked.getConsecutiveApiBlockCount());
+        // Leaky bucket decay: 3 -> 2 on first success
+        assertEquals(2, blocked.getConsecutiveApiBlockCount());
         assertEquals(1, blocked.getSessionsDispatchedToday());
         verify(defectJournalRepository).save(argThat(defect ->
                 "ACCOUNT_RECOVERY_DURATION".equals(defect.getDefectType())
@@ -326,5 +329,59 @@ class AccountHealthServiceTest {
                 org.mockito.ArgumentMatchers.eq("predict_failure"),
                 org.mockito.ArgumentMatchers.eq(com.eneik.production.services.lever.LeverAgreement.FALSE),
                 org.mockito.ArgumentMatchers.eq("success"));
+    }
+
+    @Test
+    void antiZenoAllowsRecoveryWhenStatusChangedAtIsNull() {
+        // When statusChangedAt is null (missing timestamp), fallback ensures account does not starve forever
+        Instant now = Instant.now();
+        AccountEntity blockedNullTime = account("acc-zeno", AccountStatus.api_blocked, 1, null);
+        blockedNullTime.setLastHeartbeat(now.minus(45, ChronoUnit.MINUTES));
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(List.of(blockedNullTime));
+        when(accountRepository.resetSingleAccountFromApiBlocked(blockedNullTime.getId())).thenReturn(1);
+
+        int recovered = service.recoverEligibleAccounts();
+
+        assertEquals(1, recovered);
+        verify(accountRepository).resetSingleAccountFromApiBlocked(eq(blockedNullTime.getId()));
+    }
+
+    @Test
+    void leakyBucketDecayGraduallyDecrementsConsecutiveBlockCount() {
+        AccountEntity blocked = account("acc-leaky", AccountStatus.idle, 3, Instant.now());
+        when(accountRepository.findById(blocked.getId())).thenReturn(Optional.of(blocked));
+
+        // 1st success: 3 -> 2
+        service.reportDispatchOutcome(blocked.getId(), UUID.randomUUID(), AccountHealthService.DispatchOutcome.SUCCESS, null);
+        assertEquals(2, blocked.getConsecutiveApiBlockCount());
+
+        // 2nd success: 2 -> 1
+        service.reportDispatchOutcome(blocked.getId(), UUID.randomUUID(), AccountHealthService.DispatchOutcome.SUCCESS, null);
+        assertEquals(1, blocked.getConsecutiveApiBlockCount());
+
+        // 3rd success: 1 -> 0
+        service.reportDispatchOutcome(blocked.getId(), UUID.randomUUID(), AccountHealthService.DispatchOutcome.SUCCESS, null);
+        assertEquals(0, blocked.getConsecutiveApiBlockCount());
+
+        // 4th success: remains 0 (bounded)
+        service.reportDispatchOutcome(blocked.getId(), UUID.randomUUID(), AccountHealthService.DispatchOutcome.SUCCESS, null);
+        assertEquals(0, blocked.getConsecutiveApiBlockCount());
+    }
+
+    @Test
+    void livenessInvariantAutoRelaxesOfflineAccountWithRecentHeartbeat() {
+        Instant now = Instant.now();
+        AccountEntity offlineActive = account("acc-offline", AccountStatus.offline, 0, now.minus(5, ChronoUnit.MINUTES));
+        offlineActive.setLastHeartbeat(now.minus(5, ChronoUnit.MINUTES));
+
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.api_blocked)).thenReturn(Collections.emptyList());
+        when(accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline)).thenReturn(List.of(offlineActive));
+
+        int recovered = service.recoverEligibleAccounts();
+
+        assertEquals(1, recovered);
+        assertEquals(AccountStatus.idle, offlineActive.getStatus());
+        verify(accountRepository).save(offlineActive);
     }
 }

@@ -573,6 +573,45 @@ public class GeminiContextService {
      * the operations auditor, was not - so the only reasoner without a scope was the one ruling on the
      * factory itself.
      */
+    /**
+     * Stratified source types for product-codebase implementers (Type 0 / L0 workers).
+     * Excludes orchestrator internal logs (observer_log, claude_operator_notes, operational_failure_patterns)
+     * to strictly preserve the Tarski semantic boundary (THREE-LAYER ONTO-SEPARATION) and prevent
+     * meta-level token contamination from leaking into client tasks.
+     */
+    public static final List<String> PRODUCT_WORKER_SOURCE_TYPES = List.of(
+            "philosopher_pattern", "philosopher_pattern_common", "role_charter", "engineering_charter",
+            "parallel_development_conflict_prevention");
+
+    /**
+     * Epistemically-stratified context builder for product workers (Jules).
+     * Strictly draws from doctrine and programming patterns without orchestrator internal operational history.
+     */
+    public String buildProductWorkerContextBlock(RoleEntity role, String query) {
+        List<RetrievedChunk> retrieved;
+        if (role != null) {
+            retrieved = retrieveFiltered(query, DEFAULT_TOP_K,
+                    c -> PRODUCT_WORKER_SOURCE_TYPES.contains(c.getSourceType())
+                            && (c.getSourceRef() == null || c.getSourceRef().startsWith(role.getTag())
+                                    || "philosopher_pattern_common".equals(c.getSourceType())
+                                    || "engineering_charter".equals(c.getSourceType())
+                                    || "parallel_development_conflict_prevention".equals(c.getSourceType())));
+        } else {
+            retrieved = retrieveRelevantContextBySourceTypes(query, DEFAULT_TOP_K, PRODUCT_WORKER_SOURCE_TYPES);
+        }
+        if (retrieved.isEmpty()) {
+            return "";
+        }
+        StringBuilder block = new StringBuilder(
+                "RELEVANT SYSTEM KNOWLEDGE (retrieved from the indexed doctrine corpus by embedding similarity, "
+                        + "top " + retrieved.size() + " of the doctrine corpus - this augments, never replaces, any "
+                        + "explicit evidence already provided elsewhere in this prompt):\n");
+        for (RetrievedChunk chunk : retrieved) {
+            block.append("- [").append(chunk.sourceRef()).append("] ").append(chunk.content().replace("\n", " ")).append('\n');
+        }
+        return block.toString();
+    }
+
     public String buildContextBlock(String query) {
         List<RetrievedChunk> retrieved = retrieveRelevantContextBySourceTypes(query, DEFAULT_TOP_K, METHOD_SOURCE_TYPES);
         if (retrieved.isEmpty()) {

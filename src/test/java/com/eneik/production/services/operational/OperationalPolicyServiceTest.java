@@ -35,21 +35,43 @@ class OperationalPolicyServiceTest {
         assertFalse(service.authorize(core, OperationalAction.DISPATCH_REVIEW_TASKS).allowed());
     }
 
+    /**
+     * Runtime observation is a JIT reactive probe on a live product, not a post-assembly acceptance step.
+     *
+     * <p>History, because this test asserted the exact opposite until 2026-08-27 and the reversal was
+     * deliberate. The F1 rule (2026-08-23) permitted OBSERVE_CLIENT_RUNTIME only at DELIVERED, reasoning
+     * that a sample taken mid-assembly is bias rather than noise - the answer to "does the product answer"
+     * is necessarily no while the product is still being assembled, and V_p fell monotonically (0.2, 0.167,
+     * 0.143) across three such samples on test-fiftieth. That reasoning was sound about the SAMPLE and
+     * wrong about the CONSEQUENCE: gating on completeness meant a product under construction could not be
+     * observed at all, so the factory held no running product under permanent falsification
+     * (LIVE_PRODUCT_PLAN_2026-08-19.md §1-2). The bias is handled where it belongs - in the adaptive
+     * Beta-posterior cadence of ClientRuntimeObservabilityService.maybeObserve - instead of by refusing to
+     * look.
+     *
+     * <p>What the predicate now says: observe on any active project EXCEPT the states where observing is
+     * either impossible or meaningless. Both halves are asserted below, so a regression in either
+     * direction fails this test.
+     */
     @Test
-    void runtimeObservationWaitsForAssemblyToFinishAndThenRuns() {
-        // F1, 2026-08-23. Operability is a different axis from scope delivery and is not sampled while
-        // scope is still being assembled. V_p is a Beta posterior over "the product answers"; a sample
-        // taken mid-assembly is not noise but bias, because the answer is necessarily no - measured 0.2,
-        // 0.167, 0.143 on test-fiftieth as three such samples arrived. That posterior drives the
-        // launchability constraint, so the phase error manufactures scope out of nothing.
+    void runtimeObservationRunsContinuouslyOnActiveProjectsButNotInTerminalOrBlockedStates() {
+        // Mid-assembly is now exactly when a live product most needs falsifying.
         FlowCoreDto building = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 0, 0);
-        assertFalse(service.authorize(building, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
-                "the product must not be launched and probed while its scope is still being assembled");
+        assertTrue(service.authorize(building, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
+                "a product under construction is still a running product and must be observable");
 
-        // The pair: once assembly is done the observation is not merely permitted, it is the point.
         FlowCoreDto delivered = core("DELIVERED", "active", 0, 0, 0, 0, 0);
         assertTrue(service.authorize(delivered, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
                 "at DELIVERED the observation is exactly what decides whether the product answers");
+
+        // The other half of the predicate. ACCEPTED is here because acceptance means the client ended the
+        // engagement - a different axis from readiness - so the factory stops touching the product.
+        for (String haltedState : List.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT")) {
+            FlowCoreDto halted = core(haltedState, "active", 0, 0, 0, 0, 0);
+            assertFalse(service.authorize(halted, OperationalAction.OBSERVE_CLIENT_RUNTIME).allowed(),
+                    "runtime must not be probed in state " + haltedState);
+        }
     }
 
     @Test

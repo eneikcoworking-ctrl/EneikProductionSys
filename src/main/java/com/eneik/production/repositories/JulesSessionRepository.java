@@ -18,19 +18,23 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     List<JulesSessionEntity> findByStatus(String status);
     List<JulesSessionEntity> findByStatusIn(List<String> statuses);
 
+    /** Pushed down from AutoMergeService, which loaded every session four times per 60s tick. */
+    List<JulesSessionEntity> findByPrUrlIn(List<String> prUrls);
+
+    List<JulesSessionEntity> findByExternalSessionIdIsNotNull();
+
     // 2026-08-01: SessionLifecycleService's cleanup-candidate pool - a real remote external session that
     // we haven't yet confirmed deleted. Task/project eligibility (terminal task, or closed project) is
     // filtered afterward in Java - this is a low-frequency batch job, not a hot path, so a simple fetch +
     // stream filter is preferred over a complex three-way join query.
     List<JulesSessionEntity> findByRemoteDeletedAtIsNullAndExternalSessionIdIsNotNull();
 
-    // 2026-08-14 (bug-hunt sweep, V97 migration): atomic compare-and-swap mutual-exclusion claim for
-    // JulesDispatchService.handlePrOpenedWorkflow - same primitive/reasoning as WishlistRepository.
-    // compareAndSetStatus. Only one concurrent caller's UPDATE can match the NULL predicate for a given
-    // session id; the loser's call affects 0 rows.
+    // 2026-08-25: Monotonic Epoch Lease with bounded temporal window (tau_lease).
+    // An unfinished attempt or crashed thread must NEVER permanently deadlock the state machine (Liveness invariant).
+    // The claim succeeds if the lease is either unheld (NULL) or expired (< staleThreshold).
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE JulesSessionEntity s SET s.prOpenedWorkflowClaimedAt = :now WHERE s.id = :id AND s.prOpenedWorkflowClaimedAt IS NULL")
-    int claimPrOpenedWorkflow(@Param("id") UUID id, @Param("now") Instant now);
+    @Query("UPDATE JulesSessionEntity s SET s.prOpenedWorkflowClaimedAt = :now WHERE s.id = :id AND (s.prOpenedWorkflowClaimedAt IS NULL OR s.prOpenedWorkflowClaimedAt < :staleThreshold)")
+    int claimPrOpenedWorkflow(@Param("id") UUID id, @Param("now") Instant now, @Param("staleThreshold") Instant staleThreshold);
 
     // Releases a claim taken above - called on failure (see handlePrOpenedWorkflow's try/catch) so a
     // legitimate retry (reconcileStrandedPrOpenedWorkflows' crash-recovery replay) is never permanently

@@ -360,12 +360,8 @@ public class SystemSettingsService {
         // retrieved context at all - off means byte-for-byte the pre-existing prompt behavior, no surprise
         // cost the operator didn't opt into.
         definitions.put("gemini_context_learning_enabled", flag("gemini_context_learning_enabled", "GEMINI_CONTEXT_LEARNING_ENABLED", "gemini-context.learning-enabled"));
-        // Gates GeminiProjectObserverService's scheduled analysis cycle (2026-07-25, operator directive:
-        // "what was needed was an observer, Gemini, connecting once every 30 minutes"). Redesigned same
-        // day after "it should have created its own separate log rather than working with yours" - the
-        // observer now reasons over a structured evidence snapshot of real project state plus Gemini's own
-        // journal (GeminiObserverJournalEntity), never the backend's internal Logback log.
-        definitions.put("gemini_project_observer_enabled", flagDefaultTrue("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
+        // Gates GeminiProjectObserverService's scheduled analysis cycle. Permanently disabled as Muda (2026-08-26).
+        definitions.put("gemini_project_observer_enabled", flag("gemini_project_observer_enabled", "GEMINI_PROJECT_OBSERVER_ENABLED", "gemini-project-observer.enabled"));
         // On by default (2026-07-26 restoration, operator directive: "the project log must not depend on
         // deployments!! this is a huge omission") - baseline infrastructure, not an opt-in experiment. Seeded
         // 'true' in V61. Gates only the DB write (ProjectEventLogService.flush); the appender always

@@ -147,6 +147,91 @@ public class WishlistEntity {
         this.sourceRoleTag = sourceRoleTag;
     }
 
+    /**
+     * How many compile attempts one brief gets before decomposition is declared failed for it (F42).
+     * Declared here rather than in ProjectFlowService because three separate places must agree on what
+     * "this brief can still move" means, and Charter invariant 10 says a shared invariant gets one point
+     * of application.
+     */
+    public static final int COMPILE_ATTEMPT_BUDGET = 3;
+
+    /**
+     * True when this brief can never again produce slices: its budget is spent and, by F42,
+     * ProjectFlowService will dispatch no further compile for it.
+     *
+     * <p>Charter invariant 8 - "an element that can structurally never reach done must be excluded from
+     * the denominator, or the metric sticks below 100% forever and any code deciding on that metric
+     * blocks silently with no explanation". That is exactly what happened here, measured 2026-08-28 on
+     * test-fiftieth: six briefs had spent their budget, F42 deliberately left their status at `pending`
+     * on the reasoning that "no downstream consumer changes behaviour", and two consumers did -
+     * FlowSpineService counts `pending` into `pendingWishlist`, and ClientDeliverableReadinessService
+     * requires every root to be `converted_to_task` or `dismissed`. Either alone pins the project in
+     * DECOMPOSING permanently, which denies RECOVER_FAILED_FRONTIER and holds 27 queued tasks behind a
+     * phase that can never end.
+     *
+     * <p>Charter invariant 3 also applies: budget exhaustion is an absorbing state - nothing can leave it
+     * - and it was written as a non-absorbing status. This predicate makes the absorbing fact readable
+     * without changing the status, so F42's own reason for leaving it alone is preserved.
+     */
+    public boolean decompositionExhausted() {
+        return compileAttempts >= COMPILE_ATTEMPT_BUDGET;
+    }
+
+    /**
+     * When a compile message for this brief actually reached the compiler - not when one was attempted.
+     *
+     * <p>The distinction is the whole point (Charter invariant 12, independent verification rather than
+     * self-report). {@code compileAttempts} is the dispatcher's own testimony that it tried; this column
+     * is the channel's record that the brief was genuinely put to the compiler. Measured 2026-08-28: six
+     * briefs on test-fiftieth spent their entire budget while the single persistent compiler worker was
+     * busy, so nothing was ever sent, and the factory nonetheless concluded "the brief needs a human
+     * reading" - a claim about the brief drawn from evidence about the factory.
+     */
+    @Column(name = "last_compile_reached_at")
+    private Instant lastCompileReachedAt;
+
+    public Instant getLastCompileReachedAt() { return lastCompileReachedAt; }
+    public void setLastCompileReachedAt(Instant lastCompileReachedAt) { this.lastCompileReachedAt = lastCompileReachedAt; }
+
+    /**
+     * The budget is spent AND the compiler was reached at least once: asked and gave nothing back.
+     *
+     * <p>This is a statement about the BRIEF, and it is absorbing - nothing further will be dispatched.
+     * Charter invariant 8 therefore applies: it must leave the denominators that decide flow state, or
+     * the project stays in DECOMPOSING forever with no explanation.
+     */
+    public boolean decompositionRefused() {
+        return decompositionExhausted() && lastCompileReachedAt != null;
+    }
+
+    /**
+     * The budget is spent and the compiler was NEVER reached: nothing whatever is established about the
+     * brief, only about the factory's own availability.
+     *
+     * <p>Deliberately NOT absorbing, and deliberately NOT excluded from any denominator: a brief that was
+     * never read can still reach done, so invariant 8's exclusion would be a lie in the other direction.
+     * It is restored instead - see ProjectFlowService.restoreUnreachedBriefs and the monotone watermark
+     * it stands on (invariant 7).
+     */
+    /**
+     * Can this brief still move toward a task graph? One definition, asked by every consumer
+     * (Charter invariant 10).
+     *
+     * <p>Before this existed, ten sites independently counted `pending`/`compiling`, and a brief the
+     * compiler had answered nothing for stayed in every one of those counts forever - blocking feature
+     * completion, feature dismissal, and housekeeping dispatch with no explanation (invariant 8).
+     */
+    public boolean movable() {
+        return (status == WishlistStatus.pending
+                || status == WishlistStatus.compiling
+                || status == WishlistStatus.finalizing)
+                && !decompositionRefused();
+    }
+
+    public boolean decompositionUnreached() {
+        return decompositionExhausted() && lastCompileReachedAt == null;
+    }
+
     public String getContent() {
         return content;
     }

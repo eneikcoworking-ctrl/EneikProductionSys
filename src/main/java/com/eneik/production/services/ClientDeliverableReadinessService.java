@@ -270,9 +270,16 @@ public class ClientDeliverableReadinessService {
                 .filter(w -> w.getCompiledByRole() == null)
                 .filter(w -> rootWishlistId == null || rootWishlistId.equals(w.getId()))
                 .toList();
+        // A root the compiler was reached for and which produced nothing within its budget is settled for
+        // this purpose (Charter invariant 8, 2026-08-28): it can never become converted_to_task, so leaving
+        // it in this conjunction pins decompositionComplete at false forever - which, together with
+        // pendingWishlist, is the second of the two counters that held test-fiftieth in DECOMPOSING. A root
+        // the compiler was NEVER reached for stays in the conjunction: nothing is established about it, and
+        // it is restored rather than excluded.
         boolean everyRootCompiled = !iterationRoots.isEmpty() && iterationRoots.stream()
                 .allMatch(w -> w.getStatus() == WishlistStatus.converted_to_task
-                        || w.getStatus() == WishlistStatus.dismissed);
+                        || w.getStatus() == WishlistStatus.dismissed
+                        || w.decompositionRefused());
 
         // Live bug found 2026-07-24: a work-item wishlist that the compiler already stamped with
         // compiledByRole, then later got correctly recognized as a semantic duplicate and marked
@@ -839,7 +846,9 @@ public class ClientDeliverableReadinessService {
             }
             List<WishlistEntity> ownItems = wishlistByFeature.getOrDefault(diagnostic.id(), List.of());
             boolean stillActive = ownItems.stream()
-                    .anyMatch(w -> w.getStatus() == WishlistStatus.pending || w.getStatus() == WishlistStatus.compiling);
+                    // movable(), not a raw status check: a refused brief kept the feature "still
+                    // active" permanently, so contentless grouping rows could never be dismissed.
+                    .anyMatch(WishlistEntity::movable);
             if (stillActive) {
                 continue; // might still produce real code - not resolved yet
             }
@@ -1186,6 +1195,9 @@ public class ClientDeliverableReadinessService {
             return false;
         }
         return wishlistRepository.findByFeatureId(featureId).stream()
-                .noneMatch(w -> w.getStatus() == WishlistStatus.pending || w.getStatus() == WishlistStatus.compiling);
+                // movable(), not a raw status check (2026-08-28): a brief the compiler answered nothing
+                // for can never become converted_to_task, so counting it here pins the feature at
+                // incomplete forever and DELIVERED becomes unreachable - Charter invariant 8.
+                .noneMatch(WishlistEntity::movable);
     }
 }

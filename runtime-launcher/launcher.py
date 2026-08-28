@@ -192,9 +192,17 @@ def _remap_ports(compose_file: Path) -> dict[str, tuple[int, str]]:
             continue
         new_ports = []
         for entry in ports:
-            container_port = str(entry).split(":")[-1]
-            new_ports.append(f"{next_port}:{container_port}")
-            port_map[name] = (next_port, container_port)
+            if isinstance(entry, dict):
+                target = str(entry.get("target") or "")
+                protocol = str(entry.get("protocol") or "tcp")
+                entry["published"] = str(next_port)
+                new_ports.append(entry)
+                port_map[name] = (next_port, f"{target}/{protocol}" if target else str(next_port))
+            else:
+                raw = str(entry).strip()
+                container_port = raw.split(":")[-1]
+                new_ports.append(f"{next_port}:{container_port}")
+                port_map[name] = (next_port, container_port)
             next_port += 1
         service["ports"] = new_ports
         changed = True
@@ -433,25 +441,57 @@ def _assembly_report(max_chars: int = 3000) -> str:
         return ""
 
 
+def _normalize_target_url(url: str) -> str:
+    if "localhost" in url:
+        return url.replace("localhost", "host.docker.internal")
+    if "127.0.0.1" in url:
+        return url.replace("127.0.0.1", "host.docker.internal")
+    return url
+
+
 @app.post("/healthcheck", response_model=HealthCheckResponse)
 def healthcheck(req: HealthCheckRequest) -> HealthCheckResponse:
     started = time.monotonic()
-    try:
-        response = requests.get(req.url, timeout=req.timeout_seconds)
-        return HealthCheckResponse(status_code=response.status_code, latency_ms=_elapsed_ms(started))
-    except requests.RequestException as e:
-        return HealthCheckResponse(status_code=None, latency_ms=_elapsed_ms(started),
-                                   error=str(e) + _assembly_report())
+    target_url = _normalize_target_url(req.url)
+    deadline = started + max(req.timeout_seconds, 60.0)
+    last_error = None
+
+    while time.monotonic() < deadline:
+        try:
+            response = requests.get(target_url, timeout=3.0)
+            if response.status_code >= 200 and response.status_code < 400:
+                return HealthCheckResponse(status_code=response.status_code, latency_ms=_elapsed_ms(started))
+        except requests.RequestException as e:
+            last_error = e
+            if target_url != req.url:
+                try:
+                    response = requests.get(req.url, timeout=3.0)
+                    if response.status_code >= 200 and response.status_code < 400:
+                        return HealthCheckResponse(status_code=response.status_code, latency_ms=_elapsed_ms(started))
+                except requests.RequestException:
+                    pass
+        time.sleep(1.5)
+
+    return HealthCheckResponse(status_code=None, latency_ms=_elapsed_ms(started),
+                               error=str(last_error or "health check timed out") + _assembly_report())
 
 
 @app.post("/fetch", response_model=FetchResponse)
 def fetch(req: FetchRequest) -> FetchResponse:
     started = time.monotonic()
+    target_url = _normalize_target_url(req.url)
     try:
-        response = requests.get(req.url, timeout=req.timeout_seconds)
+        response = requests.get(target_url, timeout=req.timeout_seconds)
         return FetchResponse(status_code=response.status_code, body=response.text[:MAX_FETCH_BODY_CHARS],
                               latency_ms=_elapsed_ms(started))
     except requests.RequestException as e:
+        if target_url != req.url:
+            try:
+                response = requests.get(req.url, timeout=req.timeout_seconds)
+                return FetchResponse(status_code=response.status_code, body=response.text[:MAX_FETCH_BODY_CHARS],
+                                      latency_ms=_elapsed_ms(started))
+            except requests.RequestException:
+                pass
         return FetchResponse(status_code=None, latency_ms=_elapsed_ms(started), error=str(e))
 
 

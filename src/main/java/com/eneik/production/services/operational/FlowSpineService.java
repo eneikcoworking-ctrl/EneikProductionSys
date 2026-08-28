@@ -367,7 +367,18 @@ public class FlowSpineService {
                 .filter(com.eneik.production.services.PlannedWorkRecoveryService::isResumableInPrinciple)
                 .count();
         long blocked = countStatus(tasks, TaskStatus.blocked);
-        long pendingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.pending).count();
+        // Charter invariant 8: an element that can structurally never reach done leaves the denominator,
+        // or any code deciding on this metric blocks silently. A brief whose budget is spent AND which
+        // the compiler was actually reached for will never be dispatched again (F42) - measured
+        // 2026-08-28, six such briefs held test-fiftieth in DECOMPOSING permanently, and DECOMPOSING
+        // denies RECOVER_FAILED_FRONTIER while 27 tasks waited behind it. A brief the compiler was
+        // never reached for is NOT excluded: nothing is established about it and it is restored
+        // instead (ProjectFlowService.restoreUnreachedBriefs).
+        long pendingWishlist = wishlist.stream()
+                .filter(item -> item.getStatus() == WishlistStatus.pending)
+                .filter(WishlistEntity::movable)
+                .count();
+        long refusedWishlist = wishlist.stream().filter(WishlistEntity::decompositionRefused).count();
         long compilingWishlist = wishlist.stream().filter(item -> item.getStatus() == WishlistStatus.compiling).count();
         long openSessions = sessions.stream().filter(session -> OPEN_SESSION_STATUSES.contains(normalize(session.getStatus()))).count();
         // Live-evidence scoping (2026-07-31): `tasks` above is the project's ENTIRE history
@@ -413,15 +424,34 @@ public class FlowSpineService {
         // the level of acceptance. The subject was already in the report's `stages`; this is the reader
         // that asks it.
         int qualityGatePassed = (int) tasks.stream().filter(TaskEntity::isVerifiedForDelivery).count();
+        // Refuted deliveries are excluded here and reported separately below (2026-08-28). Without the
+        // exclusion the first run of the union predicate printed failed=45 REFUTED=45 - one fact counted
+        // twice, which is how a reader concludes there are ninety problems where there are forty-five.
         int qualityGateFailed = (int) tasks.stream()
                 .filter(task -> !task.isDeliveryVerificationAbsent())
                 .filter(task -> !task.isVerifiedForDelivery())
+                .filter(task -> !task.deliveryRefuted())
                 .count();
         int deliveryVerificationAbsent = (int) tasks.stream()
                 .filter(TaskEntity::isDeliveryVerificationAbsent)
                 .count();
-        log.info("FlowSpine: delivery verification - passed={} failed={} NEVER ASKED={} of {} tasks",
-                qualityGatePassed, qualityGateFailed, deliveryVerificationAbsent, tasks.size());
+        // Refuted is reported as its own number, not folded into "failed" (2026-08-28). A task whose
+        // merged diff was judged NOT to satisfy its own acceptance criteria is a different fact from a
+        // task that failed a mechanical gate, and it was invisible until now: measured 45 of 365 on
+        // test-fiftieth, every one of them sitting in status `done`. DeliveredWorkJudgmentService files
+        // scope for each rather than rewriting history, which is correct - but a correction nobody counts
+        // is a correction nobody can act on.
+        int deliveryRefuted = (int) tasks.stream().filter(TaskEntity::deliveryRefuted).count();
+        log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} NEVER ASKED={} of {} tasks",
+                qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent, tasks.size());
+        if (refusedWishlist > 0) {
+            // F39: a finding nobody can retrieve is not a finding. These briefs are out of the flow-state
+            // denominator by invariant 8, which is exactly why they must be visible as their own number -
+            // otherwise excluding them turns a silent block into a silent disappearance.
+            log.warn("FlowSpine: {} brief(s) were put to the compiler and produced no decomposition within "
+                            + "their budget; they no longer hold the project in DECOMPOSING and need a human reading",
+                    refusedWishlist);
+        }
 
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,

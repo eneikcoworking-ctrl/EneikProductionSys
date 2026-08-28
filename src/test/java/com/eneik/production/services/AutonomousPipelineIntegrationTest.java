@@ -23,6 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 @Transactional
 class AutonomousPipelineIntegrationTest {
 
+    /** The live feature WIP limit, so the fixture below tracks configuration instead of a frozen literal. */
+    @org.springframework.beans.factory.annotation.Value("${orchestration.wip-limit-feature-in-flight:15}")
+    private int featureWipLimit;
+
     @Autowired
     private ProjectRepository projectRepository;
 
@@ -1093,6 +1097,9 @@ class AutonomousPipelineIntegrationTest {
 
     @Test
     void dispatchBatchedWishlistCompilerRespectsFeatureWipLimit() {
+        // Read from configuration rather than hard-coded, so raising the limit again moves the fixture with
+        // it instead of silently turning this test into one that cannot fail.
+        final int FEATURE_WIP_LIMIT = featureWipLimit;
         ProjectEntity project = new ProjectEntity();
         project.setName("Feature WIP Limit Project");
         project.setSlug("feature-wip-limit-project");
@@ -1106,8 +1113,12 @@ class AutonomousPipelineIntegrationTest {
         feature = featureRepository.saveAndFlush(feature);
         UUID sharedFeatureId = feature.getId();
 
+        // One more than the limit, on purpose: the fixture has to exceed the limit or the assertion below
+        // cannot fail. When this test was written the limit was 3 and 4 candidates crossed it; the limit is
+        // now 15 (raised for 13-role parallelism), so 4 candidates would all be admitted under any limit
+        // >= 4 and the test would pass while measuring nothing.
         List<WishlistEntity> candidates = new java.util.ArrayList<>();
-        for (int i = 0; i < 4; i++) {
+        for (int i = 0; i < FEATURE_WIP_LIMIT + 1; i++) {
             WishlistEntity concern = new WishlistEntity();
             concern.setProjectId(project.getId());
             concern.setSource(WishlistSource.role);
@@ -1120,15 +1131,21 @@ class AutonomousPipelineIntegrationTest {
 
         int admitted = projectFlowService.dispatchBatchedWishlistCompiler(project, candidates);
 
-        // Default orchestration.wip-limit-feature-in-flight is 3 (raised from 2, 2026-07-23): with none of
-        // the 4 already `compiling` beforehand, only 3 may be admitted in this same batch - the 4th must
-        // stay `pending` for a later cycle instead of all 4 racing into the compiler at once for one feature.
-        assertThat(admitted).isEqualTo(3);
+        // orchestration.wip-limit-feature-in-flight is 15 (raised from 3 on 2026-08-27 for 13-role
+        // parallelism): with none of them already `compiling` beforehand, only 15 may be admitted in this
+        // same batch - the last one must stay `pending` for a later cycle instead of the whole batch racing
+        // into the compiler at once for one feature.
+        assertThat(admitted).isEqualTo(FEATURE_WIP_LIMIT);
         long compilingCount = candidates.stream()
                 .map(w -> wishlistRepository.findById(w.getId()).orElseThrow())
                 .filter(w -> w.getStatus() == WishlistStatus.compiling)
                 .count();
-        assertThat(compilingCount).isEqualTo(3);
+        assertThat(compilingCount).isEqualTo(FEATURE_WIP_LIMIT);
+        long stillPending = candidates.stream()
+                .map(w -> wishlistRepository.findById(w.getId()).orElseThrow())
+                .filter(w -> w.getStatus() == WishlistStatus.pending)
+                .count();
+        assertThat(stillPending).isEqualTo(1);
     }
 
     /**

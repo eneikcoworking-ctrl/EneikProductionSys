@@ -72,8 +72,11 @@ public class LaunchabilityConstraintService {
                 project.getId(), WishlistSource.product_not_launchable,
                 List.of(WishlistStatus.pending, WishlistStatus.compiling, WishlistStatus.finalizing,
                         WishlistStatus.converted_to_task, WishlistStatus.dismissed));
-        boolean alreadyBeingWorked = existing.stream().anyMatch(w -> w.getStatus() == WishlistStatus.pending
-                || w.getStatus() == WishlistStatus.compiling || w.getStatus() == WishlistStatus.finalizing);
+        // movable(), not a raw status check (2026-08-28). "An attempt is in flight" must mean an attempt
+        // that can still move. A brief the compiler was reached for and answered nothing to is not in
+        // flight - it is finished and failed - yet it sat in `pending` and made this guard permanently
+        // true, so the launchability constraint could never be re-filed while the product stayed broken.
+        boolean alreadyBeingWorked = existing.stream().anyMatch(WishlistEntity::movable);
         if (alreadyBeingWorked) {
             return; // an attempt is in flight - never a second one beside it
         }

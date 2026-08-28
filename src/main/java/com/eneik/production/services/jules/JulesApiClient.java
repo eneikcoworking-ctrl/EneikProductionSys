@@ -119,6 +119,10 @@ public class JulesApiClient {
                     .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() == 400 && startingBranch != null && !"main".equals(startingBranch)) {
+                log.warn("Jules session creation failed with startingBranch={} (HTTP 400). Retrying automatically from main...", startingBranch);
+                return createSessionDetailed(repoUrl, taskDescription, roleContext, apiKey, title, "main");
+            }
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 log.warn("Jules session creation failed: status={} body={}", response.statusCode(), response.body());
                 return new CreateSessionResult(null, response.statusCode(), response.body());

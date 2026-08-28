@@ -12,5 +12,8 @@ public interface TaskConflictRepository extends JpaRepository<TaskConflictEntity
     Optional<TaskConflictEntity> findFirstByTaskIdAndResolutionStatus(UUID taskId, String resolutionStatus);
     List<TaskConflictEntity> findByResolutionStatusNot(String resolutionStatus);
     List<TaskConflictEntity> findByResolutionStatusIsNull();
+
+    /** Pushed down from AutoMergeService (2026-08-28): it read the whole table each 60s tick. */
+    List<TaskConflictEntity> findByResolutionStatusIgnoreCase(String resolutionStatus);
     List<TaskConflictEntity> findByTaskIdIn(List<UUID> taskIds);
 }

@@ -19,3 +19,13 @@ logs/
 dashboard-blocked-items*.png
 check_db_status.py
 repair_flyway.py
+
+# Client-project clones the runtime-launcher makes (138 MB, 2181 files, all reproducible
+# from the client repos themselves). Same reason project-workspaces/ is ignored above.
+runtime-launcher-workspace/
+
+# Agent session state: a resume checkpoint, a scheduler lock, and machine-local settings.
+.claude/
+
+# Operator backups taken before an edit. The history is the backup.
+*.bak-*

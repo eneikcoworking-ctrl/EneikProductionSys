@@ -119,3 +119,12 @@ Classes are also not permanent. Kano observed that attributes decay: what deligh
 mandatory. Wi-Fi in hotels made that trip in a decade. Therefore an `observed` entry records **when** it was
 measured and **what share** of real products had it - without those, an entry cannot be re-checked later and
 becomes dogma.
+
+## Three-Layer Epistemic Demarcation (Tarski Ontological Invariant)
+
+The factory architecture strictly enforces ontological separation between three planes of reality:
+
+1. **Layer 0 (Client Product Domain):** The client repository is an autonomous, domain-pure codebase. It contains ONLY domain concepts (e.g. protocols, pathogen strains, outbreak clusters, researcher dossiers, GDPR data rights). It is strictly forbidden from referencing, creating, or depending on factory orchestrator entities.
+2. **Layer 1 (Value Delivery / Market Corpus):** The epistemic projection plane (`capabilities.json`, `profiles.json`, `valuePaths`). It maps needs and system findings into pure domain invariants, acting as an information barrier.
+3. **Layer 2 (Factory Engine):** The internal orchestrator (`EneikProductionSys`, TOC queues, recovery watchdogs, AutoMerge, SixSigma). Layer 2 identifiers, stack traces, and database tables (`tasks`, `claims`, `wishlist`, `orchestrator_*`) NEVER cross into Layer 0 files, classes, SQL migrations, or commit messages.
+

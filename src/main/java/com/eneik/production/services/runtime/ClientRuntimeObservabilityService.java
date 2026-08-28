@@ -168,11 +168,11 @@ public class ClientRuntimeObservabilityService {
         log.info("ClientRuntimeObservabilityService: project {} live-preview window expired, torn down", project.getId());
     }
 
-    private void observeOnce(ProjectEntity project) {
+    public ClientRuntimeObservationEntity observeOnce(ProjectEntity project) {
         String repoUrl = project.getRepositoryUrl();
         if (repoUrl == null || repoUrl.isBlank()) {
             log.warn("ClientRuntimeObservabilityService: project {} has no repository URL, skipping", project.getId());
-            return;
+            return null;
         }
         String projectSlug = project.getSlug() != null ? project.getSlug() : project.getId().toString();
 
@@ -241,7 +241,7 @@ public class ClientRuntimeObservabilityService {
             launcherClient.teardown();
         }
 
-        observationRepository.save(observation);
+        observation = observationRepository.save(observation);
         log.info("ClientRuntimeObservabilityService: project {} observed - launchSuccess={} healthStatus={} instrumentFailure={}",
                 project.getId(), observation.isLaunchSuccess(), observation.getHealthStatusCode(),
                 observation.isInstrumentFailure());
@@ -250,13 +250,6 @@ public class ClientRuntimeObservabilityService {
         // evidence exists, and no longer only inside the philosophical cycle's five gates on a two-day
         // cron whose one accelerator is switched off. §7's rule is that a constraint is cleared by a fresh
         // healthy observation, not by a status - so the observation is exactly where it should be asked.
-        //
-        // Measured 2026-08-21: every filing that day happened because a human triggered the cycle by hand,
-        // while the factory sat with an empty queue and the product answering nothing. An idle factory
-        // with an unrefuted product is not "everything is done"; by §1 it means the system stopped looking.
-        //
-        // Re-filing is bounded inside the service (an attempt in flight blocks a second; a finished one
-        // waits out a cooldown), so an hourly cadence cannot turn this into a compile loop.
         if (!observation.isInstrumentFailure() && !isHealthy(observation)) {
             try {
                 launchabilityConstraintService.ensureOpen(project, observation.getErrorText());
@@ -268,14 +261,25 @@ public class ClientRuntimeObservabilityService {
         }
 
         if (observation.isInstrumentFailure()) {
-            // Nothing was learned about the product, so the product's shift test has nothing to re-run on -
-            // it would only re-read the whole history to filter this row back out. What DID happen is an
-            // attempt that reached nothing, and that belongs to the instrument's accounting.
             reportInstrumentOutage(project);
-            return;
+            return observation;
         }
 
         checkForRealShift(project);
+        return observation;
+    }
+
+    public ClientRuntimeObservationEntity ensureFreshObservation(ProjectEntity project) {
+        List<ClientRuntimeObservationEntity> history = observationRepository.findByProjectIdOrderByObservedAtDesc(project.getId());
+        java.util.Optional<ClientRuntimeObservationEntity> lastReal = lastRealObservation(history);
+
+        if (lastReal.isEmpty()
+                || !isHealthy(lastReal.get())
+                || Duration.between(lastReal.get().getObservedAt(), Instant.now()).toHours() >= 1) {
+            log.info("ClientRuntimeObservabilityService: conducting JIT fresh runtime observation for project {}", project.getId());
+            return observeOnce(project);
+        }
+        return lastReal.get();
     }
 
     /**

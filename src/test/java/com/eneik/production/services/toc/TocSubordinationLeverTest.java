@@ -75,7 +75,11 @@ class TocSubordinationLeverTest {
                 .subordinate(project, OperationalAction.CHECK_COVERAGE_AUDITS, true);
 
         verify(levers).recordObservation(eq(TocSubordinationLever.T1_TOC_SUBORDINATION), any(),
-                eq("allow"), eq("deny"), eq(LeverAgreement.FALSE), any());
+                // agreement is NEITHER at record time (2026-08-28): no truth exists yet. It used to be
+                // TRUE when the two rules coincided and FALSE when they differed - rule-coincidence,
+                // not the "candidate was right and the incumbent was not" the promotion ladder counts.
+                // What the pair decided is still asserted, by the incumbent/candidate arguments above.
+                eq("allow"), eq("deny"), eq(LeverAgreement.NEITHER), any());
     }
 
     // Subordination must never suppress the act that ends the constraint. A launchability check or an
@@ -92,7 +96,11 @@ class TocSubordinationLeverTest {
                 .subordinate(project, OperationalAction.CHECK_LAUNCHABILITY, true);
 
         verify(levers).recordObservation(any(), any(), eq("allow"), eq("allow"),
-                eq(LeverAgreement.TRUE), any());
+                // agreement is NEITHER at record time (2026-08-28): no truth exists yet. It used to be
+                // TRUE when the two rules coincided and FALSE when they differed - rule-coincidence,
+                // not the "candidate was right and the incumbent was not" the promotion ladder counts.
+                // What the pair decided is still asserted, by the incumbent/candidate arguments above.
+                eq(LeverAgreement.NEITHER), any());
     }
 
     // A healthy product means no constraint, so nothing is recorded at all - the lever must not accumulate
@@ -163,7 +171,11 @@ class TocSubordinationLeverTest {
 
         assertTrue(lever.subordinate(project, OperationalAction.CHECK_COVERAGE_AUDITS, true));
         verify(levers).recordObservation(eq(TocSubordinationLever.T1_TOC_SUBORDINATION), any(),
-                eq("allow"), eq("deny"), eq(LeverAgreement.FALSE), any());
+                // agreement is NEITHER at record time (2026-08-28): no truth exists yet. It used to be
+                // TRUE when the two rules coincided and FALSE when they differed - rule-coincidence,
+                // not the "candidate was right and the incumbent was not" the promotion ladder counts.
+                // What the pair decided is still asserted, by the incumbent/candidate arguments above.
+                eq("allow"), eq("deny"), eq(LeverAgreement.NEITHER), any());
     }
 
     @Test

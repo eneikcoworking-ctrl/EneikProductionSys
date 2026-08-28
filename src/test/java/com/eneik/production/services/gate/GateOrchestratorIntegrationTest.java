@@ -54,6 +54,15 @@ class GateOrchestratorIntegrationTest {
             "Active Role Check"
     );
 
+    /**
+     * EpistemicLayerInvariantGate (E3 Phase 3). Runs for the PERIPHERY roles only - BARCAN-TAG-11, -05 and
+     * -06 - so it joins the expected list for those roles and stays out of it for every other role. Added
+     * to these expectations 2026-08-27, when the gate became reachable at all: while
+     * FeatureService.calculateEpistemicEntrenchment returned a constant 46.25 no feature was ever
+     * classified PERIPHERY, so the gate could register but never decide anything.
+     */
+    private static final String EPISTEMIC_LAYER_CHECK = "epistemic_layer_invariant";
+
     @Autowired
     private GateOrchestrator gateOrchestrator;
 
@@ -141,7 +150,7 @@ class GateOrchestratorIntegrationTest {
         assertThat(refreshed.isQualityGatePassed()).isTrue();
         assertThat(refreshed.getQualityGateReport().path("passed").asBoolean()).isTrue();
         assertThat(checkNames(refreshed)).containsExactlyElementsOf(
-                append(BASE_CHECKS, "design_excellence")
+                append(BASE_CHECKS, "design_excellence", EPISTEMIC_LAYER_CHECK)
         );
         assertThat(checkNames(refreshed)).doesNotContain("backend_contract", "not applicable");
     }
@@ -174,7 +183,7 @@ class GateOrchestratorIntegrationTest {
 
         TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
         assertThat(refreshed.isQualityGatePassed()).isTrue();
-        assertThat(checkNames(refreshed)).containsExactlyElementsOf(BASE_CHECKS);
+        assertThat(checkNames(refreshed)).containsExactlyElementsOf(append(BASE_CHECKS, EPISTEMIC_LAYER_CHECK));
         assertThat(checkNames(refreshed)).doesNotContain("design_excellence", "backend_contract", "not applicable");
     }
 
@@ -197,7 +206,10 @@ class GateOrchestratorIntegrationTest {
 
         TaskEntity refreshed = taskRepository.findById(task.getId()).orElseThrow();
         assertThat(refreshed.isQualityGatePassed()).isTrue();
-        assertThat(checkNames(refreshed)).containsExactlyElementsOf(BASE_CHECKS);
+        // The layer invariant is deliberately NOT build-phase exempt (isBuildPhaseExempt() == false):
+        // maximal build-phase trust suspends the mechanical POLISH gates, never the structural rule that
+        // a PERIPHERY feature may not mutate CORE files. So it appears here while the polish gates do not.
+        assertThat(checkNames(refreshed)).containsExactlyElementsOf(append(BASE_CHECKS, EPISTEMIC_LAYER_CHECK));
         assertThat(checkNames(refreshed)).doesNotContain("design_excellence", "backend_contract");
     }
 
@@ -381,9 +393,9 @@ class GateOrchestratorIntegrationTest {
                 .toList();
     }
 
-    private List<String> append(List<String> checks, String specializedCheck) {
+    private List<String> append(List<String> checks, String... specializedChecks) {
         List<String> orderedChecks = new ArrayList<>(checks);
-        orderedChecks.add(specializedCheck);
+        orderedChecks.addAll(List.of(specializedChecks));
         return orderedChecks;
     }
 }

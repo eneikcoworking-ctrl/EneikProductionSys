@@ -364,8 +364,7 @@ public class SystemStatusService {
             if (project.getStatus() != ProjectStatus.active) {
                 long staleTasks = projectTasks.stream().filter(this::isNonTerminalTask).count();
                 long staleWishlists = wishlistRepository.findByProjectId(project.getId()).stream()
-                        .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
-                                || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                        .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                         .count();
                 Set<UUID> taskIds = projectTasks.stream().map(TaskEntity::getId).collect(Collectors.toSet());
                 long staleSessions = allSessions.stream()

@@ -61,7 +61,28 @@ public class OperationalPolicyService {
             case ORCHESTRATE -> activeProject && !terminal
                     && (!hardBlocked || "SYSTEM_STALLED".equals(snapshot.currentState()))
                     && (!"DELIVERED".equals(snapshot.currentState()) || hasPendingScope);
-            case RECOVER_FAILED_FRONTIER -> activeProject && "BLOCKED_BY_FAILED_FRONTIER".equals(snapshot.currentState());
+            // Narrowed 2026-08-28, the same correction already made twice in this file for
+            // DISPATCH_QUEUED_TASKS and MERGE_PR, for the same reason. Gating on state EQUALITY meant
+            // recovery was authorized only when "failed tasks" was the project's single most salient
+            // condition - and BLOCKED_BY_FAILED_FRONTIER is the LAST of fifteen states in
+            // FlowSpineService.decideState. It is reached only when there is no pending or compiling
+            // wishlist, decomposition is complete, and nothing is queued, active, in session or in review.
+            // A factory that continuously generates wishlists from its own sources never satisfies that,
+            // so the state was unreachable and the recovery mechanism behind it never ran once.
+            //
+            // Measured on test-fiftieth, 2026-08-28: 50 failed tasks, DPMO 331521, and no live path out -
+            // this gate was one of the two exits, and the other (GeminiObserverActionService.reviveFailedTask)
+            // belongs to a service decommissioned by V111. Failed tasks were a sink.
+            //
+            // DECOMPOSING is a project-wide condition and carries no evidence that THIS failed task is
+            // unsafe to resume - the identical argument this file already records against BLOCKED_BY_REVIEW
+            // blocking an unrelated approved PR. Safe to widen because the resolver is itself guarded:
+            // PlannedWorkRecoveryService.resumeEligibleTask refuses on an active claim, an active session,
+            // a merged task, an unsatisfied dependency, or a prior resume (bounded at one), and moves the
+            // status by compare-and-set. Authorizing it more often cannot produce double work.
+            case RECOVER_FAILED_FRONTIER -> activeProject && snapshot.counts().failedTasks() > 0
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             case DISPATCH_QUEUED_TASKS -> activeProject && snapshot.counts().queuedTasks() > 0
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
@@ -84,16 +105,14 @@ public class OperationalPolicyService {
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
                     && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
-            // 2026-08-23 (F1). Operability is not sampled while scope is still being assembled. This sat
-            // with the checks above, which need only an active project, so the launcher ran on every tick
-            // from the first commit onward. V_p is a Beta posterior over "the product answers"; an
-            // observation taken during assembly is not noise but bias, because the answer is necessarily
-            // no - measured 0.2, 0.167, 0.143 across three such samples, falling monotonically. That
-            // posterior drives LaunchabilityConstraintService, so the phase error manufactures scope out
-            // of nothing. DELIVERED is the flow's own name for assembly being finished, and subordination
-            // belongs here as one predicate rather than as an `if` inside the observing service (§7).
+            // 2026-08-27 (Eneik Actualism restoration): Operability is sampled continuously on active projects
+            // via adaptive Beta-Posterior cadence (ClientRuntimeObservabilityService.maybeObserve), matching
+            // §1 and §2 of LIVE_PRODUCT_PLAN_2026-08-19.md ("The factory keeps a running product under permanent
+            // falsification. Gating observation on completeness meant the product could not be observed at all
+            // while it is being built").
             case OBSERVE_CLIENT_RUNTIME -> activeProject
-                    && "DELIVERED".equals(snapshot.currentState());
+                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
             case SYNC_GITHUB -> activeProject && !"GITHUB_RATE_LIMITED".equals(snapshot.currentState());
             case CLEANUP_TERMINAL_PROJECT -> true;
             case NUDGE_SESSION, BOOST_PRIORITY -> activeProject && !hardBlocked;

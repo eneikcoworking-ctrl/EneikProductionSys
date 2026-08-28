@@ -50,14 +50,17 @@ public class DeliveredWorkJudgmentService {
 
     private static final Logger log = LoggerFactory.getLogger(DeliveredWorkJudgmentService.class);
 
-    static final String VERDICT_KEY = "acceptance_verdict";
+    // One spelling, owned by the row the fact lives in. FlowSpineService's counters and
+    // TaskEntity's own predicates read the same constants, so a rename cannot desynchronise
+    // writer and readers - which is how 127 existing verdicts stayed unread until 2026-08-28.
+    static final String VERDICT_KEY = TaskEntity.ACCEPTANCE_VERDICT_KEY;
     static final String VERDICT_REASON_KEY = "acceptance_verdict_reason";
     static final String VERDICT_AT_KEY = "acceptance_verdict_at";
 
     /** Recorded, never inferred: a task marked done that produced no diff was not thereby verified. */
     static final String NOT_JUDGED_NO_DIFF = "NOT_JUDGED_NO_DIFF";
-    static final String SATISFIED = "SATISFIED";
-    static final String REFUTED = "REFUTED";
+    static final String SATISFIED = TaskEntity.VERDICT_SATISFIED;
+    static final String REFUTED = TaskEntity.VERDICT_REFUTED;
     static final String UNDECIDABLE = "UNDECIDABLE";
 
     private static final String SYSTEM_INSTRUCTION = """

@@ -29,4 +29,10 @@ ENV ENEIK_BUILD_GIT_SHA=$ENEIK_BUILD_GIT_SHA \
     ENEIK_BUILD_TIME=$ENEIK_BUILD_TIME
 ENV JAVA_OPTS="-Xms512m -Xmx1536m -XX:+UseG1GC"
 EXPOSE 8080
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar app.jar"]
+# `exec` matters (2026-08-28): without it `sh` stays PID 1 and java runs as its child, so the SIGTERM
+# Docker sends on `compose stop` is delivered to sh, which does not forward it. Java never saw a
+# shutdown signal, Spring never closed its context, @PreDestroy never ran, H2 was never closed
+# cleanly - and every container in this project exited 137 (SIGKILL) after the grace period. That is
+# why SHUTDOWN COMPACT had never executed once and the store kept growing. With exec, java IS PID 1
+# and receives the signal itself.
+ENTRYPOINT ["sh", "-c", "exec java $JAVA_OPTS -jar app.jar"]

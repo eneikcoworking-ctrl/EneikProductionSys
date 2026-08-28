@@ -60,4 +60,51 @@ class CodeChangeClassifierTest {
                 "backend/app/routers/billing.py"
         )));
     }
+    // --- L_factory poka-yoke (2026-08-27, Phase 2) ---
+
+    @Test
+    void julesRunnerScriptsAreFactoryMetalanguageNotProductCode() {
+        // The live defect: blocker PRs #304/#306/#307/#308 on eneikdru/test-fiftieth each contained
+        // exactly one of these and were classified as containing product code, so they auto-merged.
+        assertTrue(classifier.isFactoryArtifact("_temp_submit.sh"));
+        assertTrue(classifier.isFactoryArtifact("_temp_submit_blocker.sh"));
+        assertTrue(classifier.isFactoryArtifact("_temp_submit_custom.sh"));
+        assertTrue(classifier.isFactoryArtifact("_temp_submit_review.sh"));
+        assertTrue(classifier.isFactoryArtifact("final_submit.sh"));
+        assertTrue(classifier.isFactoryArtifact("prep.sh"));
+        assertTrue(classifier.isFactoryArtifact("verification-harness.html"));
+        assertTrue(classifier.isFactoryArtifact("some/nested/dir/_temp_submit.sh"));
+    }
+
+    @Test
+    void aPrContainingOnlyRunnerScriptsHasNoProductCode() {
+        assertFalse(classifier.hasCode(List.of("_temp_submit_blocker.sh")));
+        assertFalse(classifier.hasCode(List.of("prep.sh", "final_submit.sh", "README.md")));
+    }
+
+    @Test
+    void legitimateClientShellScriptsAreStillProductCode() {
+        // The expensive direction of this error is rejecting a real PR, so the ban is on the runner
+        // shapes the factory emits, not on shell scripts.
+        assertTrue(classifier.hasCode(List.of("scripts/backup.sh")));
+        assertTrue(classifier.hasCode(List.of("scripts/migrate_db.sh")));
+        assertTrue(classifier.hasCode(List.of("deploy.sh")));
+        assertFalse(classifier.isFactoryArtifact("scripts/backup.sh"));
+    }
+
+    @Test
+    void oneRunnerScriptAmongRealCodeStillLeavesTheProductCode() {
+        assertTrue(classifier.hasCode(List.of("_temp_submit.sh", "backend/app/routers/billing.py")));
+        assertTrue(classifier.isProductCodeFile("backend/app/routers/billing.py"));
+        assertFalse(classifier.isProductCodeFile("_temp_submit.sh"));
+    }
+
+    @Test
+    void factoryRecordFilesAreDistinctFromFactoryRunnerScripts() {
+        // Record files are legitimately produced by the pipeline - stripped before merge, never grounds
+        // to reject a PR. Runner scripts are grounds to reject one.
+        assertTrue(classifier.isFactoryRecordFile(".eneik/task-plan.json"));
+        assertFalse(classifier.isFactoryArtifact(".eneik/task-plan.json"));
+        assertFalse(classifier.isFactoryRecordFile("_temp_submit.sh"));
+    }
 }

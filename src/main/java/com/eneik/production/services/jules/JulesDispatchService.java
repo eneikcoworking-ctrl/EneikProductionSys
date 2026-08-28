@@ -630,6 +630,7 @@ public class JulesDispatchService {
         roleContextBuilder.append("Description: ").append(task.getRole().getDescription()).append("\n");
         roleContextBuilder.append("\n## Jules Execution Contract\n");
         roleContextBuilder.append("- Proceed autonomously from the task description, JTBD, Acceptance Criteria, DoD, and file scope.\n");
+        roleContextBuilder.append("- THREE-LAYER ONTO-SEPARATION (TARSKI DEMARCATION): You are writing code for the CLIENT'S domain product ONLY. NEVER use or mention factory orchestrator names ('AutoMergeService', 'SixSigmaAudit', 'Jules', 'TaskPlan', 'PlannedWorkRecovery', 'EneikSys') in commit messages, PR titles, class names, database tables, or documentation. Formulate all changes strictly in the client's domain vocabulary.\n");
         roleContextBuilder.append("- Do not pause for broad optional confirmation when the Acceptance Criteria already imply a safe next step.\n");
         roleContextBuilder.append("- If a detail is ambiguous, use the smallest reversible implementation assumption, document it in the PR summary, and keep working.\n");
         roleContextBuilder.append("- Ask at most one concise blocker question only when continuing would create a concrete contradiction or security/data-loss risk.\n");
@@ -836,7 +837,12 @@ public class JulesDispatchService {
 
     private void appendRetrievedSystemKnowledge(StringBuilder roleContextBuilder, TaskEntity task, String mode, boolean buildPhase) {
         try {
-            String context = geminiContextService.buildContextBlock(julesRetrievalQuery(task, mode, buildPhase));
+            String context;
+            if (task != null && (task.getTargetContext() == null || task.getTargetContext() == com.eneik.production.models.persistence.TargetContext.PRODUCT_CODEBASE)) {
+                context = geminiContextService.buildProductWorkerContextBlock(task.getRole(), julesRetrievalQuery(task, mode, buildPhase));
+            } else {
+                context = geminiContextService.buildContextBlock(julesRetrievalQuery(task, mode, buildPhase));
+            }
             if (context == null || context.isBlank()) {
                 return;
             }
@@ -1046,6 +1052,11 @@ public class JulesDispatchService {
             }
 
             return session;
+        }
+
+        if (apiKey != null && buryIfSessionIsGone(session, apiKey)) {
+            log.info("pollStatus: Session {} returned 404 (non-existent) - buried record and released task claim",
+                    session.getExternalSessionId());
         }
 
         return session;
@@ -2041,7 +2052,9 @@ public class JulesDispatchService {
 
     @Transactional
     int claimPrOpenedWorkflow(UUID sessionId) {
-        return julesSessionRepository.claimPrOpenedWorkflow(sessionId, Instant.now());
+        Instant now = Instant.now();
+        Instant staleThreshold = now.minusSeconds(300); // 5-minute bounded monotonic lease
+        return julesSessionRepository.claimPrOpenedWorkflow(sessionId, now, staleThreshold);
     }
 
     @Transactional
@@ -3188,8 +3201,9 @@ public class JulesDispatchService {
     }
 
     Set<UUID> reviewFallbackTargetsInFlight(UUID projectId) {
-        return taskRepository.findAll().stream()
-                .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
+        // Scoped to the project (2026-08-28): the predicate below is already per-project, so reading the
+        // whole task table first paid a cost proportional to all history for an answer of a few rows.
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(projectFlowService::isReviewFallbackTask)
                 .filter(task -> !isTerminalTask(task))
                 .flatMap(task -> projectFlowService.reviewFallbackTargetTaskIds(task).stream())
@@ -3202,8 +3216,8 @@ public class JulesDispatchService {
     // content.
     Set<String> reviewFallbackTargetsEverAttempted(UUID projectId) {
         Set<String> keys = new java.util.HashSet<>();
-        taskRepository.findAll().stream()
-                .filter(task -> task.getProject() != null && projectId.equals(task.getProject().getId()))
+        // Scoped to the project (2026-08-28), same reason as above.
+        taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
                 .filter(projectFlowService::isReviewFallbackTask)
                 .forEach(task -> {
                     List<UUID> ids = projectFlowService.reviewFallbackTargetTaskIds(task);
@@ -5271,8 +5285,12 @@ public class JulesDispatchService {
             closeSessionAsNoCode(session,
                     "Remote Jules session no longer exists (HTTP 404 on the session resource itself); "
                             + "local record buried so it stops being polled forever");
-            log.info("Buried session {} - the remote session is gone (404), it had been polled every cycle",
-                    session.getExternalSessionId());
+            if (session.getTaskId() != null) {
+                claimService.releaseClaimToQueue(session.getTaskId(),
+                        "Remote Jules session no longer exists (HTTP 404) - released claim to queue");
+            }
+            log.info("Buried session {} and released task {} to queue - the remote session is gone (404)",
+                    session.getExternalSessionId(), session.getTaskId());
             return true;
         } catch (Exception e) {
             log.warn("Could not check whether session {} still exists: {}",

@@ -583,7 +583,7 @@ public class ClaimService {
     @Transactional
     public void detectStuckSessions(int stuckThresholdMinutes) {
         Instant threshold = Instant.now().minus(stuckThresholdMinutes, ChronoUnit.MINUTES);
-        List<JulesSessionEntity> activeSessions = julesSessionRepository.findByStatusIn(List.of("running", "revising"));
+        List<JulesSessionEntity> activeSessions = julesSessionRepository.findByStatusIn(List.of("running", "revising", "queued"));
 
         for (JulesSessionEntity session : activeSessions) {
             // lastProgressAt (real forward progress) rather than updatedAt, which Hibernate refreshes on
@@ -611,8 +611,7 @@ public class ClaimService {
         return "queued".equals(status)
                 || "running".equals(status)
                 || "revising".equals(status)
-                || "pr_opened".equals(status)
-                || "stuck".equals(status);
+                || "pr_opened".equals(status);
     }
 
     // Was a flat overwrite to highPriority-or-defaultPriority for every queued task on every 5-minute

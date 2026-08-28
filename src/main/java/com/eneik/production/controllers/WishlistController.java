@@ -51,4 +51,17 @@ public class WishlistController {
     public void dismiss(@PathVariable UUID id) {
         wishlistService.dismiss(id);
     }
+
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> hardDelete(@PathVariable UUID id) {
+        wishlistService.hardDelete(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    @DeleteMapping("/ghosts")
+    public ResponseEntity<java.util.Map<String, Object>> purgeGhosts(@RequestParam UUID projectId) {
+        int purged = wishlistService.purgeGhostWishlists(projectId);
+        return ResponseEntity.ok(java.util.Map.of("purgedCount", purged, "projectId", projectId));
+    }
 }
+

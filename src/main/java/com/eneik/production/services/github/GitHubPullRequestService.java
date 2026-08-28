@@ -884,6 +884,57 @@ public class GitHubPullRequestService {
         return String.join("\n", result);
     }
 
+    /**
+     * Deletes one path on a specific branch (not on main - {@link #deleteFile} does that). Added
+     * 2026-08-27 for the AutoMerge poka-yoke, which strips the factory's own `.eneik/*` record files off a
+     * product branch before that branch merges, so the invariant Code(t) INTERSECT L_factory = EMPTY holds
+     * in the merged artifact and not only in the agent's prompt.
+     *
+     * <p>Fail-open by contract: returns false and logs on any failure, and the caller must treat that as
+     * "cleanup did not happen" - never as grounds to block a merge that is otherwise legitimate.
+     * A missing path counts as success, so calling this twice is safe.
+     */
+    public boolean deleteFileOnBranch(ProjectEntity project, String branch, String path, String commitMessage) {
+        if (project == null || branch == null || branch.isBlank() || path == null || path.isBlank()) {
+            return false;
+        }
+        if (!settingsService.effectiveBoolean("github_enabled")) {
+            return false;
+        }
+        String token = settingsService.effectiveValue("github_token");
+        if (token == null || token.isBlank()) {
+            return false;
+        }
+        RepoRef repoRef = repoRef(project);
+        if (repoRef.owner().isBlank() || repoRef.repo().isBlank()) {
+            return false;
+        }
+        try {
+            String sha = fetchFileSha(project, branch, path).orElse(null);
+            if (sha == null) {
+                return true; // already absent on this branch
+            }
+            var body = objectMapper.createObjectNode();
+            body.put("message", commitMessage);
+            body.put("sha", sha);
+            body.put("branch", branch);
+            String urlPath = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/contents/" + encodePath(path);
+            HttpRequest request = baseRequest(urlPath, token)
+                    .method("DELETE", HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(body)))
+                    .build();
+            HttpResponse<String> response = sendGitHub(request);
+            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+                return true;
+            }
+            log.warn("deleteFileOnBranch: delete failed for {} on branch {}: status={} body={}",
+                    path, branch, response.statusCode(), preview(response.body()));
+        } catch (Exception e) {
+            log.warn("deleteFileOnBranch: could not delete {} on branch {} for project {}: {}",
+                    path, branch, project.getId(), e.getMessage());
+        }
+        return false;
+    }
+
     private Optional<String> fetchFileSha(ProjectEntity project, String ref, String path) {
         if (!settingsService.effectiveBoolean("github_enabled")) {
             return Optional.empty();
@@ -940,6 +991,10 @@ public class GitHubPullRequestService {
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) {
             return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "failed", 0, "GitHub token is missing");
+        }
+        if (refusedByFactoryPokaYoke(project, pullRequest.number(), pullRequest.title())) {
+            return new PullRequestCloseResult(pullRequest.number(), pullRequest.url(), "rejected", 0,
+                    "Refused by the factory poka-yoke (blocker title or L_factory contamination)");
         }
         RepoRef repoRef = repoRef(project);
         try {
@@ -1617,12 +1672,87 @@ public class GitHubPullRequestService {
      * can share it. Deliberately has no side effects of its own (no branch cleanup, no conflict handling,
      * no status writes) - callers own all of that, matching how executeMerge's inline version already works.
      */
+    /**
+     * Titles an agent uses when it is reporting that it will NOT do the work rather than describing a
+     * change. Same expression as AutoMergeService.BLOCKER_PR_TITLE, deliberately duplicated here rather
+     * than shared: this class must not depend on AutoMergeService (that would be a cycle), and a merge
+     * guard that can be disabled by a refactor somewhere else is not a guard.
+     */
+    private static final java.util.regex.Pattern BLOCKER_PR_TITLE = java.util.regex.Pattern.compile(
+            "(?i)(^|\\W)(blocker|halt|contradiction|blocked by|cannot proceed)(\\W|$)");
+
+    // Optional so every existing constructor call (including the many hand-built ones in tests) keeps
+    // compiling; a null classifier degrades this guard to "no guard", never to a crash.
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.CodeChangeClassifier codeChangeClassifier;
+
+    /**
+     * The merge-time poka-yoke, applied where a merge actually happens rather than at one of its callers.
+     *
+     * <p>Live incident, 2026-08-28. The same check already existed in AutoMergeService.executeMerge and
+     * still failed to stop PR #319/#320 ("Blocker: Architectural contradiction in Brief 2", one changed
+     * file: {@code _temp_submit.sh}) from reaching eneikdru/test-fiftieth's main branch - because those
+     * merged through mergeRecordPullRequest, one of nine merge paths, none of which passed through
+     * executeMerge. Guarding one caller closes one path; guarding the two methods that issue the actual
+     * PUT .../merge closes all of them, and stays closed when a tenth caller appears.
+     *
+     * <p>It also verifies an assumption this class previously only asserted in a comment - "record PRs
+     * carry exactly one .eneik/*.json file by construction, never product code". PR #320 is the
+     * counterexample: nothing enforced it.
+     *
+     * <p>Fail-open by design: no token, no readable diff, or no classifier means this declines to judge
+     * and the merge proceeds. A guard that refuses when it cannot see would strand legitimate work, which
+     * is the more expensive error - see CodeChangeClassifier's own doc on that trade-off.
+     */
+    private boolean refusedByFactoryPokaYoke(ProjectEntity project, int pullNumber, String prTitle) {
+        if (codeChangeClassifier == null || project == null) {
+            return false;
+        }
+        String title = prTitle == null ? "" : prTitle;
+        boolean blockerTitle = BLOCKER_PR_TITLE.matcher(title).find();
+
+        java.util.List<String> contamination = new java.util.ArrayList<>();
+        try {
+            String diff = fetchDiffText(project, pullNumber).orElse(null);
+            if (diff != null) {
+                for (String path : changedFilePathsFromDiff(diff)) {
+                    if (codeChangeClassifier.isFactoryArtifact(path)) {
+                        contamination.add(path);
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Poka-yoke could not read the diff of PR #{} for project {}: {}; allowing the merge "
+                    + "rather than blocking on ignorance", pullNumber, project.getId(), e.getMessage());
+        }
+
+        if (contamination.isEmpty() && !blockerTitle) {
+            return false;
+        }
+        String reason = contamination.isEmpty()
+                ? "Blocker PR refused at the merge point: the title announces a refusal, not a change: " + title
+                : "REJECTED_METADATA_CONTAMINATION: PR carries factory metalanguage (L_factory) files: " + contamination;
+        log.warn("POKA-YOKE REFUSE: PR #{} in project {} will NOT be merged - {}",
+                pullNumber, project.getId(), reason);
+        try {
+            fetchPullRequestByNumber(project, pullNumber)
+                    .ifPresent(pr -> closeSinglePullRequest(project, pr, reason));
+        } catch (Exception e) {
+            log.warn("Poka-yoke refused PR #{} but could not close it: {}", pullNumber, e.getMessage());
+        }
+        return true;
+    }
+
     public boolean mergePullRequest(ProjectEntity project, int pullNumber) {
         if (project == null || !settingsService.effectiveBoolean("github_enabled")) {
             return false;
         }
         String token = settingsService.effectiveValue("github_token");
         if (token == null || token.isBlank()) {
+            return false;
+        }
+        if (refusedByFactoryPokaYoke(project, pullNumber,
+                fetchPullRequestByNumber(project, pullNumber).map(GitHubPullRequest::title).orElse(""))) {
             return false;
         }
         RepoRef repoRef = repoRef(project);

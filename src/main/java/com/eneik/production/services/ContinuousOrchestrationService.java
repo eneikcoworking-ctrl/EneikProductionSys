@@ -164,6 +164,10 @@ public class ContinuousOrchestrationService {
                         // The client's own words into the product's repository, so |C| has somewhere to be
                         // derived FROM (8.2). Idempotent - no commit when nothing changed.
                         projectFlowService.syncClientBriefToRepository(project);
+                        // 2026-08-27: the mirror of the line above. That one puts the client's own words
+                        // into the product; this one takes the factory's bookkeeping back out of it.
+                        // Same tick, same authorisation, same idempotence - no commit when nothing is there.
+                        projectFlowService.purgeOrchestratorRecordsFromClientRepo(project);
                     } catch (Exception e) {
                         log.error("Continuous Orchestration: launchability check failed for project {}", project.getId(), e);
                     }
@@ -444,8 +448,7 @@ public class ContinuousOrchestrationService {
                 .count();
         long pendingWishlists = activeProjects.stream()
                 .flatMap(project -> wishlistRepository.findByProjectId(project.getId()).stream())
-                .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
-                        || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                 .count();
         long activeNonTerminalTasks = activeProjectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.claimed
@@ -518,7 +521,10 @@ public class ContinuousOrchestrationService {
 
     private void pollActiveJulesSessions() {
         try {
-            List<com.eneik.production.models.persistence.JulesSessionEntity> activeSessions = julesSessionRepository.findAll().stream()
+            // Status pushed into the query (2026-08-28): four statuses are wanted, and asking for them
+            // costs the answer instead of every session ever created, on a 60-second tick.
+            List<com.eneik.production.models.persistence.JulesSessionEntity> activeSessions = julesSessionRepository
+                    .findByStatusIn(java.util.List.of("running", "queued", "revising", "pr_opened")).stream()
                     .filter(s -> "running".equals(s.getStatus())
                             || "queued".equals(s.getStatus())
                             || "revising".equals(s.getStatus())

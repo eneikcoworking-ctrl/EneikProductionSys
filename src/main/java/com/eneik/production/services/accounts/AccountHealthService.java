@@ -100,6 +100,14 @@ public class AccountHealthService {
     @Value("${jules.precondition-block-escalation-threshold:2}")
     private int preconditionBlockEscalationThreshold;
 
+    @Value("${jules.account-recovery-full-jitter:true}")
+    private boolean fullJitter = true;
+
+    @Value("${jules.offline-account-relaxation-minutes:15}")
+    private int offlineRelaxationMinutes = 15;
+
+    private java.util.Random random = new java.util.Random();
+
     public AccountHealthService(AccountRepository accountRepository, DefectJournalRepository defectJournalRepository,
                                  AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository,
                                  LeverPromotionService leverPromotionService) {
@@ -192,7 +200,8 @@ public class AccountHealthService {
                 }
                 int newDailyCount = account.getSessionsDispatchedToday() + 1;
                 account.setSessionsDispatchedToday(newDailyCount);
-                account.setConsecutiveApiBlockCount(0);
+                // Leaky Bucket decay: decrement consecutiveApiBlockCount by 1 on success instead of hard reset
+                account.setConsecutiveApiBlockCount(Math.max(0, account.getConsecutiveApiBlockCount() - 1));
                 // Engineering invariant #15: this real success just reached (or passed) the current,
                 // not-yet-refuted ceiling belief - a bold conjecture that survived a severe test (Popper),
                 // so the belief revises upward. A success well below the current ceiling tests nothing new
@@ -252,7 +261,13 @@ public class AccountHealthService {
         Instant now = Instant.now();
         int recovered = 0;
         for (AccountEntity account : blocked) {
-            Instant changedAt = account.getStatusChangedAt() != null ? account.getStatusChangedAt() : now;
+            Instant changedAt = account.getStatusChangedAt();
+            if (changedAt == null) {
+                // Anti-Zeno: if statusChangedAt is null, fall back to lastHeartbeat / createdAt
+                // or a safe upper bound so the account is not permanently stuck.
+                changedAt = account.getLastHeartbeat() != null ? account.getLastHeartbeat()
+                        : (account.getCreatedAt() != null ? account.getCreatedAt() : now.minus(Duration.ofMinutes(maxCooldownMinutes)));
+            }
             long cooldownMinutes = computeCooldownMinutes(account);
             if (changedAt.isBefore(now.minus(Duration.ofMinutes(cooldownMinutes)))) {
                 if (accountRepository.resetSingleAccountFromApiBlocked(account.getId()) > 0) {
@@ -262,15 +277,30 @@ public class AccountHealthService {
                 }
             }
         }
+
+        // Liveness Invariant: auto-relax offline accounts if they have recent heartbeat activity
+        List<AccountEntity> offline = accountRepository.findByStatusAndEnabledTrue(AccountStatus.offline);
+        for (AccountEntity account : offline) {
+            Instant heartbeat = account.getLastHeartbeat();
+            if (heartbeat != null && Duration.between(heartbeat, now).toMinutes() < offlineRelaxationMinutes) {
+                account.setStatus(AccountStatus.idle);
+                accountRepository.save(account);
+                recovered++;
+                log.info("AccountHealthService: auto-relaxed account '{}' from offline to idle (recent heartbeat {}m ago)",
+                        account.getName(), Duration.between(heartbeat, now).toMinutes());
+            }
+        }
+
         return recovered;
     }
 
     /**
-     * Data-driven cooldown: median + z*stdDev of this account's own observed recovery durations, falling
-     * back to the factory-wide pool when this account has too few of its own, falling back to the
+     * Data-driven cooldown with Full Jitter: median + z*stdDev of this account's own observed recovery durations,
+     * falling back to the factory-wide pool when this account has too few of its own, falling back to the
      * exponential-backoff prior when even the pool is too small to trust yet.
      */
     private long computeCooldownMinutes(AccountEntity account) {
+        long targetCooldown;
         List<Double> samples = observedDurations(
                 defectJournalRepository.findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(account.getName(), RECOVERY_DURATION_DEFECT_TYPE));
 
@@ -280,15 +310,25 @@ public class AccountHealthService {
                     .stream().limit(POOLED_SAMPLE_LIMIT).toList();
             if (pooled.size() < minSamplesForDataDriven) {
                 int doublings = Math.min(Math.max(account.getConsecutiveApiBlockCount() - 1, 0), 20);
-                return Math.min((long) baseCooldownMinutes * (1L << doublings), maxCooldownMinutes);
+                targetCooldown = Math.min((long) baseCooldownMinutes * (1L << doublings), maxCooldownMinutes);
+            } else {
+                double median = median(pooled);
+                double stdDev = stdDev(pooled, median);
+                targetCooldown = Math.max(baseCooldownMinutes, Math.min(Math.round(median + zFactor * stdDev), maxCooldownMinutes));
             }
-            samples = pooled;
+        } else {
+            double median = median(samples);
+            double stdDev = stdDev(samples, median);
+            targetCooldown = Math.max(baseCooldownMinutes, Math.min(Math.round(median + zFactor * stdDev), maxCooldownMinutes));
         }
 
-        double median = median(samples);
-        double stdDev = stdDev(samples, median);
-        long cooldown = Math.round(median + zFactor * stdDev);
-        return Math.max(baseCooldownMinutes, Math.min(cooldown, maxCooldownMinutes));
+        if (!fullJitter || targetCooldown <= baseCooldownMinutes) {
+            return targetCooldown;
+        }
+        // Full Jitter: Uniform(baseCooldownMinutes, targetCooldown)
+        long range = targetCooldown - baseCooldownMinutes + 1;
+        long jitter = range > 0 ? (Math.abs(random.nextLong()) % range) : 0;
+        return baseCooldownMinutes + jitter;
     }
 
     /** Thin wrapper so every scheduled account-status mutation goes through this one service, not the repository directly. */

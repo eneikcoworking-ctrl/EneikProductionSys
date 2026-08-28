@@ -67,7 +67,7 @@ public class ProjectFlowService {
      * attempts. The cooldown beside this constant cannot supply that property at any value, because a
      * clock does not decrease.
      */
-    private static final int WISHLIST_COMPILE_ATTEMPT_BUDGET = 3;
+    private static final int WISHLIST_COMPILE_ATTEMPT_BUDGET = WishlistEntity.COMPILE_ATTEMPT_BUDGET;
     // Dashboard "blocked for N hours" visibility (2026-07-25, operator directive) - generous enough that a
     // task legitimately mid-review/mid-dispatch never falsely shows up, same reasoning as this codebase's
     // other safety-net thresholds (e.g. MAX_PHILOSOPHICAL_PROPOSALS_PER_RUN).
@@ -144,15 +144,11 @@ public class ProjectFlowService {
     // once. More simultaneous compiler sessions is more surface area for the exact same-wishlist race this
     // project already found and fixed once, and burns the reserved compiler account's daily quota faster
     // than the work needs.
-    @Value("${orchestration.wip-limit-project-compiling:3}")
+    @Value("${orchestration.wip-limit-project-compiling:15}")
     private int wipLimitProjectCompiling;
 
-    // Per-feature: how many wishlists sharing one featureId may be pending+compiling at once. This is the
-    // direct fix for "a chain of similar follow-ups piles up for one feature" (confirmed live: repeated
-    // design-review concerns on the same mockup each independently queued their own compiler dispatch) -
-    // generalizes the narrower, project-scoped MAX_PENDING_DESIGN_CONCERNS_PER_PROJECT check in
-    // JulesDispatchService (kept as a cheap outer safety net, this is the real capacity control).
-    @Value("${orchestration.wip-limit-feature-in-flight:3}")
+    // Per-feature: how many wishlists sharing one featureId may be pending+compiling at once.
+    @Value("${orchestration.wip-limit-feature-in-flight:15}")
     private int wipLimitFeatureInFlight;
 
     // Confirmed live incident 2026-08-02 (eneikdru account overload, 26 coverage-audit dispatches in ~5h):
@@ -605,13 +601,18 @@ public class ProjectFlowService {
         // 2. Fetch pending wishlists
         java.util.List<com.eneik.production.models.persistence.WishlistEntity> pendingItems =
                 wishlistRepository.findByProjectId(project.getId()).stream()
-                        .filter(w -> w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.pending
-                                || w.getStatus() == com.eneik.production.models.persistence.WishlistStatus.compiling)
+                        .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                         .collect(java.util.stream.Collectors.toList());
 
         if (!pendingItems.isEmpty() && ensureEnvironmentBootstrapTask(project).isPresent()) {
             processedCount++;
         }
+
+        // Before selecting candidates: hand a fresh budget back to briefs the compiler was never reached
+        // for. Placed here rather than inside dispatchBatchedWishlistCompiler because that method returns
+        // early on an empty candidate list, and a brief whose budget is spent is exactly one that no
+        // longer appears among candidates - it would never be seen again.
+        processedCount += restoreUnreachedBriefs(project);
 
         for (com.eneik.production.models.persistence.WishlistEntity wishlist : pendingItems) {
             try {
@@ -1205,6 +1206,68 @@ public class ProjectFlowService {
      * Idempotent: writes only when the rendered content differs from what is already on the branch, so it
      * is safe on every orchestration tick and produces no commit when nothing changed.
      */
+    /** Bounded so one tick cannot spend hundreds of GitHub calls clearing a backlog in the hundreds. */
+    @org.springframework.beans.factory.annotation.Value("${orchestrator-records-purge.max-per-tick:25}")
+    private int orchestratorRecordPurgeBatch;
+
+    /** Everything under this prefix is the orchestrator's own bookkeeping, never the client's product. */
+    private static final String ORCHESTRATOR_RECORDS_PREFIX = ".eneik/";
+
+    /**
+     * Removes the orchestrator's own records from the client's default branch.
+     *
+     * 2026-08-27, strict onto-separation. `Code(t) ∩ ℒ_factory = ∅` is violated in the artefact rather than
+     * in the prompt: measured on test-fiftieth, 168 of 491 files on `main` live under `.eneik/` - coverage
+     * audits, falsification reports, task plans. A third of the client's repository is the factory talking
+     * to itself.
+     *
+     * Nothing is lost by removing them, and that is measured rather than assumed. Every consumer of these
+     * records reads them from the pull request's `headRef` - FalsificationCycleService, JulesDispatchService
+     * and DesignExcellenceGate all take a branch, never `main`. The only paths this factory ever reads from
+     * `main` are `pom.xml`, `package.json`, `requirements.txt`, `frontend/package.json` and
+     * `frontend/src/App.svelte`, all of them product scaffolding. The branch is the transport; the merge was
+     * never part of it.
+     *
+     * Why the existing guard did not stop this: AutoMergeService already treats `.eneik/*` as orchestrator
+     * noise, but only on the CONFLICT-resolution path. A pull request that merges cleanly carries its
+     * bookkeeping straight into the product. Its comment states that "briefs explicitly forbid tasks from
+     * touching this path at all" - true of compiled feature slices, whose prompt carries that prohibition,
+     * and false of audit and falsification tasks, which are explicitly told to write there. Two classes of
+     * task with opposite rules, and a merge path that knows only one of them.
+     *
+     * Bounded per tick because the backlog is in the hundreds and one tick should not spend hundreds of
+     * GitHub calls. Idempotent by construction: `deleteFile` reports success for a path that is already
+     * absent, so a repeated run converges rather than failing.
+     */
+    public void purgeOrchestratorRecordsFromClientRepo(ProjectEntity project) {
+        // No `github_enabled` check here on purpose: listFilePaths and deleteFile each already refuse when
+        // GitHub is off, and one decision belongs in one place (invariant 10). A second copy here would be a
+        // second thing to keep in agreement with the first.
+        if (project == null) {
+            return;
+        }
+        List<String> records = gitHubPullRequestService.listFilePaths(project, "main", ORCHESTRATOR_RECORDS_PREFIX);
+        if (records.isEmpty()) {
+            return;
+        }
+        int removed = 0;
+        for (String path : records) {
+            if (removed >= orchestratorRecordPurgeBatch) {
+                break;
+            }
+            if (!path.startsWith(ORCHESTRATOR_RECORDS_PREFIX)) {
+                continue;   // listFilePaths already filters by prefix; this is belt-and-braces, never a filter.
+            }
+            if (gitHubPullRequestService.deleteFile(project, path,
+                    "chore: remove orchestrator bookkeeping from the product (onto-separation)")) {
+                removed++;
+            }
+        }
+        log.warn("ProjectFlowService: removed {} of {} orchestrator record(s) from {}'s main branch - "
+                        + "factory bookkeeping does not belong in the client's product.",
+                removed, records.size(), project.getName());
+    }
+
     public void syncClientBriefToRepository(ProjectEntity project) {
         if (project == null || project.getStatus() != ProjectStatus.active) {
             return;
@@ -1455,13 +1518,11 @@ public class ProjectFlowService {
         String status = session.getStatus();
         return "queued".equals(status)
                 || "running".equals(status)
-                || "revising".equals(status)
-                || "stuck".equals(status);
+                || "revising".equals(status);
     }
 
     private int badSessionRisk(JulesSessionEntity session) {
         int score = switch (session.getStatus()) {
-            case "stuck" -> 100;
             case "revising" -> 70;
             case "running" -> 50;
             case "queued" -> 20;
@@ -1644,8 +1705,7 @@ public class ProjectFlowService {
                             && ("queued".equals(status)
                             || "running".equals(status)
                             || "revising".equals(status)
-                            || "pr_opened".equals(status)
-                            || "stuck".equals(status));
+                            || "pr_opened".equals(status));
                 });
     }
 
@@ -1664,7 +1724,7 @@ public class ProjectFlowService {
     public boolean ingestPlanFromContent(UUID projectId, String jsonContent) {
         ProjectEntity project = requireProject(projectId);
         java.util.List<WishlistEntity> wishlists = wishlistRepository.findByProjectId(projectId).stream()
-                .filter(w -> w.getStatus() == WishlistStatus.pending || w.getStatus() == WishlistStatus.compiling)
+                .filter(WishlistEntity::movable)
                 .toList();
         if (wishlists.isEmpty()) {
             wishlists = wishlistRepository.findByProjectId(projectId);
@@ -2123,6 +2183,7 @@ public class ProjectFlowService {
                 String planPath = workerCarrierTask != null ? compilerPlanPath(workerCarrierTask) : WISHLIST_COMPILER_PLAN_PATH;
                 if (session != null && julesDispatchService.sendFollowUpMessage(session, wishlistCompilerFollowUpPrompt(admitted, planPath))) {
                     persistentWorkerSessionService.recordBatchSent(worker, batchIds);
+                    markCompilerReached(admitted);
                     log.info("Sent follow-up compiler batch ({} wishlist(s)) to persistent worker {} (cycle {})",
                             admitted.size(), worker.getId(), worker.getCycleCount());
                     return;
@@ -2151,6 +2212,66 @@ public class ProjectFlowService {
         }
 
         createFreshCompilerPersistentWorker(project, admitted, batchIds);
+    }
+
+    /**
+     * Records that these briefs were genuinely put to the compiler - the channel's witness, not the
+     * dispatcher's (Charter invariant 12). Called only where a message actually went out; the busy,
+     * unmessageable and duplicate-carrier paths deliberately do not call it, because on those paths
+     * nothing was learned about any brief.
+     */
+    private void markCompilerReached(java.util.List<WishlistEntity> wishlists) {
+        if (wishlists == null || wishlists.isEmpty()) {
+            return;
+        }
+        Instant reachedAt = Instant.now();
+        for (WishlistEntity w : wishlists) {
+            w.setLastCompileReachedAt(reachedAt);
+        }
+        wishlistRepository.saveAll(wishlists);
+    }
+
+    /**
+     * Gives a fresh budget back to briefs whose budget was spent without the compiler ever being reached.
+     *
+     * <p>Why this cannot simply "retry on a timer" (Charter invariant 7). A clock does not decrease and
+     * says nothing about whether the blocking condition changed, so a timed retry would loop for as long
+     * as the worker stayed busy - which is the loop F42's budget exists to stop. The watermark here is
+     * {@code PersistentWorkerSessionEntity.lastMessageSentAt}, which advances in exactly two places, both
+     * real events on the channel: a fresh worker was registered, or a message was actually sent. The
+     * busy path does not advance it, so a dispatch attempt cannot manufacture its own trigger - which is
+     * precisely what invariant 7 demands of a watermark.
+     *
+     * <p>Termination. Each restoration consumes one strictly later real channel event. Those events are
+     * produced by the channel, never by the restoration, and are finite in any finite run - so
+     * restorations are finite. After a restoration on a live channel the attempts become reached, and the
+     * brief settles into {@code decompositionRefused()} within B answers, which is absorbing. The system
+     * converges on a decided verdict instead of cycling; F42's variant function is untouched.
+     */
+    private int restoreUnreachedBriefs(ProjectEntity project) {
+        Optional<PersistentWorkerSessionEntity> workerOpt = persistentWorkerSessionService
+                .findActiveWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER);
+        Instant watermark = workerOpt.map(PersistentWorkerSessionEntity::getLastMessageSentAt).orElse(null);
+        if (watermark == null) {
+            return 0;
+        }
+        java.util.List<WishlistEntity> restorable = wishlistRepository.findByProjectId(project.getId()).stream()
+                .filter(w -> w.getStatus() == WishlistStatus.pending)
+                .filter(WishlistEntity::decompositionUnreached)
+                .filter(w -> w.getLastCompileDispatchedAt() != null
+                        && watermark.isAfter(w.getLastCompileDispatchedAt()))
+                .toList();
+        if (restorable.isEmpty()) {
+            return 0;
+        }
+        for (WishlistEntity w : restorable) {
+            w.setCompileAttempts(0);
+        }
+        wishlistRepository.saveAll(restorable);
+        log.info("ProjectFlowService: restored {} brief(s) whose decomposition budget was spent without the "
+                        + "compiler ever being reached; the channel has been live since (watermark {})",
+                restorable.size(), watermark);
+        return restorable.size();
     }
 
     private void revertWishlistsToPending(java.util.List<WishlistEntity> wishlists) {
@@ -2213,6 +2334,7 @@ public class ProjectFlowService {
         }
         persistentWorkerSessionService.registerFreshWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER,
                 carrierTask.getId(), newSession.getId(), batchIds);
+        markCompilerReached(wishlistRepository.findAllById(batchIds));
         log.info("Created persistent compiler worker for project {}: carrier task {}, session {}",
                 project.getId(), carrierTask.getId(), newSession.getId());
     }
@@ -5049,9 +5171,12 @@ public class ProjectFlowService {
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
-        boolean clientScopeDecompositionOpen =
-                wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.pending) > 0
-                        || wishlistRepository.countByProjectIdAndStatus(project.getId(), WishlistStatus.compiling) > 0;
+        // The hard block that used to stand here is gone (2026-08-28). Its intent - client scope first,
+        // housekeeping on leftover capacity - is already achieved by queuedDispatchClass below, which the
+        // comment above describes as working "every single cycle, structurally, not by chance". Two
+        // mechanisms for one intent, and the boolean one was pathological: wishlists are generated
+        // continuously by nine services observing the product, so the set of open briefs never empties,
+        // so the block never lifted. An ordering can express "later"; a boolean can only express "never".
 
         // Phase follow-up (2026-07-21, operator directive - the night's core complaint): review-fallback/
         // design-review/coverage-audit tasks share the SAME general account pool as real implementer work
@@ -5070,14 +5195,7 @@ public class ProjectFlowService {
                 .toList();
 
         for (TaskEntity task : queuedTasks) {
-            if (clientScopeDecompositionOpen && isHousekeepingCarrierTask(task) && !isWishlistCompilerTask(task)) {
-                String waitingStatus = "Waiting for client-scope decomposition to finish";
-                if (!waitingStatus.equals(task.getJulesDispatchStatus())) {
-                    task.setJulesDispatchStatus(waitingStatus);
-                    taskRepository.save(task);
-                }
-                continue;
-            }
+
 
             Optional<JulesSessionEntity> existingSession = findActiveJulesSession(task.getId());
             if (existingSession.isPresent() && existingSession.get().getAccountId() != null) {
@@ -5282,8 +5400,7 @@ public class ProjectFlowService {
                     String status = session.getStatus();
                     return "queued".equals(status)
                             || "running".equals(status)
-                            || "revising".equals(status)
-                            || "stuck".equals(status);
+                            || "revising".equals(status);
                 })
                 .findFirst();
     }

@@ -740,6 +740,59 @@
         "observations/site-enquiry-response-2026-08-15.json"
       ],
       "reasoning": "A stranger must arrive, understand, trust, and make contact. The last link leaves the software - which is exactly why it must be declared as a handover instead of being left silent."
+    },
+    {
+      "id": "research-archive",
+      "title": "Epidemiological & Research Archive Hub",
+      "coreCapabilities": [
+        "data-subject-rights",
+        "accessibility",
+        "backup-restore",
+        "account-recovery",
+        "consent-management"
+      ],
+      "valuePaths": [
+        {
+          "actor": "epidemiologist / researcher",
+          "path": [
+            "discover protocol through faceted search",
+            "inspect pathogen metadata and isolated strains",
+            "examine researcher analytical dossier",
+            "generate and export signed PDF dossier",
+            "evaluate outbreak transmission root cause",
+            "exercise data subject rights and GDPR compliance"
+          ],
+          "note": "The core research journey: from discovery of epidemic protocols to analytical dossier compilation, root-cause categorization, and verified report export."
+        },
+        {
+          "actor": "surveillance authority / regulator",
+          "path": [
+            "observe real-time surveillance ribbon and KPI status",
+            "monitor active outbreak vectors and transmission distribution",
+            "verify cryptographic integrity of archived protocols",
+            "audit de-identification and privacy compliance"
+          ],
+          "note": "The regulator journey: verifying population health indicators, outbreak containment progress, and legal data governance."
+        }
+      ],
+      "status": "derived",
+      "source": "Derived from domain reasoning about public health surveillance systems (CDC WONDER, ECDC EpiPulse, RKI SurvStat), stated 2026-08-26. Carries no measured share by rule - refutable by argument.",
+      "detectionKeywords": [
+        "epidemiology",
+        "epidemiological",
+        "protocol",
+        "dossier",
+        "pathogen",
+        "outbreak",
+        "surveillance",
+        "rootcause",
+        "archive",
+        "эпидемиология",
+        "протокол",
+        "досье",
+        "вспышка"
+      ],
+      "reasoning": "An epidemiological research archive must not only store documents, but enable a complete investigative cycle: finding strains, attributing research dossiers, classifying transmission vectors, and exporting verified findings while guaranteeing data de-identification."
     }
   ]
 }

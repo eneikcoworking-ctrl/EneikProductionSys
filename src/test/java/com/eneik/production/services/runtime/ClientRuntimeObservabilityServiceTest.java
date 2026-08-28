@@ -46,7 +46,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void doesNothingWhenTheFeatureFlagIsOff() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -62,7 +62,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void doesNothingWhenPhase0LaunchabilityHasNotBeenCheckedYet() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -77,7 +77,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void observesImmediatelyWhenNoHistoryExistsYet() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -106,7 +106,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void skipsWhenNotYetDuePerTheAdaptiveCadenceFormula() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -132,7 +132,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void observesAgainOnceEnoughRealTimeHasPassedPerTheFormula() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -165,7 +165,7 @@ class ClientRuntimeObservabilityServiceTest {
      */
     @Test
     void healthCheckUsesTheExternalPortReportedByTheLauncher() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -186,7 +186,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void healthCheckFallsBackToTheConfiguredPortWhenTheLauncherReportsNone() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -207,7 +207,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void aFailedLaunchIsRecordedAsFailureAndNeverAttemptsAHealthCheck() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -230,7 +230,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void aRealStatisticalShiftAfterTheNewObservationCreatesAKaizenProposal() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -278,7 +278,7 @@ class ClientRuntimeObservabilityServiceTest {
      */
     @Test
     void threeConsecutiveLaunchFailuresFromTheStartTriggersTheAbsoluteTestPath() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -314,7 +314,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void aStableHistoryAfterTheNewObservationNeverCreatesAKaizenProposal() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -349,7 +349,7 @@ class ClientRuntimeObservabilityServiceTest {
      */
     @Test
     void reaperLeavesAStillFreshLivePreviewRunning() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -376,7 +376,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void reaperTearsDownAnExpiredLivePreview() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -409,7 +409,7 @@ class ClientRuntimeObservabilityServiceTest {
      */
     @Test
     void summarizeReportsALiveUrlWhileWithinTheWindow() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -429,7 +429,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void summarizeReportsNoLiveUrlOnceTheWindowHasExpired() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -472,7 +472,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void anUnansweredLaunchIsRecordedAsAnInstrumentFailure() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -497,7 +497,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void aLaunchTheLauncherItselfReportsAsFailedIsStillARealObservation() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -525,7 +525,7 @@ class ClientRuntimeObservabilityServiceTest {
     // otherwise a failed instrument silently buys itself another full delay.
     @Test
     void theCadenceClockIgnoresInstrumentFailuresWhenDecidingWhetherACheckIsDue() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -564,7 +564,7 @@ class ClientRuntimeObservabilityServiceTest {
     // where a merged MinIO fix waited while the cadence pointed at 09:11Z the next morning.
     @Test
     void aTaskReachingDoneSinceTheLastObservationPullsTheCheckForward() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -598,7 +598,7 @@ class ClientRuntimeObservabilityServiceTest {
     // the adaptive cadence exists to prevent. The trigger changes when we look, not how often we may.
     @Test
     void aMergeWithinTheFloorDoesNotTriggerAnObservation() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -628,7 +628,7 @@ class ClientRuntimeObservabilityServiceTest {
     // never a replacement for it.
     @Test
     void withNothingMergedTheTimerStillGoverns() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -680,7 +680,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void anUnansweredLauncherCallStillSpendsTheRateLimitersClock() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -706,7 +706,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void theInstrumentIsRetriedOnceTheFloorHasPassedSinceTheLastAttempt() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -732,7 +732,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void aRunOfUnansweredLauncherCallsBecomesAFactoryFindingAgainstTheLauncher() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -766,7 +766,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void asingleUnansweredCallIsABlipAndIsNotReported() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         var launcher = mock(RuntimeLauncherClient.class);
         var settings = mock(SystemSettingsService.class);
         var projects = mock(com.eneik.production.repositories.ProjectRepository.class);
@@ -818,7 +818,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void repeatedReadingsOfOneUnchangedArtifactAreOneDrawNotMany() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         UUID projectId = UUID.randomUUID();
         // Newest first, as the repository returns them: four readings of commit A, then one of commit B.
         when(observations.findByProjectIdOrderByObservedAtDesc(projectId)).thenReturn(List.of(
@@ -840,7 +840,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void observationsWithAnUnknownArtifactAreNeverCollapsed() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         UUID projectId = UUID.randomUUID();
         // Every row written before V109 carries a null commit. Treating them as one artifact would be the
         // exact substitution ACP-102 forbids: nothing recorded which artifact they observed.
@@ -854,7 +854,7 @@ class ClientRuntimeObservabilityServiceTest {
 
     @Test
     void anArtifactObservedAgainAfterAnotherOneIsANewDraw() {
-        var observations = mock(ClientRuntimeObservationRepository.class);
+        var observations = observationRepositoryMock();
         UUID projectId = UUID.randomUUID();
         // A, then B, then A again. Only CONSECUTIVE readings of one artifact are the same fact; a return
         // to a previous commit is a genuinely new observation of it at a new time.
@@ -864,5 +864,20 @@ class ClientRuntimeObservabilityServiceTest {
         var summary = summarizingService(observations).summarize(projectId);
 
         assertEquals(1.0 / 5.0, summary.posteriorMean(), 1e-9); // Beta(1,4): three draws
+    }
+    /**
+     * A ClientRuntimeObservationRepository mock whose save() behaves like a real JPA save() - it returns
+     * the persisted entity rather than null.
+     *
+     * <p>Needed since 2026-08-27, when ClientRuntimeObservabilityService.observeOnce changed
+     * {@code observationRepository.save(observation);} to {@code observation = observationRepository.save(observation);}.
+     * A bare Mockito mock returns null from save(), so every test reaching that line died on a
+     * NullPointerException raised inside production code - an artefact of an unstubbed mock, not a defect
+     * in the service: Spring Data's save() never returns null.
+     */
+    private static ClientRuntimeObservationRepository observationRepositoryMock() {
+        var repository = mock(ClientRuntimeObservationRepository.class);
+        when(repository.save(any(ClientRuntimeObservationEntity.class))).thenAnswer(inv -> inv.getArgument(0));
+        return repository;
     }
 }

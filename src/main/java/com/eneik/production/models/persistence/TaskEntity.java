@@ -163,7 +163,56 @@ public class TaskEntity {
      * reader. A verdict about specification is not evidence about delivery, and by the Evidence Algebra
      * the absence of a check is 0, never 5.
      */
+    /**
+     * The payload schema for a delivery ruling. Declared on the entity, not on the service that writes it:
+     * the fact lives in this row, and every reader of it - FlowSpineService's counters, this class's own
+     * predicates - must agree on one spelling. DeliveredWorkJudgmentService delegates to these.
+     */
+    public static final String ACCEPTANCE_VERDICT_KEY = "acceptance_verdict";
+    public static final String VERDICT_SATISFIED = "SATISFIED";
+    public static final String VERDICT_REFUTED = "REFUTED";
+
+    /** The verdict recorded for this task, or null if nothing has ruled. */
+    public String acceptanceVerdict() {
+        if (payload == null) {
+            return null;
+        }
+        String value = payload.path(ACCEPTANCE_VERDICT_KEY).asText(null);
+        return value == null || value.isBlank() ? null : value;
+    }
+
+    /**
+     * Did the criterion instrument RULE on this task - as opposed to recording that it could not?
+     *
+     * <p>UNDECIDABLE and NOT_JUDGED_NO_DIFF are deliberately excluded. They are recorded ignorance, and
+     * counting them as answers is exactly the ACP-105 error this file already carries a comment about:
+     * a verdict field with no place to put "not measured" starts reporting silence as a result.
+     */
+    public boolean deliveryRuledByCriteria() {
+        String verdict = acceptanceVerdict();
+        return VERDICT_SATISFIED.equals(verdict) || VERDICT_REFUTED.equals(verdict);
+    }
+
+    /** The merged diff was judged NOT to satisfy this task's own acceptance criteria. */
+    public boolean deliveryRefuted() {
+        return VERDICT_REFUTED.equals(acceptanceVerdict());
+    }
+
+    /**
+     * Verified for delivery by EITHER instrument the factory owns.
+     *
+     * <p>Why a union, measured 2026-08-28 on test-fiftieth over 365 tasks: the gate instrument applied to
+     * ZERO of them, while the criterion instrument had ruled on 127 (82 satisfied, 45 refuted). The gate is
+     * not weak, it is unreachable - GateOrchestrator.runQualityGate stands on one of the five paths that
+     * write TaskStatus.done and covers five of the thirteen roles. Adding gates for the other eight would
+     * inspect finished output eight more times; asking each task its own acceptance criteria asks what the
+     * client wanted, and every task carries those. Both instruments are kept because each answers where the
+     * other is silent.
+     */
     public boolean isVerifiedForDelivery() {
+        if (VERDICT_SATISFIED.equals(acceptanceVerdict())) {
+            return true;
+        }
         if (qualityGateReport == null || !qualityGatePassed) {
             return false;
         }
@@ -183,8 +232,15 @@ public class TaskEntity {
         return qualityGateReport.path("applicableChecksByStage").path("IMPLEMENTATION_RESULT").asInt(0);
     }
 
-    /** True when nothing has ever asked this task's delivery question - neither pass nor fail. */
+    /**
+     * True when nothing has ever asked this task's delivery question - neither pass nor fail, by either
+     * instrument. A recorded UNDECIDABLE still counts as absent: the question was put and could not be
+     * settled, which is not the same as an answer.
+     */
     public boolean isDeliveryVerificationAbsent() {
+        if (deliveryRuledByCriteria()) {
+            return false;
+        }
         if (qualityGateReport == null) {
             return true;
         }

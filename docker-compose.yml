@@ -47,26 +47,23 @@ services:
       retries: 10
     restart: unless-stopped
 
-  # 2026-08-21: factory-level judgment, running on the operator's Claude SUBSCRIPTION rather than a
-  # metered API key. Verified by a real call from inside a Linux container using the credential minted by
-  # the Windows CLI - no key, no balance, no WSL interop (which was emitting accept4 failures on .exe
-  # calls that same hour, and has taken Docker down with it before).
-  #
-  # This is the ONLY component that holds the Claude credential, the same architecture decision the
-  # operator made for the docker socket above: contain a privilege in the smallest separately-reviewable
-  # surface (judgment-sidecar/server.js, ~70 lines), never in the much larger main backend.
-  #
-  # The credential is mounted READ-WRITE on purpose: Claude Code refreshes its OAuth token, and a
-  # read-only mount would work until the token expired and then fail silently for good.
-  judgment-sidecar:
+  # 2026-08-28: Primary Autonomous Judgment Service (Gemini REST API + Shadow Arbiter Fallback).
+  # Claude sidecar permanently decommissioned as Muda to free WSL2 RAM and eliminate weekly limit lockouts.
+  judgment-proxy:
     build:
-      context: ./judgment-sidecar
+      context: ./judgment-proxy
+    environment:
+      JUDGMENT_SHADOW_DIR: /shadow
+      JUDGMENT_PROXY_WAIT_MS: ${JUDGMENT_PROXY_WAIT_MS:-240000}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      GEMINI_MODEL: ${GEMINI_MODEL:-gemini-2.5-flash}
+      GEMINI_FALLBACK_MODELS: ${GEMINI_FALLBACK_MODELS:-gemini-2.5-flash-lite,gemini-1.5-flash}
     volumes:
-      - ${CLAUDE_CREDENTIAL_DIR:-C:\Users\образ центр\.claude}:/home/judge/.claude
+      - ./data/judgment-shadow:/shadow
     ports:
-      - "8092:8092"
+      - "8093:8093"
     healthcheck:
-      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8092/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8093/health', r => process.exit(r.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))"]
       interval: 10s
       timeout: 3s
       retries: 10
@@ -81,11 +78,29 @@ services:
         ENEIK_BUILD_GIT_DIRTY: ${ENEIK_BUILD_GIT_DIRTY:-unknown}
         ENEIK_BUILD_TIME: ${ENEIK_BUILD_TIME:-unknown}
     environment:
-      JAVA_OPTS: "-Xmx1024m -Xms384m -XX:+UseG1GC"
+      # Heap is DERIVED from the container limit, never stated independently (2026-08-28). Two numbers
+      # for one quantity is how they drift: Dockerfile.backend said -Xmx1536m while this file said
+      # -Xmx1024m, and which one won could only be learned by experiment. MaxRAMPercentage reads the
+      # cgroup limit set by mem_limit below, so there is exactly one number to change.
+      #
+      # -Xmx bounds the HEAP only. Real RSS is heap + metaspace + code cache + thread stacks + direct
+      # buffers + GC structures; for this app (49 JPA repositories, a 24-connection Hikari pool, an H2
+      # page cache) the non-heap part is several hundred MB. That is why an -Xmx of 1024m produced a
+      # process the host could not afford, and why the bound that matters is mem_limit, not -Xmx.
+      JAVA_OPTS: "-XX:MaxRAMPercentage=55 -XX:MaxMetaspaceSize=192m -XX:+UseG1GC"
       ML_SERVICE_URL: http://ml:8000
       RUNTIME_LAUNCHER_URL: ${RUNTIME_LAUNCHER_URL:-http://runtime-launcher:8091}
-      JUDGMENT_AGENT_URL: ${JUDGMENT_AGENT_URL:-http://judgment-sidecar:8092}
-      SPRING_DATASOURCE_URL: jdbc:h2:file:./data/eneik_db;DB_CLOSE_DELAY=-1
+      JUDGMENT_AGENT_URL: ${JUDGMENT_AGENT_URL:-http://judgment-proxy:8093}
+      # H2 anti-bloat (2026-08-27, ENGINEERING_PHILOSOPHY_ACTION_PLAN.md Phase 4). This value, not
+      # application.properties, is what the backend actually runs with - the env var overrides the
+      # property default, so editing only the properties file changes nothing.
+      # /app/data is the same file as ./data/eneik_db: WORKDIR is /app and ./data is bind-mounted there.
+      # DB_CLOSE_ON_EXIT is deliberately FALSE. With TRUE, H2 registers its own JVM shutdown
+      # hook that races Spring's, and it kept winning: every shutdown logged "The database has
+      # been closed" from EneikProductionApplication.compactH2StoreOnShutdown, so SHUTDOWN
+      # COMPACT never ran once and the store was only ever compacted by hand. Leaving the close
+      # to Spring alone lets the @PreDestroy hook find the database open.
+      SPRING_DATASOURCE_URL: jdbc:h2:file:/var/lib/eneik/eneik_db;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE;DEFRAG_ALWAYS=TRUE;AUTO_COMPACT_FILL_RATE=80
       PROJECT_FACTORY_WORKSPACE_ROOT: /app/project-workspaces
       ENEIK_OPERATOR_SYSTEM_REPO_ROOT: /app/eneik-system
       # 2026-08-14: the market corpus lives in the repository (market-corpus/), which is mounted read-only
@@ -117,7 +132,11 @@ services:
       STITCH_API_KEY: ${STITCH_API_KEY:-}
       GITHUB_ENABLED: ${GITHUB_ENABLED:-true}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
-      GITHUB_ORG: ${GITHUB_ORG:-eneikcoworking-ctrl}
+      # 2026-08-28: the factory now works eneikdru/test-fiftieth. GITHUB_ORG is what
+      # ProjectFlowService.createProject stamps into repositoryUrl, and GitHubPullRequestService.repoRef
+      # only falls back to it when a project has no repositoryUrl of its own - so this decides the owner
+      # of every NEW project, and nothing else.
+      GITHUB_ORG: ${GITHUB_ORG:-eneikdru}
       GITHUB_API_BASE_URL: ${GITHUB_API_BASE_URL:-https://api.github.com}
       GITHUB_WEBHOOK_URL: ${GITHUB_WEBHOOK_URL:-}
       LINEAR_ENABLED: ${LINEAR_ENABLED:-false}
@@ -127,13 +146,31 @@ services:
       JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT: ${JULES_MAX_CONCURRENT_SESSIONS_PER_ACCOUNT:-3}
       ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED: ${ORCHESTRATION_PERSISTENT_WORKER_SESSIONS_ENABLED:-false}
     volumes:
+      # The LIVE H2 store lives on a Docker-managed volume, not on the Windows bind mount
+      # (2026-08-28). Measured across this host all day: every operation performed inside a
+      # container filesystem succeeded, and every one that crossed ./data failed - `read 0` on
+      # reads, `Writing to FileChannel failed` on writes (16 in three minutes), torn copies of a
+      # live file, and stale file locks left by killed containers. A database whose writes can
+      # silently fail is a database that will eventually be corrupt, and this one was nearly lost
+      # once already. ./data stays mounted for everything else the factory keeps there
+      # (design-assets, logs, judgment-shadow, operator-memory, backups) - those tolerate a
+      # transient failure; the write-ahead store does not.
+      - eneik-db:/var/lib/eneik
       - ./data:/app/data
       - ./project-workspaces:/app/project-workspaces
       - .:/app/eneik-system:ro
+    # Without this, MaxRAMPercentage above reads the HOST's memory and sizes the heap at 55% of 3.3 GB -
+    # worse than the absolute -Xmx it replaced. The two settings only make sense together.
+    # Declared, not measured: 1g is chosen from three crude free-memory deltas taken this session
+    # (backend idle ~720-840 MB) plus headroom, not from `docker stats` under load. It bounds the worst
+    # case rather than reserving; adjust it from a real peak, and treat this number as provisional.
+    mem_limit: 1g
     ports:
       - "8080:8080"
     depends_on:
       ml:
+        condition: service_healthy
+      judgment-proxy:
         condition: service_healthy
     restart: unless-stopped
     # 2026-08-14: docker's default 10s grace period was killing the JVM (exit 137) before H2 could close
@@ -152,3 +189,10 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  # Docker-managed, so the H2 store never crosses the Windows file-sharing layer.
+  # Back it up with:
+  #   docker compose run --rm -v eneikproductionsys_eneik-db:/db -v "$PWD/data:/out" backend \
+  #     sh -c 'cp /db/eneik_db.mv.db /out/eneik_db.backup.mv.db'
+  eneik-db:

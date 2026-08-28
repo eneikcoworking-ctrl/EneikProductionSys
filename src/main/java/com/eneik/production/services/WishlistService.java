@@ -40,6 +40,35 @@ public class WishlistService {
         // Hibernate dirty checking will handle the update
     }
 
+    @Transactional
+    public void hardDelete(UUID id) {
+        if (!wishlistRepository.existsById(id)) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Wishlist item not found");
+        }
+        wishlistRepository.deleteById(id);
+    }
+
+    @Transactional
+    public int purgeGhostWishlists(UUID projectId) {
+        List<WishlistEntity> entities = wishlistRepository.findByProjectId(projectId);
+        List<WishlistEntity> ghosts = entities.stream()
+                .filter(e -> (e.getSource() != null && (
+                                "delivery_never_reached_main".equalsIgnoreCase(e.getSource().name())
+                                || "design_review_concern_pattern".equalsIgnoreCase(e.getSource().name())
+                                || "gemini_observer".equalsIgnoreCase(e.getSource().name())
+                             ))
+                        || (e.getContent() != null && (
+                                e.getContent().contains("Work that was reported as delivered never reached the main branch")
+                                || e.getContent().contains("Six Sigma u-chart out of control")
+                                || e.getContent().contains("orchestrator_tasks")
+                           )))
+                .toList();
+        wishlistRepository.deleteAll(ghosts);
+        return ghosts.size();
+    }
+
+
+
     private WishlistResponseDto mapToDto(WishlistEntity entity) {
         return new WishlistResponseDto(
                 entity.getId(),
