@@ -15,8 +15,20 @@ ARG ENEIK_BUILD_GIT_SHA
 ARG ENEIK_BUILD_GIT_DIRTY
 ARG ENEIK_BUILD_TIME
 WORKDIR /app
+# Only git (2026-08-28, §5c-J of the action plan). This line used to install ripgrep, docker.io,
+# docker-compose-v2, nodejs, npm, python3 and python3-pip as well: 823 MB of the image's 1.59 GB, none of
+# it reachable. Measured rather than assumed - a JVM can start a process only through ProcessBuilder or
+# Runtime.exec, there are zero of the latter and three sites of the former, and all three run `git`
+# (AutoMergeService:2753, FalsificationCycleService:1658, and SystemDriftController, whose helper hard-codes
+# "git" as argv[0]). No command is assembled from settings or the database, so the list is exhaustive.
+#
+# The Docker CLI was the worst of them: the socket is deliberately NOT mounted into this container, so it
+# could never have reached a daemon - and shipping it contradicts the containment decision written in
+# docker-compose.yml, that runtime-launcher alone holds that privilege. Client code is built and tested on
+# Jules and inside the client's own stack, never in this image; the factory only writes files into the
+# workspaces (ProjectWorkspaceFactoryService, TechnicalLeadCompiler start no process at all).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git ripgrep docker.io docker-compose-v2 nodejs npm python3 python3-pip \
+    && apt-get install -y --no-install-recommends git \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/target/*.jar app.jar
 COPY docs ./docs

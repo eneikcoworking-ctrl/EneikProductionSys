@@ -2723,7 +2723,7 @@ class JulesDispatchServiceTest {
         activeFallback.setProject(project);
         activeFallback.setStatus(TaskStatus.claimed);
 
-        when(taskRepository.findAll()).thenReturn(List.of(activeFallback));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(activeFallback));
         when(projectFlowService.isReviewFallbackTask(activeFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(activeFallback)).thenReturn(List.of(targetTaskId));
 
@@ -2743,7 +2743,7 @@ class JulesDispatchServiceTest {
         completedFallback.setProject(project);
         completedFallback.setStatus(TaskStatus.done);
 
-        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
         when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
@@ -2776,7 +2776,7 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.pending_review);
 
-        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
         when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
@@ -2808,7 +2808,7 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.pending_review);
 
-        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
         when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
@@ -2840,7 +2840,7 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.review);
 
-        when(taskRepository.findAll()).thenReturn(List.of(completedFallback));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
         when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
