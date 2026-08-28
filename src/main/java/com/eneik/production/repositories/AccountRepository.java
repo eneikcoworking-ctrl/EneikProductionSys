@@ -122,13 +122,13 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
-            "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+            "ORDER BY last_heartbeat ASC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProject(@Param("projectId") UUID projectId);
 
     @Query(value = "SELECT * FROM accounts WHERE status = 'idle' AND enabled = true " +
             "AND (current_project_id IS NULL OR current_project_id = :projectId) " +
             "AND (:tag IS NULL OR capabilities = '*' OR ',' || capabilities || ',' LIKE '%,' || :tag || ',%') " +
-            "ORDER BY last_heartbeat DESC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
+            "ORDER BY last_heartbeat ASC LIMIT 1 FOR UPDATE SKIP LOCKED", nativeQuery = true)
     Optional<AccountEntity> lockNextIdleAccountForProjectAndCapability(@Param("projectId") UUID projectId, @Param("tag") String tag);
 
     // Live incident (2026-08-08, test-forty-third): 'blocked' was missing from every one of this file's
@@ -170,6 +170,20 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed', 'blocked')
               ) < COALESCE(a.max_concurrent_sessions, :maxSessions, 3)
+            -- §13, measured 2026-08-29: thirty four refusals in a row through ONE account while six sat
+            -- idle, the freshest of the others three hours stale. With no sessions open anywhere the first
+            -- key ties for everyone, so the second key decides - and ClaimService writes last_heartbeat at
+            -- the moment of claiming (lines 133, 172, 443). DESC therefore compared against a marker the
+            -- selection itself advances, in its own favour: whoever was chosen became the freshest and was
+            -- chosen again, forever. Charter invariant 7 in its exact converse.
+            --
+            -- ASC makes the same existing side effect self-correcting instead of self-reinforcing: being
+            -- chosen moves an account to the BACK of the queue. No new column, no counter, no rotation
+            -- scheme - the write already happens, it only had to be read in the direction it moves.
+            --
+            -- Fitness is untouched: enabled, a key, a non-terminal status and capacity still decide WHO may
+            -- be returned. This decides only the order among those already eligible, where heartbeat
+            -- freshness establishes nothing further (§13.2).
             ORDER BY (
                   SELECT COUNT(*)
                   FROM jules_sessions s
@@ -177,7 +191,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed', 'blocked')
-              ) ASC, a.last_heartbeat DESC
+              ) ASC, a.last_heartbeat ASC
             LIMIT 1 FOR UPDATE SKIP LOCKED
             """, nativeQuery = true)
     Optional<AccountEntity> lockNextJulesAccountWithCapacity(@Param("projectId") UUID projectId,
