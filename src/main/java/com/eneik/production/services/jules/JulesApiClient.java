@@ -248,10 +248,30 @@ public class JulesApiClient {
                     || lower.contains("resource_exhausted");
         }
 
+        /**
+         * The refusal is about OUR request, not about the account (§10, measured 2026-08-29).
+         *
+         * <p>400 INVALID_ARGUMENT used to be folded in with 401 and 403 below, and the three are not the
+         * same fact: 401/403 say the account may not do this, 400 says we asked wrongly. Lumping them
+         * meant a malformed request was recorded against whichever account happened to carry it, and with
+         * an escalation threshold of two, one bad request burned three accounts in a single tick - the
+         * factory destroying its own constraint through the mechanism that exists to use it.
+         *
+         * <p>An authorization word in the body still wins: a 400 that says "permission denied" is about
+         * the account whatever its status code claims.
+         */
+        public boolean requestRejected() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            boolean authorizationFlavoured = lower.contains("permission_denied")
+                    || lower.contains("unauthorized")
+                    || lower.contains("forbidden")
+                    || lower.contains("access denied");
+            return statusCode == 400 && !authorizationFlavoured;
+        }
+
         public boolean apiPreconditionOrAuthorizationBlocked() {
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
-            return statusCode == 400
-                    || statusCode == 401
+            return statusCode == 401
                     || statusCode == 403
                     || lower.contains("failed_precondition")
                     || lower.contains("permission_denied")

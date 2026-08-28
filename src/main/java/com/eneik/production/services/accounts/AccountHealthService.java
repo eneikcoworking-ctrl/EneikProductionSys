@@ -44,7 +44,18 @@ public class AccountHealthService {
 
     private static final Logger log = LoggerFactory.getLogger(AccountHealthService.class);
 
-    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, PRECONDITION_BLOCKED }
+    /**
+     * REQUEST_REJECTED added 2026-08-29 (§10). The vocabulary had three words and the world produced a
+     * fourth: a refusal caused by the content of the factory's own request. Having no name for it, the
+     * regulator filed it under the nearest one it had - PRECONDITION_BLOCKED, a statement about the
+     * ACCOUNT - and systematically blamed a party that had no part in the fault. Ashby: the variety of the
+     * response must cover the variety of the disturbance, or classification becomes libel on whatever
+     * object is closest.
+     *
+     * <p>It is the same distinction §4.2 drew for briefs: UNREACHED is about the factory, REFUSED is about
+     * the subject. This is that distinction applied to dispatch.
+     */
+    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, PRECONDITION_BLOCKED, REQUEST_REJECTED }
 
     private static final String RECOVERY_DURATION_DEFECT_TYPE = "ACCOUNT_RECOVERY_DURATION";
     private static final String PRECONDITION_DEFECT_TYPE = "API_PRECONDITION_BLOCKED";
@@ -234,6 +245,15 @@ public class AccountHealthService {
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
                         DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, null));
+            }
+            case REQUEST_REJECTED -> {
+                // Deliberately touches nothing on the account: not its status, not its block counter, not
+                // its cooldown. The account did nothing. Recording it at all is what makes the fault
+                // findable - a defect with no reader is the shape this plan has caught three times.
+                log.warn("AccountHealthService: Jules refused the request itself while dispatching through "
+                                + "account '{}' - this is the factory's own defect and is NOT charged to the "
+                                + "account (\u00a710). Detail: {}",
+                        account.getName(), rawReason);
             }
             case PRECONDITION_BLOCKED -> {
                 int newCount = account.getConsecutiveApiBlockCount() + 1;

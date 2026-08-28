@@ -792,6 +792,14 @@ public class JulesDispatchService {
                         createResult.compactError(), dispatchRoleTag);
                 session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
                         + session.getClosureReason());
+            } else if (accountId != null && createResult.requestRejected()) {
+                // §10: Jules refused the CONTENT of our request. Reported so the defect is findable, and
+                // charged to nobody - the account carried the request, it did not compose it.
+                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.REQUEST_REJECTED,
+                        createResult.compactError(), dispatchRoleTag);
+                session.setClosureReason("jules_request_rejected: Jules refused the request itself, not the account. "
+                        + session.getClosureReason());
             } else if (accountId != null && createResult.apiPreconditionOrAuthorizationBlocked()) {
                 accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
                         com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_BLOCKED,
@@ -3118,7 +3126,6 @@ public class JulesDispatchService {
         // still fully protected below, unchanged - only the network-heavy part moved earlier.
         List<TaskEntity> fetchedTasks = new java.util.ArrayList<>();
         List<String> fetchedPrUrls = new java.util.ArrayList<>();
-        List<String> fetchedDiffs = new java.util.ArrayList<>();
         List<String> fetchedDiffHashes = new java.util.ArrayList<>();
 
         // §9 of ENGINEERING_PHILOSOPHY_ACTION_PLAN.md, observed 2026-08-28: seven Jules sessions spent
@@ -3172,7 +3179,6 @@ public class JulesDispatchService {
             String diffHash = Integer.toHexString(diff.get().hashCode());
             fetchedTasks.add(item.task());
             fetchedPrUrls.add(item.prUrl());
-            fetchedDiffs.add(diff.get());
             fetchedDiffHashes.add(diffHash);
         }
         if (fetchedTasks.isEmpty()) {
@@ -3192,7 +3198,6 @@ public class JulesDispatchService {
         Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
         List<TaskEntity> tasks = new java.util.ArrayList<>();
         List<String> prUrls = new java.util.ArrayList<>();
-        List<String> diffs = new java.util.ArrayList<>();
         List<String> diffHashes = new java.util.ArrayList<>();
         for (int i = 0; i < fetchedTasks.size(); i++) {
             TaskEntity task = fetchedTasks.get(i);
@@ -3206,18 +3211,17 @@ public class JulesDispatchService {
             }
             tasks.add(task);
             prUrls.add(prUrl);
-            diffs.add(fetchedDiffs.get(i));
             diffHashes.add(diffHash);
         }
         if (tasks.isEmpty()) {
             return;
         }
         if (persistentWorkerSessionService.isEnabled()) {
-            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffs, diffHashes);
+            dispatchToReviewFallbackPersistentWorker(tasks, prUrls, diffHashes);
             return;
         }
         String verdictPath = ".eneik/records/review-verdict-" + UUID.randomUUID() + ".json";
-        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs, verdictPath);
+        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, verdictPath);
         UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatch(tasks, prUrls, diffHashes, prompt, verdictPath);
         if (reviewTaskId == null) {
             log.warn("Could not dispatch batched PR review fallback for {} task(s)", tasks.size());
@@ -3314,7 +3318,7 @@ public class JulesDispatchService {
      * shared busy/rotation bookkeeping. All items here already share one project (the caller groups by
      * project before calling this).
      */
-    private void dispatchToReviewFallbackPersistentWorker(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<String> diffHashes) {
+    private void dispatchToReviewFallbackPersistentWorker(List<TaskEntity> tasks, List<String> prUrls, List<String> diffHashes) {
         com.eneik.production.models.persistence.ProjectEntity project = tasks.get(0).getProject();
         List<UUID> batchIds = tasks.stream().map(TaskEntity::getId).toList();
         Optional<com.eneik.production.models.persistence.PersistentWorkerSessionEntity> existingOpt =
@@ -3339,7 +3343,7 @@ public class JulesDispatchService {
                         ? projectFlowService.reviewFallbackVerdictPath(workerCarrierTask)
                         : ".eneik/records/review-verdict-" + UUID.randomUUID() + ".json";
                 if (session != null && sendFollowUpMessage(session,
-                        reviewerFallbackFollowUpPromptBatch(tasks, prUrls, diffs, followUpVerdictPath))) {
+                        reviewerFallbackFollowUpPromptBatch(tasks, prUrls, followUpVerdictPath))) {
                     persistentWorkerSessionService.recordBatchSent(worker, batchIds);
                     log.info("Sent follow-up review-fallback batch ({} PR(s)) to persistent worker {} (cycle {})",
                             tasks.size(), worker.getId(), worker.getCycleCount());
@@ -3355,13 +3359,13 @@ public class JulesDispatchService {
             }
         }
 
-        createFreshReviewFallbackPersistentWorker(project, tasks, prUrls, diffs, diffHashes, batchIds);
+        createFreshReviewFallbackPersistentWorker(project, tasks, prUrls, diffHashes, batchIds);
     }
 
     private void createFreshReviewFallbackPersistentWorker(com.eneik.production.models.persistence.ProjectEntity project,
-            List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, List<String> diffHashes, List<UUID> batchIds) {
+            List<TaskEntity> tasks, List<String> prUrls, List<String> diffHashes, List<UUID> batchIds) {
         String verdictPath = ".eneik/records/review-verdict-" + UUID.randomUUID() + ".json";
-        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, diffs, verdictPath);
+        String prompt = reviewerFallbackPromptBatch(tasks, prUrls, verdictPath);
         UUID reviewTaskId = projectFlowService.dispatchReviewFallbackBatchAsPersistentCarrier(tasks, prUrls, diffHashes, prompt, verdictPath);
         if (reviewTaskId == null) {
             log.warn("Could not create persistent review-fallback worker for project {} ({} task(s))", project.getId(), tasks.size());
@@ -3398,8 +3402,8 @@ public class JulesDispatchService {
      * as reviewerFallbackPromptBatch, wrapped with an instruction to overwrite .eneik/review-verdict.json
      * with only this cycle's verdicts rather than merging with a previous cycle's.
      */
-    private String reviewerFallbackFollowUpPromptBatch(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, String verdictPath) {
-        String body = reviewerFallbackPromptBatch(tasks, prUrls, diffs, verdictPath);
+    private String reviewerFallbackFollowUpPromptBatch(List<TaskEntity> tasks, List<String> prUrls, String verdictPath) {
+        String body = reviewerFallbackPromptBatch(tasks, prUrls, verdictPath);
         return """
                 NEW CYCLE for the same persistent review-fallback worker session. The PR(s) below are a
                 FRESH batch, unrelated to whatever you reviewed in a previous cycle on this same branch.
@@ -3427,7 +3431,21 @@ public class JulesDispatchService {
         return null;
     }
 
-    private String reviewerFallbackPromptBatch(List<TaskEntity> tasks, List<String> prUrls, List<String> diffs, String verdictPath) {
+    /**
+     * §10: the diff is NOT pasted in. The reviewer's session runs inside the client repository and can
+     * read the pull request there; sending a copy of what the recipient already has made the size of this
+     * factory's own request a property of somebody else's work.
+     *
+     * <p>Measured 2026-08-29: one such task reached 1 788 060 characters because the PR under review
+     * carried sixty files including tracked build output. Jules refused it with 400 INVALID_ARGUMENT, the
+     * factory had no outcome meaning "our request was bad", so it recorded the refusal against the ACCOUNT
+     * and burned three of them in one tick - twice over the escalation threshold of two. Median task
+     * description across the same project is 10 437 characters; every one of the outliers was this prompt.
+     *
+     * <p>The diff is still fetched by the caller and still hashed - the dedup key taskId::prUrl::diffHash
+     * from §9 is unchanged to the bit. It simply stops travelling.
+     */
+    String reviewerFallbackPromptBatch(List<TaskEntity> tasks, List<String> prUrls, String verdictPath) {
         StringBuilder prBlocks = new StringBuilder();
         for (int i = 0; i < tasks.size(); i++) {
             TaskEntity t = tasks.get(i);
@@ -3438,10 +3456,12 @@ public class JulesDispatchService {
 
                     PR under review: %s
 
-                    Diff to review:
-                    %s
+                    Read that pull request's own diff in this repository to review it - it is not copied
+                    here. If the diff turns out to carry committed build output or other generated
+                    artifacts (target/, node_modules, coverage, surefire reports, .class files), that alone
+                    is a blocking finding for this PR and you do not need to read further to record it.
 
-                    """.formatted(i, i, t.getRole().getTag(), t.getDescription(), prUrls.get(i), diffs.get(i)));
+                    """.formatted(i, i, t.getRole().getTag(), t.getDescription(), prUrls.get(i)));
         }
         return """
                 You are the fallback code reviewer for %d PR(s) below (Gemini review is temporarily or
