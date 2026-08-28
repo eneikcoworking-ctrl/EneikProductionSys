@@ -42,4 +42,8 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE JulesSessionEntity s SET s.prOpenedWorkflowClaimedAt = NULL WHERE s.id = :id")
     void releasePrOpenedWorkflowClaim(@Param("id") UUID id);
+
+    // §12: the observed point at which Jules refused for capacity. A count, not a read - the answer is one
+    // number and the question must not cost the table (the invariant ScheduledQueryCostInvariantTest guards).
+    long countByAccountIdAndStatusIn(java.util.UUID accountId, java.util.List<String> statuses);
 }

@@ -820,6 +820,14 @@ public class JulesDispatchService {
                         createResult.compactError(), dispatchRoleTag);
                 session.setClosureReason("jules_daily_limit: account reached an explicit Jules daily/quota/rate limit. "
                         + session.getClosureReason());
+            } else if (accountId != null && createResult.preconditionUnspecified()) {
+                // §12: a precondition failed and Jules did not say which. Charged to nobody; recorded so the
+                // gap is findable and can be measured when the answer carries more.
+                accountHealthService.reportDispatchOutcome(accountId, dispatchProjectId,
+                        com.eneik.production.services.accounts.AccountHealthService.DispatchOutcome.PRECONDITION_UNSPECIFIED,
+                        createResult.compactError(), dispatchRoleTag);
+                session.setClosureReason("jules_precondition_unspecified: Jules cited a precondition without "
+                        + "naming it; whose condition failed is not established. " + session.getClosureReason());
             } else if (accountId != null && createResult.requestRejected()) {
                 // §10: Jules refused the CONTENT of our request. Reported so the defect is findable, and
                 // charged to nobody - the account carried the request, it did not compose it.

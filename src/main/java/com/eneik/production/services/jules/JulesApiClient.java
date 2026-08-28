@@ -261,24 +261,63 @@ public class JulesApiClient {
          * the account whatever its status code claims.
          */
         public boolean requestRejected() {
+            // §12: narrowed to the status Jules itself declares. The first version took any 400 without an
+            // authorization word, which swallowed FAILED_PRECONDITION - a statement about the ACCOUNT being
+            // at its concurrent-session limit, not about our request. Measured 2026-08-29: 45 refusals in
+            // fifteen minutes, all FAILED_PRECONDITION, all misfiled as the factory's own defect.
+            return statusCode == 400 && declaredStatusIs("INVALID_ARGUMENT");
+        }
+
+        /**
+         * A precondition failed and Jules did not say which (§12).
+         *
+         * <p>Not a claim about anybody. Measured 2026-08-29: 41 refusals carrying exactly
+         * {@code "Precondition check failed."} and no detail. The same status also arrives with
+         * {@code "Repository access is not ready"} - a real, account-side condition recorded by an earlier
+         * incident and asserted by JulesDispatchServiceTest - so the status alone distinguishes nothing.
+         *
+         * <p>The first version of §12 read these as the account's concurrent-session ceiling, on the
+         * strength of the Jules UI saying "you can run up to 3 sessions at once" while they happened. That
+         * is an inference from a different surface, not a measurement of this answer, and this plan's own
+         * rule forbids it. Recorded ignorance instead - the shape §3 already uses for UNDECIDABLE and §4.1
+         * for NEITHER.
+         */
+        public boolean preconditionUnspecified() {
+            String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
+            return statusCode == 400
+                    && lower.contains("failed_precondition")
+                    && !apiPreconditionOrAuthorizationBlocked();
+        }
+
+        private boolean declaredStatusIs(String status) {
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             boolean authorizationFlavoured = lower.contains("permission_denied")
                     || lower.contains("unauthorized")
                     || lower.contains("forbidden")
                     || lower.contains("access denied");
-            return statusCode == 400 && !authorizationFlavoured;
+            return !authorizationFlavoured && lower.contains(status.toLowerCase(java.util.Locale.ROOT));
         }
 
+        /**
+         * The account itself may not do this: credentials or permissions (§12).
+         *
+         * <p>The BARE "failed_precondition" is gone from here (§12): it names no condition, so it cannot
+         * establish that the account is at fault, and charging it a cooldown of hours on that basis was a
+         * claim without evidence. Named account-side preconditions stay - "Repository access is not ready"
+         * is a real one, recorded by an earlier incident and asserted by JulesDispatchServiceTest.
+         */
         public boolean apiPreconditionOrAuthorizationBlocked() {
             String lower = errorBody == null ? "" : errorBody.toLowerCase(java.util.Locale.ROOT);
             return statusCode == 401
                     || statusCode == 403
-                    || lower.contains("failed_precondition")
                     || lower.contains("permission_denied")
                     || lower.contains("unauthorized")
                     || lower.contains("forbidden")
                     || lower.contains("access denied")
-                    || lower.contains("precondition");
+                    // Named account-side preconditions only. The bare status is not one of them (§12) -
+                    // it is claimed by preconditionUnspecified above, which claims nothing.
+                    || lower.contains("repository access is not ready")
+                    || lower.contains("repository access");
         }
 
         public String compactError() {

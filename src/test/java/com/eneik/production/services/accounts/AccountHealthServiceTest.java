@@ -39,6 +39,7 @@ class AccountHealthServiceTest {
     private DefectJournalRepository defectJournalRepository;
     private com.eneik.production.repositories.AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository;
     private com.eneik.production.services.lever.LeverPromotionService leverPromotionService;
+    private com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private AccountHealthService service;
 
     @BeforeEach
@@ -47,8 +48,9 @@ class AccountHealthServiceTest {
         defectJournalRepository = mock(DefectJournalRepository.class);
         accountRoleSuccessStatsRepository = mock(com.eneik.production.repositories.AccountRoleSuccessStatsRepository.class);
         leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        julesSessionRepository = mock(com.eneik.production.repositories.JulesSessionRepository.class);
         service = new AccountHealthService(accountRepository, defectJournalRepository,
-                accountRoleSuccessStatsRepository, leverPromotionService);
+                accountRoleSuccessStatsRepository, leverPromotionService, julesSessionRepository);
         ReflectionTestUtils.setField(service, "baseCooldownMinutes", 30);
         ReflectionTestUtils.setField(service, "maxCooldownMinutes", 480);
         ReflectionTestUtils.setField(service, "minSamplesForDataDriven", 5);

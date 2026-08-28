@@ -55,7 +55,8 @@ public class AccountHealthService {
      * <p>It is the same distinction §4.2 drew for briefs: UNREACHED is about the factory, REFUSED is about
      * the subject. This is that distinction applied to dispatch.
      */
-    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, PRECONDITION_BLOCKED, REQUEST_REJECTED }
+    public enum DispatchOutcome { SUCCESS, DAILY_LIMIT, PRECONDITION_BLOCKED, REQUEST_REJECTED,
+        PRECONDITION_UNSPECIFIED }
 
     private static final String RECOVERY_DURATION_DEFECT_TYPE = "ACCOUNT_RECOVERY_DURATION";
     private static final String PRECONDITION_DEFECT_TYPE = "API_PRECONDITION_BLOCKED";
@@ -67,6 +68,7 @@ public class AccountHealthService {
     private final DefectJournalRepository defectJournalRepository;
     private final AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository;
     private final LeverPromotionService leverPromotionService;
+    private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
 
     public static final String F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY = "F2_ACCOUNT_ROLE_SUCCESS_PROBABILITY";
 
@@ -121,11 +123,13 @@ public class AccountHealthService {
 
     public AccountHealthService(AccountRepository accountRepository, DefectJournalRepository defectJournalRepository,
                                  AccountRoleSuccessStatsRepository accountRoleSuccessStatsRepository,
-                                 LeverPromotionService leverPromotionService) {
+                                 LeverPromotionService leverPromotionService,
+                                 com.eneik.production.repositories.JulesSessionRepository julesSessionRepository) {
         this.accountRepository = accountRepository;
         this.defectJournalRepository = defectJournalRepository;
         this.accountRoleSuccessStatsRepository = accountRoleSuccessStatsRepository;
         this.leverPromotionService = leverPromotionService;
+        this.julesSessionRepository = julesSessionRepository;
     }
 
     /**
@@ -245,6 +249,22 @@ public class AccountHealthService {
                 defectJournalRepository.save(new DefectJournalEntity(
                         projectId, null, null, "MEDIUM", HEALTH_CATEGORY, account.getName(),
                         DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, null));
+            }
+            case PRECONDITION_UNSPECIFIED -> {
+                // §12. Jules said a precondition failed and did not say which. Measured 2026-08-29: 41 such
+                // refusals, all carrying "Precondition check failed." and nothing else. The same status also
+                // arrives as "Repository access is not ready", which IS about the account - so the bare form
+                // establishes nothing about anybody.
+                //
+                // Therefore nothing is charged: not the account (no evidence it is at fault) and not the
+                // factory (no evidence either). Recorded ignorance, the shape §3 uses for UNDECIDABLE and
+                // §4.1 for NEITHER. The first draft of §12 read these as a concurrent-session ceiling on the
+                // strength of the Jules UI saying so elsewhere; that was an inference from another surface,
+                // which this plan's own rule forbids, and it is retracted.
+                log.warn("AccountHealthService: Jules refused a session through account '{}' citing an "
+                                + "unspecified precondition. Charged to nobody - the answer does not say whose "
+                                + "condition failed (\u00a712). Detail: {}",
+                        account.getName(), rawReason);
             }
             case REQUEST_REJECTED -> {
                 // Deliberately touches nothing on the account: not its status, not its block counter, not
