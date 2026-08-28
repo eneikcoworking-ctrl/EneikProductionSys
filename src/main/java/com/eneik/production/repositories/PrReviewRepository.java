@@ -17,4 +17,16 @@ public interface PrReviewRepository extends JpaRepository<PrReviewEntity, UUID> 
     // JulesDispatchService.latestOpenPrSession.
     java.util.List<PrReviewEntity> findByJulesSessionId(UUID julesSessionId);
     java.util.List<PrReviewEntity> findByMergedFalseOrMergedIsNull();
+
+    // Added 2026-08-28 with the query-cost work in AutoMergeService, which had been calling all three of
+    // these against an interface that declared none of them - the caller was changed and the repository
+    // was not, so nothing compiled. Each one carries the predicate its single caller used to apply in
+    // Java after loading the whole table:
+    //   reconcileMergedTaskOutcomes  - merged rows that have a session
+    //   the done-task repair loop    - rows for a known set of sessions
+    //   the session-to-review map    - rows that have a session at all
+    // Charter: the cost of a question is proportional to its answer, not to the accumulated history.
+    java.util.List<PrReviewEntity> findByMergedTrueAndJulesSessionIdIsNotNull();
+    java.util.List<PrReviewEntity> findByJulesSessionIdIn(java.util.List<UUID> julesSessionIds);
+    java.util.List<PrReviewEntity> findByJulesSessionIdIsNotNull();
 }
