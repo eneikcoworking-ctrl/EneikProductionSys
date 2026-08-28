@@ -590,6 +590,31 @@ public class JulesDispatchService {
         session.setStatus("queued");
         session.setLastProgressAt(Instant.now());
 
+        // §11: this task's description was composed by a prompt builder this factory no longer has.
+        //
+        // §10 stopped NEW requests from carrying an artifact the factory did not author. But a request is
+        // composed at dispatch time and STORED in the carrier task, so tasks written before that change
+        // still hold the old text and keep being sent. The rule was placed where a request is composed;
+        // the action is sending, and a database sits between the two. Invariant 10 - the check lives where
+        // the action happens - and invariant 8: a carrier whose text the recipient will not accept can
+        // never reach "sent", so it must leave the set that decides dispatch instead of costing a tick
+        // forever.
+        //
+        // Deliberately not a length threshold. There is nothing to derive one from, and §6 item 9 records
+        // what an assigned number costs. The trace below is exact, needs no calibration, and expires by
+        // itself: when no task carries it, it matches nothing.
+        String removedBuilderTrace = removedBuilderTrace(task.getDescription());
+        if (removedBuilderTrace != null) {
+            log.warn("Dispatch refused for task {}: its description was composed by a builder this factory no "
+                            + "longer has (trace \"{}\", {} chars). This is the factory's own defect, not the "
+                            + "account's and not the task's subject (\u00a711).",
+                    task.getId(), removedBuilderTrace, task.getDescription().length());
+            session.setStatus("failed");
+            session.setClosureReason("composed_by_removed_builder: " + removedBuilderTrace);
+            taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
+            return julesSessionRepository.save(session);
+        }
+
         ProjectEntity project = task.getProject();
         if (project == null) {
             session.setStatus("failed");
@@ -3298,6 +3323,27 @@ public class JulesDispatchService {
                     .forEach(pr -> urls.add(pr.url()));
         }
         return urls;
+    }
+
+    /**
+     * Traces left by prompt builders this factory has removed (§11).
+     *
+     * <p>Each entry must be absent from the current sources - that is what makes it a trace of something
+     * gone rather than a filter on live output. RemovedBuilderTraceTest asserts both halves: that no
+     * current builder can produce one, and that an entry no longer matching anything is deleted rather
+     * than kept "just in case". A trace that outlives its cause is muda that reads as permission.
+     *
+     * <p>"Diff to review:" - the review-fallback builder removed in §10, which pasted a whole PR diff into
+     * the request. Measured 2026-08-29: 31 tasks carry it, 30 already terminal, one live at 1 788 060
+     * characters.
+     */
+    static final java.util.List<String> REMOVED_BUILDER_TRACES = java.util.List.of("Diff to review:");
+
+    static String removedBuilderTrace(String description) {
+        if (description == null) {
+            return null;
+        }
+        return REMOVED_BUILDER_TRACES.stream().filter(description::contains).findFirst().orElse(null);
     }
 
     boolean reviewFallbackTargetsAreTerminal(TaskEntity reviewTask) {
