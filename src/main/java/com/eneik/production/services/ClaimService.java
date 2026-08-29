@@ -649,7 +649,8 @@ public class ClaimService {
                 }
             }
             if (!isAlive) {
-                log.warn("Self-healing: Releasing stuck claim for task {} because session is skipped, failed, or missing", task.getId());
+                log.warn("Self-healing: releasing claim for task {} - it holds no session that still occupies it "
+                        + "({} session row(s) examined)", task.getId(), sessions.size());
                 claim.setReleasedAt(Instant.now());
                 claim.setResultStatus(ClaimResultStatus.failed);
                 claimRepository.save(claim);
@@ -706,15 +707,28 @@ public class ClaimService {
                 .anyMatch(this::isActiveExternalJulesSession);
     }
 
+    /**
+     * Whether this session still occupies its task.
+     *
+     * <p>Reads JulesDispatchService.ACTIVE_SESSION_STATUSES rather than listing the statuses again. It
+     * listed them itself until 2026-08-29 and the two lists differed by exactly one value, `stuck` - and
+     * that one value is what a live loop turned on. Measured that day: tasks 549a333a and 88d40685 each
+     * held a real Jules session in `stuck`, external id present, updated minutes earlier; this method
+     * therefore reported no live session, the self-healing sweep released the claim and requeued the task,
+     * the next dispatch found the same session active and answered "already dispatched, skipping
+     * duplicate", the claim was taken again - and five minutes later released again, three times each.
+     *
+     * <p>`stuck` does not mean the session is gone. It is a status the factory writes onto a session that
+     * is alive, and it has its own recovery path (shouldSendStuckRecovery, forceUnblockOverflowedSessions).
+     * Two lists answering one question is the shape Charter invariant 10 exists to prevent, and this plan
+     * already recorded it once for STUCK_CANDIDATE_STATUSES.
+     */
     private boolean isActiveExternalJulesSession(JulesSessionEntity session) {
         if (session.getExternalSessionId() == null || "skipped".equals(session.getExternalSessionId())) {
             return false;
         }
-        String status = session.getStatus();
-        return "queued".equals(status)
-                || "running".equals(status)
-                || "revising".equals(status)
-                || "pr_opened".equals(status);
+        return com.eneik.production.services.jules.JulesDispatchService.ACTIVE_SESSION_STATUSES
+                .contains(session.getStatus());
     }
 
     // Was a flat overwrite to highPriority-or-defaultPriority for every queued task on every 5-minute
