@@ -1,0 +1,12 @@
+-- V128 (2026-08-29, plan §4.36): the compiler's retry bound becomes revisable, in the shape V120 gave
+-- account capacity and V127 gave the decomposition budget.
+--
+-- NULL means "no evidence yet, use the initial conjecture" - JulesDispatchService.WISHLIST_COMPILER_MAX_
+-- RETRIES - so behaviour is unchanged until a real success at the boundary revises it.
+--
+-- Measured that day, and the measurement is the point: of 116 compiler carriers, 108 needed no retry, two
+-- reached one and six reached two, which is the whole bound. Whether any of those eight PRODUCED a plan on
+-- its last allowed attempt cannot be told from their records - all eight read "Dispatched to Jules",
+-- because until §4.35 the rejecting condition was never persisted. So the bound could not be revised for
+-- want of the one observation that would revise it, and that observation starts existing now.
+ALTER TABLE projects ADD COLUMN compiler_retry_ceiling INT;

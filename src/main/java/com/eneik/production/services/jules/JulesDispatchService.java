@@ -2537,6 +2537,7 @@ public class JulesDispatchService {
                 markSystemTaskDone(compilerTask);
             }
             systemProgressTracker.recordProgress();
+            raiseCompilerRetryCeilingIfTheProbeSurvivedAtTheBoundary(compilerTask);
             log.info("{} wishlist(s) compiled by Jules session {} into {} epic(s), {} task slice(s) total",
                     wishlists.size(), session.getExternalSessionId(), epics.size(),
                     epics.stream().mapToInt(e -> e.slices().size()).sum());
@@ -2554,7 +2555,7 @@ public class JulesDispatchService {
         }
 
         int attempts = compilerTask.getRetryCount();
-        if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
+        if (attempts >= compilerRetryCeiling(compilerTask)) {
             // Nothing is filed for a person: the factory is autonomous (operator, 2026-08-29). The PR is
             // closed and the carrier is finished here; the wishlists keep their own budget and go on being
             // offered at the compile cooldown, settling into decompositionRefused once the compiler has
@@ -2603,9 +2604,42 @@ public class JulesDispatchService {
             }
         });
         recordCompilerRejection(compilerTask, "Plan rejected (attempt " + (attempts + 1) + "/"
-                + WISHLIST_COMPILER_MAX_RETRIES + "): " + rejection);
+                + compilerRetryCeiling(compilerTask) + "): " + rejection);
         log.warn("Wishlist compiler plan rejected for {} wishlist(s) (attempt {}/{}) - {}; asked Jules to retry",
-                wishlists.size(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES, rejection);
+                wishlists.size(), attempts + 1, compilerRetryCeiling(compilerTask), rejection);
+    }
+
+    /** How many correction rounds this project's compiler gets: the revised belief, else the conjecture. */
+    int compilerRetryCeiling(TaskEntity compilerTask) {
+        Integer revised = compilerTask != null && compilerTask.getProject() != null
+                ? compilerTask.getProject().getCompilerRetryCeiling() : null;
+        return revised != null && revised > 0 ? revised : WISHLIST_COMPILER_MAX_RETRIES;
+    }
+
+    /**
+     * A plan accepted on the last attempt the bound allowed is the bold probe surviving (plan §4.36): the
+     * bound has just been shown reachable, so it has never been tested from above, and the next brief
+     * needing one more correction round would be abandoned on no evidence at all.
+     *
+     * <p>Exactly the shape AccountHealthService gives capacity and ProjectFlowService gives the
+     * decomposition budget: raise on a real success that reached the ceiling, never on a constant of our
+     * own. The step is one, because the quantity counts rounds and one is its smallest increment.
+     *
+     * <p>Measured before it existed: of 116 carriers, 108 needed no retry, two reached one, six reached
+     * two - and not one of the eight recorded whether it had SUCCEEDED there or given up, because the
+     * rejecting condition was not persisted until §4.35.
+     */
+    void raiseCompilerRetryCeilingIfTheProbeSurvivedAtTheBoundary(TaskEntity compilerTask) {
+        if (compilerTask == null || compilerTask.getProject() == null
+                || compilerTask.getRetryCount() < compilerRetryCeiling(compilerTask)) {
+            return;
+        }
+        ProjectEntity project = compilerTask.getProject();
+        int revised = compilerRetryCeiling(compilerTask) + 1;
+        project.setCompilerRetryCeiling(revised);
+        projectRepository.save(project);
+        log.info("A compiler plan was accepted on round {} of {} - the bound was reachable, so it is revised to {} "
+                        + "for project {}", compilerTask.getRetryCount(), revised - 1, revised, project.getId());
     }
 
     /**

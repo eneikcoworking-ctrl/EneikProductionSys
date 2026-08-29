@@ -149,6 +149,19 @@ public class ProjectEntity {
     public void setFactoryReport(String factoryReport) { this.factoryReport = factoryReport; }
     public String getTargetMarkets() { return targetMarkets; }
     public void setTargetMarkets(String targetMarkets) { this.targetMarkets = targetMarkets; }
+    /**
+     * The revised belief about how many correction rounds this project's compiler needs, or null while
+     * nothing has been observed (2026-08-29, plan §4.36). Same shape as accounts.estimated_concurrent_
+     * capacity and wishlist.compile_attempt_ceiling: the constant is the initial conjecture, raised only by
+     * a real plan accepted on the last attempt the bound allowed - never by a constant of our own.
+     */
+    @Column(name = "compiler_retry_ceiling")
+    private Integer compilerRetryCeiling;
+
+    public Integer getCompilerRetryCeiling() { return compilerRetryCeiling; }
+
+    public void setCompilerRetryCeiling(Integer compilerRetryCeiling) { this.compilerRetryCeiling = compilerRetryCeiling; }
+
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }
     public String getOnboardingMode() { return onboardingMode; }

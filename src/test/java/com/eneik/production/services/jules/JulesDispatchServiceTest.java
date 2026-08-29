@@ -3094,6 +3094,46 @@ class JulesDispatchServiceTest {
         verify(taskRepository, never()).save(carrier);
     }
 
+    private TaskEntity carrierAt(ProjectEntity project, int retryCount) {
+        TaskEntity carrier = new TaskEntity();
+        carrier.setId(UUID.randomUUID());
+        carrier.setProject(project);
+        carrier.setRetryCount(retryCount);
+        return carrier;
+    }
+
+    /**
+     * Plan §4.36. Measured 2026-08-29: of 116 compiler carriers, 108 needed no correction round, two
+     * reached one and six reached two - the whole bound - and not one of the eight recorded whether it had
+     * succeeded there or given up. A plan accepted on the last round the bound allows is the only evidence
+     * that the bound is reachable, and therefore that it has never been tested from above.
+     */
+    @Test
+    void aPlanAcceptedOnTheLastRoundAllowedRaisesTheCompilerRetryCeiling() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity carrier = carrierAt(project, julesDispatchService.compilerRetryCeiling(carrierAt(project, 0)));
+
+        julesDispatchService.raiseCompilerRetryCeilingIfTheProbeSurvivedAtTheBoundary(carrier);
+
+        assertEquals(carrier.getRetryCount() + 1, project.getCompilerRetryCeiling());
+    }
+
+    /**
+     * The other half, and it is not optional: a plan accepted with rounds to spare refutes nothing about
+     * the bound, so the belief must not move. Without this case the rule would raise the ceiling on every
+     * accepted plan - a constant growing by itself rather than a belief revised by evidence.
+     */
+    @Test
+    void aPlanAcceptedWithRoundsToSpareLeavesTheCompilerRetryCeilingAlone() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+
+        julesDispatchService.raiseCompilerRetryCeilingIfTheProbeSurvivedAtTheBoundary(carrierAt(project, 0));
+
+        assertNull(project.getCompilerRetryCeiling());
+    }
+
     @Test
     void compilerPlanRejectsCoverageClaimWithUnmappedRequirement() {
         var slice = new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
