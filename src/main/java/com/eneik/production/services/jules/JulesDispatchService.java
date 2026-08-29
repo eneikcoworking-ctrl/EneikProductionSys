@@ -5130,8 +5130,28 @@ public class JulesDispatchService {
             // The silence windows are untouched; they remain for the case where there is no evidence.
             boolean carrierWithNothingLeftToDeliver = task.getPayload() != null
                     && task.getPayload().hasNonNull(com.eneik.production.services.ProjectFlowService.WISHLIST_COMPILER_PAYLOAD_KEY);
+            // The claim's veto is narrowed to the phase where its own reason holds (2026-08-29, plan
+            // §4.27). The reason written above is that an implementer whose PR closed can push a new
+            // branch and open another one from the same session - true while it is still implementing,
+            // and false once it is not: pending_review/review are set by handlePrOpenedWorkflow at the
+            // moment the implementer phase COMPLETES ("Completing implementer phase for task ..."), and a
+            // finished implementer opens nothing further, it waits for a review.
+            //
+            // Measured that day. Task e126653e sat in pending_review with session pr_opened and PR#418
+            // closed unmerged. The review path saw it and correctly declined - "its verdict is already
+            // settled, so no review is dispatched" - and this sweep skipped it for the claim, so nothing
+            // moved it at all. One closed PR of one product task kept failingReviews above zero, which
+            // held the project in BLOCKED_BY_REVIEW, which denies ORCHESTRATE, which is what compiles
+            // wishlists: six ticks running, not one brief compiled, on a factory whose only source of work
+            // is decomposition. Charter invariant 11 - a blocking condition may not be wider than what it
+            // protects.
+            boolean implementerPhaseComplete = task.getStatus() == TaskStatus.pending_review
+                    || task.getStatus() == TaskStatus.review;
+            boolean claimStillVetoes = claimService.hasActiveClaim(task.getId())
+                    && !carrierWithNothingLeftToDeliver
+                    && !implementerPhaseComplete;
             if (task.getProject() == null
-                    || (claimService.hasActiveClaim(task.getId()) && !carrierWithNothingLeftToDeliver)
+                    || claimStillVetoes
                     || task.getProject().getStatus() != ProjectStatus.active) {
                 continue;
             }
@@ -5248,8 +5268,16 @@ public class JulesDispatchService {
     }
 
     private void reconcileClosedUnmergedPullRequest(TaskEntity task, GitHubPullRequestService.GitHubPullRequest closedPr) {
-        String reason = "PR#" + closedPr.number() + " closed without merge on GitHub; task had no active claim/session "
-                + "left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)";
+        // The recorded reason names what was actually the case (2026-08-29, plan §4.27). Until then it
+        // asserted "no active claim/session left", which was the only way to reach this method; since the
+        // veto was narrowed, a task whose implementer phase is complete reaches it WITH a live claim, and
+        // a reason that says otherwise is a false record of why the factory acted.
+        String reason = "PR#" + closedPr.number() + " closed without merge on GitHub; "
+                + (claimService.hasActiveClaim(task.getId())
+                        ? "the implementer phase was already complete (" + task.getStatus() + "), so no further "
+                                + "pull request was coming from its session"
+                        : "task had no active claim/session left to complete it normally")
+                + " (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)";
         int updated = taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
         if (updated == 0) {
             log.info("reconcileTaskStatusAgainstGitHubTruth: task {} reached a terminal status concurrently, skipped", task.getId());

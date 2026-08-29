@@ -149,6 +149,78 @@ class JulesDispatchServiceTest {
      * <p>The assertion is on the COUNT rather than on any outcome, because the defect is invisible in any
      * single outcome - every individual call returned the right answer.
      */
+    private ProjectEntity activeProjectForReconciliation() {
+        var settingsService = (com.eneik.production.services.settings.SystemSettingsService)
+                ReflectionTestUtils.getField(julesDispatchService, "settingsService");
+        when(settingsService.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+        project.setStatus(ProjectStatus.active);
+        return project;
+    }
+
+    private TaskEntity taskWithClosedUnmergedPr(ProjectEntity project, TaskStatus status, int prNumber) {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(status);
+
+        JulesSessionEntity session = new JulesSessionEntity();
+        session.setId(UUID.randomUUID());
+        session.setTaskId(task.getId());
+        session.setExternalSessionId("sessions/" + prNumber);
+        session.setStatus("pr_opened");
+        session.setCreatedAt(Instant.now());
+        when(julesSessionRepository.findByTaskId(task.getId())).thenReturn(List.of(session));
+        when(claimService.hasActiveClaim(task.getId())).thenReturn(true);
+
+        var closedPr = new com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest(
+                "https://github.com/org/repo/pull/" + prNumber, prNumber, "title", "jules-" + prNumber,
+                "author", false, "main", true, Instant.now());
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                        true, "org", "repo", List.of(), List.of(closedPr), ""));
+        return task;
+    }
+
+    /**
+     * Plan §4.27. A live claim vetoes this sweep because an implementer whose PR closed can push a new
+     * branch and open another one - true while it is implementing, false once pending_review says its
+     * phase completed. Measured live: one such task held the whole project in BLOCKED_BY_REVIEW, which
+     * denies ORCHESTRATE, which is what compiles wishlists - six ticks with nothing compiled at all.
+     */
+    @Test
+    void closedUnmergedPrIsActedOnOnceTheImplementerPhaseIsCompleteEvenWithALiveClaim() {
+        ProjectEntity project = activeProjectForReconciliation();
+        TaskEntity task = taskWithClosedUnmergedPr(project, TaskStatus.pending_review, 418);
+        when(taskRepository.findByStatusIn(any())).thenReturn(List.of(task));
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(List.of());
+        when(taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verify(taskRepository).writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
+    }
+
+    /**
+     * The other half, and it is not optional: while the implementer can still act, the claim must go on
+     * vetoing this sweep. Without this case the test above would also pass if the veto were removed
+     * altogether.
+     */
+    @Test
+    void closedUnmergedPrIsStillLeftAloneWhileTheImplementerCanOpenAnotherOne() {
+        ProjectEntity project = activeProjectForReconciliation();
+        TaskEntity task = taskWithClosedUnmergedPr(project, TaskStatus.claimed, 419);
+        when(taskRepository.findByStatusIn(any())).thenReturn(List.of(task));
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(List.of());
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        verify(taskRepository, never()).writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
+    }
+
     @Test
     void reconciliationSweepObservesGitHubOncePerProjectNotOncePerTask() {
         var settingsService = (com.eneik.production.services.settings.SystemSettingsService)
