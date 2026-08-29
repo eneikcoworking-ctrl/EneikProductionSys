@@ -19,7 +19,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
-import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 
@@ -31,23 +30,6 @@ import java.util.Set;
 public class PlannedWorkRecoveryService {
     private static final Logger log = LoggerFactory.getLogger(PlannedWorkRecoveryService.class);
     private static final String RESUME_COUNT_KEY = "ems_bounded_plan_resume_count";
-    // Widened 2026-08-01: confirmed live, task 0cb354e9 (test-fortieth) failed with the exact general
-    // GitHub-truth-reconciliation reason isEligibleRetiredPlanTask was widened for earlier today, but its
-    // wishlist source is gemini_observer - NOT in this set - so Gemini's own reviveFailedTask calls (she
-    // correctly found and tried it three separate cycles: 22:20, 23:20, 02:20) were silently rejected here
-    // every single time. Safe to include now: as of today's Kaizen-routing fix
-    // (GeminiProjectObserverService), a gemini_observer wishlist only ever reaches this pipeline at all when
-    // its finding was scope=product - a self-referential platform finding never becomes a wishlist/task in
-    // the first place anymore, it goes to KaizenService.recordSystemicDefectProposal instead. So any
-    // gemini_observer-sourced task seen here is, by construction, real product-scoped work exactly like a
-    // client-sourced one - excluding it from revival was never intentional, it just predated that split.
-    private static final Set<WishlistSource> PRODUCT_SOURCES = EnumSet.of(
-            WishlistSource.client,
-            WishlistSource.coverage_gap,
-            WishlistSource.self_falsification,
-            WishlistSource.gemini_observer
-    );
-
     @org.springframework.beans.factory.annotation.Value("${project.failed-plan-frontier-resume-limit:3}")
     private int frontierResumeLimit;
 
@@ -204,14 +186,37 @@ public class PlannedWorkRecoveryService {
             "left to complete it normally (periodic GitHub-truth reconciliation, testimony-vs-evidence Phase 2)",
             "Blocked task retired by iteration-admission poka-yoke; no child work created");
 
+    /**
+     * Whether a retired task is product work this recovery may resume.
+     *
+     * <p>Until 2026-08-29 this asked a hand-kept whitelist of wishlist sources, and measured that day on
+     * the live database it admitted NONE of the project's sixty-eight failed tasks: their sources were
+     * none at all (58), delivery_never_reached_main (9) and frontend_unbacked_records (1), and not one of
+     * the four listed. RECOVER_FAILED_FRONTIER was therefore authorized every tick and eligible for
+     * nothing, while three queued tasks waited behind failed dependencies that this is the only mechanism
+     * able to revive. That whitelist, deleted with this change, carried a comment recording the same failure once before,
+     * when Gemini's revival calls were rejected silently for three cycles until a source was added by hand
+     * - a list kept by hand answering a question that has a real criterion, Charter invariant 14.
+     *
+     * <p>The criterion, measured rather than assumed: of those sixty-eight, sixty carry a featureId and
+     * eight are factory carriers (their payload names a taskType) - and carriers carrying a featureId
+     * number zero. A feature is what planned product work is attached to; a carrier is never attached to
+     * one. The deliberate quarantine of out-of-cycle role work is kept, now read from the one definition
+     * on WishlistSource rather than a second copy.
+     *
+     * <p>Blast radius is unchanged: HOW OFTEN a task may be revived is still resumeCount below one, and
+     * WHY is still RETIRED_WITH_NOTHING_LEFT_WORKING_IT below. Only "is this product work" changed, and it
+     * changed from a written list to a measured structural fact.
+     */
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
-        if (task.getStatus() != TaskStatus.failed || task.getSourceWishlistId() == null
-                || task.getFeatureId() == null) {
+        if (task.getStatus() != TaskStatus.failed || task.getFeatureId() == null) {
             return false;
         }
-        WishlistEntity source = wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
-        if (source == null || source.getCompiledByRole() == null || !PRODUCT_SOURCES.contains(source.getSource())) {
-            return false;
+        if (task.getSourceWishlistId() != null) {
+            WishlistEntity source = wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
+            if (source != null && source.getSource() != null && source.getSource().outOfCycleGenerated()) {
+                return false;
+            }
         }
         String reason = task.getJulesDispatchStatus() == null ? "" : task.getJulesDispatchStatus();
         // Widened 2026-08-01 (confirmed live, test-fortieth: tasks d9f35f4b/529e5252 both died this exact

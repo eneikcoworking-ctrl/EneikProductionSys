@@ -4339,9 +4339,7 @@ public class ProjectFlowService {
             return false;
         }
         return wishlistRepository.findById(task.getSourceWishlistId())
-                .map(w -> !isEnvironmentBootstrapWishlist(w)
-                        && (w.getSource() == WishlistSource.role
-                        || w.getSource() == WishlistSource.role_mismatch_followup))
+                .map(w -> !isEnvironmentBootstrapWishlist(w) && w.getSource().outOfCycleGenerated())
                 .orElse(false);
     }
 

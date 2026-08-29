@@ -86,5 +86,18 @@ public enum WishlistSource {
      * `Runtime Contract 9b58412d` sat done-without-merge for over ten hours, holding assembly at 17 of 18
      * merged tasks, while the producer correctly reported "0 new findings, 1 already recorded" every hour.
      */
-    delivery_never_reached_main
+    delivery_never_reached_main;
+
+    /**
+     * Work a role invented outside the bounded iteration, which the factory quarantines rather than
+     * dispatches (ProjectFlowService.quarantineOutOfCycleGeneratedWork).
+     *
+     * <p>Defined here since 2026-08-29 because a second reader appeared - PlannedWorkRecoveryService needs
+     * the same distinction to decide what may be revived, and two hand-kept copies of one criterion are
+     * what Charter invariant 10 exists to prevent. Callers add their own further conditions where they
+     * have any; ProjectFlowService still exempts an environment-bootstrap brief on top of this.
+     */
+    public boolean outOfCycleGenerated() {
+        return this == role || this == role_mismatch_followup;
+    }
 }
