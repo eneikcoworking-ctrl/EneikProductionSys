@@ -2289,13 +2289,18 @@ public class ProjectFlowService {
      * while six briefs sat with their budget spent and the compiler never reached. A mechanism that is
      * registered and structurally cannot fire is muda, not a guard (§2).
      *
-     * <p>The second term is the one-shot channel's equivalent event: the last time Jules actually created
-     * a session for this project. It satisfies the same two requirements the original watermark was
-     * chosen for (Charter invariant 7). It is monotone - session rows carrying a real external id are
-     * written only on a successful creation, accumulate, and are never removed by the restoration. And it
-     * cannot be manufactured by the loop it bounds: a dispatch attempt that Jules refuses writes no
-     * external id, so a brief's own failed attempt does not advance the mark that would give it more
-     * budget.
+     * <p>The second term is the last time Jules actually created a session for the COMPILER'S OWN ACCOUNT.
+     * It was project-wide until 2026-08-29 and that was wrong in a way the live circuit showed within the
+     * hour: six healthy accounts kept advancing it on general-pool work while the compiler's account had
+     * accepted nothing since 28.08 21:36, so the six exhausted briefs were restored again and again and
+     * the compiler cycle repeated every ~13 minutes, fourteen refusals each time. The restoration's claim
+     * is that the condition which stopped a brief from reaching the compiler has changed; that condition
+     * is the compiler account's availability, so the evidence must come from there. It satisfies the same
+     * two requirements the original watermark was chosen for (Charter invariant 7). It is monotone -
+     * session rows carrying a real external id are written only on a successful creation, accumulate, and
+     * are never removed by the restoration. And it cannot be manufactured by the loop it bounds: a
+     * dispatch attempt that Jules refuses writes no external id, so a brief's own failed attempt does not
+     * advance the mark that would give it more budget.
      *
      * <p>Termination is unchanged: each restoration consumes one strictly later real channel event, those
      * are produced by the channel and are finite in any finite run, and once attempts land the brief
@@ -2305,7 +2310,7 @@ public class ProjectFlowService {
      * says that, which is why the witness above was fixed in the same change rather than replaced by this.
      */
     private Instant latestChannelEvent(ProjectEntity project, Instant workerWatermark) {
-        Instant channelWatermark = julesSessionRepository.latestAcceptedSessionAt(project.getId());
+        Instant channelWatermark = julesSessionRepository.latestAcceptedSessionAtForAccount(taskCompilerAccountName());
         if (workerWatermark == null) {
             return channelWatermark;
         }

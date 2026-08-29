@@ -548,7 +548,7 @@ class ProjectFlowServiceTest {
                 eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
                 .thenReturn(Optional.empty());
         JulesSessionRepository sessions = mock(JulesSessionRepository.class);
-        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(accepted);
+        when(sessions.latestAcceptedSessionAtForAccount("eneikdru")).thenReturn(accepted);
 
         WishlistEntity unreached = brief(projectId, 3, dispatched, null);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
@@ -570,7 +570,7 @@ class ProjectFlowServiceTest {
                 eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
                 .thenReturn(Optional.empty());
         JulesSessionRepository sessions = mock(JulesSessionRepository.class);
-        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(null);
+        when(sessions.latestAcceptedSessionAtForAccount("eneikdru")).thenReturn(null);
 
         WishlistEntity unreached = brief(projectId, 3, java.time.Instant.parse("2026-08-28T05:10:40Z"), null);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
@@ -597,7 +597,39 @@ class ProjectFlowServiceTest {
         JulesSessionRepository sessions = mock(JulesSessionRepository.class);
         // The channel last accepted a session BEFORE this brief's attempt; the attempt itself was refused
         // and wrote no external id, so the mark did not move.
-        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(dispatched.minusSeconds(600));
+        when(sessions.latestAcceptedSessionAtForAccount("eneikdru")).thenReturn(dispatched.minusSeconds(600));
+
+        WishlistEntity unreached = brief(projectId, 3, dispatched, null);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService, sessions)
+                .restoreUnreachedBriefs(project));
+        assertEquals(3, unreached.getCompileAttempts());
+    }
+
+    /**
+     * Action plan 4.10. The watermark was project-wide for one hour on 2026-08-29 and the live circuit
+     * showed what that costs: six healthy accounts kept advancing it on general-pool work while the
+     * compiler's own account had accepted nothing since 28.08 21:36, so the same six exhausted briefs were
+     * restored every cycle and the compiler repeated fourteen refusals every ~13 minutes. Evidence from an
+     * account the brief does not travel through is not evidence about the brief.
+     */
+    @Test
+    void anAcceptanceOnAnotherAccountDoesNotRestoreTheBrief() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        java.time.Instant dispatched = java.time.Instant.parse("2026-08-29T02:02:48Z");
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        when(workerService.findActiveWorker(eq(projectId),
+                eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
+                .thenReturn(Optional.empty());
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        // The compiler's account has accepted nothing; only other accounts have, and they are not asked.
+        when(sessions.latestAcceptedSessionAtForAccount("eneikdru")).thenReturn(null);
 
         WishlistEntity unreached = brief(projectId, 3, dispatched, null);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));

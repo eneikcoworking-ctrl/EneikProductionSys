@@ -62,8 +62,16 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     // excluded because it is the placeholder written when the Jules integration is switched off, which is
     // the opposite of the event this asks about. An aggregate, not a read: one row comes back however much
     // history stands behind it, so the cost is proportional to the answer.
-    @Query("SELECT MAX(s.createdAt) FROM JulesSessionEntity s, TaskEntity t "
-            + "WHERE t.id = s.taskId AND t.project.id = :projectId "
+    // 2026-08-29, action plan 4.10. Scoped to ONE account, deliberately. The project-wide form this
+    // replaced advanced on any accepted session anywhere in the project, and six healthy accounts kept
+    // advancing it while the compiler's own account had accepted nothing since 28.08 21:36 - so an
+    // exhausted brief's budget was restored forever and the compiler cycle repeated every ~13 minutes with
+    // fourteen refusals in it. The condition that stopped a brief from reaching the compiler is the
+    // compiler account's availability, so that is the channel the evidence has to come from. Any accepted
+    // session on that account counts, not only a compiler one: requiring a compiler session would deadlock
+    // (no budget, no compiler task; no compiler task, no compiler session; no session, no evidence).
+    @Query("SELECT MAX(s.createdAt) FROM JulesSessionEntity s, AccountEntity a "
+            + "WHERE a.id = s.accountId AND a.name = :accountName "
             + "AND s.externalSessionId IS NOT NULL AND s.externalSessionId <> 'skipped'")
-    Instant latestAcceptedSessionAt(@Param("projectId") UUID projectId);
+    Instant latestAcceptedSessionAtForAccount(@Param("accountName") String accountName);
 }
