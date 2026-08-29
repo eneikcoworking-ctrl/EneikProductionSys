@@ -2852,7 +2852,22 @@ public class AutoMergeService {
         }
 
         wishlistRepository.findById(wishlistId).ifPresent(wishlist -> {
-            if (wishlist.getStatus() == WishlistStatus.dismissed || wishlist.getStatus() == WishlistStatus.pending) {
+            // Only `pending` is a reason not to act - the brief is already open and this would be a no-op
+            // (2026-08-30, plan §4.40). `dismissed` used to refuse too, and it means two different things:
+            // a brief that produced nothing and is closed, and a brief that produced work which has now
+            // failed without delivering. The evidence telling them apart is in hand at this very call - a
+            // task minted from THIS brief has just been retired for merging without code - so refusing on
+            // `dismissed` buried the requirement it was written to save.
+            //
+            // Measured live 2026-08-29 18:08, five hours before this was written: client brief 8aff0d75
+            // (the Moodle integration) -> slice 2c3442ef "Self-Service Account Recovery" -> task 048e4e50,
+            // whose PR merged with no code. The task was retired, the brief sat `dismissed`, no sibling
+            // task existed, and that slice of the client's requirement simply ended. Across all thirteen
+            // empty merges: six source briefs, one surviving row, zero live replacements.
+            //
+            // Termination is untouched: the bound above still refuses once MAX_UNCERTIFIED_REATTEMPTS
+            // attempts from this same brief have failed.
+            if (wishlist.getStatus() == WishlistStatus.pending) {
                 return;
             }
             wishlist.setStatus(WishlistStatus.pending);

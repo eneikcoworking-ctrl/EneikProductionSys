@@ -1269,6 +1269,77 @@ class AutoMergeServiceTest {
         verify(wishlists).save(wishlist);
     }
 
+    /**
+     * Plan §4.40, measured live 2026-08-29 18:08. Client brief 8aff0d75 (the Moodle integration) produced
+     * slice 2c3442ef "Self-Service Account Recovery", which produced task 048e4e50, whose PR merged with no
+     * code. The task was retired, the brief sat `dismissed`, no sibling task existed, and that slice of the
+     * client's requirement simply ended. `dismissed` means two different things - a brief that produced
+     * nothing, and a brief whose work has now failed without delivering - and refusing on it buried the
+     * requirement this routing exists to save.
+     */
+    @Test
+    void aDismissedRequirementWhoseWorkMergedEmptyIsReopened() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.pending_review);
+        task.setSourceWishlistId(wishlistId);
+
+        com.eneik.production.models.persistence.WishlistEntity dismissed =
+                new com.eneik.production.models.persistence.WishlistEntity();
+        dismissed.setId(wishlistId);
+        dismissed.setStatus(com.eneik.production.models.persistence.WishlistStatus.dismissed);
+
+        when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
+        when(tasks.findById(task.getId())).thenAnswer(inv -> {
+            task.setStatus(TaskStatus.failed);
+            return Optional.of(task);
+        });
+        when(wishlists.findById(wishlistId)).thenReturn(Optional.of(dismissed));
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/442");
+
+        assertEquals(com.eneik.production.models.persistence.WishlistStatus.pending, dismissed.getStatus());
+        verify(wishlists).save(dismissed);
+    }
+
+    /**
+     * The other half, and it is not optional: a brief already open is left exactly as it is. Without this
+     * the routing would write to an open requirement on every cycle and stop being idempotent.
+     */
+    @Test
+    void aRequirementAlreadyOpenIsLeftAlone() {
+        var tasks = mock(com.eneik.production.repositories.TaskRepository.class);
+        var wishlists = mock(com.eneik.production.repositories.WishlistRepository.class);
+        AutoMergeService service = serviceWith(tasks, wishlists);
+
+        UUID wishlistId = UUID.randomUUID();
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.pending_review);
+        task.setSourceWishlistId(wishlistId);
+
+        com.eneik.production.models.persistence.WishlistEntity open =
+                new com.eneik.production.models.persistence.WishlistEntity();
+        open.setId(wishlistId);
+        open.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
+
+        when(tasks.findBySourceWishlistIdIn(List.of(wishlistId))).thenReturn(List.of(task));
+        when(tasks.findById(task.getId())).thenAnswer(inv -> {
+            task.setStatus(TaskStatus.failed);
+            return Optional.of(task);
+        });
+        when(wishlists.findById(wishlistId)).thenReturn(Optional.of(open));
+
+        service.routeUncertifiedMerge(task, "https://github.com/org/repo/pull/443");
+
+        verify(wishlists, never()).save(any());
+    }
+
     // The bound is a well-founded measure: failed siblings from the same wishlist only ever increase, so
     // the requirement cannot be re-minted forever by a role that keeps merging empty PRs.
     @Test
