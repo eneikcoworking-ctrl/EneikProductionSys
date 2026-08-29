@@ -351,6 +351,13 @@ class ProjectFlowServiceTest {
 
     private ProjectFlowService serviceWithWishlistsAndWorker(WishlistRepository wishlistRepository,
             PersistentWorkerSessionService persistentWorkerSessionService) {
+        return serviceWithWishlistsAndWorker(wishlistRepository, persistentWorkerSessionService,
+                mock(JulesSessionRepository.class));
+    }
+
+    private ProjectFlowService serviceWithWishlistsAndWorker(WishlistRepository wishlistRepository,
+            PersistentWorkerSessionService persistentWorkerSessionService,
+            JulesSessionRepository julesSessionRepository) {
         ProjectFlowService service = new ProjectFlowService(
                 projectRepository,
                 wishlistRepository,
@@ -368,7 +375,7 @@ class ProjectFlowServiceTest {
                 mock(TechnicalLeadCompiler.class),
                 mock(ClientDeliveryService.class),
                 mock(ProjectFinalReportRepository.class),
-                mock(JulesSessionRepository.class),
+                julesSessionRepository,
                 mock(JulesActivityResponseRepository.class),
                 mock(ProjectGenerationStateRepository.class),
                 new ObjectMapper(),
@@ -447,6 +454,87 @@ class ProjectFlowServiceTest {
         assertEquals(1, restored);
         assertEquals(0, unreached.getCompileAttempts());
         verify(wishlistRepository).saveAll(List.of(unreached));
+    }
+
+    // 2026-08-29. The two tests above pass with the persistent worker's watermark, and that watermark is
+    // never written on this factory: measured that day, persistent_worker_sessions held one row, purpose
+    // PHILOSOPHICAL_AUDIT, retired 25.08 - no WISHLIST_COMPILER worker had ever existed, so the restoration
+    // returned 0 on every call while six briefs sat with a spent budget the compiler had never answered.
+    // These two fix the case the live system is actually in.
+
+    @Test
+    void unreachedBriefIsRestoredFromTheOneShotChannelWithNoPersistentWorker() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        java.time.Instant dispatched = java.time.Instant.parse("2026-08-28T05:10:40Z");
+        java.time.Instant accepted = java.time.Instant.parse("2026-08-29T00:18:17Z");
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        // No worker at all - exactly what the live table holds.
+        when(workerService.findActiveWorker(eq(projectId),
+                eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
+                .thenReturn(Optional.empty());
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(accepted);
+
+        WishlistEntity unreached = brief(projectId, 3, dispatched, null);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
+
+        assertEquals(1, serviceWithWishlistsAndWorker(wishlistRepository, workerService, sessions)
+                .restoreUnreachedBriefs(project));
+        assertEquals(0, unreached.getCompileAttempts());
+    }
+
+    @Test
+    void noChannelEventAtAllRestoresNothing() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        when(workerService.findActiveWorker(eq(projectId),
+                eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
+                .thenReturn(Optional.empty());
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(null);
+
+        WishlistEntity unreached = brief(projectId, 3, java.time.Instant.parse("2026-08-28T05:10:40Z"), null);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService, sessions)
+                .restoreUnreachedBriefs(project));
+        assertEquals(3, unreached.getCompileAttempts());
+    }
+
+    /** A refusal writes no external session id, so a brief's own failed attempt cannot buy it more budget. */
+    @Test
+    void aBriefWhoseOwnAttemptFailedDoesNotAdvanceItsOwnWatermark() {
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+
+        java.time.Instant dispatched = java.time.Instant.parse("2026-08-28T05:10:40Z");
+
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        PersistentWorkerSessionService workerService = mock(PersistentWorkerSessionService.class);
+        when(workerService.findActiveWorker(eq(projectId),
+                eq(com.eneik.production.models.persistence.PersistentWorkerPurpose.WISHLIST_COMPILER)))
+                .thenReturn(Optional.empty());
+        JulesSessionRepository sessions = mock(JulesSessionRepository.class);
+        // The channel last accepted a session BEFORE this brief's attempt; the attempt itself was refused
+        // and wrote no external id, so the mark did not move.
+        when(sessions.latestAcceptedSessionAt(projectId)).thenReturn(dispatched.minusSeconds(600));
+
+        WishlistEntity unreached = brief(projectId, 3, dispatched, null);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(unreached));
+
+        assertEquals(0, serviceWithWishlistsAndWorker(wishlistRepository, workerService, sessions)
+                .restoreUnreachedBriefs(project));
+        assertEquals(3, unreached.getCompileAttempts());
     }
 
     @Test

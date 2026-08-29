@@ -2255,7 +2255,8 @@ public class ProjectFlowService {
     int restoreUnreachedBriefs(ProjectEntity project) {
         Optional<PersistentWorkerSessionEntity> workerOpt = persistentWorkerSessionService
                 .findActiveWorker(project.getId(), PersistentWorkerPurpose.WISHLIST_COMPILER);
-        Instant watermark = workerOpt.map(PersistentWorkerSessionEntity::getLastMessageSentAt).orElse(null);
+        Instant watermark = latestChannelEvent(project,
+                workerOpt.map(PersistentWorkerSessionEntity::getLastMessageSentAt).orElse(null));
         if (watermark == null) {
             return 0;
         }
@@ -2276,6 +2277,42 @@ public class ProjectFlowService {
                         + "compiler ever being reached; the channel has been live since (watermark {})",
                 restorable.size(), watermark);
         return restorable.size();
+    }
+
+    /**
+     * The later of the two real channel events available for this project.
+     *
+     * <p>The persistent worker's {@code lastMessageSentAt} was the only one consulted until 2026-08-29,
+     * and on this factory it is never written: measured that day, {@code persistent_worker_sessions} held
+     * one row, purpose PHILOSOPHICAL_AUDIT, retired 2026-08-25 - no WISHLIST_COMPILER worker had ever
+     * existed. So the watermark was null on every call and restoreUnreachedBriefs returned 0 always,
+     * while six briefs sat with their budget spent and the compiler never reached. A mechanism that is
+     * registered and structurally cannot fire is muda, not a guard (§2).
+     *
+     * <p>The second term is the one-shot channel's equivalent event: the last time Jules actually created
+     * a session for this project. It satisfies the same two requirements the original watermark was
+     * chosen for (Charter invariant 7). It is monotone - session rows carrying a real external id are
+     * written only on a successful creation, accumulate, and are never removed by the restoration. And it
+     * cannot be manufactured by the loop it bounds: a dispatch attempt that Jules refuses writes no
+     * external id, so a brief's own failed attempt does not advance the mark that would give it more
+     * budget.
+     *
+     * <p>Termination is unchanged: each restoration consumes one strictly later real channel event, those
+     * are produced by the channel and are finite in any finite run, and once attempts land the brief
+     * settles into {@code decompositionRefused()}, which is absorbing.
+     *
+     * <p>What it does not claim: that the compiler read the brief. Only {@code last_compile_reached_at}
+     * says that, which is why the witness above was fixed in the same change rather than replaced by this.
+     */
+    private Instant latestChannelEvent(ProjectEntity project, Instant workerWatermark) {
+        Instant channelWatermark = julesSessionRepository.latestAcceptedSessionAt(project.getId());
+        if (workerWatermark == null) {
+            return channelWatermark;
+        }
+        if (channelWatermark == null) {
+            return workerWatermark;
+        }
+        return channelWatermark.isAfter(workerWatermark) ? channelWatermark : workerWatermark;
     }
 
     private void revertWishlistsToPending(java.util.List<WishlistEntity> wishlists) {
@@ -3007,7 +3044,17 @@ public class ProjectFlowService {
 
         compilerTask.setAcceptanceCriteria("Given the wishlist ids recorded in this task's payload, When this compilation ends, Then a task graph exists for each of them or a recorded refusal names what it lacked, and the plan file at the recorded path exists.");
         compilerTask = taskRepository.save(compilerTask);
-        dispatchCompilerTask(compilerTask);
+        // The witness belongs on whichever channel is actually used (Charter invariant 10 - one function,
+        // every place the action happens). It was wired only to the persistent-worker paths, and this
+        // factory runs the one-shot one: measured 2026-08-29, `last_compile_reached_at` was NULL on every
+        // row in the database, for the whole of its history, while 103 compiler tasks had been dispatched
+        // and compiler sessions were being created successfully. Every brief therefore read as
+        // decompositionUnreached forever, which is what held the project in DECOMPOSING with 25 tasks
+        // queued behind it. dispatchCompilerTask returns true on exactly the condition this records - the
+        // task was really put in front of Jules - so the two statements say the same thing.
+        if (dispatchCompilerTask(compilerTask)) {
+            markCompilerReached(wishlists);
+        }
     }
 
     /** Falls back to the old shared constant for tasks dispatched before this fix. */
