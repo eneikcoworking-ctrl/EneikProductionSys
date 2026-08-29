@@ -49,14 +49,6 @@ public class ProjectFlowService {
     private static final String ORCHESTRATOR_ROLE = "BARCAN-TAG-09";
     private static final String ENVIRONMENT_BOOTSTRAP_TOC = "BOOTSTRAP-ENVIRONMENT-BOUNDARY";
     private static final long ORCHESTRATION_COOLDOWN_SECONDS = 300L;
-    // 2026-08-13 (live incident, test-forty-fourth): same cooldown idea as ORCHESTRATION_COOLDOWN_SECONDS
-    // above, but scoped to one wishlist instead of the whole project - see dispatchBatchedWishlistCompiler's
-    // admission loop. Nothing previously remembered "we just tried to compile this exact wishlist a moment
-    // ago", so a wishlist bounced back to `pending` by any means (manual claim release, a retry, a bug) got
-    // a brand-new real Jules session opened for it on the very next cycle - confirmed live: releasing the
-    // same 3-wishlist batch repeatedly while orchestration kept running opened several real duplicate
-    // "Compile 3 Wishlist" sessions against the daily Jules quota.
-    private static final long WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS = 900L;
 
     /**
      * B - the declared, finite budget of decomposition attempts per brief (F42, 2026-08-16).
@@ -1754,17 +1746,18 @@ public class ProjectFlowService {
         return created;
     }
 
+    // The one definition of a live session (2026-08-29, plan §4.29): this was a fourth hand-written copy of
+    // the status list, and it omitted `stuck` - a session the factory itself calls alive. What must be true
+    // besides being live is that the session is REAL, i.e. it exists on Jules' side at all.
     private boolean hasActiveJulesSession(UUID taskId) {
-        return julesSessionRepository.findByTaskId(taskId).stream()
-                .anyMatch(session -> {
-                    String status = session.getStatus();
-                    return session.getExternalSessionId() != null
-                            && !"skipped".equals(session.getExternalSessionId())
-                            && ("queued".equals(status)
-                            || "running".equals(status)
-                            || "revising".equals(status)
-                            || "pr_opened".equals(status));
-                });
+        return julesSessionRepository.findByTaskId(taskId).stream().anyMatch(ProjectFlowService::isRealAndLive);
+    }
+
+    static boolean isRealAndLive(JulesSessionEntity session) {
+        return session != null
+                && session.getExternalSessionId() != null
+                && !"skipped".equals(session.getExternalSessionId())
+                && session.isActive();
     }
 
     private String valueOrUnset(String value) {
@@ -2119,7 +2112,23 @@ public class ProjectFlowService {
                 .filter(w -> w.getFeatureId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getFeatureId, java.util.stream.Collectors.counting()));
 
-        Instant compileCooldownFloor = Instant.now().minusSeconds(WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS);
+        // The briefs whose previous compilation is still genuinely running (2026-08-30, plan §4.36). This
+        // replaced a 900-second cooldown whose own comment named what it stood for - "nothing remembered
+        // that we just tried to compile this exact wishlist", so a brief bounced back to `pending` got a
+        // duplicate real Jules session. That is a FACT about a session, not a duration, and the factory
+        // observes it directly. Measured before the change: 115 compiler sessions ran from 117 seconds to
+        // twenty hours, mean thirty-nine minutes, against a fifteen-minute constant - a proxy that was
+        // shorter than most of what it stood for.
+        //
+        // The broader guard above already holds every candidate while a compiler carrier is queued or
+        // claimed; what remains is the case measured today twice over - the carrier already terminal while
+        // its session is still alive (§4.24, §4.29).
+        java.util.Set<UUID> briefsWithACompilationStillRunning = new java.util.HashSet<>();
+        for (TaskEntity carrier : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+            if (isWishlistCompilerTask(carrier) && hasActiveJulesSession(carrier.getId())) {
+                briefsWithACompilationStillRunning.addAll(compilerTaskWishlistIds(carrier));
+            }
+        }
         java.util.List<WishlistEntity> admitted = new java.util.ArrayList<>();
         for (WishlistEntity candidate : candidates) {
             if (admitted.size() >= projectBudget) {
@@ -2131,12 +2140,9 @@ public class ProjectFlowService {
             if (withholdFromCompileDispatch(project, candidate)) {
                 continue;
             }
-            Instant lastDispatched = candidate.getLastCompileDispatchedAt();
-            if (lastDispatched != null && lastDispatched.isAfter(compileCooldownFloor)) {
-                log.info("ProjectFlowService: wishlist {} was already dispatched for compilation {} second(s) ago "
-                                + "(cooldown {}s); skipping this cycle to avoid opening a duplicate real Jules session",
-                        candidate.getId(), Duration.between(lastDispatched, Instant.now()).getSeconds(),
-                        WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS);
+            if (briefsWithACompilationStillRunning.contains(candidate.getId())) {
+                log.info("ProjectFlowService: wishlist {} is still being compiled by a live Jules session; "
+                        + "skipping this cycle to avoid opening a duplicate one", candidate.getId());
                 continue;
             }
             UUID featureId = candidate.getFeatureId();
@@ -2238,7 +2244,7 @@ public class ProjectFlowService {
      */
     private void dispatchToCompilerPersistentWorker(ProjectEntity project, java.util.List<WishlistEntity> admitted) {
         // Recorded once, up front, covering every exit path below (fresh message sent, worker busy/needs
-        // revert, new worker registered) - see WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS above. An attempt
+        // revert, new worker registered) - see the live-session evidence in dispatchBatchedWishlistCompiler's admission loop. An attempt
         // was made against this batch this cycle either way, which is what the cooldown needs to know.
         Instant compileAttemptAt = Instant.now();
         for (WishlistEntity w : admitted) {
@@ -3192,7 +3198,7 @@ public class ProjectFlowService {
         compilerTask.setPayload(payload);
 
         // Recorded here, at dispatch ATTEMPT time (not just success) - see
-        // WISHLIST_COMPILE_DISPATCH_COOLDOWN_SECONDS above. Even a failed/blocked attempt still closes the
+        // the admission loop's live-session evidence. Even a failed/blocked attempt still records the
         // cooldown window, so a wishlist that can't currently be dispatched doesn't get retried in a tight
         // loop either.
         Instant now = Instant.now();

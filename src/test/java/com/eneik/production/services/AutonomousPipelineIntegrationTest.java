@@ -90,7 +90,6 @@ class AutonomousPipelineIntegrationTest {
     @BeforeEach
     void setUp() {
         claimRepository.deleteAll();
-        jdbcTemplate.update("DELETE FROM needs_human_review");
         jdbcTemplate.update("DELETE FROM task_conflicts");
         jdbcTemplate.update("DELETE FROM jules_sessions");
         prReviewRepository.deleteAll();
@@ -1158,40 +1157,81 @@ class AutonomousPipelineIntegrationTest {
      * matter how many times it was reset to pending in between.
      */
     @Test
-    void dispatchBatchedWishlistCompilerSkipsWishlistStillInsideDispatchCooldown() {
+    void aBriefWhoseCompilationIsStillRunningIsNotDispatchedAgain() {
+        // Plan §4.36. This replaced a 900-second cooldown. Its own comment named what it stood for -
+        // "nothing remembered that we just tried to compile this exact wishlist" - so a brief bounced back
+        // to pending got a DUPLICATE real Jules session. That is a fact about a session, not a duration:
+        // measured 2026-08-30, 115 compiler sessions ran from two minutes to twenty hours, mean thirty-nine,
+        // against a fifteen-minute constant that was shorter than most of what it stood for.
         ProjectEntity project = new ProjectEntity();
-        project.setName("Dispatch Cooldown Project");
-        project.setSlug("dispatch-cooldown-project");
+        project.setName("Live Compilation Project");
+        project.setSlug("live-compilation-project");
         project.setStatus(ProjectStatus.active);
         project.setFactoryStatus("ready_local");
-        project.setRepositoryName("dispatch-cooldown-repo");
+        project.setRepositoryName("live-compilation-repo");
         project = projectRepository.saveAndFlush(project);
 
-        WishlistEntity recentlyDispatched = new WishlistEntity();
-        recentlyDispatched.setProjectId(project.getId());
-        recentlyDispatched.setSource(WishlistSource.client);
-        recentlyDispatched.setContent("Was just dispatched a moment ago; must not be re-dispatched yet.");
-        recentlyDispatched.setStatus(WishlistStatus.pending);
-        recentlyDispatched.setLastCompileDispatchedAt(java.time.Instant.now().minusSeconds(30));
-        recentlyDispatched = wishlistRepository.saveAndFlush(recentlyDispatched);
+        WishlistEntity beingCompiled = new WishlistEntity();
+        beingCompiled.setProjectId(project.getId());
+        beingCompiled.setSource(WishlistSource.client);
+        beingCompiled.setContent("A live session is compiling this one; a second must not be opened.");
+        beingCompiled.setStatus(WishlistStatus.pending);
+        beingCompiled = wishlistRepository.saveAndFlush(beingCompiled);
 
-        WishlistEntity neverDispatched = new WishlistEntity();
-        neverDispatched.setProjectId(project.getId());
-        neverDispatched.setSource(WishlistSource.client);
-        neverDispatched.setContent("Never dispatched before; must be admitted normally.");
-        neverDispatched.setStatus(WishlistStatus.pending);
-        neverDispatched = wishlistRepository.saveAndFlush(neverDispatched);
+        WishlistEntity untouched = new WishlistEntity();
+        untouched.setProjectId(project.getId());
+        untouched.setSource(WishlistSource.client);
+        untouched.setContent("Nothing is compiling this one; normal admission.");
+        untouched.setStatus(WishlistStatus.pending);
+        untouched = wishlistRepository.saveAndFlush(untouched);
+
+        // A carrier that is already terminal - the measured case (§4.24, §4.29) - whose session is alive.
+        TaskEntity carrier = new TaskEntity();
+        carrier.setProject(project);
+        carrier.setRole(roleRepository.findById("BARCAN-TAG-09").orElseThrow());
+        carrier.setTitle("Compile 1 wishlist(s) into task graph (live)");
+        carrier.setDescription("carrier");
+        carrier.setStatus(TaskStatus.done);
+        com.fasterxml.jackson.databind.node.ObjectNode payload =
+                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        payload.put(ProjectFlowService.WISHLIST_COMPILER_PAYLOAD_KEY, "wishlist_compiler");
+        payload.putArray(ProjectFlowService.WISHLIST_COMPILER_WISHLIST_IDS_KEY)
+                .add(beingCompiled.getId().toString());
+        carrier.setPayload(payload);
+        carrier = taskRepository.saveAndFlush(carrier);
+
+        JulesSessionEntity liveSession = new JulesSessionEntity();
+        liveSession.setTaskId(carrier.getId());
+        liveSession.setExternalSessionId("sessions/live-one");
+        liveSession.setStatus("running");
+        julesSessionRepository.saveAndFlush(liveSession);
 
         int admitted = projectFlowService.dispatchBatchedWishlistCompiler(
-                project, List.of(recentlyDispatched, neverDispatched));
+                project, List.of(beingCompiled, untouched));
 
         assertThat(admitted).isEqualTo(1);
-        assertThat(wishlistRepository.findById(recentlyDispatched.getId()).orElseThrow().getStatus())
-                .as("still inside cooldown - must stay pending, not get a fresh real Jules dispatch")
+        assertThat(wishlistRepository.findById(beingCompiled.getId()).orElseThrow().getStatus())
+                .as("its compilation is still running - a second real Jules session must not be opened")
                 .isEqualTo(WishlistStatus.pending);
-        assertThat(wishlistRepository.findById(neverDispatched.getId()).orElseThrow().getStatus())
-                .as("no prior dispatch - normal admission")
+        assertThat(wishlistRepository.findById(untouched.getId()).orElseThrow().getStatus())
+                .as("nothing is compiling it - normal admission")
                 .isEqualTo(WishlistStatus.compiling);
+
+        // The other half, and it is not optional: once the session is over there is nothing to wait for,
+        // and the brief is admitted immediately rather than serving out a timer. The carrier the admission
+        // above created is finished first - otherwise the broader guard higher up this method would hold
+        // every candidate for it, quite correctly, and this half would prove nothing.
+        for (TaskEntity anyTask : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+            anyTask.setStatus(TaskStatus.done);
+            taskRepository.saveAndFlush(anyTask);
+        }
+        liveSession.setStatus("closed_terminal_task");
+        julesSessionRepository.saveAndFlush(liveSession);
+
+        int admittedAfterTheSessionEnded = projectFlowService.dispatchBatchedWishlistCompiler(
+                project, List.of(wishlistRepository.findById(beingCompiled.getId()).orElseThrow()));
+
+        assertThat(admittedAfterTheSessionEnded).isEqualTo(1);
     }
 
     @Test
