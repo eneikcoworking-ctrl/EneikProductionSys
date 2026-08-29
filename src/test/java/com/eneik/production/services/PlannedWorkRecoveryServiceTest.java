@@ -77,6 +77,57 @@ class PlannedWorkRecoveryServiceTest {
         assertEquals(1, service.resumeNextFrontier(project));
     }
 
+    /**
+     * Plan §4.33. The gate holds a dependent while its dependency is unsatisfied - correct only while the
+     * dependency can still become satisfied. Measured live 2026-08-29: three dependents sat behind
+     * dependencies that had failed hours earlier with their own single resume already spent, so the
+     * dependency could never merge and a merged replacement could only come from a decomposition nothing
+     * triggers. The gate's condition had become one that can no longer occur, and both ends were terminal
+     * for good.
+     */
+    @Test
+    void aDependentIsResumedOnceItsDependencyIsPastItsOwnLastResume() {
+        ReflectionTestUtils.setField(service, "frontierResumeLimit", 3);
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity deadDependency = retiredTask(project, UUID.randomUUID());
+        ((ObjectNode) deadDependency.getPayload()).put("ems_bounded_plan_resume_count", 1);
+        TaskEntity child = retiredTask(project, source.getId());
+        child.setDependsOn(deadDependency);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(child));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(readinessService.isDependencySatisfied(deadDependency)).thenReturn(false);
+        when(sessionRepository.findByTaskId(child.getId())).thenReturn(List.of());
+        when(readinessService.isTaskMerged(child.getId())).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(child.getId(), TaskStatus.failed, TaskStatus.queued)).thenReturn(1);
+
+        assertEquals(1, service.resumeNextFrontier(project));
+    }
+
+    /**
+     * The other half, and it is not optional: a dependency that is not terminal at all is alive and must
+     * still be waited for. Without this case the rule above would resume work ahead of its own
+     * prerequisite.
+     */
+    @Test
+    void aDependentIsNotResumedWhileItsDependencyIsStillBeingWorked() {
+        ReflectionTestUtils.setField(service, "frontierResumeLimit", 3);
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity liveDependency = retiredTask(project, UUID.randomUUID());
+        liveDependency.setStatus(TaskStatus.claimed);
+        TaskEntity child = retiredTask(project, source.getId());
+        child.setDependsOn(liveDependency);
+
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(child));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(readinessService.isDependencySatisfied(liveDependency)).thenReturn(false);
+
+        assertEquals(0, service.resumeNextFrontier(project));
+        verify(taskRepository, never()).compareAndSetStatus(child.getId(), TaskStatus.failed, TaskStatus.queued);
+    }
+
     @Test
     void cleanoutDoesNotCompleteCompilerTaskBeforeRealFeatureDecomposition() {
         ProjectEntity project = project();

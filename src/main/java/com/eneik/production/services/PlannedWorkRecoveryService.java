@@ -97,8 +97,29 @@ public class PlannedWorkRecoveryService {
         if (readinessService.isTaskMerged(task.getId())) {
             return false;
         }
-        if (task.getDependsOn() != null && !readinessService.isDependencySatisfied(task.getDependsOn())) {
-            return false;
+        // Held while the dependency can still become satisfied, not while it merely is not (2026-08-29,
+        // plan §4.33). Measured that day: three tasks retired behind dependencies that had failed hours
+        // earlier with their own single resume already spent. Such a dependency can never merge, and a
+        // merged replacement carrying its semantic key can only come from a fresh decomposition that
+        // nothing triggers - so the gate's condition had become one that can no longer occur, and both
+        // the dependent and its dependency were terminal for good. That is §4.30's defect one storey up:
+        // there a queue waited on an event that could not arrive, here the recovery gate does.
+        //
+        // A dependency edge here is an ordering of work, not a physical precondition - this codebase
+        // already declines to wait on one when waiting is meaningless (spike_completed, whose deliverable
+        // is a decision rather than code; the early unblock on a spec dependency whose PR is open). A dead
+        // dependency is the third case of the same kind. The resume budget is untouched: if the work truly
+        // cannot be done without it, the task fails a second time and is retired for good - one cycle,
+        // rather than never.
+        // Only a dependency that is PERMANENTLY dead stops being a reason to wait: failed, and past its
+        // own single resume. A dependency still queued, claimed or in review is alive and must still be
+        // waited for - opening the gate on those would resume work ahead of its own prerequisite.
+        TaskEntity dependency = task.getDependsOn();
+        if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
+            boolean permanentlyDead = dependency.getStatus() == TaskStatus.failed && !mayStillBeResumed(dependency);
+            if (!permanentlyDead) {
+                return false;
+            }
         }
 
         // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
