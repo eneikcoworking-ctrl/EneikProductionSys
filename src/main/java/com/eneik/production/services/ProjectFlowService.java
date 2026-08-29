@@ -3061,31 +3061,9 @@ public class ProjectFlowService {
                 accountRepository.lockAccountByNameWithCapacity(
                         taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount));
         if (accountOpt.isEmpty()) {
-            // §14, measured 2026-08-29: 23 consecutive cycles failed here, the compiler task returned to the
-            // queue each time, and 27 tasks stood behind it - decomposition feeds everything downstream, so
-            // one unavailable account stopped the whole flow.
-            //
-            // The reservation is a PREFERENCE, not a prohibition. Its recorded reason (line ~145) is that
-            // other work must not burn the compiler account's daily quota - it says nothing about the
-            // compiler being forbidden other accounts. Preferring one and requiring one are different
-            // statements, and only the first was ever argued for.
-            accountOpt = self.claimAccountForTask(compilerTask.getId(), () ->
-                    accountRepository.lockNextJulesAccountWithCapacity(
-                            compilerTask.getProject().getId(),
-                            compilerTask.getRole() != null ? compilerTask.getRole().getTag() : null,
-                            maxConcurrentJulesSessionsPerAccount,
-                            null,
-                            maxDailySessionsPerAccount,
-                            null));
-            if (accountOpt.isEmpty()) {
-                log.warn("Wishlist compiler account '{}' has no free capacity and neither does the general "
-                                + "pool; task {} stays queued for the next cycle",
-                        taskCompilerAccountName(), compilerTask.getId());
-                return false;
-            }
-            log.info("Wishlist compiler account '{}' unavailable; falling back to general-pool account '{}' "
-                            + "for task {} (\u00a714 - the reservation prefers, it does not require)",
-                    taskCompilerAccountName(), accountOpt.get().getName(), compilerTask.getId());
+            log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
+                    taskCompilerAccountName(), compilerTask.getId());
+            return false;
         }
 
         AccountEntity account = accountOpt.get();
@@ -3106,36 +3084,7 @@ public class ProjectFlowService {
                 log.warn("Failed to dispatch wishlist compiler task {} to account {}: {}",
                         savedTask.getId(), account.getName(), dispatch.reason());
 
-                // §14. This is the case actually measured: the preferred account HAD capacity by our own
-                // belief, was selected, and Jules refused it - 23 cycles in a row, with 27 tasks standing
-                // behind the compiler because decomposition feeds everything downstream. Falling back only
-                // on "no capacity" would have been a repair on the path the defect does not take, which
-                // this plan has already recorded twice.
-                Optional<AccountEntity> fallbackOpt = self.claimAccountForTask(savedTask.getId(), () ->
-                        accountRepository.lockNextJulesAccountWithCapacity(
-                                savedTask.getProject().getId(),
-                                savedTask.getRole() != null ? savedTask.getRole().getTag() : null,
-                                maxConcurrentJulesSessionsPerAccount,
-                                account.getName(),
-                                maxDailySessionsPerAccount,
-                                account.getName()));
-                if (fallbackOpt.isEmpty()) {
-                    return false;
-                }
-                AccountEntity fallback = fallbackOpt.get();
-                JulesDispatchResult retry = julesDispatchService.dispatch(savedTask, fallback.getId());
-                savedTask.setJulesSessionName(retry.sessionName());
-                savedTask.setJulesDispatchStatus(retry.reason());
-                taskRepository.save(savedTask);
-                if (!retry.dispatched()) {
-                    claimService.releaseClaimToQueue(savedTask.getId(), retry.reason());
-                    log.warn("Compiler fallback to account {} also refused for task {}: {}",
-                            fallback.getName(), savedTask.getId(), retry.reason());
-                    return false;
-                }
-                log.info("Wishlist compiler task {} dispatched through fallback account {} after '{}' refused "
-                                + "(\u00a714)", savedTask.getId(), fallback.getName(), account.getName());
-                return true;
+                return false;
             }
             // JulesDispatchService.dispatch() reports dispatched=true both for a genuinely fresh dispatch
             // and for the "already dispatched, skip duplicate" no-op - logging both as "Dispatched compiler
@@ -5225,29 +5174,7 @@ public class ProjectFlowService {
     public void dispatchQueuedTasks(UUID projectId) {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
-        // §11: a carrier whose description was composed by a prompt builder this factory no longer has
-        // can never be sent - the recipient will refuse the text and no work of ours changes that. By
-        // invariant 8 it must leave the set that DECIDES, not merely be refused at the end of it: refusing
-        // at dispatch still costs a claim, an account, a session row and a tick, every tick, forever.
-        //
-        // Placed here rather than as a status write because the write cannot happen here: this tick is
-        // deliberately non-transactional (see the comment on the tick itself), and a @Modifying query needs
-        // a transaction - measured 2026-08-29, the write threw "No EntityManager with actual transaction
-        // available" while the refusal beside it worked. Excluding from the denominator needs no write at
-        // all, which is the cheaper and more honest form of the same requirement.
-        List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued)
-                .stream()
-                .filter(t -> {
-                    String trace = com.eneik.production.services.jules.JulesDispatchService
-                            .removedBuilderTrace(t.getDescription());
-                    if (trace != null) {
-                        log.warn("Task {} is not offered for dispatch: its description was composed by a builder "
-                                        + "this factory no longer has (trace \"{}\"). This is the factory's own "
-                                        + "defect (\u00a711).", t.getId(), trace);
-                    }
-                    return trace == null;
-                })
-                .toList();
+        List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
         boolean buildPhase = readinessService.isBuildPhase(project.getId());
         // The hard block that used to stand here is gone (2026-08-28). Its intent - client scope first,
         // housekeeping on leftover capacity - is already achieved by queuedDispatchClass below, which the
