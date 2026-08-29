@@ -222,6 +222,7 @@ public class ClaimService {
 
             task.setStatus(TaskStatus.done);
             taskRepository.save(task);
+            clearHumanReviewRequest(task.getId());
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         } else {
             // Implementer finished, move to review stage
@@ -528,6 +529,34 @@ public class ClaimService {
         });
         log.warn("Task {} left the dispatch queue: {} refused session creations against a budget of {}. "
                 + "Routed to human review rather than requeued.", taskId, refusals, budget);
+    }
+
+    /**
+     * A question for a human, answered by the task itself.
+     *
+     * <p>A needs-human-review row says this task cannot proceed without someone looking. When the task
+     * reaches done, that is no longer true and the row is a leftover. Measured 2026-08-29: eighteen rows
+     * stood in the table and eight belonged to tasks already done - forty-four percent of the pile a
+     * human is asked to read was about work that had finished. A list that accumulates answered questions
+     * teaches its reader to stop reading it, the same defect as a warning that is not about a problem.
+     *
+     * <p>The row leaves the set once, in data, rather than being filtered by whoever reads the list (plan
+     * section 5, item 9). Scope is this completion path, where a claim ends with the task done; system
+     * carrier tasks that other services mark done directly are not covered and their rows stay.
+     */
+    // Package-private accessor so the behaviour can be asserted directly, the same convention
+    // dispatchAttemptBudget and restoreUnreachedBriefs already follow.
+    void clearHumanReviewRequestForTest(UUID taskId) {
+        clearHumanReviewRequest(taskId);
+    }
+
+    private void clearHumanReviewRequest(UUID taskId) {
+        List<NeedsHumanReviewEntity> answered = needsHumanReviewRepository.findByTaskIdIn(List.of(taskId));
+        if (!answered.isEmpty()) {
+            needsHumanReviewRepository.deleteAll(answered);
+            log.info("ClaimService: cleared {} needs-human-review row(s) for task {} - it reached done",
+                    answered.size(), taskId);
+        }
     }
 
     private boolean isTerminal(TaskStatus status) {

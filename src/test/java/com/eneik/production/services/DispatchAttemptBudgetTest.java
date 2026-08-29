@@ -143,6 +143,26 @@ class DispatchAttemptBudgetTest {
         verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
     }
 
+    /**
+     * Measured 2026-08-29: eighteen needs-human-review rows stood in the table and eight belonged to tasks
+     * already done. A question answered by the task itself must leave the set once, in data, not be
+     * filtered by every reader of the list.
+     */
+    @Test
+    void completingATaskClearsTheHumanReviewRequestItAnswered() {
+        UUID taskId = UUID.randomUUID();
+        TaskEntity task = claimedTask(taskId);
+        NeedsHumanReviewEntity row = new NeedsHumanReviewEntity();
+        row.setTask(task);
+        when(needsHumanReviewRepository.findByTaskIdIn(java.util.List.of(taskId)))
+                .thenReturn(java.util.List.of(row));
+        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
+
+        claimService.clearHumanReviewRequestForTest(taskId);
+
+        verify(needsHumanReviewRepository).deleteAll(java.util.List.of(row));
+    }
+
     /** A row already carrying a human-review note is not duplicated on a later tick. */
     @Test
     void doesNotDuplicateTheHumanReviewRow() {
