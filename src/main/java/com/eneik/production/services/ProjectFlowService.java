@@ -1966,15 +1966,27 @@ public class ProjectFlowService {
             // actually looks rather than only in a log - F39 is the lesson that a finding nobody can
             // retrieve is not a finding. The status is deliberately left alone so no downstream consumer
             // changes behaviour; what stops is the re-dispatch.
-            log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
-                            + "without producing a single slice; no further compile will be dispatched "
-                            + "for it (F42)",
-                    wishlist.getId(), WISHLIST_COMPILE_ATTEMPT_BUDGET);
-            project.setFactoryReport(appendReportLine(project.getFactoryReport(),
-                    "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
-                            + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
-                            + "the brief needs a human reading, not another retry."));
-            projectRepository.save(project);
+            //
+            // Recorded ONCE per brief (2026-08-29). It was recorded every tick until then, and the fact is
+            // absorbing - it cannot change until restoreUnreachedBriefs fires. Measured that day: the
+            // report held 174687 characters, this sentence appeared in it 868 times, and removing every
+            // line containing it left zero characters - the report a human is asked to read was one fact
+            // about six briefs and nothing else, growing by 24 entries every twenty minutes with a project
+            // row written each time. The report itself carries whether this has been said, so no new column
+            // is needed; the same "write only when it changed" idiom the failed-dependency branch below
+            // already uses.
+            String reportLine = "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
+                    + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
+                    + "the brief needs a human reading, not another retry.";
+            String report = project.getFactoryReport();
+            if (report == null || !report.contains(reportLine)) {
+                log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
+                                + "without producing a single slice; no further compile will be dispatched "
+                                + "for it (F42)",
+                        wishlist.getId(), WISHLIST_COMPILE_ATTEMPT_BUDGET);
+                project.setFactoryReport(appendReportLine(report, reportLine));
+                projectRepository.save(project);
+            }
             return true;
         }
         return false;
