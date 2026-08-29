@@ -3354,6 +3354,52 @@ class JulesDispatchServiceTest {
         verify(gitHubPullRequestService, never()).fetchDiffText(any(), anyInt());
     }
 
+    /**
+     * Plan §4.28. The observer that establishes the verdict records it, through the one place that owns
+     * the record. Before this, the review sweep reasoned the conclusion out in full every fifteen minutes
+     * and left the task in pending_review, where it went on counting as a failing review and held the
+     * whole project in BLOCKED_BY_REVIEW - and only the hourly GitHub-truth sweep could write it down.
+     */
+    @Test
+    void aPrFoundClosedWithoutAMergeRetiresItsTaskThroughTheOnePlaceThatOwnsThatRecord() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.pending_review);
+        snapshot(project, List.of(), List.of(pr("https://github.com/org/repo/pull/421", 421, false)));
+        when(taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.failed)).thenReturn(1);
+        when(taskRepository.findById(task.getId())).thenReturn(Optional.of(task));
+
+        julesDispatchService.dispatchReviewerFallbackBatch(List.of(
+                new JulesDispatchService.PendingFallbackReview(task, "https://github.com/org/repo/pull/421")));
+
+        verify(taskRepository).writeStatusUnlessTerminal(task.getId(), TaskStatus.failed);
+    }
+
+    /**
+     * The other half, and it is not optional. Falling out of the reviewable set has two causes: the PR was
+     * closed without a merge, or it was never found at all. Only the first is evidence. Without this case
+     * the test above would also pass if the branch acted on the absence of evidence.
+     */
+    @Test
+    void aPrThatIsSimplyNotInTheSnapshotWritesNoStatusAtAll() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setProject(project);
+        task.setStatus(TaskStatus.pending_review);
+        snapshot(project, List.of(pr("https://github.com/org/repo/pull/1", 1, false)), List.of());
+
+        julesDispatchService.dispatchReviewerFallbackBatch(List.of(
+                new JulesDispatchService.PendingFallbackReview(task, "https://github.com/org/repo/pull/999")));
+
+        verify(taskRepository, never()).writeStatusUnlessTerminal(any(), any());
+        verify(gitHubPullRequestService, never()).fetchDiffText(any(), anyInt());
+    }
+
     @Test
     void openPrStillReachesTheDiffFetch() {
         // The guard must not be so strict that it stops real work - the failure mode opposite to the one

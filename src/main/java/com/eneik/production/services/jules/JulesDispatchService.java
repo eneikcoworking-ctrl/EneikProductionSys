@@ -3161,7 +3161,13 @@ public class JulesDispatchService {
         // GitHubPullRequest carries `merged`, and all items in a batch share one project by construction
         // (the caller groups by project). Unavailable snapshot does NOT block - same policy the diff fetch
         // below already follows: leave the item exactly as-is for the next cycle rather than guess.
-        java.util.Set<String> reviewablePrUrls = reviewablePrUrls(items.get(0).task().getProject());
+        // One observation of the project's pull requests for this batch, read twice: for what may still be
+        // reviewed, and for what is decisively over (2026-08-29, plan §4.28).
+        GitHubPullRequestService.PullRequestSnapshot prSnapshot =
+                gitHubPullRequestService.pullRequestSnapshot(items.get(0).task().getProject());
+        java.util.Set<String> reviewablePrUrls = reviewablePrUrls(prSnapshot);
+        java.util.Map<String, GitHubPullRequestService.GitHubPullRequest> closedUnmergedByUrl =
+                closedUnmergedByUrl(prSnapshot);
 
         for (PendingFallbackReview item : items) {
             if (isTerminalTask(item.task())) {
@@ -3170,9 +3176,32 @@ public class JulesDispatchService {
                 continue;
             }
             if (reviewablePrUrls != null && !reviewablePrUrls.contains(item.prUrl())) {
-                log.info("PR review fallback: PR {} is closed without a merge; its verdict is already settled, "
-                                + "so no review is dispatched for task {} (§9).",
-                        item.prUrl(), item.task().getId());
+                // The observer that established the fact records it, through the one place that owns the
+                // record (2026-08-29, plan §4.28). This branch already reasoned the conclusion out in full
+                // above - closure without a merge IS the verdict, no further revision can appear - and then
+                // left the task in pending_review, where it went on counting as a failing review and held
+                // the whole project in BLOCKED_BY_REVIEW, which denies ORCHESTRATE, which is what compiles
+                // wishlists. Only reconcileTaskStatusAgainstGitHubTruth could write that conclusion down,
+                // and it runs hourly: the producer of the block fires in seconds, the releaser once an
+                // hour. Charter invariants 14 and 10 - one belief, revised once, at the place that owns it.
+                //
+                // Strictly on evidence. Falling out of the reviewable set has two different causes: the PR
+                // was closed without a merge, or the PR was not found in the snapshot at all. The first is
+                // evidence; the second is the absence of evidence. Only the first writes a status, and it
+                // must be FOUND among the closed with merged=false - the same proof the hourly sweep
+                // demands. The second keeps today's behaviour exactly: skip, write nothing.
+                GitHubPullRequestService.GitHubPullRequest closedUnmerged = closedUnmergedByUrl.get(item.prUrl());
+                if (closedUnmerged != null) {
+                    log.info("PR review fallback: PR {} is closed without a merge; its verdict is already settled, "
+                                    + "so no review is dispatched for task {} (§9).",
+                            item.prUrl(), item.task().getId());
+                    reconcileClosedUnmergedPullRequest(item.task(), closedUnmerged);
+                } else {
+                    log.info("PR review fallback: PR {} is not among the project's open or merged pull requests, "
+                                    + "and was not found among the closed ones either; leaving task {} untouched "
+                                    + "rather than acting on an absence of evidence (§9).",
+                            item.prUrl(), item.task().getId());
+                }
                 continue;
             }
             Integer pullNumber = parsePullNumber(item.prUrl());
@@ -3304,7 +3333,23 @@ public class JulesDispatchService {
      * warns about in the other direction).
      */
     java.util.Set<String> reviewablePrUrls(com.eneik.production.models.persistence.ProjectEntity project) {
-        var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
+        return reviewablePrUrls(gitHubPullRequestService.pullRequestSnapshot(project));
+    }
+
+    /** The pull requests this project has closed WITHOUT merging, by url - decisive evidence, not absence. */
+    java.util.Map<String, GitHubPullRequestService.GitHubPullRequest> closedUnmergedByUrl(
+            GitHubPullRequestService.PullRequestSnapshot snapshot) {
+        if (snapshot == null || !snapshot.available() || snapshot.closed() == null) {
+            return java.util.Map.of();
+        }
+        java.util.Map<String, GitHubPullRequestService.GitHubPullRequest> byUrl = new java.util.HashMap<>();
+        snapshot.closed().stream()
+                .filter(pr -> !pr.merged())
+                .forEach(pr -> byUrl.putIfAbsent(pr.url(), pr));
+        return byUrl;
+    }
+
+    java.util.Set<String> reviewablePrUrls(GitHubPullRequestService.PullRequestSnapshot snapshot) {
         if (snapshot == null || !snapshot.available() || snapshot.open() == null) {
             return null;
         }
