@@ -46,4 +46,13 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     // §12: the observed point at which Jules refused for capacity. A count, not a read - the answer is one
     // number and the question must not cost the table (the invariant ScheduledQueryCostInvariantTest guards).
     long countByAccountIdAndStatusIn(java.util.UUID accountId, java.util.List<String> statuses);
+
+    // 2026-08-29, action plan 4.1: how many times Jules refused to create a session for this task at all.
+    // dispatchInternal writes exactly one row per attempt, and on refusal that row keeps a NULL
+    // external_session_id with status 'failed' - so this count IS the number of attempts that produced
+    // nothing, already persisted, with no new column. It is monotone: session rows are deleted only on
+    // project reset (which deletes the tasks with them) and for the 'skipped' placeholder, never as a side
+    // effect of the dispatch loop itself, which is what invariant 7 requires of a mark a loop is bounded
+    // by. A count, not a read - the answer is one number and must not cost the table.
+    long countByTaskIdAndExternalSessionIdIsNullAndStatus(UUID taskId, String status);
 }

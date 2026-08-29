@@ -3154,6 +3154,18 @@ public class ProjectFlowService {
                 taskRepository.save(savedTask);
                 if (!dispatch.dispatched()) {
                     claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
+                    // releaseClaimToQueue does not always requeue: at its dispatch-attempt budget (action
+                    // plan 4.1) it writes `blocked` and routes the task to human review instead. Rotating
+                    // on regardless would offer a task around that has just left the queue - and if the
+                    // next account happened to accept it, would open a live session against a blocked
+                    // task, which the session poller then has to close again.
+                    TaskStatus statusAfterRelease = taskRepository.findById(savedTask.getId())
+                            .map(TaskEntity::getStatus).orElse(null);
+                    if (statusAfterRelease != TaskStatus.queued) {
+                        log.info("Task {} is no longer queued after a failed dispatch ({}); stopping account rotation",
+                                savedTask.getId(), statusAfterRelease);
+                        return;
+                    }
                     log.warn("Failed to dispatch task {} to account {} (attempt {}/3): {}. Rotating to next account...",
                             savedTask.getId(), account.getName(), attempt + 1, dispatch.reason());
                     failedAccountName = account.getName();

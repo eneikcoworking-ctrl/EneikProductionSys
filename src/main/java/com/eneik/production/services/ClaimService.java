@@ -41,19 +41,22 @@ public class ClaimService {
     private final JulesSessionRepository julesSessionRepository;
     private final GateOrchestrator gateOrchestrator;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
+    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
 
     public ClaimService(ClaimRepository claimRepository,
                             TaskRepository taskRepository,
                             AccountRepository accountRepository,
                             JulesSessionRepository julesSessionRepository,
                             GateOrchestrator gateOrchestrator,
-                        com.eneik.production.services.ClientDeliverableReadinessService readinessService) {
+                        com.eneik.production.services.ClientDeliverableReadinessService readinessService,
+                        com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository) {
         this.claimRepository = claimRepository;
         this.taskRepository = taskRepository;
         this.accountRepository = accountRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.gateOrchestrator = gateOrchestrator;
         this.readinessService = readinessService;
+        this.needsHumanReviewRepository = needsHumanReviewRepository;
     }
 
     /**
@@ -377,6 +380,13 @@ public class ClaimService {
             refreshAccountStatusAfterClaimRelease(claim.getAccount());
         });
 
+        long refusals = refusedSessionCreations(taskId);
+        long budget = dispatchAttemptBudget();
+        if (refusals >= budget) {
+            retireForExhaustedDispatchBudget(taskId, refusals, budget, reason);
+            return;
+        }
+
         int revived = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.queued);
         if (revived == 0) {
             log.info("ClaimService.releaseClaimToQueue: skipped requeue for task {} - it reached a terminal status concurrently", taskId);
@@ -454,6 +464,70 @@ public class ClaimService {
             claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId)
                     .ifPresent(claim -> closeClaimForTerminalTask(claim, task, "task reached terminal status"));
         });
+    }
+
+    // 2026-08-29, action plan 4.1. This method is where every failed dispatch returns to the queue - four
+    // call sites in ProjectFlowService and JulesDispatchService, all of them the "Jules would not take it"
+    // path. Until now the return was unconditional, and that made the dispatch loop
+    //
+    //     queued -> claim an account -> Jules refuses to create the session -> requeue -> queued
+    //
+    // one along which nothing decreases. retryCount does not move here: it is incremented only after a
+    // session existed (the quality-gate branch above, and the compiler's correction round), so a task whose
+    // every attempt is refused before creation carries retryCount 0 forever. Measured on the live database
+    // 2026-08-29: one review-fallback carrier held 67 refused sessions across 7 accounts over four and a
+    // half days at retryCount 0, one compiler task held 123, and 375 of the 775 sessions ever recorded were
+    // refusals that produced nothing.
+    //
+    // The bound below is a variant function, which is the only thing that makes the loop terminate.
+    private static final int DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT = 2;
+
+    // A(task): refusals already recorded. Monotone, and raised by exactly one per iteration - see the
+    // JulesSessionRepository query's own note for why both hold.
+    long refusedSessionCreations(UUID taskId) {
+        return julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed");
+    }
+
+    // A_max = 2 * live accounts. Derived rather than picked. A refusal can be a property of the account
+    // rather than of the request, so "no account will take this" is not established until every living
+    // account has refused it - the independent-witness shape of invariant 12, testified by each account
+    // instead of asserted once. Each gets a second attempt because an unnamed FAILED_PRECONDITION can be
+    // transient. Past that, repetition carries no new information and is only cost. Measured against the
+    // live data (7 live accounts, so 14): of the 78 tasks that ever saw a refusal, this bound would have
+    // stopped exactly the two runaways, the next highest sitting at 13.
+    long dispatchAttemptBudget() {
+        return DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT * Math.max(1L, accountRepository.countLiveAccounts());
+    }
+
+    // The budget attributes no fault, deliberately. Which side's precondition failed is decided elsewhere
+    // (AccountHealthService.reportDispatchOutcome) and is not consulted here: 52 of those 67 refusals were
+    // unattributable, and a budget that spent only on attributable ones would not terminate - which is
+    // precisely what was observed for four days. So the exit is `blocked` plus a needs-human-review row,
+    // the same one the wishlist compiler already takes at its own retry cap, and not `failed`, which would
+    // state a verdict nobody reached. `blocked` keeps the task recoverable by a human; what it does not do
+    // is put the task back in front of the selector.
+    private void retireForExhaustedDispatchBudget(UUID taskId, long refusals, long budget, String reason) {
+        int written = taskRepository.writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
+        if (written == 0) {
+            log.info("ClaimService: task {} reached a terminal status concurrently; dispatch-budget retirement skipped", taskId);
+            return;
+        }
+        taskRepository.findById(taskId).ifPresent(task -> {
+            task.setJulesDispatchStatus(reason);
+            taskRepository.save(task);
+            if (!needsHumanReviewRepository.existsByTaskId(taskId)) {
+                NeedsHumanReviewEntity review = new NeedsHumanReviewEntity();
+                review.setTask(task);
+                String text = "Jules refused to create a session for this task " + refusals
+                        + " time(s), the budget for " + budget / DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT
+                        + " live account(s). Whose precondition failed is not established; the capacity spent is. Last: "
+                        + (reason == null ? "" : reason);
+                review.setReason(text.length() > 256 ? text.substring(0, 256) : text);
+                needsHumanReviewRepository.save(review);
+            }
+        });
+        log.warn("Task {} left the dispatch queue: {} refused session creations against a budget of {}. "
+                + "Routed to human review rather than requeued.", taskId, refusals, budget);
     }
 
     private boolean isTerminal(TaskStatus status) {
