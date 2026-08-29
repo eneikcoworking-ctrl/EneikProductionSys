@@ -2203,10 +2203,21 @@ public class JulesDispatchService {
      * off the same BARCAN-TAG-12 contract gets reviewed with a fuller picture instead of two completely
      * isolated diffs. Fully automated end to end; no human decision point anywhere in this pipeline.
      */
+    // No @Transactional on the sweep itself (2026-08-29, plan §4.24). It used to hold one for its whole
+    // span, so the project-row lock taken deep inside dispatchReviewerFallbackBatch - a check-then-create
+    // mutex, correct in itself - was released not at the end of that check but at the end of the entire
+    // sweep, after every remaining project's GitHub diff fetches. The comment beside that lock says it is
+    // taken "after the diff fetches above, not before, so it no longer spans those network calls"; under
+    // an enclosing transaction that statement was false, and the extent of a critical section is set by
+    // where its transaction ends, not by where it is written.
+    //
+    // Measured twice on the live circuit, 13:14 and 14:18: ProjectFlowService.admitDueCoverageAudits timed
+    // out on SELECT * FROM projects WHERE id = ? FOR UPDATE, and the coverage mechanism did not run that
+    // tick; 2.5 seconds later the review sweep committed. Charter invariant 11 - lock granularity must
+    // match causal dependency, and a diff fetch for another project depends on nothing this lock protects.
     @Scheduled(
             fixedRateString = "${pr-review.batch-rate-ms:900000}",
             initialDelayString = "${pr-review.batch-initial-delay-ms:60000}")
-    @Transactional
     public void processPendingReviewBatch() {
         List<TaskEntity> pending = taskRepository.findByStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
         if (pending.isEmpty()) {
@@ -3225,7 +3236,7 @@ public class JulesDispatchService {
                     log.info("PR review fallback: PR {} is closed without a merge; its verdict is already settled, "
                                     + "so no review is dispatched for task {} (§9).",
                             item.prUrl(), item.task().getId());
-                    reconcileClosedUnmergedPullRequest(item.task(), closedUnmerged);
+                    self.reconcileClosedUnmergedPullRequest(item.task(), closedUnmerged);
                 } else {
                     log.info("PR review fallback: PR {} is not among the project's open or merged pull requests, "
                                     + "and was not found among the closed ones either; leaving task {} untouched "
@@ -3270,6 +3281,20 @@ public class JulesDispatchService {
         // for this whole remaining span serializes concurrent callers so the second one correctly re-reads
         // history after the first commits, instead of both dispatching a duplicate review-fallback batch.
         // Taken here (after the diff fetches above, not before) so it no longer spans those network calls.
+        self.admitAndDispatchReviewFallbackBatch(projectId, fetchedTasks, fetchedPrUrls, fetchedDiffHashes);
+    }
+
+    /**
+     * The check-then-create half, in its own short transaction (plan §4.24).
+     *
+     * <p>REQUIRES_NEW through self, the same idiom this class already uses for claimAccountForTask and
+     * claimWishlistsForCompilation: the project-row lock below is a genuine admission mutex and needs a
+     * transaction, but it must end when the admission ends - not when the caller's sweep does. Everything
+     * that talks to GitHub has already happened by the time this is called.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void admitAndDispatchReviewFallbackBatch(UUID projectId, List<TaskEntity> fetchedTasks,
+            List<String> fetchedPrUrls, List<String> fetchedDiffHashes) {
         projectRepository.lockProjectForUpdate(projectId);
         Set<String> scheduledTargets = new java.util.HashSet<>(reviewFallbackTargetsEverAttempted(projectId));
         List<TaskEntity> tasks = new java.util.ArrayList<>();
@@ -5164,8 +5189,13 @@ public class JulesDispatchService {
      *   - No PR at all, but a branch has real content -&gt; hand off to the exact same evidence path Phase 1
      *     uses (hasNewProgressOnGitHub + openRecoveryPullRequest) rather than reimplementing it.
      */
+    // No @Transactional here either (2026-08-29, plan §4.24): this sweep asks GitHub about every candidate
+    // task, and a pooled connection held across those calls is the bug class this codebase has already
+    // fixed three times - SessionLifecycleService.deleteRemote, ProjectFlowService.dispatchQueuedTasks and
+    // claimAccountForTask all say so in their own comments. Measured 29.08: Hikari reported the connection
+    // this method holds as leaked at the 30-second threshold. The one write it makes takes its own short
+    // transaction below, because writeStatusUnlessTerminal is a @Modifying query and needs an active one.
     @Scheduled(cron = "${github-truth-reconciliation.cron:0 0 * * * ?}")
-    @Transactional
     public void reconcileTaskStatusAgainstGitHubTruth() {
         if (!settingsService.effectiveBoolean("github_truth_reconciliation_enabled")) {
             return;
@@ -5248,7 +5278,7 @@ public class JulesDispatchService {
                         .filter(pr -> !pr.merged() && GitHubPullRequestService.matchesSessionToken(pr, latestSession.getExternalSessionId()))
                         .findFirst();
                 if (closedUnmerged.isPresent()) {
-                    reconcileClosedUnmergedPullRequest(task, closedUnmerged.get());
+                    self.reconcileClosedUnmergedPullRequest(task, closedUnmerged.get());
                     reconciled++;
                     continue;
                 }
@@ -5342,7 +5372,8 @@ public class JulesDispatchService {
                 .orElse(null);
     }
 
-    private void reconcileClosedUnmergedPullRequest(TaskEntity task, GitHubPullRequestService.GitHubPullRequest closedPr) {
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void reconcileClosedUnmergedPullRequest(TaskEntity task, GitHubPullRequestService.GitHubPullRequest closedPr) {
         // The recorded reason names what was actually the case (2026-08-29, plan §4.27). Until then it
         // asserted "no active claim/session left", which was the only way to reach this method; since the
         // veto was narrowed, a task whose implementer phase is complete reaches it WITH a live claim, and
