@@ -24,6 +24,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -191,6 +192,75 @@ class OperationalTruthServiceTest {
     // there is nothing to review for a task-plan JSON file). These two tests pin the fix down: a carrier
     // task must never count against this blocker, but a genuine done task with no review evidence still
     // must - the exemption is scoped to task TYPE, not a blanket relaxation.
+
+    private String clientScopeInvariant(java.util.List<com.eneik.production.models.persistence.WishlistEntity> wishlist) {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var defects = mock(DefectJournalRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var flow = mock(com.eneik.production.services.ProjectFlowService.class);
+        OperationalTruthService service = new OperationalTruthService(
+                projects, tasks, wishlists, sessions, reviews, defects, readiness, systemStatus, flow);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(wishlists.findByProjectId(projectId)).thenReturn(wishlist);
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        when(defects.findByProjectIdAndCreatedAtAfter(org.mockito.ArgumentMatchers.eq(projectId), any(Instant.class)))
+                .thenReturn(List.of());
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        return service.build(projectId).invariants().stream()
+                .filter(i -> "factory_serves_a_client_brief".equals(i.key()))
+                .map(OperationalTruthDto.InvariantStatus::status)
+                .findFirst()
+                .orElse("absent");
+    }
+
+    private com.eneik.production.models.persistence.WishlistEntity brief(
+            com.eneik.production.models.persistence.WishlistSource source, UUID originWishlistId) {
+        var item = new com.eneik.production.models.persistence.WishlistEntity();
+        item.setId(UUID.randomUUID());
+        item.setSource(source);
+        item.setOriginWishlistId(originWishlistId);
+        return item;
+    }
+
+    /**
+     * Plan §4.31. The factory could not tell "nothing to do" from "working only on myself". Measured on
+     * test-fiftieth: zero client root briefs, 197 of ~222 wishlists carrying the factory's own complaint
+     * that its work never reached main, and the client's actual brief present nowhere - confirmed against
+     * the client repository's own tree, which had no file named for any part of it.
+     */
+    @Test
+    void aProjectWithOnlySelfGeneratedBriefsDoesNotPassTheClientScopeInvariant() {
+        String status = clientScopeInvariant(List.of(
+                brief(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main, null),
+                brief(com.eneik.production.models.persistence.WishlistSource.coverage_gap, null)));
+
+        assertNotEquals("pass", status);
+    }
+
+    /** The other half: a real client root brief passes, so the invariant is not simply always failing. */
+    @Test
+    void aProjectWithAClientRootBriefPassesTheClientScopeInvariant() {
+        String status = clientScopeInvariant(List.of(
+                brief(com.eneik.production.models.persistence.WishlistSource.client, null),
+                brief(com.eneik.production.models.persistence.WishlistSource.client, UUID.randomUUID())));
+
+        assertEquals("pass", status);
+    }
 
     @Test
     void aDoneWishlistCompilerCarrierTaskWithNoReviewNeverCountsAsMissingDeliveryEvidence() {

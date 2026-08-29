@@ -1309,11 +1309,51 @@ public class ProjectFlowService {
         if (rendered.equals(existing)) {
             return;
         }
+        // The referent may gain entries and may never lose them (2026-08-29, plan §4.31).
+        //
+        // This file calls itself "the referent every later artifact is checked against", and it was
+        // rendered from the wishlist rows that happen to exist at this instant - so it could only ever be
+        // as complete as a mutable table, and a deleted row silently unsaid something the client had said.
+        // Measured that day on test-fiftieth: at commit 5cd6c96c (26.08) the file carried TEN client
+        // entries and 12,349 bytes, including the Moodle/LMS integration; today it carries ONE and 1,242
+        // bytes - a single internal 401 bug report - because every wishlist row older than 28.08 01:51 is
+        // gone while 322 tasks from before 27.08 survive. The client repository has no file named for
+        // moodle, oauth, oidc, lti or sso: that brief was never built, and had stopped existing to build.
+        //
+        // No status can cause this shrink - dismissed and converted rows are quoted here just the same, the
+        // selection above filters only on source, content and role tag. Fewer entries than the file already
+        // declares therefore means rows were LOST, never that the client withdrew anything.
+        //
+        // The count is not parsed out of prose: this same method writes "Entries: N." into the trailer, so
+        // the file states its own arity. Charter invariant 13 - the client's word must designate the same
+        // thing in every later world.
+        int declaredBefore = declaredEntryCount(existing);
+        if (declaredBefore > clientWishes.size()) {
+            log.error("ProjectFlowService: refusing to rewrite {} for project {} - it records {} client "
+                            + "entr(ies) and only {} remain in the wishlist, so the rewrite would unsay what "
+                            + "the client said. The referent is left as it is; the missing briefs are the defect.",
+                    CLIENT_BRIEF_PATH, project.getId(), declaredBefore, clientWishes.size());
+            return;
+        }
         boolean written = gitHubPullRequestService.upsertFile(project, CLIENT_BRIEF_PATH,
                 rendered.getBytes(java.nio.charset.StandardCharsets.UTF_8),
                 "Client brief: the client's own entries, verbatim, as the referent for every later artifact");
         log.info("ProjectFlowService: project {} - client brief synced to {} ({} entr(ies), written={})",
                 project.getId(), CLIENT_BRIEF_PATH, clientWishes.size(), written);
+    }
+
+    /**
+     * How many client entries the published referent declares, or -1 when there is no file or no trailer to
+     * read. The trailer is written by syncClientBriefToRepository itself ("Entries: N."), so this reads a
+     * number the factory put there, not a shape guessed out of the prose.
+     */
+    static int declaredEntryCount(String publishedBrief) {
+        if (publishedBrief == null || publishedBrief.isBlank()) {
+            return -1;
+        }
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile("Entries: (\\d+)\\.")
+                .matcher(publishedBrief);
+        return matcher.find() ? Integer.parseInt(matcher.group(1)) : -1;
     }
 
     private String bootstrapDocContent(ProjectEntity project) {

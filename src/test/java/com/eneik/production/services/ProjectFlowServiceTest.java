@@ -375,6 +375,29 @@ class ProjectFlowServiceTest {
         verify(gitHubPullRequestService, never()).deleteFile(eq(project), anyString(), anyString());
     }
 
+    // --- §4.31: the client's referent may gain entries and may never lose them ----------------------
+
+    /**
+     * Measured 2026-08-29 on test-fiftieth: docs/PROJECT_BRIEF.md carried ten client entries and 12,349
+     * bytes at commit 5cd6c96c on 26.08, including the Moodle/LMS integration, and one entry and 1,242
+     * bytes on 28.08 - because the file is rendered from whatever wishlist rows exist at that instant, and
+     * every row older than 28.08 01:51 had been lost. The file states its own arity in its trailer, which
+     * this same publisher writes, so the shrink is detectable without parsing prose.
+     */
+    @Test
+    void thePublishedReferentDeclaresItsOwnEntryCount() {
+        String published = "# Project Brief\n\n1. ...\n\n---\n\nEntries: 10. Anything this product claims\n";
+        assertEquals(10, ProjectFlowService.declaredEntryCount(published));
+    }
+
+    /** No file yet, or a file with no trailer, is not evidence of loss - it must not block a first write. */
+    @Test
+    void anAbsentOrTrailerlessReferentReportsNoDeclaredCount() {
+        assertEquals(-1, ProjectFlowService.declaredEntryCount(null));
+        assertEquals(-1, ProjectFlowService.declaredEntryCount(""));
+        assertEquals(-1, ProjectFlowService.declaredEntryCount("# Project Brief\n\nno trailer here\n"));
+    }
+
     // --- §4.30: a wait is only a wait while it can still end ---------------------------------------
 
     private ProjectFlowService serviceForDeadEnd(TaskRepository taskRepository, ProjectEntity project,

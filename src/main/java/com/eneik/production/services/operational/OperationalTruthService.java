@@ -120,7 +120,8 @@ public class OperationalTruthService {
         List<OperationalTruthDto.Blocker> blockers = blockers(
                 tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, liveSessionIds);
         List<OperationalTruthDto.InvariantStatus> invariants = invariants(
-                readiness, tasks, reviews, systemStatus, duplicateContent, sessionsByTask, reviewsBySession, recentDefects);
+                readiness, tasks, wishlist, reviews, systemStatus, duplicateContent, sessionsByTask,
+                reviewsBySession, recentDefects);
         OperationalTruthDto.Trust trust = trust(evidence, blockers, systemStatus, duplicateContent, recentDefects);
         OperationalTruthDto.BlockedValue blockedValue = blockedValue(blockers);
         OperationalTruthDto.LearningSummary learning = learning(recentDefects, invariants);
@@ -449,6 +450,7 @@ public class OperationalTruthService {
     private List<OperationalTruthDto.InvariantStatus> invariants(
             ClientDeliverableReadinessService.Readiness readiness,
             List<TaskEntity> tasks,
+            List<WishlistEntity> wishlist,
             List<PrReviewEntity> reviews,
             String systemStatus,
             DuplicateContent duplicateContent,
@@ -492,6 +494,28 @@ public class OperationalTruthService {
         result.add(invariant("defect_requires_invariant_capture", recentDefects.isEmpty() ? "pass" : "observed",
                 "defect_fixed(x) and no_invariant(x) -> not_learned(x)",
                 recentDefects.size() + " recent defect(s) should be checked for invariant/test/RAG capture."));
+
+        // 2026-08-29 (plan §4.31). The factory could not tell the difference between having no work and
+        // working only on itself. Its state machine distinguishes WHAT it is busy with - DECOMPOSING,
+        // QUEUED, BLOCKED_BY_* - and never WHOSE work that is. Measured that day on test-fiftieth: zero
+        // client root briefs in the database, 197 of ~222 wishlists carrying source
+        // delivery_never_reached_main (the factory's own complaint that its work never reached main), and
+        // the client's actual brief - a Moodle/LMS integration - present in no wishlist and no epic at all,
+        // surviving only frozen inside the text of three compiler carrier tasks from 26.08. The client
+        // repository's own tree confirmed it independently: 407 files, not one whose name contains moodle,
+        // oauth, oidc, lti or sso. Three days of work, none of it the client's, and nothing anywhere said
+        // so.
+        //
+        // A root brief is one with no origin wishlist: everything else in the chain descends from one.
+        long clientRootBriefs = wishlist.stream()
+                .filter(item -> item.getSource() == com.eneik.production.models.persistence.WishlistSource.client)
+                .filter(item -> item.getOriginWishlistId() == null)
+                .count();
+        result.add(invariant("factory_serves_a_client_brief", clientRootBriefs > 0 ? "pass" : "warn",
+                "no_client_root_brief(project) -> factory_works_only_on_itself(project)",
+                clientRootBriefs > 0
+                        ? clientRootBriefs + " client root brief(s) are present."
+                        : "No client root brief exists for this project; every open brief is self-generated."));
         return result;
     }
 
