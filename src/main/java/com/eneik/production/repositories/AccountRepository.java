@@ -196,8 +196,11 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             -- BACK. Leaving the run takes exactly one accepted session, an event Jules produces and the
             -- factory cannot. It is an ordering, never an exclusion - if every account is in a refusal run
             -- the order is the previous one and work still goes out. It attributes no fault: it touches
-            -- neither the account's status nor its health counters, and says only "this one is not
-            -- carrying anything right now", which is what was measured.
+            -- neither the status of the account nor its health counters, and says only that this one is
+            -- not carrying anything right now, which is what was measured. No apostrophe appears in any
+            -- comment inside this query text on purpose: Spring Data scans the whole annotation value for
+            -- quoted ranges without excluding SQL comments, and one apostrophe here cost a 43-restart crash
+            -- loop on 2026-08-29 ("starts a quoted range at 3712, but never ends it").
             ORDER BY COALESCE((
                   SELECT CASE WHEN s.external_session_id IS NULL THEN 1 ELSE 0 END
                   FROM jules_sessions s
