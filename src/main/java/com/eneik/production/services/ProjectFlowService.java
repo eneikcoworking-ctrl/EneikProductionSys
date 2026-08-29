@@ -1960,7 +1960,23 @@ public class ProjectFlowService {
                     + "established, not re-collecting it (F42)", wishlist.getId());
             return true;
         }
-        if (wishlist.getCompileAttempts() >= WISHLIST_COMPILE_ATTEMPT_BUDGET) {
+        // Withheld only when the compiler was actually REACHED (2026-08-29). compileAttempts rises on every
+        // dispatch ATTEMPT, while lastCompileReachedAt is written only when a message really went out - the
+        // difference between "we asked this brief and got nothing" and "we never asked it". The budget is
+        // named for decomposition but was being spent on the factory's own unavailability, which
+        // decompositionUnreached's own javadoc already says establishes nothing about the brief.
+        //
+        // Measured the moment the operator freed Jules: six briefs at 3 of 3 attempts with
+        // lastCompileReachedAt null on every one, two tasks queued behind failed dependencies, and NOT ONE
+        // dispatch attempt anywhere. Exhausted briefs create no compiler task, so nothing asks the compiler
+        // account for a session, so the mark that would return their budget never moves. The external
+        // condition had changed and the factory could not find out, because it had stopped asking.
+        //
+        // An unreached brief keeps being offered, no more often than the compile cooldown already applied
+        // in this same admission loop. Termination is unchanged in the direction that matters: the first
+        // time the compiler is reached, lastCompileReachedAt fills in, and a spent budget then makes the
+        // brief decompositionRefused, which is absorbing.
+        if (wishlist.decompositionRefused()) {
             // mu = 0 and the brief is still not decomposed. This is a WITHHOLD, not an abstention: it is
             // ESTABLISHED that decomposition failed inside its declared budget. Recorded where a human
             // actually looks rather than only in a log - F39 is the lesson that a finding nobody can

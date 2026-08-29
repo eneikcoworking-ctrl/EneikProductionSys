@@ -178,6 +178,17 @@ class ProjectFlowServiceTest {
     // covered here IS that the guard lived on one path and not the other, so a test bound to a single
     // caller would reproduce the very mistake it is meant to catch.
 
+    /**
+     * Withheld once the compiler ANSWERED and the budget is spent - that is a statement about the brief.
+     *
+     * <p>Narrowed 2026-08-29 (action plan 4.19). The guard used to fire on a spent budget alone, and
+     * compileAttempts rises on every dispatch ATTEMPT while lastCompileReachedAt is written only when a
+     * message really went out. So a brief the compiler was never reached for was withheld on evidence
+     * about the factory rather than about itself - and with every brief withheld, no compiler task is
+     * created, nothing asks the compiler account for a session, and the mark that would return their
+     * budget never moves. Measured the moment the operator freed Jules: six briefs at 3 of 3 with
+     * lastCompileReachedAt null on all six, and not one dispatch attempt anywhere in the factory.
+     */
     @Test
     void aBriefThatExhaustedItsDecompositionBudgetIsWithheldFromDispatch() {
         ProjectFlowService service = service();
@@ -186,6 +197,7 @@ class ProjectFlowServiceTest {
         wishlist.setId(UUID.randomUUID());
         wishlist.setProjectId(project.getId());
         wishlist.setCompileAttempts(3); // == WISHLIST_COMPILE_ATTEMPT_BUDGET, so mu = 0
+        wishlist.setLastCompileReachedAt(java.time.Instant.now()); // and the compiler did answer
 
         Boolean withheld = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
                 service, "withholdFromCompileDispatch", project, wishlist);
@@ -198,6 +210,25 @@ class ProjectFlowServiceTest {
                 "the exhausted budget must be reported against this wishlist; factoryReport was: "
                         + project.getFactoryReport());
         verify(projectRepository).save(project);
+    }
+
+    /** Spent budget but the compiler was never reached: nothing is established about the brief. */
+    @Test
+    void aBriefWhoseBudgetWasSpentWithoutReachingTheCompilerIsNotWithheld() {
+        ProjectFlowService service = service();
+        ProjectEntity project = greenfieldProject();
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setId(UUID.randomUUID());
+        wishlist.setProjectId(project.getId());
+        wishlist.setCompileAttempts(3);
+        // lastCompileReachedAt deliberately left null - the attempts never put it to the compiler.
+
+        Boolean withheld = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "withholdFromCompileDispatch", project, wishlist);
+
+        assertTrue(Boolean.FALSE.equals(withheld),
+                "a brief the compiler never saw must keep being offered - withholding it on the factory's "
+                        + "own unavailability is what deadlocked decomposition");
     }
 
     @Test
