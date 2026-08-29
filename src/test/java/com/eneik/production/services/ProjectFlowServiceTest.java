@@ -447,6 +447,9 @@ class ProjectFlowServiceTest {
 
         serviceForDeadEnd(taskRepository, project, readinessService).dispatchQueuedTasks(project.getId());
 
+        // Asserted on the repository call the short REQUIRES_NEW helper makes, reached through `self` -
+        // the helper is what gives that @Modifying query the active transaction dispatchQueuedTasks does
+        // not hold.
         verify(taskRepository).compareAndSetStatus(dependent.getId(), TaskStatus.queued, TaskStatus.blocked);
     }
 

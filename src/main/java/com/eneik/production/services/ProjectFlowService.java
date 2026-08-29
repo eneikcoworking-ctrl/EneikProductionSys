@@ -31,6 +31,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
@@ -1340,6 +1341,24 @@ public class ProjectFlowService {
                 "Client brief: the client's own entries, verbatim, as the referent for every later artifact");
         log.info("ProjectFlowService: project {} - client brief synced to {} ({} entr(ies), written={})",
                 project.getId(), CLIENT_BRIEF_PATH, clientWishes.size(), written);
+    }
+
+    /**
+     * Retires a task whose dependency can never come back (plan §4.30), in its own short transaction.
+     *
+     * <p>REQUIRES_NEW rather than REQUIRED: the caller, dispatchQueuedTasks, deliberately runs with no
+     * transaction open so that the real Jules dispatch below it never holds one across a network call.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean retireDependentBehindDeadDependency(UUID taskId, String reason) {
+        if (taskRepository.compareAndSetStatus(taskId, TaskStatus.queued, TaskStatus.blocked) == 0) {
+            return false;
+        }
+        taskRepository.findById(taskId).ifPresent(fresh -> {
+            fresh.setJulesDispatchStatus(reason);
+            taskRepository.save(fresh);
+        });
+        return true;
     }
 
     /**
@@ -5468,12 +5487,13 @@ public class ProjectFlowService {
                             String deadEnd = "Dependency " + dependency.getId() + " failed and cannot be resumed again; "
                                     + "retired for recovery so its work can be re-planned instead of waiting for a task "
                                     + "that will never return";
-                            int moved = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.queued, TaskStatus.blocked);
-                            if (moved > 0) {
-                                taskRepository.findById(task.getId()).ifPresent(fresh -> {
-                                    fresh.setJulesDispatchStatus(deadEnd);
-                                    taskRepository.save(fresh);
-                                });
+                            // Through self, in its own short transaction: dispatchQueuedTasks deliberately
+                            // holds none, and compareAndSetStatus is a @Modifying JPQL query that needs an
+                            // already-active writable one - the same trap this file documents at
+                            // claimWishlistsForCompilation, and the same fix (2026-08-29, observed live:
+                            // "No EntityManager with actual transaction available" on the first two ticks
+                            // after deploying this branch without it).
+                            if (self.retireDependentBehindDeadDependency(task.getId(), deadEnd)) {
                                 log.warn("ProjectFlowService: task {} blocked - {}", task.getId(), deadEnd);
                             }
                             continue;
