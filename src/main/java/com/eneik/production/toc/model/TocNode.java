@@ -116,7 +116,20 @@ public class TocNode {
     }
 
     public double getDynamicTimeoutLimitMs(double sensitivityMultiplier, double defaultFloorMs) {
-        if (completedCount.get() < 2) {
+        // Fall back to the floor only when NOTHING has been observed (2026-08-29). The condition was
+        // `< 2`, and with exactly one completed pass it threw away a mean it already had: the counters are
+        // Welford, so at count one the mean IS that observation and the deviation is legitimately zero.
+        // Measured that day on the live circuit: AUTOMERGE_PROCESSING logged `Dynamic Limit: 5000.00 ms
+        // (mu: 41146.00 ms, stdDev: 0.00 ms)` five times and flagged dwells of 11950, 11989, 13952 and
+        // 13989 ms as stalls - a third of the node's own measured mean. That node calls GitHub; ten
+        // seconds there is normal. Eleven false stall flags in twenty minutes, the loudest warning in the
+        // log.
+        //
+        // With one sample stdDev is zero, so the limit becomes max(floor, mean) - the mean itself. No
+        // number is introduced; one is removed from the path where evidence already exists, and
+        // defaultFloorMs goes on being what its name says, a floor. Charter invariant 15: a limit standing
+        // for an unknown duration is revised by observation, not held at an unrevised constant.
+        if (completedCount.get() == 0) {
             return defaultFloorMs;
         }
         return Math.max(defaultFloorMs, meanDurationMs + (sensitivityMultiplier * stdDevMs));
