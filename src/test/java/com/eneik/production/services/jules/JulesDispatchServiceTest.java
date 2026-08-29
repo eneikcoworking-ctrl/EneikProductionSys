@@ -2926,6 +2926,8 @@ class JulesDispatchServiceTest {
                 List.of("R1: create campaigns", "R2: reject invalid campaigns"), true, List.of(slice));
 
         assertTrue(JulesDispatchService.isValidCompilerPlan(List.of(epic), 1));
+        assertEquals("", JulesDispatchService.compilerPlanRejection(List.of(epic), 1),
+                "a usable plan reports no rejection");
     }
 
     @Test
@@ -2941,6 +2943,11 @@ class JulesDispatchServiceTest {
                 List.of("R1: create campaigns", "R2: reject invalid campaigns"), true, List.of(slice));
 
         assertFalse(JulesDispatchService.isValidCompilerPlan(List.of(epic), 1));
+        // 2026-08-29: the reason has to name the condition, not repeat that something was wrong. There are
+        // fourteen ways to fail in here, and the compiler task went to human review twice with the single
+        // word "invalid" while six briefs settled as refused behind it.
+        assertFalse(JulesDispatchService.compilerPlanRejection(List.of(epic), 1).isBlank(),
+                "a rejected plan must say which condition rejected it");
     }
 
     @Test
@@ -2956,6 +2963,8 @@ class JulesDispatchServiceTest {
                 List.of("R1: create campaigns"), true, List.of(slice));
 
         assertFalse(JulesDispatchService.isValidCompilerPlan(List.of(epic), 2));
+        assertTrue(JulesDispatchService.compilerPlanRejection(List.of(epic), 2).contains("got no epic at all"),
+                "a brief with no epic must be named as the reason");
     }
 
     // --- Agent-dialog answering never calls Gemini (2026-07-26, operator directive: "не согласен. может

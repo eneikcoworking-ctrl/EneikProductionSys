@@ -2505,7 +2505,8 @@ public class JulesDispatchService {
         // - sourceIndex values in Jules's response reference the numbering the prompt actually sent, which
         // covers every wishlist in the batch regardless of whether one of them was independently finished
         // by another session in the meantime.
-        if (isValidCompilerPlan(epics, wishlists.size())) {
+        String rejection = compilerPlanRejection(epics, wishlists.size());
+        if (rejection.isEmpty()) {
             try {
                 projectFlowService.buildTaskGraphFromSlices(compilerTask.getProject(), wishlistsForGraphBuild, epics);
             } catch (RuntimeException e) {
@@ -2561,11 +2562,13 @@ public class JulesDispatchService {
         session.setStatus("revising");
         julesSessionRepository.save(session);
 
-        String correction = "Your PR did not contain a valid `" + planPath + "` matching the requested "
-                + "schema (or it omitted explicit requirement coverage). Please fix the same PR: write only "
-                + "that file with exhaustive epic requirements, coverageComplete=true, and 1-8 concrete "
-                + "slices per epic. Every requirement must be covered by slice requirementRefs and every "
-                + "input brief must be represented.";
+        // Names the condition that actually rejected the plan (2026-08-29). It restated the whole schema
+        // until then - the same paragraph on attempt one and attempt two - so Jules had nothing to correct
+        // by and wrote the same thing twice. See compilerPlanRejection.
+        String correction = "Your `" + planPath + "` was rejected: " + rejection + ". Please fix the same "
+                + "PR by writing only that file, with exhaustive epic requirements, coverageComplete=true, "
+                + "and 1-8 concrete slices per epic; every requirement must be covered by slice "
+                + "requirementRefs and every input brief must be represented.";
         String externalSessionId = session.getExternalSessionId();
         String sessionApiKey = apiKeyForSession(session);
         java.util.concurrent.CompletableFuture.runAsync(() -> {
@@ -2576,8 +2579,8 @@ public class JulesDispatchService {
                 log.warn("Failed to send compiler-plan correction to Jules session {}", externalSessionId);
             }
         });
-        log.warn("Wishlist compiler plan invalid for {} wishlist(s) (attempt {}/{}); asked Jules to retry",
-                wishlists.size(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES);
+        log.warn("Wishlist compiler plan rejected for {} wishlist(s) (attempt {}/{}) - {}; asked Jules to retry",
+                wishlists.size(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES, rejection);
     }
 
     /**
@@ -2786,7 +2789,8 @@ public class JulesDispatchService {
                 .map(pr -> parseCompilerPlan(carrierTask.getProject(), pr.headRef(), planPath))
                 .orElseGet(List::of);
 
-        if (isValidCompilerPlan(epics, wishlists.size())) {
+        String cycleRejection = compilerPlanRejection(epics, wishlists.size());
+        if (cycleRejection.isEmpty()) {
             projectFlowService.buildTaskGraphFromSlices(carrierTask.getProject(), wishlists, epics);
             systemProgressTracker.recordProgress();
             log.info("Persistent compiler worker (carrier task {}): {} wishlist(s) compiled into {} epic(s), {} task slice(s) this cycle",
@@ -2801,11 +2805,10 @@ public class JulesDispatchService {
         // just retries of the current one; an occasional bad cycle just gets asked to redo it.
         session.setStatus("revising");
         julesSessionRepository.save(session);
-        String correction = "Your latest commit did not contain a valid `" + planPath + "` matching the "
-                + "requested schema or explicit requirement coverage for THIS cycle's brief(s). Please fix "
-                + "the same file with exhaustive epic requirements, coverageComplete=true, and 1-8 concrete "
-                + "slices per epic. Every requirement must be covered by slice requirementRefs and every "
-                + "input brief must be represented.";
+        String correction = "Your latest `" + planPath + "` was rejected for THIS cycle: " + cycleRejection
+                + ". Please fix the same file, with exhaustive epic requirements, coverageComplete=true, and "
+                + "1-8 concrete slices per epic; every requirement must be covered by slice requirementRefs "
+                + "and every input brief must be represented.";
         String externalSessionId = session.getExternalSessionId();
         String sessionApiKey = apiKeyForSession(session);
         java.util.concurrent.CompletableFuture.runAsync(() -> {
@@ -4399,74 +4402,120 @@ public class JulesDispatchService {
     private static final int MAX_SLICES_PER_EPIC = 8;
     private static final int MAX_TOTAL_SLICES_PER_BRIEF = 48;
 
-    static boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
+    /**
+     * Empty when the plan is usable; otherwise the condition that rejected it.
+     *
+     * <p>Returned a bare boolean until 2026-08-29, and there are fourteen distinct ways to fail in here.
+     * Measured that day: the compiler was finally reachable, wrote a plan, and the plan was refused twice
+     * with the single word "invalid" - then the compiler task went to human review and six briefs settled
+     * as refused, which leaves the factory with no source of new tasks at all. Nobody could tell whether
+     * Jules had written something wrong or this check was too strict, and the correction sent back to Jules
+     * was a fixed paragraph restating the whole schema, identical on both attempts, so it learned nothing
+     * between them either.
+     *
+     * <p>The checks themselves, their order and their strictness are untouched: only what the function
+     * reports has changed.
+     */
+    static String compilerPlanRejection(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
         if (epics.isEmpty()) {
-            return false;
+            return "the plan contained no epics at all";
         }
         int normalizedBriefCount = Math.max(1, briefCount);
         java.util.Map<Integer, Integer> epicsByBrief = new java.util.HashMap<>();
         java.util.Map<Integer, Integer> slicesByBrief = new java.util.HashMap<>();
         java.util.Set<Integer> representedBriefs = new java.util.HashSet<>();
         for (com.eneik.production.services.MLPredictionServiceClient.EpicPlan epic : epics) {
+            String where = "epic \"" + (epic.title() == null ? "(untitled)" : epic.title()) + "\" (sourceIndex "
+                    + epic.sourceIndex() + ")";
             if (epic.sourceIndex() < 0 || epic.sourceIndex() >= normalizedBriefCount) {
-                return false;
+                return where + ": sourceIndex is outside the range of the " + normalizedBriefCount
+                        + " brief(s) that were sent";
             }
             representedBriefs.add(epic.sourceIndex());
             int epicCount = epicsByBrief.merge(epic.sourceIndex(), 1, Integer::sum);
             if (epicCount > MAX_EPICS_PER_BRIEF) {
-                return false;
+                return where + ": brief " + epic.sourceIndex() + " has " + epicCount + " epics, more than "
+                        + MAX_EPICS_PER_BRIEF;
             }
-            // A new epic (existingEpicId == null) must carry real content - an existing-epic match is
-            // allowed to omit it (the compiler is told to reuse the match, not restate it).
             if (epic.existingEpicId() == null
                     && (epic.title() == null || epic.title().isBlank()
                         || epic.jtbd() == null || epic.jtbd().isBlank())) {
-                return false;
+                return where + ": a new epic must carry a title and a JTBD";
             }
-            if (!epic.coverageComplete() || epic.requirements() == null || epic.requirements().isEmpty()) {
-                return false;
+            if (!epic.coverageComplete()) {
+                return where + ": coverageComplete is not true";
             }
-            if (epic.slices().isEmpty() || epic.slices().size() > MAX_SLICES_PER_EPIC) {
-                return false;
+            if (epic.requirements() == null || epic.requirements().isEmpty()) {
+                return where + ": it lists no requirements";
+            }
+            if (epic.slices().isEmpty()) {
+                return where + ": it has no slices";
+            }
+            if (epic.slices().size() > MAX_SLICES_PER_EPIC) {
+                return where + ": it has " + epic.slices().size() + " slices, more than " + MAX_SLICES_PER_EPIC;
             }
             int sliceCount = slicesByBrief.merge(epic.sourceIndex(), epic.slices().size(), Integer::sum);
             if (sliceCount > MAX_TOTAL_SLICES_PER_BRIEF) {
-                return false;
+                return where + ": brief " + epic.sourceIndex() + " now has " + sliceCount
+                        + " slices in total, more than " + MAX_TOTAL_SLICES_PER_BRIEF;
             }
-
             java.util.Set<String> requirementIds = new java.util.LinkedHashSet<>();
             for (String requirement : epic.requirements()) {
                 String id = requirementId(requirement);
-                if (id.isBlank() || !requirementIds.add(id)) {
-                    return false;
+                if (id.isBlank()) {
+                    return where + ": a requirement carries no identifier: " + requirement;
+                }
+                if (!requirementIds.add(id)) {
+                    return where + ": requirement identifier " + id + " appears more than once";
                 }
             }
             java.util.Set<String> coveredRequirementIds = new java.util.LinkedHashSet<>();
             for (com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata slice : epic.slices()) {
-                if (slice.title() == null || slice.title().isBlank()
-                        || slice.jtbd() == null || slice.jtbd().isBlank()
-                        || slice.acceptanceCriteria() == null || slice.acceptanceCriteria().isBlank()) {
-                    return false;
+                String sliceWhere = where + ", slice \"" + (slice.title() == null ? "(untitled)" : slice.title()) + "\"";
+                if (slice.title() == null || slice.title().isBlank()) {
+                    return sliceWhere + ": it has no title";
+                }
+                if (slice.jtbd() == null || slice.jtbd().isBlank()) {
+                    return sliceWhere + ": it has no JTBD";
+                }
+                if (slice.acceptanceCriteria() == null || slice.acceptanceCriteria().isBlank()) {
+                    return sliceWhere + ": it has no acceptance criteria";
                 }
                 if (slice.jtbd().contains("one small verifiable capability completed")) {
-                    return false;
+                    return sliceWhere + ": its JTBD is the template placeholder rather than a real job";
                 }
                 if (slice.requirementRefs() == null || slice.requirementRefs().isEmpty()) {
-                    return false;
+                    return sliceWhere + ": it references no requirement";
                 }
                 for (String ref : slice.requirementRefs()) {
                     String normalizedRef = ref == null ? "" : ref.trim().toUpperCase(java.util.Locale.ROOT);
                     if (!requirementIds.contains(normalizedRef)) {
-                        return false;
+                        return sliceWhere + ": it references requirement " + normalizedRef
+                                + ", which this epic does not list";
                     }
                     coveredRequirementIds.add(normalizedRef);
                 }
             }
             if (!coveredRequirementIds.equals(requirementIds)) {
-                return false;
+                java.util.Set<String> uncovered = new java.util.LinkedHashSet<>(requirementIds);
+                uncovered.removeAll(coveredRequirementIds);
+                return where + ": no slice covers requirement(s) " + uncovered;
             }
         }
-        return representedBriefs.size() == normalizedBriefCount;
+        if (representedBriefs.size() != normalizedBriefCount) {
+            java.util.Set<Integer> missing = new java.util.LinkedHashSet<>();
+            for (int i = 0; i < normalizedBriefCount; i++) {
+                if (!representedBriefs.contains(i)) {
+                    missing.add(i);
+                }
+            }
+            return "brief(s) " + missing + " of " + normalizedBriefCount + " got no epic at all";
+        }
+        return "";
+    }
+
+    static boolean isValidCompilerPlan(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
+        return compilerPlanRejection(epics, briefCount).isEmpty();
     }
 
     private static String requirementId(String requirement) {
