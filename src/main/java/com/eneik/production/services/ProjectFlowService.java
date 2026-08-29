@@ -2344,6 +2344,37 @@ public class ProjectFlowService {
         return channelWatermark.isAfter(workerWatermark) ? channelWatermark : workerWatermark;
     }
 
+    /**
+     * Gives back an attempt the factory's own check consumed.
+     *
+     * <p>Section 8.3 of the action plan: a budget counter may only move on an event that is evidence about
+     * the thing the budget is about. compileAttempts is about the BRIEF - whether it can be decomposed. An
+     * answer the compiler produced and this factory's validator then refused says something about the
+     * validator, not about the brief, so it must not spend the brief's budget. An answer that came back
+     * genuinely empty does say something about the brief, and that one still spends it.
+     *
+     * <p>Symmetric to restoreUnreachedBriefs, which gives the budget back when the compiler was never
+     * reached at all. Same argument one step later in the chain.
+     */
+    @Transactional
+    public void returnCompileAttempt(java.util.Collection<UUID> wishlistIds) {
+        if (wishlistIds == null || wishlistIds.isEmpty()) {
+            return;
+        }
+        java.util.List<WishlistEntity> touched = new java.util.ArrayList<>();
+        for (WishlistEntity w : wishlistRepository.findAllById(wishlistIds)) {
+            if (w.getCompileAttempts() > 0) {
+                w.setCompileAttempts(w.getCompileAttempts() - 1);
+                touched.add(w);
+            }
+        }
+        if (!touched.isEmpty()) {
+            wishlistRepository.saveAll(touched);
+            log.info("ProjectFlowService: returned one compile attempt to {} brief(s) - their answer was refused "
+                    + "by this factory's own check, which establishes nothing about the brief", touched.size());
+        }
+    }
+
     private void revertWishlistsToPending(java.util.List<WishlistEntity> wishlists) {
         for (WishlistEntity w : wishlists) {
             w.setStatus(WishlistStatus.pending);

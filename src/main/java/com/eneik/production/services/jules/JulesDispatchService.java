@@ -2530,10 +2530,15 @@ public class JulesDispatchService {
             return;
         }
 
-        // Plan was invalid - this attempt claimed the wishlists but is not going to build anything from
-        // them, so release the claim now (before deciding retry vs. escalate) instead of leaving them
+        // The answer is not usable - this attempt claimed the wishlists but is not going to build anything
+        // from them, so release the claim now (before deciding retry vs. escalate) instead of leaving them
         // stuck in `finalizing`, which would make every future admission's compare-and-swap fail forever.
         self.releaseUnfinishedClaims(admission.claimedIds());
+        // And give the attempt itself back unless the compiler answered empty: a refusal by this factory's
+        // own check is evidence about the check, not about the brief (action plan 8.3).
+        if (!EMPTY_COMPILER_ANSWER.equals(rejection)) {
+            projectFlowService.returnCompileAttempt(admission.claimedIds());
+        }
 
         int attempts = compilerTask.getRetryCount();
         if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
@@ -2800,6 +2805,12 @@ public class JulesDispatchService {
         // just retries of the current one; an occasional bad cycle just gets asked to redo it.
         session.setStatus("revising");
         julesSessionRepository.save(session);
+        // Same rule as the one-shot path (action plan 8.3): a refusal by this factory's own check does not
+        // spend the brief's budget, because it establishes nothing about the brief.
+        if (!EMPTY_COMPILER_ANSWER.equals(cycleRejection)) {
+            projectFlowService.returnCompileAttempt(wishlists.stream()
+                    .map(com.eneik.production.models.persistence.WishlistEntity::getId).toList());
+        }
         String correction = "Your latest `" + planPath + "` was rejected for THIS cycle: " + cycleRejection
                 + ". Please fix the same file, with exhaustive epic requirements, coverageComplete=true, and "
                 + "1-8 concrete slices per epic; every requirement must be covered by slice requirementRefs "
@@ -4411,9 +4422,16 @@ public class JulesDispatchService {
      * <p>The checks themselves, their order and their strictness are untouched: only what the function
      * reports has changed.
      */
+    /**
+     * The one rejection that is evidence about the BRIEF rather than about this factory's own check: the
+     * compiler answered and there was nothing in the answer. Every other rejection below says the compiler
+     * produced something this factory refused, which establishes nothing about the brief (action plan 8.3).
+     */
+    static final String EMPTY_COMPILER_ANSWER = "the answer carried no epic at all";
+
     static String compilerPlanRejection(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
         if (epics.isEmpty()) {
-            return "the plan contained no epics at all";
+            return EMPTY_COMPILER_ANSWER;
         }
         int normalizedBriefCount = Math.max(1, briefCount);
         java.util.Map<Integer, Integer> epicsByBrief = new java.util.HashMap<>();

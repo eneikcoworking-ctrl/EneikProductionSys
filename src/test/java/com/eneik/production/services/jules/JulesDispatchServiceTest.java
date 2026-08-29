@@ -2927,6 +2927,12 @@ class JulesDispatchServiceTest {
         assertTrue(JulesDispatchService.isValidCompilerPlan(List.of(epic), 1));
         assertEquals("", JulesDispatchService.compilerPlanRejection(List.of(epic), 1),
                 "a usable plan reports no rejection");
+        // Action plan 8.3: only ONE rejection is evidence about the brief - the compiler answered and the
+        // answer was empty. It is named, so the caller can tell it apart from a refusal by this factory's
+        // own check and decline to spend the brief's budget on the latter.
+        assertEquals(JulesDispatchService.EMPTY_COMPILER_ANSWER,
+                JulesDispatchService.compilerPlanRejection(List.of(), 1),
+                "an empty answer must report the one rejection that speaks about the brief");
     }
 
     @Test
