@@ -5087,7 +5087,25 @@ public class JulesDispatchService {
             // spent on frozen/accepted projects with leftover non-terminal tasks, against 37 for the one
             // genuinely active project). A project past active has nothing further to reconcile toward -
             // this sweep now costs it nothing, instead of competing for the same shared rate-limit budget.
-            if (task.getProject() == null || claimService.hasActiveClaim(task.getId())
+            // An active claim vetoes this sweep for product work, and rightly: an implementer whose PR
+            // closed can push a new branch and open another one from the same session, so a closed PR is
+            // not the end of its work.
+            //
+            // A factory carrier is different, and 2026-08-29 measured what the difference costs. Compiler
+            // task ad7879a8 held session ae5ff8a7 `running` with PR#416 closed without merge and both plan
+            // retries spent; six briefs sat in `compiling` behind it and the whole factory dispatched
+            // nothing. The claim held because the session was alive, self-healing left it alone for the
+            // same reason, and the only remaining path was the silence detector - sixty minutes to call it
+            // stuck, a hundred and twenty to close it. Two hours of nothing, while the evidence had been in
+            // from the first minute: a carrier's deliverable IS its record PR, and that PR was closed. The
+            // plan is not in it and will not be. This factory already treats a closed unmerged PR as
+            // decisive elsewhere - a pull request closed without a merge has been reviewed by its closing.
+            //
+            // The silence windows are untouched; they remain for the case where there is no evidence.
+            boolean carrierWithNothingLeftToDeliver = task.getPayload() != null
+                    && task.getPayload().hasNonNull(com.eneik.production.services.ProjectFlowService.WISHLIST_COMPILER_PAYLOAD_KEY);
+            if (task.getProject() == null
+                    || (claimService.hasActiveClaim(task.getId()) && !carrierWithNothingLeftToDeliver)
                     || task.getProject().getStatus() != ProjectStatus.active) {
                 continue;
             }
