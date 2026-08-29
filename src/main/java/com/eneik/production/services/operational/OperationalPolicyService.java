@@ -11,6 +11,18 @@ import java.util.UUID;
 
 @Service
 public class OperationalPolicyService {
+
+    /**
+     * The states in which nothing in the project should move at all.
+     *
+     * <p>Written out eleven times in this file until 2026-08-29 - one invariant copied into eleven places,
+     * which Charter invariant 10 names as the guarantee that they will drift apart. Naming it also gives
+     * denialReason below something to ask, which is what made the false message findable.
+     */
+    static final Set<String> GLOBALLY_BLOCKING_STATES = Set.of(
+            "FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT");
+
     private final OperationalFlowCoreService flowCoreService;
 
     public OperationalPolicyService(OperationalFlowCoreService flowCoreService) {
@@ -99,19 +111,15 @@ public class OperationalPolicyService {
             // a merged task, an unsatisfied dependency, or a prior resume (bounded at one), and moves the
             // status by compare-and-set. Authorizing it more often cannot produce double work.
             case RECOVER_FAILED_FRONTIER -> activeProject && snapshot.counts().failedTasks() > 0
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             case DISPATCH_QUEUED_TASKS -> activeProject && snapshot.counts().queuedTasks() > 0
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             case DISPATCH_REVIEW_TASKS -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState())
                     && (snapshot.counts().reviewTasks() > 0 || snapshot.evidence().openReviews() > 0);
             case CHECK_COVERAGE_AUDITS, RUN_PROJECT_AUDIT_PIPELINE, CHECK_LAUNCHABILITY,
                     JUDGE_DELIVERED_WORK -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             // Deliberately narrower than hardBlocked (2026-07-31, same shape as DISPATCH_QUEUED_TASKS
             // above): confirmed live, PR#13 (task 529e5252) was already approved by review with no
             // problems of its own, but sat unmerged for hours because BLOCKED_BY_REVIEW is project-wide -
@@ -120,8 +128,7 @@ public class OperationalPolicyService {
             // merging (frozen/archived/accepted/not-active, GitHub itself unavailable, a content-generation
             // quality gate) - those really do mean nothing in this project should move.
             case MERGE_PR -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState())
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState())
                     && (authorization.mergeAllowed() || snapshot.evidence().openReviews() > 0);
             // 2026-08-27 (Eneik Actualism restoration): Operability is sampled continuously on active projects
             // via adaptive Beta-Posterior cadence (ClientRuntimeObservabilityService.maybeObserve), matching
@@ -129,8 +136,7 @@ public class OperationalPolicyService {
             // falsification. Gating observation on completeness meant the product could not be observed at all
             // while it is being built").
             case OBSERVE_CLIENT_RUNTIME -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             case SYNC_GITHUB -> activeProject && !"GITHUB_RATE_LIMITED".equals(snapshot.currentState());
             case CLEANUP_TERMINAL_PROJECT -> true;
             case NUDGE_SESSION, BOOST_PRIORITY -> activeProject && !hardBlocked;
@@ -139,19 +145,20 @@ public class OperationalPolicyService {
             // specific already-dead task carries no dependency on an unrelated task/review/stall elsewhere
             // in the project - only genuinely global conditions should stop it.
             case REVIVE_FAILED_TASK -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             // Same narrowing reasoning as REVIVE_FAILED_TASK/MERGE_PR (2026-08-03): resolving one specific
             // already-dead-ended task's orphaned PR carries no dependency on an unrelated task/review/stall
             // elsewhere in the project - only genuinely global conditions should stop it.
             case RESOLVE_ORPHANED_PR -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             // Deliberately excludes BLOCKED_BY_DUPLICATE_CONTENT from its own exclusion set (2026-08-07,
             // unlike every other action above): this IS the recovery action for that exact state - nothing
             // else can reach a terminal task status while dispatch itself is what BLOCKED_BY_DUPLICATE_CONTENT
             // denies, so gating this action the same way as the others would make the hard-stop permanent
             // (confirmed live, test-forty-third: stuck for 3+ hours with no autonomous recovery path).
+            // The one set written out rather than read from GLOBALLY_BLOCKING_STATES, because it is
+            // deliberately that set MINUS BLOCKED_BY_DUPLICATE_CONTENT - see the paragraph above. Left
+            // literal so the difference is visible at the point where it is intended.
             case COLLAPSE_DUPLICATE_TASK -> activeProject
                     && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
                             "GITHUB_RATE_LIMITED").contains(snapshot.currentState());
@@ -159,15 +166,13 @@ public class OperationalPolicyService {
             // specific feature's closeout carries no dependency on an unrelated task/review/stall elsewhere
             // in the project - only genuinely global conditions should stop it.
             case RETRY_FEATURE_CLOSEOUT -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
             // Same narrowing reasoning as REVIVE_FAILED_TASK/RESOLVE_ORPHANED_PR/RETRY_FEATURE_CLOSEOUT
             // (2026-08-11): retiring one specific carrier task's wedged persistent worker carries no
             // dependency on an unrelated task/review/stall elsewhere in the project - only genuinely global
             // conditions should stop it.
             case RETIRE_STUCK_WORKER -> activeProject
-                    && !Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
-                            "GITHUB_RATE_LIMITED", "BLOCKED_BY_DUPLICATE_CONTENT").contains(snapshot.currentState());
+                    && !GLOBALLY_BLOCKING_STATES.contains(snapshot.currentState());
         };
 
         String reason = allowed
@@ -199,15 +204,50 @@ public class OperationalPolicyService {
         }
     }
 
+    /**
+     * Whether the current state is why anything at all is being refused.
+     *
+     * <p>If it is not, then a denial came from the action's own conjuncts, which are its counters - is
+     * there anything for it to act on. The project being inactive is covered here too, because
+     * PROJECT_NOT_ACTIVE is itself one of the globally blocking states.
+     */
+    static boolean stateBlocks(String state, String projectStatus) {
+        return GLOBALLY_BLOCKING_STATES.contains(state)
+                || isHardBlocked(state)
+                || !"active".equalsIgnoreCase(projectStatus);
+    }
+
+    /**
+     * A denial says what actually denied it.
+     *
+     * <p>Measured 2026-08-29: DISPATCH_REVIEW_TASKS was refused once a tick, fifteen ticks running, with
+     * the text "denied by Flow Core state DECOMPOSING" - while CHECK_COVERAGE_AUDITS, whose set of blocking
+     * states is byte-for-byte the same, was allowed in those same ticks. So DECOMPOSING was blocking
+     * neither, and the message named a cause that was not one. It cost this session an hour: the state was
+     * investigated as the thing holding the flow, because the message said so. The real conjunct was the
+     * action's own - reviewTasks > 0 || openReviews > 0 - and its plain meaning is that there is nothing
+     * to review, which is a normal condition and not a fault of the state.
+     */
     private static String denialReason(OperationalAction action, FlowCoreDto core) {
         FlowSpineDto snapshot = core.snapshot();
-        String blockingReason = snapshot.blockingReason();
-        if (blockingReason != null && !blockingReason.isBlank()) {
-            return "Operational action " + action + " denied by Flow Core state "
-                    + snapshot.currentState() + ": " + blockingReason;
+        return denialReason(action, snapshot.currentState(), core.project().status(),
+                snapshot.blockingReason(), core.authorization().status());
+    }
+
+    // Takes the five values it actually reads rather than the whole model, so the sentence it produces can
+    // be asserted without building one.
+    static String denialReason(OperationalAction action, String state, String projectStatus,
+            String blockingReason, String authorizationStatus) {
+        if (!stateBlocks(state, projectStatus)) {
+            return "Operational action " + action + " is not blocked by Flow Core state " + state
+                    + "; its own precondition is unmet - there is nothing for it to act on right now.";
         }
-        return "Operational action " + action + " denied by Flow Core state "
-                + snapshot.currentState() + " with authorization " + core.authorization().status() + ".";
+        if (blockingReason != null && !blockingReason.isBlank()) {
+            return "Operational action " + action + " denied by Flow Core state " + state
+                    + ": " + blockingReason;
+        }
+        return "Operational action " + action + " denied by Flow Core state " + state
+                + " with authorization " + authorizationStatus + ".";
     }
 
     private static boolean isHardBlocked(String state) {

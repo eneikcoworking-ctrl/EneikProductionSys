@@ -260,13 +260,16 @@ public class ContinuousOrchestrationService {
                     if (isAllowed(project, flowSnapshot, OperationalAction.DISPATCH_QUEUED_TASKS)) {
                         projectFlowService.dispatchQueuedTasks(project.getId());
                     } else {
-                        log.warn("Continuous Orchestration: Flow policy denies queued-task dispatch for project {}; skipping",
+                        // INFO, not WARN (2026-08-29, action plan 4.6). isAllowed above already logged the
+                        // decision together with the reason that actually produced it; repeating it louder
+                        // adds no fact and teaches the reader that warnings are not about problems.
+                        log.info("Continuous Orchestration: queued-task dispatch not authorized for project {} this tick",
                                 project.getName());
                     }
                     if (isAllowed(project, flowSnapshot, OperationalAction.DISPATCH_REVIEW_TASKS)) {
                         projectFlowService.dispatchReviewTasks(project.getId());
                     } else {
-                        log.warn("Continuous Orchestration: Flow policy denies review dispatch for project {}; skipping",
+                        log.info("Continuous Orchestration: review dispatch not authorized for project {} this tick",
                                 project.getName());
                     }
                 } catch (OrchestrationCooldownException e) {
