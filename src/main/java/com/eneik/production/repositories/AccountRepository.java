@@ -184,7 +184,29 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             -- Fitness is untouched: enabled, a key, a non-terminal status and capacity still decide WHO may
             -- be returned. This decides only the order among those already eligible, where heartbeat
             -- freshness establishes nothing further (§13.2).
-            ORDER BY (
+            --
+            -- §4.11, measured 2026-08-29: the same converse again, one key higher. A refusal creates no
+            -- session, so an account that refuses every attempt keeps zero open sessions and sorts FIRST -
+            -- preferred for carrying nothing. Live at the time: eneikdru idle, zero open sessions, ceiling
+            -- 15, 206 consecutive unnamed refusals and no accepted session since 28.08 21:36, while the six
+            -- accounts that were accepting all had a session or two open and a ceiling of 3.
+            --
+            -- The leading term below is the one key a refusing account cannot improve by refusing: a
+            -- refusal writes a row with no external id, which sets the term to 1 and moves the account
+            -- BACK. Leaving the run takes exactly one accepted session, an event Jules produces and the
+            -- factory cannot. It is an ordering, never an exclusion - if every account is in a refusal run
+            -- the order is the previous one and work still goes out. It attributes no fault: it touches
+            -- neither the account's status nor its health counters, and says only "this one is not
+            -- carrying anything right now", which is what was measured.
+            ORDER BY COALESCE((
+                  SELECT CASE WHEN s.external_session_id IS NULL THEN 1 ELSE 0 END
+                  FROM jules_sessions s
+                  WHERE s.account_id = a.id
+                    AND ((s.external_session_id IS NOT NULL AND s.external_session_id <> 'skipped')
+                         OR (s.external_session_id IS NULL AND s.status = 'failed'))
+                  ORDER BY s.created_at DESC
+                  LIMIT 1
+              ), 0) ASC, (
                   SELECT COUNT(*)
                   FROM jules_sessions s
                   JOIN tasks t ON t.id = s.task_id

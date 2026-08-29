@@ -84,6 +84,43 @@ class AccountSelectionFairnessTest {
                         + "the back of the queue");
     }
 
+    /**
+     * §4.11. The same converse one key higher: a refusal creates no session, so an account refusing every
+     * attempt keeps zero open sessions and the "fewest open sessions" key promotes it to FIRST - preferred
+     * for carrying nothing. Measured 2026-08-29: eneikdru idle, zero open sessions, ceiling 15, 206
+     * consecutive unnamed refusals, no accepted session since 28.08 21:36, while the six accounts that
+     * were accepting each held a session or two.
+     *
+     * <p>Structural for the same reason as the tests above: the property is about the query's text.
+     */
+    @Test
+    void theGeneralPoolSelectorRanksARefusalRunBehindEverythingElse() throws IOException {
+        String source = Files.readString(REPOSITORY);
+        int orderBy = source.indexOf("ORDER BY COALESCE((");
+        assertTrue(orderBy > 0,
+                "the general-pool selector must lead its ordering with a term a refusing account cannot "
+                        + "improve by refusing");
+
+        String leadingTerm = source.substring(orderBy, source.indexOf(") ASC, (", orderBy));
+        assertTrue(leadingTerm.contains("s.external_session_id IS NULL"),
+                "the term must read whether the account's most recent outcome was a refusal");
+        assertTrue(leadingTerm.contains("ORDER BY s.created_at DESC"),
+                "it is the MOST RECENT outcome that decides, not a count - a count would need a threshold");
+        assertTrue(leadingTerm.contains("LIMIT 1"), "exactly one row decides the term");
+    }
+
+    /** An ordering may say later; it may never say never. Every account must remain selectable. */
+    @Test
+    void theRefusalRunTermIsAnOrderingAndNotAFilter() throws IOException {
+        String source = Files.readString(REPOSITORY);
+        int orderBy = source.indexOf("ORDER BY COALESCE((");
+        String whereClause = source.substring(0, orderBy);
+
+        assertTrue(!whereClause.contains("s.external_session_id IS NULL AND s.status = 'failed'"),
+                "the refusal run must not appear among the WHERE filters - it decides the queue, never "
+                        + "eligibility, or an account Jules refuses once becomes unreachable forever");
+    }
+
     @Test
     void fitnessFiltersAreUnchangedByTheOrdering() throws IOException {
         // P18. The ordering decides the queue, never eligibility. If a fix to fairness quietly widened who
