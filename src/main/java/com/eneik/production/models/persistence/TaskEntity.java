@@ -269,4 +269,14 @@ public class TaskEntity {
     public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+
+    /**
+     * Ordinary saves move the mark too (2026-08-30, plan §4.37) - the same hook JulesSessionEntity has
+     * carried all along. The CAS queries in TaskRepository write it themselves, because a bulk JPQL update
+     * never reaches this callback.
+     */
+    @PreUpdate
+    public void preUpdate() {
+        this.updatedAt = Instant.now();
+    }
 }

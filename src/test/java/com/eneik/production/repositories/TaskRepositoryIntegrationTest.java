@@ -49,6 +49,72 @@ class TaskRepositoryIntegrationTest {
         assertEquals(1, results.get(0).count());
     }
 
+    /**
+     * Plan §4.37. Section 2 of the plan states that a status change writes the state mark atomically. It
+     * did not: measured 2026-08-30 on the live database, 271 of 412 tasks carried updated_at exactly equal
+     * to created_at, including 257 of 375 done ones, because these CAS writes are bulk JPQL updates and
+     * never touched it - so every "has not moved in over X" predicate was reading an age, not a movement.
+     */
+    @Test
+    void aStatusChangeWritesTheMovementMarkInTheSameAtomicWrite() throws InterruptedException {
+        RoleEntity role = new RoleEntity();
+        role.setTag("MOVEMENT-TAG");
+        role.setRulesPath("rules/");
+        entityManager.persist(role);
+
+        Instant createdAt = Instant.now().minusSeconds(3600);
+        TaskEntity task = new TaskEntity();
+        task.setRole(role);
+        task.setDescription("Moves through states");
+        task.setStatus(TaskStatus.queued);
+        task.setCreatedAt(createdAt);
+        task.setUpdatedAt(createdAt);
+        entityManager.persist(task);
+        entityManager.flush();
+
+        assertEquals(1, taskRepository.compareAndSetStatus(task.getId(), TaskStatus.queued, TaskStatus.claimed));
+        entityManager.clear();
+
+        TaskEntity moved = taskRepository.findById(task.getId()).orElseThrow();
+        assertEquals(TaskStatus.claimed, moved.getStatus());
+        assertTrue(moved.getUpdatedAt().isAfter(createdAt),
+                "the mark must move with the status, not stay at creation time");
+    }
+
+    /**
+     * The other half, and it is not optional: the mark must be the one the write was given, not whatever
+     * the entity callback would stamp on the way past. Without this the callback alone could satisfy the
+     * test above while the CAS - the write that actually changes state, and the one a bulk JPQL update
+     * performs without ever reaching a callback - still left the mark behind.
+     */
+    @Test
+    void theMarkTheStatusChangeWritesIsTheMomentItWasGiven() {
+        RoleEntity role = new RoleEntity();
+        role.setTag("EXACT-MARK-TAG");
+        role.setRulesPath("rules/");
+        entityManager.persist(role);
+
+        Instant createdAt = Instant.now().minusSeconds(7200);
+        TaskEntity task = new TaskEntity();
+        task.setRole(role);
+        task.setDescription("Moves at a known instant");
+        task.setStatus(TaskStatus.queued);
+        task.setCreatedAt(createdAt);
+        task.setUpdatedAt(createdAt);
+        entityManager.persist(task);
+        entityManager.flush();
+        entityManager.clear();
+
+        Instant movedAt = createdAt.plusSeconds(1800);
+        assertEquals(1, taskRepository.compareAndSetStatusAt(
+                task.getId(), TaskStatus.queued, TaskStatus.claimed, movedAt));
+        entityManager.clear();
+
+        assertEquals(movedAt.toEpochMilli(),
+                taskRepository.findById(task.getId()).orElseThrow().getUpdatedAt().toEpochMilli(),
+                "the status change writes the mark itself, in the same statement");
+    }
+
     @Test
     void testFileScopeLockIsolation() {
         com.eneik.production.models.persistence.ProjectEntity project = new com.eneik.production.models.persistence.ProjectEntity();

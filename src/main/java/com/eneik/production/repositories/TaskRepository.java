@@ -50,8 +50,21 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // instead of trusting an in-memory check that can go stale. Every "revive a task" write site must use
     // this instead of task.setStatus(...)+save() - a plain save() can never be race-safe here.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE TaskEntity t SET t.status = :newStatus WHERE t.id = :id AND t.status = :expectedStatus")
-    int compareAndSetStatus(@Param("id") UUID id, @Param("expectedStatus") TaskStatus expectedStatus, @Param("newStatus") TaskStatus newStatus);
+    // The movement mark is written by the same atomic write as the status (2026-08-30, plan §4.37). It was
+    // not, and a bulk JPQL update bypasses the entity lifecycle by definition, so no hook could have done
+    // it either: measured that day, 271 of 412 tasks carried updated_at exactly equal to created_at,
+    // including 257 of 375 done ones. Every predicate of the form "has not moved in over X" was reading an
+    // age, not a movement. Section 2 of the plan states the rule this restores: a status change writes the
+    // state mark atomically.
+    @Query("UPDATE TaskEntity t SET t.status = :newStatus, t.updatedAt = :movedAt "
+            + "WHERE t.id = :id AND t.status = :expectedStatus")
+    int compareAndSetStatusAt(@Param("id") UUID id, @Param("expectedStatus") TaskStatus expectedStatus,
+            @Param("newStatus") TaskStatus newStatus, @Param("movedAt") java.time.Instant movedAt);
+
+    /** The moment is supplied rather than taken from the database so the mark stays a java.time.Instant. */
+    default int compareAndSetStatus(UUID id, TaskStatus expectedStatus, TaskStatus newStatus) {
+        return compareAndSetStatusAt(id, expectedStatus, newStatus, java.time.Instant.now());
+    }
 
     // Generalizes compareAndSetStatus for callers that only know "not terminal" at call time, not the exact
     // prior status. Guards BOTH directions with the same single invariant - "once a row enters {done,
@@ -66,11 +79,17 @@ public interface TaskRepository extends JpaRepository<TaskEntity, UUID> {
     // terminal set, so a terminal task can never be resurrected or overwritten no matter which caller races
     // to get here first.
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE TaskEntity t SET t.status = :newStatus WHERE t.id = :id AND t.status NOT IN (" +
+    @Query("UPDATE TaskEntity t SET t.status = :newStatus, t.updatedAt = :movedAt "
+            + "WHERE t.id = :id AND t.status NOT IN (" +
             "com.eneik.production.models.persistence.TaskStatus.done, " +
             "com.eneik.production.models.persistence.TaskStatus.failed, " +
             "com.eneik.production.models.persistence.TaskStatus.spike_completed)")
-    int writeStatusUnlessTerminal(@Param("id") UUID id, @Param("newStatus") TaskStatus newStatus);
+    int writeStatusUnlessTerminalAt(@Param("id") UUID id, @Param("newStatus") TaskStatus newStatus,
+            @Param("movedAt") java.time.Instant movedAt);
+
+    default int writeStatusUnlessTerminal(UUID id, TaskStatus newStatus) {
+        return writeStatusUnlessTerminalAt(id, newStatus, java.time.Instant.now());
+    }
 
     @Query("SELECT new com.eneik.production.dto.dashboard.QueueDashboardDto$TagCountDto(" +
             "t.role.tag, COUNT(t), " +
