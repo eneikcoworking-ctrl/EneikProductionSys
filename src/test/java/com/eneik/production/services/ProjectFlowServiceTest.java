@@ -52,6 +52,8 @@ class ProjectFlowServiceTest {
     private final GitHubPullRequestService gitHubPullRequestService = mock(GitHubPullRequestService.class);
     private final com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository =
             mock(com.eneik.production.repositories.ProjectFileClaimRepository.class);
+    private final com.eneik.production.services.PlannedWorkRecoveryService plannedWorkRecoveryService =
+            mock(com.eneik.production.services.PlannedWorkRecoveryService.class);
 
     @Test
     void deliverableMergeRatioUsesMergedPlannedTasksNotFeatureReadiness() {
@@ -373,6 +375,84 @@ class ProjectFlowServiceTest {
         verify(gitHubPullRequestService, never()).deleteFile(eq(project), anyString(), anyString());
     }
 
+    // --- §4.30: a wait is only a wait while it can still end ---------------------------------------
+
+    private ProjectFlowService serviceForDeadEnd(TaskRepository taskRepository, ProjectEntity project,
+            ClientDeliverableReadinessService readinessService) {
+        when(projectRepository.findById(project.getId())).thenReturn(Optional.of(project));
+        return serviceWithWishlistsAndWorker(mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class), mock(JulesSessionRepository.class),
+                taskRepository, readinessService);
+    }
+
+    private TaskEntity dependentBehind(TaskRepository taskRepository, ProjectEntity project, TaskEntity dependency) {
+        TaskEntity dependent = new TaskEntity();
+        dependent.setId(UUID.randomUUID());
+        dependent.setProject(project);
+        dependent.setStatus(TaskStatus.queued);
+        dependent.setDependsOn(dependency);
+        when(taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued))
+                .thenReturn(java.util.List.of(dependent));
+        when(taskRepository.findById(dependency.getId())).thenReturn(Optional.of(dependency));
+        when(taskRepository.findById(dependent.getId())).thenReturn(Optional.of(dependent));
+        return dependent;
+    }
+
+    /**
+     * Measured live 2026-08-29: three of the project's seven live tasks sat in `queued` behind
+     * dependencies that had failed hours earlier with their single bounded resume already spent, and the
+     * branch that noticed it only rewrote a status line saying no replacement had been created. A wait
+     * whose condition can never become true is not a wait; `blocked` is this factory's word for it, and
+     * createRecoveryWishlistForOrphanedBlockedTasks already owns what happens next.
+     */
+    @Test
+    void aDependentBehindAPermanentlyDeadDependencyIsRetiredForRecovery() {
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        var readinessService = mock(ClientDeliverableReadinessService.class);
+
+        TaskEntity dependency = new TaskEntity();
+        dependency.setId(UUID.randomUUID());
+        dependency.setStatus(TaskStatus.failed);
+        TaskEntity dependent = dependentBehind(taskRepository, project, dependency);
+
+        when(readinessService.isDependencySatisfied(dependency)).thenReturn(false);
+        when(plannedWorkRecoveryService.mayStillBeResumed(dependency)).thenReturn(false);
+        when(taskRepository.compareAndSetStatus(dependent.getId(), TaskStatus.queued, TaskStatus.blocked)).thenReturn(1);
+
+        serviceForDeadEnd(taskRepository, project, readinessService).dispatchQueuedTasks(project.getId());
+
+        verify(taskRepository).compareAndSetStatus(dependent.getId(), TaskStatus.queued, TaskStatus.blocked);
+    }
+
+    /**
+     * The other half, and it is not optional: while the dependency's single bounded resume is unspent, it
+     * can still come back, so the dependent is genuinely waiting and must be left alone. Without this case
+     * the test above would also pass if every dependent behind a failed dependency were retired.
+     */
+    @Test
+    void aDependentIsLeftWaitingWhileItsDependencyCanStillBeResumed() {
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        var readinessService = mock(ClientDeliverableReadinessService.class);
+
+        TaskEntity dependency = new TaskEntity();
+        dependency.setId(UUID.randomUUID());
+        dependency.setStatus(TaskStatus.failed);
+        TaskEntity dependent = dependentBehind(taskRepository, project, dependency);
+
+        when(readinessService.isDependencySatisfied(dependency)).thenReturn(false);
+        when(plannedWorkRecoveryService.mayStillBeResumed(dependency)).thenReturn(true);
+
+        serviceForDeadEnd(taskRepository, project, readinessService).dispatchQueuedTasks(project.getId());
+
+        verify(taskRepository, never()).compareAndSetStatus(dependent.getId(), TaskStatus.queued, TaskStatus.blocked);
+    }
+
     private ProjectFlowService service() {
         return serviceWithWishlists(mock(WishlistRepository.class));
     }
@@ -390,11 +470,20 @@ class ProjectFlowServiceTest {
     private ProjectFlowService serviceWithWishlistsAndWorker(WishlistRepository wishlistRepository,
             PersistentWorkerSessionService persistentWorkerSessionService,
             JulesSessionRepository julesSessionRepository) {
+        return serviceWithWishlistsAndWorker(wishlistRepository, persistentWorkerSessionService,
+                julesSessionRepository, mock(TaskRepository.class), mock(ClientDeliverableReadinessService.class));
+    }
+
+    private ProjectFlowService serviceWithWishlistsAndWorker(WishlistRepository wishlistRepository,
+            PersistentWorkerSessionService persistentWorkerSessionService,
+            JulesSessionRepository julesSessionRepository,
+            TaskRepository taskRepository,
+            ClientDeliverableReadinessService readinessService) {
         ProjectFlowService service = new ProjectFlowService(
                 projectRepository,
                 wishlistRepository,
                 mock(AccountRepository.class),
-                mock(TaskRepository.class),
+                taskRepository,
                 mock(ClaimRepository.class),
                 mock(RoleRepository.class),
                 mock(ClaimService.class),
@@ -417,7 +506,7 @@ class ProjectFlowServiceTest {
                 mock(ProjectOperationalContextService.class),
                 mock(DesignAssetService.class),
                 gitHubPullRequestService,
-                mock(ClientDeliverableReadinessService.class),
+                readinessService,
                 mock(FeatureService.class),
                 persistentWorkerSessionService,
                 mock(SelfFalsificationEpicMatcher.class),
@@ -429,6 +518,7 @@ class ProjectFlowServiceTest {
                     mock(com.eneik.production.repositories.LinearIssueMetadataRepository.class),
                 mock(com.eneik.production.repositories.FeatureRepository.class),
                 mock(com.eneik.production.repositories.FeatureThreadRepository.class),
+                plannedWorkRecoveryService,
                 null);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
         return service;

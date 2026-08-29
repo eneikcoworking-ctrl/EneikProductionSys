@@ -108,6 +108,7 @@ class ProjectFlowServiceResetTest {
                 linearIssueMetadataRepository,
                 featureRepository,
                 featureThreadRepository,
+                mock(com.eneik.production.services.PlannedWorkRecoveryService.class),
                 null);
     }
 

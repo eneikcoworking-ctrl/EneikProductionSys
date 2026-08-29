@@ -232,6 +232,19 @@ public class PlannedWorkRecoveryService {
         return RETIRED_WITH_NOTHING_LEFT_WORKING_IT.stream().anyMatch(reason::contains);
     }
 
+    /**
+     * Whether a failed task could still come back by itself (2026-08-29, plan §4.30).
+     *
+     * <p>Asked by ProjectFlowService before it decides that a dependent's wait can never end. The budget
+     * and the eligibility rule stay here, in the one place that owns them - a second copy of "one auto
+     * resume per task" elsewhere would be the same number written twice, which is what Charter invariant
+     * 10 forbids. Deliberately durable-only: the transient reasons resumeEligibleTask also checks (a live
+     * claim, a live session, an unsatisfied dependency of its own) say "not right now", not "never again".
+     */
+    public boolean mayStillBeResumed(TaskEntity task) {
+        return task != null && isEligibleRetiredPlanTask(task) && resumeCount(task) < 1;
+    }
+
     private int resumeCount(TaskEntity task) {
         return task.getPayload() == null ? 0 : task.getPayload().path(RESUME_COUNT_KEY).asInt(0);
     }

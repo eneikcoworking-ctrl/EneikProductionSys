@@ -105,6 +105,7 @@ public class ProjectFlowService {
     private final com.eneik.production.services.dashboard.ProjectOperationalContextService contextService;
     private final com.eneik.production.services.design.DesignAssetService designAssetService;
     private final com.eneik.production.services.github.GitHubPullRequestService gitHubPullRequestService;
+    private final PlannedWorkRecoveryService plannedWorkRecoveryService;
     private final ClientDeliverableReadinessService readinessService;
     private final FeatureService featureService;
     private final PersistentWorkerSessionService persistentWorkerSessionService;
@@ -211,6 +212,7 @@ public class ProjectFlowService {
                               com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository,
                               com.eneik.production.repositories.FeatureRepository featureRepository,
                               com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
+                              PlannedWorkRecoveryService plannedWorkRecoveryService,
                               @org.springframework.context.annotation.Lazy ProjectFlowService self) {
         this.projectRepository = projectRepository;
         this.wishlistRepository = wishlistRepository;
@@ -238,6 +240,7 @@ public class ProjectFlowService {
         this.contextService = contextService;
         this.designAssetService = designAssetService;
         this.gitHubPullRequestService = gitHubPullRequestService;
+        this.plannedWorkRecoveryService = plannedWorkRecoveryService;
         this.readinessService = readinessService;
         this.featureService = featureService;
         this.persistentWorkerSessionService = persistentWorkerSessionService;
@@ -5406,13 +5409,42 @@ public class ProjectFlowService {
                     }
                 } else {
                     if (dependency.getStatus() == TaskStatus.failed) {
+                        // A wait is only a wait while it can still end (2026-08-29, plan §4.30).
+                        // isDependencySatisfied can be satisfied by a merged REPLACEMENT carrying the same
+                        // semantic key - a precise consumer with no producer: nothing creates one, and this
+                        // branch used to say so in its own log line ("no child work is created") and do
+                        // nothing about it, every tick. Measured that day: three of the project's seven
+                        // live tasks sat here, two of them behind dependencies that had failed eight hours
+                        // earlier with their single auto-resume already spent, in epics that were otherwise
+                        // nine-twelfths done.
+                        //
+                        // Once the dependency can no longer come back, the dependent is not waiting, it is
+                        // stuck - and `blocked` is this factory's word for that, with an owner already
+                        // attached: createRecoveryWishlistForOrphanedBlockedTasks turns such a task into a
+                        // recovery wishlist, and decomposition, the only source of work here, does the
+                        // rest. The resume budget is not re-implemented; it is asked of the service that
+                        // owns it (Charter invariant 10).
+                        if (!plannedWorkRecoveryService.mayStillBeResumed(dependency)) {
+                            String deadEnd = "Dependency " + dependency.getId() + " failed and cannot be resumed again; "
+                                    + "retired for recovery so its work can be re-planned instead of waiting for a task "
+                                    + "that will never return";
+                            int moved = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.queued, TaskStatus.blocked);
+                            if (moved > 0) {
+                                taskRepository.findById(task.getId()).ifPresent(fresh -> {
+                                    fresh.setJulesDispatchStatus(deadEnd);
+                                    taskRepository.save(fresh);
+                                });
+                                log.warn("ProjectFlowService: task {} blocked - {}", task.getId(), deadEnd);
+                            }
+                            continue;
+                        }
                         String waitingStatus = "Waiting for failed dependency " + dependency.getId()
-                                + "; no replacement task or wishlist was created";
+                                + "; bounded recovery may still resume it once";
                         if (!waitingStatus.equals(task.getJulesDispatchStatus())) {
                             task.setJulesDispatchStatus(waitingStatus);
                             taskRepository.save(task);
                             log.warn("ProjectFlowService: kept planned task {} queued behind failed dependency {}; "
-                                            + "bounded recovery may resume the same dependency once, but no child work is created",
+                                            + "its single bounded resume has not been spent yet",
                                     task.getId(), dependency.getId());
                         }
                     }
