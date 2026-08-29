@@ -30,6 +30,43 @@ public class TocSentinelServiceTest {
         sentinelService = new TocSentinelService(graph, anomalyDetector, optimizer);
     }
 
+    /**
+     * Plan §4.32. A stall report claims a dwell is anomalous FOR THIS NODE, and it does more than log: it
+     * sets stallBottleneck, which the TOC machinery reorders the queue by. Measured live 2026-08-29: five
+     * reports in one run against a single token, every one printing "mu: 0.00" beside a limit it called
+     * dynamic - raised before the node had ever finished a pass, on a node that entered and exited four
+     * times in the same three minutes. The counters are in-memory only, so that window reopens on every
+     * restart.
+     */
+    @Test
+    void aNodeThatHasNeverFinishedAPassIsNotCalledABottleneck() throws InterruptedException {
+        anomalyDetector.setDefaultTimeoutFloorMs(0.0);
+        TocToken token = sentinelService.startExecution("WORKFLOW_BLIND", 10);
+        sentinelService.enterStep(token, "NEVER_COMPLETED_NODE");
+        Thread.sleep(5);
+
+        assertThat(anomalyDetector.scanForStalls()).isEmpty();
+        assertThat(graph.getNode("NEVER_COMPLETED_NODE").isStallBottleneck()).isFalse();
+    }
+
+    /**
+     * The other half, and it is not optional: once the node has finished a pass there IS something to be
+     * anomalous against, and the detector must go on saying so. Without this case the change above would
+     * also pass with the detector switched off altogether.
+     */
+    @Test
+    void aNodeWithAnObservedDurationIsStillCalledABottleneckWhenADwellExceedsIt() throws InterruptedException {
+        anomalyDetector.setDefaultTimeoutFloorMs(0.0);
+        anomalyDetector.setSensitivityMultiplier(0.0);
+        TocToken token = sentinelService.startExecution("WORKFLOW_OBSERVED", 10);
+        sentinelService.enterStep(token, "OBSERVED_NODE");
+        graph.getNode("OBSERVED_NODE").recordExecution(0L, true);
+        Thread.sleep(5);
+
+        assertThat(anomalyDetector.scanForStalls()).isNotEmpty();
+        assertThat(graph.getNode("OBSERVED_NODE").isStallBottleneck()).isTrue();
+    }
+
     @Test
     void testCycleDetectionAndLoopBreak() {
         TocToken token = sentinelService.startExecution("WORKFLOW_A", 10);

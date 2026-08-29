@@ -115,6 +115,15 @@ public class TocNode {
         isPrimaryConstraint = primaryConstraint;
     }
 
+    /**
+     * Whether this node has ever finished a pass, i.e. whether anything at all is known about how long it
+     * takes (2026-08-29, plan §4.32). These counters are in-memory only - there is no store behind them -
+     * so this is false again after every restart, and stays false until the first pass completes.
+     */
+    public boolean hasObservedDuration() {
+        return completedCount.get() > 0;
+    }
+
     public double getDynamicTimeoutLimitMs(double sensitivityMultiplier, double defaultFloorMs) {
         // Fall back to the floor only when NOTHING has been observed (2026-08-29). The condition was
         // `< 2`, and with exactly one completed pass it threw away a mean it already had: the counters are

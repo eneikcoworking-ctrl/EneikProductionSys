@@ -106,6 +106,27 @@ public class TocAnomalyDetector {
                 continue;
             }
 
+            // No observation, no verdict about this node (2026-08-29, plan §4.32). A stall report is a
+            // claim that a dwell is anomalous FOR THIS NODE, and until the node has finished a pass there
+            // is nothing to be anomalous against: the limit would be defaultTimeoutFloorMs, an unrevised
+            // constant, and Charter invariant 15 says such a constant is a hypothesis, not a measurement.
+            //
+            // It matters beyond the log line. A report sets stallBottleneck, which is what the TOC
+            // machinery reorders the queue by, and past 2.5x it marks the token STALLED - flow decisions,
+            // taken from a number nothing derived. Measured that day: five reports in one run, every one
+            // of them printing "mu: 0.00" beside a limit it called dynamic, all five raised against a
+            // single token before its first completion, on a node that entered and exited four times in
+            // the same three minutes. These counters are in-memory only, so that blind window reopens on
+            // every restart.
+            //
+            // This postpones the detector until it has grounds; it does not disable it. Nor does it remove
+            // a safety net: hung work is owned by the session silence windows, the Davidson veto and the
+            // hourly GitHub-truth sweep, all of which judge on evidence. This detector looks for the
+            // constraint, and a constraint cannot be found in a node nothing is known about.
+            if (!node.hasObservedDuration()) {
+                continue;
+            }
+
             double dynamicLimitMs = node.getDynamicTimeoutLimitMs(sensitivityMultiplier, defaultTimeoutFloorMs);
             long dwellMs = token.getActiveNodeDwellTimeMs();
 
