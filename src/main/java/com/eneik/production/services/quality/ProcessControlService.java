@@ -79,6 +79,7 @@ public class ProcessControlService {
     private final SixSigmaAuditService sixSigmaAuditService;
     private final ReviewConcernRepository reviewConcernRepository;
     private final PrReviewRepository prReviewRepository;
+    private final com.eneik.production.repositories.TaskConflictRepository taskConflictRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
     private final DefectJournalRepository defectJournalRepository;
     private final KaizenService kaizenService;
@@ -101,6 +102,7 @@ public class ProcessControlService {
                                   SixSigmaAuditService sixSigmaAuditService,
                                   ReviewConcernRepository reviewConcernRepository,
                                   PrReviewRepository prReviewRepository,
+                                  com.eneik.production.repositories.TaskConflictRepository taskConflictRepository,
                                   com.eneik.production.repositories.JulesSessionRepository julesSessionRepository,
                                   DefectJournalRepository defectJournalRepository,
                                   KaizenService kaizenService,
@@ -112,6 +114,7 @@ public class ProcessControlService {
         this.sixSigmaAuditService = sixSigmaAuditService;
         this.reviewConcernRepository = reviewConcernRepository;
         this.prReviewRepository = prReviewRepository;
+        this.taskConflictRepository = taskConflictRepository;
         this.julesSessionRepository = julesSessionRepository;
         this.defectJournalRepository = defectJournalRepository;
         this.kaizenService = kaizenService;
@@ -149,14 +152,22 @@ public class ProcessControlService {
     public List<ProcessControlSnapshotEntity> recomputeForProject(UUID projectId) {
         List<EpicPoint> completedEpics = completedEpicsInOrder(projectId);
         List<ProcessControlSnapshotEntity> all = new ArrayList<>();
+        // The conflict evidence is read once for the whole recompute, not once per epic (2026-08-29, plan
+        // §4.25). computePrConflictCounts used to read pr_reviews and task_conflicts whole on every call,
+        // and this method calls it once per completed epic: measured that day, 41 epics against 565
+        // pr_review rows, inside one transaction - which is why Hikari reported this recompute's connection
+        // held past its threshold. The per-epic filter stays exactly as it was; only the reading moved out.
+        List<com.eneik.production.models.persistence.PrReviewEntity> reviewEvidence = prReviewRepository.findAll();
+        List<com.eneik.production.models.persistence.TaskConflictEntity> conflictEvidence = taskConflictRepository.findAll();
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_QUALITY_GATE,
                 featureId -> sixSigmaAuditService.computeQualityGateCounts(null, featureId)));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_PR_CONFLICTS,
-                featureId -> sixSigmaAuditService.computePrConflictCounts(null, featureId)));
+                featureId -> sixSigmaAuditService.computePrConflictCounts(null, featureId,
+                        reviewEvidence, conflictEvidence)));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_TASK_REVIVAL,
                 this::taskRevivalCounts));
         all.addAll(recomputeStream(projectId, completedEpics, STREAM_REVIEW_CONCERNS,
-                this::reviewConcernCounts));
+                featureId -> reviewConcernCounts(featureId, reviewEvidence)));
         return all;
     }
 
@@ -385,9 +396,15 @@ public class ProcessControlService {
         return new DefectOpportunityCount(defects, tasks.size());
     }
 
-    private DefectOpportunityCount reviewConcernCounts(UUID featureId) {
+    /**
+     * Takes the evidence already read for this recompute (2026-08-29, plan §4.25). It used to read
+     * pr_reviews whole itself, once per epic, so one recompute read the same table N+1 times - measured
+     * live at four reads for three epics, and 41 epics against 565 rows on the real project.
+     */
+    private DefectOpportunityCount reviewConcernCounts(UUID featureId,
+            List<com.eneik.production.models.persistence.PrReviewEntity> reviewEvidence) {
         long defects = reviewConcernRepository.findByFeatureId(featureId).size();
-        long reviewPasses = prReviewRepository.findAll().stream()
+        long reviewPasses = reviewEvidence.stream()
                 .filter(r -> {
                     if (r.getJulesSessionId() == null) return false;
                     var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());

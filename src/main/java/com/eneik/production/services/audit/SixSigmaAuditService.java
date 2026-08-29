@@ -421,8 +421,22 @@ public class SixSigmaAuditService {
     }
 
     public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId) {
-        List<PrReviewEntity> reviews = prReviewRepository.findAll();
-        List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
+        return computePrConflictCounts(projectId, featureId,
+                prReviewRepository.findAll(), taskConflictRepository.findAll());
+    }
+
+    /**
+     * The same counting, over evidence the caller has already read (2026-08-29, plan §4.25 once more).
+     *
+     * <p>ProcessControlService.recomputeForProject asks this question once per completed epic, and the two
+     * reads it used to do inside depend on no epic at all - measured that day, 41 epics against 565 pr_review
+     * rows, so one recompute materialised the same table tens of times over. The scope filter below is per
+     * epic; the evidence is not.
+     */
+    public DefectOpportunityCount computePrConflictCounts(UUID projectId, UUID featureId,
+            List<PrReviewEntity> allReviews, List<TaskConflictEntity> allConflicts) {
+        List<PrReviewEntity> reviews = allReviews;
+        List<TaskConflictEntity> conflicts = allConflicts;
 
         // Membership is decided by identity, not by dereference (2026-08-29, plan §4.26). `c.getTask()` is
         // a LAZY proxy and is never null: testing it for null tests that a REFERENCE is present, not that

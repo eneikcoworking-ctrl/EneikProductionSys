@@ -56,6 +56,8 @@ public class ProcessControlServiceTest {
     private ProcessControlService service;
     private UUID projectId;
 
+    private PrReviewRepository prReviewRepository;
+
     @BeforeEach
     void setUp() {
         featureRepository = mock(FeatureRepository.class);
@@ -63,7 +65,7 @@ public class ProcessControlServiceTest {
         snapshotRepository = mock(ProcessControlSnapshotRepository.class);
         sixSigmaAuditService = mock(SixSigmaAuditService.class);
         reviewConcernRepository = mock(ReviewConcernRepository.class);
-        PrReviewRepository prReviewRepository = mock(PrReviewRepository.class);
+        prReviewRepository = mock(PrReviewRepository.class);
         JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
         defectJournalRepository = mock(DefectJournalRepository.class);
         kaizenService = mock(KaizenService.class);
@@ -77,9 +79,12 @@ public class ProcessControlServiceTest {
         when(defectJournalRepository.findByFeatureId(any())).thenReturn(Collections.emptyList());
         when(projectRepository.findById(any())).thenReturn(Optional.empty());
         when(sixSigmaAuditService.computePrConflictCounts(any(), any())).thenReturn(new DefectOpportunityCount(0, 0));
+        when(sixSigmaAuditService.computePrConflictCounts(any(), any(), any(), any()))
+                .thenReturn(new DefectOpportunityCount(0, 0));
 
         service = new ProcessControlService(featureRepository, taskRepository, snapshotRepository,
-                sixSigmaAuditService, reviewConcernRepository, prReviewRepository, julesSessionRepository,
+                sixSigmaAuditService, reviewConcernRepository, prReviewRepository,
+                mock(com.eneik.production.repositories.TaskConflictRepository.class), julesSessionRepository,
                 defectJournalRepository, kaizenService, projectRepository, null);
         ReflectionTestUtils.setField(service, "baselineEpicCount", 2);
     }
@@ -105,6 +110,30 @@ public class ProcessControlServiceTest {
         task.setCreatedAt(completedAt.minusSeconds(60));
         task.setUpdatedAt(completedAt);
         when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(task));
+    }
+
+    @Test
+    void theConflictEvidenceIsReadOncePerRecomputeNotOncePerEpic() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        UUID f1 = UUID.randomUUID();
+        UUID f2 = UUID.randomUUID();
+        UUID f3 = UUID.randomUUID();
+        Instant t0 = Instant.now().minus(3, ChronoUnit.DAYS);
+        when(featureRepository.findByProjectIdAndDismissedAtIsNull(projectId))
+                .thenReturn(List.of(epic(f1, project), epic(f2, project), epic(f3, project)));
+        stubCompletedEpic(f1, project, t0);
+        stubCompletedEpic(f2, project, t0.plus(1, ChronoUnit.DAYS));
+        stubCompletedEpic(f3, project, t0.plus(2, ChronoUnit.DAYS));
+        when(sixSigmaAuditService.computeQualityGateCounts(eq(null), any()))
+                .thenReturn(new DefectOpportunityCount(1, 10));
+
+        service.recomputeForProject(projectId);
+
+        // Three completed epics, one reading of the evidence. Measured before this held: 41 epics against
+        // 565 pr_review rows, read whole on every call, inside one transaction - which is why this
+        // recompute's connection was reported held past its threshold.
+        verify(prReviewRepository, org.mockito.Mockito.times(1)).findAll();
     }
 
     @Test
