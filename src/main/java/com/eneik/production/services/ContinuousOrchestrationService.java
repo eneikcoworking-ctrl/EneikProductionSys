@@ -291,6 +291,10 @@ public class ContinuousOrchestrationService {
                 }
 
             } finally {
+                // Closes the snapshot opened at the top of this project's tick (action plan 4.18). In the
+                // same finally as the log scope and for the same reason: the scheduler thread is pooled, so
+                // a snapshot left open would answer the next project, or the next tick, with this one.
+                operationalPolicyService.closeTick();
                 LogScope.clear();
             }
         }

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -29,8 +30,21 @@ public class OperationalPolicyService {
         this.flowCoreService = flowCoreService;
     }
 
+    /**
+     * The snapshot taken for the tick currently running on this thread, if there is one.
+     *
+     * <p>Not a cache: it has no lifetime and no size, only the frame it was opened in. The orchestration
+     * opens it once per project and closes it in a finally; every other caller - controllers, other
+     * threads - finds nothing here and builds its own exactly as before.
+     */
+    private static final ThreadLocal<Map.Entry<UUID, FlowCoreDto>> TICK_SNAPSHOT = new ThreadLocal<>();
+
     @Transactional(readOnly = true)
     public OperationalDecision authorize(UUID projectId, OperationalAction action) {
+        Map.Entry<UUID, FlowCoreDto> open = TICK_SNAPSHOT.get();
+        if (open != null && open.getKey().equals(projectId)) {
+            return authorize(open.getValue(), action);
+        }
         return authorize(flowCoreService.build(projectId), action);
     }
 
@@ -49,7 +63,23 @@ public class OperationalPolicyService {
      */
     @Transactional(readOnly = true)
     public FlowCoreDto snapshot(UUID projectId) {
-        return flowCoreService.build(projectId);
+        FlowCoreDto core = flowCoreService.build(projectId);
+        TICK_SNAPSHOT.set(Map.entry(projectId, core));
+        return core;
+    }
+
+    /**
+     * Closes the tick opened by {@link #snapshot(UUID)}. Must run in a finally: a snapshot left open on a
+     * pooled scheduler thread would answer the next tick with the previous one.
+     *
+     * <p>Measured 2026-08-29 before this existed: four full model builds per tick - the snapshot, plus
+     * three requireAllowed calls inside the very actions the snapshot had just authorized, microseconds
+     * apart with nothing happening in between. Seventy six identical rebuilds in twenty minutes while the
+     * factory had no work at all: 356 done, 27 failed, two queued behind a failed dependency, zero open
+     * sessions.
+     */
+    public void closeTick() {
+        TICK_SNAPSHOT.remove();
     }
 
     public OperationalDecision authorize(FlowCoreDto core, OperationalAction action) {
