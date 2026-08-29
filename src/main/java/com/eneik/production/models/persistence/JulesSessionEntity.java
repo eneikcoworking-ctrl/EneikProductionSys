@@ -7,6 +7,30 @@ import java.util.UUID;
 @Entity
 @Table(name = "jules_sessions")
 public class JulesSessionEntity {
+
+    /**
+     * The statuses in which a session is still doing something (2026-08-29, plan §4.29). This is the one
+     * definition of "live" for a session; JulesDispatchService.ACTIVE_SESSION_STATUSES delegates here, and
+     * every reader that asks whether a session's evidence is still current asks {@link #isActive()}.
+     *
+     * <p>It used to be asked in three different ways. Dispatch asked this set; FlowSpineService and
+     * OperationalTruthService each carried their own copy of {@code SUPERSEDED_SESSION_STATUS =
+     * "cancelled"} and read "live" as "not literally cancelled". Measured that day on the live database:
+     * failed 658, closed_terminal_task 262, closed_no_code 117, loop_closed 51, cancelled 39, running 3 -
+     * so that reading excluded 39 sessions of 1130 and counted every other finished one as live. The
+     * consequence was measured too: PlannedWorkRecoveryService deliberately reuses the original task
+     * identity when it revives a failed task, so the previous attempt's closed_unmerged review stayed
+     * attached to a non-terminal task, kept failingReviews above zero, and put the project back into
+     * BLOCKED_BY_REVIEW one minute after the new attempt had already been dispatched.
+     *
+     * <p>The knowledge those two copies carried is kept, and is the same knowledge: a session retired with
+     * "cancelled" by Branch GC or cancelSession is retired because its task is being fast-tracked to a
+     * FRESH re-dispatch, not because the task reached a terminal status (2026-08-01, test-fortieth/PR#119),
+     * so its review is evidence about a superseded attempt. Asking whether the session is active answers
+     * that case and every other finished one at once, instead of naming one status out of six.
+     */
+    public static final java.util.Set<String> ACTIVE_STATUSES =
+            java.util.Set.of("running", "queued", "revising", "pr_opened", "stuck");
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
@@ -135,5 +159,10 @@ public class JulesSessionEntity {
     @PreUpdate
     public void preUpdate() {
         this.updatedAt = Instant.now();
+    }
+
+    /** Whether this session is still doing something - the single definition, see {@link #ACTIVE_STATUSES}. */
+    public boolean isActive() {
+        return status != null && ACTIVE_STATUSES.contains(status);
     }
 }

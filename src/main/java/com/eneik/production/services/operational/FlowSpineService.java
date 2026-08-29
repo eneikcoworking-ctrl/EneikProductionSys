@@ -49,17 +49,6 @@ public class FlowSpineService {
     private static final Set<String> FAILING_REVIEW_STATUSES = Set.of(
             "failure", "failing", "conflict", "escalated", "closed_unmerged", "invalid_pr", "unowned"
     );
-    // 2026-08-01 (live incident, test-fortieth/PR#119): a session Branch GC or JulesDispatchService.
-    // cancelSession individually retires (status="cancelled") - because the task is being fast-tracked to a
-    // FRESH re-dispatch, not because the task itself reached a terminal status - was still treated as "live"
-    // by the terminal-task-only filter below, since the task goes straight back to `queued`, never
-    // `done`/`failed`/`spike_completed`. Its review (e.g. a real "closed_unmerged" GitHub conflict) then kept
-    // failingReviews > 0 and BLOCKED_BY_REVIEW permanently stuck, even though the task had already moved on
-    // to a brand new attempt. Both retirement paths deliberately use "cancelled" for exactly this reason -
-    // see BranchGarbageCollectorService.retireAbandonedBranchAndPR's Step 3.5 comment ("not in
-    // ACTIVE_SESSION_STATUSES, so it's fully inert going forward") - the review-liveness filter just never
-    // learned to read that signal.
-    private static final String SUPERSEDED_SESSION_STATUS = "cancelled";
 
     /**
      * A task the factory created to carry its own process - the wishlist compiler, a review fallback, an
@@ -411,9 +400,14 @@ public class FlowSpineService {
                 .filter(task -> terminalTaskStatuses.contains(task.getStatus()))
                 .map(TaskEntity::getId)
                 .collect(Collectors.toSet());
+        // "Still doing something" is asked of the session, in the one place that defines it (2026-08-29,
+        // plan §4.29). It was asked here as "not literally cancelled", which counted every finished
+        // session as live - measured that day, 1088 of 1130. PlannedWorkRecoveryService reuses the
+        // original task identity when it revives a failed task, so the previous attempt's closed_unmerged
+        // review kept the project in BLOCKED_BY_REVIEW a minute after the new attempt was already running.
         Set<UUID> liveSessionIds = sessions.stream()
                 .filter(session -> session.getTaskId() == null || !terminalTaskIds.contains(session.getTaskId()))
-                .filter(session -> !SUPERSEDED_SESSION_STATUS.equals(session.getStatus()))
+                .filter(JulesSessionEntity::isActive)
                 .map(JulesSessionEntity::getId)
                 .collect(Collectors.toSet());
         int mergedReviews = (int) reviews.stream().filter(reviewEntity -> Boolean.TRUE.equals(reviewEntity.getMerged())).count();

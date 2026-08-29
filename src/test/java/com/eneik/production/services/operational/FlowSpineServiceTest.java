@@ -310,6 +310,73 @@ class FlowSpineServiceTest {
         assertEquals(0, dto.evidence().failingReviews());
     }
 
+    /**
+     * Plan §4.29, measured live 2026-08-29. PlannedWorkRecoveryService deliberately reuses the original
+     * task identity when it revives a failed task ("reusing the original planned task identity"), so the
+     * previous attempt's session and its closed_unmerged review stay attached to a task that is
+     * non-terminal again. That session is closed - status closed_terminal_task - but the liveness filter
+     * asked "is it literally cancelled", which it is not, so the dead attempt's review put the project
+     * back into BLOCKED_BY_REVIEW one minute after the new attempt was already running, and wishlist
+     * compilation was denied again.
+     */
+    @Test
+    void aRevivedTasksPreviousAttemptDoesNotBlockItsNewOne() {
+        var projects = mock(ProjectRepository.class);
+        var tasks = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        var mlPredictionServiceClient = mock(com.eneik.production.services.MLPredictionServiceClient.class);
+        var leverPromotionService = mock(com.eneik.production.services.lever.LeverPromotionService.class);
+        FlowSpineService service = new FlowSpineService(
+                projects, tasks, wishlists, sessions, reviews, events, readiness, systemStatus,
+                mlPredictionServiceClient, leverPromotionService);
+
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID revivedTaskId = UUID.randomUUID();
+        TaskEntity revivedTask = new TaskEntity();
+        revivedTask.setId(revivedTaskId);
+        revivedTask.setStatus(TaskStatus.claimed);
+        revivedTask.setDescription("Backend API e126653e");
+
+        JulesSessionEntity previousAttempt = new JulesSessionEntity();
+        previousAttempt.setId(UUID.randomUUID());
+        previousAttempt.setTaskId(revivedTaskId);
+        previousAttempt.setStatus("closed_terminal_task");
+
+        JulesSessionEntity currentAttempt = new JulesSessionEntity();
+        currentAttempt.setId(UUID.randomUUID());
+        currentAttempt.setTaskId(revivedTaskId);
+        currentAttempt.setStatus("running");
+
+        PrReviewEntity previousAttemptsReview = new PrReviewEntity();
+        previousAttemptsReview.setJulesSessionId(previousAttempt.getId());
+        previousAttemptsReview.setCiStatus("closed_unmerged");
+        previousAttemptsReview.setMerged(false);
+
+        when(projects.findById(projectId)).thenReturn(java.util.Optional.of(project));
+        when(tasks.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(revivedTask));
+        when(wishlists.findByProjectId(projectId)).thenReturn(List.of());
+        when(sessions.findByTaskIdIn(List.of(revivedTaskId))).thenReturn(List.of(previousAttempt, currentAttempt));
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList()))
+                .thenReturn(List.of(previousAttemptsReview));
+        when(readiness.computeForProject(projectId)).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(systemStatus.getStatus(projectId)).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+
+        FlowSpineDto dto = service.build(projectId);
+
+        assertEquals(0, dto.evidence().failingReviews());
+        assertNotEquals("BLOCKED_BY_REVIEW", dto.currentState());
+    }
+
     @Test
     void duplicateContentAmongOnlyTerminalTasksDoesNotBlockLiveState() {
         // Regression test for the 2026-08-04 incident: test-forty-first stuck for hours in

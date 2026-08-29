@@ -51,7 +51,9 @@ public class JulesDispatchService {
     private static final Logger log = LoggerFactory.getLogger(JulesDispatchService.class);
     // Public (2026-08-02): reused by ProjectTreeService to derive a feature branch's live-pulse signal
     // from real session state - the same canonical "is this session active" definition, not a duplicate.
-    public static final List<String> ACTIVE_SESSION_STATUSES = List.of("running", "queued", "revising", "pr_opened", "stuck");
+    /** Delegates to the one definition, which lives on the session itself (2026-08-29, plan §4.29). */
+    public static final List<String> ACTIVE_SESSION_STATUSES =
+            List.copyOf(JulesSessionEntity.ACTIVE_STATUSES);
     private static final Duration STUCK_RECOVERY_MESSAGE_INTERVAL = Duration.ofMinutes(15);
     private static final int DAVIDSON_TRUST_WINDOW_MINUTES = 60;
     private static final int DAVIDSON_CLOSE_WINDOW_MINUTES = 120;
