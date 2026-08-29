@@ -3188,6 +3188,15 @@ public class ProjectFlowService {
                             excludedNamesCsv
                     ));
             if (accountOpt.isEmpty()) {
+                // Recorded on the task, not only in the log (2026-08-29): this was the one thing the
+                // duplicated queued-task branch did that this method did not, and a hold nobody can read
+                // afterwards is how seventeen tasks spent twenty-two hours unexplained.
+                String noCapacity = "No free Jules shared session slot available for role context "
+                        + task.getRole().getTag();
+                if (!noCapacity.equals(task.getJulesDispatchStatus())) {
+                    task.setJulesDispatchStatus(noCapacity);
+                    taskRepository.save(task);
+                }
                 log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
                 return;
             }
@@ -3200,6 +3209,14 @@ public class ProjectFlowService {
                 savedTask.setJulesDispatchStatus(dispatch.reason());
                 taskRepository.save(savedTask);
                 if (!dispatch.dispatched()) {
+                    if (isJulesSourceNotFound(dispatch.reason())) {
+                        // Rotating is pointless here: no account can see a repository Jules cannot see.
+                        // Carried over from the queued-task branch this method absorbed on 2026-08-29.
+                        claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
+                        log.warn("Blocked task {} because Jules cannot see the repository source: {}",
+                                savedTask.getId(), dispatch.reason());
+                        return;
+                    }
                     claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                     // releaseClaimToQueue does not always requeue: at its dispatch-attempt budget (action
                     // plan 4.1) it writes `blocked` and routes the task to human review instead. Rotating
@@ -5382,50 +5399,15 @@ public class ProjectFlowService {
             // nothing anywhere when it skipped a task, so seventeen tasks waited twenty-two hours with no
             // log line and a null jules_dispatch_status; removing it removes that silence with it.
 
-            String roleTag = task.getRole().getTag();
-
-            // Complex/chaotic/retried/defect-work tasks used to bypass Jules for a separate autonomous
-            // worker; Jules now has universal role capability across every BARCAN-TAG role, so all tasks
-            // flow through the same dispatch path below regardless of cynefin domain or retry count.
-            Optional<AccountEntity> accountOpt = self.claimAccountForTask(task.getId(), () ->
-                    accountRepository.lockNextJulesAccountWithCapacity(
-                            project.getId(),
-                            roleTag,
-                            maxConcurrentJulesSessionsPerAccount,
-                            null,
-                            maxDailySessionsPerAccount,
-                            null
-                    ));
-            if (accountOpt.isPresent()) {
-                AccountEntity account = accountOpt.get();
-                try {
-                    // Refresh task state after claim
-                    TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
-
-                    JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
-                    savedTask.setJulesSessionName(dispatch.sessionName());
-                    savedTask.setJulesDispatchStatus(dispatch.reason());
-                    taskRepository.save(savedTask);
-                    if (!dispatch.dispatched()) {
-                        if (isJulesSourceNotFound(dispatch.reason())) {
-                            claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
-                            log.warn("Blocked queued task {} of project {} because Jules cannot see the repository source: {}",
-                                    savedTask.getId(), project.getName(), dispatch.reason());
-                            continue;
-                        }
-                        claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
-                        log.warn("Failed to dispatch queued task {} of project {} to account {}: {}",
-                                savedTask.getId(), project.getName(), account.getName(), dispatch.reason());
-                        continue;
-                    }
-                    log.info("Dispatched queued task {} of project {} to account {}", savedTask.getId(), project.getName(), account.getName());
-                } catch (Exception e) {
-                    log.error("Failed to claim/dispatch queued task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
-                }
-            } else {
-                task.setJulesDispatchStatus("No free Jules shared session slot available for role context " + roleTag);
-                taskRepository.save(task);
-            }
+            // One implementation, every caller (Charter invariant 10). Until 2026-08-29 this branch was a
+            // second copy of dispatchToGeneralPool that differed in exactly the way that mattered: it
+            // passed null as the excluded account and, on a refusal, moved to the next TASK rather than
+            // the next ACCOUNT. So a single refusing account was handed the same task tick after tick.
+            // Measured that day on the live circuit: 126 refusals in twenty minutes, every one of them on
+            // eneikdru, while six other accounts accepted sessions in the same window - and the refusals
+            // arrived on this branch's own log line, not the pinned compiler one. The rotation that fixes
+            // it was already written here; it was simply never called from this loop.
+            dispatchToGeneralPool(task);
         }
     }
 
