@@ -70,27 +70,41 @@ class DispatchAttemptBudgetTest {
         return claim;
     }
 
-    private void wire(UUID taskId, TaskEntity task, long liveAccounts, long refusals) {
+    private void wire(UUID taskId, TaskEntity task, long accountsAttempted, long refusals) {
         when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
         when(claimRepository.findFirstByTaskIdAndReleasedAtIsNullOrderByClaimedAtDesc(taskId))
                 .thenReturn(Optional.of(activeClaim(task)));
-        when(accountRepository.countLiveAccounts()).thenReturn(liveAccounts);
+        when(julesSessionRepository.countDistinctAccountsAttempted(taskId)).thenReturn(accountsAttempted);
         when(julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed"))
                 .thenReturn(refusals);
     }
 
-    /** A_max = 2 * live accounts: seven living accounts buy fourteen attempts, not an unbounded number. */
+    /** A_max = 2 * the accounts that really carried an attempt, not the size of the pool. */
     @Test
-    void budgetIsTwoAttemptsPerLivingAccount() {
-        when(accountRepository.countLiveAccounts()).thenReturn(7L);
-        assertEquals(14L, claimService.dispatchAttemptBudget());
+    void budgetIsTwoAttemptsPerAccountThatCarriedOne() {
+        UUID taskId = UUID.randomUUID();
+        when(julesSessionRepository.countDistinctAccountsAttempted(taskId)).thenReturn(7L);
+        assertEquals(14L, claimService.dispatchAttemptBudget(taskId));
     }
 
-    /** An empty pool must still admit a first attempt rather than retiring every task on sight. */
+    /**
+     * The case the pool-sized denominator got wrong: a task pinned to one account is offered to exactly
+     * one, so fourteen attempts buy what two buy. Measured live 2026-08-29 - 126 refusals in twenty
+     * minutes, all on the pinned compiler account, while six others were accepting.
+     */
+    @Test
+    void aTaskOfferedToOneAccountGetsTwoAttemptsNotFourteen() {
+        UUID taskId = UUID.randomUUID();
+        when(julesSessionRepository.countDistinctAccountsAttempted(taskId)).thenReturn(1L);
+        assertEquals(2L, claimService.dispatchAttemptBudget(taskId));
+    }
+
+    /** Before any attempt has been carried, a first attempt must still be admitted. */
     @Test
     void budgetNeverCollapsesToZero() {
-        when(accountRepository.countLiveAccounts()).thenReturn(0L);
-        assertTrue(claimService.dispatchAttemptBudget() > 0);
+        UUID taskId = UUID.randomUUID();
+        when(julesSessionRepository.countDistinctAccountsAttempted(taskId)).thenReturn(0L);
+        assertTrue(claimService.dispatchAttemptBudget(taskId) > 0);
     }
 
     /** Under budget the loop is untouched: the task goes back to the queue exactly as before. */

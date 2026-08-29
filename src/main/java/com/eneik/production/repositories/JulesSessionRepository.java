@@ -62,6 +62,16 @@ public interface JulesSessionRepository extends JpaRepository<JulesSessionEntity
     // excluded because it is the placeholder written when the Jules integration is switched off, which is
     // the opposite of the event this asks about. An aggregate, not a read: one row comes back however much
     // history stands behind it, so the cost is proportional to the answer.
+    // 2026-08-29, action plan 4.9: how many distinct accounts have actually carried an attempt for this
+    // task. The dispatch budget's own premise is that "no account will take this" is not established until
+    // every account that could take it has refused - so the denominator must be the accounts the task is
+    // really offered to, not the size of a pool it may never reach. A compiler task is pinned to one
+    // account by operator decision, and measured 2026-08-29 it spent 126 refusals in twenty minutes on
+    // that one account while six others were accepting sessions.
+    @Query("SELECT COUNT(DISTINCT s.accountId) FROM JulesSessionEntity s "
+            + "WHERE s.taskId = :taskId AND s.accountId IS NOT NULL")
+    long countDistinctAccountsAttempted(@Param("taskId") UUID taskId);
+
     @Query("SELECT MAX(s.createdAt) FROM JulesSessionEntity s, TaskEntity t "
             + "WHERE t.id = s.taskId AND t.project.id = :projectId "
             + "AND s.externalSessionId IS NOT NULL AND s.externalSessionId <> 'skipped'")
