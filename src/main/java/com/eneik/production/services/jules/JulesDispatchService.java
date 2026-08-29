@@ -2554,8 +2554,18 @@ public class JulesDispatchService {
                 claimService.complete(compilerTask.getId());
                 markSystemTaskDone(compilerTask);
             }
-            log.error("Compilation of {} wishlist(s) produced no valid plan after {} attempts; carrier finished, briefs stay on their own budget",
-                    wishlists.size(), attempts);
+            // Durably, not only in the log (2026-08-29, plan §4.35). This condition is what decides the
+            // brief's fate - an empty compiler answer spends its budget, our own validator's refusal
+            // returns it - and until now it existed as a computed string that went into the correction
+            // message and a log line, nowhere else. Measured that day: the client's own brief came back to
+            // `pending` with two attempts spent and no epics, and the only record on its carrier read
+            // "Dispatched to Jules", because the log of the run that rejected it had gone with the
+            // restart. §4.23's own rule - a refusal nobody can read cannot ground an absorbing verdict -
+            // was being broken by the storage medium.
+            recordCompilerRejection(compilerTask,
+                    "No usable plan after " + attempts + " attempt(s); last rejection: " + rejection);
+            log.error("Compilation of {} wishlist(s) produced no valid plan after {} attempts ({}); carrier finished, briefs stay on their own budget",
+                    wishlists.size(), attempts, rejection);
             return;
         }
 
@@ -2581,8 +2591,26 @@ public class JulesDispatchService {
                 log.warn("Failed to send compiler-plan correction to Jules session {}", externalSessionId);
             }
         });
+        recordCompilerRejection(compilerTask, "Plan rejected (attempt " + (attempts + 1) + "/"
+                + WISHLIST_COMPILER_MAX_RETRIES + "): " + rejection);
         log.warn("Wishlist compiler plan rejected for {} wishlist(s) (attempt {}/{}) - {}; asked Jules to retry",
                 wishlists.size(), attempts + 1, WISHLIST_COMPILER_MAX_RETRIES, rejection);
+    }
+
+    /**
+     * Writes why a compilation was refused where it outlives the process that decided it (plan §4.35).
+     *
+     * <p>julesDispatchStatus is this codebase's existing home for exactly this kind of record - the same
+     * field already carries "PR#418 closed without merge on GitHub...", "Waiting for failed dependency...",
+     * "Blocked task retired...". No new column and no new mechanism: the condition is already computed and
+     * the attempt number is already stored.
+     */
+    void recordCompilerRejection(TaskEntity compilerTask, String reason) {
+        if (compilerTask == null) {
+            return;
+        }
+        compilerTask.setJulesDispatchStatus(reason);
+        taskRepository.save(compilerTask);
     }
 
     /**

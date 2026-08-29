@@ -3059,6 +3059,39 @@ class JulesDispatchServiceTest {
                 "an empty answer must report the one rejection that speaks about the brief");
     }
 
+    /**
+     * Plan §4.35. The condition that rejected a compilation decides the brief's fate - an empty compiler
+     * answer spends its budget, our own validator's refusal returns it - and it used to exist only as a
+     * log line. Measured live 2026-08-29: the client's own brief came back to `pending` with two attempts
+     * spent and no epics, and the only durable record on its carrier read "Dispatched to Jules", because
+     * the log of the run that rejected it had gone with the restart.
+     */
+    @Test
+    void aRejectedCompilationLeavesItsReasonWhereItOutlivesTheProcess() {
+        TaskEntity carrier = new TaskEntity();
+        carrier.setId(UUID.randomUUID());
+        carrier.setJulesDispatchStatus("Dispatched to Jules");
+
+        julesDispatchService.recordCompilerRejection(carrier, "Plan rejected (attempt 1/2): the answer carried no epic at all");
+
+        verify(taskRepository).save(carrier);
+        assertTrue(carrier.getJulesDispatchStatus().contains("carried no epic at all"),
+                "the durable record must name the condition that actually rejected the plan");
+    }
+
+    /** The other half: a carrier nobody rejected keeps its own record untouched. */
+    @Test
+    void aCompilationThatWasNotRejectedKeepsItsRecordUntouched() {
+        TaskEntity carrier = new TaskEntity();
+        carrier.setId(UUID.randomUUID());
+        carrier.setJulesDispatchStatus("Dispatched to Jules");
+
+        julesDispatchService.recordCompilerRejection(null, "never mind");
+
+        assertEquals("Dispatched to Jules", carrier.getJulesDispatchStatus());
+        verify(taskRepository, never()).save(carrier);
+    }
+
     @Test
     void compilerPlanRejectsCoverageClaimWithUnmappedRequirement() {
         var slice = new com.eneik.production.services.MLPredictionServiceClient.TaskSliceMetadata(
