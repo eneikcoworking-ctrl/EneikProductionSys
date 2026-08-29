@@ -117,7 +117,6 @@ public class JulesDispatchService {
     private final com.eneik.production.services.settings.SystemSettingsService settingsService;
     private final com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker;
     private final com.eneik.production.services.ProjectFlowService projectFlowService;
-    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final com.eneik.production.services.FalsificationCycleService falsificationCycleService;
     private final com.eneik.production.services.ClientDeliverableReadinessService readinessService;
     private final com.eneik.production.services.PersistentWorkerSessionService persistentWorkerSessionService;
@@ -440,7 +439,6 @@ public class JulesDispatchService {
                                 com.eneik.production.repositories.PrReviewRepository prReviewRepository,
                                 com.eneik.production.services.monitor.SystemProgressTracker systemProgressTracker,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.ProjectFlowService projectFlowService,
-                                com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                                 @org.springframework.context.annotation.Lazy com.eneik.production.services.FalsificationCycleService falsificationCycleService,
                                 com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
                                 com.eneik.production.services.ClientDeliverableReadinessService readinessService,
@@ -472,7 +470,6 @@ public class JulesDispatchService {
         this.prReviewRepository = prReviewRepository;
         this.systemProgressTracker = systemProgressTracker;
         this.projectFlowService = projectFlowService;
-        this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.falsificationCycleService = falsificationCycleService;
         this.featureThreadRepository = featureThreadRepository;
         this.readinessService = readinessService;
@@ -2424,8 +2421,9 @@ public class JulesDispatchService {
      * (see ProjectFlowService.wishlistCompilerPrompt), never product code. Parses and validates that
      * plan, feeds it into the same graph-building logic Gemini's slices used to drive, then discards
      * the compiler PR (it never gets merged). On invalid/empty output this does not fall back to
-     * fabricated content - it asks Jules to retry a bounded number of times, then escalates to
-     * NeedsHumanReviewEntity.
+     * fabricated content - it asks Jules to retry a bounded number of times, then closes the PR and
+     * finishes the carrier. Nothing is escalated to a person: the factory is autonomous, and the briefs
+     * keep their own budget (see ProjectFlowService.withholdFromCompileDispatch).
      */
     private void completeWishlistCompilation(JulesSessionEntity session, TaskEntity compilerTask) {
         List<UUID> wishlistIds = compilerTaskWishlistIds(compilerTask);
@@ -2539,21 +2537,18 @@ public class JulesDispatchService {
 
         int attempts = compilerTask.getRetryCount();
         if (attempts >= WISHLIST_COMPILER_MAX_RETRIES) {
-            if (!needsHumanReviewRepository.existsByTaskId(compilerTask.getId())) {
-                com.eneik.production.models.persistence.NeedsHumanReviewEntity review =
-                        new com.eneik.production.models.persistence.NeedsHumanReviewEntity();
-                review.setTask(compilerTask);
-                review.setReason("Wishlist compiler produced no valid task plan after " + attempts
-                        + " attempt(s) for " + wishlists.size() + " wishlist(s) - needs manual decomposition.");
-                needsHumanReviewRepository.save(review);
-            }
+            // Nothing is filed for a person: the factory is autonomous (operator, 2026-08-29). The PR is
+            // closed and the carrier is finished here; the wishlists keep their own budget and go on being
+            // offered at the compile cooldown, settling into decompositionRefused once the compiler has
+            // actually answered and given nothing - which is absorbing and needs no further decision.
             prOpt.ifPresent(pr -> gitHubPullRequestService.closeSinglePullRequest(
                     compilerTask.getProject(), pr, "wishlist compiler plan invalid after max retries"));
             if (claimService.hasActiveClaim(compilerTask.getId())) {
                 claimService.complete(compilerTask.getId());
                 markSystemTaskDone(compilerTask);
             }
-            log.error("Compilation of {} wishlist(s) failed after {} attempts; routed to human review", wishlists.size(), attempts);
+            log.error("Compilation of {} wishlist(s) produced no valid plan after {} attempts; carrier finished, briefs stay on their own budget",
+                    wishlists.size(), attempts);
             return;
         }
 

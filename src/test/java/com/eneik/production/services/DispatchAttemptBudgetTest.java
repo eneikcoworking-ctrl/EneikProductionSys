@@ -2,14 +2,12 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.AccountEntity;
 import com.eneik.production.models.persistence.ClaimEntity;
-import com.eneik.production.models.persistence.NeedsHumanReviewEntity;
 import com.eneik.production.models.persistence.RoleEntity;
 import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
-import com.eneik.production.repositories.NeedsHumanReviewRepository;
 import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.services.gate.GateOrchestrator;
 import org.junit.jupiter.api.Test;
@@ -45,11 +43,10 @@ class DispatchAttemptBudgetTest {
     private final JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
     private final GateOrchestrator gateOrchestrator = mock(GateOrchestrator.class);
     private final ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
-    private final NeedsHumanReviewRepository needsHumanReviewRepository = mock(NeedsHumanReviewRepository.class);
 
     private final ClaimService claimService = new ClaimService(
             claimRepository, taskRepository, accountRepository, julesSessionRepository, gateOrchestrator,
-            readinessService, needsHumanReviewRepository);
+            readinessService);
 
     private TaskEntity claimedTask(UUID id) {
         TaskEntity task = new TaskEntity();
@@ -105,7 +102,6 @@ class DispatchAttemptBudgetTest {
 
         verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.queued);
         verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
-        verify(needsHumanReviewRepository, never()).save(any(NeedsHumanReviewEntity.class));
     }
 
     /**
@@ -118,13 +114,11 @@ class DispatchAttemptBudgetTest {
         TaskEntity task = claimedTask(taskId);
         wire(taskId, task, 7L, 14L);
         when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(1);
-        when(needsHumanReviewRepository.existsByTaskId(taskId)).thenReturn(false);
 
         claimService.releaseClaimToQueue(taskId, "jules_create_session_failed: HTTP 400");
 
         verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.queued);
         verify(taskRepository).writeStatusUnlessTerminal(taskId, TaskStatus.blocked);
-        verify(needsHumanReviewRepository).save(any(NeedsHumanReviewEntity.class));
     }
 
     /**
@@ -143,39 +137,7 @@ class DispatchAttemptBudgetTest {
         verify(taskRepository, never()).writeStatusUnlessTerminal(taskId, TaskStatus.failed);
     }
 
-    /**
-     * Measured 2026-08-29: eighteen needs-human-review rows stood in the table and eight belonged to tasks
-     * already done. A question answered by the task itself must leave the set once, in data, not be
-     * filtered by every reader of the list.
-     */
-    @Test
-    void completingATaskClearsTheHumanReviewRequestItAnswered() {
-        UUID taskId = UUID.randomUUID();
-        TaskEntity task = claimedTask(taskId);
-        NeedsHumanReviewEntity row = new NeedsHumanReviewEntity();
-        row.setTask(task);
-        when(needsHumanReviewRepository.findByTaskIdIn(java.util.List.of(taskId)))
-                .thenReturn(java.util.List.of(row));
-        when(taskRepository.findById(taskId)).thenReturn(Optional.of(task));
 
-        claimService.clearHumanReviewRequestForTest(taskId);
-
-        verify(needsHumanReviewRepository).deleteAll(java.util.List.of(row));
-    }
-
-    /** A row already carrying a human-review note is not duplicated on a later tick. */
-    @Test
-    void doesNotDuplicateTheHumanReviewRow() {
-        UUID taskId = UUID.randomUUID();
-        TaskEntity task = claimedTask(taskId);
-        wire(taskId, task, 7L, 20L);
-        when(taskRepository.writeStatusUnlessTerminal(eq(taskId), eq(TaskStatus.blocked))).thenReturn(1);
-        when(needsHumanReviewRepository.existsByTaskId(taskId)).thenReturn(true);
-
-        claimService.releaseClaimToQueue(taskId, "jules_create_session_failed");
-
-        verify(needsHumanReviewRepository, never()).save(any(NeedsHumanReviewEntity.class));
-    }
 
     /** Losing the atomic guard means another transaction decided the row; nothing further is written. */
     @Test
@@ -188,6 +150,5 @@ class DispatchAttemptBudgetTest {
         claimService.releaseClaimToQueue(taskId, "jules_create_session_failed");
 
         verify(taskRepository, never()).save(any(TaskEntity.class));
-        verify(needsHumanReviewRepository, never()).save(any(NeedsHumanReviewEntity.class));
     }
 }

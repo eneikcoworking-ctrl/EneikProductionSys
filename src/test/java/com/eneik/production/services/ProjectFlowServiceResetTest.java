@@ -13,7 +13,6 @@ import com.eneik.production.repositories.FeatureThreadRepository;
 import com.eneik.production.repositories.JulesActivityResponseRepository;
 import com.eneik.production.repositories.JulesSessionRepository;
 import com.eneik.production.repositories.LinearIssueMetadataRepository;
-import com.eneik.production.repositories.NeedsHumanReviewRepository;
 import com.eneik.production.repositories.ProjectFinalReportRepository;
 import com.eneik.production.repositories.ProjectGenerationStateRepository;
 import com.eneik.production.repositories.ProjectRepository;
@@ -64,7 +63,6 @@ class ProjectFlowServiceResetTest {
     private final JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
     private final JulesActivityResponseRepository julesActivityResponseRepository = mock(JulesActivityResponseRepository.class);
     private final TaskConflictRepository taskConflictRepository = mock(TaskConflictRepository.class);
-    private final NeedsHumanReviewRepository needsHumanReviewRepository = mock(NeedsHumanReviewRepository.class);
     private final LinearIssueMetadataRepository linearIssueMetadataRepository = mock(LinearIssueMetadataRepository.class);
     private final FeatureRepository featureRepository = mock(FeatureRepository.class);
     private final FeatureThreadRepository featureThreadRepository = mock(FeatureThreadRepository.class);
@@ -107,7 +105,6 @@ class ProjectFlowServiceResetTest {
                 mock(RequirementGroundingService.class),
                 geminiContextService,
                 taskConflictRepository,
-                needsHumanReviewRepository,
                 linearIssueMetadataRepository,
                 featureRepository,
                 featureThreadRepository,
@@ -182,7 +179,6 @@ class ProjectFlowServiceResetTest {
         when(julesSessionRepository.findByTaskIdIn(List.of(sliceTaskId1, sliceTaskId2))).thenReturn(List.of(session));
         when(claimRepository.findByTaskIdIn(List.of(sliceTaskId1, sliceTaskId2))).thenReturn(List.of());
         when(taskConflictRepository.findByTaskIdIn(List.of(sliceTaskId1, sliceTaskId2))).thenReturn(List.of());
-        when(needsHumanReviewRepository.findByTaskIdIn(List.of(sliceTaskId1, sliceTaskId2))).thenReturn(List.of());
         when(julesActivityResponseRepository.findByJulesSessionIdIn(List.of(sessionId))).thenReturn(List.of());
         when(featureRepository.findByProjectId(projectId)).thenReturn(List.of());
         when(featureThreadRepository.findByProjectId(projectId)).thenReturn(List.of());

@@ -426,8 +426,7 @@ class ProjectFlowServiceTest {
                 mock(RequirementGroundingService.class),
                 mock(GeminiContextService.class),
                 mock(com.eneik.production.repositories.TaskConflictRepository.class),
-                mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
-                mock(com.eneik.production.repositories.LinearIssueMetadataRepository.class),
+                    mock(com.eneik.production.repositories.LinearIssueMetadataRepository.class),
                 mock(com.eneik.production.repositories.FeatureRepository.class),
                 mock(com.eneik.production.repositories.FeatureThreadRepository.class),
                 null);

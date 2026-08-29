@@ -1,0 +1,11 @@
+-- 2026-08-29, action plan 4.14. Operator directive: the factory is autonomous, and a branch that ends by
+-- waiting for a person is a dead end. This table was one - AutoMergeService had already written the same
+-- conclusion next to its own removed write ("a needs_human_review row here used to be a dead end, nothing
+-- reads that table"), and measured that day it held 18 rows of which 8 were about tasks already done.
+--
+-- What the two writing paths do instead is what the factory already does by itself: a task that spent its
+-- dispatch budget stays `blocked`, from where createRecoveryWishlistForOrphanedBlockedTasks retires it and
+-- PlannedWorkRecoveryService resumes it once; a compiler carrier that produced no valid plan closes its PR
+-- and finishes, while its briefs keep their own budget and settle into decompositionRefused once the
+-- compiler has answered.
+DROP TABLE IF EXISTS needs_human_review;

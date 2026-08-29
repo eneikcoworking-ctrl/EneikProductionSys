@@ -112,7 +112,6 @@ public class ProjectFlowService {
     private final OperationalPolicyService operationalPolicyService;
     private final com.eneik.production.repositories.ProjectFileClaimRepository projectFileClaimRepository;
     private final com.eneik.production.repositories.TaskConflictRepository taskConflictRepository;
-    private final com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository;
     private final com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository;
     private final com.eneik.production.repositories.FeatureRepository featureRepository;
     private final com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository;
@@ -209,7 +208,6 @@ public class ProjectFlowService {
                               RequirementGroundingService requirementGroundingService,
                               GeminiContextService geminiContextService,
                               com.eneik.production.repositories.TaskConflictRepository taskConflictRepository,
-                              com.eneik.production.repositories.NeedsHumanReviewRepository needsHumanReviewRepository,
                               com.eneik.production.repositories.LinearIssueMetadataRepository linearIssueMetadataRepository,
                               com.eneik.production.repositories.FeatureRepository featureRepository,
                               com.eneik.production.repositories.FeatureThreadRepository featureThreadRepository,
@@ -249,7 +247,6 @@ public class ProjectFlowService {
         this.requirementGroundingService = requirementGroundingService;
         this.geminiContextService = geminiContextService;
         this.taskConflictRepository = taskConflictRepository;
-        this.needsHumanReviewRepository = needsHumanReviewRepository;
         this.linearIssueMetadataRepository = linearIssueMetadataRepository;
         this.featureRepository = featureRepository;
         this.featureThreadRepository = featureThreadRepository;
@@ -456,7 +453,6 @@ public class ProjectFlowService {
 
             claimRepository.deleteAll(claimRepository.findByTaskIdIn(taskIds));
             taskConflictRepository.deleteAll(taskConflictRepository.findByTaskIdIn(taskIds));
-            needsHumanReviewRepository.deleteAll(needsHumanReviewRepository.findByTaskIdIn(taskIds));
             linearIssueMetadataRepository.deleteAllById(taskIds);
 
             List<JulesSessionEntity> sessions = julesSessionRepository.findByTaskIdIn(taskIds);

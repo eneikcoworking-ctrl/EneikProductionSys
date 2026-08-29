@@ -91,7 +91,6 @@ class IdempotencyTest {
             mock(com.eneik.production.repositories.PrReviewRepository.class),
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
             mock(com.eneik.production.services.ProjectFlowService.class),
-            mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             mock(com.eneik.production.services.FalsificationCycleService.class),
             mock(com.eneik.production.repositories.FeatureThreadRepository.class),
             mock(com.eneik.production.services.ClientDeliverableReadinessService.class),

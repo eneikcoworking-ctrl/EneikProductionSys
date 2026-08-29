@@ -87,7 +87,6 @@ class JulesDispatchServiceTest {
             prReviewPipelineService, mlPredictionServiceClient, roleRepository, gitHubPullRequestService, prReviewRepository,
             mock(com.eneik.production.services.monitor.SystemProgressTracker.class),
             projectFlowService,
-            mock(com.eneik.production.repositories.NeedsHumanReviewRepository.class),
             falsificationCycleService,
             featureThreadRepository, readinessService,
             persistentWorkerSessionService,
