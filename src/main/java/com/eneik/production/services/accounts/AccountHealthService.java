@@ -229,6 +229,18 @@ public class AccountHealthService {
                                     + "success at count={} - revised estimate upward to {}.",
                             account.getName(), currentCeiling, newDailyCount, account.getEstimatedDailyCapacity());
                 }
+                // Invariant 15, the same shape one field over (2026-08-29, action plan 4.4). A session Jules
+                // actually accepted while this account already held its believed ceiling open is a bold
+                // conjecture that survived; an acceptance well below it tests nothing.
+                int openNow = accountRepository.countOpenSessions(account.getId());
+                int concurrentCeiling = concurrentCeilingOf(account);
+                if (openNow >= concurrentCeiling) {
+                    account.setEstimatedConcurrentCapacity(concurrentCeiling + dailyCapacityProbeStep);
+                    log.info("[ACCOUNT-CAPACITY] Account '{}' held {} session(s) open at its believed "
+                                    + "concurrent ceiling of {} and Jules still accepted - revised upward to {}.",
+                            account.getName(), openNow, concurrentCeiling,
+                            account.getEstimatedConcurrentCapacity());
+                }
                 accountRepository.save(account);
             }
             case DAILY_LIMIT -> {
@@ -251,6 +263,22 @@ public class AccountHealthService {
                         DAILY_LIMIT_DEFECT_TYPE, rawReason == null ? "" : rawReason, null));
             }
             case PRECONDITION_UNSPECIFIED -> {
+                // 2026-08-29, action plan 4.4. The operator established that this refusal is Jules turning
+                // down a session because too many are already open. That is the falsifier invariant 15 said
+                // was missing for the concurrency belief, so the belief revises down from the ACTUAL point
+                // it was refused at - never back to the unverified constant - with the same backoff factor
+                // the daily belief already uses. Nothing else about the account is charged: its status, its
+                // block counter and its cooldown stay untouched, because being full is not being at fault.
+                int refusedAt = accountRepository.countOpenSessions(account.getId());
+                int priorConcurrent = concurrentCeilingOf(account);
+                int revisedConcurrent = Math.max(1, (int) Math.round(refusedAt * dailyCapacityBackoffFactor));
+                if (revisedConcurrent < priorConcurrent) {
+                    account.setEstimatedConcurrentCapacity(revisedConcurrent);
+                    accountRepository.save(account);
+                    log.warn("[ACCOUNT-CAPACITY] Account '{}' was refused a session while holding {} open - "
+                                    + "revised concurrent estimate from {} down to {}.",
+                            account.getName(), refusedAt, priorConcurrent, revisedConcurrent);
+                }
                 // §12. Jules said a precondition failed and did not say which. Measured 2026-08-29: 41 such
                 // refusals, all carrying "Precondition check failed." and nothing else. The same status also
                 // arrives as "Repository access is not ready", which IS about the account - so the bare form
@@ -339,6 +367,14 @@ public class AccountHealthService {
      * falling back to the factory-wide pool when this account has too few of its own, falling back to the
      * exponential-backoff prior when even the pool is too small to trust yet.
      */
+    /** The ceiling the selector applies, read the same way it reads it. */
+    private int concurrentCeilingOf(AccountEntity account) {
+        if (account.getEstimatedConcurrentCapacity() != null) {
+            return account.getEstimatedConcurrentCapacity();
+        }
+        return account.getMaxConcurrentSessions() != null ? account.getMaxConcurrentSessions() : 3;
+    }
+
     private long computeCooldownMinutes(AccountEntity account) {
         long targetCooldown;
         List<Double> samples = observedDurations(

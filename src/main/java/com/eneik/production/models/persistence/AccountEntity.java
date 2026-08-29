@@ -110,6 +110,17 @@ public class AccountEntity {
     public void setMaxConcurrentSessions(Integer maxConcurrentSessions) { this.maxConcurrentSessions = maxConcurrentSessions; }
     public int getConsecutiveApiBlockCount() { return consecutiveApiBlockCount; }
     public void setConsecutiveApiBlockCount(int consecutiveApiBlockCount) { this.consecutiveApiBlockCount = consecutiveApiBlockCount; }
+    // 2026-08-29, action plan 4.4: the same revisable belief as estimatedDailyCapacity, for how many
+    // sessions this account may hold open at once. NULL until a real observation moves it, and the selector
+    // then falls back to maxConcurrentSessions exactly as before.
+    @Column(name = "estimated_concurrent_capacity")
+    private Integer estimatedConcurrentCapacity;
+
+    public Integer getEstimatedConcurrentCapacity() { return estimatedConcurrentCapacity; }
+    public void setEstimatedConcurrentCapacity(Integer estimatedConcurrentCapacity) {
+        this.estimatedConcurrentCapacity = estimatedConcurrentCapacity;
+    }
+
     public Integer getEstimatedDailyCapacity() { return estimatedDailyCapacity; }
     public void setEstimatedDailyCapacity(Integer estimatedDailyCapacity) { this.estimatedDailyCapacity = estimatedDailyCapacity; }
 }

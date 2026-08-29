@@ -149,9 +149,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
     // a.estimated_daily_capacity (AccountHealthService.reportDispatchOutcome's Popperian/Bayesian belief,
     // revised only by real Jules evidence) over the raw :maxDailySessions config constant, an unverified
     // global guess applied identically to every account regardless of that account's real quota. Deliberately
-    // does NOT extend to max_concurrent_sessions below - DispatchOutcome has no distinct "rejected because
-    // too many concurrent sessions" signal, so there is no real evidence channel to falsify a belief about it
-    // (a one-directional "probe up, never verified down" would violate the same invariant it's meant to satisfy).
+    // Extended to concurrency on 2026-08-29 (action plan 4.4). It did not apply here while DispatchOutcome
+    // had no distinct "rejected because too many concurrent sessions" signal - without a falsifier, a
+    // one-directional "probe up, never verified down" would have violated the very invariant it was meant
+    // to satisfy. The operator established that day that the unnamed FAILED_PRECONDITION IS that refusal,
+    // so the falsifier exists and estimated_concurrent_capacity now leads the COALESCE below, NULL until a
+    // real observation moves it.
     @Query(value = """
             SELECT * FROM accounts a
             WHERE a.enabled = true
@@ -169,7 +172,7 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                   WHERE s.account_id = a.id
                     AND s.status IN ('queued', 'running', 'revising', 'stuck')
                     AND t.status NOT IN ('done', 'failed', 'blocked')
-              ) < COALESCE(a.max_concurrent_sessions, :maxSessions, 3)
+              ) < COALESCE(a.estimated_concurrent_capacity, a.max_concurrent_sessions, :maxSessions, 3)
             -- §13, measured 2026-08-29: thirty four refusals in a row through ONE account while six sat
             -- idle, the freshest of the others three hours stale. With no sessions open anywhere the first
             -- key ties for everyone, so the second key decides - and ClaimService writes last_heartbeat at
@@ -276,6 +279,19 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             """, nativeQuery = true)
     boolean existsJulesAccountWithCapacity(@Param("tag") String tag,
                                            @Param("maxSessions") int maxSessions);
+
+    // 2026-08-29, action plan 4.4: how many sessions this account is holding open, counted by exactly the
+    // expression the selector below admits by. The belief about the ceiling and the gate that applies it
+    // must speak of the same quantity, or one is revised about a number the other never uses.
+    @Query(value = """
+            SELECT COUNT(*)
+            FROM jules_sessions s
+            JOIN tasks t ON t.id = s.task_id
+            WHERE s.account_id = :accountId
+              AND s.status IN ('queued', 'running', 'revising', 'stuck')
+              AND t.status NOT IN ('done', 'failed', 'blocked')
+            """, nativeQuery = true)
+    int countOpenSessions(@Param("accountId") UUID accountId);
 
     long countByCurrentProjectId(UUID currentProjectId);
 
