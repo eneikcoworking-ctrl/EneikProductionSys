@@ -102,11 +102,14 @@ class AccountSelectionFairnessTest {
                         + "improve by refusing");
 
         String leadingTerm = source.substring(orderBy, source.indexOf(") ASC, (", orderBy));
-        assertTrue(leadingTerm.contains("s.external_session_id IS NULL"),
-                "the term must read whether the account's most recent outcome was a refusal");
-        assertTrue(leadingTerm.contains("ORDER BY s.created_at DESC"),
-                "it is the MOST RECENT outcome that decides, not a count - a count would need a threshold");
-        assertTrue(leadingTerm.contains("LIMIT 1"), "exactly one row decides the term");
+        assertTrue(leadingTerm.contains("r.external_session_id IS NULL"),
+                "the term must count refusals recorded for this account");
+        // A single bit saturated under load (measured 2026-08-29: every account carried a recent refusal,
+        // so the term tied at one and the next key promoted the account carrying nothing). The count keeps
+        // the distinction; it is a sort key derived from the data, not a threshold anyone chose.
+        assertTrue(leadingTerm.contains("SELECT COUNT(*)"), "it must count, not read a single bit");
+        assertTrue(leadingTerm.contains("MAX(s2.created_at)"),
+                "counted only since this account last had a session accepted, so one acceptance resets it");
     }
 
     /** An ordering may say later; it may never say never. Every account must remain selectable. */

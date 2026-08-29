@@ -192,23 +192,35 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
             -- accounts that were accepting all had a session or two open and a ceiling of 3.
             --
             -- The leading term below is the one key a refusing account cannot improve by refusing: a
-            -- refusal writes a row with no external id, which sets the term to 1 and moves the account
-            -- BACK. Leaving the run takes exactly one accepted session, an event Jules produces and the
+            -- refusal writes a row with no external id, which raises the term and moves the account
+            -- BACK. Resetting it takes exactly one accepted session, an event Jules produces and the
             -- factory cannot. It is an ordering, never an exclusion - if every account is in a refusal run
             -- the order is the previous one and work still goes out. It attributes no fault: it touches
             -- neither the status of the account nor its health counters, and says only that this one is
-            -- not carrying anything right now, which is what was measured. No apostrophe appears in any
+            -- not carrying anything right now, which is what was measured.
+            --
+            -- It was a single BIT until the evening of 2026-08-29, and the bit saturated. Measured under
+            -- load: 10 dispatches against 37 refusals, a recent refusal on every account, so the term tied
+            -- at one for all of them and the next key decided - fewest open sessions, which prefers exactly
+            -- the account carrying nothing. eneikdru was picked FIRST eleven times in fifteen minutes, at
+            -- zero of fifteen sessions, with twenty one refusals and no accepted session in eight hours.
+            -- Counting the refusals recorded since that account last had one accepted keeps the
+            -- distinction when everyone has refused: small for an account that sometimes accepts, the
+            -- whole run for one that does not. No apostrophe appears in any
             -- comment inside this query text on purpose: Spring Data scans the whole annotation value for
             -- quoted ranges without excluding SQL comments, and one apostrophe here cost a 43-restart crash
             -- loop on 2026-08-29 ("starts a quoted range at 3712, but never ends it").
             ORDER BY COALESCE((
-                  SELECT CASE WHEN s.external_session_id IS NULL THEN 1 ELSE 0 END
-                  FROM jules_sessions s
-                  WHERE s.account_id = a.id
-                    AND ((s.external_session_id IS NOT NULL AND s.external_session_id <> 'skipped')
-                         OR (s.external_session_id IS NULL AND s.status = 'failed'))
-                  ORDER BY s.created_at DESC
-                  LIMIT 1
+                  SELECT COUNT(*)
+                  FROM jules_sessions r
+                  WHERE r.account_id = a.id
+                    AND r.external_session_id IS NULL AND r.status = 'failed'
+                    AND r.created_at > COALESCE((
+                          SELECT MAX(s2.created_at) FROM jules_sessions s2
+                          WHERE s2.account_id = a.id
+                            AND s2.external_session_id IS NOT NULL
+                            AND s2.external_session_id <> 'skipped'
+                      ), TIMESTAMP '1970-01-01 00:00:00')
               ), 0) ASC, (
                   SELECT COUNT(*)
                   FROM jules_sessions s
