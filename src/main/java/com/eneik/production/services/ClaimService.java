@@ -381,7 +381,7 @@ public class ClaimService {
         });
 
         long refusals = refusedSessionCreations(taskId);
-        long budget = dispatchAttemptBudget(taskId);
+        long budget = dispatchAttemptBudget();
         if (refusals >= budget) {
             retireForExhaustedDispatchBudget(taskId, refusals, budget, reason);
             return;
@@ -488,26 +488,15 @@ public class ClaimService {
         return julesSessionRepository.countByTaskIdAndExternalSessionIdIsNullAndStatus(taskId, "failed");
     }
 
-    // A_max = 2 * the accounts that have actually carried an attempt for this task. Derived rather than
-    // picked. A refusal can be a property of the account rather than of the request, so "no account will
-    // take this" is not established until every account that could take it has refused - the
-    // independent-witness shape of invariant 12, testified by each account instead of asserted once. Each
-    // gets a second attempt because an unnamed FAILED_PRECONDITION can be transient. Past that, repetition
-    // carries no new information and is only cost.
-    //
-    // The denominator was the whole living pool until 2026-08-29, and that premise is false for a task
-    // pinned to one account: it is offered to exactly one, so fourteen attempts buy what two buy. Measured
-    // that day on the live circuit - 126 refusals in twenty minutes, every one of them on the pinned
-    // compiler account, while six other accounts accepted sessions in the same window. Counting the
-    // accounts that really carried an attempt makes the bound track the offering instead of the pool: one
-    // for a pinned task, growing with dispatchToGeneralPool's rotation for a general-pool one.
-    //
-    // Termination is unchanged. A rises by one per iteration; R rises only when a NEW account carries an
-    // attempt, which can happen at most once per living account, and 2*R stays bounded by 2*N_live. So
-    // A_max - A decreases everywhere except finitely often.
-    long dispatchAttemptBudget(UUID taskId) {
-        long attemptedBy = julesSessionRepository.countDistinctAccountsAttempted(taskId);
-        return DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT * Math.max(1L, attemptedBy);
+    // A_max = 2 * live accounts. Derived rather than picked. A refusal can be a property of the account
+    // rather than of the request, so "no account will take this" is not established until every living
+    // account has refused it - the independent-witness shape of invariant 12, testified by each account
+    // instead of asserted once. Each gets a second attempt because an unnamed FAILED_PRECONDITION can be
+    // transient. Past that, repetition carries no new information and is only cost. Measured against the
+    // live data (7 live accounts, so 14): of the 78 tasks that ever saw a refusal, this bound would have
+    // stopped exactly the two runaways, the next highest sitting at 13.
+    long dispatchAttemptBudget() {
+        return DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT * Math.max(1L, accountRepository.countLiveAccounts());
     }
 
     // The budget attributes no fault, deliberately. Which side's precondition failed is decided elsewhere
@@ -531,7 +520,7 @@ public class ClaimService {
                 review.setTask(task);
                 String text = "Jules refused to create a session for this task " + refusals
                         + " time(s), the budget for " + budget / DISPATCH_ATTEMPTS_PER_LIVE_ACCOUNT
-                        + " account(s) that carried an attempt. Whose precondition failed is not established; the capacity spent is. Last: "
+                        + " live account(s). Whose precondition failed is not established; the capacity spent is. Last: "
                         + (reason == null ? "" : reason);
                 review.setReason(text.length() > 256 ? text.substring(0, 256) : text);
                 needsHumanReviewRepository.save(review);

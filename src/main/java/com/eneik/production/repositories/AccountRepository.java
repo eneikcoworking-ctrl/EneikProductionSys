@@ -241,4 +241,12 @@ public interface AccountRepository extends JpaRepository<AccountEntity, UUID> {
                                            @Param("maxSessions") int maxSessions);
 
     long countByCurrentProjectId(UUID currentProjectId);
+
+    // 2026-08-29, action plan 4.1: the size of the pool a refused dispatch could still be retried against.
+    // `decommissioned` is the only status that means the account is gone for good; every other one
+    // (api_blocked, daily_limited, offline) is a condition the account recovers from, so an account in it
+    // is still a witness the task has not yet been offered to.
+    @Query("SELECT COUNT(a) FROM AccountEntity a WHERE " +
+            "a.status <> com.eneik.production.models.persistence.AccountStatus.decommissioned")
+    long countLiveAccounts();
 }
