@@ -1989,7 +1989,7 @@ public class ProjectFlowService {
             // already uses.
             String reportLine = "Decomposition budget exhausted for wishlist " + wishlist.getId() + " after "
                     + WISHLIST_COMPILE_ATTEMPT_BUDGET + " attempts with no slice produced - "
-                    + "the brief needs a human reading, not another retry.";
+                    + "no further compile will be dispatched for it.";
             String report = project.getFactoryReport();
             if (report == null || !report.contains(reportLine)) {
                 log.warn("ProjectFlowService: wishlist {} exhausted its decomposition budget ({} attempts) "
@@ -3248,7 +3248,7 @@ public class ProjectFlowService {
                     }
                     claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
                     // releaseClaimToQueue does not always requeue: at its dispatch-attempt budget (action
-                    // plan 4.1) it writes `blocked` and routes the task to human review instead. Rotating
+                    // plan 4.1) it writes `blocked` and leaves the task blocked instead. Rotating
                     // on regardless would offer a task around that has just left the queue - and if the
                     // next account happened to accept it, would open a live session against a blocked
                     // task, which the session poller then has to close again.

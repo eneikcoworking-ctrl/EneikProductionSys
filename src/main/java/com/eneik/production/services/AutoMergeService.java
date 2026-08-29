@@ -810,12 +810,12 @@ public class AutoMergeService {
                 + CLOSEOUT_CONFLICT_MAX_ATTEMPTS + " automated Jules-mediated rebase attempts - this branch's "
                 + "real code was NEVER MERGED into main and the branch has now been deleted.\n\n"
                 + "Last known work summary: " + (thread.getSummary() == null ? "(none recorded)" : thread.getSummary())
-                + "\n\nRecommendation: this consistently indicates either (a) the conflict is symptomatic of a "
-                + "deeper design clash with other work already on main (two features independently editing the "
-                + "same real file/table/endpoint) that needs a human decision before any retry, not just another "
-                + "automated rebase, or (b) the thread's own work has simply drifted too far from main's current "
-                + "state to salvage - in that case, re-implementing this feature's remaining scope fresh from "
-                + "current main is more reliable than trying to rescue the abandoned branch.");
+                + "\n\nRecommendation: re-implement this feature's remaining scope fresh from current main "
+                + "rather than trying to rescue the abandoned branch. A conflict that survived this many "
+                + "automated rebases is either a design clash with work already on main (two features editing "
+                + "the same real file, table or endpoint) or a branch that has drifted too far to salvage, and "
+                + "in both cases the reliable move is the same: build the remaining scope again against main "
+                + "as it is now.");
         wishlistRepository.save(wishlist);
     }
 

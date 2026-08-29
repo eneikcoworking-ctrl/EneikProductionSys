@@ -478,14 +478,11 @@ public class FlowSpineService {
         int deliveryRefuted = (int) tasks.stream().filter(TaskEntity::deliveryRefuted).count();
         log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} NEVER ASKED={} of {} tasks",
                 qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent, tasks.size());
-        if (refusedWishlist > 0) {
-            // F39: a finding nobody can retrieve is not a finding. These briefs are out of the flow-state
-            // denominator by invariant 8, which is exactly why they must be visible as their own number -
-            // otherwise excluding them turns a silent block into a silent disappearance.
-            log.warn("FlowSpine: {} brief(s) were put to the compiler and produced no decomposition within "
-                            + "their budget; they no longer hold the project in DECOMPOSING and need a human reading",
-                    refusedWishlist);
-        }
+        // The count of briefs the compiler answered with nothing travels in StateInputs below and reaches
+        // the dashboard through the model, which is where F39 wanted it retrievable. It used to be written
+        // here as a warning as well, on every build of the model - measured 2026-08-29, eleven identical
+        // lines in thirty minutes about a fact that cannot change - and it ended by asking for a human
+        // reading, which is a branch this factory no longer has (operator, same day).
 
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,
