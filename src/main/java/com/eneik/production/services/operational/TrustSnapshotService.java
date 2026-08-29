@@ -14,6 +14,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -138,12 +140,22 @@ public class TrustSnapshotService {
     }
 
     void backfillResolvedOutcomes() {
+        // One readiness computation per project per pass (2026-08-29). computeForProject() takes the
+        // PROJECT, so calling it inside this loop recomputed the same answer once per snapshot. The set
+        // iterated here is every snapshot whose outcome is still open, and a snapshot stays open until its
+        // project is delivered or frozen while two more are written every hour - so the set grows linearly
+        // with the age of a live project and the cost of this pass grows with it, without bound. Measured
+        // that day on the live circuit: 50 snapshots, 0 resolved, one active project of 387 tasks - fifty
+        // full readiness computations to obtain one answer fifty times, and the connection this pass holds
+        // was reported leaked at the 30-second threshold. The map lives for exactly one pass.
+        Map<UUID, ClientDeliverableReadinessService.Readiness> passReadiness = new HashMap<>();
         for (TrustSignalSnapshotEntity snapshot : snapshotRepository.findByEventualOutcomeIsNull()) {
             ProjectEntity project = projectRepository.findById(snapshot.getProjectId()).orElse(null);
             if (project == null) {
                 continue;
             }
-            var readiness = readinessService.computeForProject(snapshot.getProjectId());
+            var readiness = passReadiness.computeIfAbsent(
+                    snapshot.getProjectId(), readinessService::computeForProject);
             if (readiness.totalFeatures() > 0 && readiness.completeFeatures() >= readiness.totalFeatures()) {
                 resolve(snapshot, "delivered");
             } else if (project.getStatus() == ProjectStatus.frozen || project.getStatus() == ProjectStatus.archived) {

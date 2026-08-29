@@ -136,6 +136,58 @@ class JulesDispatchServiceTest {
         return service;
     }
 
+    /**
+     * Guard for the loop-invariant rule (2026-08-29, plan §4.25): a value whose only argument is the
+     * PROJECT is observed once per sweep, not once per element of the sweep.
+     *
+     * <p>Measured before it was forbidden: this sweep asked GitHub for the same project's pull requests
+     * once per non-terminal task and once more per done-but-unmerged task - nine calls on the live
+     * circuit, two paginated fetches each, where one call answers for all of them. Beyond the cost it was
+     * also less correct: nine calls observe nine different states of the repository, so two tasks decided
+     * within one sweep could be decided against two different realities (Charter invariant 9).
+     *
+     * <p>The assertion is on the COUNT rather than on any outcome, because the defect is invisible in any
+     * single outcome - every individual call returned the right answer.
+     */
+    @Test
+    void reconciliationSweepObservesGitHubOncePerProjectNotOncePerTask() {
+        var settingsService = (com.eneik.production.services.settings.SystemSettingsService)
+                ReflectionTestUtils.getField(julesDispatchService, "settingsService");
+        when(settingsService.effectiveBoolean("github_truth_reconciliation_enabled")).thenReturn(true);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setRepositoryName("repo");
+        project.setStatus(ProjectStatus.active);
+
+        List<TaskEntity> nonTerminal = new ArrayList<>();
+        List<TaskEntity> done = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            TaskEntity task = new TaskEntity();
+            task.setId(UUID.randomUUID());
+            task.setProject(project);
+            task.setStatus(i < 3 ? TaskStatus.queued : TaskStatus.done);
+            (i < 3 ? nonTerminal : done).add(task);
+
+            JulesSessionEntity session = new JulesSessionEntity();
+            session.setId(UUID.randomUUID());
+            session.setTaskId(task.getId());
+            session.setExternalSessionId("sessions/" + i);
+            session.setCreatedAt(Instant.now());
+            when(julesSessionRepository.findByTaskId(task.getId())).thenReturn(List.of(session));
+        }
+        when(taskRepository.findByStatusIn(any())).thenReturn(nonTerminal);
+        when(taskRepository.findByStatus(TaskStatus.done)).thenReturn(done);
+        when(gitHubPullRequestService.pullRequestSnapshot(project)).thenReturn(
+                new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                        false, "owner", "repo", List.of(), List.of(), "unavailable for this test"));
+
+        julesDispatchService.reconcileTaskStatusAgainstGitHubTruth();
+
+        // Five tasks of one project, one observation. Not "at most one call per task".
+        verify(gitHubPullRequestService, times(1)).pullRequestSnapshot(project);
+    }
+
     @Test
     void testMapExternalStatus() {
         assertEquals("queued", julesDispatchService.mapExternalStatus("QUEUED"));

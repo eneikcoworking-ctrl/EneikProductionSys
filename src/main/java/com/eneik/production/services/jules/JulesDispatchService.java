@@ -5100,6 +5100,14 @@ public class JulesDispatchService {
             return;
         }
         int reconciled = 0;
+        // One observation per project per sweep (2026-08-29). pullRequestSnapshot() takes the PROJECT, not
+        // the task, so calling it inside this loop asked GitHub the same question once per candidate: two
+        // paginated fetches each, measured at nine calls where one answers for all of them. Beyond the cost
+        // it was also less correct - nine calls take nine different states of the repository, so two tasks
+        // of one sweep could be classified against two different realities (Charter invariant 9). This map
+        // lives for exactly one sweep and is shared with the done-task pass below; it is not a cache, the
+        // next sweep asks GitHub again.
+        Map<UUID, GitHubPullRequestService.PullRequestSnapshot> sweepSnapshots = new java.util.HashMap<>();
         for (TaskEntity task : candidates) {
             // GitHub budget guard (2026-07-30, quantified live: 45 of 82 calls in a 20-minute window were
             // spent on frozen/accepted projects with leftover non-terminal tasks, against 37 for the one
@@ -5136,7 +5144,7 @@ public class JulesDispatchService {
                     continue;
                 }
                 GitHubPullRequestService.PullRequestSnapshot snapshot =
-                        gitHubPullRequestService.pullRequestSnapshot(task.getProject());
+                        sweepSnapshot(sweepSnapshots, task.getProject());
                 if (!snapshot.available()) {
                     continue;
                 }
@@ -5169,7 +5177,7 @@ public class JulesDispatchService {
         if (reconciled > 0) {
             log.info("reconcileTaskStatusAgainstGitHubTruth: reconciled {} task(s) against real GitHub state this sweep", reconciled);
         }
-        reconcileDoneTasksNotReachedMain();
+        reconcileDoneTasksNotReachedMain(sweepSnapshots);
     }
 
     /**
@@ -5189,7 +5197,18 @@ public class JulesDispatchService {
      *      a product-correctness judgment call (same boundary OpsAuditorService draws for itself), not a
      *      mechanical reconciliation this sweep should make unilaterally.
      */
-    private void reconcileDoneTasksNotReachedMain() {
+    /**
+     * Returns this sweep's single observation of the project's pull requests, taking it the first time it
+     * is asked for. See the comment at the map's declaration for why one observation per sweep is both
+     * cheaper and more correct than one per task.
+     */
+    private GitHubPullRequestService.PullRequestSnapshot sweepSnapshot(
+            Map<UUID, GitHubPullRequestService.PullRequestSnapshot> sweepSnapshots, ProjectEntity project) {
+        return sweepSnapshots.computeIfAbsent(project.getId(), id -> gitHubPullRequestService.pullRequestSnapshot(project));
+    }
+
+    private void reconcileDoneTasksNotReachedMain(
+            Map<UUID, GitHubPullRequestService.PullRequestSnapshot> sweepSnapshots) {
         List<TaskEntity> doneTasks = taskRepository.findByStatus(TaskStatus.done);
         for (TaskEntity task : doneTasks) {
             if (task.getProject() == null || readinessService.isAuxiliaryTask(task) || readinessService.reachedMain(task)) {
@@ -5202,7 +5221,7 @@ public class JulesDispatchService {
                     continue;
                 }
                 GitHubPullRequestService.PullRequestSnapshot snapshot =
-                        gitHubPullRequestService.pullRequestSnapshot(task.getProject());
+                        sweepSnapshot(sweepSnapshots, task.getProject());
                 if (!snapshot.available()) {
                     continue;
                 }
@@ -5211,8 +5230,8 @@ public class JulesDispatchService {
                         .findFirst()
                         .ifPresent(closedPr -> log.warn(
                                 "reconcileTaskStatusAgainstGitHubTruth: task {} is marked done but PR#{} closed without "
-                                        + "merge and no other evidence shows the work reached main - needs human review, "
-                                        + "not auto-corrected (done is a CAS-protected terminal status)",
+                                        + "merge and no other evidence shows the work reached main - recorded as evidence "
+                                        + "only; done is a CAS-protected terminal status this sweep does not overwrite",
                                 task.getId(), closedPr.number()));
             } finally {
                 com.eneik.production.services.logging.LogScope.clear();

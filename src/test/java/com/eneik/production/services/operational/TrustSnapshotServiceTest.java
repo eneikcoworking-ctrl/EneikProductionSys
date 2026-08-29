@@ -122,6 +122,42 @@ class TrustSnapshotServiceTest {
         assertEquals("abandoned", unresolved.getEventualOutcome());
     }
 
+    /**
+     * Guard for the loop-invariant rule (2026-08-29, plan §4.25): readiness takes the PROJECT, so this
+     * pass computes it once per project, not once per snapshot.
+     *
+     * <p>Why it matters here more than anywhere else: a snapshot stays unresolved until its project is
+     * delivered or frozen, and two more are written every hour, so the set this pass iterates grows
+     * linearly with the age of a live project and never shrinks. Measured on the live circuit that day:
+     * 50 snapshots, 0 resolved, one active project of 387 tasks - fifty full readiness computations to
+     * obtain one answer fifty times, and the pooled connection this pass holds was reported leaked at the
+     * 30-second threshold.
+     *
+     * <p>Asserted as a count, because every one of those fifty computations returned the correct value.
+     */
+    @Test
+    void backfillComputesReadinessOncePerProjectNotOncePerSnapshot() {
+        UUID projectId = UUID.randomUUID();
+        List<TrustSignalSnapshotEntity> unresolved = new java.util.ArrayList<>();
+        for (int i = 0; i < 12; i++) {
+            TrustSignalSnapshotEntity snapshot = new TrustSignalSnapshotEntity();
+            snapshot.setProjectId(projectId);
+            unresolved.add(snapshot);
+        }
+        when(snapshotRepository.findByEventualOutcomeIsNull()).thenReturn(unresolved);
+
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+        when(projectRepository.findById(projectId)).thenReturn(Optional.of(project));
+        when(readinessService.computeForProject(projectId)).thenReturn(
+                new ClientDeliverableReadinessService.Readiness(5, 2, 10, 4, 0.4, true, 0.4));
+
+        service.backfillResolvedOutcomes();
+
+        verify(readinessService, org.mockito.Mockito.times(1)).computeForProject(projectId);
+    }
+
     @Test
     void backfillLeavesAStillActiveIncompleteProjectUnresolved() {
         TrustSignalSnapshotEntity unresolved = new TrustSignalSnapshotEntity();
