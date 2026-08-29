@@ -2900,8 +2900,10 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.pending_review);
 
-        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
-        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        // The target belongs to this project, so it is in the project's own task list - which is what the
+        // production query returns and what the caller now indexes instead of asking per target (§4.25).
+        target.setProject(project);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback, target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
         when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
@@ -2932,8 +2934,8 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.pending_review);
 
-        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
-        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        target.setProject(project);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback, target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
         when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));
@@ -2964,8 +2966,8 @@ class JulesDispatchServiceTest {
         target.setId(targetTaskId);
         target.setStatus(TaskStatus.review);
 
-        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback));
-        when(taskRepository.findById(targetTaskId)).thenReturn(Optional.of(target));
+        target.setProject(project);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(completedFallback, target));
         when(projectFlowService.isReviewFallbackTask(completedFallback)).thenReturn(true);
         when(projectFlowService.reviewFallbackTargetTaskIds(completedFallback)).thenReturn(List.of(targetTaskId));
         when(projectFlowService.reviewFallbackTargetPrUrls(completedFallback)).thenReturn(List.of("https://github.com/org/repo/pull/1"));

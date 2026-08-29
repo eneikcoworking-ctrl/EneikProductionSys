@@ -3349,7 +3349,21 @@ public class JulesDispatchService {
     Set<String> reviewFallbackTargetsEverAttempted(UUID projectId) {
         Set<String> keys = new java.util.HashSet<>();
         // Scoped to the project (2026-08-28), same reason as above.
-        taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+        //
+        // Read once, indexed once (2026-08-29, plan §4.25 again, measured again). The per-target lookup
+        // below used to be its own findById, so this method cost one query per target of every
+        // review-fallback carrier the project has ever had - and it runs inside the admission mutex, where
+        // that cost is paid while every other admission of the project waits. Measured on the live circuit
+        // right after the transaction span was shortened: Hikari still reported the connection held past
+        // the 30-second threshold, now inside admitAndDispatchReviewFallbackBatch itself, on a project of
+        // ~400 tasks. The tasks were already all in hand; asking the database again for rows already read
+        // is the same defect as asking GitHub once per task.
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId);
+        Map<UUID, TaskEntity> byId = new java.util.HashMap<>();
+        for (TaskEntity task : projectTasks) {
+            byId.put(task.getId(), task);
+        }
+        projectTasks.stream()
                 .filter(projectFlowService::isReviewFallbackTask)
                 .forEach(task -> {
                     List<UUID> ids = projectFlowService.reviewFallbackTargetTaskIds(task);
@@ -3363,7 +3377,7 @@ public class JulesDispatchService {
                         // it eligible for a genuine re-review next processPendingReviewBatch tick instead of
                         // being pre-blocked by this same poka-yoke forever. See
                         // PR_REVIEW_FALLBACK_NULL_VERDICT_RETRY_KEY.
-                        TaskEntity target = taskRepository.findById(targetId).orElse(null);
+                        TaskEntity target = byId.get(targetId);
                         if (target != null
                                 && target.getStatus() == com.eneik.production.models.persistence.TaskStatus.pending_review
                                 && projectFlowService.reviewFallbackNullVerdictRetryCount(target) > 0
