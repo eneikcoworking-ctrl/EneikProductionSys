@@ -287,6 +287,19 @@ b допускается при `W(project) > last_compile_dispatched_at(b)`.
 *Бутстрап проверяем по данным:* у шести брифов `last_compile_dispatched_at` — 28.08 05:10, 05:27 и 21:49;
 `W` на момент замера — 29.08 00:18. Все шесть подлежат возврату первым же тактом.
 
+**Сделано и наблюдено 29.08** (`dc8a586`, развёрнуто). `markCompilerReached` получил третье место вызова —
+одноразовый путь, в точке, где `dispatchCompilerTask` вернул истину. `restoreUnreachedBriefs` берёт
+`max(знак работника, W)`. 35 из 35 тестов зелёные, три новых в `ProjectFlowServiceTest` — восстановление
+без работника, отсутствие знака вообще, и что собственный отказ брифа не двигает его же знак.
+
+Наблюдение на живых данных, 01:45:48:
+
+    ProjectFlowService: restored 6 brief(s) whose decomposition budget was spent without the
+    compiler ever being reached; the channel has been live since (watermark 2026-08-29T00:18:17.420141Z)
+
+Шесть — те самые шесть, знак — то самое значение, предсказанное выше. Следом создан компиляторный таск
+`b2c7e8fe` и раз в такт получает `jules_precondition_unspecified`, HTTP 400, на аккаунте `eneikdru`.
+
 ### 4.3 Условие `FAILED_PRECONDITION` без названия
 
 Jules отвечает `400 FAILED_PRECONDITION` с текстом «Precondition check failed.» и ничем больше. Тот же
