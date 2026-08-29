@@ -375,6 +375,48 @@ class ProjectFlowServiceTest {
         verify(gitHubPullRequestService, never()).deleteFile(eq(project), anyString(), anyString());
     }
 
+    /**
+     * Plan §4.24 and §4.25 in one line. The coverage admission holds the project row locked - correctly, it
+     * is a check-then-create mutex - and it used to take a GitHub snapshot inside that lock, once per
+     * client brief. Measured 2026-08-30: Hikari reported this admission holding its connection past the
+     * 30-second threshold, and earlier the same admission was the victim, timing out on that very lock
+     * while another sweep held it, so the coverage mechanism did not run that tick at all.
+     *
+     * <p>The observation is now the caller's, taken with no transaction open. Nothing inside the mutex may
+     * wait on another system.
+     */
+    @Test
+    void theCoverageAdmissionNeverWaitsOnGitHubWhileHoldingTheProjectLock() {
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        when(projectRepository.findById(project.getId())).thenReturn(Optional.of(project));
+
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setId(UUID.randomUUID());
+        clientBrief.setProjectId(project.getId());
+        clientBrief.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+        clientBrief.setStatus(com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(java.util.List.of(clientBrief));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(java.util.List.of());
+
+        var snapshot = new com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot(
+                true, "org", "repo", java.util.List.of(), java.util.List.of(), "");
+
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        when(readinessService.computeForProject(any())).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(readinessService.computeForProject(any(), any())).thenReturn(ClientDeliverableReadinessService.Readiness.none());
+        when(readinessService.listTasksForRootWishlist(any(), any())).thenReturn(java.util.List.of());
+
+        serviceWithWishlistsAndWorker(wishlistRepository, mock(PersistentWorkerSessionService.class),
+                mock(JulesSessionRepository.class), taskRepository, readinessService)
+                .admitDueCoverageAudits(project.getId(), snapshot);
+
+        verify(gitHubPullRequestService, never()).pullRequestSnapshot(any());
+    }
+
     // --- §4.36: the decomposition budget is a conjecture, revised by observation ---------------------
 
     private WishlistEntity brief(UUID projectId, int attempts, Integer ceiling, com.eneik.production.models.persistence.WishlistStatus status) {

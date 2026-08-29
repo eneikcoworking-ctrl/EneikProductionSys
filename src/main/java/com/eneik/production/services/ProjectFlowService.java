@@ -4582,7 +4582,16 @@ public class ProjectFlowService {
      * wishlist only after that transaction has already committed and released the lock.
      */
     public void checkAndDispatchCoverageAudits(UUID projectId) {
-        List<DueCoverageAudit> due = self.admitDueCoverageAudits(projectId);
+        // One observation of the project's pull requests, taken here where no transaction is open
+        // (2026-08-30, plan §4.24 and §4.25 in one line). It used to be taken inside the admission - once
+        // per client brief, while the project row was locked - so a lock meant to serialise a
+        // check-then-create was held across paginated GitHub calls. Measured that day: Hikari reported this
+        // admission holding its connection past the 30-second threshold, and earlier the same admission was
+        // the victim, timing out on that very lock while another sweep held it.
+        ProjectEntity project = projectRepository.findById(projectId).orElse(null);
+        com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot prSnapshot = project == null
+                ? null : gitHubPullRequestService.pullRequestSnapshot(project);
+        List<DueCoverageAudit> due = self.admitDueCoverageAudits(projectId, prSnapshot);
         for (DueCoverageAudit d : due) {
             dispatchCoverageAuditForCompletedWishlist(d.project(), d.wishlist(), d.highestMergedPrNumber());
         }
@@ -4597,7 +4606,8 @@ public class ProjectFlowService {
     // 2026-07-24). Public + called via `self` (not `this`) so this actually goes through the Spring proxy -
     // see the `self` field's own comment. No network calls in here, deliberately.
     @Transactional
-    public List<DueCoverageAudit> admitDueCoverageAudits(UUID projectId) {
+    public List<DueCoverageAudit> admitDueCoverageAudits(UUID projectId,
+            com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot prSnapshot) {
         operationalPolicyService.requireAllowed(projectId, OperationalAction.CHECK_COVERAGE_AUDITS);
         projectRepository.lockProjectForUpdate(projectId);
         List<WishlistEntity> clientWishlists = wishlistRepository.findByProjectId(projectId).stream()
@@ -4623,7 +4633,7 @@ public class ProjectFlowService {
             // work merged - itself a slower version of the same tail-chasing bug, confirmed live tonight
             // (test-thirty-seventh: continuous merges elsewhere kept resetting decompositionComplete/
             // featureRatio, so philosophical falsification's readiness bar was never stably crossed).
-            Integer currentHighestMergedPr = highestMergedPrNumberForWishlist(project, wishlist);
+            Integer currentHighestMergedPr = highestMergedPrNumberForWishlist(project, wishlist, prSnapshot);
             List<TaskEntity> auditsForThisWishlist = existingAuditTasks.stream()
                     .filter(t -> wishlist.getId().equals(coverageAuditTargetWishlistId(t)))
                     .toList();
@@ -4724,18 +4734,27 @@ public class ProjectFlowService {
      * kept that wishlist's readiness/decompositionComplete from ever stabilizing long enough for the
      * philosophical falsification readiness gate to be crossed.
      */
-    private Integer highestMergedPrNumberForWishlist(ProjectEntity project, WishlistEntity wishlist) {
-        var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
-        if (!snapshot.available()) {
+    /**
+     * The highest merged product PR of one brief, against an observation the caller already made.
+     *
+     * <p>Two changes, both of shapes this codebase has already named (2026-08-30). The GitHub snapshot is
+     * passed in rather than fetched here: it depends on the PROJECT, this runs once per brief, and it used
+     * to run inside the admission mutex. And the sessions are asked for by task id rather than read whole
+     * and filtered in memory - the filter WAS the question, and jules_sessions grows with every unit of
+     * work the factory does.
+     */
+    private Integer highestMergedPrNumberForWishlist(ProjectEntity project, WishlistEntity wishlist,
+            com.eneik.production.services.github.GitHubPullRequestService.PullRequestSnapshot prSnapshot) {
+        if (prSnapshot == null || !prSnapshot.available()) {
             return null;
         }
-        Set<UUID> wishlistTaskIds = readinessService.listTasksForRootWishlist(project.getId(), wishlist.getId())
+        var snapshot = prSnapshot;
+        List<UUID> wishlistTaskIds = readinessService.listTasksForRootWishlist(project.getId(), wishlist.getId())
                 .stream()
                 .map(TaskEntity::getId)
-                .collect(java.util.stream.Collectors.toSet());
-        List<JulesSessionEntity> wishlistSessions = julesSessionRepository.findAll().stream()
-                .filter(s -> s.getTaskId() != null && wishlistTaskIds.contains(s.getTaskId()))
                 .toList();
+        List<JulesSessionEntity> wishlistSessions = wishlistTaskIds.isEmpty()
+                ? List.of() : julesSessionRepository.findByTaskIdIn(wishlistTaskIds);
         return snapshot.closed().stream()
                 .filter(com.eneik.production.services.github.GitHubPullRequestService.GitHubPullRequest::merged)
                 .filter(pr -> !isSystemRecordPr(pr, wishlistSessions))
