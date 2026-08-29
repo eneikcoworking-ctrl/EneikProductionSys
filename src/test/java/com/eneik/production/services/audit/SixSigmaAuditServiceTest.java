@@ -87,6 +87,54 @@ public class SixSigmaAuditServiceTest {
         );
     }
 
+    /**
+     * Guard for "a reference is not its referent" (2026-08-29, plan §4.26).
+     *
+     * <p>The task behind a TaskConflictEntity is a LAZY proxy: it is never null, and reading any field
+     * other than getId() loads the row. This scoping filter used to read getProject()/getFeatureId(), so
+     * it asked whether a REFERENCE was present rather than whether its REFERENT exists - and on the live
+     * circuit the 2-hour Kaizen cycle died with EntityNotFoundException on every run, against 92 conflict
+     * rows whose tasks are gone.
+     *
+     * <p>The proxy here refuses every field but getId(), exactly as Hibernate's does for a missing row.
+     * The count must still be produced, and it must be produced from identity alone.
+     */
+    @Test
+    void conflictScopingUsesTaskIdentityAndNeverLoadsTheTaskBehindTheProxy() {
+        UUID projectId = UUID.randomUUID();
+        UUID liveTaskId = UUID.randomUUID();
+
+        com.eneik.production.models.persistence.TaskEntity liveTask =
+                new com.eneik.production.models.persistence.TaskEntity();
+        liveTask.setId(liveTaskId);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(liveTask));
+
+        com.eneik.production.models.persistence.TaskEntity proxyOfLiveTask =
+                mock(com.eneik.production.models.persistence.TaskEntity.class);
+        when(proxyOfLiveTask.getId()).thenReturn(liveTaskId);
+        when(proxyOfLiveTask.getProject()).thenThrow(new jakarta.persistence.EntityNotFoundException("proxy must not be loaded"));
+        when(proxyOfLiveTask.getFeatureId()).thenThrow(new jakarta.persistence.EntityNotFoundException("proxy must not be loaded"));
+
+        com.eneik.production.models.persistence.TaskEntity proxyOfDeletedTask =
+                mock(com.eneik.production.models.persistence.TaskEntity.class);
+        when(proxyOfDeletedTask.getId()).thenReturn(UUID.randomUUID());
+        when(proxyOfDeletedTask.getProject()).thenThrow(new jakarta.persistence.EntityNotFoundException("task no longer exists"));
+
+        com.eneik.production.models.persistence.TaskConflictEntity inScope =
+                new com.eneik.production.models.persistence.TaskConflictEntity();
+        inScope.setTask(proxyOfLiveTask);
+        com.eneik.production.models.persistence.TaskConflictEntity orphan =
+                new com.eneik.production.models.persistence.TaskConflictEntity();
+        orphan.setTask(proxyOfDeletedTask);
+        when(taskConflictRepository.findAll()).thenReturn(List.of(inScope, orphan));
+
+        SixSigmaAuditService.DefectOpportunityCount counts = auditService.computePrConflictCounts(projectId, null);
+
+        // The conflict on the project's own task counts; the one whose task cannot be found belongs to no
+        // project and so counts nowhere.
+        assertThat(counts.defects()).isEqualTo(1);
+    }
+
     @Test
     void testSigmaLevelCalculationFormula() {
         // 3.4 DPMO = 6.0 Sigma

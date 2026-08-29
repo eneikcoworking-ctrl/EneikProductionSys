@@ -424,37 +424,42 @@ public class SixSigmaAuditService {
         List<PrReviewEntity> reviews = prReviewRepository.findAll();
         List<TaskConflictEntity> conflicts = taskConflictRepository.findAll();
 
+        // Membership is decided by identity, not by dereference (2026-08-29, plan §4.26). `c.getTask()` is
+        // a LAZY proxy and is never null: testing it for null tests that a REFERENCE is present, not that
+        // its REFERENT exists, and reading any field other than getId() loads the row - which throws
+        // EntityNotFoundException once that row is gone. Measured that day: the Kaizen 2-hour cycle died
+        // here on every single run, against 92 conflict rows whose tasks no longer exist. This codebase
+        // already writes the distinction down in AutoMergeService and GeminiObserverActionService
+        // ("getId() is always safe, a real field needs a session") and honoured it in exactly those two
+        // places. A conflict whose task is not in the scope's id set belongs to no scope - which is also
+        // the right answer for a conflict whose task cannot be found at all.
         if (featureId != null) {
-            reviews = reviews.stream()
-                    .filter(r -> {
-                        if (r.getJulesSessionId() == null) return false;
-                        var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
-                        if (sessionOpt.isEmpty()) return false;
-                        var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                        return taskOpt.isPresent() && featureId.equals(taskOpt.get().getFeatureId());
-                    })
-                    .toList();
-            conflicts = conflicts.stream()
-                    .filter(c -> c.getTask() != null && featureId.equals(c.getTask().getFeatureId()))
-                    .toList();
+            Set<UUID> scopedTaskIds = idsOf(taskRepository.findByFeatureId(featureId));
+            reviews = reviews.stream().filter(r -> scopedTaskIds.contains(taskIdOfReview(r))).toList();
+            conflicts = conflicts.stream().filter(c -> scopedTaskIds.contains(c.getTask().getId())).toList();
         } else if (projectId != null) {
-            reviews = reviews.stream()
-                    .filter(r -> {
-                        if (r.getJulesSessionId() == null) return false;
-                        var sessionOpt = julesSessionRepository.findById(r.getJulesSessionId());
-                        if (sessionOpt.isEmpty()) return false;
-                        var taskOpt = taskRepository.findById(sessionOpt.get().getTaskId());
-                        return taskOpt.isPresent() && taskOpt.get().getProject() != null && projectId.equals(taskOpt.get().getProject().getId());
-                    })
-                    .toList();
-            conflicts = conflicts.stream()
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projectId.equals(c.getTask().getProject().getId()))
-                    .toList();
+            Set<UUID> scopedTaskIds = idsOf(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId));
+            reviews = reviews.stream().filter(r -> scopedTaskIds.contains(taskIdOfReview(r))).toList();
+            conflicts = conflicts.stream().filter(c -> scopedTaskIds.contains(c.getTask().getId())).toList();
         }
 
         long mergedPrs = reviews.stream().filter(r -> Boolean.TRUE.equals(r.getMerged())).count();
         long conflictDefects = conflicts.size();
         return new DefectOpportunityCount(conflictDefects, mergedPrs + conflictDefects);
+    }
+
+    private static Set<UUID> idsOf(List<TaskEntity> tasks) {
+        return tasks.stream().map(TaskEntity::getId).collect(java.util.stream.Collectors.toSet());
+    }
+
+    /** The task a review belongs to, or null when the chain review -> session -> task is broken. */
+    private UUID taskIdOfReview(PrReviewEntity review) {
+        if (review.getJulesSessionId() == null) {
+            return null;
+        }
+        return julesSessionRepository.findById(review.getJulesSessionId())
+                .map(com.eneik.production.models.persistence.JulesSessionEntity::getTaskId)
+                .orElse(null);
     }
 
     /**

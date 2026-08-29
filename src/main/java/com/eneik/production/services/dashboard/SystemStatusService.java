@@ -552,8 +552,13 @@ public class SystemStatusService {
                     .filter(r -> projectSessionIds.contains(r.getJulesSessionId()))
                     .collect(Collectors.toList());
 
+            // By identity, not by dereference (2026-08-29, plan §4.26). The id set was already built two
+            // statements above for sessions; the conflict filter walked the lazy task proxy instead and so
+            // asked whether a REFERENCE was present rather than whether its REFERENT exists - the same
+            // reading that killed the Kaizen cycle in SixSigmaAuditService against 92 conflict rows whose
+            // tasks are gone.
             allConflicts = allConflicts.stream()
-                    .filter(c -> c.getTask() != null && c.getTask().getProject() != null && projectId.equals(c.getTask().getProject().getId()))
+                    .filter(c -> projectTaskIds.contains(c.getTask().getId()))
                     .collect(Collectors.toList());
         }
 
