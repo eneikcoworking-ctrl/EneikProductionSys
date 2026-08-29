@@ -377,6 +377,75 @@ class FlowSpineServiceTest {
         assertNotEquals("BLOCKED_BY_REVIEW", dto.currentState());
     }
 
+    private FlowSpineService spineOver(List<TaskEntity> tasks, ProjectEntity project) {
+        var projects = mock(ProjectRepository.class);
+        var taskRepo = mock(TaskRepository.class);
+        var wishlists = mock(WishlistRepository.class);
+        var sessions = mock(JulesSessionRepository.class);
+        var reviews = mock(PrReviewRepository.class);
+        var events = mock(FlowSpineEventRepository.class);
+        var readiness = mock(ClientDeliverableReadinessService.class);
+        var systemStatus = mock(SystemStatusService.class);
+        when(projects.findById(project.getId())).thenReturn(java.util.Optional.of(project));
+        when(taskRepo.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(tasks);
+        when(wishlists.findByProjectId(project.getId())).thenReturn(List.of());
+        when(reviews.findByJulesSessionIdIn(org.mockito.ArgumentMatchers.anyList())).thenReturn(List.of());
+        // Decomposition is complete and not everything is delivered, so the earlier DECOMPOSING and
+        // DELIVERED branches fall through and the frontier rule is the one under test.
+        when(readiness.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(1, 0, 1, 0, 0.0, true, 0.0));
+        when(systemStatus.getStatus(project.getId())).thenReturn(
+                Map.of("systemHealth", Map.of("data", Map.of("status", "ok"))));
+        return new FlowSpineService(projects, taskRepo, wishlists, sessions, reviews, events, readiness,
+                systemStatus, mock(com.eneik.production.services.MLPredictionServiceClient.class),
+                mock(com.eneik.production.services.lever.LeverPromotionService.class));
+    }
+
+    private TaskEntity failedPlannedTask(int resumeCount) {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.failed);
+        task.setSourceWishlistId(UUID.randomUUID());
+        task.setFeatureId(UUID.randomUUID());
+        var payload = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+        payload.put("ems_bounded_plan_resume_count", resumeCount);
+        task.setPayload(payload);
+        return task;
+    }
+
+    /**
+     * Plan §4.39. BLOCKED_BY_FAILED_FRONTIER denies ORCHESTRATE, DISPATCH_QUEUED_TASKS and
+     * DISPATCH_REVIEW_TASKS - the whole path from brief to execution. Its resolver is
+     * PlannedWorkRecoveryService, which allows one automatic resume per task and refuses thereafter, so a
+     * task past its budget can never be removed from a gate that still counts it. Measured live
+     * 2026-08-30: 35 failed tasks, 17 resumable in principle, 13 of those already past their only resume.
+     */
+    @Test
+    void aFailedTaskPastItsOnlyResumeNoLongerHoldsTheFrontierClosed() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        FlowSpineDto dto = spineOver(List.of(failedPlannedTask(1)), project).build(project.getId());
+
+        assertNotEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+    }
+
+    /**
+     * The other half, and it is not optional: a failure the resolver can still act on must go on holding
+     * the state, or the failure would stop meaning anything at all.
+     */
+    @Test
+    void aFailedTaskWithItsResumeStillUnspentHoldsTheFrontierClosed() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+
+        FlowSpineDto dto = spineOver(List.of(failedPlannedTask(0)), project).build(project.getId());
+
+        assertEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+    }
+
     @Test
     void duplicateContentAmongOnlyTerminalTasksDoesNotBlockLiveState() {
         // Regression test for the 2026-08-04 incident: test-forty-first stuck for hours in

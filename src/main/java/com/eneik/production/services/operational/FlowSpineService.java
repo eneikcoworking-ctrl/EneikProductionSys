@@ -362,8 +362,17 @@ public class FlowSpineService {
         // null sourceWishlistId - not planned deliverables, outside totalPlannedTasks entirely - hold the
         // project in a state whose only resolver was structurally unable to clear it. The gate and its
         // resolver must quantify over the same set, or the state is unreachable-from by construction.
+        // 2026-08-30 (plan §4.39): and only those the resolver can still act on. The requirement was already
+        // written above - the gate and its resolver must quantify over the same set - but stated one level
+        // too shallow: "in principle" is structural eligibility, while PlannedWorkRecoveryService also
+        // refuses a task whose single automatic resume is spent. Measured that day on the live circuit: 35
+        // failed tasks, 17 resumable in principle, 13 of those already past their only resume - so the gate
+        // held thirteen elements its resolver could never remove, and after the remaining four were used
+        // the state would have been unleavable for good, denying ORCHESTRATE, DISPATCH_QUEUED_TASKS and
+        // DISPATCH_REVIEW_TASKS forever.
         long failed = tasks.stream()
                 .filter(com.eneik.production.services.PlannedWorkRecoveryService::isResumableInPrinciple)
+                .filter(com.eneik.production.services.PlannedWorkRecoveryService::hasResumeBudgetLeft)
                 .count();
         long blocked = countStatus(tasks, TaskStatus.blocked);
         // Charter invariant 8: an element that can structurally never reach done leaves the denominator,

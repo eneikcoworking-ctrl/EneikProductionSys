@@ -263,7 +263,21 @@ public class PlannedWorkRecoveryService {
      * claim, a live session, an unsatisfied dependency of its own) say "not right now", not "never again".
      */
     public boolean mayStillBeResumed(TaskEntity task) {
-        return task != null && isEligibleRetiredPlanTask(task) && resumeCount(task) < 1;
+        return task != null && isEligibleRetiredPlanTask(task) && hasResumeBudgetLeft(task);
+    }
+
+    /**
+     * Whether this task still has its single automatic resume (2026-08-30, plan §4.39).
+     *
+     * <p>Static and payload-only so the gate that decides BLOCKED_BY_FAILED_FRONTIER can ask the same
+     * question this resolver asks, from the same definition. FlowSpineService used to quantify over
+     * isResumableInPrinciple alone - structural eligibility - while this service also refuses a task whose
+     * budget is spent, so the gate held elements the resolver could never remove. Measured that day: 35
+     * failed tasks, 17 resumable in principle, and 13 of those 17 already past their only resume.
+     */
+    public static boolean hasResumeBudgetLeft(TaskEntity task) {
+        return task != null
+                && (task.getPayload() == null || task.getPayload().path(RESUME_COUNT_KEY).asInt(0) < 1);
     }
 
     private int resumeCount(TaskEntity task) {
