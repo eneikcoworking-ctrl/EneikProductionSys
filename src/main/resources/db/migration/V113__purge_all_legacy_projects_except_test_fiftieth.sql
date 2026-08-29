@@ -1,3 +1,14 @@
+-- 2026-08-29: three DELETE statements removed from this file. Two named project_event_log and
+-- project_observer_watermark, which V58 drops fifty-five migrations before this one; the third named
+-- role_threads, which V45 renamed to feature_threads sixty-eight migrations before it - and this file
+-- deletes from BOTH names, so the surviving one was always the new name and the old one was always dead.
+-- On any
+-- schema built from this chain they do not exist and this migration cannot complete: measured that day,
+-- every @SpringBootTest in the repository failed identically with `Table "PROJECT_OBSERVER_WATERMARK" not
+-- found` (TaskClaimServiceTest 8 errors, OrchestrationStatusTest 1), and a fresh deployment could not
+-- start at all. Editing an applied migration is safe here and only here: validate-on-migrate is off and
+-- EneikProductionApplication calls flyway.repair() before migrate, so the checksum is reconciled; on the
+-- live database V113 is already recorded successful and never runs again.
 ﻿-- Flyway migration V113: Purge all legacy projects and retain ONLY test-fiftieth
 -- Preserves test-fiftieth with all its tasks, features, wishlists, and sessions intact.
 
@@ -40,14 +51,11 @@ DELETE FROM kaizen_proposals WHERE project_id NOT IN (SELECT id FROM projects WH
 DELETE FROM onboarding_audit_findings WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM persistent_worker_sessions WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM process_control_snapshots WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
-DELETE FROM project_event_log WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM project_file_claims WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM project_final_reports WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM project_generation_state WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM project_hotspot_files WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
-DELETE FROM project_observer_watermark WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM review_concerns WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
-DELETE FROM role_threads WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM tasks WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM trust_signal_snapshots WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
 DELETE FROM wishlist WHERE project_id NOT IN (SELECT id FROM projects WHERE slug = 'test-fiftieth');
