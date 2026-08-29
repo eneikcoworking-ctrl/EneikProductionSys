@@ -61,6 +61,16 @@ public class FlowSpineService {
     // learned to read that signal.
     private static final String SUPERSEDED_SESSION_STATUS = "cancelled";
 
+    /**
+     * A task the factory created to carry its own process - the wishlist compiler, a review fallback, an
+     * audit, a design review. Every one of them is stamped with a taskType in its payload when it is built,
+     * and no product task ever is. Measured 2026-08-29 across the project's 68 failed tasks: 60 carried a
+     * feature and 8 were carriers, and carriers carrying a feature numbered zero.
+     */
+    static boolean isFactoryCarrierTask(TaskEntity task) {
+        return task.getPayload() != null && task.getPayload().hasNonNull("taskType");
+    }
+
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
     private final WishlistRepository wishlistRepository;
@@ -411,9 +421,33 @@ public class FlowSpineService {
                 .filter(reviewEntity -> !Boolean.TRUE.equals(reviewEntity.getMerged()))
                 .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .count();
+        // A factory carrier's pull request is a process record, never product code - the compiler's own path
+        // says so in its own words, merging a good plan through mergeRecordPullRequest and closing the
+        // session with closeSessionAsNoCode, "process/metadata only by design". So a carrier PR closed
+        // without a merge is an outcome of the process, not a failing review OF THE PRODUCT, and it carries
+        // no evidence that the product is unwell.
+        //
+        // Measured 2026-08-29: of 108 reviews with a failing status, 107 had no session at all and were
+        // already filtered out here; the single one that counted was PR#416 of compiler task ad7879a8,
+        // "Compile 6 wishlist(s) into tasks". Its plan had been rejected and its PR closed, which put the
+        // project into BLOCKED_BY_REVIEW, which denies ORCHESTRATE, which is what dispatches compilation -
+        // so the compiler's own failure locked the only mechanism that could retry it, and the factory made
+        // no dispatch of any kind for seven ticks running.
+        //
+        // Charter invariant 11: a blocking condition must justify WHAT it protects and may not be wider
+        // than that. Product reviews still count exactly as before, failing ones included.
+        Set<UUID> carrierTaskIds = tasks.stream()
+                .filter(FlowSpineService::isFactoryCarrierTask)
+                .map(TaskEntity::getId)
+                .collect(Collectors.toSet());
+        Set<UUID> carrierSessionIds = sessions.stream()
+                .filter(session -> session.getTaskId() != null && carrierTaskIds.contains(session.getTaskId()))
+                .map(JulesSessionEntity::getId)
+                .collect(Collectors.toSet());
         int failingReviews = (int) reviews.stream()
                 .filter(reviewEntity -> FAILING_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
                 .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
+                .filter(reviewEntity -> !carrierSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .count();
         // 2026-08-22: these counted a boolean that answers two different questions. GateOrchestrator
         // writes the same flag from runTaskSpecGate at task CREATION and from runQualityGate when an
