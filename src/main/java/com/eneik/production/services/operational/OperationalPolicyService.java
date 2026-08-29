@@ -22,6 +22,24 @@ public class OperationalPolicyService {
         return authorize(flowCoreService.build(projectId), action);
     }
 
+    /**
+     * One snapshot, asked many times.
+     *
+     * <p>Building the model reads the project's whole task history, its wishlists, the sessions on those
+     * tasks and the reviews on those sessions, then walks the task list about fifteen times. The overload
+     * above does that once per QUESTION, and ContinuousOrchestrationService asks ten of them per tick.
+     * Measured 2026-08-29: fifty-two rebuilds in twenty minutes, byte-identical results
+     * ({@code passed=92 failed=0 REFUTED=45 NEVER ASKED=245 of 382 tasks}), up to five inside one second.
+     *
+     * <p>The overload taking a FlowCoreDto already existed; it only needed a way to obtain one. Callers
+     * that ask more than once about the same tick take a snapshot here and pass it, which makes the
+     * snapshot's lifetime the tick rather than the question.
+     */
+    @Transactional(readOnly = true)
+    public FlowCoreDto snapshot(UUID projectId) {
+        return flowCoreService.build(projectId);
+    }
+
     public OperationalDecision authorize(FlowCoreDto core, OperationalAction action) {
         FlowSpineDto snapshot = core.snapshot();
         FlowCoreDto.Authorization authorization = core.authorization();

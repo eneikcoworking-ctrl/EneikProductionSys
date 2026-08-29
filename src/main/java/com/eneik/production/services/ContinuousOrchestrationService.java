@@ -128,13 +128,34 @@ public class ContinuousOrchestrationService {
             LogScope.project(project.getId());
             try {
                 log.info("Continuous Orchestration: Processing project {}", project.getName());
+                // One snapshot for this project's whole tick (2026-08-29, action plan 4.5). Every
+                // isAllowed below used to build the flow model from scratch - the project's entire task
+                // history, its wishlists, the sessions on those tasks, the reviews on those sessions, then
+                // fifteen stream passes - and there are ten of them here. Measured that day: fifty-two
+                // rebuilds in twenty minutes returning byte-identical numbers, up to five in one second.
+                //
+                // The consequence to be explicit about: checks after the first read the state as of the
+                // tick's start rather than after actions this tick already performed. That is sound for
+                // these ten and not in general - they are project-wide coordination gates, whose excessive
+                // width the Charter already calls a defect (invariant 11), not the preconditions of the
+                // actions themselves. Each action still checks its own on fresh data: dispatch re-reads the
+                // task, recovery re-reads the frontier, merge asks the gate. A gate may lag one tick; an
+                // action may not.
+                com.eneik.production.dto.operational.FlowCoreDto flowSnapshot;
+                try {
+                    flowSnapshot = operationalPolicyService.snapshot(project.getId());
+                } catch (Exception e) {
+                    log.warn("Continuous Orchestration: flow snapshot failed for project {}; every policy "
+                            + "check this tick fails closed: {}", project.getId(), e.getMessage());
+                    flowSnapshot = null;
+                }
                 // 2026-08-14 (bug-hunt sweep): these 3 calls used to run unguarded, unlike every other step
                 // in this loop. An uncaught exception here would skip the rest of THIS project's steps below
                 // AND propagate out of the whole method, aborting every subsequent project in activeProjects
                 // for this cycle - the single-active-project invariant makes that low-impact today, but it's
                 // the same inconsistency the rest of this loop was already careful to avoid everywhere else.
                 try {
-                    if (gitHubPullRequestService != null && isAllowed(project, OperationalAction.SYNC_GITHUB)) {
+                    if (gitHubPullRequestService != null && isAllowed(project, flowSnapshot, OperationalAction.SYNC_GITHUB)) {
                         gitHubPullRequestService.syncCiWorkflow(project);
                     }
                     if (branchGarbageCollectorService != null) {
@@ -145,7 +166,7 @@ public class ContinuousOrchestrationService {
                     log.error("Continuous Orchestration: CI sync/PR cleanup/duplicate-content check failed for project {}", project.getId(), e);
                 }
 
-                if (isAllowed(project, OperationalAction.CHECK_LAUNCHABILITY)) {
+                if (isAllowed(project, flowSnapshot, OperationalAction.CHECK_LAUNCHABILITY)) {
                     try {
                         productLaunchabilityService.checkOnce(project);
                         // 2026-08-22: deliberately OUTSIDE checkOnce, which runs exactly once per project
@@ -172,7 +193,7 @@ public class ContinuousOrchestrationService {
                         log.error("Continuous Orchestration: launchability check failed for project {}", project.getId(), e);
                     }
                 }
-                if (isAllowed(project, OperationalAction.OBSERVE_CLIENT_RUNTIME)) {
+                if (isAllowed(project, flowSnapshot, OperationalAction.OBSERVE_CLIENT_RUNTIME)) {
                     try {
                         clientRuntimeObservabilityService.maybeObserve(project);
                     } catch (Exception e) {
@@ -180,7 +201,7 @@ public class ContinuousOrchestrationService {
                     }
                 }
 
-                if (isAllowed(project, OperationalAction.JUDGE_DELIVERED_WORK)) {
+                if (isAllowed(project, flowSnapshot, OperationalAction.JUDGE_DELIVERED_WORK)) {
                     try {
                         // 2026-08-23: the one question nothing was asking. Measured on test-fiftieth the day
                         // before: 26 of 26 tasks closed with IMPLEMENTATION_RESULT checks applied = 0, because
@@ -194,7 +215,7 @@ public class ContinuousOrchestrationService {
                     }
                 }
 
-                if (isAllowed(project, OperationalAction.RECOVER_FAILED_FRONTIER)) {
+                if (isAllowed(project, flowSnapshot, OperationalAction.RECOVER_FAILED_FRONTIER)) {
                     int resumedPlanTasks = plannedWorkRecoveryService.resumeNextFrontier(project);
                     if (resumedPlanTasks > 0) {
                         log.warn("Continuous Orchestration: Resumed {} existing planned task(s) for project {}; "
@@ -213,7 +234,7 @@ public class ContinuousOrchestrationService {
                 // every cycle is cheap and safe; it's a separate try/catch so its cooldown never skips the
                 // recovery/dispatch calls below.
                 try {
-                    if (isAllowed(project, OperationalAction.ORCHESTRATE)) {
+                    if (isAllowed(project, flowSnapshot, OperationalAction.ORCHESTRATE)) {
                         OrchestrationResultDto orchestration = projectFlowService.orchestrate(project.getId());
                         if (orchestration.processedWishlistItems() > 0) {
                             log.info("Continuous Orchestration: Compiled {} wishlist item(s) into {} task(s) for project {}",
@@ -236,13 +257,13 @@ public class ContinuousOrchestrationService {
                         log.info("Continuous Orchestration: Recovered {} blocked work item(s) for project {}",
                                 recovered, project.getName());
                     }
-                    if (isAllowed(project, OperationalAction.DISPATCH_QUEUED_TASKS)) {
+                    if (isAllowed(project, flowSnapshot, OperationalAction.DISPATCH_QUEUED_TASKS)) {
                         projectFlowService.dispatchQueuedTasks(project.getId());
                     } else {
                         log.warn("Continuous Orchestration: Flow policy denies queued-task dispatch for project {}; skipping",
                                 project.getName());
                     }
-                    if (isAllowed(project, OperationalAction.DISPATCH_REVIEW_TASKS)) {
+                    if (isAllowed(project, flowSnapshot, OperationalAction.DISPATCH_REVIEW_TASKS)) {
                         projectFlowService.dispatchReviewTasks(project.getId());
                     } else {
                         log.warn("Continuous Orchestration: Flow policy denies review dispatch for project {}; skipping",
@@ -256,10 +277,10 @@ public class ContinuousOrchestrationService {
                 }
 
                 try {
-                    if (isAllowed(project, OperationalAction.CHECK_COVERAGE_AUDITS)) {
+                    if (isAllowed(project, flowSnapshot, OperationalAction.CHECK_COVERAGE_AUDITS)) {
                         projectFlowService.checkAndDispatchCoverageAudits(project.getId());
                     }
-                    if (projectAuditPipelineService != null && isAllowed(project, OperationalAction.RUN_PROJECT_AUDIT_PIPELINE)) {
+                    if (projectAuditPipelineService != null && isAllowed(project, flowSnapshot, OperationalAction.RUN_PROJECT_AUDIT_PIPELINE)) {
                         projectAuditPipelineService.executeSequentialAuditPipeline(project.getId());
                     }
                 } catch (Exception e) {
@@ -288,9 +309,14 @@ public class ContinuousOrchestrationService {
     // content instead: payload.slice_title carries the real per-slice semantic content ("Internal work
     // item N from wishlist X: <the real JTBD-derived description>"), falling back to the full description
     // for any task that didn't go through the epic-slice compiler path.
-    private boolean isAllowed(ProjectEntity project, OperationalAction action) {
+    private boolean isAllowed(ProjectEntity project,
+            com.eneik.production.dto.operational.FlowCoreDto snapshot,
+            OperationalAction action) {
+        if (snapshot == null) {
+            return false;
+        }
         try {
-            var decision = operationalPolicyService.authorize(project.getId(), action);
+            var decision = operationalPolicyService.authorize(snapshot, action);
             if (!decision.allowed()) {
                 log.info("Continuous Orchestration: policy denied {} for project {} in state {}: {}",
                         action, project.getName(), decision.state(), decision.reason());
