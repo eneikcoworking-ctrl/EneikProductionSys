@@ -23,14 +23,14 @@ public class KaizenProposal {
         // defect events already carry a rootCausePatternId matching one of the 12 documented patterns in
         // docs/ENGINEERING_INVARIANTS_CHARTER.md - a KNOWN fix shape, cited by number. Review-only, same
         // boundary as SYSTEMIC_DEFECT (expectedGainPercent=0, never auto-applied) - the specific code fix
-        // still needs human/Claude judgment, but the diagnosis itself is no longer free-text guesswork.
+        // is a finding about cause rather than an action, and the diagnosis itself is no longer free-text guesswork.
         KNOWN_PATTERN_VIOLATION,
         // 2026-08-07: a role's own historical ems_defect_weight (computed per-task at compile time,
         // TechnicalLeadCompiler.criticalityScore, previously persisted into every task's payload and never
         // read back - confirmed live audit) trending meaningfully upward across a project's own history -
         // a leading indicator of a systemic quality problem in how that role is being executed, not a
         // one-off task failure. Review-only, same boundary as SYSTEMIC_DEFECT/KNOWN_PATTERN_VIOLATION
-        // (expectedGainPercent=0, never auto-applied) - a real trend needs human/Claude judgment on cause.
+        // (expectedGainPercent=0, never auto-applied) - a real trend is a finding about cause, not an action to apply.
         ROLE_QUALITY_DRIFT,
         // 2026-08-09 (Phase 3 of docs/reports/PLAN_client_runtime_observability_2026-08-09.md): a
         // RuntimeHealthShiftDetector-confirmed statistical shift in the ACTIVE PRODUCT's own real launch/
@@ -43,7 +43,8 @@ public class KaizenProposal {
     }
 
     public enum ProposalStatus {
-        PROPOSED,      // Identified opportunity, waiting execution
+        PROPOSED,      // Identified opportunity. Terminal for categories with no autonomous action: this
+                       // factory has no human to execute one, so such a finding stands as evidence (§4.34).
         APPLIED,       // Micro-improvement applied (Do phase)
         STANDARDIZED,  // Verified positive impact (Act phase)
         REVERTED       // Rolled back due to negative/neutral impact

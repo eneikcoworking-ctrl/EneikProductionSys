@@ -459,8 +459,10 @@ public class KaizenService {
      * to "fix" something that only exists in EneikProductionSys' own source - confirmed live, several
      * gemini_observer wishlists like "Fix pending_review state transition logic" were unfixable no-ops for
      * exactly this reason). expectedGainPercent is fixed at 0 so periodicKaizenCycle's auto-apply loop
-     * (">= 5.0" threshold) never fires for this category - review and any resulting code change stay
-     * human/Claude-only, matching operator directive ("only you and I deal with that").
+     * (">= 5.0" threshold) never fires for this category. The boundary being kept here is ontological, not
+     * procedural: a defect in EneikProductionSys' own source is not work for the client's product pipeline,
+     * so it never becomes a client task. The finding stands as recorded evidence about the factory - it is
+     * not parked awaiting anyone, because there is no one here to park it for (plan §4.34).
      */
     public KaizenProposal recordSystemicDefectProposal(java.util.UUID projectId, String projectName,
                                                          String title, String actionDescription) {
@@ -588,9 +590,10 @@ public class KaizenService {
     /**
      * External entry point (2026-08-07, DMAIC Control-phase wiring) for a role's own ems_defect_weight
      * trending upward within one project's history (SixSigmaAuditService.detectRoleDefectWeightDrift) -
-     * review-only, same boundary as recordSystemicDefectProposal/recordKnownPatternViolationProposal
-     * (expectedGainPercent fixed at 0, never auto-applied): a real quality trend needs human/Claude
-     * judgment on cause, not an automatic runtime-parameter tweak.
+     * evidence-only, same boundary as recordSystemicDefectProposal/recordKnownPatternViolationProposal
+     * (expectedGainPercent fixed at 0, never auto-applied): a real quality trend is a finding about cause,
+     * and turning it into an automatic runtime-parameter tweak would be acting on a correlation. It stands
+     * as recorded evidence and is never marked applied - there is no one here to apply it (plan §4.34).
      */
     public KaizenProposal recordRoleQualityDriftProposal(UUID projectId, String projectName,
                                                             com.eneik.production.services.audit.SixSigmaAuditService.RoleQualityDrift drift) {
@@ -686,12 +689,23 @@ public class KaizenService {
                     log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' (reviewConcerns) escalated to a real "
                             + "wishlist item for project {} - no human action required.", proposal.getId(), proposal.getProjectId());
                 } else {
-                    log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' marked applied by "
-                            + "explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
+                    // No human applies anything here (operator, standing directive; plan §4.34). This
+                    // factory is autonomous, so a state whose only exit is a person is a state with no
+                    // exit: measured 2026-08-29, three SYSTEMIC_DEFECT proposals stood in PROPOSED with
+                    // recurrences of 20, 7 and 1, and not one proposal of any category had ever been
+                    // applied. The finding itself is sound and deduplicated - it stands as evidence, which
+                    // is what it is - and saying it was "applied" would be a false record of an action
+                    // nobody took (Charter invariant 12: the record must not assert more than happened).
+                    log.info("[KAIZEN-ACTION] Systemic defect proposal '{}' has no autonomous action in this "
+                            + "factory; it stands as recorded evidence rather than being marked applied.", proposal.getId());
+                    return false;
                 }
             }
-            case KNOWN_PATTERN_VIOLATION -> log.info("[KAIZEN-ACTION] Known-pattern-violation proposal '{}' marked "
-                    + "applied by explicit human/operator action - this category has no automatic action of its own.", proposal.getId());
+            case KNOWN_PATTERN_VIOLATION -> {
+                log.info("[KAIZEN-ACTION] Known-pattern-violation proposal '{}' has no autonomous action in this "
+                        + "factory; it stands as recorded evidence rather than being marked applied.", proposal.getId());
+                return false;
+            }
         }
 
         proposal.setStatus(KaizenProposal.ProposalStatus.APPLIED);

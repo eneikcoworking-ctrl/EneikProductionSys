@@ -162,8 +162,15 @@ public class KaizenServiceTest {
         assertThat(captor.getValue().getStatus()).isEqualTo(com.eneik.production.models.persistence.WishlistStatus.pending);
     }
 
+    /**
+     * Plan §4.34. This factory is autonomous; a finding with no autonomous action is not "waiting
+     * execution", because the actor that clause named does not exist here. Reporting it as applied would
+     * assert an action nobody took - measured 2026-08-29: three SYSTEMIC_DEFECT proposals standing in
+     * PROPOSED with recurrences of 20, 7 and 1, and no proposal of any category ever applied. The finding
+     * stands as recorded evidence, and the record says exactly that.
+     */
     @Test
-    void applyMicroStepLeavesAnUnrelatedSystemicDefectRequiringHumanAction() {
+    void aSystemicDefectWithNoAutonomousActionIsNotReportedAsApplied() {
         UUID projectId = UUID.randomUUID();
         KaizenProposal proposal = kaizenService.recordSystemicDefectProposal(projectId, "Test Project",
                 "u-chart out of control: qualityGate (epic abc-123)",
@@ -171,7 +178,9 @@ public class KaizenServiceTest {
 
         boolean applied = kaizenService.applyMicroStep(proposal.getId());
 
-        assertThat(applied).isTrue();
+        assertThat(applied).isFalse();
+        assertThat(proposal.getStatus()).isEqualTo(KaizenProposal.ProposalStatus.PROPOSED);
+        assertThat(proposal.getAppliedAt()).isNull();
         org.mockito.Mockito.verifyNoInteractions(wishlistRepository);
     }
 

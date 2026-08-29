@@ -307,8 +307,8 @@ public class GeminiObserverActionService {
                 return "feature thread was formally abandoned after " + thread.getCloseoutConflictAttempts()
                         + " failed conflict-resolution attempt(s) and its branch was deleted - the code is gone, "
                         + "this cannot be safely retried automatically; see the closeout_abandoned wishlist item "
-                        + "for this feature for the real recommendation (re-implement from current main, or a "
-                        + "human decision on the underlying design clash)";
+                        + "for this feature for the real recommendation: re-implement the remaining scope from "
+                        + "current main";
             }
             if (!gitHubPullRequestService.branchExists(project, thread.getBranchName())) {
                 return "feature thread branch '" + thread.getBranchName() + "' no longer exists on GitHub - "
