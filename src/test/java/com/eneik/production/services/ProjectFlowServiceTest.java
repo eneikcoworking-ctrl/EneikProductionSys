@@ -375,6 +375,57 @@ class ProjectFlowServiceTest {
         verify(gitHubPullRequestService, never()).deleteFile(eq(project), anyString(), anyString());
     }
 
+    // --- §4.36: the decomposition budget is a conjecture, revised by observation ---------------------
+
+    private WishlistEntity brief(UUID projectId, int attempts, Integer ceiling, com.eneik.production.models.persistence.WishlistStatus status) {
+        WishlistEntity w = new WishlistEntity();
+        w.setId(UUID.randomUUID());
+        w.setProjectId(projectId);
+        w.setCompileAttempts(attempts);
+        w.setCompileAttemptCeiling(ceiling);
+        w.setStatus(status);
+        return w;
+    }
+
+    /**
+     * Measured live 2026-08-29: of 55 briefs that ever became a task graph, three did so on attempt three
+     * against a budget of three. Successes sitting exactly on the bound are the signature of a bound never
+     * tested from above - a brief needing one more attempt was refused as undecomposable while nothing had
+     * ever shown that it was.
+     */
+    @Test
+    void aBriefThatCompiledOnItsLastAllowedAttemptRaisesTheCeilingForTheRest() {
+        UUID projectId = UUID.randomUUID();
+        WishlistRepository wishlists = mock(WishlistRepository.class);
+        WishlistEntity converted = brief(projectId, WishlistEntity.COMPILE_ATTEMPT_BUDGET, null,
+                com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
+        WishlistEntity stillOpen = brief(projectId, 1, null, com.eneik.production.models.persistence.WishlistStatus.pending);
+        when(wishlists.findByProjectId(projectId)).thenReturn(java.util.List.of(converted, stillOpen));
+
+        serviceWithWishlists(wishlists).raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary(converted);
+
+        assertEquals(WishlistEntity.COMPILE_ATTEMPT_BUDGET + 1, stillOpen.effectiveCompileCeiling());
+    }
+
+    /**
+     * The other half, and it is not optional: a success well inside the bound refutes nothing about it, so
+     * the belief must not move. Without this case the rule would raise the ceiling on every conversion,
+     * which is a constant growing by itself rather than a belief revised by evidence.
+     */
+    @Test
+    void aBriefThatCompiledWithAttemptsToSpareLeavesTheCeilingAlone() {
+        UUID projectId = UUID.randomUUID();
+        WishlistRepository wishlists = mock(WishlistRepository.class);
+        WishlistEntity converted = brief(projectId, 1, null, com.eneik.production.models.persistence.WishlistStatus.converted_to_task);
+        WishlistEntity stillOpen = brief(projectId, 1, null, com.eneik.production.models.persistence.WishlistStatus.pending);
+        when(wishlists.findByProjectId(projectId)).thenReturn(java.util.List.of(converted, stillOpen));
+
+        serviceWithWishlists(wishlists).raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary(converted);
+
+        assertEquals(WishlistEntity.COMPILE_ATTEMPT_BUDGET, stillOpen.effectiveCompileCeiling());
+        verify(wishlists, never()).saveAll(any());
+    }
+
     // --- §4.31: the client's referent may gain entries and may never lose them ----------------------
 
     /**

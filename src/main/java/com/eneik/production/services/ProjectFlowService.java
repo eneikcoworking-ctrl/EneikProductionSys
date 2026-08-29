@@ -2588,8 +2588,50 @@ public class ProjectFlowService {
             // falsely claiming a real conversion happened (honesty fix, 2026-07-24).
             wishlist.setStatus(wishlistBuiltAnything ? WishlistStatus.converted_to_task : WishlistStatus.dismissed);
             wishlistRepository.save(wishlist);
+            if (wishlistBuiltAnything) {
+                raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary(wishlist);
+            }
         }
         return anyBuilt;
+    }
+
+    /**
+     * A brief that became a task graph on the very last attempt it was allowed is the bold probe surviving
+     * (2026-08-29, plan §4.36): the bound has just been shown to be reachable, so it has never been tested
+     * from above, and the next brief needing one more attempt would be refused as undecomposable on no
+     * evidence at all. Charter invariant 15 - such a limit is a hypothesis revised by observation.
+     *
+     * <p>Exactly the shape AccountHealthService already gives daily and concurrent capacity: raise on a
+     * real success that reached the ceiling, never on a constant of our own. The step is one, because the
+     * quantity is a count of attempts and one is its smallest increment - there is no magnitude to choose.
+     *
+     * <p>Measured before this existed: of 55 briefs that ever converted, three did so at attempt three,
+     * against a budget of three.
+     *
+     * <p>Termination is untouched. Every brief still carries a finite ceiling that its own attempt counter
+     * strictly climbs toward, and the ceiling only moves when another brief really did produce a task
+     * graph - progress, not looping.
+     */
+    void raiseCompileCeilingIfTheProbeSurvivedAtTheBoundary(WishlistEntity converted) {
+        if (converted.getProjectId() == null
+                || converted.getCompileAttempts() < converted.effectiveCompileCeiling()) {
+            return;
+        }
+        int revised = converted.effectiveCompileCeiling() + 1;
+        List<WishlistEntity> stillOpen = wishlistRepository.findByProjectId(converted.getProjectId()).stream()
+                .filter(WishlistEntity::movable)
+                .filter(w -> w.effectiveCompileCeiling() < revised)
+                .toList();
+        for (WishlistEntity open : stillOpen) {
+            open.setCompileAttemptCeiling(revised);
+        }
+        if (!stillOpen.isEmpty()) {
+            wishlistRepository.saveAll(stillOpen);
+        }
+        log.info("ProjectFlowService: a brief compiled on attempt {} of {} - the ceiling was reachable, so it is "
+                        + "revised to {} for {} still-open brief(s) of project {}",
+                converted.getCompileAttempts(), converted.effectiveCompileCeiling(), revised,
+                stillOpen.size(), converted.getProjectId());
     }
 
     /**

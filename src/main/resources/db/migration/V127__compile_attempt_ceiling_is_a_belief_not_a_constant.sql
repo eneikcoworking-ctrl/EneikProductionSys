@@ -1,0 +1,13 @@
+-- V127 (2026-08-29, plan §4.36): the decomposition budget becomes a belief the factory can revise, in
+-- exactly the shape V120 already gave account capacity.
+--
+-- NULL means "no evidence yet, use the initial conjecture" - WishlistEntity.COMPILE_ATTEMPT_BUDGET - so
+-- behaviour is unchanged until a real success at the boundary revises it. Same COALESCE-to-the-constant
+-- idiom as accounts.estimated_concurrent_capacity.
+--
+-- Why the bound is a conjecture rather than a truth, measured that day on the live database: of 55 briefs
+-- that ever became a task graph, 35 converted at 0 recorded attempts, 13 at one, 4 at two - and THREE at
+-- three, which is the whole budget. A bound whose observed successes sit exactly on it is a bound that has
+-- not been tested from above; three briefs made it by the last attempt they were allowed, and any brief
+-- needing one more was refused as undecomposable while nothing had ever shown that it was.
+ALTER TABLE wishlist ADD COLUMN compile_attempt_ceiling INT;

@@ -156,6 +156,35 @@ public class WishlistEntity {
     public static final int COMPILE_ATTEMPT_BUDGET = 3;
 
     /**
+     * The revised belief about how many attempts decomposition needs here, or null while nothing has been
+     * observed (2026-08-29, plan §4.36). Same shape as accounts.estimated_concurrent_capacity: the constant
+     * above is the initial conjecture, not the truth, and it is raised by a real success that reached the
+     * current ceiling - the bold probe survived - never by a constant of our own.
+     *
+     * <p>Measured before it was made revisable: of 55 briefs that ever became a task graph, 35 converted at
+     * 0 recorded attempts, 13 at one, 4 at two, and THREE at three - the whole budget. Successes sitting
+     * exactly on the bound are the signature of a bound never tested from above, and Charter invariant 15
+     * says such a limit is a hypothesis, revised by observation.
+     */
+    @Column(name = "compile_attempt_ceiling")
+    private Integer compileAttemptCeiling;
+
+    public Integer getCompileAttemptCeiling() {
+        return compileAttemptCeiling;
+    }
+
+    public void setCompileAttemptCeiling(Integer compileAttemptCeiling) {
+        this.compileAttemptCeiling = compileAttemptCeiling;
+    }
+
+    /** How many attempts this brief actually gets: the revised belief when there is one, else the conjecture. */
+    public int effectiveCompileCeiling() {
+        return compileAttemptCeiling != null && compileAttemptCeiling > 0
+                ? compileAttemptCeiling
+                : COMPILE_ATTEMPT_BUDGET;
+    }
+
+    /**
      * True when this brief can never again produce slices: its budget is spent and, by F42,
      * ProjectFlowService will dispatch no further compile for it.
      *
@@ -174,7 +203,7 @@ public class WishlistEntity {
      * without changing the status, so F42's own reason for leaving it alone is preserved.
      */
     public boolean decompositionExhausted() {
-        return compileAttempts >= COMPILE_ATTEMPT_BUDGET;
+        return compileAttempts >= effectiveCompileCeiling();
     }
 
     /**
