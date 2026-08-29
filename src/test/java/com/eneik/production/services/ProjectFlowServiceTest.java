@@ -2,6 +2,7 @@ package com.eneik.production.services;
 
 import com.eneik.production.models.persistence.ProjectEntity;
 import com.eneik.production.models.persistence.WishlistEntity;
+import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.repositories.AccountRepository;
 import com.eneik.production.repositories.ClaimRepository;
@@ -401,6 +402,75 @@ class ProjectFlowServiceTest {
                 null);
         org.springframework.test.util.ReflectionTestUtils.setField(service, "self", service);
         return service;
+    }
+
+    // --- queuedDispatchClass (§4.8): the ordering that replaced the BUILD-phase boolean hold ----------
+    //
+    // Measured 2026-08-29: 26 queued tasks, none client-rooted, 17 of them self-generated and untried since
+    // 28.08 04:07, 7 more waiting on those 17. The hold lifts only when client deliverables merge, and the
+    // client brief's four tasks were already done - so the event it waited for could no longer occur. The
+    // order below has to keep client work ahead of self-generated work (the intent) while still admitting
+    // self-generated work when no client work is queued (the deadlock).
+
+    private TaskEntity taskFromWishlist(WishlistRepository wishlistRepository,
+            com.eneik.production.models.persistence.WishlistSource source) {
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        if (source != null) {
+            WishlistEntity w = new WishlistEntity();
+            w.setId(UUID.randomUUID());
+            w.setSource(source);
+            task.setSourceWishlistId(w.getId());
+            when(wishlistRepository.findById(w.getId())).thenReturn(Optional.of(w));
+        }
+        return task;
+    }
+
+    @Test
+    void clientRootedWorkIsOfferedCapacityBeforeSelfGeneratedWork() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService service = serviceWithWishlists(wishlistRepository);
+
+        TaskEntity client = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.client);
+        TaskEntity selfGenerated = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+
+        assertTrue(service.queuedDispatchClass(client) < service.queuedDispatchClass(selfGenerated),
+                "client-rooted work must be offered capacity before self-generated work");
+    }
+
+    @Test
+    void selfGeneratedWorkStillOutranksHousekeepingCarriers() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService service = serviceWithWishlists(wishlistRepository);
+
+        TaskEntity selfGenerated = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        TaskEntity reviewFallback = new TaskEntity();
+        reviewFallback.setId(UUID.randomUUID());
+        com.fasterxml.jackson.databind.node.ObjectNode payload = new ObjectMapper().createObjectNode();
+        payload.put("taskType", "pr_review_fallback");
+        reviewFallback.setPayload(payload);
+
+        assertTrue(service.queuedDispatchClass(selfGenerated) < service.queuedDispatchClass(reviewFallback));
+    }
+
+    /** The whole point of the change: nothing in the order can express "never". */
+    @Test
+    void everyClassIsDispatchableRatherThanHeld() {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService service = serviceWithWishlists(wishlistRepository);
+
+        TaskEntity selfGenerated = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        TaskEntity noWishlist = taskFromWishlist(wishlistRepository, null);
+
+        // A rank, not a hold: both sort, both are reached by the loop.
+        assertTrue(service.queuedDispatchClass(selfGenerated) >= 0);
+        assertTrue(service.queuedDispatchClass(noWishlist) >= 0);
+        assertTrue(service.queuedDispatchClass(noWishlist) < service.queuedDispatchClass(selfGenerated),
+                "a task with no wishlist at all is not self-generated work and must not be ranked as such");
     }
 
     // --- restoreUnreachedBriefs (§4.2): the restoring half of the REFUSED/UNREACHED split -------------

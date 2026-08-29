@@ -5234,7 +5234,6 @@ public class ProjectFlowService {
         ProjectEntity project = requireActiveProject(projectId);
         operationalPolicyService.requireAllowed(projectId, OperationalAction.DISPATCH_QUEUED_TASKS);
         List<TaskEntity> queuedTasks = taskRepository.findByProjectIdAndStatusOrderByPriorityDescCreatedAtAsc(project.getId(), TaskStatus.queued);
-        boolean buildPhase = readinessService.isBuildPhase(project.getId());
         // The hard block that used to stand here is gone (2026-08-28). Its intent - client scope first,
         // housekeeping on leftover capacity - is already achieved by queuedDispatchClass below, which the
         // comment above describes as working "every single cycle, structurally, not by chance". Two
@@ -5376,15 +5375,12 @@ public class ProjectFlowService {
                 continue;
             }
 
-            if (buildPhase && isSelfGeneratedWork(task)) {
-                // BUILD phase: only work traceable to the client's own brief is allowed to dispatch. Design
-                // review/role-mismatch-followup/self-falsification-derived work stays queued (not dropped -
-                // it simply waits) until the project has actually shipped its first
-                // buildPhaseDeliverableCount client deliverables. See test-twenty-eighth post-mortem §6.4:
-                // this kind of self-generated backlog made up 82% of dispatched capacity while the two real
-                // specification items sat starved of retries.
-                continue;
-            }
+            // The BUILD-phase hold that stood here is gone (2026-08-29), for the reason the sibling hold
+            // above was removed on 2026-08-28 and recorded in the same method: its intent is an ordering,
+            // and it was written as a boolean. queuedDispatchClass now carries it - see the ranking there
+            // for the measurement, and the action plan for the deadlock it closed. The hold also wrote
+            // nothing anywhere when it skipped a task, so seventeen tasks waited twenty-two hours with no
+            // log line and a null jules_dispatch_status; removing it removes that silence with it.
 
             String roleTag = task.getRole().getTag();
 
@@ -5433,15 +5429,34 @@ public class ProjectFlowService {
         }
     }
 
-    private int queuedDispatchClass(TaskEntity task) {
+    /**
+     * Total order over four structural classes, not a tuned threshold.
+     *
+     * <p>Client-rooted work outranks self-generated product work (2026-08-29). Until then this method
+     * distinguished only the carrier type, so "client scope first" was carried instead by a boolean hold in
+     * dispatchQueuedTasks - and a boolean can only say never. Measured that day: 26 queued tasks, none of
+     * them client-rooted, 17 of them self-generated and untried since 28.08 04:07 with nothing written on
+     * them, and 7 more waiting on those 17. The hold lifts only when client deliverables merge, and the
+     * client brief's four tasks were all already done, so no remaining task could produce the event the
+     * hold was waiting for. The same method had already retired the sibling hold on 2026-08-28 for exactly
+     * this reason; this is that argument applied to the one left standing.
+     *
+     * <p>What survives the change is the intent the hold was written for (test-twenty-eighth post-mortem:
+     * self-generated backlog took 82% of dispatched capacity while two real specification items starved) -
+     * with k accounts free in a tick, client-rooted work is offered them before self-generated work. What
+     * does not survive is "never": when no client-rooted work is queued, the remainder is everything.
+     */
+    // Package-private so ProjectFlowServiceTest can assert the order directly, the same convention
+    // restoreUnreachedBriefs and JulesDispatchService.reviewFallbackTargetsInFlight already follow.
+    int queuedDispatchClass(TaskEntity task) {
         if (isWishlistCompilerTask(task)) {
             return 0;
         }
         if (isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task) || isCoverageAuditTask(task)
                 || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
-            return 2;
+            return 3;
         }
-        return 1;
+        return isSelfGeneratedWork(task) ? 2 : 1;
     }
 
     private boolean isJulesSourceNotFound(String reason) {
