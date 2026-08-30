@@ -204,6 +204,41 @@ public class DeliveryRealityProducerService {
         produce();
     }
 
+    /** How large the predicate disagreement is, per project, as last reported. */
+    private final java.util.Map<java.util.UUID, String> lastDisagreement = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * How many requirements sit in the gap between "reached main" and "delivered" (model rule 8.19).
+     *
+     * <p>This department selects on {@code reachedMain}, which is true for any merged pull request; value is
+     * counted with {@code hasRequiredMergeEvidence}, which for a code-owing role also requires the diff to
+     * carry code. A task whose merged pull request records a blocker rather than the work satisfies the
+     * first and fails the second: this department does not see it, the value count does not credit it, and
+     * the requirement is parked with nothing anywhere saying so. Measured 2026-08-30: of 279 wishlists in
+     * the project not one mentions a blocker, while the live circuit was merging pull requests titled
+     * "Record concrete blocker ..." and "Blocker: Unresolvable specification misalignment ...".
+     *
+     * <p>This only MEASURES. Switching the selection would file one repair per task in this set, and the
+     * set's size is exactly what is not yet known - a number that must be measured before it is acted on,
+     * never assumed (plan 4.47).
+     */
+    private void reportPredicateDisagreementIfChanged(ProjectEntity project) {
+        long parked = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+                .filter(task -> task.getStatus() == TaskStatus.done)
+                .filter(task -> !readinessService.isAuxiliaryTask(task))
+                .filter(readinessService::reachedMain)
+                .filter(task -> !readinessService.hasRequiredMergeEvidence(task))
+                .count();
+        String digest = String.valueOf(parked);
+        if (digest.equals(lastDisagreement.get(project.getId()))) {
+            return;
+        }
+        lastDisagreement.put(project.getId(), digest);
+        log.info("DeliveryRealityProducerService: project {} - {} done task(s) reached main without carrying "
+                        + "code, so their requirement is neither delivered nor spoken about (plan 4.47)",
+                project.getName(), parked);
+    }
+
     /**
      * Planned work that did not land and that nothing is going to land.
      *
@@ -253,6 +288,7 @@ public class DeliveryRealityProducerService {
         produceRuntimeObservationEvidence(project);
         int recorded = 0;
         int alreadyKnown = 0;
+        reportPredicateDisagreementIfChanged(project);
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
             if (!isWorkThatNeverLanded(task)) {
                 continue;
