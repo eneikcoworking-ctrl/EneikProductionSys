@@ -67,6 +67,42 @@ class DeliveryBriefZoneBoundaryTest {
      * failed and nothing else, six planned client deliverables unmerged, seven accounts free, and the
      * project standing in VERIFYING_DELIVERY for 3632 minutes - rule 8.11 L5 failing outright.
      */
+    /**
+     * The brief is the only thing the agent working in the client's codebase reads, so it must not assert
+     * something about the task that is untrue. Widening this sweep to abandoned `failed` work while leaving
+     * the sentence at "has status done" would hand that agent a false premise - the same boundary this test
+     * class was written for, one field further along.
+     */
+    @Test
+    void theBriefForAbandonedFailedWorkDoesNotClaimTheTaskSaidDone() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = task(project);
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.failed);
+
+        service().fileTheMissingWorkAsScope(project, task);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(captor.capture());
+        String content = captor.getValue().getContent();
+        assertFalse(content.contains("has status done"), "the task did not say done - it failed");
+        assertTrue(content.contains("has status failed"), "the brief must state what the record actually says");
+    }
+
+    @Test
+    void theBriefForDoneWithoutMergeStillSaysTheStatusAssertedDelivery() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity task = task(project);
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+
+        service().fileTheMissingWorkAsScope(project, task);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(captor.capture());
+        assertTrue(captor.getValue().getContent().contains("has status done"));
+    }
+
     @Test
     void abandonedFailedWorkIsWorkThatNeverLanded() {
         TaskEntity task = task(new ProjectEntity());

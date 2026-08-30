@@ -154,15 +154,12 @@ public class DeliveryRealityProducerService {
         wishlist.setLeanValue(com.eneik.production.models.persistence.LeanValue.essential);
         wishlist.setCynefinDomain("clear");
         wishlist.setSourceRoleTag("BARCAN-TAG-00");
-        wishlist.setContent("Work that was reported as delivered never reached the main branch.\n\n"
-                + "The closed task \"" + title + "\" has status done, and no merge evidence "
-                + "exists for it at all - no merged pull request, nothing on main. Its own status is the "
-                + "only thing asserting that the work was delivered.\n\n"
+        wishlist.setContent("Planned work never reached the main branch.\n\n"
+                + "The closed task \"" + title + "\" " + whatItsRecordSays(task) + "\n\n"
                 + "Deliver what that task was for. Do not reopen it and do not restate its goal as new "
                 + "scope: what is missing is the change itself, on main.");
-        wishlist.setJtbd("When a task says done while nothing it produced reached main, I want the work "
-                + "itself delivered, so that done means the change is on main rather than meaning that a "
-                + "row says so.");
+        wishlist.setJtbd("When planned work ends with nothing of it on main, I want the work itself "
+                + "delivered, so that the record of a task and the state of the branch say the same thing.");
         wishlist.setAcceptanceCriteria("Given the task named above, When this finding is delivered, Then a "
                 + "merged pull request exists on main carrying the change that task was for, and it is "
                 + "named here.");
@@ -170,8 +167,26 @@ public class DeliveryRealityProducerService {
                 + "pull request, and the task's status is no longer the only evidence of delivery.");
         wishlistRepository.save(wishlist);
 
-        log.warn("DeliveryRealityProducerService: filed missing delivery of task {} ({}) as scope - status "
-                + "said done, nothing reached main", task.getId(), title);
+        log.warn("DeliveryRealityProducerService: filed missing delivery of task {} ({}) as scope - "
+                + "status {}, nothing reached main", task.getId(), title, task.getStatus());
+    }
+
+    /**
+     * What this task's own record actually says, in one sentence, so every place that states the finding
+     * states the truth about it.
+     *
+     * <p>This sweep speaks about two different situations and used to describe both as the first one. A
+     * brief that misstates the fact it is about is the same boundary defect this file already paid for
+     * once: the agent reads the brief, not the code, and acts on whatever it is told.
+     */
+    private String whatItsRecordSays(TaskEntity task) {
+        if (task.getStatus() == TaskStatus.done) {
+            return "has status done, and no merge evidence exists for it at all - no merged pull request, "
+                    + "nothing on main. Its own status is the only thing asserting that the work was delivered.";
+        }
+        return "has status " + task.getStatus() + ", no merge evidence exists for it at all - no merged pull "
+                + "request, nothing on main - and nothing is going to retry it: its automatic recovery no "
+                + "longer applies. The work it was planned for is simply absent.";
     }
 
     /**
@@ -276,8 +291,7 @@ public class DeliveryRealityProducerService {
             node.setPolarity(EvidenceNodeEntity.Polarity.NEGATIVE_FINDING);
             node.setSummaryText("Task " + task.getId() + " ("
                     + com.eneik.production.services.task.TaskTitleBuilder.displayTitle(task)
-                    + ") reports status done while nothing ever reached main - no merge evidence exists for it. "
-                    + "Its own status is the only thing asserting the work was delivered.");
+                    + ") " + whatItsRecordSays(task));
             node.setOperationalRealityFindingId(finding.getId());
             evidenceNodeRepository.save(node);
             fileTheMissingWorkAsScope(project, task);
@@ -288,7 +302,7 @@ public class DeliveryRealityProducerService {
                     task.getId(), project.getName(), finding.getId());
         }
         if (recorded > 0 || alreadyKnown > 0) {
-            log.info("DeliveryRealityProducerService: project {} - {} new done-without-merge finding(s), "
+            log.info("DeliveryRealityProducerService: project {} - {} new never-reached-main finding(s), "
                     + "{} already recorded", project.getName(), recorded, alreadyKnown);
         }
     }
