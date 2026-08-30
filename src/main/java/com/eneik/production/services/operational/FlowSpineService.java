@@ -434,6 +434,24 @@ public class FlowSpineService {
                 .filter(JulesSessionEntity::isActive)
                 .map(JulesSessionEntity::getId)
                 .collect(Collectors.toSet());
+        // Model rule 8.20: a task in review needs ITS OWN artifact. The invariant below used to compare two
+        // project-wide aggregates - "are there review tasks" against "are there open reviews" - which warns
+        // on the ordinary case of a review task whose pull request has just merged, and stays silent on a
+        // task that has no artifact at all. Different quantifiers, so the check could not answer the
+        // question it was asked. Counted per task here, from the session that links the two.
+        Set<UUID> sessionIdsCarryingAReview = reviews.stream()
+                .map(PrReviewEntity::getJulesSessionId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        Set<UUID> taskIdsCarryingAReview = sessions.stream()
+                .filter(session -> sessionIdsCarryingAReview.contains(session.getId()))
+                .map(JulesSessionEntity::getTaskId)
+                .filter(java.util.Objects::nonNull)
+                .collect(Collectors.toSet());
+        long reviewTasksWithoutArtifact = tasks.stream()
+                .filter(task -> Set.of(TaskStatus.pending_review, TaskStatus.review).contains(task.getStatus()))
+                .filter(task -> !taskIdsCarryingAReview.contains(task.getId()))
+                .count();
         int mergedReviews = (int) reviews.stream().filter(reviewEntity -> Boolean.TRUE.equals(reviewEntity.getMerged())).count();
         int openReviews = (int) reviews.stream()
                 .filter(reviewEntity -> !Boolean.TRUE.equals(reviewEntity.getMerged()))
@@ -504,7 +522,8 @@ public class FlowSpineService {
 
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,
-                pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews, failingReviews,
+                pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
+                reviewTasksWithoutArtifact, failingReviews,
                 qualityGatePassed, qualityGateFailed, readiness.totalFeatures(), readiness.completeFeatures(),
                 readiness.totalDeliverables(), readiness.mergedDeliverables(), readiness.decompositionComplete(),
                 systemStatus, duplicateContent);
@@ -638,9 +657,10 @@ public class FlowSpineService {
                 invariant("frozen_has_no_autonomous_flow", input.projectStatus() == ProjectStatus.frozen ? "observed" : "pass",
                         "frozen(project) forbids autonomous orchestration.",
                         "project.status=" + input.projectStatus()),
-                invariant("review_requires_artifact", input.reviewTasks() > 0 && input.openReviews() == 0 ? "warn" : "pass",
+                invariant("review_requires_artifact", input.reviewTasksWithoutArtifact() > 0 ? "warn" : "pass",
                         "review(state) requires PR/review artifact evidence.",
-                        input.reviewTasks() + " review task(s), " + input.openReviews() + " open review artifact(s)."),
+                        input.reviewTasksWithoutArtifact() + " of " + input.reviewTasks()
+                                + " review task(s) carry no review artifact of their own."),
                 invariant("delivery_requires_full_mapping", input.totalFeatures() > 0
                                 && input.completeFeatures() >= input.totalFeatures()
                                 && input.mergedDeliverables() < input.totalDeliverables() ? "warn" : "pass",
@@ -1094,6 +1114,8 @@ public class FlowSpineService {
             long openSessions,
             int mergedReviews,
             int openReviews,
+            /** Tasks in a review status that carry no review artifact of their own (model rule 8.20). */
+            long reviewTasksWithoutArtifact,
             int failingReviews,
             int qualityGatePassed,
             int qualityGateFailed,
