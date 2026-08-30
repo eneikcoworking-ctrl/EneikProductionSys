@@ -407,6 +407,10 @@ class FlowSpineServiceTest {
         task.setStatus(TaskStatus.failed);
         task.setSourceWishlistId(UUID.randomUUID());
         task.setFeatureId(UUID.randomUUID());
+        // The resolver's domain includes WHY the task was retired, so a fixture meant to be inside that
+        // domain has to say it (model rule 8.6 - the gate quantifies over what the resolver can act on).
+        task.setJulesDispatchStatus(
+                "Blocked task retired; auto-recovery follow-up disabled during task-expansion incident");
         var payload = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
         payload.put("ems_bounded_plan_resume_count", resumeCount);
         task.setPayload(payload);
@@ -444,6 +448,26 @@ class FlowSpineServiceTest {
         FlowSpineDto dto = spineOver(List.of(failedPlannedTask(0)), project).build(project.getId());
 
         assertEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
+    }
+
+    /**
+     * Model rule 8.6. The resolver's domain is not just structural eligibility and an unspent budget: it
+     * also depends on why the task was retired. A task that failed for a reason this resolver cannot act
+     * on can never be removed by it, so counting such a task holds the project in a state with no exit.
+     * Measured live 2026-08-30: four such tasks, and the project denied ORCHESTRATE and both dispatch
+     * actions with nothing able to clear them.
+     */
+    @Test
+    void aFailedTaskTheResolverWillNeverTouchDoesNotHoldTheFrontierClosed() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setStatus(ProjectStatus.active);
+        TaskEntity task = failedPlannedTask(0);
+        task.setJulesDispatchStatus("Poka-yoke: out-of-cycle generated work is quarantined");
+
+        FlowSpineDto dto = spineOver(List.of(task), project).build(project.getId());
+
+        assertNotEquals("BLOCKED_BY_FAILED_FRONTIER", dto.currentState());
     }
 
     @Test
