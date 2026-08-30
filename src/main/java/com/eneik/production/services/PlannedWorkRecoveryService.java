@@ -111,15 +111,26 @@ public class PlannedWorkRecoveryService {
         // dependency is the third case of the same kind. The resume budget is untouched: if the work truly
         // cannot be done without it, the task fails a second time and is retired for good - one cycle,
         // rather than never.
-        // Only a dependency that is PERMANENTLY dead stops being a reason to wait: failed, and past its
-        // own single resume. A dependency still queued, claimed or in review is alive and must still be
-        // waited for - opening the gate on those would resume work ahead of its own prerequisite.
+        // An unsatisfied dependency holds the dependent, without exception (2026-08-30).
+        //
+        // This gate was widened on 2026-08-29 to let a dependent through when its dependency was
+        // permanently dead, on the argument that a dependency edge is an ordering rather than a physical
+        // precondition. Measured the same evening, on the client's own epic, the widening produced a loop
+        // and nothing else:
+        //
+        //   19:01:38  ProjectFlowService blocks task 40dff79f - its dependency is dead for good
+        //   19:02:45  the admission sweep retires it, creating no child work
+        //   19:03:49  this service resumes it, spending its one and only automatic resume
+        //   19:03:50  ProjectFlowService blocks it again, one second later, for the same dead dependency
+        //   19:04:48  retired for good - the requirement ends, and the epic delivered nothing
+        //
+        // The two rules contradicted each other: one declares such a dependent a dead end and blocks it,
+        // the other resumes it. A resume that is undone within a second is not a recovery, it is the
+        // consumption of the only recovery the task had. ProjectFlowService already routes this case to
+        // `blocked`, which is a terminating path; this gate must not race it.
         TaskEntity dependency = task.getDependsOn();
         if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
-            boolean permanentlyDead = dependency.getStatus() == TaskStatus.failed && !mayStillBeResumed(dependency);
-            if (!permanentlyDead) {
-                return false;
-            }
+            return false;
         }
 
         // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
