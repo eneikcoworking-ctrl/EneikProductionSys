@@ -103,22 +103,6 @@ class DeliveryBriefZoneBoundaryTest {
         assertTrue(captor.getValue().getContent().contains("has status done"));
     }
 
-    /**
-     * Model rule 8.19: a merged diff delivers the requirement only if it carries code, for a role that owes
-     * code. This department's selection does not yet apply that - it selects on reachedMain - so the guard
-     * asserts the current, measured state honestly rather than a change that has not been made: a task whose
-     * merged pull request carries no code is NOT picked up here, which is exactly the gap 4.47 records.
-     */
-    @Test
-    void aMergedBlockerRecordIsStillNotPickedUpByThisDepartment() {
-        TaskEntity task = task(new ProjectEntity());
-        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-
-        // isWorkThatNeverLanded answers on status alone; the reachedMain filter that excludes this task
-        // lives in the sweep, which is what rule 8.19 asks to be brought into agreement.
-        assertTrue(service().isWorkThatNeverLanded(task));
-    }
-
     @Test
     void abandonedFailedWorkIsWorkThatNeverLanded() {
         TaskEntity task = task(new ProjectEntity());

@@ -223,20 +223,28 @@ public class DeliveryRealityProducerService {
      * never assumed (plan 4.47).
      */
     private void reportPredicateDisagreementIfChanged(ProjectEntity project) {
-        long parked = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+        java.util.Map<String, Long> byRole = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .filter(task -> task.getStatus() == TaskStatus.done)
                 .filter(task -> !readinessService.isAuxiliaryTask(task))
                 .filter(readinessService::reachedMain)
                 .filter(task -> !readinessService.hasRequiredMergeEvidence(task))
-                .count();
-        String digest = String.valueOf(parked);
+                .collect(java.util.stream.Collectors.groupingBy(
+                        task -> {
+                            String role = task.getRole() == null ? "(none)" : task.getRole().getTag();
+                            return role + "/" + com.eneik.production.services.EmsFlowStage.deliveryArtifact(role);
+                        },
+                        java.util.TreeMap::new,
+                        java.util.stream.Collectors.counting()));
+        long parked = byRole.values().stream().mapToLong(Long::longValue).sum();
+        String digest = parked + " " + byRole;
         if (digest.equals(lastDisagreement.get(project.getId()))) {
             return;
         }
         lastDisagreement.put(project.getId(), digest);
-        log.info("DeliveryRealityProducerService: project {} - {} done task(s) reached main without carrying "
-                        + "code, so their requirement is neither delivered nor spoken about (plan 4.47)",
-                project.getName(), parked);
+        log.info("DeliveryRealityProducerService: project {} - {} done task(s) reached main without the "
+                        + "artifact their role owes, so their requirement is neither delivered nor spoken "
+                        + "about (plan 4.47); by role/artifact: {}",
+                project.getName(), parked, byRole);
     }
 
     /**
@@ -295,7 +303,15 @@ public class DeliveryRealityProducerService {
             }
             // Same two checks the dashboard applies - a DECISION-stage or `complex`-Cynefin task is never
             // expected to reach main on its own, and flagging it would be the 2026-07-25 false positive.
-            if (readinessService.reachedMain(task) || readinessService.isAuxiliaryTask(task)) {
+            // Model rule 8.19: a merged diff delivers the requirement only if it carries code, for a role
+            // that owes code. This asked reachedMain, which is true for ANY merged pull request, while value
+            // is counted with hasRequiredMergeEvidence, which also requires the diff to carry code. A task
+            // whose merged pull request records a blocker rather than the work satisfied the first and
+            // failed the second: this department did not see it, the value count did not credit it, and the
+            // requirement was parked with nothing anywhere saying so. Measured 2026-08-30: 16 such tasks in
+            // one project, against 400 done and 13 of 19 requirements delivered. Both questions are now
+            // answered by one predicate (Charter invariant 10).
+            if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
                 continue;
             }
             if (!operationalRealityFindingRepository.findByTaskId(task.getId()).isEmpty()) {
