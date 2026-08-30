@@ -6366,9 +6366,39 @@ public class ProjectFlowService {
         }
     }
 
-    private boolean areWishlistItemsSimilar(com.eneik.production.models.persistence.WishlistEntity item1, com.eneik.production.models.persistence.WishlistEntity item2) {
-        String text1 = item1.getContent();
-        String text2 = item2.getContent();
+    /**
+     * Plan 4.45, measured 2026-08-30 on test-fiftieth. Two failures, both fatal, both fixed here.
+     *
+     * <p><b>Slices of one brief were merged into each other.</b> The durable log records it exactly:
+     * at 00:33:34 this method's caller merged "Privacy Compliance Backend and Integration" and
+     * "QA: Verification of Data Subject Rights and Consent" into a slice of "Self-Service Account
+     * Recovery" - all three decomposed from the SAME client brief 8aff0d75 - and dismissed the two
+     * privacy rows. Their epic was left with no planned item, which pins everyFeaturePlanned false, which
+     * held the whole project in DECOMPOSING for the rest of the night. Two Must-Be requirements of a
+     * paying client (data export, erasure, consent, and their verification) stopped being work.
+     *
+     * <p>A decomposition is a decision that these are DIFFERENT parts of one brief, already taken and
+     * already recorded by the compiler. Re-deciding it here without new evidence is what Charter
+     * invariant 14 forbids, and sharing an originWishlistId is evidence of exactly the opposite of
+     * sameness. No threshold is involved: this is structural.
+     *
+     * <p><b>The text compared was not the referent.</b> A compiled slice's {@code content} is a header the
+     * factory generated - "Internal work item N (ROLE) from wishlist &lt;uuid&gt;: &lt;title&gt;" - and
+     * after stop-words the surviving tokens are {@code internal, work, item, wishlist, <root uuid>},
+     * shared by every slice by construction. Measured on the real rows: privacy-backend~privacy-QA 0.385,
+     * privacy-backend~SSO 0.417, privacy-QA~backup 0.357 - every pair over the 0.25 threshold, none of it
+     * about the requirement. The root brief's UUID as an identity token asserts "came from one brief",
+     * which is the opposite of "is the same requirement". What carries a slice's identity is its jtbd and
+     * acceptance criteria - the very fields the merge itself already treats as identity-bearing when it
+     * unions them into the survivor.
+     */
+    static boolean areWishlistItemsSimilar(com.eneik.production.models.persistence.WishlistEntity item1, com.eneik.production.models.persistence.WishlistEntity item2) {
+        java.util.UUID origin1 = item1.getOriginWishlistId();
+        if (origin1 != null && origin1.equals(item2.getOriginWishlistId())) {
+            return false;
+        }
+        String text1 = identityText(item1);
+        String text2 = identityText(item2);
         if (text1 == null || text2 == null) {
             return false;
         }
@@ -6390,7 +6420,22 @@ public class ProjectFlowService {
         return similarity >= 0.25;
     }
 
-    private java.util.Set<String> getCleanTokens(String text) {
+    /**
+     * The text that carries a wishlist row's identity. For a compiled slice that is its jtbd and
+     * acceptance criteria; its {@code content} is a generated header (see areWishlistItemsSimilar). For a
+     * raw brief nothing has been compiled yet, so the content IS the requirement.
+     */
+    private static String identityText(com.eneik.production.models.persistence.WishlistEntity item) {
+        if (item.getCompiledByRole() == null) {
+            return item.getContent();
+        }
+        String jtbd = item.getJtbd() == null ? "" : item.getJtbd();
+        String acceptance = item.getAcceptanceCriteria() == null ? "" : item.getAcceptanceCriteria();
+        String identity = (jtbd + " " + acceptance).trim();
+        return identity.isEmpty() ? item.getContent() : identity;
+    }
+
+    private static java.util.Set<String> getCleanTokens(String text) {
         if (text == null) {
             return java.util.Collections.emptySet();
         }
