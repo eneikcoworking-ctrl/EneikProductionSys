@@ -5651,11 +5651,27 @@ public class ProjectFlowService {
         if (isWishlistCompilerTask(task)) {
             return 0;
         }
-        if (isFalsificationAuditTask(task) || isPhilosophicalAuditTask(task) || isCoverageAuditTask(task)
-                || isReviewFallbackTask(task) || isDesignReviewTask(task)) {
+        if (isFactoryCarrier(task)) {
             return 3;
         }
         return isSelfGeneratedWork(task) ? 2 : 1;
+    }
+
+    /**
+     * A task the factory created to carry its own process, by the model's own definition
+     * ({@code carrier(t) <=> payload(t).taskType != null}, model 8.0).
+     *
+     * <p>The admission order of 8.17 used to enumerate the five carrier types it knew about. Measured
+     * 2026-08-30: seven carrier types exist in this file, and `design_concern_triage` was not among the
+     * five - it is created directly in `queued`, so it reaches account selection, and an unlisted carrier
+     * falls through to the product branch. It therefore competed for the seven live accounts at PRODUCT
+     * priority, ahead of self-generated work and ahead of every other carrier, which is the exact inversion
+     * the order exists to prevent. An enumeration has to be maintained; a definition does not, and this one
+     * is already the definition the model uses.
+     */
+    boolean isFactoryCarrier(TaskEntity task) {
+        return task != null && task.getPayload() != null
+                && task.getPayload().hasNonNull(WISHLIST_COMPILER_PAYLOAD_KEY);
     }
 
     private boolean isJulesSourceNotFound(String reason) {
@@ -5663,11 +5679,8 @@ public class ProjectFlowService {
     }
 
     private boolean isHousekeepingCarrierTask(TaskEntity task) {
-        return isFalsificationAuditTask(task)
-                || isPhilosophicalAuditTask(task)
-                || isCoverageAuditTask(task)
-                || isReviewFallbackTask(task)
-                || isDesignReviewTask(task);
+        // Same correction as queuedDispatchClass above: the enumeration missed a carrier type that exists.
+        return isFactoryCarrier(task) && !isWishlistCompilerTask(task);
     }
 
     private Optional<JulesSessionEntity> findActiveJulesSession(UUID taskId) {

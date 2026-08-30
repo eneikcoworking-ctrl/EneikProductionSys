@@ -695,6 +695,49 @@ class ProjectFlowServiceTest {
         assertTrue(service.queuedDispatchClass(selfGenerated) < service.queuedDispatchClass(reviewFallback));
     }
 
+    /**
+     * Model rule 8.17, point 2: the admission order must cover every class of task that reaches account
+     * selection. It enumerated five carrier types; measured 2026-08-30 this file declares seven, and
+     * `design_concern_triage` was not among them. Such a task is created directly in `queued`, so it does
+     * reach selection, and an unlisted carrier fell through to the PRODUCT branch - competing for the seven
+     * live accounts ahead of self-generated work and ahead of every other carrier, which is the exact
+     * inversion the order exists to prevent.
+     *
+     * <p>Asserted over every carrier type this file declares, so a type added later cannot slip out of the
+     * order the way this one did.
+     */
+    @Test
+    void everyCarrierTypeThisFileDeclaresIsInTheOrder() throws Exception {
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        ProjectFlowService service = serviceWithWishlists(wishlistRepository);
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/eneik/production/services/ProjectFlowService.java"));
+        java.util.regex.Matcher m = java.util.regex.Pattern
+                .compile("_TASK_TYPE = .([a-z_]+).").matcher(source);
+        java.util.List<String> declared = new java.util.ArrayList<>();
+        while (m.find()) {
+            declared.add(m.group(1));
+        }
+        assertTrue(declared.size() >= 6, "expected the carrier types to be found, got " + declared);
+
+        TaskEntity product = taskFromWishlist(wishlistRepository,
+                com.eneik.production.models.persistence.WishlistSource.client);
+        for (String type : declared) {
+            TaskEntity carrier = new TaskEntity();
+            carrier.setId(UUID.randomUUID());
+            com.fasterxml.jackson.databind.node.ObjectNode payload = new ObjectMapper().createObjectNode();
+            payload.put("taskType", type);
+            carrier.setPayload(payload);
+            if ("wishlist_compiler".equals(type)) {
+                assertTrue(service.queuedDispatchClass(carrier) < service.queuedDispatchClass(product),
+                        "the compiler goes first: " + type);
+            } else {
+                assertTrue(service.queuedDispatchClass(carrier) > service.queuedDispatchClass(product),
+                        "a factory carrier must never compete at product priority: " + type);
+            }
+        }
+    }
+
     /** The whole point of the change: nothing in the order can express "never". */
     @Test
     void everyClassIsDispatchableRatherThanHeld() {
