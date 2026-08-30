@@ -234,6 +234,16 @@ public class TechnicalLeadCompiler {
             // conversion happened; `dismissed` says honestly that no separate task was spawned for it.
             wishlist.setStatus(WishlistStatus.dismissed);
             wishlistRepository.save(wishlist);
+            // 2026-08-30 (plan 4.45, F39). This was the only status write to `dismissed` in the whole
+            // codebase that recorded nothing at all. Measured on test-fiftieth: two Must-Be slices of the
+            // client's own brief ("data export and erasure", "QA verification of data subject rights") sat
+            // `dismissed` with no task and no trace, and their epic then held the entire project in
+            // DECOMPOSING - and the reason they were discarded could not be recovered from anywhere. A
+            // discard that names nothing cannot be checked, so it cannot be wrong; that is what makes it
+            // dangerous. Says which task absorbed it, in project scope, so the record is durable.
+            log.info("TechnicalLeadCompiler: wishlist {} collapsed into the existing semantic duplicate "
+                            + "task {} (key {}); it is dismissed and no separate task was created for it",
+                    wishlist.getId(), duplicate.get().getId(), semanticKey);
             return duplicate.get();
         }
 

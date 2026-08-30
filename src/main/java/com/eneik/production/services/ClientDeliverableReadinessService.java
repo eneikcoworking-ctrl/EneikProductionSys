@@ -798,17 +798,30 @@ public class ClientDeliverableReadinessService {
     // "Zero code-producing items yet" is meaningless evidence of valuelessness while nothing can dispatch
     // at all - it dismissed real epics whose tasks simply hadn't been allowed to start. Once dispatch
     // resumed, nothing re-validated those dismissals, so real work went on to complete under them anyway,
-    // permanently invisible to /epics, /tree, and productReadiness (dismissedAt-filtered everywhere). Skip
-    // this project's cleanup entirely for the cycle when dispatch is currently blocked project-wide -
-    // reuses the exact same gate real dispatch already obeys (ProjectFlowService.dispatchQueuedTasks),
-    // not a separate ad hoc condition that could drift out of sync with it.
+    // permanently invisible to /epics, /tree, and productReadiness (dismissedAt-filtered everywhere).
+    // Withhold judgment on an epic for the cycle when dispatch is currently blocked project-wide AND that
+    // epic has work dispatch would have moved - reuses the exact same gate real dispatch already obeys
+    // (ProjectFlowService.dispatchQueuedTasks), not a separate ad hoc condition that could drift out of
+    // sync with it. The second conjunct was added 2026-08-30 (plan 4.45): without it this skipped the whole
+    // project, including epics the freeze could not possibly explain, and one of those epics was itself the
+    // cause of the freeze.
     private void deleteValuelessEpicsForProject(UUID projectId) {
-        if (!operationalPolicyService.authorize(projectId, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS).allowed()) {
-            log.info("ClientDeliverableReadinessService: skipping valueless-epic cleanup for project {} - "
-                    + "dispatch is currently blocked project-wide, zero code-producing items is not real evidence right now",
-                    projectId);
-            return;
-        }
+        // 2026-08-30 (plan 4.45). This used to return here for the whole project, and that early return
+        // closed a cycle on itself: an epic with no planned item pins everyFeaturePlanned false, which pins
+        // decompositionComplete false, which holds the project in DECOMPOSING, which denies
+        // DISPATCH_QUEUED_TASKS - the exact authorization this line reads. The only mechanism that could
+        // remove the epic was forbidden by the state the epic created. Measured live on test-fiftieth:
+        // 49 consecutive orchestration ticks with an empty queue, this line logging the skip at 09:20:03,
+        // and one Must-Be epic (f3f8e658) holding it.
+        //
+        // The 2026-08-07 reason below is kept whole, because it is right: zero code-producing items is not
+        // evidence of valuelessness while the work that would have produced them was withheld. What was
+        // wrong is the subject - it asked about the PROJECT and then judged an EPIC. Charter invariant 8,
+        // exact denominator: a freeze can only hide work that exists. An epic with no non-terminal task had
+        // nothing withheld from it, so its emptiness is established rather than an artifact of the denial.
+        boolean dispatchBlockedProjectWide = !operationalPolicyService
+                .authorize(projectId, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS)
+                .allowed();
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, List<WishlistEntity>> wishlistByFeature = allWishlist.stream()
                 .filter(w -> w.getFeatureId() != null)
@@ -844,6 +857,22 @@ public class ClientDeliverableReadinessService {
                     && java.time.Duration.between(diagnostic.createdAt(), now).toMinutes() < EPIC_CLEANUP_MIN_AGE_MINUTES) {
                 continue; // too new to judge - give the compiler a chance to still link real work to it
             }
+            if (dispatchBlockedProjectWide && hasWorkDispatchWouldMove(projectId, diagnostic.id())) {
+                // Live incident, 2026-08-07 (test-forty-third): this cron fired 5x during a ~4.5h
+                // project-wide BLOCKED_BY_DUPLICATE_CONTENT freeze, when dispatch itself was denied for
+                // every task in the project. It dismissed real epics whose tasks simply hadn't been allowed
+                // to start; once dispatch resumed, nothing re-validated those dismissals, so real work went
+                // on to complete under them anyway, permanently invisible to /epics, /tree and
+                // productReadiness (dismissedAt-filtered everywhere). Those epics HAD tasks - that is the
+                // condition that makes the freeze a real alternative explanation, and it is the condition
+                // checked here.
+                log.info("ClientDeliverableReadinessService: withholding judgment on epic '{}' ({}) for "
+                                + "project {} - dispatch is blocked project-wide and this epic has work "
+                                + "that dispatch would have moved, so zero code-producing items is not "
+                                + "real evidence right now",
+                        diagnostic.title(), diagnostic.id(), projectId);
+                continue;
+            }
             List<WishlistEntity> ownItems = wishlistByFeature.getOrDefault(diagnostic.id(), List.of());
             boolean stillActive = ownItems.stream()
                     // movable(), not a raw status check: a refused brief kept the feature "still
@@ -867,6 +896,25 @@ public class ClientDeliverableReadinessService {
                             + "zero code-producing items, nothing left pending for it (soft-deleted, lineage preserved)",
                     diagnostic.title(), diagnostic.id(), projectId);
         }
+    }
+
+    /**
+     * Whether the project-wide dispatch denial can actually explain this epic's emptiness - i.e. whether
+     * there is work under it that dispatch would have moved. Plan 4.45, Charter invariant 8: the freeze
+     * hypothesis has this set as its denominator, and an empty denominator establishes nothing.
+     *
+     * <p>Terminal statuses are excluded because dispatch does not move them: a done, failed or
+     * spike_completed task is not work the freeze is holding back.
+     */
+    private boolean hasWorkDispatchWouldMove(UUID projectId, UUID featureId) {
+        if (featureId == null) {
+            return false;
+        }
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(task -> featureId.equals(task.getFeatureId()))
+                .anyMatch(task -> task.getStatus() != com.eneik.production.models.persistence.TaskStatus.done
+                        && task.getStatus() != com.eneik.production.models.persistence.TaskStatus.failed
+                        && task.getStatus() != com.eneik.production.models.persistence.TaskStatus.spike_completed);
     }
 
     /**

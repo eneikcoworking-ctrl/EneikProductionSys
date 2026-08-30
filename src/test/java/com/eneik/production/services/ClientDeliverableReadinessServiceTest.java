@@ -660,12 +660,51 @@ class ClientDeliverableReadinessServiceTest {
     }
 
     @Test
-    void deleteValuelessEpicsSkipsCleanupEntirelyWhenDispatchIsBlockedProjectWide() {
+    void deleteValuelessEpicsWithholdsJudgmentWhenDispatchIsBlockedAndTheEpicHasWorkDispatchWouldMove() {
         // Live incident, 2026-08-07 (test-forty-third): this cron ran 5x during a project-wide dispatch
         // freeze (BLOCKED_BY_DUPLICATE_CONTENT) and wrongly dismissed real epics whose tasks simply hadn't
         // been allowed to dispatch yet - "zero code-producing items" is not real evidence of valuelessness
-        // while nothing can dispatch at all. Same fixture as the test above (which WOULD normally dismiss
-        // this epic), but with dispatch currently denied - cleanup must not touch it this cycle.
+        // while the work that would have produced them is being withheld. Same fixture as the test above
+        // (which WOULD normally dismiss this epic), plus the queued task that makes the freeze a real
+        // alternative explanation - cleanup must not touch it this cycle.
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        WishlistEntity dismissedItem = plannedItems(projectId, feature.getId(), 1).get(0);
+        dismissedItem.setStatus(WishlistStatus.dismissed);
+
+        TaskEntity withheld = task(UUID.randomUUID(), projectId, feature.getId(), UUID.randomUUID(), "BARCAN-TAG-02");
+        withheld.setStatus(TaskStatus.queued);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(withheld));
+        denyDispatch(projectId);
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository, never()).findById(any());
+        verify(featureRepository, never()).save(any());
+        assertNull(feature.getDismissedAt());
+    }
+
+    @Test
+    void deleteValuelessEpicsStillRemovesAnEpicWithNoTaskAtAllWhileDispatchIsBlocked() {
+        // Plan 4.45, measured live on test-fiftieth 2026-08-30. The guard above used to return for the
+        // WHOLE project, which closed a cycle on itself: an epic with no planned item pins
+        // everyFeaturePlanned false -> decompositionComplete false -> DECOMPOSING -> DISPATCH_QUEUED_TASKS
+        // denied -> this very cleanup skipped. The only mechanism that could remove the epic was forbidden
+        // by the state the epic created, and one Must-Be epic held the project for 49 consecutive ticks.
+        //
+        // Charter invariant 8, exact denominator: a freeze can only hide work that exists. This epic has no
+        // task of any status, so nothing was withheld from it and its emptiness is established evidence.
         UUID projectId = UUID.randomUUID();
         ProjectEntity project = new ProjectEntity();
         project.setId(projectId);
@@ -681,16 +720,54 @@ class ClientDeliverableReadinessServiceTest {
 
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
         stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of());
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
+        denyDispatch(projectId);
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository).save(feature);
+        assertNotNull(feature.getDismissedAt());
+    }
+
+    @Test
+    void deleteValuelessEpicsWithholdsJudgmentOnAnEpicWhoseOnlyTasksAreStillTerminal() {
+        // The complement of the two above: a done task is not work dispatch would move, so it gives the
+        // freeze nothing to explain. Without this the "has work" test would pass on any task at all and
+        // the guard would be back to withholding judgment on epics the freeze cannot account for.
+        UUID projectId = UUID.randomUUID();
+        ProjectEntity project = new ProjectEntity();
+        project.setId(projectId);
+        project.setStatus(ProjectStatus.active);
+
+        UUID rootId = UUID.randomUUID();
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        FeatureEntity feature = feature(projectId, rootId);
+        feature.setCreatedAt(OLD_ENOUGH);
+
+        WishlistEntity dismissedItem = plannedItems(projectId, feature.getId(), 1).get(0);
+        dismissedItem.setStatus(WishlistStatus.dismissed);
+
+        TaskEntity finished = task(UUID.randomUUID(), projectId, feature.getId(), UUID.randomUUID(), "BARCAN-TAG-02");
+        finished.setStatus(TaskStatus.done);
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
+        stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)).thenReturn(List.of(finished));
+        when(featureRepository.findById(feature.getId())).thenReturn(java.util.Optional.of(feature));
+        denyDispatch(projectId);
+
+        service.deleteValuelessEpics();
+
+        verify(featureRepository).save(feature);
+        assertNotNull(feature.getDismissedAt());
+    }
+
+    private void denyDispatch(UUID projectId) {
         when(operationalPolicyService.authorize(eq(projectId), eq(com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS)))
                 .thenReturn(new com.eneik.production.services.operational.OperationalPolicyService.OperationalDecision(
                         projectId, com.eneik.production.services.operational.OperationalAction.DISPATCH_QUEUED_TASKS,
                         false, "BLOCKED_BY_DUPLICATE_CONTENT", "authorized", "denied", List.of(), null));
-
-        service.deleteValuelessEpics();
-
-        verify(featureRepository, never()).findById(any());
-        verify(featureRepository, never()).save(any());
-        assertNull(feature.getDismissedAt());
     }
 
     @Test
