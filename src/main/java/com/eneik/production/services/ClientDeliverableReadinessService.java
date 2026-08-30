@@ -306,12 +306,8 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
-        Map<UUID, Boolean> fulfilledByPlannedItem = new HashMap<>();
-        for (WishlistEntity plannedItem : plannedItems) {
-            boolean fulfilled = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of()).stream()
-                    .anyMatch(this::hasRequiredMergeEvidence);
-            fulfilledByPlannedItem.put(plannedItem.getId(), fulfilled);
-        }
+        Map<UUID, Boolean> fulfilledByPlannedItem =
+                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, allWishlist);
 
         // Operator directive 2026-07-24, sharpened over two rounds of correction: "the formula must be computed
         // only over code-bearing tasks, not spikes, reviews and other auxiliary work" (this ratio must only
@@ -666,12 +662,8 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
-        Map<UUID, Boolean> fulfilledByPlannedItem = new HashMap<>();
-        for (WishlistEntity plannedItem : plannedItems) {
-            boolean fulfilled = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of()).stream()
-                    .anyMatch(this::hasRequiredMergeEvidence);
-            fulfilledByPlannedItem.put(plannedItem.getId(), fulfilled);
-        }
+        Map<UUID, Boolean> fulfilledByPlannedItem =
+                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, allWishlist);
         List<WishlistEntity> codeProducingItems = plannedItems.stream()
                 .filter(w -> !isAuxiliaryPlannedItem(tasksByPlannedItem.getOrDefault(w.getId(), List.of())))
                 .toList();
@@ -1025,6 +1017,70 @@ public class ClientDeliverableReadinessService {
         // disagreed about BARCAN-TAG-03 - the set won silently, so delivery had two sources of truth for
         // one role. The stage now declares each role's delivery artifact and this asks only that.
         return EmsFlowStage.requiresCodeForDelivery(roleTag);
+    }
+
+    /**
+     * Whether each planned item's requirement has been met, following the repair chain (model rule 8.18).
+     *
+     * <p>A task is an attempt; the requirement is carried by the planned item. When an attempt fails, the
+     * delivery-reality department files a repair for the same requirement, and that repair's own task hangs
+     * off the repair wishlist rather than off the planned item. Counting only the item's own tasks means a
+     * requirement that was in fact delivered - by the second attempt, on main - stays unfulfilled forever.
+     *
+     * <p>Measured on the live circuit 2026-08-30: twenty-seven repairs filed, nineteen already compiled into
+     * tasks, three pull requests merged in half an hour, and mergedDeliverables standing unmoved at 13 of 19
+     * across three consecutive measurements. That is 8.15 inverted - there `done` was taken for delivery,
+     * here real delivery is taken for nothing.
+     *
+     * <p>The source scope is deliberately NOT widened: a repair is not a separate requirement that would add
+     * to the denominator, it discharges an existing one. Termination is by construction - a repair names a
+     * task that existed before it - and the visited set makes it independent of the data being well-formed.
+     */
+    private Map<UUID, Boolean> fulfilmentByPlannedItem(List<WishlistEntity> plannedItems,
+                                                        Map<UUID, List<TaskEntity>> tasksByPlannedItem,
+                                                        List<WishlistEntity> allWishlist) {
+        Map<UUID, List<WishlistEntity>> repairsByRepairedTask = allWishlist.stream()
+                .filter(w -> w.getSourceTaskId() != null)
+                .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
+        Map<UUID, List<TaskEntity>> tasksByRepair = Map.of();
+        if (!repairsByRepairedTask.isEmpty()) {
+            List<UUID> repairIds = repairsByRepairedTask.values().stream()
+                    .flatMap(List::stream)
+                    .map(WishlistEntity::getId)
+                    .toList();
+            tasksByRepair = taskRepository.findBySourceWishlistIdIn(repairIds).stream()
+                    .filter(t -> t.getSourceWishlistId() != null)
+                    .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
+        }
+
+        Map<UUID, Boolean> fulfilled = new HashMap<>();
+        for (WishlistEntity plannedItem : plannedItems) {
+            fulfilled.put(plannedItem.getId(), anyMergedInRepairClosure(
+                    tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of()),
+                    repairsByRepairedTask, tasksByRepair));
+        }
+        return fulfilled;
+    }
+
+    /** The closure of rule 8.18, walked breadth-first from the planned item's own attempts. */
+    private boolean anyMergedInRepairClosure(List<TaskEntity> attempts,
+                                             Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+                                             Map<UUID, List<TaskEntity>> tasksByRepair) {
+        java.util.Deque<TaskEntity> frontier = new java.util.ArrayDeque<>(attempts);
+        java.util.Set<UUID> visited = new java.util.HashSet<>();
+        while (!frontier.isEmpty()) {
+            TaskEntity attempt = frontier.pop();
+            if (attempt.getId() == null || !visited.add(attempt.getId())) {
+                continue;
+            }
+            if (hasRequiredMergeEvidence(attempt)) {
+                return true;
+            }
+            for (WishlistEntity repair : repairsByRepairedTask.getOrDefault(attempt.getId(), List.of())) {
+                frontier.addAll(tasksByRepair.getOrDefault(repair.getId(), List.of()));
+            }
+        }
+        return false;
     }
 
     public boolean hasRequiredMergeEvidence(TaskEntity task) {

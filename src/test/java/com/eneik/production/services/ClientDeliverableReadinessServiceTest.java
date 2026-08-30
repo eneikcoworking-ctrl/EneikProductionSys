@@ -543,6 +543,76 @@ class ClientDeliverableReadinessServiceTest {
         }
     }
 
+    /**
+     * Model rule 8.18: a task is an attempt, the planned item carries the requirement, and a repair
+     * discharges the requirement it repairs. Measured live 2026-08-30 - twenty-seven repairs filed, three
+     * pull requests merged in half an hour, and mergedDeliverables unmoved at 13 of 19 across three
+     * consecutive measurements, because fulfilment was bound to the first attempt's task identity.
+     */
+    @Test
+    void aRequirementIsFulfilledWhenItsRepairMergedRatherThanItsFirstAttempt() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        TaskEntity firstAttempt = attempts.get(0);
+        firstAttempt.setStatus(TaskStatus.failed);
+
+        WishlistEntity repair = repairOf(projectId, feature.getId(), firstAttempt);
+        TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, attempts);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(root, items.get(0), repair));
+        when(taskRepository.findBySourceWishlistIdIn(List.of(repair.getId()))).thenReturn(List.of(repairTask));
+        stubMerged(repairTask, true);
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+
+        assertEquals(1, readiness.mergedDeliverables(),
+                "the change is on main - the requirement is met, whichever attempt carried it");
+    }
+
+    /**
+     * The complement, and it is not optional: without it the rule degenerates into counting everything as
+     * delivered the moment a repair exists.
+     */
+    @Test
+    void aRequirementWhoseRepairHasNotMergedIsStillUnfulfilled() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        TaskEntity firstAttempt = attempts.get(0);
+        firstAttempt.setStatus(TaskStatus.failed);
+
+        WishlistEntity repair = repairOf(projectId, feature.getId(), firstAttempt);
+        TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, attempts);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(root, items.get(0), repair));
+        when(taskRepository.findBySourceWishlistIdIn(List.of(repair.getId()))).thenReturn(List.of(repairTask));
+        stubMerged(repairTask, false);
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+
+        assertEquals(0, readiness.mergedDeliverables());
+    }
+
+    private WishlistEntity repairOf(UUID projectId, UUID featureId, TaskEntity repaired) {
+        WishlistEntity repair = new WishlistEntity();
+        repair.setId(UUID.randomUUID());
+        repair.setProjectId(projectId);
+        repair.setSource(WishlistSource.delivery_never_reached_main);
+        repair.setStatus(WishlistStatus.converted_to_task);
+        repair.setCompiledByRole("BARCAN-TAG-00");
+        repair.setFeatureId(featureId);
+        repair.setSourceTaskId(repaired.getId());
+        repair.setContent("Planned work never reached the main branch.");
+        return repair;
+    }
+
     private void stubPlan(UUID projectId, WishlistEntity root, FeatureEntity feature,
                           List<WishlistEntity> items, List<TaskEntity> tasks) {
         List<WishlistEntity> all = new ArrayList<>();
