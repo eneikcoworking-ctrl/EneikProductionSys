@@ -47,6 +47,7 @@ class DeliveryBriefZoneBoundaryTest {
             "[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}");
 
     private final WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+    private final PlannedWorkRecoveryService plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
 
     private DeliveryRealityProducerService service() {
         return new DeliveryRealityProducerService(
@@ -55,7 +56,53 @@ class DeliveryBriefZoneBoundaryTest {
                 mock(ClientDeliverableReadinessService.class),
                 mock(OperationalRealityFindingRepository.class),
                 mock(EvidenceNodeRepository.class),
-                wishlistRepository);
+                wishlistRepository,
+                plannedWorkRecoveryService);
+    }
+
+    /**
+     * Model rule 8.12: every department's finding maps to a wishlist. This department owns "the work never
+     * reached main", and its predicate read the status word rather than the deliverable, so abandoned
+     * `failed` work belonged to no department at all. Measured on the live circuit 2026-08-30: 382 done, 38
+     * failed and nothing else, six planned client deliverables unmerged, seven accounts free, and the
+     * project standing in VERIFYING_DELIVERY for 3632 minutes - rule 8.11 L5 failing outright.
+     */
+    @Test
+    void abandonedFailedWorkIsWorkThatNeverLanded() {
+        TaskEntity task = task(new ProjectEntity());
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.failed);
+        when(plannedWorkRecoveryService.mayStillBeResumed(task)).thenReturn(false);
+
+        assertTrue(service().isWorkThatNeverLanded(task));
+    }
+
+    /**
+     * The complement, and it is not optional: work the recovery service can still resume is owned by that
+     * service, which reuses the task identity. Ordering it again here would run the same requirement twice.
+     */
+    @Test
+    void failedWorkTheRecoveryStillOwnsIsNotOrderedAgainHere() {
+        TaskEntity task = task(new ProjectEntity());
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.failed);
+        when(plannedWorkRecoveryService.mayStillBeResumed(task)).thenReturn(true);
+
+        assertFalse(service().isWorkThatNeverLanded(task));
+    }
+
+    @Test
+    void doneWorkIsStillWhatThisDepartmentPrimarilySpeaksAbout() {
+        TaskEntity task = task(new ProjectEntity());
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+
+        assertTrue(service().isWorkThatNeverLanded(task));
+    }
+
+    @Test
+    void workThatIsStillRunningIsNotDeclaredLost() {
+        TaskEntity task = task(new ProjectEntity());
+        task.setStatus(com.eneik.production.models.persistence.TaskStatus.in_progress);
+
+        assertFalse(service().isWorkThatNeverLanded(task));
     }
 
     private TaskEntity task(ProjectEntity project) {

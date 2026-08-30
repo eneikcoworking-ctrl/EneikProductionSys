@@ -79,6 +79,8 @@ public class DeliveryRealityProducerService {
     private final OperationalRealityFindingRepository operationalRealityFindingRepository;
     private final EvidenceNodeRepository evidenceNodeRepository;
     private final com.eneik.production.repositories.WishlistRepository wishlistRepository;
+    /** Asked, never re-derived - see isWorkThatNeverLanded. */
+    private final PlannedWorkRecoveryService plannedWorkRecoveryService;
 
     /**
      * Optional, field-injected for the same reason FactorySelfHealthService injects KaizenService that way:
@@ -93,13 +95,15 @@ public class DeliveryRealityProducerService {
                                           ClientDeliverableReadinessService readinessService,
                                           OperationalRealityFindingRepository operationalRealityFindingRepository,
                                           EvidenceNodeRepository evidenceNodeRepository,
-                                          com.eneik.production.repositories.WishlistRepository wishlistRepository) {
+                                          com.eneik.production.repositories.WishlistRepository wishlistRepository,
+                                          PlannedWorkRecoveryService plannedWorkRecoveryService) {
         this.projectRepository = projectRepository;
         this.taskRepository = taskRepository;
         this.readinessService = readinessService;
         this.operationalRealityFindingRepository = operationalRealityFindingRepository;
         this.evidenceNodeRepository = evidenceNodeRepository;
         this.wishlistRepository = wishlistRepository;
+        this.plannedWorkRecoveryService = plannedWorkRecoveryService;
     }
 
     /**
@@ -185,6 +189,33 @@ public class DeliveryRealityProducerService {
         produce();
     }
 
+    /**
+     * Planned work that did not land and that nothing is going to land.
+     *
+     * <p>Model rule 8.12: every department's finding maps to a wishlist and re-enters the chain. This
+     * department owns "the work never reached main". Its predicate used to be {@code status == done} alone,
+     * which reads the status word rather than the deliverable, and so left a whole class outside every
+     * department: a task that FAILED and that PlannedWorkRecoveryService durably refuses. Nobody speaks
+     * about those, so nothing orders them again.
+     *
+     * <p>Measured on the live circuit 2026-08-30: 382 done, 38 failed and nothing else - no queued, no
+     * claimed, no review - with six planned client deliverables unmerged, seven accounts free, and the
+     * project standing in VERIFYING_DELIVERY for 3632 minutes against a 30-minute SLA. That is model rule
+     * 8.11 L5 failing outright: admissible work and free capacity, and nothing advances.
+     *
+     * <p>A failed task the recovery service can still resume is deliberately NOT filed here. That service
+     * owns it, reuses its task identity, and ordering the same work twice in parallel is what the
+     * non-parallelism rule forbids. The question is asked through
+     * {@link PlannedWorkRecoveryService#mayStillBeResumed} rather than re-derived, so the two departments
+     * cannot drift into either double-ordering or a gap between them (Charter invariant 10).
+     */
+    boolean isWorkThatNeverLanded(TaskEntity task) {
+        if (task.getStatus() == TaskStatus.done) {
+            return true;
+        }
+        return task.getStatus() == TaskStatus.failed && !plannedWorkRecoveryService.mayStillBeResumed(task);
+    }
+
     @Scheduled(cron = "${delivery-reality-producer.cron:0 20 * * * ?}")
     public void produce() {
         List<ProjectEntity> active = projectRepository.findAll().stream()
@@ -208,7 +239,7 @@ public class DeliveryRealityProducerService {
         int recorded = 0;
         int alreadyKnown = 0;
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
-            if (task.getStatus() != TaskStatus.done) {
+            if (!isWorkThatNeverLanded(task)) {
                 continue;
             }
             // Same two checks the dashboard applies - a DECISION-stage or `complex`-Cynefin task is never
@@ -232,7 +263,10 @@ public class DeliveryRealityProducerService {
             // Null since V103: a session is one KIND of record, not the essence of the claim, and this task
             // asserts completion having never had one.
             finding.setJulesSessionId(null);
-            finding.setExpectedStatus(TaskStatus.done.name());
+            // The task's own status, not the word `done`. This sweep now also speaks about abandoned
+            // `failed` work, and recording it as having claimed completion would be a false statement in
+            // the evidence record - the one place that must never carry one.
+            finding.setExpectedStatus(task.getStatus().name());
             finding.setActualGithubState(NO_MERGE_EVIDENCE);
             finding = operationalRealityFindingRepository.save(finding);
 
