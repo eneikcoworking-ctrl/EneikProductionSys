@@ -613,6 +613,84 @@ class ClientDeliverableReadinessServiceTest {
         return repair;
     }
 
+    /**
+     * Model rule 8.11 O8. mergedDeliverables is the end of the value chain and was a bare number: measured
+     * 2026-08-30 it stood at 13 of 19 across five consecutive observations while eight pull requests
+     * merged, and nothing could say which requirements were outstanding. A number that cannot be acted on
+     * is not monitoring.
+     */
+    @Test
+    void anOutstandingRequirementIsNamed() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        items.get(0).setContent("Internal work item 1 (BARCAN-TAG-02) from wishlist " + rootId
+                + ": Privacy Compliance Backend and Integration");
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+
+        Logs logs = Logs.capture(ClientDeliverableReadinessService.class);
+        try {
+            service.computeForProject(projectId);
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("Privacy Compliance Backend and Integration"),
+                "an outstanding requirement must be named, not counted");
+    }
+
+    /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */
+    @Test
+    void anUnchangedOutstandingSetIsNotRepeatedOnTheNextRead() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+        service.computeForProject(projectId);
+
+        Logs logs = Logs.capture(ClientDeliverableReadinessService.class);
+        try {
+            service.computeForProject(projectId);
+        } finally {
+            logs.stop();
+        }
+
+        assertFalse(logs.contains("not yet on main"));
+    }
+
+    private static final class Logs {
+        private final ch.qos.logback.classic.Logger logger;
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        private Logs(Class<?> type) {
+            logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        static Logs capture(Class<?> type) {
+            return new Logs(type);
+        }
+
+        boolean contains(String fragment) {
+            return appender.list.stream().anyMatch(e -> e.getFormattedMessage().contains(fragment));
+        }
+
+        void stop() {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
+    }
+
     private void stubPlan(UUID projectId, WishlistEntity root, FeatureEntity feature,
                           List<WishlistEntity> items, List<TaskEntity> tasks) {
         List<WishlistEntity> all = new ArrayList<>();

@@ -322,6 +322,10 @@ public class ClientDeliverableReadinessService {
                 .filter(w -> !isAuxiliaryPlannedItem(tasksByPlannedItem.getOrDefault(w.getId(), List.of())))
                 .toList();
 
+        if (sources.equals(PRODUCT_ITERATION_SOURCES) && rootWishlistId == null) {
+            reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem);
+        }
+
         int mergedCount = (int) codeProducingItems.stream()
                 .filter(w -> Boolean.TRUE.equals(fulfilledByPlannedItem.get(w.getId())))
                 .count();
@@ -1036,6 +1040,58 @@ public class ClientDeliverableReadinessService {
      * to the denominator, it discharges an existing one. Termination is by construction - a repair names a
      * task that existed before it - and the visited set makes it independent of the data being well-formed.
      */
+    /** What each project's outstanding requirements are, as last reported - see reportUnfulfilledIfChanged. */
+    private final java.util.Map<UUID, String> lastUnfulfilled = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Which requirements are still outstanding, stated once per change.
+     *
+     * <p>Model rule 8.11 O8: every hold leaves a readable record of its reason; O9: an unchanging fact is
+     * written once, not on every read. {@code mergedDeliverables} is the end of the value chain, and it was
+     * a bare number: measured 2026-08-30, it stood at 13 of 19 across five consecutive half-hourly
+     * observations while eight pull requests merged, and nothing anywhere could say WHICH six requirements
+     * were outstanding or what each was waiting for. A number that cannot be acted on is not monitoring.
+     *
+     * <p>Named by the item's own slice title rather than by id: the id identifies the row, the title
+     * identifies the requirement, and it is the requirement a reader has to recognise.
+     */
+    private void reportUnfulfilledIfChanged(UUID projectId,
+                                             List<WishlistEntity> codeProducingItems,
+                                             Map<UUID, Boolean> fulfilledByPlannedItem) {
+        List<String> outstanding = codeProducingItems.stream()
+                .filter(item -> !Boolean.TRUE.equals(fulfilledByPlannedItem.get(item.getId())))
+                .map(this::requirementName)
+                .sorted()
+                .toList();
+        String digest = outstanding.isEmpty() ? "none" : String.join("; ", outstanding);
+        if (digest.equals(lastUnfulfilled.get(projectId))) {
+            return;
+        }
+        lastUnfulfilled.put(projectId, digest);
+        if (outstanding.isEmpty()) {
+            log.info("ClientDeliverableReadinessService: every planned requirement of project {} is now on main",
+                    projectId);
+            return;
+        }
+        log.info("ClientDeliverableReadinessService: project {} has {} requirement(s) not yet on main - {}",
+                projectId, outstanding.size(), digest);
+    }
+
+    /**
+     * The requirement a planned item stands for. A compiled slice's content is a generated header whose
+     * tail is the real title; anything else is named by its own first line.
+     */
+    private String requirementName(WishlistEntity item) {
+        String content = item.getContent() == null ? "" : item.getContent();
+        String firstLine = content.lines().findFirst().orElse("").trim();
+        int colon = firstLine.lastIndexOf(": ");
+        String name = colon >= 0 ? firstLine.substring(colon + 2).trim() : firstLine;
+        if (name.isBlank()) {
+            name = "wishlist " + item.getId();
+        }
+        return name.length() > 80 ? name.substring(0, 80) : name;
+    }
+
     private Map<UUID, Boolean> fulfilmentByPlannedItem(List<WishlistEntity> plannedItems,
                                                         Map<UUID, List<TaskEntity>> tasksByPlannedItem,
                                                         List<WishlistEntity> allWishlist) {
