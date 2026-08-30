@@ -70,4 +70,26 @@ class GitHubApiBudgetSpendTest {
 
         assertThat(budget.spendByOperation().keySet().iterator().next()).isEqualTo("GET /repos/o/r/pulls");
     }
+
+    /**
+     * Model rule 8.17 with Charter invariant 10: the account has to live where the call is made. Measured
+     * 2026-08-30 - the window lost 1063 requests between two observations while 82 were booked, because two
+     * services recorded and a third, with six call sites of its own, did not. A structural guard, because
+     * the defect is a missing call and only counting them catches it.
+     */
+    @Test
+    void everyGitHubCallSiteBooksItsCost() throws Exception {
+        java.nio.file.Path root = java.nio.file.Path.of("src/main/java/com/eneik/production/services/github");
+        try (var files = java.nio.file.Files.walk(root)) {
+            for (java.nio.file.Path file : files.filter(f -> f.toString().endsWith(".java")).toList()) {
+                String body = java.nio.file.Files.readString(file);
+                long sends = body.lines().filter(l -> l.contains("httpClient.send(")).count();
+                long booked = body.lines().filter(l -> l.contains("recordResponse(")).count();
+                assertThat(sends)
+                        .as("%s makes %d GitHub call(s) and books %d - every call site must book its cost",
+                                file.getFileName(), sends, booked)
+                        .isLessThanOrEqualTo(booked);
+            }
+        }
+    }
 }

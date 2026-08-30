@@ -27,11 +27,14 @@ public class GithubAccessService {
     private final JdbcTemplate jdbcTemplate;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final GitHubApiBudgetService githubApiBudgetService;
 
     public GithubAccessService(GithubConfig githubConfig,
                                SystemSettingsService settingsService,
                                JdbcTemplate jdbcTemplate,
-                               ObjectMapper objectMapper) {
+                               ObjectMapper objectMapper,
+                                GitHubApiBudgetService githubApiBudgetService) {
+        this.githubApiBudgetService = githubApiBudgetService;
         this.githubConfig = githubConfig;
         this.settingsService = settingsService;
         this.jdbcTemplate = jdbcTemplate;
@@ -178,12 +181,27 @@ public class GithubAccessService {
         return jdbcTemplate.queryForObject("SELECT repository_name FROM projects WHERE id = ?", String.class, projectId);
     }
 
+    /**
+     * Every GitHub call of this service, through one place that also books its cost.
+     *
+     * <p>Model rule 8.17 and Charter invariant 10: shared capacity must be attributable, and the account
+     * has to live where the action happens. Measured 2026-08-30 - between 17:43 and 17:50 the hourly window
+     * lost 1063 requests while only 82 were booked, because the budget was recorded in two services and
+     * this one, with six call sites of its own, recorded none. An account that sees a fifth of the spend
+     * does not name the cause; it names whatever it happens to see.
+     */
+    private HttpResponse<String> sendGitHub(HttpRequest request) throws java.io.IOException, InterruptedException {
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        githubApiBudgetService.recordResponse(request.method() + " " + request.uri().getPath(), response);
+        return response;
+    }
+
     private boolean checkRepoAccess(String repoName, String token) {
         try {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName), token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             return response.statusCode() == 200;
         } catch (Exception e) {
             return false;
@@ -195,7 +213,7 @@ public class GithubAccessService {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/branches/main/protection", token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) return false;
 
             JsonNode json = objectMapper.readTree(response.body());
@@ -213,7 +231,7 @@ public class GithubAccessService {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName), token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) return false;
 
             JsonNode permissions = objectMapper.readTree(response.body()).path("permissions");
@@ -228,7 +246,7 @@ public class GithubAccessService {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/hooks", token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) return false;
 
             JsonNode hooks = objectMapper.readTree(response.body());
@@ -259,7 +277,7 @@ public class GithubAccessService {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/commits/main/check-runs", token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) return checkActionsWorkflowStatus(repoName, token);
 
             JsonNode json = objectMapper.readTree(response.body());
@@ -295,7 +313,7 @@ public class GithubAccessService {
             HttpRequest request = baseRequest("/repos/" + encode(githubConfig.getOrganization()) + "/" + encode(repoName) + "/actions/runs?branch=main&per_page=10", token)
                     .GET()
                     .build();
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            HttpResponse<String> response = sendGitHub(request);
             if (response.statusCode() != 200) return "no_ci";
 
             JsonNode runs = objectMapper.readTree(response.body()).path("workflow_runs");

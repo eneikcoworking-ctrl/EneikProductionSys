@@ -39,7 +39,8 @@ class GithubAccessServiceTest {
         settingsService = Mockito.mock(SystemSettingsService.class);
         jdbcTemplate = Mockito.mock(JdbcTemplate.class);
         objectMapper = new ObjectMapper();
-        githubAccessService = new GithubAccessService(githubConfig, settingsService, jdbcTemplate, objectMapper);
+        githubAccessService = new GithubAccessService(githubConfig, settingsService, jdbcTemplate, objectMapper,
+                new GitHubApiBudgetService());
     }
 
     @Test
