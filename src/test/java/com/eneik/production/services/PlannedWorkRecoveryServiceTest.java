@@ -19,7 +19,9 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 
 class PlannedWorkRecoveryServiceTest {
@@ -255,6 +257,92 @@ class PlannedWorkRecoveryServiceTest {
 
         assertEquals(false, service.resumeTask(task.getId()));
         verify(taskRepository, never()).compareAndSetStatus(any(), any(), any());
+    }
+
+    /**
+     * Model rule 8.6: an element leaves the decision set exactly once, in the data, and only when nothing
+     * can carry it to done. BLOCKED_BY_FAILED_FRONTIER denies ORCHESTRATE and both dispatch actions for the
+     * whole project and names this service as its resolver, so which elements this resolver refuses, and on
+     * what condition, has to be readable. Before this it refused with a bare `false` in every branch.
+     */
+    @Test
+    void aRefusalInTheGatesOwnDenominatorNamesTheConditionThatHeldIt() {
+        ReflectionTestUtils.setField(service, "frontierResumeLimit", 3);
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity dependency = retiredTask(project, source.getId());
+        TaskEntity dependent = retiredTask(project, source.getId());
+        dependent.setDependsOn(dependency);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(dependent));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(sessionRepository.findByTaskId(dependent.getId())).thenReturn(List.of());
+        when(readinessService.isTaskMerged(dependent.getId())).thenReturn(false);
+        when(readinessService.isDependencySatisfied(dependency)).thenReturn(false);
+
+        Logs logs = Logs.capture(PlannedWorkRecoveryService.class);
+        try {
+            assertEquals(0, service.resumeNextFrontier(project));
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("is held by"), "the frontier's refusal must be readable, not a bare false");
+        assertTrue(logs.contains("is not satisfied"), "and must name the condition that held it");
+    }
+
+    /**
+     * The complement. The fact is stable and the tick is not; the same sentence written every tick is what
+     * produced the 868-repetition report this factory already had to remove.
+     */
+    @Test
+    void anUnchangedRefusalIsNotRepeatedOnTheNextTick() {
+        ReflectionTestUtils.setField(service, "frontierResumeLimit", 3);
+        ProjectEntity project = project();
+        WishlistEntity source = source(project.getId());
+        TaskEntity dependency = retiredTask(project, source.getId());
+        TaskEntity dependent = retiredTask(project, source.getId());
+        dependent.setDependsOn(dependency);
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(dependent));
+        when(wishlistRepository.findById(source.getId())).thenReturn(Optional.of(source));
+        when(sessionRepository.findByTaskId(dependent.getId())).thenReturn(List.of());
+        when(readinessService.isTaskMerged(dependent.getId())).thenReturn(false);
+        when(readinessService.isDependencySatisfied(dependency)).thenReturn(false);
+        service.resumeNextFrontier(project);
+
+        Logs logs = Logs.capture(PlannedWorkRecoveryService.class);
+        try {
+            service.resumeNextFrontier(project);
+        } finally {
+            logs.stop();
+        }
+
+        assertFalse(logs.contains("is held by"), "an unchanged fact carries no information on a second tick");
+    }
+
+    /** Minimal in-memory appender - the assertion is about what a reader can retrieve, so it reads the log. */
+    private static final class Logs {
+        private final ch.qos.logback.classic.Logger logger;
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        private Logs(Class<?> type) {
+            logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        static Logs capture(Class<?> type) {
+            return new Logs(type);
+        }
+
+        boolean contains(String fragment) {
+            return appender.list.stream().anyMatch(event -> event.getFormattedMessage().contains(fragment));
+        }
+
+        void stop() {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 
     private TaskEntity retiredTask(ProjectEntity project, UUID sourceWishlistId) {

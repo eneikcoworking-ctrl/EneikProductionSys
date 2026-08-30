@@ -40,6 +40,21 @@ public class PlannedWorkRecoveryService {
     private final ClientDeliverableReadinessService readinessService;
     private final ObjectMapper objectMapper;
 
+    /**
+     * Why the frontier stayed where it is, per project, as last reported (plan 4.46).
+     *
+     * <p>BLOCKED_BY_FAILED_FRONTIER denies ORCHESTRATE, DISPATCH_QUEUED_TASKS and DISPATCH_REVIEW_TASKS
+     * for the whole project, and its named resolver is this service. Measured 2026-08-30, 13:31 onwards on
+     * test-fiftieth: four failed tasks in the gate's own denominator, this resolver resuming none of them
+     * for thirteen minutes and counting, and not one line anywhere saying which condition refused them -
+     * every branch below returned a bare false. F39: a finding nobody can retrieve is not a finding.
+     *
+     * <p>Held here rather than logged per tick because the fact is stable and the tick is not: the same
+     * sentence written every minute is what produced the 868-repetition report this factory already had
+     * to remove. Reported when the composition changes, which is exactly when it carries information.
+     */
+    private final java.util.Map<java.util.UUID, String> lastFrontierRefusal = new java.util.concurrent.ConcurrentHashMap<>();
+
     public PlannedWorkRecoveryService(TaskRepository taskRepository,
                                       WishlistRepository wishlistRepository,
                                       JulesSessionRepository julesSessionRepository,
@@ -57,6 +72,7 @@ public class PlannedWorkRecoveryService {
     @Transactional
     public int resumeNextFrontier(ProjectEntity project) {
         int resumed = 0;
+        java.util.Map<String, Integer> refusals = new java.util.LinkedHashMap<>();
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .sorted(java.util.Comparator.comparing(TaskEntity::getCreatedAt))
                 .toList();
@@ -64,11 +80,42 @@ public class PlannedWorkRecoveryService {
             if (resumed >= Math.max(1, frontierResumeLimit)) {
                 break;
             }
-            if (resumeEligibleTask(task, project.getId(), resumed)) {
+            if (resumeEligibleTask(task, project.getId(), resumed, refusals)) {
                 resumed++;
             }
         }
+        reportFrontierRefusalsIfChanged(project.getId(), refusals);
         return resumed;
+    }
+
+    /**
+     * States, once per change, why every task the BLOCKED_BY_FAILED_FRONTIER gate is counting was refused.
+     * Only tasks in the gate's own denominator are counted here - anything else is not something this
+     * resolver was ever asked about, and reporting it would be noise rather than evidence.
+     */
+    private void reportFrontierRefusalsIfChanged(java.util.UUID projectId, java.util.Map<String, Integer> refusals) {
+        String digest = refusals.isEmpty()
+                ? "none"
+                : refusals.entrySet().stream()
+                        .map(entry -> entry.getValue() + "x " + entry.getKey())
+                        .collect(java.util.stream.Collectors.joining("; "));
+        if (digest.equals(lastFrontierRefusal.get(projectId))) {
+            return;
+        }
+        lastFrontierRefusal.put(projectId, digest);
+        if (refusals.isEmpty()) {
+            log.info("PlannedWorkRecoveryService: nothing in the failed frontier is being refused for project {}", projectId);
+            return;
+        }
+        log.warn("PlannedWorkRecoveryService: the failed frontier of project {} is held by - {}", projectId, digest);
+    }
+
+    /** Records one refusal and returns false, so a refusing branch stays a single statement. */
+    private boolean refuse(java.util.Map<String, Integer> refusals, TaskEntity task, String reason) {
+        if (isResumableInPrinciple(task) && hasResumeBudgetLeft(task)) {
+            refusals.merge(reason, 1, Integer::sum);
+        }
+        return false;
     }
 
     /**
@@ -84,18 +131,23 @@ public class PlannedWorkRecoveryService {
         if (task == null || task.getProject() == null) {
             return false;
         }
-        return resumeEligibleTask(task, task.getProject().getId(), 0);
+        return resumeEligibleTask(task, task.getProject().getId(), 0, new java.util.LinkedHashMap<>());
     }
 
-    private boolean resumeEligibleTask(TaskEntity task, java.util.UUID projectId, int frontierIndexForLog) {
-        if (!isEligibleRetiredPlanTask(task) || resumeCount(task) >= 1) {
-            return false;
+    private boolean resumeEligibleTask(TaskEntity task, java.util.UUID projectId, int frontierIndexForLog,
+                                       java.util.Map<String, Integer> refusals) {
+        if (!isEligibleRetiredPlanTask(task)) {
+            return refuse(refusals, task, "not product work this recovery may resume "
+                    + "(out-of-cycle source, or a failure reason outside RETIRED_WITH_NOTHING_LEFT_WORKING_IT)");
+        }
+        if (resumeCount(task) >= 1) {
+            return refuse(refusals, task, "its single automatic resume is already spent");
         }
         if (claimService.hasActiveClaim(task.getId()) || hasActiveSession(task)) {
-            return false;
+            return refuse(refusals, task, "something is still actively working it (live claim or session)");
         }
         if (readinessService.isTaskMerged(task.getId())) {
-            return false;
+            return refuse(refusals, task, "its work is already merged");
         }
         // Held while the dependency can still become satisfied, not while it merely is not (2026-08-29,
         // plan §4.33). Measured that day: three tasks retired behind dependencies that had failed hours
@@ -130,7 +182,8 @@ public class PlannedWorkRecoveryService {
         // `blocked`, which is a terminating path; this gate must not race it.
         TaskEntity dependency = task.getDependsOn();
         if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
-            return false;
+            return refuse(refusals, task, "its dependency " + dependency.getId() + " (" + dependency.getStatus()
+                    + ") is not satisfied");
         }
 
         // Atomic CAS, not task.setStatus()+save(): isEligibleRetiredPlanTask() and resumeCount() above
