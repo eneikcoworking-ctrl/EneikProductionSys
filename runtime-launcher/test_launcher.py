@@ -85,3 +85,42 @@ def test_a_malformed_compose_file_returns_an_empty_map_instead_of_raising(tmp_pa
     port_map = _remap_ports(compose_file)
 
     assert port_map == {}
+
+
+def test_bound_memory_gives_every_unbounded_service_the_declared_limit(tmp_path, monkeypatch):
+    """Plan §4.44. The launcher starts the product through the host docker socket, so its own 256m binds
+    nothing it starts. Measured 2026-08-30: the product answered Cloudflare 530/1033 because no container of
+    it existed - the launcher was kept down precisely because starting it reopened that unbounded path."""
+    import launcher
+
+    compose = tmp_path / "docker-compose.resolved.yml"
+    compose.write_text(
+        "services:\n"
+        "  api:\n"
+        "    image: api\n"
+        "  db:\n"
+        "    image: db\n"
+        "    mem_limit: 128m\n"
+    )
+    monkeypatch.setattr(launcher, "CLIENT_STACK_MEM_LIMIT", "384m")
+
+    bounded = launcher._bound_memory(compose)
+
+    spec = launcher.yaml.safe_load(compose.read_text())
+    assert bounded == 1
+    assert spec["services"]["api"]["mem_limit"] == "384m"
+    assert spec["services"]["db"]["mem_limit"] == "128m", "the client's own decision is not overwritten"
+
+
+def test_bound_memory_changes_nothing_when_no_limit_is_declared(tmp_path, monkeypatch):
+    """The other half: with nothing declared the launcher behaves exactly as before, so an operator who has
+    not set the bound is not silently given one this factory invented."""
+    import launcher
+
+    compose = tmp_path / "docker-compose.resolved.yml"
+    original = "services:\n  api:\n    image: api\n"
+    compose.write_text(original)
+    monkeypatch.setattr(launcher, "CLIENT_STACK_MEM_LIMIT", "")
+
+    assert launcher._bound_memory(compose) == 0
+    assert compose.read_text() == original

@@ -58,6 +58,13 @@ services:
     # the one unbounded path left in the factory, and no value here closes it - only the
     # client_runtime_observability_enabled flag does. 256m covers Python, FastAPI and the docker CLI.
     mem_limit: 256m
+    # 2026-08-30 (plan §4.44): the bound the launcher applies to EACH service of the product it starts.
+    # The limit above binds only the launcher process; without this one the product's containers and
+    # BuildKit run outside every cgroup in this file, which is why this service was kept down - and while
+    # it is down nothing serves the product and the consumer sees Cloudflare 530/1033. Declared here,
+    # beside every other limit in this factory, rather than chosen inside the launcher.
+    environment:
+      CLIENT_STACK_MEM_LIMIT: ${CLIENT_STACK_MEM_LIMIT:-384m}
     restart: unless-stopped
 
   # 2026-08-28: Primary Autonomous Judgment Service (Gemini REST API + Shadow Arbiter Fallback).

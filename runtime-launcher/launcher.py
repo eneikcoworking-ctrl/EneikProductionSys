@@ -24,6 +24,7 @@ live-drift check - same "GET a caller-given URL, no assumptions about the target
                        even if nothing is running.
 """
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -162,6 +163,49 @@ def _http_port(port_map: dict) -> Optional[int]:
     return candidates[0] if len(candidates) == 1 else None
 
 
+CLIENT_STACK_MEM_LIMIT = os.environ.get("CLIENT_STACK_MEM_LIMIT", "").strip()
+
+
+def _bound_memory(compose_file: Path) -> int:
+    """Give every service of the product a memory limit, in the ephemeral clone, unless it already has one.
+
+    Why this exists (2026-08-30, plan §4.44). This launcher runs `docker compose up --build -d` against the
+    client repository through the host docker socket, so the product's containers and BuildKit are siblings
+    of the factory on the same daemon - outside every cgroup declared in the factory's own compose file. The
+    factory's compose says so in its own words: the launcher's 256m "binds the launcher process and NOTHING
+    IT STARTS". That is why the launcher was kept down, and while it is down nothing serves the product:
+    measured that day, https://test-fiftieth.dmitryefremov.com/ answered HTTP 530 / error 1033 - Cloudflare
+    reporting that no origin is connected - because no container of the product existed at all.
+
+    The bound is not chosen here. It is declared where every other limit in this factory is declared, in the
+    factory's docker-compose.yml, and arrives as CLIENT_STACK_MEM_LIMIT. With nothing declared this function
+    changes nothing, so an operator who has not set it gets exactly the previous behaviour.
+
+    A service that already declares its own limit is left untouched: that is the client's own decision about
+    its own product, and overwriting it would be this factory imposing an opinion on the product it builds.
+
+    Rewrites the same ephemeral file _remap_ports rewrites, never the client's real repository.
+    """
+    if not CLIENT_STACK_MEM_LIMIT:
+        return 0
+    try:
+        spec = yaml.safe_load(compose_file.read_text()) or {}
+    except (OSError, yaml.YAMLError):
+        return 0
+    services = spec.get("services") or {}
+    bounded = 0
+    for _name, service in services.items():
+        if not isinstance(service, dict):
+            continue
+        if service.get("mem_limit") or (service.get("deploy") or {}).get("resources"):
+            continue
+        service["mem_limit"] = CLIENT_STACK_MEM_LIMIT
+        bounded += 1
+    if bounded:
+        compose_file.write_text(yaml.safe_dump(spec))
+    return bounded
+
+
 def _remap_ports(compose_file: Path) -> dict[str, tuple[int, str]]:
     """Rewrite every published host port in the compose file IN PLACE to a fixed range starting at
     EXTERNAL_PORT_BASE. A separate override file passed via a second `-f` does NOT work for this: Docker
@@ -251,6 +295,9 @@ def launch(req: LaunchRequest) -> LaunchResponse:
         # duplicate collapses with it.
         compose_file = _resolve_topology(workdir, compose_file)
         port_map = _remap_ports(compose_file)
+        bounded = _bound_memory(compose_file)
+        if bounded:
+            print(f"[launcher] bounded {bounded} service(s) of the product at {CLIENT_STACK_MEM_LIMIT}", flush=True)
 
         up = _run(
             ["docker", "compose", "-p", COMPOSE_PROJECT_NAME, "-f", str(compose_file), "up", "-d", "--build"],
