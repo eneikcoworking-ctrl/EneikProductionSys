@@ -6393,6 +6393,21 @@ public class ProjectFlowService {
      * unions them into the survivor.
      */
     static boolean areWishlistItemsSimilar(com.eneik.production.models.persistence.WishlistEntity item1, com.eneik.production.models.persistence.WishlistEntity item2) {
+        // A per-task finding is identified by the task it is about, and that identity lives in a COLUMN -
+        // deliberately kept out of the prose since V116, because the prose is read by an agent working in
+        // the client's codebase and a factory id there is a zone-boundary violation. The producer's own
+        // deduplication (existsByProjectIdAndSourceAndSourceTaskId) uses that column. Comparing the prose
+        // here made this method disagree with it about the same question, which Charter invariant 10
+        // forbids: two places deciding "is this the same finding" by different predicates.
+        //
+        // Measured on the live circuit 2026-08-30: sixteen findings about sixteen different tasks, whose
+        // texts differ only in a task title, were merged into one at 14:36:26 - fifteen of them dismissed
+        // twenty minutes after the department that files them was finally able to file them at all.
+        java.util.UUID subject1 = item1.getSourceTaskId();
+        java.util.UUID subject2 = item2.getSourceTaskId();
+        if ((subject1 != null || subject2 != null) && !java.util.Objects.equals(subject1, subject2)) {
+            return false;
+        }
         java.util.UUID origin1 = item1.getOriginWishlistId();
         if (origin1 != null && origin1.equals(item2.getOriginWishlistId())) {
             return false;

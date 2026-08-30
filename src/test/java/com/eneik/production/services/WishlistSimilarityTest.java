@@ -81,6 +81,46 @@ class WishlistSimilarityTest {
         assertTrue(ProjectFlowService.areWishlistItemsSimilar(first, second));
     }
 
+    /**
+     * Findings about different tasks are different findings, whatever their prose looks like. Measured on
+     * the live circuit 2026-08-30: sixteen delivery findings whose texts differ only in a task title were
+     * merged into one, and fifteen pieces of ordered work vanished twenty minutes after being ordered.
+     */
+    @Test
+    void findingsAboutDifferentTasksAreNeverDuplicatesOfEachOther() {
+        String boilerplate = "Planned work never reached the main branch.\n\nThe closed task \"%s\" has "
+                + "status failed, no merge evidence exists for it at all - no merged pull request, nothing "
+                + "on main - and nothing is going to retry it.";
+        WishlistEntity first = finding(UUID.randomUUID(), String.format(boilerplate, "API Slice B8dca98a"));
+        WishlistEntity second = finding(UUID.randomUUID(), String.format(boilerplate, "API Slice 2c3442ef"));
+
+        assertFalse(ProjectFlowService.areWishlistItemsSimilar(first, second),
+                "the subject of a per-task finding is the task, not the sentence around it");
+    }
+
+    /**
+     * The complement: a per-task finding is not a duplicate of a brief that is about no task at all, even
+     * when both mention the same words. Without this the rule would only be half applied.
+     */
+    @Test
+    void aPerTaskFindingIsNotADuplicateOfABriefAboutNoTask() {
+        WishlistEntity finding = finding(UUID.randomUUID(), "Planned work never reached the main branch.");
+        WishlistEntity plain = new WishlistEntity();
+        plain.setId(UUID.randomUUID());
+        plain.setContent("Planned work never reached the main branch.");
+
+        assertFalse(ProjectFlowService.areWishlistItemsSimilar(finding, plain));
+        assertFalse(ProjectFlowService.areWishlistItemsSimilar(plain, finding));
+    }
+
+    private WishlistEntity finding(UUID sourceTaskId, String content) {
+        WishlistEntity item = new WishlistEntity();
+        item.setId(UUID.randomUUID());
+        item.setSourceTaskId(sourceTaskId);
+        item.setContent(content);
+        return item;
+    }
+
     private WishlistEntity slice(UUID originBrief, String content, String jtbd) {
         WishlistEntity item = new WishlistEntity();
         item.setId(UUID.randomUUID());
