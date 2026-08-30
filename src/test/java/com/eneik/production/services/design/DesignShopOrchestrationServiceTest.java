@@ -12,6 +12,8 @@ import com.eneik.production.services.github.GitHubPullRequestService;
 import com.eneik.production.services.settings.SystemSettingsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.mockito.ArgumentCaptor;
 
 import java.time.Instant;
@@ -297,5 +299,80 @@ class DesignShopOrchestrationServiceTest {
         ArgumentCaptor<DesignShopCycleEntity> saved = ArgumentCaptor.forClass(DesignShopCycleEntity.class);
         verify(designShopCycleRepository).save(saved.capture());
         assertThat(saved.getValue().getStage()).isEqualTo(DesignShopCycleEntity.STAGE_DONE);
+    }
+
+    /**
+     * Model rule 8.11 O8: every hold leaves a readable record of its reason. Measured 2026-08-30 - both
+     * design-shop flags true in the database, this cron running every five minutes, and the cycle row
+     * untouched for 45 hours with nothing anywhere able to say whether it was never polled or polled and
+     * held. The hold itself is correct (8.13 fires on the rising edge of readiness, and the front had not
+     * arrived); what was wrong is that it was invisible.
+     */
+    @Test
+    void aShopThatHoldsSaysWhyItHeld() {
+        DesignShopCycleEntity cycle = new DesignShopCycleEntity();
+        cycle.setProjectId(project.getId());
+        cycle.setStage(DesignShopCycleEntity.STAGE_IDLE);
+        cycle.setLastWasReady(false);
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(java.util.Optional.of(cycle));
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(9, 5, 19, 13, 0.684, true));
+
+        Logs logs = Logs.capture(DesignShopOrchestrationService.class);
+        try {
+            service.tick();
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("the readiness front has not occurred"), "a hold must be readable");
+        assertTrue(logs.contains("ratio=0.684"), "and must carry the value that held it");
+    }
+
+    /** Model rule 8.11 O9: an unchanging fact is written once, not on every one of the 288 daily ticks. */
+    @Test
+    void anUnchangedHoldIsNotRepeatedOnTheNextTick() {
+        DesignShopCycleEntity cycle = new DesignShopCycleEntity();
+        cycle.setProjectId(project.getId());
+        cycle.setStage(DesignShopCycleEntity.STAGE_IDLE);
+        cycle.setLastWasReady(false);
+        when(designShopCycleRepository.findByProjectId(project.getId())).thenReturn(java.util.Optional.of(cycle));
+        when(readinessService.computeForProject(project.getId()))
+                .thenReturn(new ClientDeliverableReadinessService.Readiness(9, 5, 19, 13, 0.684, true));
+        service.tick();
+
+        Logs logs = Logs.capture(DesignShopOrchestrationService.class);
+        try {
+            service.tick();
+        } finally {
+            logs.stop();
+        }
+
+        assertFalse(logs.contains("the readiness front has not occurred"));
+    }
+
+    private static final class Logs {
+        private final ch.qos.logback.classic.Logger logger;
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        private Logs(Class<?> type) {
+            logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        static Logs capture(Class<?> type) {
+            return new Logs(type);
+        }
+
+        boolean contains(String fragment) {
+            return appender.list.stream().anyMatch(e -> e.getFormattedMessage().contains(fragment));
+        }
+
+        void stop() {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

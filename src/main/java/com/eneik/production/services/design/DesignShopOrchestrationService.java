@@ -107,6 +107,9 @@ public class DesignShopOrchestrationService {
     // both call startCycle, dispatching two real design reviews for the same round. Closed with an atomic
     // compare-and-swap claim (DesignShopCycleEntity.startCycleClaimedAt, V98 migration) - see
     // processProject/claimStartCycle/releaseStartCycleClaim.
+    /** Why each project's shop is holding, as last reported - see reportHoldIfChanged (rule 8.11 O9). */
+    private final java.util.Map<UUID, String> lastHold = new java.util.concurrent.ConcurrentHashMap<>();
+
     @Scheduled(cron = "${design-shop.cron:0 */5 * * * ?}")
     public void tick() {
         if (!settingsService.effectiveBoolean("design_shop_enabled")) {
@@ -159,7 +162,34 @@ public class DesignShopOrchestrationService {
             cycle.setLastWasReady(false);
             cycle.setUpdatedAt(Instant.now());
             designShopCycleRepository.save(cycle);
+        } else {
+            reportHoldIfChanged(project.getId(), readiness);
         }
+    }
+
+    /**
+     * Why this shop did nothing this tick, stated once per change.
+     *
+     * <p>Model rule 8.11 O8: every hold leaves a readable record of its reason; O9: an unchanging fact is
+     * written once, not on every tick. This branch is the routine outcome - the readiness front has not
+     * occurred - and it used to write nothing at all, so the cycle row's stage and updatedAt stood still
+     * with no way to tell "never polled" from "polled and held". Measured 2026-08-30: both flags true in
+     * the database, this cron running every five minutes, the cycle row untouched for 45 hours, and the two
+     * explanations indistinguishable from any data the factory kept.
+     *
+     * <p>The hold itself is correct and is not being removed: 8.13 defines readiness as
+     * {@code decompositionComplete ∧ ratio = 1} and fires on its rising edge, and a front that has not
+     * arrived is not a defect. What was a defect is that nobody could see which of the two it was.
+     */
+    private void reportHoldIfChanged(UUID projectId, ClientDeliverableReadinessService.Readiness readiness) {
+        String hold = "decompositionComplete=" + readiness.decompositionComplete()
+                + " ratio=" + String.format(java.util.Locale.ROOT, "%.3f", readiness.ratio());
+        if (hold.equals(lastHold.get(projectId))) {
+            return;
+        }
+        lastHold.put(projectId, hold);
+        log.info("DesignShopOrchestrationService: holding for project {} - the readiness front has not "
+                + "occurred: {}", projectId, hold);
     }
 
     // Idempotent get-or-create for this project's one cycle row (project_id is UNIQUE - see V93
