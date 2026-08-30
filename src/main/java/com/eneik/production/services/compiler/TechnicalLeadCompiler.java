@@ -227,7 +227,20 @@ public class TechnicalLeadCompiler {
                     .orElseGet(() -> taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream().findFirst().orElse(null));
         }
 
-        java.util.Optional<TaskEntity> duplicate = findExistingSemanticTask(project.getId(), semanticKey);
+        // 2026-08-30 (plan 4.45). This veto used to consider a task of ANY status, including `failed`, and
+        // that defeated the whole reopen mechanism at its last step. Measured on the live circuit that day:
+        // V129/V132 returned two Must-Be client requirements (data export and erasure, and their
+        // verification) to the flow; the very next compile pointed each of them at the dead task it was
+        // meant to replace and dismissed it again -
+        //
+        //     19:00:38  task d55621e0 marked failed - PR#437 closed without merge on GitHub
+        //     10:24:27  wishlist b8dca98a collapsed into the existing semantic duplicate task d55621e0
+        //
+        // What survives a failure is the REQUIREMENT, not the task identity. A `failed` task can never
+        // reach done, so by Charter invariant 8 it must not occupy the slot that blocks its own
+        // replacement - otherwise a requirement is unmeetable for the life of the project the moment its
+        // first attempt fails, and every reopen path in the factory quietly does nothing.
+        java.util.Optional<TaskEntity> duplicate = findLiveSemanticTask(project.getId(), semanticKey);
         if (duplicate.isPresent()) {
             // Ф-honesty fix (2026-07-24): this specific wishlist row never got its own task - it collapsed
             // into an already-existing semantic duplicate. `converted_to_task` previously claimed a real
@@ -451,6 +464,23 @@ public class TechnicalLeadCompiler {
                 + (wishlist.getJtbd() != null ? wishlist.getJtbd() : "") + " "
                 + (wishlist.getContent() != null ? wishlist.getContent() : "") + " "
                 + (wishlist.getAcceptanceCriteria() != null ? wishlist.getAcceptanceCriteria() : "")).trim();
+    }
+
+    /**
+     * The semantic-duplicate veto's own lookup: a task carrying this key that can still reach done. Only
+     * such a task makes a new one redundant. See the call site for the incident this separates it from
+     * {@link #findExistingSemanticTask}, which answers a different question (which task did this
+     * already-converted wishlist become) and must keep seeing terminal ones.
+     */
+    java.util.Optional<TaskEntity> findLiveSemanticTask(UUID projectId, String semanticKey) {
+        if (semanticKey == null || semanticKey.isBlank()) {
+            return java.util.Optional.empty();
+        }
+        return taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId).stream()
+                .filter(task -> task.getPayload() != null)
+                .filter(task -> semanticKey.equals(task.getPayload().path("ems_semantic_key").asText("")))
+                .filter(task -> task.getStatus() != com.eneik.production.models.persistence.TaskStatus.failed)
+                .findFirst();
     }
 
     private java.util.Optional<TaskEntity> findExistingSemanticTask(UUID projectId, String semanticKey) {
