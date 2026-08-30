@@ -370,8 +370,23 @@ public class FlowSpineService {
         // held thirteen elements its resolver could never remove, and after the remaining four were used
         // the state would have been unleavable for good, denying ORCHESTRATE, DISPATCH_QUEUED_TASKS and
         // DISPATCH_REVIEW_TASKS forever.
+        // 2026-08-30 (model rule 8.6, third correction and the last one this predicate needs). "In
+        // principle" and "has budget" are both computed from the task's own fields, while the resolver's
+        // domain also depends on the task's SOURCE BRIEF and on why it failed - out-of-cycle generated work
+        // it never resumes, and a failure reason outside RETIRED_WITH_NOTHING_LEFT_WORKING_IT it cannot
+        // act on. Measured on the live circuit that day: four failed tasks held this gate, the resolver
+        // refused all four durably, and the project sat in BLOCKED_BY_FAILED_FRONTIER - denying ORCHESTRATE
+        // and both dispatch actions - with no path out at all.
+        //
+        // The predicate is not re-implemented here: PlannedWorkRecoveryService.isProductWorkThisMayResume
+        // is the one definition, called with the brief this method already loaded (Charter invariant 10).
+        // A task whose source brief is absent from that list is NOT excluded - nothing is established about
+        // it, and 8.6's second line forbids removing what is merely unknown.
+        java.util.Map<java.util.UUID, WishlistEntity> briefById = wishlist.stream()
+                .collect(java.util.stream.Collectors.toMap(WishlistEntity::getId, item -> item, (a, b) -> a));
         long failed = tasks.stream()
-                .filter(com.eneik.production.services.PlannedWorkRecoveryService::isResumableInPrinciple)
+                .filter(task -> com.eneik.production.services.PlannedWorkRecoveryService.isProductWorkThisMayResume(
+                        task, task.getSourceWishlistId() == null ? null : briefById.get(task.getSourceWishlistId())))
                 .filter(com.eneik.production.services.PlannedWorkRecoveryService::hasResumeBudgetLeft)
                 .count();
         long blocked = countStatus(tasks, TaskStatus.blocked);

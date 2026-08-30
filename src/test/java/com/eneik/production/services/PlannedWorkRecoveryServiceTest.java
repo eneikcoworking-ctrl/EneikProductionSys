@@ -345,6 +345,47 @@ class PlannedWorkRecoveryServiceTest {
         }
     }
 
+    /**
+     * Model rule 8.6, first line: an element with no path to done leaves the decision set. The
+     * BLOCKED_BY_FAILED_FRONTIER gate calls this same predicate, so what this resolver will never touch
+     * must not hold the whole project in a state whose only named resolver is this service.
+     */
+    @Test
+    void workThisResolverWillNeverResumeIsNotInItsDomain() {
+        ProjectEntity project = project();
+        WishlistEntity outOfCycle = source(project.getId());
+        outOfCycle.setSource(WishlistSource.role);
+        TaskEntity onOutOfCycleWork = retiredTask(project, outOfCycle.getId());
+
+        TaskEntity failedForAnotherReason = retiredTask(project, source(project.getId()).getId());
+        failedForAnotherReason.setJulesDispatchStatus("Poka-yoke: out-of-cycle generated work is quarantined");
+
+        assertFalse(PlannedWorkRecoveryService.isProductWorkThisMayResume(onOutOfCycleWork, outOfCycle));
+        assertFalse(PlannedWorkRecoveryService.isProductWorkThisMayResume(failedForAnotherReason, null));
+    }
+
+    /**
+     * Model rule 8.6, second line: what is merely unknown does not leave the set. A task whose source brief
+     * cannot be found establishes nothing about itself, so it stays - the asymmetry the rule demands, and
+     * the one an over-eager exclusion filter always loses first.
+     */
+    @Test
+    void aTaskWhoseSourceBriefIsUnknownStaysInTheDomain() {
+        ProjectEntity project = project();
+        TaskEntity task = retiredTask(project, UUID.randomUUID());
+
+        assertTrue(PlannedWorkRecoveryService.isProductWorkThisMayResume(task, null));
+    }
+
+    @Test
+    void ordinaryRetiredProductWorkIsInTheDomain() {
+        ProjectEntity project = project();
+        WishlistEntity brief = source(project.getId());
+        TaskEntity task = retiredTask(project, brief.getId());
+
+        assertTrue(PlannedWorkRecoveryService.isProductWorkThisMayResume(task, brief));
+    }
+
     private TaskEntity retiredTask(ProjectEntity project, UUID sourceWishlistId) {
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());

@@ -294,14 +294,30 @@ public class PlannedWorkRecoveryService {
      * changed from a written list to a measured structural fact.
      */
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
-        if (task.getStatus() != TaskStatus.failed || task.getFeatureId() == null) {
+        WishlistEntity source = task.getSourceWishlistId() == null
+                ? null
+                : wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
+        return isProductWorkThisMayResume(task, source);
+    }
+
+    /**
+     * The DURABLE half of this resolver's domain, as a function of the task and its source brief alone.
+     *
+     * <p>Model rule 8.6: BLOCKED_BY_FAILED_FRONTIER names this service as its resolver, so the gate must
+     * quantify over the set this resolver can act on. The transient reasons (a live claim, a live session,
+     * an unsatisfied dependency) say "not right now" and belong to neither side; these say "never, by this
+     * resolver". Charter invariant 10 - one point of application - is why the gate calls this rather than
+     * carrying its own copy.
+     *
+     * <p>A missing source row is deliberately NOT a reason to exclude: nothing is established about the
+     * task then, and 8.6's second line forbids removing what is merely unknown.
+     */
+    public static boolean isProductWorkThisMayResume(TaskEntity task, WishlistEntity source) {
+        if (task == null || task.getStatus() != TaskStatus.failed || task.getFeatureId() == null) {
             return false;
         }
-        if (task.getSourceWishlistId() != null) {
-            WishlistEntity source = wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
-            if (source != null && source.getSource() != null && source.getSource().outOfCycleGenerated()) {
-                return false;
-            }
+        if (source != null && source.getSource() != null && source.getSource().outOfCycleGenerated()) {
+            return false;
         }
         String reason = task.getJulesDispatchStatus() == null ? "" : task.getJulesDispatchStatus();
         // Widened 2026-08-01 (confirmed live, test-fortieth: tasks d9f35f4b/529e5252 both died this exact
