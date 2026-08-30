@@ -1257,11 +1257,15 @@ public class GitHubPullRequestService {
     // page 3 would be a worse regression than the flat truncation this replaces.
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
         java.util.List<GitHubPullRequest> result = new java.util.ArrayList<>();
+        Instant watermark = prListWatermark.get(cacheKey(repoRef, state));
+        Instant highestSeen = null;
+        boolean reachedWatermark = false;
+        boolean truncatedByBudget = false;
         int page = 1;
         int maxPages = 10;
         while (page <= maxPages) {
             String path = "/repos/" + encode(repoRef.owner()) + "/" + encode(repoRef.repo()) + "/pulls?state="
-                    + encode(state) + "&per_page=100&page=" + page;
+                    + encode(state) + "&sort=updated&direction=desc&per_page=100&page=" + page;
             HttpRequest request = baseRequest(path, token).GET().build();
             HttpResponse<String> response;
             try {
@@ -1272,6 +1276,7 @@ public class GitHubPullRequestService {
                 }
                 log.warn("GitHub PR pagination stopped early for {}/{} state={} page={}: {}",
                         repoRef.owner(), repoRef.repo(), state, page, budgetDenied.getMessage());
+                truncatedByBudget = true;
                 break;
             }
             if (response.statusCode() != 200) {
@@ -1289,6 +1294,15 @@ public class GitHubPullRequestService {
             }
 
             for (JsonNode pr : prs) {
+                Instant updatedAt = parsePrTimestamp(pr, "updated_at");
+                if (alreadySeen(updatedAt, watermark)) {
+                    // Everything from here on was already seen: the walk is newest-updated-first.
+                    reachedWatermark = true;
+                    break;
+                }
+                if (updatedAt != null && (highestSeen == null || updatedAt.isAfter(highestSeen))) {
+                    highestSeen = updatedAt;
+                }
                 result.add(new GitHubPullRequest(
                         pr.path("html_url").asText(""),
                         pr.path("number").asInt(),
@@ -1301,12 +1315,80 @@ public class GitHubPullRequestService {
                         parsePrCreatedAt(pr)
                 ));
             }
-            if (prs.size() < 100) {
+            if (reachedWatermark || prs.size() < 100) {
                 break;
             }
             page++;
         }
-        return result;
+
+        // The mark advances only from GitHub's own updated_at values - never from the act of walking (model
+        // rule 8.5). It is written only when the walk was not cut short by the budget guard: a partial walk
+        // has not seen everything above the old mark, and moving it then would hide those pull requests for
+        // good.
+        String key = cacheKey(repoRef, state);
+        List<GitHubPullRequest> merged = mergeWithCached(prListCache.get(key), result);
+        if (!truncatedByBudget && highestSeen != null) {
+            prListWatermark.put(key, highestSeen);
+        }
+        prListCache.put(key, merged);
+        return merged;
+    }
+
+    /**
+     * The pull-request list of one repository and state, kept across calls so a walk only pays for what
+     * changed (model rule 8.5, monotone mark).
+     *
+     * <p>Measured on the live circuit 2026-08-30: this listing was 849 of 1173 accounted GitHub calls -
+     * 72% of the hourly window - and exhausted the whole 5000-request budget twice in one hour, each time
+     * freezing the project in GITHUB_RATE_LIMITED, which denies every operational action there is. The walk
+     * re-read the repository's entire closed history on every invocation, and four call sites invoke it.
+     *
+     * <p>Keyed by repository and state because those are different lists; entries are replaced by pull
+     * request number, so a pull request that changed is updated rather than duplicated.
+     */
+    private final java.util.Map<String, List<GitHubPullRequest>> prListCache = new java.util.concurrent.ConcurrentHashMap<>();
+    private final java.util.Map<String, Instant> prListWatermark = new java.util.concurrent.ConcurrentHashMap<>();
+
+    private static String cacheKey(RepoRef repoRef, String state) {
+        return repoRef.owner() + "/" + repoRef.repo() + "#" + state;
+    }
+
+    /**
+     * Whether the walk has reached work it has already accounted for (model rule 8.5).
+     *
+     * <p>A pull request with no {@code updated_at} is NEVER treated as seen: nothing is established about
+     * it, and dropping what is merely unknown is what rule 8.6's second line forbids. The comparison is
+     * non-strict on purpose - a pull request updated exactly at the mark was in the previous walk.
+     */
+    static boolean alreadySeen(Instant updatedAt, Instant watermark) {
+        return watermark != null && updatedAt != null && !updatedAt.isAfter(watermark);
+    }
+
+    static List<GitHubPullRequest> mergeWithCached(List<GitHubPullRequest> cached, List<GitHubPullRequest> fresh) {
+        if (cached == null || cached.isEmpty()) {
+            return List.copyOf(fresh);
+        }
+        java.util.Map<Integer, GitHubPullRequest> byNumber = new java.util.LinkedHashMap<>();
+        for (GitHubPullRequest pr : fresh) {
+            byNumber.put(pr.number(), pr);
+        }
+        for (GitHubPullRequest pr : cached) {
+            byNumber.putIfAbsent(pr.number(), pr);
+        }
+        return List.copyOf(byNumber.values());
+    }
+
+    /** GitHub ISO-8601 timestamp, tolerant of a missing or malformed value. */
+    static Instant parsePrTimestamp(JsonNode pr, String field) {
+        String raw = pr.path(field).asText("");
+        if (raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Instant.parse(raw);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private PullRequestCloseResult closePullRequest(RepoRef repoRef,
