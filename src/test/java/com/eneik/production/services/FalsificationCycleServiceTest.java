@@ -627,6 +627,62 @@ class FalsificationCycleServiceTest {
                 constraintService);
     }
 
+    /**
+     * Plan §4.41. DurableProjectLogAppender persists only events whose MDC scope starts with PROJECT: -
+     * everything else is dropped. This service never entered one, so not a single line it has ever written
+     * survives in project_event_log: measured 2026-08-30, 29,020 rows there and zero from this logger,
+     * while the cycle had produced no audit since 26.08. The absence read as "it never ran"; it was "its
+     * reasons are unrecordable". Falsification is the only source of the next product iteration once the
+     * client's briefs are decomposed, so the subsystem the whole flow waits on was the one whose refusals
+     * could not be read.
+     */
+    @Test
+    void theDailyCycleRunsInsideTheProjectsOwnLogScope() {
+        RoleRepository roles = mock(RoleRepository.class);
+        ProjectFlowService flow = mock(ProjectFlowService.class);
+        SystemSettingsService settings = mock(SystemSettingsService.class);
+        when(settings.effectiveBoolean("falsification_cycle_enabled")).thenReturn(true);
+
+        com.eneik.production.repositories.ProjectRepository projects =
+                mock(com.eneik.production.repositories.ProjectRepository.class);
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        project.setName("scoped-project");
+        project.setStatus(com.eneik.production.models.persistence.ProjectStatus.active);
+        when(projects.findAll()).thenReturn(List.of(project));
+
+        ClientDeliverableReadinessService readiness = mock(ClientDeliverableReadinessService.class);
+        java.util.concurrent.atomic.AtomicReference<String> scopeSeen = new java.util.concurrent.atomic.AtomicReference<>();
+        when(readiness.computeForProject(any())).thenAnswer(inv -> {
+            scopeSeen.set(org.slf4j.MDC.get(com.eneik.production.services.logging.LogScope.MDC_KEY));
+            return ClientDeliverableReadinessService.Readiness.none();
+        });
+
+        FalsificationCycleService service = new FalsificationCycleService(
+                projects, roles, mock(RoleCapabilityLoader.class),
+                mock(WishlistRepository.class), mock(FalsificationRunRepository.class), settings,
+                mock(GitHubPullRequestService.class), flow, readiness,
+                mock(WishlistContentSimilarityMatcher.class),
+                mock(com.eneik.production.services.GeminiContextService.class),
+                mock(com.eneik.production.repositories.TaskRepository.class),
+                mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                mock(com.eneik.production.services.PersistentWorkerSessionService.class),
+                mock(com.eneik.production.repositories.PrReviewRepository.class),
+                mock(com.eneik.production.repositories.CodeIntegrityFindingRepository.class),
+                mock(com.eneik.production.repositories.EvidenceNodeRepository.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.runtime.RuntimeLauncherClient.class),
+                launchabilityConstraintService(mock(WishlistRepository.class)));
+
+        service.runDailyFalsificationCycle();
+
+        assertEquals("PROJECT:" + project.getId(), scopeSeen.get(),
+                "the cycle must decide inside the project whose record its decision belongs to");
+        org.junit.jupiter.api.Assertions.assertNull(
+                org.slf4j.MDC.get(com.eneik.production.services.logging.LogScope.MDC_KEY),
+                "and must not leak that scope back onto the scheduler thread");
+    }
+
     @Test
     void weeklyCycleSkippedWhenFeatureFlagDisabled() {
         RoleRepository roles = mock(RoleRepository.class);

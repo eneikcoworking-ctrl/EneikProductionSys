@@ -166,10 +166,25 @@ public class FalsificationCycleService {
                 .toList();
 
         for (ProjectEntity project : projects) {
+            // In the project's own scope, so this cycle's decisions become part of that project's durable
+            // record (2026-08-30, plan §4.41). DurableProjectLogAppender persists only events whose MDC
+            // scope starts with PROJECT: - everything else is dropped - and this service never entered one,
+            // so not a single line it has ever written survives in project_event_log. Measured that day:
+            // 29,020 rows there, zero of them from FalsificationCycleService, while the cycle itself had
+            // produced no audit since 26.08. The absence looked like "it never ran"; it was "its reasons
+            // are unrecordable". Falsification is the only source of the next product iteration once the
+            // client's briefs are decomposed - the factory says so itself in its own poka-yoke line - so
+            // the one subsystem the whole value flow waits on was the one whose refusals could not be read.
+            //
+            // Same idiom as ContinuousOrchestrationService and the GitHub-truth sweep: set on entry,
+            // cleared in a finally so a scope never leaks into the next project or the scheduler thread.
+            com.eneik.production.services.logging.LogScope.project(project.getId());
             try {
                 executeCycleForProject(project);
             } catch (Exception e) {
                 log.error("FalsificationCycleService: Failed for project {}: {}", project.getId(), e.getMessage(), e);
+            } finally {
+                com.eneik.production.services.logging.LogScope.clear();
             }
         }
     }
