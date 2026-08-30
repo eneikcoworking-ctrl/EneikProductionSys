@@ -1257,7 +1257,8 @@ public class GitHubPullRequestService {
     // page 3 would be a worse regression than the flat truncation this replaces.
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
         java.util.List<GitHubPullRequest> result = new java.util.ArrayList<>();
-        Instant watermark = prListWatermark.get(cacheKey(repoRef, state));
+        boolean incremental = membershipOnlyGrows(state);
+        Instant watermark = incremental ? prListWatermark.get(cacheKey(repoRef, state)) : null;
         Instant highestSeen = null;
         boolean reachedWatermark = false;
         boolean truncatedByBudget = false;
@@ -1325,6 +1326,11 @@ public class GitHubPullRequestService {
         // rule 8.5). It is written only when the walk was not cut short by the budget guard: a partial walk
         // has not seen everything above the old mark, and moving it then would hide those pull requests for
         // good.
+        if (!incremental) {
+            // Membership shrinks here, so nothing may be carried over: a pull request that left this state
+            // must leave the answer with it.
+            return List.copyOf(result);
+        }
         String key = cacheKey(repoRef, state);
         List<GitHubPullRequest> merged = mergeWithCached(prListCache.get(key), result);
         if (!truncatedByBudget && highestSeen != null) {
@@ -1332,6 +1338,21 @@ public class GitHubPullRequestService {
         }
         prListCache.put(key, merged);
         return merged;
+    }
+
+    /**
+     * Whether this state's membership only ever grows, which is the precondition for walking it against a
+     * mark at all (model rule 8.5, and rule 8.6: what left the set must leave the answer).
+     *
+     * <p>`closed` only grows - a closed pull request does not reopen itself, and its history is what made
+     * the walk expensive. `open` SHRINKS: every merge and every close removes an element. Caching it kept
+     * dead entries alive, and that is not hypothetical - measured on the live circuit 2026-08-30 18:50,
+     * within an hour of the mark being deployed: PR #496 was closed without merge at 18:50:15 and the sweep
+     * went on reporting it as "clean open" at 18:50:22 and every minute after. An open list is also cheap by
+     * construction - it is the work in flight, one page.
+     */
+    static boolean membershipOnlyGrows(String state) {
+        return "closed".equalsIgnoreCase(state);
     }
 
     /**

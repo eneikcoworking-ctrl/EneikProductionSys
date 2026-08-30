@@ -64,4 +64,22 @@ class PullRequestWalkWatermarkTest {
         return new GitHubPullRequest("https://github.com/o/r/pull/" + number, number, title,
                 "head-" + number, "author", false, "main", true, MARK);
     }
+
+    /**
+     * A mark is only valid where membership grows. Measured on the live circuit 2026-08-30 18:50, within an
+     * hour of the mark being deployed: PR #496 was closed without merge at 18:50:15 and the merge sweep went
+     * on finding it "clean open" at 18:50:22 and every minute after, because the cached open list kept it.
+     * Rule 8.6: what left the set must leave the answer.
+     */
+    @Test
+    void theOpenListIsNeverCarriedOverBecauseItShrinks() {
+        assertThat(GitHubPullRequestService.membershipOnlyGrows("open")).isFalse();
+        assertThat(GitHubPullRequestService.membershipOnlyGrows("all")).isFalse();
+    }
+
+    /** The closed history is what made the walk expensive, and it only grows. */
+    @Test
+    void theClosedHistoryIsWalkedAgainstTheMark() {
+        assertThat(GitHubPullRequestService.membershipOnlyGrows("closed")).isTrue();
+    }
 }
