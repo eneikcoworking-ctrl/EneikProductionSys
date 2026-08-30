@@ -5719,9 +5719,10 @@ public class ProjectFlowService {
             // prompt forever. Confirmed live on test-thirty-second: one design-review task got fully
             // re-completed 3 times over ~50 minutes before landing on `failed`. Kept as a safety net for
             // any task that predates this fix or slips through some other path.
-            if (isWishlistCompilerTask(task) || isFalsificationAuditTask(task) || isReviewFallbackTask(task)
-                    || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPersistentWorkerCarrierTask(task)
-                    || isPhilosophicalAuditTask(task)) {
+            // Same correction as queuedDispatchClass (2026-08-30): this enumerated the carrier types it knew
+            // about, and the file declares more than were listed. A carrier is defined by carrying a
+            // taskType (model 8.0), and a definition cannot fall behind the way an enumeration does.
+            if (isFactoryCarrier(task) || isPersistentWorkerCarrierTask(task)) {
                 continue;
             }
             // Bug fix (2026-07-23, confirmed live on test-thirty-fifth): this used its own incomplete

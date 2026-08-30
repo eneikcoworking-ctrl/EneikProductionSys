@@ -208,8 +208,30 @@ public class ClaimService {
             // repair that damages. The task stays in review and the flow's own recovery paths keep working
             // on it, rather than being closed on a status nothing backs.
             if (readinessService.requiresCodeForDelivery(task) && !readinessService.hasRequiredMergeEvidence(task)) {
-                log.warn("Task {} ({}) was not marked done: its role must deliver code and nothing reached "
-                        + "main for it. Left in review - done would be the only evidence the work exists.",
+                // Refusing `done` is right and stays (8.15): a row must not be the only evidence that work
+                // exists. What was wrong is where the task was then left. `review` means "an artifact is
+                // under review" (model rule 8.20), and such a task has none - measured on the live circuit
+                // 2026-08-30: 3 of 3 review tasks carried no review artifact of their own. It could not
+                // progress, the review dispatcher kept sending it to a reviewer with nothing to read, and
+                // its claim was never released, so one of the seven live accounts stayed held for it.
+                //
+                // The attempt is over by construction: this method is reached from the merge webhook and
+                // from a session's completion handler. An attempt that ended without delivering is `failed`
+                // - a state that HAS exits: PlannedWorkRecoveryService gives it one bounded resume, and
+                // when it cannot, DeliveryRealityProducerService orders the requirement again (8.12). That
+                // is the recovery the old comment promised and `review` could not provide.
+                claim.setReleasedAt(Instant.now());
+                claim.setResultStatus(ClaimResultStatus.failed);
+                claimRepository.save(claim);
+                task.setStatus(TaskStatus.failed);
+                task.setJulesDispatchStatus("left to complete it normally (periodic GitHub-truth "
+                        + "reconciliation, testimony-vs-evidence Phase 2): the role must deliver code and "
+                        + "nothing reached main for it");
+                task.setUpdatedAt(Instant.now());
+                taskRepository.save(task);
+                refreshAccountStatusAfterClaimRelease(claim.getAccount());
+                log.warn("Task {} ({}) did not deliver: its role must deliver code and nothing reached main "
+                        + "for it. Marked failed and its account released, so recovery can act on it.",
                         task.getId(), task.getRole() != null ? task.getRole().getTag() : "?");
                 return;
             }
