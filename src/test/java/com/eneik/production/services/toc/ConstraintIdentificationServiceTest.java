@@ -53,7 +53,7 @@ public class ConstraintIdentificationServiceTest {
         when(accountRepository.findAll()).thenReturn(Collections.emptyList());
         when(julesSessionRepository.findByStatusIn(any())).thenReturn(Collections.emptyList());
         when(gitHubApiBudgetService.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
-                "available", true, 5000, 5000, 0, null, null, null, null, "fresh", Instant.now()));
+                "available", true, 5000, 5000, 0, null, null, null, null, "fresh", Instant.now(), java.util.Map.of()));
 
         service = new ConstraintIdentificationService(taskRepository, accountRepository, julesSessionRepository, gitHubApiBudgetService);
         ReflectionTestUtils.setField(service, "nominalReviewCapacity", 3);
@@ -89,7 +89,7 @@ public class ConstraintIdentificationServiceTest {
     void nearExhaustedGithubBudgetIsIdentifiedAsDrumWhenOtherQueuesAreCalm() {
         when(taskRepository.findAll()).thenReturn(Collections.emptyList());
         when(gitHubApiBudgetService.snapshot()).thenReturn(new GitHubApiBudgetService.Snapshot(
-                "exhausted", false, 5000, 10, 4990, null, null, null, null, "near limit", Instant.now()));
+                "exhausted", false, 5000, 10, 4990, null, null, null, null, "near limit", Instant.now(), java.util.Map.of()));
 
         var drum = service.identifyDrum(projectId);
 

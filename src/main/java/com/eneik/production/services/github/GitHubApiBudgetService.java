@@ -19,6 +19,9 @@ public class GitHubApiBudgetService {
 
     private final AtomicReference<BudgetState> state = new AtomicReference<>(BudgetState.initial());
 
+    /** Per-operation spend for the current rate-limit window - see countSpend (model rule 8.17). */
+    private final java.util.concurrent.ConcurrentHashMap<String, Long> spend = new java.util.concurrent.ConcurrentHashMap<>();
+
     public GuardDecision guard(String operation) {
         BudgetState current = state.get();
         Instant now = Instant.now();
@@ -59,7 +62,8 @@ public class GitHubApiBudgetService {
                 current.lastStatusCode(),
                 current.lastOperation(),
                 guard.allowed() ? guard.reason() : current.reason(),
-                current.updatedAt()
+                current.updatedAt(),
+                spendByOperation()
         );
     }
 
@@ -99,10 +103,50 @@ public class GitHubApiBudgetService {
                 Instant.now()
         );
         BudgetState previous = state.getAndSet(next);
+        countSpend(previous, resetAt, operation);
         if ("exhausted".equals(status)
                 && (previous.cooldownUntil() == null || !previous.cooldownUntil().equals(cooldownUntil))) {
-            log.warn("[GITHUB-BUDGET] Rate limit exhausted by operation '{}'; cooldownUntil={}", operation, cooldownUntil);
+            log.warn("[GITHUB-BUDGET] Rate limit exhausted; cooldownUntil={}. Spent this window by operation: {}",
+                    cooldownUntil, spendByOperation());
         }
+    }
+
+    /**
+     * What spent this window, per operation (model rule 8.17).
+     *
+     * <p>An admission order says who yields to whom, and it cannot be applied to spend that is not
+     * attributable. The hourly GitHub limit is shared capacity of exactly that kind, and exhausting it stops
+     * the whole flow - GITHUB_RATE_LIMITED is globally blocking. Measured 2026-08-30: 5000 of 5000 spent,
+     * the entire project frozen, and the only thing recorded was the name of the LAST call. Measured again
+     * two minutes after the reset: 234 calls gone, which is the whole window inside forty-three minutes -
+     * so this recurs every hour until someone can see who is spending it.
+     *
+     * <p>The key is the operation with its query string removed. Without that the key set is unbounded -
+     * page numbers alone would grow it without limit - and an unbounded tally is a leak, not an account.
+     */
+    private void countSpend(BudgetState previous, Instant resetAt, String operation) {
+        Instant previousReset = previous.resetAt();
+        if (resetAt != null && previousReset != null && !resetAt.equals(previousReset)) {
+            spend.clear();
+        }
+        spend.merge(normalizeOperation(operation), 1L, Long::sum);
+    }
+
+    static String normalizeOperation(String operation) {
+        if (operation == null || operation.isBlank()) {
+            return "(unnamed)";
+        }
+        int query = operation.indexOf('?');
+        return query < 0 ? operation : operation.substring(0, query);
+    }
+
+    /** The window's tally, heaviest first, so a reader sees the cause before the noise. */
+    public java.util.Map<String, Long> spendByOperation() {
+        return spend.entrySet().stream()
+                .sorted(java.util.Map.Entry.<String, Long>comparingByValue().reversed())
+                .collect(java.util.LinkedHashMap::new,
+                        (m, e) -> m.put(e.getKey(), e.getValue()),
+                        java.util.LinkedHashMap::putAll);
     }
 
     private boolean isRateLimited(int statusCode, Integer remaining, String body) {
@@ -180,7 +224,9 @@ public class GitHubApiBudgetService {
             Integer lastStatusCode,
             String lastOperation,
             String reason,
-            Instant updatedAt
+            Instant updatedAt,
+            /** What spent this window, heaviest first - model rule 8.17: spend must be attributable. */
+            Map<String, Long> spendByOperation
     ) {
         public Map<String, Object> asMap() {
             return Map.ofEntries(
@@ -194,7 +240,8 @@ public class GitHubApiBudgetService {
                     Map.entry("lastStatusCode", lastStatusCode == null ? "" : lastStatusCode),
                     Map.entry("lastOperation", lastOperation == null ? "" : lastOperation),
                     Map.entry("reason", reason == null ? "" : reason),
-                    Map.entry("updatedAt", updatedAt == null ? "" : updatedAt)
+                    Map.entry("updatedAt", updatedAt == null ? "" : updatedAt),
+                    Map.entry("spendByOperation", spendByOperation == null ? Map.of() : spendByOperation)
             );
         }
     }
