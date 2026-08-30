@@ -51,6 +51,8 @@ class ContinuousOrchestrationServiceTest {
         JulesSessionEntity reviewSession = new JulesSessionEntity();
         reviewSession.setTaskId(review.getId());
         reviewSession.setPrUrl("https://github.com/org/repo/pull/1");
+        // Finished, so the review task is work this factory can still move (2026-08-30, plan §4.43).
+        reviewSession.setStatus("closed_terminal_task");
 
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(activeProject));
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId())).thenReturn(List.of(queued, review));
@@ -88,6 +90,100 @@ class ContinuousOrchestrationServiceTest {
         assertEquals(1, snapshot.activeNonTerminalTasks());
         assertEquals(1, snapshot.reviewTasksWithPr());
         assertTrue(snapshot.hasActionableWork());
+    }
+
+    /**
+     * Plan §4.43. `stalled` is a globally blocking state: it denies ORCHESTRATE and both dispatch actions.
+     * The predicate behind it counted a task already handed to a live Jules session as work the factory was
+     * failing to move. Measured overnight 29->30.08: 122 identical SYSTEM STALLED errors, each printing
+     * queuedTasks=0, pendingOrCompilingWishlists=0, activeNonTerminalTasks=1 - one session running and
+     * nothing else - and 241 ticks spent in that state, which is where the client requirements returned to
+     * the queue at 00:29 stopped being compiled. Sessions here run from two minutes to twenty hours.
+     */
+    @Test
+    void aTaskAliveInsideAJulesSessionIsNotWorkTheFactoryIsFailingToMove() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+
+        ProjectEntity activeProject = project(UUID.fromString("00000000-0000-0000-0000-000000000003"),
+                "active", ProjectStatus.active);
+        TaskEntity inFlight = task(activeProject, TaskStatus.claimed);
+        JulesSessionEntity liveSession = new JulesSessionEntity();
+        liveSession.setTaskId(inFlight.getId());
+        liveSession.setStatus("running");
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(activeProject));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId())).thenReturn(List.of(inFlight));
+        when(wishlistRepository.findByProjectId(activeProject.getId())).thenReturn(List.of());
+        when(julesSessionRepository.findByTaskId(inFlight.getId())).thenReturn(List.of(liveSession));
+
+        ContinuousOrchestrationService service = serviceOver(projectRepository, taskRepository,
+                wishlistRepository, julesSessionRepository);
+
+        ContinuousOrchestrationService.SystemWorkSnapshot snapshot = service.systemWorkSnapshot();
+
+        assertEquals(0, snapshot.activeNonTerminalTasks());
+        org.junit.jupiter.api.Assertions.assertFalse(snapshot.hasActionableWork(),
+                "a session is running; the factory is waiting on another system, not stalling");
+    }
+
+    /**
+     * The other half, and it is not optional: the same task with no live session IS work the factory should
+     * be moving, and a stall verdict on it is real. Without this the change would simply switch the
+     * detector off.
+     */
+    @Test
+    void theSameTaskWithNoLiveSessionIsStillActionable() {
+        ProjectRepository projectRepository = mock(ProjectRepository.class);
+        TaskRepository taskRepository = mock(TaskRepository.class);
+        WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+        JulesSessionRepository julesSessionRepository = mock(JulesSessionRepository.class);
+
+        ProjectEntity activeProject = project(UUID.fromString("00000000-0000-0000-0000-000000000004"),
+                "active", ProjectStatus.active);
+        TaskEntity stranded = task(activeProject, TaskStatus.claimed);
+        JulesSessionEntity finished = new JulesSessionEntity();
+        finished.setTaskId(stranded.getId());
+        finished.setStatus("closed_terminal_task");
+
+        when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(activeProject));
+        when(taskRepository.findByProjectIdOrderByCreatedAtDesc(activeProject.getId())).thenReturn(List.of(stranded));
+        when(wishlistRepository.findByProjectId(activeProject.getId())).thenReturn(List.of());
+        when(julesSessionRepository.findByTaskId(stranded.getId())).thenReturn(List.of(finished));
+
+        ContinuousOrchestrationService.SystemWorkSnapshot snapshot = serviceOver(projectRepository,
+                taskRepository, wishlistRepository, julesSessionRepository).systemWorkSnapshot();
+
+        assertEquals(1, snapshot.activeNonTerminalTasks());
+        assertTrue(snapshot.hasActionableWork());
+    }
+
+    private ContinuousOrchestrationService serviceOver(ProjectRepository projectRepository,
+            TaskRepository taskRepository, WishlistRepository wishlistRepository,
+            JulesSessionRepository julesSessionRepository) {
+        return new ContinuousOrchestrationService(
+                projectRepository,
+                mock(ProjectFlowService.class),
+                mock(AccountRepository.class),
+                julesSessionRepository,
+                mock(com.eneik.production.services.jules.JulesDispatchService.class),
+                wishlistRepository,
+                mock(TechnicalLeadCompiler.class),
+                mock(MLPredictionServiceClient.class),
+                taskRepository,
+                new SystemProgressTracker(),
+                mock(SystemSettingsService.class),
+                mock(PlannedWorkRecoveryService.class),
+                mock(BranchGarbageCollectorService.class),
+                mock(GitHubPullRequestService.class),
+                mock(OperationalPolicyService.class),
+                mock(com.eneik.production.services.accounts.AccountHealthService.class),
+                mock(com.eneik.production.services.runtime.ProductLaunchabilityService.class),
+                mock(com.eneik.production.services.runtime.ClientRuntimeObservabilityService.class),
+                mock(com.eneik.production.services.judgment.DeliveredWorkJudgmentService.class),
+                mock(com.eneik.production.services.toc.TocSubordinationLever.class));
     }
 
     /**

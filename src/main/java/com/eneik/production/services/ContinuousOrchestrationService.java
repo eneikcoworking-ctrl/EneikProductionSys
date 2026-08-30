@@ -483,11 +483,26 @@ public class ContinuousOrchestrationService {
                 .flatMap(project -> wishlistRepository.findByProjectId(project.getId()).stream())
                 .filter(com.eneik.production.models.persistence.WishlistEntity::movable)
                 .count();
+        // Only work THIS factory can still move counts as stalled-able (2026-08-30, plan §4.43). A task
+        // that is claimed with a live Jules session is not idle work - it has already been dispatched and
+        // the factory is waiting on another system, which is not a stall of the factory. Sessions here run
+        // 117 seconds to twenty hours, mean thirty-nine minutes (measured over 115 compiler sessions), so
+        // "no dispatch or merge for N minutes while one session runs" describes normal waiting.
+        //
+        // Measured overnight 29->30.08: 122 identical SYSTEM STALLED errors, every one of them printing
+        // queuedTasks=0, pendingOrCompilingWishlists=0, activeNonTerminalTasks=1 - one task in flight and
+        // nothing else. `stalled` is a globally blocking state, so those verdicts denied ORCHESTRATE and
+        // both dispatch actions for 241 ticks, including the compilation of client requirements returned
+        // to the queue at 00:29.
+        //
+        // The distinction is the one this codebase already defines once: JulesSessionEntity.isActive.
         long activeNonTerminalTasks = activeProjectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.claimed
                         || task.getStatus() == TaskStatus.in_progress
                         || task.getStatus() == TaskStatus.pending_review
                         || task.getStatus() == TaskStatus.review)
+                .filter(task -> julesSessionRepository.findByTaskId(task.getId()).stream()
+                        .noneMatch(com.eneik.production.models.persistence.JulesSessionEntity::isActive))
                 .count();
         long reviewTasksWithPr = activeProjectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.review)
