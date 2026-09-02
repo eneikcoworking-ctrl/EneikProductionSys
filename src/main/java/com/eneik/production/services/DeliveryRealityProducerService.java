@@ -204,6 +204,78 @@ public class DeliveryRealityProducerService {
         produce();
     }
 
+    /** The repair-chain depth histogram, per project, as last reported. */
+    private final java.util.Map<java.util.UUID, String> lastRepairDepths = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * How deep the repair chains of this project have grown (model rule 8.21).
+     *
+     * <p>Filing a repair for work that did not deliver is a TURN OF A CYCLE: the repair's own task can fail
+     * to deliver too, and then a repair is filed for it. Rule 8.4 requires every cycle to carry a quantity
+     * that strictly decreases per turn, and this one carries none - each turn mints a fresh task identity,
+     * so resumeCount, retryCount and compileAttempts all stay where they were.
+     *
+     * <p>Measured 2026-09-02 over three days without intervention: 408 done tasks became 488, 410 merged
+     * reviews became 496, delivered requirements stayed at 13 of 19, and the parked set - work that reached
+     * main without the artifact its role owes - went from 16 to 50, of which 39 carry BARCAN-TAG-00, the
+     * role this department stamps on its own repair briefs. Work producing work, delivering nothing.
+     *
+     * <p>This only MEASURES. The bound on chain depth has to be derived from the distribution, not assumed,
+     * exactly as 4.36 requires of the decomposition budget. Depth needs no new column: a repair names the
+     * task it repairs, and that task names the wishlist it came from.
+     */
+    private void reportRepairDepthsIfChanged(ProjectEntity project) {
+        List<com.eneik.production.models.persistence.WishlistEntity> allWishlist =
+                wishlistRepository.findByProjectId(project.getId());
+        java.util.Map<java.util.UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById =
+                new java.util.HashMap<>();
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            wishlistById.put(item.getId(), item);
+        }
+        java.util.Map<java.util.UUID, TaskEntity> taskById = new java.util.HashMap<>();
+        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+            taskById.put(task.getId(), task);
+        }
+
+        java.util.TreeMap<Integer, Long> histogram = new java.util.TreeMap<>();
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            if (item.getSourceTaskId() == null) {
+                continue;
+            }
+            histogram.merge(repairDepth(item, wishlistById, taskById), 1L, Long::sum);
+        }
+        String digest = histogram.toString();
+        if (digest.equals(lastRepairDepths.get(project.getId()))) {
+            return;
+        }
+        lastRepairDepths.put(project.getId(), digest);
+        log.info("DeliveryRealityProducerService: project {} - repair chain depths {} (model rule 8.21: this "
+                        + "cycle has no variant function yet)", project.getName(), digest);
+    }
+
+    /** Depth of one repair chain, walked back through the task each link repairs. Visited-guarded. */
+    private int repairDepth(com.eneik.production.models.persistence.WishlistEntity repair,
+                            java.util.Map<java.util.UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+                            java.util.Map<java.util.UUID, TaskEntity> taskById) {
+        java.util.Set<java.util.UUID> visited = new java.util.HashSet<>();
+        int depth = 1;
+        com.eneik.production.models.persistence.WishlistEntity current = repair;
+        while (current != null && current.getSourceTaskId() != null && visited.add(current.getId())) {
+            TaskEntity repaired = taskById.get(current.getSourceTaskId());
+            if (repaired == null || repaired.getSourceWishlistId() == null) {
+                return depth;
+            }
+            com.eneik.production.models.persistence.WishlistEntity previous =
+                    wishlistById.get(repaired.getSourceWishlistId());
+            if (previous == null || previous.getSourceTaskId() == null) {
+                return depth;
+            }
+            depth++;
+            current = previous;
+        }
+        return depth;
+    }
+
     /** How large the predicate disagreement is, per project, as last reported. */
     private final java.util.Map<java.util.UUID, String> lastDisagreement = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -297,6 +369,7 @@ public class DeliveryRealityProducerService {
         int recorded = 0;
         int alreadyKnown = 0;
         reportPredicateDisagreementIfChanged(project);
+        reportRepairDepthsIfChanged(project);
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
             if (!isWorkThatNeverLanded(task)) {
                 continue;
