@@ -26,6 +26,41 @@ class OperationalPolicyServiceTest {
         assertFalse(service.authorize(core, OperationalAction.MERGE_PR).allowed());
     }
 
+    /**
+     * Model rule 8.3.1: a denial must stand on evidence about the thing it denies. A failing review speaks
+     * about its own pull request and says nothing about whether compiling an unrelated brief is safe.
+     *
+     * <p>Measured 2026-09-02: seven failing reviews put the project in BLOCKED_BY_REVIEW, which denied
+     * ORCHESTRATE - the queue stood at zero, two briefs waited, and the merge department was working and
+     * merging in the same minute. The front starved on the state of the back.
+     */
+    @Test
+    void aFailingReviewDoesNotDenyCompilingAnUnrelatedBrief() {
+        FlowCoreDto core = core("BLOCKED_BY_REVIEW", "active", 0, 7, 7, 2, 0);
+
+        assertTrue(service.authorize(core, OperationalAction.ORCHESTRATE).allowed());
+    }
+
+    /**
+     * The complement, and it is not optional: duplicate content is PRODUCED by compilation, so it is
+     * evidence about compilation itself and must keep denying it. Without this the rule would lift a guard
+     * that stands for a reason.
+     */
+    @Test
+    void duplicateContentStillDeniesCompilingBecauseCompilationProducesIt() {
+        FlowCoreDto core = core("BLOCKED_BY_DUPLICATE_CONTENT", "active", 0, 0, 0, 2, 0);
+
+        assertFalse(service.authorize(core, OperationalAction.ORCHESTRATE).allowed());
+    }
+
+    /** And a terminal project still forbids everything, which the `terminal` flag has always covered. */
+    @Test
+    void aFrozenProjectStillDeniesCompiling() {
+        FlowCoreDto core = core("FROZEN", "frozen", 0, 0, 0, 2, 0);
+
+        assertFalse(service.authorize(core, OperationalAction.ORCHESTRATE).allowed());
+    }
+
     @Test
     void queuedStateAllowsOnlyMatchingDispatchWork() {
         FlowCoreDto core = core("QUEUED", "active", 2, 0, 0, 1, 0);
@@ -100,7 +135,7 @@ class OperationalPolicyServiceTest {
         FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 5, 0, 0, 0, 0);
         assertTrue(service.authorize(blockedByReview, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
         // ORCHESTRATE stays blocked - unchanged, still genuinely entangled with the failing review.
-        assertFalse(service.authorize(blockedByReview, OperationalAction.ORCHESTRATE).allowed());
+        assertTrue(service.authorize(blockedByReview, OperationalAction.ORCHESTRATE).allowed());
 
         FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 0, 0);
         assertTrue(service.authorize(blockedByTask, OperationalAction.DISPATCH_QUEUED_TASKS).allowed());
@@ -126,12 +161,16 @@ class OperationalPolicyServiceTest {
     }
 
     @Test
-    void orchestrateStaysBlockedByGenuinelyEntangledReviewAndTaskBlockersUnlikeStall() {
-        // ORCHESTRATE deliberately keeps its original entanglement with BLOCKED_BY_REVIEW/BLOCKED_BY_TASK
-        // (new decomposition genuinely waits its turn behind those) - only SYSTEM_STALLED was carved out.
-        FlowCoreDto blockedByReview = core("BLOCKED_BY_REVIEW", "active", 5, 0, 0, 1, 0);
-        assertFalse(service.authorize(blockedByReview, OperationalAction.ORCHESTRATE).allowed());
-
+    void orchestrateStaysBlockedByAGenuinelyEntangledTaskBlockerUnlikeAReview() {
+        // The original reasoning was WIP restraint: "new decomposition genuinely waits its turn behind
+        // those". Model rule 8.17 answers that directly - restraint is expressed as an ORDER, not a
+        // prohibition, because a prohibition can only say "never" while an order says "later". Measured
+        // 2026-09-02: the review bottleneck had been breached for 6810 minutes, four and a half days, with
+        // the queue at zero, two briefs waiting and the merge department merging in the same minute. In
+        // practice it said never.
+        //
+        // BLOCKED_BY_TASK keeps denying. The argument against it is identical, but it has not been measured
+        // holding, and changing what has not been measured is how a repair becomes a guess.
         FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 1, 0);
         assertFalse(service.authorize(blockedByTask, OperationalAction.ORCHESTRATE).allowed());
     }

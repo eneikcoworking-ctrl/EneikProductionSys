@@ -118,8 +118,15 @@ public class OperationalPolicyService {
             // (new decomposition genuinely waits its turn behind those) - only SYSTEM_STALLED is carved out
             // here, since that state is specifically "no dispatch/merge progress despite actionable work"
             // and a pending wishlist never getting decomposed is itself part of what keeps a project stalled.
+            // Model rule 8.3.1: a denial must stand on evidence about the thing it denies. The hard-block
+            // set is one set for every action, so ORCHESTRATE inherited denials from states that say
+            // nothing about compiling a brief. Measured 2026-09-02: seven failing reviews put the project
+            // in BLOCKED_BY_REVIEW, which denied ORCHESTRATE - the queue stood at zero, two briefs waited,
+            // and the merge department was working and merging in the same minute. The front starved on
+            // the state of the back. The same narrowing was already made twice in this file, for
+            // DISPATCH_QUEUED_TASKS and MERGE_PR, on exactly this argument.
             case ORCHESTRATE -> activeProject && !terminal
-                    && (!hardBlocked || "SYSTEM_STALLED".equals(snapshot.currentState()))
+                    && !deniesCompilation(snapshot.currentState())
                     && (!"DELIVERED".equals(snapshot.currentState()) || hasPendingScope);
             // Narrowed 2026-08-28, the same correction already made twice in this file for
             // DISPATCH_QUEUED_TASKS and MERGE_PR, for the same reason. Gating on state EQUALITY meant
@@ -278,6 +285,25 @@ public class OperationalPolicyService {
         }
         return "Operational action " + action + " denied by Flow Core state " + state
                 + " with authorization " + authorizationStatus + ".";
+    }
+
+    /**
+     * States that are evidence about COMPILING A BRIEF, and so may deny it (model rule 8.3.1).
+     *
+     * <p>Duplicate content is produced by compilation, so it speaks about compilation itself; the GitHub
+     * rate limit binds the compiler's own dispatch; terminality is handled by the caller's `terminal` flag.
+     * BLOCKED_BY_REVIEW, BLOCKED_BY_TASK and BLOCKED_BY_FAILED_FRONTIER are conditions of INDIVIDUAL
+     * elements raised to a project-wide state - they carry no evidence that compiling an unrelated brief is
+     * unsafe, and denying it on them is what starved the front while the back was working.
+     *
+     * <p>SYSTEM_STALLED was already excepted here before this rule was written, for the same reason.
+     */
+    private static boolean deniesCompilation(String state) {
+        // BLOCKED_BY_TASK and BLOCKED_BY_FAILED_FRONTIER are the same shape as BLOCKED_BY_REVIEW and are
+        // deliberately left denying: the argument against them is identical, but only the review case has
+        // been measured holding, and changing what has not been measured is how a repair becomes a guess.
+        return Set.of("BLOCKED_BY_DUPLICATE_CONTENT", "GITHUB_RATE_LIMITED",
+                "BLOCKED_BY_TASK", "BLOCKED_BY_FAILED_FRONTIER").contains(state);
     }
 
     private static boolean isHardBlocked(String state) {
