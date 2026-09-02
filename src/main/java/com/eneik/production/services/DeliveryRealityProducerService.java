@@ -219,6 +219,92 @@ public class DeliveryRealityProducerService {
         produce();
     }
 
+    /** How many repairs sit outside the product epic set, per project, as last reported. */
+    private final java.util.Map<UUID, String> lastStrayRepairs = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * How much repair work is attached to an epic the value model does not count (model rule 8.18.1).
+     *
+     * <p>Value is measured by the completeness of epics in the product set. A repair whose epic is outside
+     * that set runs, merges and moves nothing. Measured 2026-09-02: of 444 repairs, 434 carried an epic
+     * outside the set, spread over 30 such epics against nine real ones. Filing was fixed the same evening
+     * so a repair can no longer found an epic of its own - but the rows already written stay where they
+     * are, and whether they can be re-homed depends on whether a product epic is REACHABLE from each of
+     * them through the repair chain. That is what this counts, and it is the number a migration would have
+     * to stand on.
+     */
+    private void reportStrayRepairsIfChanged(ProjectEntity project) {
+        java.util.Set<UUID> productEpics = readinessService.listEpicDiagnostics(project.getId()).stream()
+                .map(ClientDeliverableReadinessService.EpicDiagnostic::id)
+                .collect(java.util.stream.Collectors.toSet());
+        List<com.eneik.production.models.persistence.WishlistEntity> allWishlist =
+                wishlistRepository.findByProjectId(project.getId());
+        java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById =
+                new java.util.HashMap<>();
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            wishlistById.put(item.getId(), item);
+        }
+        java.util.Map<UUID, TaskEntity> taskById = new java.util.HashMap<>();
+        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+            taskById.put(task.getId(), task);
+        }
+
+        int inSet = 0;
+        int outside = 0;
+        int reHomeable = 0;
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            if (item.getSourceTaskId() == null) {
+                continue;
+            }
+            UUID epic = item.getFeatureId();
+            if (epic != null && productEpics.contains(epic)) {
+                inSet++;
+                continue;
+            }
+            outside++;
+            if (reachableProductEpic(item, wishlistById, taskById, productEpics) != null) {
+                reHomeable++;
+            }
+        }
+        String digest = inSet + "/" + (inSet + outside) + " in set, " + reHomeable + " of " + outside
+                + " re-homeable";
+        if (digest.equals(lastStrayRepairs.get(project.getId()))) {
+            return;
+        }
+        lastStrayRepairs.put(project.getId(), digest);
+        log.info("DeliveryRealityProducerService: project {} - repairs by epic: {} (model rule 8.18.1)",
+                project.getName(), digest);
+    }
+
+    /** The nearest product epic reachable from a repair through its chain, or null when none is. */
+    private UUID reachableProductEpic(com.eneik.production.models.persistence.WishlistEntity repair,
+                                      java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+                                      java.util.Map<UUID, TaskEntity> taskById,
+                                      java.util.Set<UUID> productEpics) {
+        java.util.Set<UUID> visited = new java.util.HashSet<>();
+        com.eneik.production.models.persistence.WishlistEntity current = repair;
+        while (current != null && visited.add(current.getId())) {
+            if (current.getFeatureId() != null && productEpics.contains(current.getFeatureId())) {
+                return current.getFeatureId();
+            }
+            if (current.getSourceTaskId() == null) {
+                return null;
+            }
+            TaskEntity repaired = taskById.get(current.getSourceTaskId());
+            if (repaired == null) {
+                return null;
+            }
+            if (repaired.getFeatureId() != null && productEpics.contains(repaired.getFeatureId())) {
+                return repaired.getFeatureId();
+            }
+            if (repaired.getSourceWishlistId() == null) {
+                return null;
+            }
+            current = wishlistById.get(repaired.getSourceWishlistId());
+        }
+        return null;
+    }
+
     /** The repair-chain depth histogram, per project, as last reported. */
     private final java.util.Map<java.util.UUID, String> lastRepairDepths = new java.util.concurrent.ConcurrentHashMap<>();
 
@@ -428,6 +514,7 @@ public class DeliveryRealityProducerService {
         int tasksSeen = 0;
         reportPredicateDisagreementIfChanged(project);
         reportRepairDepthsIfChanged(project);
+        reportStrayRepairsIfChanged(project);
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
             if (!isWorkThatNeverLanded(task)) {
                 continue;
