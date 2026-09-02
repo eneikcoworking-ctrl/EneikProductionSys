@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
 
 /**
  * Turns the readiness invariant's own detection into evidence.
@@ -147,7 +148,21 @@ public class DeliveryRealityProducerService {
         // epics closed, and the one epic that carries what the client actually asked for - upload, search,
         // download - stuck at 6 of 7 while task after task completed beside it. Repairing delivery of a
         // task and detaching that repair from the task's own feature is delivering into a void.
-        wishlist.setFeatureId(task.getFeatureId());
+        // Model rule 8.18.1: a repair belongs to the epic of the requirement it repairs and never founds
+        // one of its own. This used to copy the task's featureId even when it was null - the brief then
+        // reached the compiler with no epic, and resolveOrCreateFeatureId minted a fresh one rooted in the
+        // REPAIR BRIEF itself. That brief's source is delivery_never_reached_main, outside
+        // PRODUCT_ITERATION_SOURCES, so the epic never enters the product set, and every later repair
+        // inherits it. Measured 2026-09-02: of 444 repairs, 434 carried an epic outside the product set,
+        // spread over 30 such epics against nine real ones - work that runs, merges and moves nothing.
+        UUID epic = epicOfRequirement(task);
+        if (epic == null) {
+            log.warn("DeliveryRealityProducerService: not filing scope for task {} - no epic is reachable "
+                            + "from it, and a repair may not found one (model rule 8.18.1). The finding "
+                            + "itself stays on record.", task.getId());
+            return;
+        }
+        wishlist.setFeatureId(epic);
         wishlist.setOriginFeatureId(task.getOriginFeatureId() != null
                 ? task.getOriginFeatureId() : task.getFeatureId());
         wishlist.setStatus(com.eneik.production.models.persistence.WishlistStatus.pending);
@@ -251,6 +266,43 @@ public class DeliveryRealityProducerService {
         lastRepairDepths.put(project.getId(), digest);
         log.info("DeliveryRealityProducerService: project {} - repair chain depths {} (model rule 8.21: this "
                         + "cycle has no variant function yet)", project.getName(), digest);
+    }
+
+    /**
+     * The epic of the requirement this task is an attempt at, walked back through the repair chain
+     * (model rules 8.18 and 8.18.1).
+     *
+     * <p>A task without an epic of its own is an attempt at a requirement that has one - the chain reaches
+     * it through the wishlist the task came from and, when that wishlist is itself a repair, through the
+     * task it repairs. Returns null only when nothing in the chain carries an epic; the caller then files
+     * nothing rather than founding one, because an epic founded on a repair brief is outside the product
+     * set by construction and can never come back into it.
+     */
+    private UUID epicOfRequirement(TaskEntity task) {
+        if (task.getFeatureId() != null) {
+            return task.getFeatureId();
+        }
+        java.util.Set<UUID> visited = new java.util.HashSet<>();
+        TaskEntity current = task;
+        while (current != null && current.getId() != null && visited.add(current.getId())) {
+            UUID sourceWishlistId = current.getSourceWishlistId();
+            if (sourceWishlistId == null) {
+                return null;
+            }
+            com.eneik.production.models.persistence.WishlistEntity origin =
+                    wishlistRepository.findById(sourceWishlistId).orElse(null);
+            if (origin == null) {
+                return null;
+            }
+            if (origin.getFeatureId() != null) {
+                return origin.getFeatureId();
+            }
+            if (origin.getSourceTaskId() == null) {
+                return null;
+            }
+            current = taskRepository.findById(origin.getSourceTaskId()).orElse(null);
+        }
+        return null;
     }
 
     /** Depth of one repair chain, walked back through the task each link repairs. Visited-guarded. */

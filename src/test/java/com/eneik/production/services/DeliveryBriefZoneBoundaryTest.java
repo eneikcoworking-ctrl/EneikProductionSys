@@ -48,11 +48,12 @@ class DeliveryBriefZoneBoundaryTest {
 
     private final WishlistRepository wishlistRepository = mock(WishlistRepository.class);
     private final PlannedWorkRecoveryService plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
+    private final TaskRepository taskRepository = mock(TaskRepository.class);
 
     private DeliveryRealityProducerService service() {
         return new DeliveryRealityProducerService(
                 mock(ProjectRepository.class),
-                mock(TaskRepository.class),
+                taskRepository,
                 mock(ClientDeliverableReadinessService.class),
                 mock(OperationalRealityFindingRepository.class),
                 mock(EvidenceNodeRepository.class),
@@ -146,6 +147,9 @@ class DeliveryBriefZoneBoundaryTest {
         task.setId(UUID.randomUUID());
         task.setProject(project);
         task.setTitle("Runtime Contract 9b58412d");
+        // The ordinary case: the task belongs to an epic, so the repair inherits it (model rule 8.18.1).
+        // The case where nothing in the chain carries one has its own test below.
+        task.setFeatureId(UUID.randomUUID());
         return task;
     }
 
@@ -197,6 +201,53 @@ class DeliveryBriefZoneBoundaryTest {
                 .thenReturn(true);
 
         service().fileTheMissingWorkAsScope(project, task);
+
+        verify(wishlistRepository, never()).save(any());
+    }
+
+    /**
+     * Model rule 8.18.1: a repair belongs to the epic of the requirement it repairs and never founds one.
+     * When the repaired task has no epic of its own, the chain is walked back through the wishlist it came
+     * from. Measured 2026-09-02: 434 of 444 repairs carried an epic outside the product set, spread over 30
+     * such epics against nine real ones, because a repair with no epic minted one rooted in itself.
+     */
+    @Test
+    void aRepairTakesTheEpicOfTheRequirementItRepairs() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        UUID requirementEpic = UUID.randomUUID();
+
+        WishlistEntity requirement = new WishlistEntity();
+        requirement.setId(UUID.randomUUID());
+        requirement.setFeatureId(requirementEpic);
+
+        TaskEntity attempt = task(project);
+        attempt.setFeatureId(null);
+        attempt.setSourceWishlistId(requirement.getId());
+        // no featureId on the task itself - this is the case that used to mint a fresh epic
+        when(wishlistRepository.findById(requirement.getId())).thenReturn(java.util.Optional.of(requirement));
+
+        service().fileTheMissingWorkAsScope(project, attempt);
+
+        ArgumentCaptor<WishlistEntity> captor = ArgumentCaptor.forClass(WishlistEntity.class);
+        verify(wishlistRepository).save(captor.capture());
+        assertEquals(requirementEpic, captor.getValue().getFeatureId());
+    }
+
+    /**
+     * The complement, and it is not optional: when nothing in the chain carries an epic, the repair must
+     * file NOTHING rather than found one. An epic founded on a repair brief is outside the product set by
+     * construction and can never come back into it.
+     */
+    @Test
+    void aRepairWithNoReachableEpicFilesNothingRatherThanFoundingOne() {
+        ProjectEntity project = new ProjectEntity();
+        project.setId(UUID.randomUUID());
+        TaskEntity orphan = task(project);
+        orphan.setFeatureId(null);
+        orphan.setSourceWishlistId(null);
+
+        service().fileTheMissingWorkAsScope(project, orphan);
 
         verify(wishlistRepository, never()).save(any());
     }
