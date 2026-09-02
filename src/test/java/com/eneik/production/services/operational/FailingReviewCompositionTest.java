@@ -118,4 +118,40 @@ class FailingReviewCompositionTest {
 
         assertThat(dto.blockingReason()).doesNotContain("{}");
     }
+
+    /**
+     * Model rule 8.6: an element with no path to done leaves the decision set. A pull request closed on
+     * GitHub without merging cannot be merged or repaired, and BLOCKED_BY_REVIEW names AutoMergeService as
+     * its resolver - so counting it holds the whole project on something nothing can act on. Measured
+     * 2026-09-02: {closed_unmerged=5}, holding a bottleneck breached for 6841 minutes.
+     */
+    @Test
+    void aClosedUnmergedReviewDoesNotHoldTheProject() {
+        TaskEntity task = liveTask();
+        JulesSessionEntity session = liveSession(task);
+        when(sessions.findByTaskIdIn(anyList())).thenReturn(List.of(session));
+        when(reviews.findByJulesSessionIdIn(anyList()))
+                .thenReturn(List.of(review(session, "closed_unmerged"), review(session, "closed_unmerged")));
+
+        FlowSpineDto dto = service(List.of(task)).build(project.getId());
+
+        assertThat(dto.currentState()).isNotEqualTo("BLOCKED_BY_REVIEW");
+        assertThat(dto.evidence().failingReviews()).isZero();
+    }
+
+    /**
+     * The complement, and it is not optional: a conflict HAS a bounded resolution path, so it must keep
+     * holding. Without this the rule would empty the gate instead of narrowing it.
+     */
+    @Test
+    void aConflictStillHoldsBecauseItCanStillBeResolved() {
+        TaskEntity task = liveTask();
+        JulesSessionEntity session = liveSession(task);
+        when(sessions.findByTaskIdIn(anyList())).thenReturn(List.of(session));
+        when(reviews.findByJulesSessionIdIn(anyList())).thenReturn(List.of(review(session, "conflict")));
+
+        FlowSpineDto dto = service(List.of(task)).build(project.getId());
+
+        assertThat(dto.evidence().failingReviews()).isEqualTo(1);
+    }
 }

@@ -51,6 +51,24 @@ public class FlowSpineService {
     );
 
     /**
+     * Failing statuses from which no resolver can move the review (model rule 8.6: an element with no path
+     * to done leaves the decision set).
+     *
+     * <p>BLOCKED_BY_REVIEW names AutoMergeService as its resolver, and a pull request that is closed on
+     * GitHub without merging cannot be merged or repaired - there is nothing left to act on. Measured
+     * 2026-09-02, once the state was made to name its own composition: "5 failing/conflicted review(s)
+     * exist {closed_unmerged=5}", holding a bottleneck that had been breached for 6841 minutes, four and
+     * three quarter days. Scoping the count to live sessions was an earlier attempt at this same problem
+     * and is not enough: the session outlives the pull request.
+     *
+     * <p>Only the measured status is excluded. `escalated`, `invalid_pr` and `unowned` are the same shape
+     * and are deliberately left in until they are observed holding - changing what has not been measured is
+     * how a repair becomes a guess. The task's own non-delivery is not lost either way: it is carried by
+     * hasRequiredMergeEvidence and by the delivery-reality department.
+     */
+    private static final Set<String> UNRESOLVABLE_REVIEW_STATUSES = Set.of("closed_unmerged");
+
+    /**
      * A task the factory created to carry its own process - the wishlist compiler, a review fallback, an
      * audit, a design review. Every one of them is stamped with a taskType in its payload when it is built,
      * and no product task ever is. Measured 2026-08-29 across the project's 68 failed tasks: 60 carried a
@@ -488,6 +506,7 @@ public class FlowSpineService {
         // days, and the number alone could not say which of those it was.
         java.util.Map<String, Long> failingByStatus = reviews.stream()
                 .filter(reviewEntity -> FAILING_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
+                .filter(reviewEntity -> !UNRESOLVABLE_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
                 .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .filter(reviewEntity -> !carrierSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .collect(Collectors.groupingBy(reviewEntity -> normalize(reviewEntity.getCiStatus()),
