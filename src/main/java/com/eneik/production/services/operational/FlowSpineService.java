@@ -480,11 +480,20 @@ public class FlowSpineService {
                 .filter(session -> session.getTaskId() != null && carrierTaskIds.contains(session.getTaskId()))
                 .map(JulesSessionEntity::getId)
                 .collect(Collectors.toSet());
-        int failingReviews = (int) reviews.stream()
+        // Model rule 8.11 O8: a hold leaves a readable record of its REASON. This state said "5
+        // failing/conflicted review(s) exist" and nothing else, while the kinds it lumps together have
+        // entirely different resolvers - `conflict` has a bounded resolution path, `escalated` and
+        // `closed_unmerged` are terminal and, on a session that stays live, would be counted forever.
+        // Measured 2026-09-02: this bottleneck had been breached for 6841 minutes, four and three quarter
+        // days, and the number alone could not say which of those it was.
+        java.util.Map<String, Long> failingByStatus = reviews.stream()
                 .filter(reviewEntity -> FAILING_REVIEW_STATUSES.contains(normalize(reviewEntity.getCiStatus())))
                 .filter(reviewEntity -> liveSessionIds.contains(reviewEntity.getJulesSessionId()))
                 .filter(reviewEntity -> !carrierSessionIds.contains(reviewEntity.getJulesSessionId()))
-                .count();
+                .collect(Collectors.groupingBy(reviewEntity -> normalize(reviewEntity.getCiStatus()),
+                        java.util.TreeMap::new, Collectors.counting()));
+        int failingReviews = (int) failingByStatus.values().stream().mapToLong(Long::longValue).sum();
+        String failingReviewComposition = failingByStatus.isEmpty() ? "" : failingByStatus.toString();
         // 2026-08-22: these counted a boolean that answers two different questions. GateOrchestrator
         // writes the same flag from runTaskSpecGate at task CREATION and from runQualityGate when an
         // implementer FINISHES, and measured on test-forty-ninth every task in the project carries a gate
@@ -523,7 +532,7 @@ public class FlowSpineService {
         return new StateInputs(
                 projectStatus, queued, active, review, done, failed, blocked,
                 pendingWishlist, compilingWishlist, openSessions, mergedReviews, openReviews,
-                reviewTasksWithoutArtifact, failingReviews,
+                reviewTasksWithoutArtifact, failingReviewComposition, failingReviews,
                 qualityGatePassed, qualityGateFailed, readiness.totalFeatures(), readiness.completeFeatures(),
                 readiness.totalDeliverables(), readiness.mergedDeliverables(), readiness.decompositionComplete(),
                 systemStatus, duplicateContent);
@@ -608,7 +617,9 @@ public class FlowSpineService {
             case "GITHUB_RATE_LIMITED" -> "GitHub API budget is exhausted; GitHub-dependent PR truth is unavailable.";
             case "SYSTEM_STALLED" -> "System status is stalled.";
             case "BLOCKED_BY_TASK" -> input.blockedTasks() + " blocked task(s) exist.";
-            case "BLOCKED_BY_REVIEW" -> input.failingReviews() + " failing/conflicted review(s) exist.";
+            case "BLOCKED_BY_REVIEW" -> input.failingReviews() + " failing/conflicted review(s) exist"
+                    + (input.failingReviewComposition() == null || input.failingReviewComposition().isBlank()
+                            ? "." : " " + input.failingReviewComposition() + ".");
             case "BLOCKED_BY_FAILED_FRONTIER" -> input.failedTasks() + " failed task(s) exist and no live work is moving.";
             case "ARCHIVED" -> "Archived projects are terminal.";
             default -> "Flow is blocked by " + state + ".";
@@ -1116,6 +1127,8 @@ public class FlowSpineService {
             int openReviews,
             /** Tasks in a review status that carry no review artifact of their own (model rule 8.20). */
             long reviewTasksWithoutArtifact,
+            /** Which kinds of failing review are holding the state, by ciStatus (model rule 8.11 O8). */
+            String failingReviewComposition,
             int failingReviews,
             int qualityGatePassed,
             int qualityGateFailed,

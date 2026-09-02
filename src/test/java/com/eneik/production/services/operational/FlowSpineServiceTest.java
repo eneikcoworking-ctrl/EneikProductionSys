@@ -595,7 +595,7 @@ class FlowSpineServiceTest {
                                                boolean duplicateContentDetected) {
         return new FlowSpineService.StateInputs(projectStatus, queuedTasks, activeTasks, reviewTasks, doneTasks,
                 failedTasks, blockedTasks, pendingWishlist, compilingWishlist, openSessions, mergedReviews,
-                openReviews, 0L, failingReviews, qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
+                openReviews, 0L, "", failingReviews, qualityGatePassed, qualityGateFailed, totalFeatures, completeFeatures,
                 totalDeliverables, mergedDeliverables, decompositionComplete, systemStatus, duplicateContentDetected);
     }
 
