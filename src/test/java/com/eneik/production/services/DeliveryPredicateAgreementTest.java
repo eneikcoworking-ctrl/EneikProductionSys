@@ -10,6 +10,8 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
 import java.util.List;
 import java.util.UUID;
 
@@ -111,5 +113,61 @@ class DeliveryPredicateAgreementTest {
         service.produce();
 
         verify(wishlistRepository, never()).save(any());
+    }
+
+    /**
+     * Model rule 8.11 O8: a record that cannot be read correctly is not a record. The sweep reported a task
+     * count beside a sum of refreshed evidence nodes, which invited exactly the subtraction that produced a
+     * false finding on 2026-09-02 - "50 parked, 16 recorded, therefore 34 unspoken for" - when the two
+     * numbers answer different questions. The line now names how many TASKS the sweep saw.
+     */
+    @Test
+    void theSweepSaysHowManyTasksItSawNotHowManyNodesItTouched() {
+        ProjectEntity project = activeProject();
+        TaskEntity task = doneTask(project);
+        when(readinessService.reachedMain(task)).thenReturn(true);
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(false);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        com.eneik.production.models.persistence.OperationalRealityFindingEntity known =
+                new com.eneik.production.models.persistence.OperationalRealityFindingEntity();
+        known.setId(UUID.randomUUID());
+        known.setTaskId(task.getId());
+        when(findingRepository.findByTaskId(task.getId())).thenReturn(List.of(known));
+        when(wishlistRepository.existsByProjectIdAndSourceAndSourceTaskId(any(), any(), any())).thenReturn(true);
+
+        Logs logs = Logs.capture(DeliveryRealityProducerService.class);
+        try {
+            service.produce();
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("1 task(s) with nothing delivered"),
+                "the sweep must name the number of tasks it saw");
+    }
+
+    private static final class Logs {
+        private final ch.qos.logback.classic.Logger logger;
+        private final ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent> appender =
+                new ch.qos.logback.core.read.ListAppender<>();
+
+        private Logs(Class<?> type) {
+            logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(type);
+            appender.start();
+            logger.addAppender(appender);
+        }
+
+        static Logs capture(Class<?> type) {
+            return new Logs(type);
+        }
+
+        boolean contains(String fragment) {
+            return appender.list.stream().anyMatch(e -> e.getFormattedMessage().contains(fragment));
+        }
+
+        void stop() {
+            logger.detachAppender(appender);
+            appender.stop();
+        }
     }
 }

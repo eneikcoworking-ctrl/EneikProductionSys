@@ -368,6 +368,12 @@ public class DeliveryRealityProducerService {
         produceRuntimeObservationEvidence(project);
         int recorded = 0;
         int alreadyKnown = 0;
+        // Model rule 8.11 O8: a record that cannot be read correctly is not a record. `alreadyKnown` sums
+        // refreshStandingEvidence's return value, which counts EVIDENCE NODES refreshed, not tasks - and it
+        // was reported next to a task count, so the two invited exactly the subtraction that produced a
+        // false finding on 2026-09-02 ("50 parked, 16 recorded, therefore 34 unspoken for"). The sweep now
+        // says how many TASKS it saw, separately from how many nodes it refreshed.
+        int tasksSeen = 0;
         reportPredicateDisagreementIfChanged(project);
         reportRepairDepthsIfChanged(project);
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
@@ -387,6 +393,7 @@ public class DeliveryRealityProducerService {
             if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
                 continue;
             }
+            tasksSeen++;
             if (!operationalRealityFindingRepository.findByTaskId(task.getId()).isEmpty()) {
                 alreadyKnown += refreshStandingEvidence(task);
                 // 2026-08-23, second pass. The scope filing below sat AFTER this continue, so it could only
@@ -426,9 +433,10 @@ public class DeliveryRealityProducerService {
                             + "evidence - recorded as operational reality finding {}",
                     task.getId(), project.getName(), finding.getId());
         }
-        if (recorded > 0 || alreadyKnown > 0) {
-            log.info("DeliveryRealityProducerService: project {} - {} new never-reached-main finding(s), "
-                    + "{} already recorded", project.getName(), recorded, alreadyKnown);
+        if (tasksSeen > 0) {
+            log.info("DeliveryRealityProducerService: project {} - {} task(s) with nothing delivered: {} "
+                            + "newly recorded, {} already on record ({} evidence node(s) refreshed)",
+                    project.getName(), tasksSeen, recorded, tasksSeen - recorded, alreadyKnown);
         }
     }
 
