@@ -60,8 +60,34 @@ class DeliveryPredicateAgreementTest {
         task.setProject(project);
         task.setTitle("API Slice");
         task.setStatus(TaskStatus.done);
+        // Real product work belongs to an epic. Without one, filing refuses before it ever reaches the
+        // question this class asks - model rule 8.18.1 forbids a repair from founding an epic of its own,
+        // so a task with no epic and no source wishlist is declined for a reason that has nothing to do
+        // with whether its merge carried code. The fixture was written before that rule existed and had
+        // been failing in main ever since, asserting nothing.
+        task.setFeatureId(UUID.randomUUID());
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
         return task;
+    }
+
+    @Test
+    void oneSweepReadsEachTableOnce() {
+        // Charter invariant 10, one point of application. The sweep used to ask for the project's whole
+        // task table four times and its whole wishlist table twice, each caller building its own maps over
+        // the same rows. Measured 2026-09-03 while the flow stood still: the backend sat at 863 MiB of its
+        // 1 GiB limit on two cores, Hikari reported thread starvation with an 84-second housekeeper delta,
+        // and a read path that had answered in 4.6 seconds took over 200. Same rows, same answers - asking
+        // once is not a cache.
+        ProjectEntity project = activeProject();
+        TaskEntity task = doneTask(project);
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(true);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+
+        service.produce();
+
+        verify(taskRepository, times(1)).findByProjectIdOrderByCreatedAtDesc(project.getId());
+        verify(wishlistRepository, times(1)).findByProjectId(project.getId());
     }
 
     @Test

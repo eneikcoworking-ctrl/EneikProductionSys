@@ -233,19 +233,18 @@ public class DeliveryRealityProducerService {
      * them through the repair chain. That is what this counts, and it is the number a migration would have
      * to stand on.
      */
-    private void reportStrayRepairsIfChanged(ProjectEntity project) {
+    private void reportStrayRepairsIfChanged(ProjectEntity project, List<TaskEntity> projectTasks,
+            List<com.eneik.production.models.persistence.WishlistEntity> allWishlist) {
         java.util.Set<UUID> productEpics = readinessService.listEpicDiagnostics(project.getId()).stream()
                 .map(ClientDeliverableReadinessService.EpicDiagnostic::id)
                 .collect(java.util.stream.Collectors.toSet());
-        List<com.eneik.production.models.persistence.WishlistEntity> allWishlist =
-                wishlistRepository.findByProjectId(project.getId());
         java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById =
                 new java.util.HashMap<>();
         for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
             wishlistById.put(item.getId(), item);
         }
         java.util.Map<UUID, TaskEntity> taskById = new java.util.HashMap<>();
-        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+        for (TaskEntity task : projectTasks) {
             taskById.put(task.getId(), task);
         }
 
@@ -423,16 +422,15 @@ public class DeliveryRealityProducerService {
      * exactly as 4.36 requires of the decomposition budget. Depth needs no new column: a repair names the
      * task it repairs, and that task names the wishlist it came from.
      */
-    private void reportRepairDepthsIfChanged(ProjectEntity project) {
-        List<com.eneik.production.models.persistence.WishlistEntity> allWishlist =
-                wishlistRepository.findByProjectId(project.getId());
+    private void reportRepairDepthsIfChanged(ProjectEntity project, List<TaskEntity> projectTasks,
+            List<com.eneik.production.models.persistence.WishlistEntity> allWishlist) {
         java.util.Map<java.util.UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById =
                 new java.util.HashMap<>();
         for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
             wishlistById.put(item.getId(), item);
         }
         java.util.Map<java.util.UUID, TaskEntity> taskById = new java.util.HashMap<>();
-        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+        for (TaskEntity task : projectTasks) {
             taskById.put(task.getId(), task);
         }
 
@@ -530,8 +528,8 @@ public class DeliveryRealityProducerService {
      * set's size is exactly what is not yet known - a number that must be measured before it is acted on,
      * never assumed (plan 4.47).
      */
-    private void reportPredicateDisagreementIfChanged(ProjectEntity project) {
-        java.util.Map<String, Long> byRole = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
+    private void reportPredicateDisagreementIfChanged(ProjectEntity project, List<TaskEntity> projectTasks) {
+        java.util.Map<String, Long> byRole = projectTasks.stream()
                 .filter(task -> task.getStatus() == TaskStatus.done)
                 .filter(task -> !readinessService.isAuxiliaryTask(task))
                 .filter(readinessService::reachedMain)
@@ -610,10 +608,20 @@ public class DeliveryRealityProducerService {
         // false finding on 2026-09-02 ("50 parked, 16 recorded, therefore 34 unspoken for"). The sweep now
         // says how many TASKS it saw, separately from how many nodes it refreshed.
         int tasksSeen = 0;
-        reportPredicateDisagreementIfChanged(project);
-        reportRepairDepthsIfChanged(project);
-        reportStrayRepairsIfChanged(project);
-        for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())) {
+        // One point of application (Charter, inv. 10). This sweep asked the database for the project's
+        // whole task table four times and its whole wishlist table twice, each caller building its own maps
+        // over the same rows. Measured 2026-09-03 while the flow stood still: the factory backend sat at
+        // 863 MiB of its 1 GiB limit burning two cores, Hikari reported thread starvation with an 84-second
+        // housekeeper delta, and the read path that had answered in 4.6 seconds took over 200. The rows are
+        // the same rows and the answers are the same answers - reading them once per sweep is not a cache,
+        // it is the same query asked once instead of six times.
+        List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        List<com.eneik.production.models.persistence.WishlistEntity> projectWishlist =
+                wishlistRepository.findByProjectId(project.getId());
+        reportPredicateDisagreementIfChanged(project, projectTasks);
+        reportRepairDepthsIfChanged(project, projectTasks, projectWishlist);
+        reportStrayRepairsIfChanged(project, projectTasks, projectWishlist);
+        for (TaskEntity task : projectTasks) {
             if (!isWorkThatNeverLanded(task)) {
                 continue;
             }
