@@ -224,7 +224,33 @@ public class ClientDeliverableReadinessService {
         return computeForSources(projectId, null, CLIENT_BRIEF_SOURCE);
     }
 
+    /**
+     * The longest this computation has taken for a project, so the worst case is recorded without writing a
+     * line on every read (model rule 8.11 O9 - a watermark speaks only when it moves).
+     *
+     * <p>Measured 2026-09-03: the spine read takes about twelve seconds and the orchestrator asks it every
+     * tick. The spine calls readiness ONCE - an earlier assumption of three calls was wrong - so this says
+     * how much of those twelve seconds is the computation itself and how much is everything else.
+     */
+    private final java.util.Map<UUID, Long> slowestComputationMillis = new java.util.concurrent.ConcurrentHashMap<>();
+
     private Readiness computeForSources(UUID projectId, UUID rootWishlistId, Set<WishlistSource> sources) {
+        long startedAt = System.currentTimeMillis();
+        try {
+            return computeForSourcesTimed(projectId, rootWishlistId, sources);
+        } finally {
+            long elapsed = System.currentTimeMillis() - startedAt;
+            Long slowest = slowestComputationMillis.get(projectId);
+            if (slowest == null || elapsed > slowest) {
+                slowestComputationMillis.put(projectId, elapsed);
+                log.info("ClientDeliverableReadinessService: project {} - slowest readiness computation so "
+                                + "far {} ms ({} mergedReviews round trips)",
+                        projectId, elapsed, mergedReviewCalls.get()[0]);
+            }
+        }
+    }
+
+    private Readiness computeForSourcesTimed(UUID projectId, UUID rootWishlistId, Set<WishlistSource> sources) {
         mergedReviewCalls.get()[0] = 0;
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
