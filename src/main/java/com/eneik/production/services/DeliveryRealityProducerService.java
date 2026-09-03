@@ -281,13 +281,42 @@ public class DeliveryRealityProducerService {
         }
         String digest = inSet + "/" + (inSet + outside) + " in set, " + reHomeable + " of " + outside
                 + " re-homeable" + (strayOrigin.isEmpty() ? "" : ", origin " + strayOrigin)
-                + (strayRepaired.isEmpty() ? "" : ", repairing " + strayRepaired);
+                + (strayRepaired.isEmpty() ? "" : ", repairing " + strayRepaired)
+                + ", " + repairBriefsNamingNothing(allWishlist);
         if (digest.equals(lastStrayRepairs.get(project.getId()))) {
             return;
         }
         lastStrayRepairs.put(project.getId(), digest);
         log.info("DeliveryRealityProducerService: project {} - repairs by epic: {} (model rule 8.18.1)",
                 project.getName(), digest);
+    }
+
+    /**
+     * How many repair briefs do not name the task they repair.
+     *
+     * <p>A repair is keyed on the task it repairs: that link is what puts it inside the requirement's
+     * closure (rule 8.18), what makes the repair chain's depth observable (rule 8.21), and what the
+     * requirement report counts as {@code repairs=N/M}. A brief without it is work ordered for a
+     * requirement that can never count it - present in the project, absent from every closure.
+     *
+     * <p>Measured indirectly first, and the two readings disagreed: 89 stray repairs name a task that came
+     * from a repair brief, so their chains are second-order, while the depth histogram reported every chain
+     * as first-order. The walk stops at exactly one place - a repair brief with no task named - so this
+     * counts that place directly instead of inferring it.
+     */
+    String repairBriefsNamingNothing(List<com.eneik.production.models.persistence.WishlistEntity> allWishlist) {
+        long briefs = 0;
+        long namingNothing = 0;
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            if (item.getSource() != com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main) {
+                continue;
+            }
+            briefs++;
+            if (item.getSourceTaskId() == null) {
+                namingNothing++;
+            }
+        }
+        return "repair briefs naming no task " + namingNothing + " of " + briefs;
     }
 
     /**

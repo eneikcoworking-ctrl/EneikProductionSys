@@ -105,6 +105,39 @@ class StrayRepairOriginTest {
         return role;
     }
 
+    @Test
+    void repairBriefsThatNameNoTaskAreCountedApartFromThoseThatDo() {
+        // The link to the repaired task is what puts a repair inside the requirement's closure (8.18) and
+        // what makes chain depth observable (8.21). A brief without it is ordered work no requirement can
+        // count, and it must be counted separately from briefs that carry the link - otherwise the two
+        // readings that already disagree cannot be told apart.
+        WishlistEntity named = repairBrief();
+        named.setSourceTaskId(UUID.randomUUID());
+        WishlistEntity namingNothing = repairBrief();
+
+        assertEquals("repair briefs naming no task 1 of 2",
+                service.repairBriefsNamingNothing(java.util.List.of(named, namingNothing)));
+    }
+
+    @Test
+    void wishlistsThatAreNotRepairBriefsAreNotCountedAsOne() {
+        // Without this the count degenerates into "every wishlist without a source task", which is most of
+        // the project and answers nothing.
+        WishlistEntity plain = new WishlistEntity();
+        plain.setId(UUID.randomUUID());
+        plain.setSource(com.eneik.production.models.persistence.WishlistSource.client);
+
+        assertEquals("repair briefs naming no task 0 of 0",
+                service.repairBriefsNamingNothing(java.util.List.of(plain)));
+    }
+
+    private WishlistEntity repairBrief() {
+        WishlistEntity brief = new WishlistEntity();
+        brief.setId(UUID.randomUUID());
+        brief.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        return brief;
+    }
+
     private TaskEntity task(UUID epic) {
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());
