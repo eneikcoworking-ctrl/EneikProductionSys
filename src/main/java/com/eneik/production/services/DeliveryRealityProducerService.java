@@ -426,8 +426,40 @@ public class DeliveryRealityProducerService {
                 return null;
             }
             current = wishlistById.get(repaired.getSourceWishlistId());
+            // A compiled slice carries the immutable lineage back to the brief it was cut from, and rule
+            // 8.18 defines exactly that link: slices(w) = {v : originWishlist(v) = w}. The walk followed
+            // sourceTaskId and sourceWishlistId only, so it stopped at a slice and reported no product epic
+            // reachable - measured on the live circuit, 0 of 133 repairs re-homeable while every one of
+            // them inherited its epic from the task it repairs. Following the link the model already names
+            // is not a new rule, it is the walk catching up with 8.18.
+            current = throughLineage(current, wishlistById, productEpics);
         }
         return null;
+    }
+
+    /**
+     * The wishlist this one was cut from, when following it is what reaches the requirement.
+     *
+     * <p>Returns the slice's origin brief when the slice itself carries no product epic; otherwise the
+     * wishlist unchanged, so a brief that already belongs to the product set is never replaced by its
+     * ancestor.
+     */
+    com.eneik.production.models.persistence.WishlistEntity throughLineage(
+            com.eneik.production.models.persistence.WishlistEntity item,
+            java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+            java.util.Set<UUID> productEpics) {
+        if (item == null) {
+            return null;
+        }
+        if (item.getFeatureId() != null && productEpics.contains(item.getFeatureId())) {
+            return item;
+        }
+        if (item.getOriginWishlistId() == null) {
+            return item;
+        }
+        com.eneik.production.models.persistence.WishlistEntity origin =
+                wishlistById.get(item.getOriginWishlistId());
+        return origin == null ? item : origin;
     }
 
     /** The repair-chain depth histogram, per project, as last reported. */

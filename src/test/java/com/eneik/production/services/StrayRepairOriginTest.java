@@ -10,6 +10,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -139,6 +140,46 @@ class StrayRepairOriginTest {
         brief.setId(UUID.randomUUID());
         brief.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
         return brief;
+    }
+
+    @Test
+    void aSliceIsFollowedBackToTheBriefItWasCutFrom() {
+        // Rule 8.18 defines slices(w) = {v : originWishlist(v) = w}, and the walk that looks for a product
+        // epic did not follow that link - it stopped at the slice. Measured on the live circuit: 0 of 133
+        // repairs re-homeable while every one inherited its epic from the task it repairs.
+        UUID productEpic = UUID.randomUUID();
+        WishlistEntity brief = new WishlistEntity();
+        brief.setId(UUID.randomUUID());
+        brief.setFeatureId(productEpic);
+        WishlistEntity slice = new WishlistEntity();
+        slice.setId(UUID.randomUUID());
+        slice.setOriginWishlistId(brief.getId());
+        slice.setFeatureId(UUID.randomUUID());
+
+        assertEquals(brief, service.throughLineage(slice, Map.of(brief.getId(), brief), Set.of(productEpic)));
+    }
+
+    @Test
+    void aBriefAlreadyInTheProductSetIsNotReplacedByItsAncestor() {
+        // The reverse case: walking past a wishlist that already belongs to the product set would re-home
+        // work away from the requirement it actually serves.
+        UUID productEpic = UUID.randomUUID();
+        WishlistEntity ancestor = new WishlistEntity();
+        ancestor.setId(UUID.randomUUID());
+        WishlistEntity item = new WishlistEntity();
+        item.setId(UUID.randomUUID());
+        item.setFeatureId(productEpic);
+        item.setOriginWishlistId(ancestor.getId());
+
+        assertEquals(item, service.throughLineage(item, Map.of(ancestor.getId(), ancestor), Set.of(productEpic)));
+    }
+
+    @Test
+    void aWishlistWithNoLineageIsReturnedUnchanged() {
+        WishlistEntity lone = new WishlistEntity();
+        lone.setId(UUID.randomUUID());
+
+        assertEquals(lone, service.throughLineage(lone, Map.of(), Set.of(UUID.randomUUID())));
     }
 
     private TaskEntity task(UUID epic) {
