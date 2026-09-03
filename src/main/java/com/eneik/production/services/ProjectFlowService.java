@@ -2003,14 +2003,37 @@ public class ProjectFlowService {
      * Restrictive-only, exactly as F42 argued: this can remove a dispatch and can never add one, so it
      * cannot make anything worse than it already is.
      */
+    /**
+     * States what the slices already prove: this brief was decomposed.
+     *
+     * <p>Returns false when the status already says it, so the sweep neither writes nor logs on every tick
+     * about a fact that has not changed.
+     */
+    boolean markDecompositionEstablished(WishlistEntity wishlist) {
+        if (wishlist.getStatus() == WishlistStatus.converted_to_task) {
+            return false;
+        }
+        wishlist.setStatus(WishlistStatus.converted_to_task);
+        return true;
+    }
+
     private boolean withholdFromCompileDispatch(ProjectEntity project, WishlistEntity wishlist) {
         // The exit condition is the referent, not the clock: compiled(w) <=> a slice exists whose
         // originWishlistId is w. A slice is the artefact decomposition was supposed to produce, so its
         // existence IS the effect. A brief still `compiling` with no slice yet is untouched and retries
         // exactly as before.
         if (alreadyDecomposed(project.getId(), wishlist.getId())) {
-            log.info("ProjectFlowService: wishlist {} has already produced slices; decomposition is "
-                    + "established, not re-collecting it (F42)", wishlist.getId());
+            // And the brief's own status must say so. Charter invariant 9: related entities may not
+            // disagree, and this pair did - the slices said decomposed while the brief said pending, so the
+            // project could never leave DECOMPOSING, `pendingWishlist` never fell, and this line repeated
+            // every tick about a fact that cannot change (rule 8.11 O9). Measured 04.09 on test-fiftieth:
+            // one brief, nothing queued, nothing active, the state machine naming the compiler as the owner
+            // of a transition the compiler had already made.
+            if (markDecompositionEstablished(wishlist)) {
+                wishlistRepository.save(wishlist);
+                log.info("ProjectFlowService: wishlist {} has already produced slices; decomposition is "
+                        + "established, recording it and not re-collecting it (F42)", wishlist.getId());
+            }
             return true;
         }
         // Withheld only when the compiler was actually REACHED (2026-08-29). compileAttempts rises on every
