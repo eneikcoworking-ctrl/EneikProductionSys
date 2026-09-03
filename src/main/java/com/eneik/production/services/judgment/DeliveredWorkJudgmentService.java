@@ -297,6 +297,115 @@ public class DeliveredWorkJudgmentService {
                 + " of " + diff.length() + " characters of the diff, so the question was put incompletely]";
     }
 
+    /** What the judge is shown, and what it is not shown, named (model rule 8.23). */
+    record SelectedEvidence(String text, java.util.List<String> omitted) {}
+
+    /**
+     * The part of the merged diff that bears on this task's criteria, within the channel's limit
+     * (model rule 8.23).
+     *
+     * <p>The limit is real - the sidecar takes the prompt as one argument and the kernel bounds it - but a
+     * real limit does not license cutting the evidence arbitrarily. Taking the first characters of a diff
+     * selects by the alphabetical accident of file names: what settles the question ends up outside not
+     * because it is absent but because it sorted late. Measured on the live circuit, that is what 203 of
+     * 272 unsettled verdicts were - the judge obeying an instruction to refuse on partial evidence.
+     *
+     * <p>So the diff is split at its own file boundaries and the files are ordered by how much of the
+     * criteria's vocabulary they carry, most first, taking whole files while they fit. What did not fit is
+     * returned by name, so the judge knows the exact border of its knowledge instead of "the first N
+     * characters". A diff that fits whole is returned untouched and in its original order - reordering
+     * evidence that needed no selection would be a different defect in the same place.
+     */
+    SelectedEvidence evidenceForCriteria(String diff, String criteria) {
+        if (diff == null || diff.length() <= diffCharLimit) {
+            return new SelectedEvidence(diff == null ? "" : diff, java.util.List.of());
+        }
+        java.util.List<String> sections = splitAtFileBoundaries(diff);
+        if (sections.size() <= 1) {
+            // Nothing to select between - one file larger than the limit. Say so rather than pretend the
+            // choice was made by relevance.
+            return new SelectedEvidence(diff.substring(0, diffCharLimit),
+                    java.util.List.of("(the remainder of a single file too large to carry)"));
+        }
+        java.util.Set<String> vocabulary = vocabularyOf(criteria);
+        java.util.List<String> byBearing = new java.util.ArrayList<>(sections);
+        byBearing.sort(java.util.Comparator
+                .comparingLong((String section) -> bearingOn(section, vocabulary)).reversed());
+
+        StringBuilder taken = new StringBuilder();
+        java.util.Set<String> keptSections = new java.util.HashSet<>();
+        for (String section : byBearing) {
+            if (taken.length() + section.length() > diffCharLimit) {
+                continue;
+            }
+            taken.append(section);
+            keptSections.add(section);
+        }
+        java.util.List<String> omitted = new java.util.ArrayList<>();
+        StringBuilder inOriginalOrder = new StringBuilder();
+        for (String section : sections) {
+            if (keptSections.contains(section)) {
+                inOriginalOrder.append(section);
+            } else {
+                omitted.add(fileNameOf(section));
+            }
+        }
+        return new SelectedEvidence(inOriginalOrder.toString(), omitted);
+    }
+
+    /** The diff cut at its own `diff --git` boundaries, each section keeping its header. */
+    private static java.util.List<String> splitAtFileBoundaries(String diff) {
+        java.util.List<String> sections = new java.util.ArrayList<>();
+        java.util.regex.Matcher boundary = java.util.regex.Pattern
+                .compile("(?m)^diff --git ").matcher(diff);
+        java.util.List<Integer> starts = new java.util.ArrayList<>();
+        while (boundary.find()) {
+            starts.add(boundary.start());
+        }
+        if (starts.isEmpty()) {
+            sections.add(diff);
+            return sections;
+        }
+        if (starts.get(0) > 0) {
+            sections.add(diff.substring(0, starts.get(0)));
+        }
+        for (int i = 0; i < starts.size(); i++) {
+            int end = i + 1 < starts.size() ? starts.get(i + 1) : diff.length();
+            sections.add(diff.substring(starts.get(i), end));
+        }
+        return sections;
+    }
+
+    /** The words the criteria are made of, lowercased, short ones dropped as carrying no bearing. */
+    private static java.util.Set<String> vocabularyOf(String criteria) {
+        if (criteria == null || criteria.isBlank()) {
+            return java.util.Set.of();
+        }
+        java.util.Set<String> words = new java.util.HashSet<>();
+        for (String word : criteria.toLowerCase(java.util.Locale.ROOT).split("[^a-z0-9_]+")) {
+            if (word.length() > 3) {
+                words.add(word);
+            }
+        }
+        return words;
+    }
+
+    /** How much of the criteria's vocabulary this section of the diff actually contains. */
+    private static long bearingOn(String section, java.util.Set<String> vocabulary) {
+        if (vocabulary.isEmpty()) {
+            return 0;
+        }
+        String lower = section.toLowerCase(java.util.Locale.ROOT);
+        return vocabulary.stream().filter(lower::contains).count();
+    }
+
+    /** The path a diff section is about, for naming what was left out. */
+    private static String fileNameOf(String section) {
+        java.util.regex.Matcher header = java.util.regex.Pattern
+                .compile("^diff --git a/(\\S+)").matcher(section);
+        return header.find() ? header.group(1) : "(unnamed section)";
+    }
+
     /**
      * Retrieval that cannot take a verdict down with it.
      *
@@ -315,13 +424,15 @@ public class DeliveredWorkJudgmentService {
     }
 
     private String prompt(TaskEntity task, String prUrl, String diff) {
-        boolean truncated = diff.length() > diffCharLimit;
-        String bounded = truncated ? diff.substring(0, diffCharLimit) : diff;
-        String warning = truncated
-                ? "\n\nTHIS DIFF IS INCOMPLETE. You are seeing the first " + diffCharLimit + " characters of "
-                + diff.length() + ". Do not answer SATISFIED on a partial diff: if a criterion's evidence "
-                + "could lie in the part you cannot see, answer UNDECIDABLE and say which criterion it was.\n"
-                : "";
+        SelectedEvidence evidence = evidenceForCriteria(diff, task.getAcceptanceCriteria());
+        String bounded = evidence.text();
+        String warning = evidence.omitted().isEmpty()
+                ? ""
+                : "\n\nTHIS DIFF IS INCOMPLETE. What you are shown was selected by its bearing on the "
+                + "criteria above, not by position, and it is " + bounded.length() + " of " + diff.length()
+                + " characters. These files were left out entirely: " + String.join(", ", evidence.omitted())
+                + ". Do not answer SATISFIED if a criterion's evidence would lie in a file named there - "
+                + "answer UNDECIDABLE and say which criterion and which file.\n";
         String prompt = "TASK TITLE\n" + task.getTitle()
                 + "\n\nWHAT THIS TASK WAS ASKED TO DO\n"
                 + cap(task.getDescription() == null ? "(no description recorded)" : task.getDescription(),
