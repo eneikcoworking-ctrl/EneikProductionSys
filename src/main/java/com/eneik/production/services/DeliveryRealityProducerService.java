@@ -252,6 +252,11 @@ public class DeliveryRealityProducerService {
         int inSet = 0;
         int outside = 0;
         int reHomeable = 0;
+        // How each stray epic came to be there. Rule 8.18.1 asks this before anything is changed, because
+        // the two answers need different repairs and the counts say which one exists: a repair that carries
+        // the epic of the task it repairs inherited a stray that was already there, and the chain is what
+        // has to be cut; a repair carrying a different epic founded one on itself, which is the filing site.
+        java.util.Map<String, Long> strayOrigin = new java.util.TreeMap<>();
         for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
             if (item.getSourceTaskId() == null) {
                 continue;
@@ -265,15 +270,42 @@ public class DeliveryRealityProducerService {
             if (reachableProductEpic(item, wishlistById, taskById, productEpics) != null) {
                 reHomeable++;
             }
+            strayOrigin.merge(strayEpicOrigin(item, taskById), 1L, Long::sum);
         }
         String digest = inSet + "/" + (inSet + outside) + " in set, " + reHomeable + " of " + outside
-                + " re-homeable";
+                + " re-homeable" + (strayOrigin.isEmpty() ? "" : ", origin " + strayOrigin);
         if (digest.equals(lastStrayRepairs.get(project.getId()))) {
             return;
         }
         lastStrayRepairs.put(project.getId(), digest);
         log.info("DeliveryRealityProducerService: project {} - repairs by epic: {} (model rule 8.18.1)",
                 project.getName(), digest);
+    }
+
+    /**
+     * Where a repair's out-of-set epic came from, which is the distinction rule 8.18.1 requires be
+     * established by measurement before the code is touched.
+     *
+     * <ul>
+     *   <li>{@code inherited} - the repair carries exactly the epic of the task it repairs, so the stray
+     *       was already there and travelled down the chain.
+     *   <li>{@code founded} - the repair carries an epic that is not the repaired task's, so it was made
+     *       here rather than inherited. A repair may not found an epic of its own.
+     *   <li>{@code none} - the repair carries no epic at all, so it belongs to nothing.
+     *   <li>{@code repaired-task-gone} - the task it names no longer exists, so origin is unanswerable
+     *       from this row and must not be counted as either.
+     * </ul>
+     */
+    String strayEpicOrigin(com.eneik.production.models.persistence.WishlistEntity repair,
+                                   java.util.Map<UUID, TaskEntity> taskById) {
+        TaskEntity repaired = taskById.get(repair.getSourceTaskId());
+        if (repaired == null) {
+            return "repaired-task-gone";
+        }
+        if (repair.getFeatureId() == null) {
+            return "none";
+        }
+        return repair.getFeatureId().equals(repaired.getFeatureId()) ? "inherited" : "founded";
     }
 
     /** The nearest product epic reachable from a repair through its chain, or null when none is. */
