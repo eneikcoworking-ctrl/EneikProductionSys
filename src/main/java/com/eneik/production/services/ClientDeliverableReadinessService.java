@@ -225,6 +225,7 @@ public class ClientDeliverableReadinessService {
     }
 
     private Readiness computeForSources(UUID projectId, UUID rootWishlistId, Set<WishlistSource> sources) {
+        mergedReviewCalls.get()[0] = 0;
         List<WishlistEntity> allWishlist = wishlistRepository.findByProjectId(projectId);
         Map<UUID, WishlistEntity> wishlistById = new HashMap<>();
         for (WishlistEntity item : allWishlist) {
@@ -1080,7 +1081,9 @@ public class ClientDeliverableReadinessService {
                         + attemptStates(item, tasksByPlannedItem, repairsByRepairedTask, tasksByRepair))
                 .sorted()
                 .toList();
-        String digest = outstanding.isEmpty() ? "none" : String.join("; ", outstanding);
+        int roundTrips = mergedReviewCalls.get()[0];
+        String digest = (outstanding.isEmpty() ? "none" : String.join("; ", outstanding))
+                + " [mergedReviews round trips this computation: " + roundTrips + "]";
         if (digest.equals(lastUnfulfilled.get(projectId))) {
             return;
         }
@@ -1340,7 +1343,18 @@ public class ClientDeliverableReadinessService {
                 .orElse(false);
     }
 
+    /**
+     * Counts the round trips one readiness computation makes through this method (plan 4.52).
+     *
+     * <p>Measured 2026-09-03: this read went from about a second to 36-96 seconds and tripped Hikari's
+     * connection-leak detector twelve times in a quarter of an hour, while the orchestrator asks it on
+     * every tick. Two guesses at the cause were both wrong, so this counts instead of guessing: every call
+     * here is two queries, one for the task's sessions and one for their merged reviews.
+     */
+    private final ThreadLocal<int[]> mergedReviewCalls = ThreadLocal.withInitial(() -> new int[1]);
+
     private List<PrReviewEntity> mergedReviews(UUID taskId) {
+        mergedReviewCalls.get()[0]++;
         List<UUID> sessionIds = julesSessionRepository.findByTaskId(taskId).stream()
                 .map(session -> session.getId())
                 .toList();
