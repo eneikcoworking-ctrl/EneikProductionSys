@@ -560,11 +560,18 @@ public class FlowSpineService {
                 .collect(java.util.stream.Collectors.groupingBy(
                         FlowSpineService::groundOfUnsettledJudgment,
                         java.util.TreeMap::new, java.util.stream.Collectors.counting()));
+        // And of those never asked, how many are simply not finished. A task that has not closed has
+        // nothing to be asked about yet, and counting it beside work that closed unasked states a coverage
+        // gap where there is none - the same misreading "never asked" already caused once (rule 8.11 O8).
+        // Measured 04.09: of 118 never asked, 112 had not closed.
+        int neverAsked = deliveryVerificationAbsent - deliveryQuestionUnsettled;
+        int neverAskedAndClosed = countNeverAskedAndClosed(tasks);
         log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} unverified={} "
-                        + "(of which asked-without-ruling={} {}, never asked={}) of {} tasks",
+                        + "(of which asked-without-ruling={} {}, never asked={} [closed and unasked={}, "
+                        + "not finished yet={}]) of {} tasks",
                 qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent,
-                deliveryQuestionUnsettled, unsettledGrounds,
-                deliveryVerificationAbsent - deliveryQuestionUnsettled, tasks.size());
+                deliveryQuestionUnsettled, unsettledGrounds, neverAsked, neverAskedAndClosed,
+                neverAsked - neverAskedAndClosed, tasks.size());
         // The count of briefs the compiler answered with nothing travels in StateInputs below and reaches
         // the dashboard through the model, which is where F39 wanted it retrievable. It used to be written
         // here as a warning as well, on every build of the model - measured 2026-08-29, eleven identical
@@ -1183,6 +1190,22 @@ public class FlowSpineService {
             boolean duplicateContentDetected
     ) {
     }
+    /**
+     * Work that finished and was never asked whether it delivered - the part of "never asked" that names a
+     * real gap.
+     *
+     * <p>A task that has not closed has nothing to be asked about yet. Counting it beside work that closed
+     * unasked states a coverage gap where there is none, and that misreading has already been made once on
+     * this number (rule 8.11 O8). Measured 04.09: of 118 never asked, 112 had simply not finished.
+     */
+    static int countNeverAskedAndClosed(java.util.List<TaskEntity> tasks) {
+        return (int) tasks.stream()
+                .filter(TaskEntity::isDeliveryVerificationAbsent)
+                .filter(task -> !task.deliveryQuestionPutButUnsettled())
+                .filter(task -> task.getStatus() == com.eneik.production.models.persistence.TaskStatus.done)
+                .count();
+    }
+
     /**
      * Which of the judgment's three recordable grounds this unsettled verdict carries.
      *
