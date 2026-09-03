@@ -356,6 +356,68 @@ public class DeliveryRealityProducerService {
     }
 
     /**
+     * Returns a repair to the epic of the requirement it repairs (model rule 8.18.1).
+     *
+     * <p>The rule is an equality, not a preference: {@code epic(w_repair) = epic(requirement)}, always. A
+     * repair carrying some other epic is work that runs, merges and moves nothing the value count can see -
+     * measured on the live circuit, 133 of 143 repairs sat outside the product set. This does not found an
+     * epic and does not choose one: it moves a repair only to an epic already reachable from the chain it
+     * belongs to, which is exactly what the rule says its epic is.
+     *
+     * <p>A repair with no product epic reachable is left untouched. Inventing a home for it would be the
+     * defect the rule forbids, committed while claiming to fix it.
+     */
+    private void reHomeStrayRepairs(ProjectEntity project, List<TaskEntity> projectTasks,
+            List<com.eneik.production.models.persistence.WishlistEntity> allWishlist) {
+        java.util.Set<UUID> productEpics = readinessService.listEpicDiagnostics(project.getId()).stream()
+                .map(ClientDeliverableReadinessService.EpicDiagnostic::id)
+                .collect(java.util.stream.Collectors.toSet());
+        if (productEpics.isEmpty()) {
+            return;
+        }
+        java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById =
+                new java.util.HashMap<>();
+        for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
+            wishlistById.put(item.getId(), item);
+        }
+        java.util.Map<UUID, TaskEntity> taskById = new java.util.HashMap<>();
+        for (TaskEntity task : projectTasks) {
+            taskById.put(task.getId(), task);
+        }
+        int returned = 0;
+        for (com.eneik.production.models.persistence.WishlistEntity repair : allWishlist) {
+            UUID home = homeOfRepair(repair, wishlistById, taskById, productEpics);
+            if (home == null) {
+                continue;
+            }
+            repair.setFeatureId(home);
+            wishlistRepository.save(repair);
+            returned++;
+        }
+        if (returned > 0) {
+            log.info("DeliveryRealityProducerService: project {} - returned {} repair(s) to the epic of the "
+                    + "requirement they repair (model rule 8.18.1)", project.getName(), returned);
+        }
+    }
+
+    /**
+     * The epic a repair belongs to when it is not already there, or null when it is - or when nothing in
+     * its chain reaches the product set.
+     */
+    UUID homeOfRepair(com.eneik.production.models.persistence.WishlistEntity repair,
+            java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+            java.util.Map<UUID, TaskEntity> taskById,
+            java.util.Set<UUID> productEpics) {
+        if (repair.getSourceTaskId() == null) {
+            return null;
+        }
+        if (repair.getFeatureId() != null && productEpics.contains(repair.getFeatureId())) {
+            return null;
+        }
+        return reachableProductEpic(repair, wishlistById, taskById, productEpics);
+    }
+
+    /**
      * The role and origin of the task a stray repair is repairing, named as "roleTag/wishlistSource" so
      * carriers and product work are told apart by what they are rather than by what they are called.
      */
@@ -678,6 +740,7 @@ public class DeliveryRealityProducerService {
         List<TaskEntity> projectTasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
         List<com.eneik.production.models.persistence.WishlistEntity> projectWishlist =
                 wishlistRepository.findByProjectId(project.getId());
+        reHomeStrayRepairs(project, projectTasks, projectWishlist);
         reportPredicateDisagreementIfChanged(project, projectTasks);
         reportRepairDepthsIfChanged(project, projectTasks, projectWishlist);
         reportStrayRepairsIfChanged(project, projectTasks, projectWishlist);

@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 
 /**
@@ -180,6 +181,40 @@ class StrayRepairOriginTest {
         lone.setId(UUID.randomUUID());
 
         assertEquals(lone, service.throughLineage(lone, Map.of(), Set.of(UUID.randomUUID())));
+    }
+
+    @Test
+    void aRepairWhoseRequirementEpicIsReachableIsReturnedToIt() {
+        // Rule 8.18.1 is an equality, not a preference: epic(repair) = epic(requirement), always. Measured
+        // on the live circuit, 133 of 143 repairs sat outside the product set - work that runs, merges and
+        // moves nothing the value count can see.
+        UUID productEpic = UUID.randomUUID();
+        TaskEntity repaired = task(productEpic);
+        WishlistEntity repair = repairOf(repaired, UUID.randomUUID());
+
+        assertEquals(productEpic, service.homeOfRepair(repair, Map.of(),
+                Map.of(repaired.getId(), repaired), Set.of(productEpic)));
+    }
+
+    @Test
+    void aRepairAlreadyInItsRequirementEpicIsNotMoved() {
+        // Without this the sweep would rewrite and save every repair on every pass.
+        UUID productEpic = UUID.randomUUID();
+        TaskEntity repaired = task(productEpic);
+        WishlistEntity repair = repairOf(repaired, productEpic);
+
+        assertNull(service.homeOfRepair(repair, Map.of(),
+                Map.of(repaired.getId(), repaired), Set.of(productEpic)));
+    }
+
+    @Test
+    void aRepairWithNoReachableProductEpicIsLeftAlone() {
+        // Inventing a home would be the defect 8.18.1 forbids, committed while claiming to fix it.
+        TaskEntity repaired = task(UUID.randomUUID());
+        WishlistEntity repair = repairOf(repaired, UUID.randomUUID());
+
+        assertNull(service.homeOfRepair(repair, Map.of(),
+                Map.of(repaired.getId(), repaired), Set.of(UUID.randomUUID())));
     }
 
     private TaskEntity task(UUID epic) {
