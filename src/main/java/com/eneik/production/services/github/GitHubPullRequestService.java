@@ -1255,7 +1255,61 @@ public class GitHubPullRequestService {
     // until GitHub returns a short page (< 100 = last page). If the budget guard denies a later page mid-walk,
     // returns what was already fetched instead of discarding it - losing page 1's data over a budget cap on
     // page 3 would be a worse regression than the flat truncation this replaces.
+    /**
+     * One listing per repository and state at a time (Charter invariant 10, and rule 8.17 on shared
+     * capacity).
+     *
+     * <p>The pull request list is one fact about one repository, and the schedulers that need it run
+     * concurrently - measured on the live circuit, AUTOMERGE cycles on three different scheduling threads
+     * at once, and `GET /repos/.../pulls` as the largest attributable spend of the window at 52 calls while
+     * the token's hourly limit sat exhausted and every merge cycle was skipped. The limit is GitHub's and
+     * not ours to raise; what is ours is not spending it several times over on the same answer.
+     *
+     * <p>Nothing is retained once the fetch ends, so this cannot serve a membership that has already
+     * changed - the reason the `open` state is deliberately excluded from the incremental watermark below.
+     * A caller arriving while a listing is in flight receives that listing's answer, which is newer than
+     * the one it would have started for itself.
+     */
     private java.util.List<GitHubPullRequest> fetchPullRequests(RepoRef repoRef, String state, String token) throws Exception {
+        return sharingOneInFlight(cacheKey(repoRef, state),
+                () -> fetchPullRequestsUncoordinated(repoRef, state, token));
+    }
+
+    private final java.util.concurrent.ConcurrentHashMap<String, java.util.concurrent.CompletableFuture<?>>
+            listingsInFlight = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Runs {@code work} once for a key while callers arriving during it share its answer.
+     *
+     * <p>Nothing is retained once the work ends, so a caller can never be handed a listing from a state the
+     * repository has already left - which is what makes this safe for the `open` state, deliberately
+     * excluded from the incremental watermark because its membership shrinks.
+     */
+    @SuppressWarnings("unchecked")
+    <T> T sharingOneInFlight(String key, java.util.concurrent.Callable<T> work) throws Exception {
+        java.util.concurrent.CompletableFuture<T> mine = new java.util.concurrent.CompletableFuture<>();
+        java.util.concurrent.CompletableFuture<?> running = listingsInFlight.putIfAbsent(key, mine);
+        if (running != null) {
+            try {
+                return (T) running.join();
+            } catch (java.util.concurrent.CompletionException theirFailure) {
+                // Their failure is not this caller's answer - ask for ourselves instead of inheriting it.
+                return work.call();
+            }
+        }
+        try {
+            T answer = work.call();
+            mine.complete(answer);
+            return answer;
+        } catch (Exception e) {
+            mine.completeExceptionally(e);
+            throw e;
+        } finally {
+            listingsInFlight.remove(key, mine);
+        }
+    }
+
+    private java.util.List<GitHubPullRequest> fetchPullRequestsUncoordinated(RepoRef repoRef, String state, String token) throws Exception {
         java.util.List<GitHubPullRequest> result = new java.util.ArrayList<>();
         boolean incremental = membershipOnlyGrows(state);
         Instant watermark = incremental ? prListWatermark.get(cacheKey(repoRef, state)) : null;
