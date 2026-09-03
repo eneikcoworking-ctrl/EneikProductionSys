@@ -266,12 +266,35 @@ public class DeliveredWorkJudgmentService {
             return;
         }
 
-        record(task, verdict, reason);
+        record(task, verdict, groundNamingWhoWasLimited(verdict, reason, diff.get()));
         log.info("[DELIVERY-JUDGMENT] task {} ({}) -> {}", task.getId(), task.getTitle(), verdict);
 
         if (REFUTED.equals(verdict)) {
             fileRefutation(project, task, prUrl.get(), reason);
         }
+    }
+
+    /**
+     * A verdict that settled nothing must say WHOSE limitation left it unsettled (rule 8.11 O8, and the
+     * denial-evidence rule 8.3.1 applied to the asker rather than the answerer).
+     *
+     * <p>The judge is shown the first {@code diffCharLimit} characters of the diff and instructed, in this
+     * class's own prompt, to answer UNDECIDABLE when a criterion's evidence could lie in the part it cannot
+     * see. When it obeys, the resulting record reads as a fact about the delivery - it is not. It is a fact
+     * about the question: the factory asked whether the work delivered while withholding most of the work.
+     * Measured on the live circuit: of 272 verdicts that settled nothing, 203 carried the judge's own words
+     * and no named cause at all, which is why the number pointed at no place to act.
+     *
+     * <p>A ruled verdict is returned untouched - only an unsettled one gets the addition, and the judge's
+     * own words are kept in front of it rather than replaced.
+     */
+    String groundNamingWhoWasLimited(String verdict, String reason, String diff) {
+        if (!UNDECIDABLE.equals(verdict) || diff == null || diff.length() <= diffCharLimit) {
+            return reason;
+        }
+        return (reason == null || reason.isBlank() ? "" : reason + " ")
+                + "[the judgment channel could not carry this input: it was shown " + diffCharLimit
+                + " of " + diff.length() + " characters of the diff, so the question was put incompletely]";
     }
 
     /**
