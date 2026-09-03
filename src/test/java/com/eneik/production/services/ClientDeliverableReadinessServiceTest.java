@@ -643,6 +643,34 @@ class ClientDeliverableReadinessServiceTest {
                 "an outstanding requirement must be named, not counted");
     }
 
+    /**
+     * Model rule 8.11 O8, second half: a hold states its reason, and for an undelivered requirement the
+     * reason lives in the states of its own attempts. Measured 2026-09-02: six requirements outstanding for
+     * five days while 499 tasks completed, with the record naming which six and never saying whether
+     * anything was being attempted for them.
+     */
+    @Test
+    void anOutstandingRequirementAlsoSaysWhatItsAttemptsAreDoing() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        tasks.get(0).setStatus(TaskStatus.failed);
+        stubPlan(projectId, root, feature, items, tasks);
+        stubMerged(tasks.get(0), false);
+
+        Logs logs = Logs.capture(ClientDeliverableReadinessService.class);
+        try {
+            service.computeForProject(projectId);
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("{failed=1}"), "the hold must say what its attempts are doing");
+    }
+
     /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */
     @Test
     void anUnchangedOutstandingSetIsNotRepeatedOnTheNextRead() {

@@ -323,7 +323,8 @@ public class ClientDeliverableReadinessService {
                 .toList();
 
         if (sources.equals(PRODUCT_ITERATION_SOURCES) && rootWishlistId == null) {
-            reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem);
+            reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem,
+                    tasksByPlannedItem);
         }
 
         int mergedCount = (int) codeProducingItems.stream()
@@ -1057,10 +1058,11 @@ public class ClientDeliverableReadinessService {
      */
     private void reportUnfulfilledIfChanged(UUID projectId,
                                              List<WishlistEntity> codeProducingItems,
-                                             Map<UUID, Boolean> fulfilledByPlannedItem) {
+                                             Map<UUID, Boolean> fulfilledByPlannedItem,
+                                             Map<UUID, List<TaskEntity>> tasksByPlannedItem) {
         List<String> outstanding = codeProducingItems.stream()
                 .filter(item -> !Boolean.TRUE.equals(fulfilledByPlannedItem.get(item.getId())))
-                .map(this::requirementName)
+                .map(item -> requirementName(item) + " " + attemptStates(item, tasksByPlannedItem))
                 .sorted()
                 .toList();
         String digest = outstanding.isEmpty() ? "none" : String.join("; ", outstanding);
@@ -1081,6 +1083,27 @@ public class ClientDeliverableReadinessService {
      * The requirement a planned item stands for. A compiled slice's content is a generated header whose
      * tail is the real title; anything else is named by its own first line.
      */
+    /**
+     * What became of this requirement's own attempts, by status.
+     *
+     * <p>Naming the requirement was the first half of 8.11 O8; this is the second. Measured 2026-09-02: six
+     * requirements had been outstanding for five days while 499 tasks completed, and the record said WHICH
+     * six but never what their attempts were doing - so "not delivered" could not be told apart from
+     * "nobody is working on it". A hold states its reason, and the reason lives in the states of the work
+     * under it.
+     */
+    private String attemptStates(WishlistEntity item, Map<UUID, List<TaskEntity>> tasksByPlannedItem) {
+        List<TaskEntity> attempts = tasksByPlannedItem.getOrDefault(item.getId(), List.of());
+        if (attempts.isEmpty()) {
+            return "(no attempt)";
+        }
+        return attempts.stream()
+                .collect(java.util.stream.Collectors.groupingBy(
+                        task -> task.getStatus() == null ? "null" : task.getStatus().name(),
+                        java.util.TreeMap::new, java.util.stream.Collectors.counting()))
+                .toString();
+    }
+
     private String requirementName(WishlistEntity item) {
         String content = item.getContent() == null ? "" : item.getContent();
         String firstLine = content.lines().findFirst().orElse("").trim();
