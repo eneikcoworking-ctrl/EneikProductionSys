@@ -32,6 +32,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.text.Normalizer;
@@ -5422,9 +5424,57 @@ public class ProjectFlowService {
     @Transactional
     public Optional<AccountEntity> claimAccountForTask(UUID taskId, java.util.function.Supplier<Optional<AccountEntity>> accountLookup) {
         Optional<AccountEntity> accountOpt = accountLookup.get();
-        accountOpt.ifPresent(account -> claimService.claimSpecificTask(taskId, account.getId()));
+        accountOpt.ifPresent(account -> {
+            claimService.claimSpecificTask(taskId, account.getId());
+            reportAccountLockHeldAfterClaim(account.getName());
+        });
         return accountOpt;
     }
+
+    /**
+     * The causally necessary lifetime of the ACCOUNTS row lock is the claim itself: once
+     * {@code claimSpecificTask} has returned, "this account is free, and is now claimed" is proven and
+     * written, and nothing about the correctness of that fact depends on holding the row any longer. The
+     * lock nevertheless survives until the surrounding transaction commits - and this method's
+     * {@code @Transactional} is {@code REQUIRED}, so when it is reached from inside a caller's transaction
+     * it joins that one instead of opening its own. This measures the difference: the interval between the
+     * claim being proven and the row actually being released. That surplus is the quantity to act on
+     * (Charter, inv. 11 - lock granularity), not the number of dispatch queries.
+     *
+     * <p>Watermark, not per-call (§8.11 O9): a line appears only when a new maximum is reached, so a quiet
+     * circuit stays silent and a growing hold cannot hide inside a normal rate of logging.
+     */
+    private void reportAccountLockHeldAfterClaim(String accountName) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            return;
+        }
+        long claimedAtNanos = System.nanoTime();
+        // Spring names a transaction after the method of its OUTERMOST participant, so this is an exact
+        // answer to "did this method open the transaction, or join one already in progress?" - and the
+        // joining case is the one where the row stays locked for the caller's whole remaining span.
+        String transactionName = TransactionSynchronizationManager.getCurrentTransactionName();
+        String owner = transactionName == null ? "unknown"
+                : transactionName.substring(transactionName.lastIndexOf('.') + 1);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCompletion(int status) {
+                long heldMillis = (System.nanoTime() - claimedAtNanos) / 1_000_000L;
+                long previousMax = accountLockHeldAfterClaimWatermarkMillis.get();
+                if (heldMillis <= previousMax
+                        || !accountLockHeldAfterClaimWatermarkMillis.compareAndSet(previousMax, heldMillis)) {
+                    return;
+                }
+                log.info("Account lock granularity: ACCOUNTS row for {} stayed FOR UPDATE-locked {} ms after "
+                                + "its claim was already proven and written (new maximum; previous {} ms; "
+                                + "transaction owned by {}). The claim is the only part that needs the row - "
+                                + "everything after it is surplus hold.",
+                        accountName, heldMillis, previousMax, owner);
+            }
+        });
+    }
+
+    private final java.util.concurrent.atomic.AtomicLong accountLockHeldAfterClaimWatermarkMillis =
+            new java.util.concurrent.atomic.AtomicLong(0L);
 
     // No longer @Transactional (2026-08-08 fix, see claimAccountForTask above for the invariant): this
     // loop can process many queued tasks in one tick, each ending in a real Jules network call. Wrapping
