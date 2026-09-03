@@ -549,11 +549,22 @@ public class FlowSpineService {
         int deliveryQuestionUnsettled = (int) tasks.stream()
                 .filter(TaskEntity::deliveryQuestionPutButUnsettled)
                 .count();
+        // And WHY each of them came back without a ruling. The judgment records its ground, and the three
+        // it can record are three different defects needing three different repairs: criteria that no
+        // delivery could falsify (the claim was substituted before dispatch), an input the channel could
+        // not carry, and an answer that did not come in the declared form. Reported as one number they are
+        // a mystery; named, each points at its own place. Verificationism, applied to the factory's own
+        // record: a count whose meaning has no method of settling it says nothing.
+        java.util.Map<String, Long> unsettledGrounds = tasks.stream()
+                .filter(TaskEntity::deliveryQuestionPutButUnsettled)
+                .collect(java.util.stream.Collectors.groupingBy(
+                        FlowSpineService::groundOfUnsettledJudgment,
+                        java.util.TreeMap::new, java.util.stream.Collectors.counting()));
         log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} unverified={} "
-                        + "(of which asked-without-ruling={}, never asked={}) of {} tasks",
+                        + "(of which asked-without-ruling={} {}, never asked={}) of {} tasks",
                 qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent,
-                deliveryQuestionUnsettled, deliveryVerificationAbsent - deliveryQuestionUnsettled,
-                tasks.size());
+                deliveryQuestionUnsettled, unsettledGrounds,
+                deliveryVerificationAbsent - deliveryQuestionUnsettled, tasks.size());
         // The count of briefs the compiler answered with nothing travels in StateInputs below and reaches
         // the dashboard through the model, which is where F39 wanted it retrievable. It used to be written
         // here as a warning as well, on every build of the model - measured 2026-08-29, eleven identical
@@ -1172,4 +1183,31 @@ public class FlowSpineService {
             boolean duplicateContentDetected
     ) {
     }
+    /**
+     * Which of the judgment's three recordable grounds this unsettled verdict carries.
+     *
+     * <p>Read from the ground the judgment itself wrote, not re-derived: the three are
+     * "criteria no delivery can falsify" (the client's claim was substituted before dispatch),
+     * "input the channel could not carry" (the diff does not fit the sidecar's limit), and
+     * "answer not in the declared form". A ground that matches none of them is named `other` rather than
+     * folded into one of the three - putting an unreadable row into a named bucket is how a count stops
+     * answering (rule 8.11 O8).
+     */
+    static String groundOfUnsettledJudgment(TaskEntity task) {
+        String ground = task.acceptanceVerdictReason();
+        if (ground == null || ground.isBlank()) {
+            return "no ground recorded";
+        }
+        if (ground.contains("no delivery can falsify")) {
+            return "criteria nothing can falsify";
+        }
+        if (ground.contains("channel could not carry")) {
+            return "input too large for the channel";
+        }
+        if (ground.contains("did not answer in the declared form")) {
+            return "answer not in the declared form";
+        }
+        return "other";
+    }
+
 }
