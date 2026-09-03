@@ -299,11 +299,17 @@ public class OperationalPolicyService {
      * <p>SYSTEM_STALLED was already excepted here before this rule was written, for the same reason.
      */
     private static boolean deniesCompilation(String state) {
-        // BLOCKED_BY_TASK and BLOCKED_BY_FAILED_FRONTIER are the same shape as BLOCKED_BY_REVIEW and are
-        // deliberately left denying: the argument against them is identical, but only the review case has
-        // been measured holding, and changing what has not been measured is how a repair becomes a guess.
+        // BLOCKED_BY_TASK joined BLOCKED_BY_REVIEW here on 2026-09-03, once it too was measured denying:
+        // "policy denied ORCHESTRATE ... state BLOCKED_BY_TASK: 1 blocked task(s) exist" while two briefs
+        // waited, the queue stood at zero and nothing was active. One blocked task is a condition of ONE
+        // element and says nothing about whether compiling an unrelated brief is safe - model rule 8.3.1
+        // names it explicitly.
+        //
+        // BLOCKED_BY_FAILED_FRONTIER is the same shape and is deliberately left denying: the argument
+        // against it is identical, but it has not been observed denying, and changing what has not been
+        // measured is how a repair becomes a guess.
         return Set.of("BLOCKED_BY_DUPLICATE_CONTENT", "GITHUB_RATE_LIMITED",
-                "BLOCKED_BY_TASK", "BLOCKED_BY_FAILED_FRONTIER").contains(state);
+                "BLOCKED_BY_FAILED_FRONTIER").contains(state);
     }
 
     private static boolean isHardBlocked(String state) {

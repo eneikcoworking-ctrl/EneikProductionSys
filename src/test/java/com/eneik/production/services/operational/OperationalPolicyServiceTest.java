@@ -161,7 +161,7 @@ class OperationalPolicyServiceTest {
     }
 
     @Test
-    void orchestrateStaysBlockedByAGenuinelyEntangledTaskBlockerUnlikeAReview() {
+    void orchestrateStaysBlockedOnlyByStatesThatSpeakAboutCompiling() {
         // The original reasoning was WIP restraint: "new decomposition genuinely waits its turn behind
         // those". Model rule 8.17 answers that directly - restraint is expressed as an ORDER, not a
         // prohibition, because a prohibition can only say "never" while an order says "later". Measured
@@ -171,8 +171,16 @@ class OperationalPolicyServiceTest {
         //
         // BLOCKED_BY_TASK keeps denying. The argument against it is identical, but it has not been measured
         // holding, and changing what has not been measured is how a repair becomes a guess.
+        // Measured 2026-09-03: "policy denied ORCHESTRATE ... state BLOCKED_BY_TASK: 1 blocked task(s)
+        // exist" while two briefs waited, the queue stood at zero and nothing was active. One blocked task
+        // is a condition of ONE element; model rule 8.3.1 names it as carrying no evidence about compiling.
         FlowCoreDto blockedByTask = core("BLOCKED_BY_TASK", "active", 5, 0, 0, 1, 0);
-        assertFalse(service.authorize(blockedByTask, OperationalAction.ORCHESTRATE).allowed());
+        assertTrue(service.authorize(blockedByTask, OperationalAction.ORCHESTRATE).allowed());
+
+        // BLOCKED_BY_FAILED_FRONTIER is the same shape and still denies: not yet observed denying, and
+        // changing what has not been measured is how a repair becomes a guess.
+        FlowCoreDto blockedByFrontier = core("BLOCKED_BY_FAILED_FRONTIER", "active", 5, 0, 0, 1, 0);
+        assertFalse(service.authorize(blockedByFrontier, OperationalAction.ORCHESTRATE).allowed());
     }
 
     @Test
