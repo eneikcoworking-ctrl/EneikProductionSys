@@ -1113,7 +1113,18 @@ public class ClientDeliverableReadinessService {
         long repaired = attempts.stream()
                 .filter(attempt -> !repairsByRepairedTask.getOrDefault(attempt.getId(), List.of()).isEmpty())
                 .count();
-        String repairs = " repairs=" + repaired + "/" + attempts.size();
+        // And what became of those repairs. Measured 2026-09-03: every attempt of every outstanding
+        // requirement had a repair filed (repairs=N/N) and not one repair task appeared in the closure - so
+        // the briefs exist and produced nothing. `converted_to_task` with no task in the closure and
+        // `dismissed` are different defects: the first is a broken link between task and brief, the second
+        // is something discarding work already ordered for a client requirement (plan 4.51).
+        Map<String, Long> repairStatuses = attempts.stream()
+                .flatMap(attempt -> repairsByRepairedTask.getOrDefault(attempt.getId(), List.<WishlistEntity>of()).stream())
+                .collect(java.util.stream.Collectors.groupingBy(
+                        repair -> repair.getStatus() == null ? "null" : repair.getStatus().name(),
+                        java.util.TreeMap::new, java.util.stream.Collectors.counting()));
+        String repairs = " repairs=" + repaired + "/" + attempts.size()
+                + (repairStatuses.isEmpty() ? "" : repairStatuses.toString());
         return repairs + " " + attempts.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
                         task -> task.getStatus() == null ? "null" : task.getStatus().name(),

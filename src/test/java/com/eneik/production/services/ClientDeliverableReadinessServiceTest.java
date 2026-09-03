@@ -710,6 +710,9 @@ class ClientDeliverableReadinessServiceTest {
         // Plan 4.51: the record must separate "nothing was ordered" from "something was ordered and
         // delivered nothing" - one attempt of the two carries a repair here.
         assertTrue(logs.contains("repairs=1/2"), "and how many attempts a repair was actually filed for");
+        // Plan 4.51: a repair that exists and produced nothing must be distinguishable from one that was
+        // discarded - the statuses say which.
+        assertTrue(logs.contains("converted_to_task=1"), "and what became of the repair that was filed");
     }
 
     /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */
