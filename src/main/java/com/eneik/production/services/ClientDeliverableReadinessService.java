@@ -1154,13 +1154,38 @@ public class ClientDeliverableReadinessService {
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
         Map<UUID, List<TaskEntity>> tasksByRepair = Map.of();
         if (!repairsByRepairedTask.isEmpty()) {
-            List<UUID> repairIds = repairsByRepairedTask.values().stream()
+            java.util.Set<UUID> repairIds = repairsByRepairedTask.values().stream()
                     .flatMap(List::stream)
                     .map(WishlistEntity::getId)
-                    .toList();
-            tasksByRepair = taskRepository.findBySourceWishlistIdIn(repairIds).stream()
+                    .collect(java.util.stream.Collectors.toSet());
+            // Model rule 8.18, the `slices` link. A repair brief is a ROOT: compilation decomposes it into
+            // slice wishlists, and the task hangs on the SLICE, never on the brief. Looking for tasks by the
+            // repair's own id therefore finds none - by construction, not by data. Measured 2026-09-03: for
+            // all six outstanding client requirements a repair was filed for every attempt and eight of the
+            // nine had become tasks, yet not one appeared in the closure, and 13 of 19 had stood unmoved for
+            // five days.
+            Map<UUID, List<UUID>> sliceIdsByRepair = allWishlist.stream()
+                    .filter(w -> w.getOriginWishlistId() != null && repairIds.contains(w.getOriginWishlistId()))
+                    .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getOriginWishlistId,
+                            java.util.stream.Collectors.mapping(WishlistEntity::getId,
+                                    java.util.stream.Collectors.toList())));
+            List<UUID> lookupIds = new java.util.ArrayList<>(repairIds);
+            sliceIdsByRepair.values().forEach(lookupIds::addAll);
+            Map<UUID, List<TaskEntity>> tasksByWishlist = taskRepository.findBySourceWishlistIdIn(lookupIds).stream()
                     .filter(t -> t.getSourceWishlistId() != null)
                     .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
+            Map<UUID, List<TaskEntity>> aggregated = new HashMap<>();
+            for (UUID repairId : repairIds) {
+                List<TaskEntity> own = new java.util.ArrayList<>(
+                        tasksByWishlist.getOrDefault(repairId, List.of()));
+                for (UUID sliceId : sliceIdsByRepair.getOrDefault(repairId, List.of())) {
+                    own.addAll(tasksByWishlist.getOrDefault(sliceId, List.of()));
+                }
+                if (!own.isEmpty()) {
+                    aggregated.put(repairId, own);
+                }
+            }
+            tasksByRepair = aggregated;
         }
         return new RepairIndex(repairsByRepairedTask, tasksByRepair);
     }

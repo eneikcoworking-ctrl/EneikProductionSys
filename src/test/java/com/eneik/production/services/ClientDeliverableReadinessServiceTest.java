@@ -600,6 +600,50 @@ class ClientDeliverableReadinessServiceTest {
         assertEquals(0, readiness.mergedDeliverables());
     }
 
+    /**
+     * Model rule 8.18, the `slices` link. A repair brief is a ROOT: compilation decomposes it into slice
+     * wishlists and the task hangs on the SLICE. Looking for the repair's tasks by the brief's own id finds
+     * none by construction. Measured 2026-09-03: for all six outstanding client requirements a repair had
+     * been filed for every attempt and eight of nine had become tasks, yet not one appeared in the closure,
+     * and 13 of 19 deliverables had stood unmoved for five days.
+     */
+    @Test
+    void aRepairDeliveredThroughItsSliceStillDischargesTheRequirement() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        attempts.get(0).setStatus(TaskStatus.failed);
+
+        WishlistEntity repair = repairOf(projectId, feature.getId(), attempts.get(0));
+        // The slice the compiler produced under the repair brief - this is what the task actually hangs on.
+        WishlistEntity slice = new WishlistEntity();
+        slice.setId(UUID.randomUUID());
+        slice.setProjectId(projectId);
+        slice.setSource(WishlistSource.delivery_never_reached_main);
+        slice.setStatus(WishlistStatus.converted_to_task);
+        slice.setCompiledByRole("BARCAN-TAG-09");
+        slice.setFeatureId(feature.getId());
+        slice.setOriginWishlistId(repair.getId());
+        TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), slice.getId(), "BARCAN-TAG-02");
+
+        stubPlan(projectId, root, feature, items, attempts);
+        when(wishlistRepository.findByProjectId(projectId))
+                .thenReturn(List.of(root, items.get(0), repair, slice));
+        // Stubbed precisely, not with anyList(): stubPlan already answers the planned-item lookup, and a
+        // blanket stub would answer that one too and empty the item of its own attempts.
+        when(taskRepository.findBySourceWishlistIdIn(List.of(repair.getId(), slice.getId())))
+                .thenReturn(List.of(repairTask));
+        stubMerged(repairTask, true);
+
+        ClientDeliverableReadinessService.Readiness readiness = service.computeForProject(projectId);
+
+        assertEquals(1, readiness.mergedDeliverables(),
+                "the change is on main through the repair's slice - the requirement is met");
+    }
+
     private WishlistEntity repairOf(UUID projectId, UUID featureId, TaskEntity repaired) {
         WishlistEntity repair = new WishlistEntity();
         repair.setId(UUID.randomUUID());
