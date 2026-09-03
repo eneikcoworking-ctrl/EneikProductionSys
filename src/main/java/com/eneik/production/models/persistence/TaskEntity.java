@@ -172,6 +172,24 @@ public class TaskEntity {
     public static final String VERDICT_SATISFIED = "SATISFIED";
     public static final String VERDICT_REFUTED = "REFUTED";
 
+    public static final String ACCEPTANCE_VERDICT_REASON_KEY = "acceptance_verdict_reason";
+
+    /**
+     * Why the recorded verdict came out as it did, or null when no ground was recorded.
+     *
+     * <p>Model rule 8.22: an order reissued after a denial must carry that denial's ground. The ground is
+     * written next to the verdict when the judgment is recorded, but nothing outside the judgment service
+     * could read it, so every repair brief reissued the failed order unchanged - the next agent received
+     * the same task, in the same words, knowing exactly what the previous one knew.
+     */
+    public String acceptanceVerdictReason() {
+        if (payload == null) {
+            return null;
+        }
+        String value = payload.path(ACCEPTANCE_VERDICT_REASON_KEY).asText(null);
+        return value == null || value.isBlank() ? null : value;
+    }
+
     /** The verdict recorded for this task, or null if nothing has ruled. */
     public String acceptanceVerdict() {
         if (payload == null) {

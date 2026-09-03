@@ -10,6 +10,7 @@ import com.eneik.production.repositories.TaskRepository;
 import com.eneik.production.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -68,6 +69,67 @@ class DeliveryPredicateAgreementTest {
         task.setFeatureId(UUID.randomUUID());
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
         return task;
+    }
+
+    @Test
+    void aReissuedOrderCarriesTheGroundOfTheDenialItAnswers() {
+        // Model rule 8.22. A repair is a turn of a cycle and rule 8.4 requires every cycle to carry
+        // something that strictly decreases. Reissuing the failed order unchanged decreases nothing - the
+        // next agent gets the same task, in the same words, knowing what the last one knew. The ground was
+        // recorded next to the verdict and nothing outside the judgment service could read it.
+        ProjectEntity project = activeProject();
+        TaskEntity task = doneTask(project);
+        task.setPayload(new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode()
+                .put(TaskEntity.ACCEPTANCE_VERDICT_KEY, TaskEntity.VERDICT_REFUTED)
+                .put(TaskEntity.ACCEPTANCE_VERDICT_REASON_KEY,
+                        "the merged diff records a blocker and carries none of the change"));
+        when(readinessService.reachedMain(task)).thenReturn(true);
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(false);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        // The steady state after the first sweep: the finding is already on record, which is the path the
+        // filing actually runs on.
+        com.eneik.production.models.persistence.OperationalRealityFindingEntity known =
+                new com.eneik.production.models.persistence.OperationalRealityFindingEntity();
+        known.setTaskId(task.getId());
+        when(findingRepository.findByTaskId(task.getId())).thenReturn(List.of(known));
+        when(wishlistRepository.existsByProjectIdAndSourceAndSourceTaskId(any(), any(), any())).thenReturn(false);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+
+        service.produce();
+
+        org.mockito.ArgumentCaptor<com.eneik.production.models.persistence.WishlistEntity> filed =
+                org.mockito.ArgumentCaptor.forClass(com.eneik.production.models.persistence.WishlistEntity.class);
+        verify(wishlistRepository).save(filed.capture());
+        assertTrue(filed.getValue().getContent()
+                        .contains("the merged diff records a blocker and carries none of the change"),
+                "the reissued order does not carry the ground of the denial it answers");
+    }
+
+    @Test
+    void anUnrecordedGroundIsNotInvented() {
+        // Without this the rule turns into "make one up", which is the defect 8.3.1 exists to prevent,
+        // committed by the repairer instead of the denier.
+        ProjectEntity project = activeProject();
+        TaskEntity task = doneTask(project);
+        when(readinessService.reachedMain(task)).thenReturn(true);
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(false);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+        // The steady state after the first sweep: the finding is already on record, which is the path the
+        // filing actually runs on.
+        com.eneik.production.models.persistence.OperationalRealityFindingEntity known =
+                new com.eneik.production.models.persistence.OperationalRealityFindingEntity();
+        known.setTaskId(task.getId());
+        when(findingRepository.findByTaskId(task.getId())).thenReturn(List.of(known));
+        when(wishlistRepository.existsByProjectIdAndSourceAndSourceTaskId(any(), any(), any())).thenReturn(false);
+        when(wishlistRepository.findByProjectId(project.getId())).thenReturn(List.of());
+
+        service.produce();
+
+        org.mockito.ArgumentCaptor<com.eneik.production.models.persistence.WishlistEntity> filed =
+                org.mockito.ArgumentCaptor.forClass(com.eneik.production.models.persistence.WishlistEntity.class);
+        verify(wishlistRepository).save(filed.capture());
+        assertFalse(filed.getValue().getContent().contains("already judged"),
+                "no verdict was recorded, so the brief must not claim one");
     }
 
     @Test

@@ -171,6 +171,7 @@ public class DeliveryRealityProducerService {
         wishlist.setSourceRoleTag("BARCAN-TAG-00");
         wishlist.setContent("Planned work never reached the main branch.\n\n"
                 + "The closed task \"" + title + "\" " + whatItsRecordSays(task) + "\n\n"
+                + whatWasAlreadyJudged(task)
                 + "Deliver what that task was for. Do not reopen it and do not restate its goal as new "
                 + "scope: what is missing is the change itself, on main.");
         wishlist.setJtbd("When planned work ends with nothing of it on main, I want the work itself "
@@ -184,6 +185,33 @@ public class DeliveryRealityProducerService {
 
         log.warn("DeliveryRealityProducerService: filed missing delivery of task {} ({}) as scope - "
                 + "status {}, nothing reached main", task.getId(), title, task.getStatus());
+    }
+
+    /**
+     * The ground of the denial this repair answers, in the words it was recorded in (model rule 8.22).
+     *
+     * <p>A repair is a turn of a cycle, and rule 8.4 requires every cycle to carry something that strictly
+     * decreases. Reissuing the failed order unchanged decreases nothing: the next agent gets the same task,
+     * in the same words, knowing exactly what the last one knew, and produces the same result. The factory
+     * already records why the previous attempt was judged as it was - passing that on is what makes the
+     * next turn a different turn.
+     *
+     * <p>Returns an empty string when no ground was recorded. A denial with no recorded ground must not be
+     * given an invented one: that would be the defect rule 8.3.1 exists to prevent, committed by the
+     * repairer instead of the denier.
+     */
+    private String whatWasAlreadyJudged(TaskEntity task) {
+        String verdict = task.acceptanceVerdict();
+        if (verdict == null) {
+            return "";
+        }
+        String reason = task.acceptanceVerdictReason();
+        if (reason == null) {
+            return "Its delivery was already judged " + verdict + ", with no ground recorded.\n\n";
+        }
+        return "Its delivery was already judged " + verdict + ", on this ground: " + reason
+                + "\n\nWhatever you do must answer that ground. Repeating what the previous attempt did "
+                + "will produce the same judgement again.\n\n";
     }
 
     /**

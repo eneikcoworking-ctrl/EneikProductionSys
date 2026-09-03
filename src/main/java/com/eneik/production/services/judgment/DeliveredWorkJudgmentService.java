@@ -54,7 +54,7 @@ public class DeliveredWorkJudgmentService {
     // TaskEntity's own predicates read the same constants, so a rename cannot desynchronise
     // writer and readers - which is how 127 existing verdicts stayed unread until 2026-08-28.
     static final String VERDICT_KEY = TaskEntity.ACCEPTANCE_VERDICT_KEY;
-    static final String VERDICT_REASON_KEY = "acceptance_verdict_reason";
+    static final String VERDICT_REASON_KEY = TaskEntity.ACCEPTANCE_VERDICT_REASON_KEY;
     static final String VERDICT_AT_KEY = "acceptance_verdict_at";
 
     /** Recorded, never inferred: a task marked done that produced no diff was not thereby verified. */
