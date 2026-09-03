@@ -106,7 +106,7 @@ class StrayRepairOriginTest {
     }
 
     @Test
-    void repairBriefsThatNameNoTaskAreCountedApartFromThoseThatDo() {
+    void aSliceIsNotCountedAsABriefThatNamesNothing() {
         // The link to the repaired task is what puts a repair inside the requirement's closure (8.18) and
         // what makes chain depth observable (8.21). A brief without it is ordered work no requirement can
         // count, and it must be counted separately from briefs that carry the link - otherwise the two
@@ -115,8 +115,11 @@ class StrayRepairOriginTest {
         named.setSourceTaskId(UUID.randomUUID());
         WishlistEntity namingNothing = repairBrief();
 
-        assertEquals("repair briefs naming no task 1 of 2",
-                service.repairBriefsNamingNothing(java.util.List.of(named, namingNothing)));
+        WishlistEntity slice = repairBrief();
+        slice.setOriginWishlistId(UUID.randomUUID());
+
+        assertEquals("repair briefs 3, of them slices 1, naming nothing 1",
+                service.repairBriefsNamingNothing(java.util.List.of(named, namingNothing, slice)));
     }
 
     @Test
@@ -127,7 +130,7 @@ class StrayRepairOriginTest {
         plain.setId(UUID.randomUUID());
         plain.setSource(com.eneik.production.models.persistence.WishlistSource.client);
 
-        assertEquals("repair briefs naming no task 0 of 0",
+        assertEquals("repair briefs 0, of them slices 0, naming nothing 0",
                 service.repairBriefsNamingNothing(java.util.List.of(plain)));
     }
 

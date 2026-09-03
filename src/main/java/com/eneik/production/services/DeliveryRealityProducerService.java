@@ -306,17 +306,26 @@ public class DeliveryRealityProducerService {
      */
     String repairBriefsNamingNothing(List<com.eneik.production.models.persistence.WishlistEntity> allWishlist) {
         long briefs = 0;
+        long slices = 0;
         long namingNothing = 0;
         for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
             if (item.getSource() != com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main) {
                 continue;
             }
             briefs++;
-            if (item.getSourceTaskId() == null) {
+            if (item.getSourceTaskId() != null) {
+                continue;
+            }
+            // A compiled slice inherits its parent's source and is linked by the wishlist it came from,
+            // not by a repaired task - rule 8.18 already walks that link. Counting it as a brief that
+            // names nothing would report a defect where the model has a link.
+            if (item.getOriginWishlistId() != null) {
+                slices++;
+            } else {
                 namingNothing++;
             }
         }
-        return "repair briefs naming no task " + namingNothing + " of " + briefs;
+        return "repair briefs " + briefs + ", of them slices " + slices + ", naming nothing " + namingNothing;
     }
 
     /**
