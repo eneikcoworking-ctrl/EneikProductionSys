@@ -707,6 +707,9 @@ class ClientDeliverableReadinessServiceTest {
 
         assertTrue(logs.contains("failed=1"), "the first attempt is still shown");
         assertTrue(logs.contains("in_progress=1"), "and so is the repair that is working on it now");
+        // Plan 4.51: the record must separate "nothing was ordered" from "something was ordered and
+        // delivered nothing" - one attempt of the two carries a repair here.
+        assertTrue(logs.contains("repairs=1/2"), "and how many attempts a repair was actually filed for");
     }
 
     /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */

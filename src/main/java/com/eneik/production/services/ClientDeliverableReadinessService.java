@@ -1106,7 +1106,15 @@ public class ClientDeliverableReadinessService {
         if (attempts.isEmpty()) {
             return "(no attempt)";
         }
-        return attempts.stream()
+        // How many of those attempts a repair was actually filed for. Without this the record cannot tell
+        // "no department ordered anything for this requirement" from "a repair was ordered and produced
+        // nothing" - two different defects needing two different repairs (plan 4.51). Counted by
+        // sourceTaskId, which is what a repair is keyed on, not by any name in its prose.
+        long repaired = attempts.stream()
+                .filter(attempt -> !repairsByRepairedTask.getOrDefault(attempt.getId(), List.of()).isEmpty())
+                .count();
+        String repairs = " repairs=" + repaired + "/" + attempts.size();
+        return repairs + " " + attempts.stream()
                 .collect(java.util.stream.Collectors.groupingBy(
                         task -> task.getStatus() == null ? "null" : task.getStatus().name(),
                         java.util.TreeMap::new, java.util.stream.Collectors.counting()))
