@@ -257,6 +257,12 @@ public class DeliveryRealityProducerService {
         // the epic of the task it repairs inherited a stray that was already there, and the chain is what
         // has to be cut; a repair carrying a different epic founded one on itself, which is the filing site.
         java.util.Map<String, Long> strayOrigin = new java.util.TreeMap<>();
+        // And WHAT each stray repair is repairing. Every stray inherited its epic from the task it repairs
+        // (measured 2026-09-03: origin {inherited=125}), so the epic is not the question any more - the
+        // question is whether those tasks are product work that lost its requirement or carriers, because
+        // a carrier that did not deliver must not order product scope at all (model rule 8.2), while
+        // product work that lost its epic has to be returned to the requirement it was an attempt at.
+        java.util.Map<String, Long> strayRepaired = new java.util.TreeMap<>();
         for (com.eneik.production.models.persistence.WishlistEntity item : allWishlist) {
             if (item.getSourceTaskId() == null) {
                 continue;
@@ -271,15 +277,37 @@ public class DeliveryRealityProducerService {
                 reHomeable++;
             }
             strayOrigin.merge(strayEpicOrigin(item, taskById), 1L, Long::sum);
+            strayRepaired.merge(whatIsBeingRepaired(item, wishlistById, taskById), 1L, Long::sum);
         }
         String digest = inSet + "/" + (inSet + outside) + " in set, " + reHomeable + " of " + outside
-                + " re-homeable" + (strayOrigin.isEmpty() ? "" : ", origin " + strayOrigin);
+                + " re-homeable" + (strayOrigin.isEmpty() ? "" : ", origin " + strayOrigin)
+                + (strayRepaired.isEmpty() ? "" : ", repairing " + strayRepaired);
         if (digest.equals(lastStrayRepairs.get(project.getId()))) {
             return;
         }
         lastStrayRepairs.put(project.getId(), digest);
         log.info("DeliveryRealityProducerService: project {} - repairs by epic: {} (model rule 8.18.1)",
                 project.getName(), digest);
+    }
+
+    /**
+     * The role and origin of the task a stray repair is repairing, named as "roleTag/wishlistSource" so
+     * carriers and product work are told apart by what they are rather than by what they are called.
+     */
+    String whatIsBeingRepaired(com.eneik.production.models.persistence.WishlistEntity repair,
+                               java.util.Map<UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+                               java.util.Map<UUID, TaskEntity> taskById) {
+        TaskEntity repaired = taskById.get(repair.getSourceTaskId());
+        if (repaired == null) {
+            return "repaired-task-gone";
+        }
+        String role = repaired.getRole() == null || repaired.getRole().getTag() == null
+                ? "no-role" : repaired.getRole().getTag();
+        com.eneik.production.models.persistence.WishlistEntity origin =
+                repaired.getSourceWishlistId() == null ? null : wishlistById.get(repaired.getSourceWishlistId());
+        String source = origin == null || origin.getSource() == null
+                ? "no-source" : origin.getSource().name();
+        return role + "/" + source;
     }
 
     /**

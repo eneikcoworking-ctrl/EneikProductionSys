@@ -70,6 +70,41 @@ class StrayRepairOriginTest {
         assertEquals("repaired-task-gone", service.strayEpicOrigin(repair, Map.of()));
     }
 
+    @Test
+    void whatIsBeingRepairedNamesTheRoleAndTheOriginOfTheRepairedTask() {
+        // Model rule 8.2: a carrier that did not deliver must not order product scope, while product work
+        // that lost its epic has to be returned to its requirement. The two are told apart by the role the
+        // repaired task carries and the source of the wishlist it came from, so both must appear.
+        TaskEntity repaired = task(UUID.randomUUID());
+        repaired.setRole(role("BARCAN-TAG-00"));
+        WishlistEntity origin = new WishlistEntity();
+        origin.setId(UUID.randomUUID());
+        origin.setSource(com.eneik.production.models.persistence.WishlistSource.delivery_never_reached_main);
+        repaired.setSourceWishlistId(origin.getId());
+        WishlistEntity repair = repairOf(repaired, UUID.randomUUID());
+
+        assertEquals("BARCAN-TAG-00/delivery_never_reached_main",
+                service.whatIsBeingRepaired(repair, Map.of(origin.getId(), origin),
+                        Map.of(repaired.getId(), repaired)));
+    }
+
+    @Test
+    void aRepairedTaskWithNoRoleAndNoOriginIsStillNamed() {
+        // An unnamed row must not silently join a named bucket - that is how a count stops answering.
+        TaskEntity repaired = task(UUID.randomUUID());
+        WishlistEntity repair = repairOf(repaired, UUID.randomUUID());
+
+        assertEquals("no-role/no-source",
+                service.whatIsBeingRepaired(repair, Map.of(), Map.of(repaired.getId(), repaired)));
+    }
+
+    private com.eneik.production.models.persistence.RoleEntity role(String tag) {
+        com.eneik.production.models.persistence.RoleEntity role =
+                new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag(tag);
+        return role;
+    }
+
     private TaskEntity task(UUID epic) {
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());
