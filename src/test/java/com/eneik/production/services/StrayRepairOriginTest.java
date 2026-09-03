@@ -16,6 +16,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Model rule 8.18.1: a repair belongs to the epic of the requirement it repairs and may not found one of
@@ -30,10 +31,15 @@ import static org.mockito.Mockito.mock;
  */
 class StrayRepairOriginTest {
 
+    private final ClientDeliverableReadinessService readinessService =
+            mock(ClientDeliverableReadinessService.class);
+    private final WishlistRepository wishlistRepository = mock(WishlistRepository.class);
+    private final TaskRepository taskRepository = mock(TaskRepository.class);
+
     private final DeliveryRealityProducerService service = new DeliveryRealityProducerService(
-            mock(ProjectRepository.class), mock(TaskRepository.class),
-            mock(ClientDeliverableReadinessService.class), mock(OperationalRealityFindingRepository.class),
-            mock(EvidenceNodeRepository.class), mock(WishlistRepository.class),
+            mock(ProjectRepository.class), taskRepository,
+            readinessService, mock(OperationalRealityFindingRepository.class),
+            mock(EvidenceNodeRepository.class), wishlistRepository,
             mock(PlannedWorkRecoveryService.class));
 
     @Test
@@ -215,6 +221,97 @@ class StrayRepairOriginTest {
 
         assertNull(service.homeOfRepair(repair, Map.of(),
                 Map.of(repaired.getId(), repaired), Set.of(UUID.randomUUID())));
+    }
+
+    @Test
+    void aRepairIsFiledIntoTheProductEpicOfTheRequirement() {
+        UUID productEpic = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity project = project();
+        TaskEntity attempt = task(productEpic);
+        attempt.setProject(project);
+        stubProductEpics(project, productEpic);
+
+        assertEquals(productEpic, service.epicOfRequirement(attempt));
+    }
+
+    @Test
+    void anEpicOutsideTheProductSetDoesNotEndTheWalk() {
+        // Rule 8.18.1: the repair belongs to the epic of the REQUIREMENT, and a requirement is a planned
+        // product item by construction. Returning the first non-null epic is how a stray is born and then
+        // inherited - measured, 120 repairs outside the set with no product epic reachable from any.
+        UUID productEpic = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity project = project();
+        TaskEntity attempt = task(UUID.randomUUID());
+        attempt.setProject(project);
+        WishlistEntity requirement = new WishlistEntity();
+        requirement.setId(UUID.randomUUID());
+        requirement.setFeatureId(productEpic);
+        attempt.setSourceWishlistId(requirement.getId());
+        stubProductEpics(project, productEpic);
+        when(wishlistRepository.findById(requirement.getId())).thenReturn(java.util.Optional.of(requirement));
+
+        assertEquals(productEpic, service.epicOfRequirement(attempt));
+    }
+
+    @Test
+    void aStrayEpicOnThePathIsWalkedPastRatherThanReturned() {
+        // The case that makes the rule bite: the wishlist the attempt came from carries an epic that is NOT
+        // the product set's, and the requirement's own epic lies one hop further. Returning the first
+        // non-null epic is precisely how a stray is born and then inherited down every later repair.
+        UUID productEpic = UUID.randomUUID();
+        UUID strayEpic = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity project = project();
+        TaskEntity attempt = task(null);
+        attempt.setProject(project);
+
+        WishlistEntity strayBrief = new WishlistEntity();
+        strayBrief.setId(UUID.randomUUID());
+        strayBrief.setFeatureId(strayEpic);
+        TaskEntity earlierAttempt = task(null);
+        strayBrief.setSourceTaskId(earlierAttempt.getId());
+        attempt.setSourceWishlistId(strayBrief.getId());
+
+        WishlistEntity requirement = new WishlistEntity();
+        requirement.setId(UUID.randomUUID());
+        requirement.setFeatureId(productEpic);
+        earlierAttempt.setSourceWishlistId(requirement.getId());
+
+        stubProductEpics(project, productEpic);
+        when(wishlistRepository.findById(strayBrief.getId())).thenReturn(java.util.Optional.of(strayBrief));
+        when(taskRepository.findById(earlierAttempt.getId())).thenReturn(java.util.Optional.of(earlierAttempt));
+        when(wishlistRepository.findById(requirement.getId())).thenReturn(java.util.Optional.of(requirement));
+
+        assertEquals(productEpic, service.epicOfRequirement(attempt),
+                "the walk stopped at an epic that is not the requirement's");
+    }
+
+    @Test
+    void noProductEpicAnywhereMeansNoEpicAtAll() {
+        // The mandatory reverse case: filing must refuse rather than found an epic of its own, which is
+        // exactly what 8.18.1 forbids.
+        com.eneik.production.models.persistence.ProjectEntity project = project();
+        TaskEntity attempt = task(UUID.randomUUID());
+        attempt.setProject(project);
+        stubProductEpics(project, UUID.randomUUID());
+
+        assertNull(service.epicOfRequirement(attempt));
+    }
+
+    private com.eneik.production.models.persistence.ProjectEntity project() {
+        com.eneik.production.models.persistence.ProjectEntity project =
+                new com.eneik.production.models.persistence.ProjectEntity();
+        project.setId(UUID.randomUUID());
+        return project;
+    }
+
+    private void stubProductEpics(com.eneik.production.models.persistence.ProjectEntity project, UUID... epics) {
+        java.util.List<ClientDeliverableReadinessService.EpicDiagnostic> diagnostics =
+                new java.util.ArrayList<>();
+        for (UUID epic : epics) {
+            diagnostics.add(new ClientDeliverableReadinessService.EpicDiagnostic(
+                    epic, "epic", null, java.time.Instant.now(), true, false, 0, 0));
+        }
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(diagnostics);
     }
 
     private TaskEntity task(UUID epic) {

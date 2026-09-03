@@ -582,8 +582,12 @@ public class DeliveryRealityProducerService {
      * nothing rather than founding one, because an epic founded on a repair brief is outside the product
      * set by construction and can never come back into it.
      */
-    private UUID epicOfRequirement(TaskEntity task) {
-        if (task.getFeatureId() != null) {
+    UUID epicOfRequirement(TaskEntity task) {
+        java.util.Set<UUID> productEpics = task.getProject() == null ? java.util.Set.of()
+                : readinessService.listEpicDiagnostics(task.getProject().getId()).stream()
+                        .map(ClientDeliverableReadinessService.EpicDiagnostic::id)
+                        .collect(java.util.stream.Collectors.toSet());
+        if (task.getFeatureId() != null && productEpics.contains(task.getFeatureId())) {
             return task.getFeatureId();
         }
         java.util.Set<UUID> visited = new java.util.HashSet<>();
@@ -598,7 +602,13 @@ public class DeliveryRealityProducerService {
             if (origin == null) {
                 return null;
             }
-            if (origin.getFeatureId() != null) {
+            // Only a PRODUCT epic ends this walk. Rule 8.18.1 says the repair belongs to the epic of the
+            // REQUIREMENT it repairs, and a requirement is a planned product item by construction - so an
+            // epic outside the product set is not the requirement's and returning it is how a stray is
+            // born and then inherited down the chain. Measured on the live circuit: 120 repairs outside the
+            // set with no product epic reachable from any of them, 71 of those repairing a task whose own
+            // role is the repair brief's. Walking past it costs one more hop; accepting it costs the work.
+            if (origin.getFeatureId() != null && productEpics.contains(origin.getFeatureId())) {
                 return origin.getFeatureId();
             }
             if (origin.getSourceTaskId() == null) {
