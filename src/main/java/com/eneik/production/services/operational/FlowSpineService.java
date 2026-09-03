@@ -540,8 +540,20 @@ public class FlowSpineService {
         // scope for each rather than rewriting history, which is correct - but a correction nobody counts
         // is a correction nobody can act on.
         int deliveryRefuted = (int) tasks.stream().filter(TaskEntity::deliveryRefuted).count();
-        log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} NEVER ASKED={} of {} tasks",
-                qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent, tasks.size());
+        // "Never asked" and "asked, no ruling" are two different defects and were reported as one number.
+        // Nobody asking means no witness ran (rule 8.15); a verdict recorded without a ruling means the
+        // witness ran and could not decide, which points at the criteria, not at the coverage. Both leave
+        // delivery unverified, so both stay inside `deliveryVerificationAbsent` - but naming them together
+        // as "never asked" states something false about whichever of the two it is (rule 8.11 O8), and it
+        // did: 385 of 665 read as a coverage gap while an unknown share of them had been asked already.
+        int deliveryQuestionUnsettled = (int) tasks.stream()
+                .filter(TaskEntity::deliveryQuestionPutButUnsettled)
+                .count();
+        log.info("FlowSpine: delivery verification - passed={} failed={} REFUTED={} unverified={} "
+                        + "(of which asked-without-ruling={}, never asked={}) of {} tasks",
+                qualityGatePassed, qualityGateFailed, deliveryRefuted, deliveryVerificationAbsent,
+                deliveryQuestionUnsettled, deliveryVerificationAbsent - deliveryQuestionUnsettled,
+                tasks.size());
         // The count of briefs the compiler answered with nothing travels in StateInputs below and reaches
         // the dashboard through the model, which is where F39 wanted it retrievable. It used to be written
         // here as a warning as well, on every build of the model - measured 2026-08-29, eleven identical

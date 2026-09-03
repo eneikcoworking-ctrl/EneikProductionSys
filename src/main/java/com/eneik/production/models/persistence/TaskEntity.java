@@ -233,6 +233,21 @@ public class TaskEntity {
     }
 
     /**
+     * The question WAS put to the criterion instrument and came back without a ruling.
+     *
+     * <p>This is not the same defect as never being asked, and the two must not be counted as one. Nobody
+     * asking means no witness ran at all (model rule 8.15); asking and getting no ruling means the witness
+     * ran and could not decide, which points at the criteria rather than at the coverage. Both leave the
+     * delivery unverified, so {@link #isDeliveryVerificationAbsent()} still holds for both - but a record
+     * that cannot be read correctly is not a record (rule 8.11 O8), and a line reporting both as "never
+     * asked" says something false about whichever of them it is.
+     */
+    public boolean deliveryQuestionPutButUnsettled() {
+        String verdict = acceptanceVerdict();
+        return verdict != null && !deliveryRuledByCriteria();
+    }
+
+    /**
      * True when nothing has ever asked this task's delivery question - neither pass nor fail, by either
      * instrument. A recorded UNDECIDABLE still counts as absent: the question was put and could not be
      * settled, which is not the same as an answer.
