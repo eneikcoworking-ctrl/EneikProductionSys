@@ -1214,6 +1214,15 @@ public class ClientDeliverableReadinessService {
 
         Map<UUID, Boolean> fulfilled = new HashMap<>();
         for (WishlistEntity plannedItem : plannedItems) {
+            // An item already carried by one of its own attempts needs no walk at all. Measured 2026-09-03:
+            // walking the closure for every item turned this read - which the orchestrator asks on every
+            // tick - from about a second into 36-87 seconds, because merge evidence is fetched per task.
+            // Most items are met directly; only the outstanding few are worth the walk.
+            List<TaskEntity> own = tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of());
+            if (own.stream().anyMatch(this::hasRequiredMergeEvidence)) {
+                fulfilled.put(plannedItem.getId(), true);
+                continue;
+            }
             fulfilled.put(plannedItem.getId(), anyMergedInRepairClosure(
                     tasksByPlannedItem.getOrDefault(plannedItem.getId(), List.of()),
                     repairsByRepairedTask, tasksByRepair));
