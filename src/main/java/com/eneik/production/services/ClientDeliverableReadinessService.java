@@ -174,8 +174,64 @@ public class ClientDeliverableReadinessService {
      */
     @Transactional(readOnly = true)
     public Readiness computeForProject(UUID projectId, UUID rootWishlistId) {
-        return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+        ReadinessKey key = new ReadinessKey(projectId, rootWishlistId);
+        if (computingHere.get().contains(key)) {
+            // This thread is already inside the computation for this very key - joining the future it is
+            // itself responsible for completing would wait forever. Compute directly.
+            return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+        }
+        InFlightReadiness mine = new InFlightReadiness(new java.util.concurrent.CompletableFuture<>());
+        InFlightReadiness running = readinessInFlight.putIfAbsent(key, mine);
+        if (running != null) {
+            try {
+                return running.result().join();
+            } catch (java.util.concurrent.CompletionException failedForTheOtherCaller) {
+                // The computation already under way did not produce an answer. Its failure is not this
+                // caller's answer either - fall through and compute one.
+                return computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+            }
+        }
+        computingHere.get().add(key);
+        try {
+            Readiness readiness = computeForSources(projectId, rootWishlistId, PRODUCT_ITERATION_SOURCES);
+            mine.result().complete(readiness);
+            return readiness;
+        } catch (RuntimeException e) {
+            mine.result().completeExceptionally(e);
+            throw e;
+        } finally {
+            computingHere.get().remove(key);
+            readinessInFlight.remove(key, mine);
+        }
     }
+
+    /**
+     * The readiness of a project is one fact about one state, and the Charter allows it one point of
+     * application (inv. 10). It has nine callers on nine independent schedules, and they were measured
+     * evaluating it at the same instant on the same project: two scheduling threads each reported their own
+     * "slowest computation so far" for project test-fiftieth seven milliseconds apart, 47-59 repository
+     * round trips each. Duplicating the evaluation does not only cost the duplicate work - the copies
+     * contend with each other for the same rows, which is what made a single round trip cost seconds.
+     *
+     * <p>So concurrent callers of the same key share one evaluation instead of starting their own. There is
+     * no cache and no lifetime here: nothing is retained after the computation ends, so no caller is ever
+     * served an answer from a state that has already been left behind. A caller that arrives while an
+     * evaluation is running receives that evaluation's answer, which spans a shorter window than the one it
+     * would have computed itself - a more coherent reading of the state, not a staler one.
+     */
+    private record ReadinessKey(UUID projectId, UUID rootWishlistId) {}
+
+    private record InFlightReadiness(java.util.concurrent.CompletableFuture<Readiness> result) {}
+
+    private final java.util.concurrent.ConcurrentHashMap<ReadinessKey, InFlightReadiness> readinessInFlight =
+            new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Keys this thread is currently evaluating, so a re-entrant call cannot wait on a future only this same
+     * thread can complete.
+     */
+    private final ThreadLocal<java.util.Set<ReadinessKey>> computingHere =
+            ThreadLocal.withInitial(java.util.HashSet::new);
 
     /**
      * All tasks belonging to features rooted at the given wishlist - same feature-resolution rootWishlistId

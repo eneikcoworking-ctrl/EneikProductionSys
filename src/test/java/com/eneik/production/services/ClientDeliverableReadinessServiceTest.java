@@ -826,6 +826,66 @@ class ClientDeliverableReadinessServiceTest {
         }
     }
 
+    /**
+     * The readiness of a project is one fact and gets one point of application (Charter, inv. 10). Nine
+     * callers evaluate it on nine independent schedules; on the live circuit two scheduling threads were
+     * measured evaluating the same project at the same instant, each paying 47-59 repository round trips
+     * for the same answer while contending with the other for the same rows.
+     *
+     * <p>The check is what "one point of application" means operationally: while one evaluation is running,
+     * a second caller for the same key gets that evaluation's answer and the underlying repositories are
+     * read once, not twice. Remove the sharing and this fails with two reads.
+     */
+    @Test
+    void concurrentCallersForOneProjectShareOneEvaluation() throws Exception {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 2);
+        List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        stubPlan(projectId, root, feature, items, tasks);
+        tasks.forEach(task -> stubMerged(task, true));
+
+        List<WishlistEntity> allWishlist = new ArrayList<>();
+        allWishlist.add(root);
+        allWishlist.addAll(items);
+        java.util.concurrent.atomic.AtomicInteger reads = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.CountDownLatch firstIsInside = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch secondHasJoined = new java.util.concurrent.CountDownLatch(1);
+        when(wishlistRepository.findByProjectId(projectId)).thenAnswer(invocation -> {
+            if (reads.incrementAndGet() == 1) {
+                firstIsInside.countDown();
+                secondHasJoined.await();
+            }
+            return allWishlist;
+        });
+
+        java.util.concurrent.atomic.AtomicReference<ClientDeliverableReadinessService.Readiness> firstAnswer =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicReference<ClientDeliverableReadinessService.Readiness> secondAnswer =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        Thread first = new Thread(() -> firstAnswer.set(service.computeForProject(projectId)), "first-caller");
+        Thread second = new Thread(() -> secondAnswer.set(service.computeForProject(projectId)), "second-caller");
+
+        first.start();
+        assertTrue(firstIsInside.await(10, java.util.concurrent.TimeUnit.SECONDS),
+                "the first evaluation never reached the repositories");
+        second.start();
+        // The second caller is sharing the first evaluation exactly when it is parked waiting for it. Wait
+        // for that state rather than for a chosen interval, so the check does not depend on timing.
+        while (second.getState() != Thread.State.WAITING && second.getState() != Thread.State.TERMINATED) {
+            Thread.onSpinWait();
+        }
+        secondHasJoined.countDown();
+        first.join(10_000);
+        second.join(10_000);
+
+        assertEquals(1, reads.get(), "the same project was evaluated twice at the same time");
+        assertNotNull(firstAnswer.get());
+        assertEquals(firstAnswer.get(), secondAnswer.get());
+    }
+
     private void stubPlan(UUID projectId, WishlistEntity root, FeatureEntity feature,
                           List<WishlistEntity> items, List<TaskEntity> tasks) {
         List<WishlistEntity> all = new ArrayList<>();
