@@ -306,7 +306,12 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
-        RepairIndex repairIndex = buildRepairIndex(allWishlist);
+        java.util.Set<UUID> attemptIds = tasksByPlannedItem.values().stream()
+                .flatMap(List::stream)
+                .map(TaskEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        RepairIndex repairIndex = buildRepairIndex(allWishlist, attemptIds);
         Map<UUID, Boolean> fulfilledByPlannedItem =
                 fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
 
@@ -668,7 +673,12 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
-        RepairIndex repairIndex = buildRepairIndex(allWishlist);
+        java.util.Set<UUID> attemptIds = tasksByPlannedItem.values().stream()
+                .flatMap(List::stream)
+                .map(TaskEntity::getId)
+                .filter(java.util.Objects::nonNull)
+                .collect(java.util.stream.Collectors.toSet());
+        RepairIndex repairIndex = buildRepairIndex(allWishlist, attemptIds);
         Map<UUID, Boolean> fulfilledByPlannedItem =
                 fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
         List<WishlistEntity> codeProducingItems = plannedItems.stream()
@@ -1148,9 +1158,15 @@ public class ClientDeliverableReadinessService {
                                Map<UUID, List<TaskEntity>> tasksByRepair) {
     }
 
-    private RepairIndex buildRepairIndex(List<WishlistEntity> allWishlist) {
+    private RepairIndex buildRepairIndex(List<WishlistEntity> allWishlist,
+                                         java.util.Set<UUID> repairedTaskIdsOfInterest) {
+        // Scoped to the attempts actually being judged. The project holds 449 repair briefs; loading the
+        // tasks of all of them turned this read path into a query over ~900 ids and tripped Hikari's
+        // connection-leak detector on the very first deploy. A readiness read must not drag the whole
+        // history behind it - it is asked on every dashboard request.
         Map<UUID, List<WishlistEntity>> repairsByRepairedTask = allWishlist.stream()
                 .filter(w -> w.getSourceTaskId() != null)
+                .filter(w -> repairedTaskIdsOfInterest.contains(w.getSourceTaskId()))
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
         Map<UUID, List<TaskEntity>> tasksByRepair = Map.of();
         if (!repairsByRepairedTask.isEmpty()) {
