@@ -306,8 +306,9 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
+        RepairIndex repairIndex = buildRepairIndex(allWishlist);
         Map<UUID, Boolean> fulfilledByPlannedItem =
-                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, allWishlist);
+                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
 
         // Operator directive 2026-07-24, sharpened over two rounds of correction: "the formula must be computed
         // only over code-bearing tasks, not spikes, reviews and other auxiliary work" (this ratio must only
@@ -324,7 +325,7 @@ public class ClientDeliverableReadinessService {
 
         if (sources.equals(PRODUCT_ITERATION_SOURCES) && rootWishlistId == null) {
             reportUnfulfilledIfChanged(projectId, codeProducingItems, fulfilledByPlannedItem,
-                    tasksByPlannedItem);
+                    tasksByPlannedItem, repairIndex.repairsByRepairedTask(), repairIndex.tasksByRepair());
         }
 
         int mergedCount = (int) codeProducingItems.stream()
@@ -667,8 +668,9 @@ public class ClientDeliverableReadinessService {
                 .filter(t -> t.getSourceWishlistId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
 
+        RepairIndex repairIndex = buildRepairIndex(allWishlist);
         Map<UUID, Boolean> fulfilledByPlannedItem =
-                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, allWishlist);
+                fulfilmentByPlannedItem(plannedItems, tasksByPlannedItem, repairIndex);
         List<WishlistEntity> codeProducingItems = plannedItems.stream()
                 .filter(w -> !isAuxiliaryPlannedItem(tasksByPlannedItem.getOrDefault(w.getId(), List.of())))
                 .toList();
@@ -1059,10 +1061,13 @@ public class ClientDeliverableReadinessService {
     private void reportUnfulfilledIfChanged(UUID projectId,
                                              List<WishlistEntity> codeProducingItems,
                                              Map<UUID, Boolean> fulfilledByPlannedItem,
-                                             Map<UUID, List<TaskEntity>> tasksByPlannedItem) {
+                                             Map<UUID, List<TaskEntity>> tasksByPlannedItem,
+                                             Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+                                             Map<UUID, List<TaskEntity>> tasksByRepair) {
         List<String> outstanding = codeProducingItems.stream()
                 .filter(item -> !Boolean.TRUE.equals(fulfilledByPlannedItem.get(item.getId())))
-                .map(item -> requirementName(item) + " " + attemptStates(item, tasksByPlannedItem))
+                .map(item -> requirementName(item) + " "
+                        + attemptStates(item, tasksByPlannedItem, repairsByRepairedTask, tasksByRepair))
                 .sorted()
                 .toList();
         String digest = outstanding.isEmpty() ? "none" : String.join("; ", outstanding);
@@ -1092,8 +1097,12 @@ public class ClientDeliverableReadinessService {
      * "nobody is working on it". A hold states its reason, and the reason lives in the states of the work
      * under it.
      */
-    private String attemptStates(WishlistEntity item, Map<UUID, List<TaskEntity>> tasksByPlannedItem) {
-        List<TaskEntity> attempts = tasksByPlannedItem.getOrDefault(item.getId(), List.of());
+    private String attemptStates(WishlistEntity item,
+                                 Map<UUID, List<TaskEntity>> tasksByPlannedItem,
+                                 Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+                                 Map<UUID, List<TaskEntity>> tasksByRepair) {
+        List<TaskEntity> attempts = repairClosure(
+                tasksByPlannedItem.getOrDefault(item.getId(), List.of()), repairsByRepairedTask, tasksByRepair);
         if (attempts.isEmpty()) {
             return "(no attempt)";
         }
@@ -1115,9 +1124,12 @@ public class ClientDeliverableReadinessService {
         return name.length() > 80 ? name.substring(0, 80) : name;
     }
 
-    private Map<UUID, Boolean> fulfilmentByPlannedItem(List<WishlistEntity> plannedItems,
-                                                        Map<UUID, List<TaskEntity>> tasksByPlannedItem,
-                                                        List<WishlistEntity> allWishlist) {
+    /** The two indices the repair closure is walked over, built once and shared (Charter invariant 10). */
+    private record RepairIndex(Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+                               Map<UUID, List<TaskEntity>> tasksByRepair) {
+    }
+
+    private RepairIndex buildRepairIndex(List<WishlistEntity> allWishlist) {
         Map<UUID, List<WishlistEntity>> repairsByRepairedTask = allWishlist.stream()
                 .filter(w -> w.getSourceTaskId() != null)
                 .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
@@ -1131,6 +1143,14 @@ public class ClientDeliverableReadinessService {
                     .filter(t -> t.getSourceWishlistId() != null)
                     .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
         }
+        return new RepairIndex(repairsByRepairedTask, tasksByRepair);
+    }
+
+    private Map<UUID, Boolean> fulfilmentByPlannedItem(List<WishlistEntity> plannedItems,
+                                                        Map<UUID, List<TaskEntity>> tasksByPlannedItem,
+                                                        RepairIndex index) {
+        Map<UUID, List<WishlistEntity>> repairsByRepairedTask = index.repairsByRepairedTask();
+        Map<UUID, List<TaskEntity>> tasksByRepair = index.tasksByRepair();
 
         Map<UUID, Boolean> fulfilled = new HashMap<>();
         for (WishlistEntity plannedItem : plannedItems) {
@@ -1145,21 +1165,32 @@ public class ClientDeliverableReadinessService {
     private boolean anyMergedInRepairClosure(List<TaskEntity> attempts,
                                              Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
                                              Map<UUID, List<TaskEntity>> tasksByRepair) {
+        return repairClosure(attempts, repairsByRepairedTask, tasksByRepair).stream()
+                .anyMatch(this::hasRequiredMergeEvidence);
+    }
+
+    /**
+     * Every attempt at this requirement: its own tasks and, transitively, the tasks of the repairs filed
+     * for them (model rule 8.18). One walk, used both by the verdict and by the record that explains it -
+     * a second copy would let the two drift apart, which Charter invariant 10 forbids.
+     */
+    private List<TaskEntity> repairClosure(List<TaskEntity> attempts,
+                                           Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+                                           Map<UUID, List<TaskEntity>> tasksByRepair) {
         java.util.Deque<TaskEntity> frontier = new java.util.ArrayDeque<>(attempts);
         java.util.Set<UUID> visited = new java.util.HashSet<>();
+        List<TaskEntity> all = new java.util.ArrayList<>();
         while (!frontier.isEmpty()) {
             TaskEntity attempt = frontier.pop();
             if (attempt.getId() == null || !visited.add(attempt.getId())) {
                 continue;
             }
-            if (hasRequiredMergeEvidence(attempt)) {
-                return true;
-            }
+            all.add(attempt);
             for (WishlistEntity repair : repairsByRepairedTask.getOrDefault(attempt.getId(), List.of())) {
                 frontier.addAll(tasksByRepair.getOrDefault(repair.getId(), List.of()));
             }
         }
-        return false;
+        return all;
     }
 
     public boolean hasRequiredMergeEvidence(TaskEntity task) {

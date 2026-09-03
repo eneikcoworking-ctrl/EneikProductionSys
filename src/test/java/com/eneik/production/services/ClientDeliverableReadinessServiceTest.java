@@ -671,6 +671,44 @@ class ClientDeliverableReadinessServiceTest {
         assertTrue(logs.contains("{failed=1}"), "the hold must say what its attempts are doing");
     }
 
+    /**
+     * Model rule 8.18 with 8.11 O8. The record used to show only the item's OWN attempts, so a requirement
+     * whose repair had been filed and executed still read {failed=1} - identical to a requirement nobody
+     * had touched. Measured 2026-09-03: six requirements outstanding, nine repairs filed for their epics on
+     * 30 August, and no way to tell from the record whether those repairs had run, merged, or existed.
+     * The record now walks the same closure the verdict walks.
+     */
+    @Test
+    void theRecordShowsTheRepairAttemptsAndNotOnlyTheFirstOnes() {
+        UUID projectId = UUID.randomUUID();
+        UUID rootId = UUID.randomUUID();
+        FeatureEntity feature = feature(projectId, rootId);
+        WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
+        List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
+        items.get(0).setContent("Internal work item 1 (BARCAN-TAG-02) from wishlist " + rootId
+                + ": Privacy Compliance Backend");
+        List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
+        attempts.get(0).setStatus(TaskStatus.failed);
+
+        WishlistEntity repair = repairOf(projectId, feature.getId(), attempts.get(0));
+        TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
+        repairTask.setStatus(TaskStatus.in_progress);
+        stubPlan(projectId, root, feature, items, attempts);
+        when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(root, items.get(0), repair));
+        when(taskRepository.findBySourceWishlistIdIn(List.of(repair.getId()))).thenReturn(List.of(repairTask));
+        stubMerged(repairTask, false);
+
+        Logs logs = Logs.capture(ClientDeliverableReadinessService.class);
+        try {
+            service.computeForProject(projectId);
+        } finally {
+            logs.stop();
+        }
+
+        assertTrue(logs.contains("failed=1"), "the first attempt is still shown");
+        assertTrue(logs.contains("in_progress=1"), "and so is the repair that is working on it now");
+    }
+
     /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */
     @Test
     void anUnchangedOutstandingSetIsNotRepeatedOnTheNextRead() {
