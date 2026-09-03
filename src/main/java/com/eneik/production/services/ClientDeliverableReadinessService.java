@@ -1082,8 +1082,10 @@ public class ClientDeliverableReadinessService {
                 .sorted()
                 .toList();
         int roundTrips = mergedReviewCalls.get()[0];
-        String digest = (outstanding.isEmpty() ? "none" : String.join("; ", outstanding))
-                + " [mergedReviews round trips this computation: " + roundTrips + "]";
+        // The round-trip count is a diagnostic, not part of the fact being watched. Keeping it inside the
+        // digest made the line re-log whenever the count merely wobbled, which is exactly what rule 8.11 O9
+        // forbids: an unchanging fact is written once, not on every tick.
+        String digest = outstanding.isEmpty() ? "none" : String.join("; ", outstanding);
         if (digest.equals(lastUnfulfilled.get(projectId))) {
             return;
         }
@@ -1093,8 +1095,9 @@ public class ClientDeliverableReadinessService {
                     projectId);
             return;
         }
-        log.info("ClientDeliverableReadinessService: project {} has {} requirement(s) not yet on main - {}",
-                projectId, outstanding.size(), digest);
+        log.info("ClientDeliverableReadinessService: project {} has {} requirement(s) not yet on main - {} "
+                        + "[mergedReviews round trips this computation: {}]",
+                projectId, outstanding.size(), digest, roundTrips);
     }
 
     /**

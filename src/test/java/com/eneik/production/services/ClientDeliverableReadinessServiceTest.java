@@ -759,6 +759,25 @@ class ClientDeliverableReadinessServiceTest {
         assertTrue(logs.contains("converted_to_task=1"), "and what became of the repair that was filed");
     }
 
+    /**
+     * Model rule 8.11 O9: what is watched for change must be the FACT, never a diagnostic that wobbles.
+     * The round-trip counter added while chasing a slow read was concatenated into the digest, which would
+     * have re-logged the whole requirement list whenever the count merely moved. Behavioural tests cannot
+     * see this - the same data yields the same count - so the guard is structural, the same shape as the
+     * one asserting every GitHub call site books its cost.
+     */
+    @Test
+    void theWatchedFactCarriesNoDiagnosticThatCanWobble() throws Exception {
+        String source = java.nio.file.Files.readString(java.nio.file.Path.of(
+                "src/main/java/com/eneik/production/services/ClientDeliverableReadinessService.java"));
+        String digestLine = source.lines()
+                .filter(l -> l.contains("String digest ="))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("the digest assignment moved - update this guard"));
+        assertFalse(digestLine.contains("roundTrips"),
+                "the change-detection digest must not carry the diagnostic counter: " + digestLine.trim());
+    }
+
     /** Model rule 8.11 O9 - this is computed on every dashboard read; an unchanged fact is written once. */
     @Test
     void anUnchangedOutstandingSetIsNotRepeatedOnTheNextRead() {
