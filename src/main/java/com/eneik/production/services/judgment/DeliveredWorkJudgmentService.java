@@ -168,7 +168,7 @@ public class DeliveredWorkJudgmentService {
                 project.getId(), judgeable.size(), closed.size(), judged);
 
         List<TaskEntity> awaiting = judgeable.stream()
-                .filter(task -> verdictOf(task) == null)
+                .filter(this::stillWorthAsking)
                 .limit(Math.max(1, maxPerCycle))
                 .toList();
 
@@ -507,11 +507,49 @@ public class DeliveredWorkJudgmentService {
         ObjectNode payload = task.getPayload() instanceof ObjectNode node
                 ? node
                 : com.fasterxml.jackson.databind.node.JsonNodeFactory.instance.objectNode();
+        String ground = reason == null ? "" : reason;
+        // Model rule 8.24: asking again is a turn of a cycle, and rule 8.4 requires a quantity that
+        // strictly decreases per turn. It is not assigned here, it is observed - the ground itself. While
+        // each new ground differs from the last, asking is still learning something; the moment it comes
+        // back the same, asking has stopped producing knowledge and the question is closed as unsettleable,
+        // with its ground on record rather than silently (8.21).
+        if (UNDECIDABLE.equals(verdict) && ground.equals(groundOf(task))) {
+            payload.put(GROUND_REPEATED_KEY, true);
+        }
         payload.put(VERDICT_KEY, verdict);
-        payload.put(VERDICT_REASON_KEY, reason == null ? "" : reason);
+        payload.put(VERDICT_REASON_KEY, ground);
         payload.put(VERDICT_AT_KEY, Instant.now().toString());
         task.setPayload(payload);
         taskRepository.save(task);
+    }
+
+    static final String GROUND_REPEATED_KEY = "acceptance_verdict_ground_repeated";
+
+    private String groundOf(TaskEntity task) {
+        if (task.getPayload() == null) {
+            return null;
+        }
+        return task.getPayload().path(VERDICT_REASON_KEY).asText(null);
+    }
+
+    /**
+     * A question this sweep should put again (model rule 8.24).
+     *
+     * <p>A verdict that settled nothing is not a decision. The sweep used to select only tasks with no
+     * verdict at all, so an unsettled one was never asked again - measured 04.09, 272 of 665 tasks frozen
+     * as unverified, and they would have stayed frozen after the cause of the unsettlement was removed.
+     * Charter invariant 15: an external limit is a hypothesis, and a belief held on a limit that no longer
+     * exists is a belief never revised.
+     */
+    boolean stillWorthAsking(TaskEntity task) {
+        String verdict = verdictOf(task);
+        if (verdict == null) {
+            return true;
+        }
+        if (!UNDECIDABLE.equals(verdict)) {
+            return false;
+        }
+        return !task.getPayload().path(GROUND_REPEATED_KEY).asBoolean(false);
     }
 
     private static final String SILENCE_COUNT_KEY = "acceptance_silence_count";
