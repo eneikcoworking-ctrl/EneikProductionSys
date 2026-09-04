@@ -1242,32 +1242,60 @@ public class ClientDeliverableReadinessService {
     }
 
     /** The two indices the repair closure is walked over, built once and shared (Charter invariant 10). */
-    private record RepairIndex(Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
+    record RepairIndex(Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
                                Map<UUID, List<TaskEntity>> tasksByRepair) {
     }
 
-    private RepairIndex buildRepairIndex(List<WishlistEntity> allWishlist,
-                                         java.util.Set<UUID> repairedTaskIdsOfInterest) {
-        // Scoped to the attempts actually being judged. The project holds 449 repair briefs; loading the
-        // tasks of all of them turned this read path into a query over ~900 ids and tripped Hikari's
-        // connection-leak detector on the very first deploy. A readiness read must not drag the whole
-        // history behind it - it is asked on every dashboard request.
-        Map<UUID, List<WishlistEntity>> repairsByRepairedTask = allWishlist.stream()
-                .filter(w -> w.getSourceTaskId() != null)
-                .filter(w -> repairedTaskIdsOfInterest.contains(w.getSourceTaskId()))
-                .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
-        Map<UUID, List<TaskEntity>> tasksByRepair = Map.of();
-        if (!repairsByRepairedTask.isEmpty()) {
-            java.util.Set<UUID> repairIds = repairsByRepairedTask.values().stream()
+    RepairIndex buildRepairIndex(List<WishlistEntity> allWishlist,
+                                 java.util.Set<UUID> repairedTaskIdsOfInterest) {
+        // Model rules 8.18 and 8.21. The closure is defined recursively - a repair of a repair is still in
+        // it - so the index it walks must be grown to a FIXPOINT, not built in one pass over the initial
+        // attempts. Built in one pass it terminated at depth one by construction: the tasks of a
+        // first-order repair were never in `repairedTaskIdsOfInterest`, so their own repairs were absent
+        // from the map the walk consults, and no second-order repair could ever be found. That is exactly
+        // what the depth histogram reported for weeks - {1=145}, not one chain deeper, on a project where
+        // every outstanding requirement had already had a repair filed for its repair.
+        //
+        // Still scoped, and for the reason the previous version was: the project holds ~450 repair briefs,
+        // and loading the tasks of all of them turned this read path into a query over ~900 ids and tripped
+        // the connection-leak detector. The fixpoint below is bounded by the chain actually reached from
+        // these attempts, which is what the closure needs and nothing more.
+        Map<UUID, List<WishlistEntity>> repairsByRepairedTask = new HashMap<>();
+        Map<UUID, List<TaskEntity>> tasksByRepair = new HashMap<>();
+        java.util.Set<UUID> pending = new java.util.HashSet<>(repairedTaskIdsOfInterest);
+        java.util.Set<UUID> alreadyAsked = new java.util.HashSet<>();
+
+        while (!pending.isEmpty()) {
+            java.util.Set<UUID> askingFor = new java.util.HashSet<>(pending);
+            askingFor.removeAll(alreadyAsked);
+            pending = new java.util.HashSet<>();
+            if (askingFor.isEmpty()) {
+                break;
+            }
+            alreadyAsked.addAll(askingFor);
+
+            Map<UUID, List<WishlistEntity>> round = allWishlist.stream()
+                    .filter(w -> w.getSourceTaskId() != null)
+                    .filter(w -> askingFor.contains(w.getSourceTaskId()))
+                    .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getSourceTaskId));
+            if (round.isEmpty()) {
+                continue;
+            }
+            round.forEach((repairedTaskId, repairs) ->
+                    repairsByRepairedTask.computeIfAbsent(repairedTaskId, key -> new java.util.ArrayList<>())
+                            .addAll(repairs));
+
+            java.util.Set<UUID> repairIds = round.values().stream()
                     .flatMap(List::stream)
                     .map(WishlistEntity::getId)
+                    .filter(id -> !tasksByRepair.containsKey(id))
                     .collect(java.util.stream.Collectors.toSet());
+            if (repairIds.isEmpty()) {
+                continue;
+            }
             // Model rule 8.18, the `slices` link. A repair brief is a ROOT: compilation decomposes it into
             // slice wishlists, and the task hangs on the SLICE, never on the brief. Looking for tasks by the
-            // repair's own id therefore finds none - by construction, not by data. Measured 2026-09-03: for
-            // all six outstanding client requirements a repair was filed for every attempt and eight of the
-            // nine had become tasks, yet not one appeared in the closure, and 13 of 19 had stood unmoved for
-            // five days.
+            // repair's own id therefore finds none - by construction, not by data.
             Map<UUID, List<UUID>> sliceIdsByRepair = allWishlist.stream()
                     .filter(w -> w.getOriginWishlistId() != null && repairIds.contains(w.getOriginWishlistId()))
                     .collect(java.util.stream.Collectors.groupingBy(WishlistEntity::getOriginWishlistId,
@@ -1275,21 +1303,24 @@ public class ClientDeliverableReadinessService {
                                     java.util.stream.Collectors.toList())));
             List<UUID> lookupIds = new java.util.ArrayList<>(repairIds);
             sliceIdsByRepair.values().forEach(lookupIds::addAll);
-            Map<UUID, List<TaskEntity>> tasksByWishlist = taskRepository.findBySourceWishlistIdIn(lookupIds).stream()
-                    .filter(t -> t.getSourceWishlistId() != null)
-                    .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
-            Map<UUID, List<TaskEntity>> aggregated = new HashMap<>();
+            Map<UUID, List<TaskEntity>> tasksByWishlist =
+                    taskRepository.findBySourceWishlistIdIn(lookupIds).stream()
+                            .filter(t -> t.getSourceWishlistId() != null)
+                            .collect(java.util.stream.Collectors.groupingBy(TaskEntity::getSourceWishlistId));
             for (UUID repairId : repairIds) {
                 List<TaskEntity> own = new java.util.ArrayList<>(
                         tasksByWishlist.getOrDefault(repairId, List.of()));
                 for (UUID sliceId : sliceIdsByRepair.getOrDefault(repairId, List.of())) {
                     own.addAll(tasksByWishlist.getOrDefault(sliceId, List.of()));
                 }
-                if (!own.isEmpty()) {
-                    aggregated.put(repairId, own);
+                if (own.isEmpty()) {
+                    continue;
                 }
+                tasksByRepair.put(repairId, own);
+                // Those tasks are attempts too, and a repair may have been filed for any of them. Asking
+                // about them is what makes the closure recursive rather than one level deep.
+                own.stream().map(TaskEntity::getId).filter(java.util.Objects::nonNull).forEach(pending::add);
             }
-            tasksByRepair = aggregated;
         }
         return new RepairIndex(repairsByRepairedTask, tasksByRepair);
     }
@@ -1331,7 +1362,7 @@ public class ClientDeliverableReadinessService {
      * for them (model rule 8.18). One walk, used both by the verdict and by the record that explains it -
      * a second copy would let the two drift apart, which Charter invariant 10 forbids.
      */
-    private List<TaskEntity> repairClosure(List<TaskEntity> attempts,
+    List<TaskEntity> repairClosure(List<TaskEntity> attempts,
                                            Map<UUID, List<WishlistEntity>> repairsByRepairedTask,
                                            Map<UUID, List<TaskEntity>> tasksByRepair) {
         java.util.Deque<TaskEntity> frontier = new java.util.ArrayDeque<>(attempts);
