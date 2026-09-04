@@ -255,6 +255,33 @@ public class OperationalPolicyService {
     }
 
     /**
+     * Action-specific check: whether the current state is what denies THIS specific action (Law 12).
+     *
+     * <p>Measured 2026-09-04 (Claude audit, commit c6d7a68): RECOVER_FAILED_FRONTIER was denied with
+     * "denied by Flow Core state BLOCKED_BY_REVIEW: 1 failing review(s) exist" when failedTasks was 0.
+     * But BLOCKED_BY_REVIEW is not in GLOBALLY_BLOCKING_STATES, so the state denied nothing - the unmet
+     * conjunct was failedTasks > 0. A denial must name the conjunct that actually failed, not a state
+     * that does not block this action.
+     */
+    static boolean stateBlocks(OperationalAction action, String state, String projectStatus) {
+        if (!"active".equalsIgnoreCase(projectStatus)) {
+            return true;
+        }
+        if (action == null) {
+            return stateBlocks(state, projectStatus);
+        }
+        return switch (action) {
+            case NUDGE_SESSION, BOOST_PRIORITY -> isHardBlocked(state);
+            case SYNC_GITHUB -> "GITHUB_RATE_LIMITED".equals(state);
+            case COLLAPSE_DUPLICATE_TASK -> Set.of("FROZEN", "PROJECT_NOT_ACTIVE", "ACCEPTED", "ARCHIVED",
+                    "GITHUB_RATE_LIMITED").contains(state);
+            case DISMISS_WISHLIST, ABANDON_CONFLICT -> isTerminal(state);
+            case CLEANUP_TERMINAL_PROJECT -> false;
+            default -> GLOBALLY_BLOCKING_STATES.contains(state);
+        };
+    }
+
+    /**
      * A denial says what actually denied it.
      *
      * <p>Measured 2026-08-29: DISPATCH_REVIEW_TASKS was refused once a tick, fifteen ticks running, with
@@ -275,7 +302,7 @@ public class OperationalPolicyService {
     // be asserted without building one.
     static String denialReason(OperationalAction action, String state, String projectStatus,
             String blockingReason, String authorizationStatus) {
-        if (!stateBlocks(state, projectStatus)) {
+        if (!stateBlocks(action, state, projectStatus)) {
             return "Operational action " + action + " is not blocked by Flow Core state " + state
                     + "; its own precondition is unmet - there is nothing for it to act on right now.";
         }
