@@ -158,9 +158,30 @@ public class ProjectEntity {
     @Column(name = "compiler_retry_ceiling")
     private Integer compilerRetryCeiling;
 
+    @Column(name = "retire_attempts", nullable = false)
+    private int retireAttempts = 0;
+
+    @Column(name = "retire_exhausted", nullable = false)
+    private boolean retireExhausted = false;
+
+    @Column(name = "retired_at")
+    private Instant retiredAt;
+
     public Integer getCompilerRetryCeiling() { return compilerRetryCeiling; }
 
     public void setCompilerRetryCeiling(Integer compilerRetryCeiling) { this.compilerRetryCeiling = compilerRetryCeiling; }
+
+    public int getRetireAttempts() { return retireAttempts; }
+
+    public void setRetireAttempts(int retireAttempts) { this.retireAttempts = retireAttempts; }
+
+    public boolean isRetireExhausted() { return retireExhausted; }
+
+    public void setRetireExhausted(boolean retireExhausted) { this.retireExhausted = retireExhausted; }
+
+    public Instant getRetiredAt() { return retiredAt; }
+
+    public void setRetiredAt(Instant retiredAt) { this.retiredAt = retiredAt; }
 
     public ProjectStatus getStatus() { return status; }
     public void setStatus(ProjectStatus status) { this.status = status; }

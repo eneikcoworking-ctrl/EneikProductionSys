@@ -41,11 +41,15 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -233,7 +237,7 @@ class ProjectAdmissionLaw25aTest {
     }
 
     @Test
-    @DisplayName("Law 25a structural invariant: admitProject is @Transactional, createProject is not, admit has zero network calls")
+    @DisplayName("Law 25a transitive whitelist guard: admitProject and its transitive helper call graph access ONLY allowed local data collaborators")
     void structuralDemarcationInvariant() throws IOException {
         Path sourcePath = Path.of("src/main/java/com/eneik/production/services/ProjectFlowService.java");
         assertTrue(Files.exists(sourcePath), "ProjectFlowService.java must exist");
@@ -253,14 +257,97 @@ class ProjectAdmissionLaw25aTest {
         assertFalse(precedingCreate.contains("@Transactional"),
                 "createProject must NOT be @Transactional - external network calls must not span the local DB transaction");
 
-        // 3. admitProject body must not call external services
-        int endAdmitIdx = src.indexOf("return saved;", admitIdx);
-        assertTrue(endAdmitIdx > admitIdx, "admitProject return statement must exist");
-        String admitBody = src.substring(admitIdx, endAdmitIdx);
+        // 3. Extract all method bodies across the transitive call graph of admitProject
+        String admitBody = extractMethodBody(src, "public ProjectEntity admitProject(");
+        String retireLocallyBody = extractMethodBody(src, "private void retirePriorActiveProjectsLocally(");
+        String ensureGenStateBody = extractMethodBody(src, "private void ensureProjectGenerationState(");
+        String uniqueSlugBody = extractMethodBody(src, "private String uniqueSlug(");
 
-        assertFalse(admitBody.contains("gitHubPullRequestService"), "admitProject must not access gitHubPullRequestService");
-        assertFalse(admitBody.contains("julesDispatchService"), "admitProject must not access julesDispatchService");
-        assertFalse(admitBody.contains("projectFactoryService"), "admitProject must not access projectFactoryService");
-        assertFalse(admitBody.contains("gitHubProjectFactoryClient"), "admitProject must not access gitHubProjectFactoryClient");
+        String fullTransitiveCode = String.join("\n", admitBody, retireLocallyBody, ensureGenStateBody, uniqueSlugBody);
+
+        // 4. Strict Whitelist of permitted instance fields / collaborators
+        Set<String> permittedCollaborators = Set.of(
+                "projectRepository",
+                "wishlistRepository",
+                "taskRepository",
+                "claimRepository",
+                "claimService",
+                "projectGenerationStateRepository",
+                "githubOrganization",
+                "self",
+                "log"
+        );
+
+        // 5. Inspect every declared field of ProjectFlowService.
+        // If any field outside the whitelist appears in the transitive call graph, FAIL.
+        Field[] fields = ProjectFlowService.class.getDeclaredFields();
+        List<String> violations = new ArrayList<>();
+        for (Field f : fields) {
+            String fieldName = f.getName();
+            if (!permittedCollaborators.contains(fieldName)) {
+                Pattern fieldUsage = Pattern.compile("\\b" + Pattern.quote(fieldName) + "\\b");
+                if (fieldUsage.matcher(fullTransitiveCode).find()) {
+                    violations.add(fieldName + " (" + f.getType().getSimpleName() + ")");
+                }
+            }
+        }
+
+        assertEquals(List.of(), violations,
+                "Law 25a Transitive Whitelist Violation: The admission transaction must strictly touch factory local data. "
+                        + "The following non-whitelisted collaborators are accessed across the admitProject transitive call graph: "
+                        + violations);
+
+        // 6. Direct external network/process call ban
+        List<String> rawExternalKeywords = List.of(
+                "HttpClient", "RestTemplate", "WebClient", "ProcessBuilder", "Socket", "HttpURLConnection"
+        );
+        for (String kw : rawExternalKeywords) {
+            assertFalse(fullTransitiveCode.contains(kw),
+                    "Law 25a violation: direct external I/O primitive '" + kw + "' found in admission call graph");
+        }
+    }
+
+    private static String extractMethodBody(String src, String methodSignature) {
+        int sigIdx = src.indexOf(methodSignature);
+        assertTrue(sigIdx >= 0, "Method signature not found: " + methodSignature);
+        int openBrace = src.indexOf('{', sigIdx);
+        assertTrue(openBrace >= 0, "Opening brace not found for: " + methodSignature);
+        int depth = 1;
+        int i = openBrace + 1;
+        while (i < src.length() && depth > 0) {
+            char c = src.charAt(i);
+            if (c == '{') {
+                depth++;
+            } else if (c == '}') {
+                depth--;
+            } else if (c == '"' || c == '\'') {
+                char quote = c;
+                i++;
+                while (i < src.length()) {
+                    char q = src.charAt(i);
+                    if (q == '\\' && i + 1 < src.length()) {
+                        i += 2;
+                        continue;
+                    }
+                    if (q == quote) {
+                        break;
+                    }
+                    i++;
+                }
+            } else if (c == '/' && i + 1 < src.length() && src.charAt(i + 1) == '/') {
+                while (i < src.length() && src.charAt(i) != '\n') {
+                    i++;
+                }
+            } else if (c == '/' && i + 1 < src.length() && src.charAt(i + 1) == '*') {
+                i += 2;
+                while (i + 1 < src.length() && !(src.charAt(i) == '*' && src.charAt(i + 1) == '/')) {
+                    i++;
+                }
+                i = Math.min(i + 1, src.length() - 1);
+            }
+            i++;
+        }
+        return src.substring(openBrace, i);
     }
 }
+

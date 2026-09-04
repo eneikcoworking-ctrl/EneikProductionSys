@@ -1,5 +1,6 @@
 package com.eneik.production.services;
 
+import com.eneik.production.kaizen.service.DefectJournalService;
 import com.eneik.production.dto.*;
 import com.eneik.production.dto.dashboard.AgentDashboardDto;
 import com.eneik.production.dto.dashboard.FeaturePullRequestSnapshotDto;
@@ -167,6 +168,21 @@ public class ProjectFlowService {
     // instead goes through the real proxy. @Lazy breaks the constructor circular dependency this would
     // otherwise create.
     private final ProjectFlowService self;
+
+    /**
+     * Law 8 (Finite Budget on Retirement Loop):
+     * A project's retirement loop has a declared finite attempt budget.
+     * Variant function nu(P) = MAX_RETIRE_ATTEMPTS - retireAttempts(P) is bounded below by 0
+     * and strictly decreasing with every external attempt.
+     */
+    public static final int MAX_RETIRE_ATTEMPTS = 3;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private DefectJournalService defectJournalService;
+
+    public void setDefectJournalService(DefectJournalService defectJournalService) {
+        this.defectJournalService = defectJournalService;
+    }
 
 
     public ProjectFlowService(ProjectRepository projectRepository,
@@ -374,10 +390,12 @@ public class ProjectFlowService {
         return toProjectDto(saved);
     }
 
-    private void retireExternalWorkForPriorProjects() {
+    void retireExternalWorkForPriorProjects() {
         try {
             for (ProjectEntity frozen : projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.frozen)) {
-                cancelExternalWorkForProject(frozen, "Project frozen: superseded by a new project");
+                if (frozen.getRetiredAt() == null && !frozen.isRetireExhausted()) {
+                    cancelExternalWorkForProject(frozen, "Project frozen: superseded by a new project");
+                }
             }
         } catch (Exception e) {
             log.warn("ProjectFlowService: background retirement of prior projects encountered non-fatal error: {}",
@@ -385,32 +403,131 @@ public class ProjectFlowService {
         }
     }
 
-    private void cancelExternalWorkForProject(ProjectEntity project, String reason) {
-        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
-        for (TaskEntity task : tasks) {
-            for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
-                String sessionStatus = session.getStatus();
-                if (session.getExternalSessionId() != null
-                        && !"skipped".equals(session.getExternalSessionId())
-                        && ("queued".equals(sessionStatus)
-                        || "running".equals(sessionStatus)
-                        || "revising".equals(sessionStatus)
-                        || "pr_opened".equals(sessionStatus)
-                        || "stuck".equals(sessionStatus))) {
-                    try {
-                        julesDispatchService.cancelSession(session.getId(), reason);
-                    } catch (Exception e) {
-                        log.warn("ProjectFlowService: failed to cancel Jules session {} during retirement: {}",
-                                session.getId(), e.getMessage());
+    /**
+     * Law 8 (Finite Budget on Retirement Loop):
+     * v(P) = MAX_RETIRE_ATTEMPTS - retireAttempts(P) is strictly decreasing and bounded below by 0.
+     * Delta retireAttempts = 1 iff an attempt reached external systems (Jules API or GitHub API).
+     * Law 9 reverse case: if no external work exists, Delta retireAttempts = 0 and retiredAt is stamped immediately.
+     * Idempotency: sessions already cancelled/failed/completed and projects already retired/exhausted are never re-contacted.
+     * Non-silent exhaustion: upon reaching the attempt budget with outstanding failures, records exactly ONE
+     * defect in defect_journal and sets retireExhausted = true.
+     */
+    public void cancelExternalWorkForProject(ProjectEntity project, String reason) {
+        if (project == null || project.getRetiredAt() != null || project.isRetireExhausted()) {
+            return;
+        }
+
+        // Exhaustion guard: if attempts already reached ceiling, mark exhausted and record defect once
+        if (project.getRetireAttempts() >= MAX_RETIRE_ATTEMPTS) {
+            project.setRetireExhausted(true);
+            if (defectJournalService != null) {
+                defectJournalService.recordDefect(
+                        project.getId(),
+                        "CRITICAL",
+                        "LIFECYCLE",
+                        "ProjectFlowService",
+                        "RETIRE_BUDGET_EXHAUSTED",
+                        "Project retirement variant function exhausted after " + MAX_RETIRE_ATTEMPTS
+                                + " attempts: external work remains uncancelled",
+                        (double) project.getRetireAttempts()
+                );
+            }
+            if (projectRepository != null) {
+                projectRepository.save(project);
+            }
+            return;
+        }
+
+        List<TaskEntity> tasks = taskRepository != null
+                ? taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())
+                : List.of();
+        List<JulesSessionEntity> activeSessions = new ArrayList<>();
+        if (julesSessionRepository != null) {
+            for (TaskEntity task : tasks) {
+                for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
+                    String sessionStatus = session.getStatus();
+                    if (session.getExternalSessionId() != null
+                            && !"skipped".equals(session.getExternalSessionId())
+                            && ("queued".equals(sessionStatus)
+                            || "running".equals(sessionStatus)
+                            || "revising".equals(sessionStatus)
+                            || "pr_opened".equals(sessionStatus)
+                            || "stuck".equals(sessionStatus))) {
+                        activeSessions.add(session);
                     }
                 }
             }
         }
-        try {
-            gitHubPullRequestService.closeOpenPullRequests(project, reason);
-        } catch (Exception e) {
-            log.warn("ProjectFlowService: failed to close open GitHub PRs while retiring project {}: {}",
-                    project.getId(), e.getMessage());
+
+        boolean hasGithubRepo = gitHubPullRequestService != null
+                && project.getRepositoryName() != null
+                && !project.getRepositoryName().isBlank()
+                && (project.getGithubRepositoryId() != null
+                    || (project.getGithubRepositoryStatus() != null && !"provision_failed".equals(project.getFactoryStatus()))
+                    || "ready".equalsIgnoreCase(project.getFactoryStatus()));
+
+        boolean reachedExternal = !activeSessions.isEmpty() || hasGithubRepo;
+
+        if (!reachedExternal) {
+            // Law 9 reverse case: no external work to cancel, zero external calls made.
+            // Does not spend budget (Delta retireAttempts = 0). Marks project retired immediately.
+            project.setRetiredAt(Instant.now());
+            if (projectRepository != null) {
+                projectRepository.save(project);
+            }
+            return;
+        }
+
+        boolean anyFailed = false;
+        for (JulesSessionEntity session : activeSessions) {
+            try {
+                if (julesDispatchService != null) {
+                    julesDispatchService.cancelSession(session.getId(), reason);
+                }
+            } catch (Exception e) {
+                anyFailed = true;
+                log.warn("ProjectFlowService: failed to cancel Jules session {} during retirement: {}",
+                        session.getId(), e.getMessage());
+            }
+        }
+
+        if (hasGithubRepo && gitHubPullRequestService != null) {
+            try {
+                gitHubPullRequestService.closeOpenPullRequests(project, reason);
+            } catch (Exception e) {
+                anyFailed = true;
+                log.warn("ProjectFlowService: failed to close open GitHub PRs while retiring project {}: {}",
+                        project.getId(), e.getMessage());
+            }
+        }
+
+        // Law 8 variant function: nu(P) = MAX_RETIRE_ATTEMPTS - retireAttempts(P)
+        // Delta retireAttempts = 1 iff an attempt reached external systems.
+        int newAttempts = project.getRetireAttempts() + 1;
+        project.setRetireAttempts(newAttempts);
+
+        if (!anyFailed) {
+            project.setRetiredAt(Instant.now());
+        } else {
+            if (newAttempts >= MAX_RETIRE_ATTEMPTS && !project.isRetireExhausted()) {
+                project.setRetireExhausted(true);
+                if (defectJournalService != null) {
+                    defectJournalService.recordDefect(
+                            project.getId(),
+                            "CRITICAL",
+                            "LIFECYCLE",
+                            "ProjectFlowService",
+                            "RETIRE_BUDGET_EXHAUSTED",
+                            "Project retirement variant function exhausted after " + MAX_RETIRE_ATTEMPTS
+                                    + " attempts: external work remains uncancelled",
+                            (double) newAttempts
+                    );
+                }
+            }
+        }
+
+        if (projectRepository != null) {
+            projectRepository.save(project);
         }
     }
 
