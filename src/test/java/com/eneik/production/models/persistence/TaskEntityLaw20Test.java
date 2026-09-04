@@ -1,4 +1,4 @@
-﻿package com.eneik.production.models.persistence;
+package com.eneik.production.models.persistence;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
