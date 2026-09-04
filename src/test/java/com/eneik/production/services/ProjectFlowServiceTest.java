@@ -1011,7 +1011,7 @@ class ProjectFlowServiceTest {
         List<com.eneik.production.dto.dashboard.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
 
         assertEquals(1, blocked.size());
-        assertEquals(task.getId(), blocked.get(0).taskId());
+        assertEquals(task.getId(), blocked.get(0).id());
         assertEquals("done_not_reached_main", blocked.get(0).reason());
     }
 
