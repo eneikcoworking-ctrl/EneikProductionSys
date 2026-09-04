@@ -204,7 +204,12 @@ public class TocSubordinationLever {
         if (latest == null || latest.getObservedAt() == null) {
             return;
         }
-        String truth = isHealthy(latest) ? "allow" : "deny";
+        if (!isEstablishedHealthy(latest) && !isEstablishedUnhealthy(latest)) {
+            // Law 11: Health was not established by this observation (e.g. launchSuccess=true, healthStatusCode=null).
+            // Ignorance must not resolve truth to a false "deny".
+            return;
+        }
+        String truth = isEstablishedHealthy(latest) ? "allow" : "deny";
         List<LeverObservation> pending = leverObservationRepository
                 .findByLeverKeyAndSubjectIdStartingWithAndGroundTruthOutcomeIsNullAndObservedAtBeforeOrderByObservedAtAsc(
                         T1_TOC_SUBORDINATION, project.getId() + ":", latest.getObservedAt(),
@@ -235,12 +240,32 @@ public class TocSubordinationLever {
         return null;
     }
 
-    /** One definition of health, shared by the constraint predicate and by truth resolution. */
-    private static boolean isHealthy(ClientRuntimeObservationEntity row) {
+    /**
+     * Law 11 (Neutral Evidence / Decision Set Law):
+     * - Established Healthy: launched and HTTP 2xx.
+     * - Established Unhealthy: failed launch OR HTTP non-2xx.
+     * - Unestablished (Ignorance): healthStatusCode == null or instrument failure.
+     * Ignorance does NOT subordinate work, and does NOT resolve truth.
+     */
+    public static boolean isEstablishedHealthy(ClientRuntimeObservationEntity row) {
+        if (row == null || row.isInstrumentFailure()) {
+            return false;
+        }
         return row.isLaunchSuccess()
                 && row.getHealthStatusCode() != null
                 && row.getHealthStatusCode() >= 200
                 && row.getHealthStatusCode() < 300;
+    }
+
+    public static boolean isEstablishedUnhealthy(ClientRuntimeObservationEntity row) {
+        if (row == null || row.isInstrumentFailure()) {
+            return false;
+        }
+        if (!row.isLaunchSuccess()) {
+            return true;
+        }
+        return row.getHealthStatusCode() != null
+                && (row.getHealthStatusCode() < 200 || row.getHealthStatusCode() >= 300);
     }
 
     private boolean constraintIsOpen(ProjectEntity project) {
@@ -255,7 +280,15 @@ public class TocSubordinationLever {
             if (row.isInstrumentFailure()) {
                 continue;
             }
-            return !isHealthy(row);
+            if (isEstablishedUnhealthy(row)) {
+                return true;
+            }
+            if (isEstablishedHealthy(row)) {
+                return false;
+            }
+            // If health is unestablished (e.g. launchSuccess=true, healthStatusCode == null),
+            // ignorance does not open the constraint (Law 11).
+            return false;
         }
         return false; // never observed - nothing is known, so nothing is subordinated
     }

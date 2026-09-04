@@ -69,7 +69,7 @@ class TocSubordinationLeverTest {
         var levers = mock(LeverPromotionService.class);
         ProjectEntity project = project();
         when(observations.findByProjectIdOrderByObservedAtDesc(eq(project.getId()), any()))
-                .thenReturn(List.of(observation(true, null, false))); // launched, never served: unhealthy
+                .thenReturn(List.of(observation(true, 500, false))); // launched, served 500: established unhealthy
 
         new TocSubordinationLever(observations, levers)
                 .subordinate(project, OperationalAction.CHECK_COVERAGE_AUDITS, true);
@@ -186,7 +186,7 @@ class TocSubordinationLeverTest {
         var levers = mock(LeverPromotionService.class);
         ProjectEntity project = project();
         when(observations.findByProjectIdOrderByObservedAtDesc(eq(project.getId()), any()))
-                .thenReturn(List.of(observation(true, null, false)));
+                .thenReturn(List.of(observation(true, 500, false)));
 
         var lever = leverAt(observations, levers, LeverStage.SOFT_GATE);
 
@@ -202,7 +202,7 @@ class TocSubordinationLeverTest {
         var levers = mock(LeverPromotionService.class);
         ProjectEntity project = project();
         when(observations.findByProjectIdOrderByObservedAtDesc(eq(project.getId()), any()))
-                .thenReturn(List.of(observation(true, null, false)));
+                .thenReturn(List.of(observation(true, 500, false)));
 
         var lever = leverAt(observations, levers, LeverStage.HARD_GATE);
 
@@ -217,12 +217,32 @@ class TocSubordinationLeverTest {
         var levers = mock(LeverPromotionService.class);
         ProjectEntity project = project();
         when(observations.findByProjectIdOrderByObservedAtDesc(eq(project.getId()), any()))
-                .thenReturn(List.of(observation(true, null, false)));
+                .thenReturn(List.of(observation(true, 500, false)));
 
         var lever = leverAt(observations, levers, LeverStage.HARD_GATE);
 
         assertTrue(lever.subordinate(project, OperationalAction.CHECK_LAUNCHABILITY, true));
         assertTrue(lever.subordinate(project, OperationalAction.OBSERVE, true));
+    }
+
+    // --- Law 11 (Neutral Evidence / Decision Set Law) ----------------------------------------------------
+
+    @Test
+    void anObservationWithUnestablishedHealthDoesNotOpenConstraintAndSubordinatesNothing() {
+        // Law 11: "о x ничего не установлено => x множество НЕ покидает".
+        // When launch was successful, but health check was not taken or returned null,
+        // nothing is established about health. Ignorance must NOT open the constraint.
+        var observations = mock(ClientRuntimeObservationRepository.class);
+        var levers = mock(LeverPromotionService.class);
+        ProjectEntity project = project();
+        when(observations.findByProjectIdOrderByObservedAtDesc(eq(project.getId()), any()))
+                .thenReturn(List.of(observation(true, null, false)));
+
+        var lever = leverAt(observations, levers, LeverStage.HARD_GATE);
+
+        // Slack work remains allowed because constraint is NOT open on unestablished health
+        assertTrue(lever.subordinate(project, OperationalAction.CHECK_COVERAGE_AUDITS, true));
+        verify(levers, never()).recordObservation(any(), any(), any(), any(), any(), any());
     }
 
     @Test

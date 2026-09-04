@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * The factory's judgment layer: one bounded ruling on one refutation.
@@ -119,18 +121,106 @@ public class JudgmentAgentClient {
      * Truncation is announced inside the prompt, never silent: a judge that cannot see it has been cut will
      * rule on the fragment as though it were the whole, which is worse than refusing to rule.
      */
-    private static final int PROMPT_CHAR_LIMIT = 40_000;
+    static final int PROMPT_CHAR_LIMIT = 40_000;
 
-    private static String withinChannel(String prompt) {
+    static String withinChannel(String prompt) {
         if (prompt == null || prompt.length() <= PROMPT_CHAR_LIMIT) {
             return prompt;
         }
-        log.warn("[JUDGMENT] prompt of {} characters exceeds the {} the channel can carry; truncating",
+        log.warn("[JUDGMENT] prompt of {} characters exceeds the {} the channel can carry; selecting evidence to fit channel",
                 prompt.length(), PROMPT_CHAR_LIMIT);
-        return prompt.substring(0, PROMPT_CHAR_LIMIT)
+
+        // Law 17: No judgment may be made on mechanically truncated evidence.
+        // If the prompt contains a DIFF section, select diff evidence at file boundaries by criteria relevance
+        // rather than slicing the prompt mechanically by character index.
+        String marker = "\n\nDIFF\n";
+        int diffIdx = prompt.indexOf(marker);
+        if (diffIdx == -1) {
+            marker = "\nDIFF\n";
+            diffIdx = prompt.indexOf(marker);
+        }
+
+        if (diffIdx != -1) {
+            String prefix = prompt.substring(0, diffIdx + marker.length());
+            String rawDiff = prompt.substring(diffIdx + marker.length());
+
+            // Extract criteria vocabulary if present
+            String criteria = extractCriteria(prefix);
+
+            // If prefix alone is so large that it suffocates the diff, reduce repository listing if present
+            if (prefix.length() > PROMPT_CHAR_LIMIT - 10_000 && prefix.contains("WHAT THE REPOSITORY CONTAINS ON MAIN")) {
+                prefix = compactRepositoryStateInPrefix(prefix, 40);
+            }
+
+            // Calculate exact space available for diff
+            int warningReserve = 600;
+            int allowedDiff = Math.max(0, PROMPT_CHAR_LIMIT - prefix.length() - warningReserve);
+
+            CriteriaEvidenceSelector.SelectedEvidence selected =
+                    CriteriaEvidenceSelector.select(rawDiff, criteria, allowedDiff);
+
+            if (selected.omitted().isEmpty()) {
+                return prefix + selected.text();
+            }
+
+            String warning = "\n[THIS INPUT WAS TRIMMED TO FIT THE JUDGMENT CHANNEL. Evidence was selected at file "
+                    + "boundaries by bearing on acceptance criteria, not by position. Files omitted entirely: "
+                    + String.join(", ", selected.omitted()) + ". Do not rule as though you had seen the whole: "
+                    + "if what you need to decide could lie in an omitted file, answer UNDECIDABLE instead of deciding.]\n";
+            return prefix + warning + selected.text();
+        }
+
+        // Fallback for non-diff prompts: bounded cleanly with explicit notice
+        int cutoff = Math.max(0, PROMPT_CHAR_LIMIT - 300);
+        return prompt.substring(0, cutoff)
                 + "\n\n[THIS INPUT WAS TRUNCATED to fit the judgment channel. You are seeing the first "
-                + PROMPT_CHAR_LIMIT + " characters. Do not rule as though you had seen the whole: if what "
+                + cutoff + " characters. Do not rule as though you had seen the whole: if what "
                 + "you need to decide could lie in the part you cannot see, say so instead of deciding.]";
+    }
+
+    private static String extractCriteria(String text) {
+        int idx = text.indexOf("ACCEPTANCE CRITERIA THIS TASK CARRIED\n");
+        if (idx == -1) {
+            return "";
+        }
+        int start = idx + "ACCEPTANCE CRITERIA THIS TASK CARRIED\n".length();
+        int end = text.indexOf("\n\nMERGED PULL REQUEST", start);
+        if (end == -1) {
+            end = text.indexOf("\n\nWHAT THE REPOSITORY", start);
+        }
+        if (end == -1) {
+            end = text.indexOf("\n\nDIFF\n", start);
+        }
+        return end != -1 ? text.substring(start, end).trim() : text.substring(start).trim();
+    }
+
+    private static String compactRepositoryStateInPrefix(String prefix, int maxPaths) {
+        int startIdx = prefix.indexOf("WHAT THE REPOSITORY CONTAINS ON MAIN");
+        if (startIdx == -1) {
+            return prefix;
+        }
+        int colonIdx = prefix.indexOf(":\n", startIdx);
+        if (colonIdx == -1) {
+            return prefix;
+        }
+        int endIdx = prefix.indexOf("\n\n", colonIdx);
+        if (endIdx == -1) {
+            endIdx = prefix.indexOf("\nDIFF\n", colonIdx);
+        }
+        if (endIdx == -1) {
+            return prefix;
+        }
+        String pathsBlock = prefix.substring(colonIdx + 2, endIdx);
+        String[] lines = pathsBlock.split("\n");
+        if (lines.length <= maxPaths) {
+            return prefix;
+        }
+        List<String> kept = new ArrayList<>();
+        for (int i = 0; i < maxPaths && i < lines.length; i++) {
+            kept.add(lines[i]);
+        }
+        String compacted = String.join("\n", kept) + "\n... (" + (lines.length - maxPaths) + " more files on main)";
+        return prefix.substring(0, colonIdx + 2) + compacted + prefix.substring(endIdx);
     }
 
     public Ruling judge(String userPrompt) {

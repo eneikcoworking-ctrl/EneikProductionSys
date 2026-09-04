@@ -251,43 +251,33 @@ public class ProjectFlowService {
         this.self = self;
     }
 
+    /**
+     * Law 25a (Clean Project Admission Law):
+     * dom(admit) = { w : content(w) != empty }
+     * admit ⊥ state(P_prev)
+     * admit ⊥ availability(Jules, GitHub)
+     * effects(admit) ⊆ factory local data
+     *
+     * Admission writes strictly to the factory's own database: the project entity and its initial client wishlist.
+     * Zero external network calls are performed within this transaction, guaranteeing that admission is total:
+     * with a non-empty brief, it cannot fail due to external system outages or prior project state.
+     */
     @Transactional
-    public ProjectDto createProject(String name, String onboardingMode, String initialWishlist) {
+    public ProjectEntity admitProject(String name, String onboardingMode, String initialWishlist) {
         if (name == null || name.isBlank()) {
             throw new IllegalArgumentException("Project name is required");
         }
-        // A project with no wishlist is a project the orchestrator will eventually generate a bootstrap
-        // task for just to have something to do (the exact wasted-work pattern the Lean bootstrap-deferral
-        // fix targeted) - requiring real client content at creation time means that gap can never open in
-        // the first place. Fail before any GitHub repo/workspace provisioning happens, not after.
         if (initialWishlist == null || initialWishlist.isBlank()) {
             throw new IllegalArgumentException("initialWishlist is required - a project cannot be created without a client brief");
         }
         String mode = onboardingMode != null ? onboardingMode.trim() : "greenfield";
 
-        // 1. Freeze current active project only if greenfield
+        // 1. Local state transition for prior active project (pure SQL, zero external network calls)
         if ("greenfield".equalsIgnoreCase(mode)) {
-            projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active)
-                    .ifPresent(p -> freezeProjectAndCancelWork(p,
-                            "Project frozen: superseded by a new greenfield project"));
-            // This system works one project at a time - freezing the old active project above stops the
-            // orchestrator from touching it, but it does NOT release the claims its accounts were holding
-            // (ContinuousOrchestrationService only iterates ProjectStatus.active, so a frozen/accepted
-            // project's claims just sit there forever with releasedAt=null). That leaves accounts showing
-            // as busy/leased against work belonging to a project nobody is doing anymore. Confirmed live
-            // 2026-07-23: 5 unreleased claims from 4 different old projects (some frozen, some merely
-            // "accepted" and never explicitly frozen either) were still occupying accounts when a brand
-            // new greenfield project was created. Since a brand-new project can't have any claims of its
-            // own yet, releasing every currently-unreleased claim here is safe - it just requeues those old
-            // tasks (harmless, since their frozen/accepted projects are never processed again) and frees
-            // the accounts for the new project.
-            for (ClaimEntity staleClaim : claimRepository.findByReleasedAtIsNull()) {
-                claimService.releaseClaimToQueue(staleClaim.getTask().getId(),
-                        "Released: new greenfield project created, account freed from a stale prior-project claim");
-            }
+            retirePriorActiveProjectsLocally();
         }
 
-        // 2. Create new project
+        // 2. Create and persist new project entity in local database
         ProjectEntity project = new ProjectEntity();
         project.setName(name.trim());
         project.setSlug(uniqueSlug(name));
@@ -301,23 +291,76 @@ public class ProjectFlowService {
         project.setRepositoryUrl("https://github.com/" + githubOrganization + "/" + project.getSlug());
         project.setRepoUrl(project.getRepositoryUrl());
         project.setLinearProjectKey(project.getSlug().toUpperCase(Locale.ROOT).replace("-", "_"));
-        
+
         ProjectEntity saved = projectRepository.save(project);
         ensureProjectGenerationState(saved.getId());
-        ProjectFactoryResult factoryResult = projectFactoryService.provision(saved);
-        saved.setRepositoryUrl(factoryResult.repositoryUrl());
-        saved.setRepoUrl(factoryResult.repositoryUrl());
-        saved.setGithubRepositoryStatus(factoryResult.githubRepositoryStatus());
-        saved.setGithubRepositoryId(factoryResult.githubRepositoryId());
-        saved.setLinearProjectStatus(factoryResult.linearProjectStatus());
-        saved.setLinearProjectId(factoryResult.linearProjectId());
-        saved.setWorkspacePath(factoryResult.workspacePath());
-        saved.setFactoryStatus(factoryResult.factoryStatus());
-        saved.setFactoryReport(factoryResult.factoryReport());
-        if ("waiting".equals(factoryResult.factoryStatus())) {
-            saved.setStatus(ProjectStatus.waiting);
+
+        // 3. Persist initial client wishlist in local database
+        WishlistEntity firstWishlist = new WishlistEntity();
+        firstWishlist.setProjectId(saved.getId());
+        firstWishlist.setContent(initialWishlist.trim());
+        firstWishlist.setSource(WishlistSource.client);
+        firstWishlist.setStatus(WishlistStatus.pending);
+        wishlistRepository.save(firstWishlist);
+
+        return saved;
+    }
+
+    private void retirePriorActiveProjectsLocally() {
+        projectRepository.findFirstByStatusOrderByCreatedAtDesc(ProjectStatus.active)
+                .ifPresent(p -> {
+                    p.setStatus(ProjectStatus.frozen);
+                    projectRepository.save(p);
+                    for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(p.getId())) {
+                        TaskStatus status = task.getStatus();
+                        if (status != TaskStatus.done && status != TaskStatus.failed && status != TaskStatus.spike_completed) {
+                            claimService.closeTaskAsFailed(task.getId(),
+                                    "Project frozen: superseded by a new greenfield project");
+                        }
+                    }
+                });
+        for (ClaimEntity staleClaim : claimRepository.findByReleasedAtIsNull()) {
+            claimService.releaseClaimToQueue(staleClaim.getTask().getId(),
+                    "Released: new greenfield project created, account freed from a stale prior-project claim");
         }
-        saved = projectRepository.save(saved);
+    }
+
+    public ProjectDto createProject(String name, String onboardingMode, String initialWishlist) {
+        // Step 1: Atomic Law 25a admission (pure local transaction, zero external calls)
+        ProjectEntity saved = self != null ? self.admitProject(name, onboardingMode, initialWishlist)
+                : admitProject(name, onboardingMode, initialWishlist);
+
+        String mode = saved.getOnboardingMode();
+
+        // Step 2: Asynchronous / separate external cleanups for prior project (Law 8 variant function, idempotent)
+        if ("greenfield".equalsIgnoreCase(mode)) {
+            retireExternalWorkForPriorProjects();
+        }
+
+        // Step 3: Provision external resources (GitHub repo, Linear, workspace)
+        // Failure to provision externally updates project record but never rolls back project admission.
+        try {
+            ProjectFactoryResult factoryResult = projectFactoryService.provision(saved);
+            saved.setRepositoryUrl(factoryResult.repositoryUrl());
+            saved.setRepoUrl(factoryResult.repositoryUrl());
+            saved.setGithubRepositoryStatus(factoryResult.githubRepositoryStatus());
+            saved.setGithubRepositoryId(factoryResult.githubRepositoryId());
+            saved.setLinearProjectStatus(factoryResult.linearProjectStatus());
+            saved.setLinearProjectId(factoryResult.linearProjectId());
+            saved.setWorkspacePath(factoryResult.workspacePath());
+            saved.setFactoryStatus(factoryResult.factoryStatus());
+            saved.setFactoryReport(factoryResult.factoryReport());
+            if ("waiting".equals(factoryResult.factoryStatus())) {
+                saved.setStatus(ProjectStatus.waiting);
+            }
+            saved = projectRepository.save(saved);
+        } catch (Exception e) {
+            log.warn("ProjectFlowService: provisioning encountered error for admitted project {}: {}",
+                    saved.getId(), e.getMessage());
+            saved.setFactoryStatus("provision_failed");
+            saved.setFactoryReport(e.getMessage());
+            saved = projectRepository.save(saved);
+        }
 
         // Run onboarding audit if brownfield
         if ("brownfield".equalsIgnoreCase(mode)) {
@@ -328,14 +371,47 @@ public class ProjectFlowService {
             }
         }
 
-        WishlistEntity firstWishlist = new WishlistEntity();
-        firstWishlist.setProjectId(saved.getId());
-        firstWishlist.setContent(initialWishlist.trim());
-        firstWishlist.setSource(WishlistSource.client);
-        firstWishlist.setStatus(WishlistStatus.pending);
-        wishlistRepository.save(firstWishlist);
-
         return toProjectDto(saved);
+    }
+
+    private void retireExternalWorkForPriorProjects() {
+        try {
+            for (ProjectEntity frozen : projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.frozen)) {
+                cancelExternalWorkForProject(frozen, "Project frozen: superseded by a new project");
+            }
+        } catch (Exception e) {
+            log.warn("ProjectFlowService: background retirement of prior projects encountered non-fatal error: {}",
+                    e.getMessage());
+        }
+    }
+
+    private void cancelExternalWorkForProject(ProjectEntity project, String reason) {
+        List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId());
+        for (TaskEntity task : tasks) {
+            for (JulesSessionEntity session : julesSessionRepository.findByTaskId(task.getId())) {
+                String sessionStatus = session.getStatus();
+                if (session.getExternalSessionId() != null
+                        && !"skipped".equals(session.getExternalSessionId())
+                        && ("queued".equals(sessionStatus)
+                        || "running".equals(sessionStatus)
+                        || "revising".equals(sessionStatus)
+                        || "pr_opened".equals(sessionStatus)
+                        || "stuck".equals(sessionStatus))) {
+                    try {
+                        julesDispatchService.cancelSession(session.getId(), reason);
+                    } catch (Exception e) {
+                        log.warn("ProjectFlowService: failed to cancel Jules session {} during retirement: {}",
+                                session.getId(), e.getMessage());
+                    }
+                }
+            }
+        }
+        try {
+            gitHubPullRequestService.closeOpenPullRequests(project, reason);
+        } catch (Exception e) {
+            log.warn("ProjectFlowService: failed to close open GitHub PRs while retiring project {}: {}",
+                    project.getId(), e.getMessage());
+        }
     }
 
     private void ensureProjectGenerationState(UUID projectId) {
