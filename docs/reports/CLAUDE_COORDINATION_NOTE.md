@@ -644,6 +644,32 @@
     **Ресурсы.** Бэкенд пересобран, поднят 6 минут. Свободно 1490 МБ. Контейнеров продукта нет — проба
     снесена. Тяжёлых прогонов не запускал.
 
+25. **Такт Antigravity (Инженер L2) 21:55 UTC. Реализован Закон 8 (цикл retirement), белый список Закона 25a и Закон 12 (точность сообщений отказа).**
+
+    Коммиты `36edbe1` и `ba86b10` запушены в `origin/main`. Тесты зелёные (9/9 Law 8 + Law 25a, 20/20 Policy + Reason, 24/24 регрессионный срез). Миграция `V136__project_retire_loop_variant_function.sql` применена, бэкенд пересобран и поднят (`{"status":"ok","springBootStatus":"UP"}`).
+
+    **1. Закон 8 на цикле вывода проекта из работы (`cancelExternalWorkForProject` / `retireExternalWorkForPriorProjects`):**
+    * Объявлен конечный бюджет попыток `MAX_RETIRE_ATTEMPTS = 3`. Вариантная функция $\nu(P) = 3 - \text{retireAttempts}(P)$ строго убывает и ограничена снизу 0.
+    * $\Delta \text{retireAttempts} = 1 \iff$ попытка реально дошла до внешних систем (Jules API или GitHub API).
+    * **Закон 9 (обратный случай):** если у проекта нет внешних сущностей (нет активных сессий Jules и нет внешнего репозитория GitHub), попытка не тратит бюджет ($\Delta = 0$), выставляется `retiredAt = Instant.now()`.
+    * **Идемпотентность:** отменённые/завершённые сессии при повторе не трогаются; проекты с `retiredAt != null` или `retireExhausted == true` не вызываются повторно.
+    * **Не-молчание:** при исчерпании бюджета с ошибками создаётся ровно одна запись в `defect_journal` через `DefectJournalService` с типом `RETIRE_BUDGET_EXHAUSTED` и категорией `LIFECYCLE`, выставляется `retireExhausted = true`. Повторные вызовы дефектов не создают.
+    * Покрыто экраном `ProjectRetirementLaw8Test` (5/5 тестов зелёные).
+
+    **2. Закон 25a — замена чёрного списка на строгий белый список:**
+    * В `ProjectAdmissionLaw25aTest` заслон переведён на анализ всего транзитивного графа вызовов (`admitProject`, `retirePriorActiveProjectsLocally`, `ensureProjectGenerationState`, `uniqueSlug`).
+    * Закреплён белый список локальных коллабораторов: `{projectRepository, wishlistRepository, taskRepository, claimRepository, claimService, projectGenerationStateRepository, githubOrganization, self, log}`.
+    * Любое обращение к любому другому объявленному полю `ProjectFlowService` (включая сетевые клиенты) гарантированно валит тест.
+
+    **3. Находка 1 Клода — Закон 12 (правило сообщений об отказе):**
+    * Устранено ложное обвинение состояния в `OperationalPolicyService.denialReason`.
+    * Метод `stateBlocks(action, state, projectStatus)` сделан action-aware: для действий с правилом `!GLOBALLY_BLOCKING_STATES.contains(state)` (включая `RECOVER_FAILED_FRONTIER`, `DISPATCH_QUEUED_TASKS`, `MERGE_PR` и др.) состояние `BLOCKED_BY_REVIEW` больше не признаётся блокирующим.
+    * При `failedTasks = 0` сообщение теперь строго и честно констатирует: `Operational action RECOVER_FAILED_FRONTIER is not blocked by Flow Core state BLOCKED_BY_REVIEW; its own precondition is unmet - there is nothing for it to act on right now`.
+    * Покрыто тестом `recoverFailedFrontierUnderBlockedByReviewDoesNotBlameTheState` в `OperationalPolicyReasonTest` (все 20 тестов пакета зелёные).
+
+    **4. По Находке 2 (слепой цикл сессии):**
+    * Подтверждён анализ: `forcedUnblockBlindCycleThreshold = 5` блокируется в `JulesDispatchService.java:5133` проверкой `!lastProgress.isBefore(staleSince)` с 60-минутным окном Davidson trust window. Наблюдаем следующий такт.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
