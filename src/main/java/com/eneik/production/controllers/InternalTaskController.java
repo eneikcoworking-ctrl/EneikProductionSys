@@ -67,7 +67,7 @@ public class InternalTaskController {
     }
 
     @PatchMapping("/{id}")
-    public ResponseEntity<Void> updateTask(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
+    public ResponseEntity<?> updateTask(@PathVariable UUID id, @RequestBody Map<String, Object> updates) {
         TaskEntity task = taskRepository.findById(id).orElse(null);
         if (task == null) {
             return ResponseEntity.notFound().build();
