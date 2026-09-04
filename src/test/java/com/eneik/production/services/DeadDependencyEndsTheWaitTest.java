@@ -4,6 +4,7 @@ import com.eneik.production.models.persistence.TaskEntity;
 import com.eneik.production.models.persistence.TaskStatus;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.models.persistence.WishlistSource;
+import com.eneik.production.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -67,6 +68,48 @@ class DeadDependencyEndsTheWaitTest {
         clientBrief.setSource(WishlistSource.client);
 
         assertFalse(PlannedWorkRecoveryService.isProductWorkThisMayResume(queued, clientBrief));
+    }
+
+    @Test
+    void aResumableDependencyWhoseOnlyResumeIsSpentIsDeadForGood() {
+        // The case that held the live circuit. It IS work this service resumes, so the durable predicate
+        // says yes - and its single automatic resume is already gone, so nothing will ever act on that yes.
+        // Measured 04.09: the dependency holding the whole project appeared in no refusal bucket at all,
+        // which by this class's own filter means exactly that its budget was spent.
+        TaskEntity dependency = resumableDependency();
+        dependency.setPayload(new com.fasterxml.jackson.databind.ObjectMapper()
+                .createObjectNode().put("ems_bounded_plan_resume_count", 1));
+
+        assertTrue(service().isDeadForGood(dependency),
+                "a resumable dependency past its only resume still ends the wait");
+    }
+
+    @Test
+    void aDependencyWithItsResumeStillUnspentIsWorthWaitingFor() {
+        // The mandatory reverse case: a dependency that can still be revived must not end its dependent.
+        assertFalse(service().isDeadForGood(resumableDependency()));
+    }
+
+    private TaskEntity resumableDependency() {
+        TaskEntity dependency = failedTask();
+        dependency.setSourceWishlistId(java.util.UUID.randomUUID());
+        dependency.setJulesDispatchStatus("auto-recovery is disabled; dependent task retired");
+        return dependency;
+    }
+
+    private PlannedWorkRecoveryService service() {
+        WishlistRepository wishlistRepository = org.mockito.Mockito.mock(WishlistRepository.class);
+        WishlistEntity clientBrief = new WishlistEntity();
+        clientBrief.setSource(WishlistSource.client);
+        org.mockito.Mockito.when(wishlistRepository.findById(org.mockito.ArgumentMatchers.any()))
+                .thenReturn(java.util.Optional.of(clientBrief));
+        return new PlannedWorkRecoveryService(
+                org.mockito.Mockito.mock(com.eneik.production.repositories.TaskRepository.class),
+                wishlistRepository,
+                org.mockito.Mockito.mock(com.eneik.production.repositories.JulesSessionRepository.class),
+                org.mockito.Mockito.mock(ClaimService.class),
+                org.mockito.Mockito.mock(ClientDeliverableReadinessService.class),
+                new com.fasterxml.jackson.databind.ObjectMapper());
     }
 
     private TaskEntity failedTask() {

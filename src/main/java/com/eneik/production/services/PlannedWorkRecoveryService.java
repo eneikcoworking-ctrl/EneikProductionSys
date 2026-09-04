@@ -325,9 +325,15 @@ public class PlannedWorkRecoveryService {
      * durable predicate the BLOCKED_BY_FAILED_FRONTIER gate itself uses, so the two cannot disagree.
      */
     boolean isDeadForGood(TaskEntity dependency) {
+        // Two ways nothing will ever revive it, and both end the wait. Either it is not work this service
+        // resumes at all, or it is - and its single automatic resume is already spent. The second was
+        // missing and is the common case: this service's own measurement recorded 17 tasks resumable in
+        // principle and 13 of them already past their only resume. Measured 04.09 on test-fiftieth, the
+        // dependency holding the whole project appeared in NO refusal bucket, which by this class's own
+        // filter means exactly that its budget was gone.
         return dependency != null
                 && dependency.getStatus() == TaskStatus.failed
-                && !isEligibleRetiredPlanTask(dependency);
+                && (!isEligibleRetiredPlanTask(dependency) || !hasResumeBudgetLeft(dependency));
     }
 
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
