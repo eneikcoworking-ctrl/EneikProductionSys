@@ -32,21 +32,32 @@
    * Сведение предикатов приёмки в `ProjectFlowService.computeBlockedItems` и `JulesDispatchService.reconcileDoneTasksNotReachedMain` к строгому предикату `readinessService.hasRequiredMergeEvidence(task)`.
    * Добавлены тесты `computeBlockedItemsFlagsDoneTaskWithMergedPrLackingCodeAsBlockedUnderLaw4` и `computeBlockedItemsAcceptsDoneTaskWithRequiredMergeEvidenceUnderLaw4`.
 
-2. **Закон 20 / S2 (Закон необратимости статуса) — текущий такт:**
+2. **Закон 20 / S2 (Закон необратимости статуса) — коммит `87d24f3`:**
    * `TaskStatus`: добавлен метод `isTerminal()` (`done`, `failed`, `spike_completed`).
    * `TaskEntity`: добавлены `isTerminal()`, строгий защитный инвариант в `setStatus(...)` (выбрасывает `IllegalStateException` при попытке перетереть терминальный статус другим), и `initializeStatus(...)` для безопасной инициализации новых сущностей.
    * Разделение 36 вызовов на инициализацию сущностей (`initializeStatus`) и мутации жизненного цикла (`setStatus` с терминальными проверками и `writeStatusUnlessTerminal`).
    * Защищены: `AutoMergeService`, `ClaimService`, `GeminiObserverActionService`, `JulesDispatchService`, `OpsAuditorService`, `PlannedWorkRecoveryService`, `ProjectFlowService`, `TechnicalLeadCompiler`, `BranchGarbageCollectorService`, `InternalTaskController`.
    * Добавлен модульный тест `TaskEntityLaw20Test`.
 
+3. **Закон 16 (Закон предмета ревью / Вход в review) — коммит `2bb5787`:**
+   * Реализован паттерн Нуэля Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, `NUEL_BELNAP_05_LAMBDA_CORE_REDUCTION`, `NUEL_BELNAP_08_INSTITUTIONAL_FACT_REGISTER`):
+     - Чистая функция допуска `evaluateReviewAdmission`:
+       - `ADMIT` (`told-true`): артефакт PR присутствует либо роль не требует кода (спецификации, документация) $\implies$ допуск в `review` и вызов quality gate.
+       - `DEFER` (`told-neither`): сессия активна, но PR ещё не зарегистрирован $\implies$ решение откладывается, задача остаётся в работе, заявка не сбрасывается (защита от отказа по гонке, Закон 11).
+       - `REJECT` (`told-false`): все сессии терминальны (или отсутствуют) и артефакта нет $\implies$ перевод в `failed` (состояние с выходами) и освобождение заявки.
+   * Внедрён `PrReviewRepository` в `ClaimService`.
+   * Создан модульный тест-гарнитур `ReviewAdmissionLaw16Test` (7 тестов).
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Верификация)
 
 * **Регламент взаимодействия:** Руководствоваться правилами из `docs/architecture/AUTONOMOUS_OPERATING_REGULATION.md`.
-* **Аудит инвариантов плана:** Сверить выполнение инвариантов S2 и Закона 4 по `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
-* **Запуск тестов в контейнере:** Как только контур будет запущен, прогнать `mvn test -Dtest=TaskEntityLaw20Test,ProjectFlowServiceTest`.
+* **Аудит инвариантов плана:** 
+  1. Обновить статус Закона 16 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` (вход в review теперь держится кодом и тестами).
+  2. Подготовить философский паттерн для следующего дефекта: **Закон 13 (Бюджет запросов к GitHub API, шардирование состояния по токенам)** или **Закон 17 (Закон свидетельства / отбор diff по критериям)**.
 * **Режим ответа:** Правка строк плана «держится / не держится» молча, без генерации шума в чат (согласно указанию оператора «не нужны сводки, нужен результат»).
+
 
 
 
