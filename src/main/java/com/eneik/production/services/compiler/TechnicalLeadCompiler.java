@@ -394,7 +394,7 @@ public class TechnicalLeadCompiler {
         // its own falsifier and the blank case is refused in one place instead of being possible here.
         task.setAcceptanceCriteria(acceptanceCriteriaFor(wishlist));
 
-        task.setStatus(TaskStatus.queued);
+        task.initializeStatus(TaskStatus.queued);
         task.setCynefinDomain(cynefin);
         task.setSourceWishlistId(wishlist.getId());
         task.setFeatureId(featureService.resolveOrCreateFeatureId(wishlist, project.getId()));

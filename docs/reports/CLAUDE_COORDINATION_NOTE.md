@@ -26,9 +26,25 @@
 
 ---
 
-## 2. 🎯 Текущий фронт работ Antigravity
+## 2. 🎯 Выполненные задачи Antigravity
 
-Antigravity начинает с **Закона 4 (Закон предмета слияния)**:
-Сведение предикатов приёмки в `ProjectFlowService.computeBlockedItems` и `JulesDispatchService.reconcileDoneTasksNotReachedMain` к строгому предикату `readinessService.hasRequiredMergeEvidence(task)`.
+1. **Закон 4 (Закон предмета слияния) — коммит `c344c23`:**
+   * Сведение предикатов приёмки в `ProjectFlowService.computeBlockedItems` и `JulesDispatchService.reconcileDoneTasksNotReachedMain` к строгому предикату `readinessService.hasRequiredMergeEvidence(task)`.
+   * Добавлены тесты `computeBlockedItemsFlagsDoneTaskWithMergedPrLackingCodeAsBlockedUnderLaw4` и `computeBlockedItemsAcceptsDoneTaskWithRequiredMergeEvidenceUnderLaw4`.
+
+2. **Закон 20 / S2 (Закон необратимости статуса) — текущий такт:**
+   * `TaskStatus`: добавлен метод `isTerminal()` (`done`, `failed`, `spike_completed`).
+   * `TaskEntity`: добавлены `isTerminal()`, строгий защитный инвариант в `setStatus(...)` (выбрасывает `IllegalStateException` при попытке перетереть терминальный статус другим), и `initializeStatus(...)` для безопасной инициализации новых сущностей.
+   * Разделение 36 вызовов на инициализацию сущностей (`initializeStatus`) и мутации жизненного цикла (`setStatus` с терминальными проверками и `writeStatusUnlessTerminal`).
+   * Защищены: `AutoMergeService`, `ClaimService`, `GeminiObserverActionService`, `JulesDispatchService`, `OpsAuditorService`, `PlannedWorkRecoveryService`, `ProjectFlowService`, `TechnicalLeadCompiler`, `BranchGarbageCollectorService`, `InternalTaskController`.
+   * Добавлен модульный тест `TaskEntityLaw20Test`.
+
+---
+
+## 3. 📋 Задачи Claude (Аудит и Верификация)
+
+* **Аудит инвариантов плана:** Сверить выполнение инвариантов S2 и Закона 4 по `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
+* **Запуск тестов в контейнере:** Как только контур будет запущен, прогнать `mvn test -Dtest=TaskEntityLaw20Test,ProjectFlowServiceTest`.
+
 
 

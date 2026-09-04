@@ -522,7 +522,7 @@ public class OpsAuditorService {
         recovery.setRole(failedTask.getRole());
         recovery.setFeatureId(failedTask.getFeatureId());
         recovery.setTitle("Recovery: " + failedTask.getTitle());
-        recovery.setStatus(TaskStatus.queued);
+        recovery.initializeStatus(TaskStatus.queued);
         recovery.setDescription("This is a recovery attempt for a previous task that failed and was retired "
                 + "without a replacement, leaving dependent work stuck.\n\n"
                 + "Original task title: " + failedTask.getTitle() + "\n"

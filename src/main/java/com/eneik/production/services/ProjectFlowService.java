@@ -753,8 +753,10 @@ public class ProjectFlowService {
         boolean frontendScaffolded = commitDeterministicFrontendScaffoldIfAbsent(project);
 
         if (committed && backendScaffolded && frontendScaffolded) {
-            task.setStatus(TaskStatus.done);
-            taskRepository.save(task);
+            if (!task.isTerminal()) {
+                task.setStatus(TaskStatus.done);
+                taskRepository.save(task);
+            }
             log.info("Environment bootstrap for project {} completed deterministically by the backend (no Jules session needed): docs/architecture/bootstrap.md", project.getId());
         } else {
             log.warn("Environment bootstrap for project {} incomplete (doc={}, backend scaffold={}, frontend scaffold={}); "
@@ -1718,9 +1720,11 @@ public class ProjectFlowService {
                 }
                 log.warn("ProjectFlowService: blocked compiler task {} reopened {} wishlist(s) to pending for a fresh compiler dispatch",
                         task.getId(), reopened);
-                task.setStatus(TaskStatus.failed);
-                task.setJulesDispatchStatus("Compiler task blocked; wishlist(s) reopened for a fresh compiler dispatch instead of generic recovery");
-                taskRepository.save(task);
+                if (!task.isTerminal()) {
+                    task.setStatus(TaskStatus.failed);
+                    task.setJulesDispatchStatus("Compiler task blocked; wishlist(s) reopened for a fresh compiler dispatch instead of generic recovery");
+                    taskRepository.save(task);
+                }
                 continue;
             }
 
@@ -1732,18 +1736,22 @@ public class ProjectFlowService {
             // (e.g. a fresh mockup+design-review cycle, a fresh falsification pass) - so the correct recovery
             // here is simply to stop the noise, not to fabricate bespoke recovery logic for each.
             if (isFalsificationAuditTask(task) || isReviewFallbackTask(task) || isDesignReviewTask(task) || isCoverageAuditTask(task) || isPhilosophicalAuditTask(task)) {
-                task.setStatus(TaskStatus.failed);
-                task.setJulesDispatchStatus("System task blocked; retired instead of generic clarify-wishlist recovery (not role feature work)");
-                taskRepository.save(task);
+                if (!task.isTerminal()) {
+                    task.setStatus(TaskStatus.failed);
+                    task.setJulesDispatchStatus("System task blocked; retired instead of generic clarify-wishlist recovery (not role feature work)");
+                    taskRepository.save(task);
+                }
                 continue;
             }
 
             log.warn("ProjectFlowService: retiring blocked task {} without creating a recovery wishlist/task; "
                             + "product recovery reuses an existing planned task ID or enters through self_falsification",
                     task.getId());
-            task.setStatus(TaskStatus.failed);
-            task.setJulesDispatchStatus("Blocked task retired by iteration-admission poka-yoke; no child work created");
-            taskRepository.save(task);
+            if (!task.isTerminal()) {
+                task.setStatus(TaskStatus.failed);
+                task.setJulesDispatchStatus("Blocked task retired by iteration-admission poka-yoke; no child work created");
+                taskRepository.save(task);
+            }
         }
         return created;
     }
@@ -2491,7 +2499,7 @@ public class ProjectFlowService {
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
         String carrierPrompt = wishlistCompilerPromptBatch(admitted, planPath);
         carrierTask.setDescription(carrierPrompt);
-        carrierTask.setStatus(TaskStatus.queued);
+        carrierTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
@@ -3210,7 +3218,7 @@ public class ProjectFlowService {
         String planPath = ".eneik/records/task-plan-" + UUID.randomUUID() + ".json";
         String compilerPrompt = wishlistCompilerPromptBatch(wishlists, planPath);
         compilerTask.setDescription(compilerPrompt);
-        compilerTask.setStatus(TaskStatus.queued);
+        compilerTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, WISHLIST_COMPILER_TASK_TYPE);
@@ -4226,7 +4234,7 @@ public class ProjectFlowService {
         // avoid tripping the duplicate-task-title false positive across separate legitimate audit runs.
         auditTask.setTitle("Falsification audit: refusal criteria & methodological review (" + shortId(UUID.randomUUID()) + ")");
         auditTask.setDescription(prompt);
-        auditTask.setStatus(TaskStatus.queued);
+        auditTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, FALSIFICATION_AUDIT_TASK_TYPE);
@@ -4313,7 +4321,7 @@ public class ProjectFlowService {
         auditTask.setRole(compilerRole);
         auditTask.setTitle("Philosophical falsification: product critique (" + shortId(UUID.randomUUID()) + ")");
         auditTask.setDescription(prompt);
-        auditTask.setStatus(TaskStatus.queued);
+        auditTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PHILOSOPHICAL_AUDIT_TASK_TYPE);
@@ -4472,7 +4480,7 @@ public class ProjectFlowService {
         carrierTask.setRole(compilerRole);
         carrierTask.setTitle("Persistent philosophical audit worker (" + shortId(project.getId()) + ")");
         carrierTask.setDescription(prompt);
-        carrierTask.setStatus(TaskStatus.queued);
+        carrierTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PHILOSOPHICAL_AUDIT_TASK_TYPE);
@@ -4536,9 +4544,11 @@ public class ProjectFlowService {
     private void quarantineOutOfCycleGeneratedWork(TaskEntity task) {
         String reason = "Poka-yoke: out-of-cycle generated work is quarantined; product improvements "
                 + "must enter through the bounded self_falsification iteration";
-        task.setStatus(TaskStatus.failed);
-        task.setJulesDispatchStatus(reason);
-        taskRepository.save(task);
+        if (!task.isTerminal()) {
+            task.setStatus(TaskStatus.failed);
+            task.setJulesDispatchStatus(reason);
+            taskRepository.save(task);
+        }
         wishlistRepository.findById(task.getSourceWishlistId()).ifPresent(wishlist -> {
             if (wishlist.getStatus() != WishlistStatus.dismissed) {
                 wishlist.setStatus(WishlistStatus.dismissed);
@@ -4870,7 +4880,7 @@ public class ProjectFlowService {
         auditTask.setRole(compilerRole);
         auditTask.setTitle("Coverage audit: brief vs shipped code (" + shortId(originalWishlist.getId()) + ")");
         auditTask.setDescription(prompt);
-        auditTask.setStatus(TaskStatus.queued);
+        auditTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, COVERAGE_AUDIT_TASK_TYPE);
@@ -5025,7 +5035,7 @@ public class ProjectFlowService {
         reviewTask.setTitle("PR review fallback (Gemini unavailable, " + originalTasks.size() + " PR(s), "
                 + shortId(originalTasks.get(0).getId()) + ")");
         reviewTask.setDescription(prompt);
-        reviewTask.setStatus(TaskStatus.queued);
+        reviewTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
@@ -5074,7 +5084,7 @@ public class ProjectFlowService {
         reviewTask.setRole(compilerRole);
         reviewTask.setTitle("Persistent PR review fallback worker (" + shortId(originalTasks.get(0).getProject().getId()) + ")");
         reviewTask.setDescription(prompt);
-        reviewTask.setStatus(TaskStatus.queued);
+        reviewTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, PR_REVIEW_FALLBACK_TASK_TYPE);
@@ -5205,7 +5215,7 @@ public class ProjectFlowService {
         reviewTask.setRole(compilerRole);
         reviewTask.setTitle("Design review (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
         reviewTask.setDescription(designReviewPrompt(draftPath, brief, charter, verdictPath));
-        reviewTask.setStatus(TaskStatus.queued);
+        reviewTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, DESIGN_REVIEW_TASK_TYPE);
@@ -5263,7 +5273,7 @@ public class ProjectFlowService {
         implementationTask.setDescription("Implement the following pixel-perfect against the already-approved design reference. " + jtbd
                 + "\n\nDESIGN_MOCKUP_ASSET (already approved - implement directly against it, no new mockup or design review needed): "
                 + approvedDesignPath + "/mockup.html");
-        implementationTask.setStatus(TaskStatus.queued);
+        implementationTask.initializeStatus(TaskStatus.queued);
 
         implementationTask.setAcceptanceCriteria("Given the approved design reference, When this implementation is delivered, Then the shipped screen matches it element for element, and any deviation is named in the pull request with the reason it was necessary.");
         implementationTask = taskRepository.save(implementationTask);
@@ -5298,7 +5308,7 @@ public class ProjectFlowService {
         triageTask.setRole(triageRole);
         triageTask.setTitle("Design concern triage (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
         triageTask.setDescription(designConcernTriagePrompt(mockupPath, rawConcernsText, charter, recordPath));
-        triageTask.setStatus(TaskStatus.queued);
+        triageTask.initializeStatus(TaskStatus.queued);
 
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put(WISHLIST_COMPILER_PAYLOAD_KEY, DESIGN_CONCERN_TRIAGE_TASK_TYPE);

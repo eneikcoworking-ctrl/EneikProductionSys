@@ -75,7 +75,7 @@ public class MarketResearchService {
         task.setProject(carrier);
         task.setRole(role);
         task.setTargetContext(TargetContext.ORCHESTRATOR_SYSTEM);
-        task.setStatus(TaskStatus.queued);
+        task.initializeStatus(TaskStatus.queued);
         task.setTitle("Market research " + profileId + " " + market);
         task.setDescription(researchPrompt(profileId, market, boundedSample));
         task.setAcceptanceCriteria("Given the market and sample size this task names, When the research ends, Then it reports counts observed in that many real products with the date and the method used, and marks any figure it could not source as absent rather than estimating it.");

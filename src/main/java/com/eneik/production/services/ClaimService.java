@@ -194,6 +194,11 @@ public class ClaimService {
         ClaimEntity claim = findActiveClaimByTaskId(taskId);
 
         TaskEntity task = claim.getTask();
+        if (task.isTerminal()) {
+            log.info("ClaimService.complete: task {} is already terminal ({}); skipping status mutation", taskId, task.getStatus());
+            closeClaimForTerminalTask(claim, task, "complete called on terminal task");
+            return;
+        }
         // If it was already in review (AI Reviewer finished), then mark as done
         if (task.getStatus() == TaskStatus.review) {
             // 2026-08-23 (poka-yoke, not inspection). This is the only transition into done, and it is
@@ -543,7 +548,7 @@ public class ClaimService {
     }
 
     private boolean isTerminal(TaskStatus status) {
-        return status == TaskStatus.done || status == TaskStatus.failed || status == TaskStatus.spike_completed;
+        return status != null && status.isTerminal();
     }
 
     private void closeClaimForTerminalTask(ClaimEntity claim, TaskEntity task, String trigger) {

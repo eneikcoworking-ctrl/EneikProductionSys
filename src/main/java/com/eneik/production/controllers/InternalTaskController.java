@@ -91,7 +91,12 @@ public class InternalTaskController {
             task.setPayload(rawPayload == null ? null : objectMapper.valueToTree(rawPayload));
         }
         if (updates.containsKey("status")) {
-            task.setStatus(TaskStatus.valueOf((String) updates.get("status")));
+            TaskStatus newStatus = TaskStatus.valueOf((String) updates.get("status"));
+            if (task.isTerminal() && task.getStatus() != newStatus) {
+                return ResponseEntity.status(org.springframework.http.HttpStatus.CONFLICT)
+                        .body(java.util.Map.of("error", "Cannot overwrite terminal task status " + task.getStatus() + " with " + newStatus));
+            }
+            task.setStatus(newStatus);
         }
         // Manual correction for tasks whose cynefinDomain was mis-derived before the 2026-08-03 fix (see
         // TechnicalLeadCompiler.cynefinDomain) - restores the compiler's real original per-slice value.

@@ -172,8 +172,10 @@ public class JulesDispatchService {
      * handler to give the task a real terminal state and stop dispatchReviewTasks from ever seeing it.
      */
     private void markSystemTaskDone(TaskEntity task) {
-        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-        taskRepository.save(task);
+        if (!task.isTerminal()) {
+            task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+            taskRepository.save(task);
+        }
     }
 
     private void closeSessionAsNoCode(JulesSessionEntity session, String reason) {
@@ -2142,10 +2144,12 @@ public class JulesDispatchService {
                     if (!fallback.isEmpty()) {
                         dispatchReviewerFallbackBatch(fallback);
                     }
-                } else {
+                } else if (!task.isTerminal()) {
                     task.setStatus(com.eneik.production.models.persistence.TaskStatus.pending_review);
                     taskRepository.save(task);
                     log.info("Task {} implementer PR opened; deferred to batched review (next tick).", task.getId());
+                } else {
+                    log.warn("Task {} implementer PR opened but task is already terminal ({}); skipping pending_review", task.getId(), task.getStatus());
                 }
             } else if (task.getStatus() == com.eneik.production.models.persistence.TaskStatus.review) {
                 log.info("Jules reviewer session {} transitioned to pr_opened. Completing reviewer phase for task {}.", session.getId(), taskId);
@@ -3855,7 +3859,9 @@ public class JulesDispatchService {
                 // BlockedTasks already retires an orphaned blocked task (no active Jules session) to failed
                 // with a clear reason, which lets the normal falsification/coverage-audit gap-detection
                 // recreate the work instead of leaving it silently frozen in pending_review forever.
-                originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.blocked);
+                if (!originalTask.isTerminal()) {
+                    originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.blocked);
+                }
                 originalTask.setJulesDispatchStatus("PR review fallback returned no verdict for this task " + retries
                         + " time(s) in a row; giving up automatic retry.");
                 taskRepository.save(originalTask);
@@ -3882,7 +3888,9 @@ public class JulesDispatchService {
 
         if (blocked) {
             log.warn("PR review fallback: task {} (PR {}) blocked by Jules reviewer - {}", originalTaskId, prUrl, verdict.criticalReason());
-            originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            if (!originalTask.isTerminal()) {
+                originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.claimed);
+            }
             projectFlowService.clearReviewFallbackNullVerdictRetries(originalTask);
             taskRepository.save(originalTask);
             implementerSession.setStatus("revising");
@@ -3927,7 +3935,9 @@ public class JulesDispatchService {
         prData.setDiffSummary(remarks);
         prReviewPipelineService.onPrOpened(prUrl, implementerSession.getId(), prData);
 
-        originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
+        if (!originalTask.isTerminal()) {
+            originalTask.setStatus(com.eneik.production.models.persistence.TaskStatus.review);
+        }
         projectFlowService.clearReviewFallbackNullVerdictRetries(originalTask);
         taskRepository.save(originalTask);
         systemProgressTracker.recordProgress();

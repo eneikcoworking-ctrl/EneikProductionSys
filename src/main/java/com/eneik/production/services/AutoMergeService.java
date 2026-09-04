@@ -989,8 +989,10 @@ public class AutoMergeService {
                     
                     if ("complex".equalsIgnoreCase(task.getCynefinDomain())) {
                         log.info("Cynefin Domain complex: Task {} spike completed. Not merging branch.", task.getId());
-                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.spike_completed);
-                        taskRepository.save(task);
+                        if (!task.isTerminal()) {
+                            task.setStatus(com.eneik.production.models.persistence.TaskStatus.spike_completed);
+                            taskRepository.save(task);
+                        }
                         
                         review.setMerged(false);
                         prReviewRepository.save(review);
@@ -1225,8 +1227,10 @@ public class AutoMergeService {
                 julesSessionRepository.findById(review.getJulesSessionId()).ifPresent(session -> {
                     UUID taskId = session.getTaskId();
                     taskRepository.findById(taskId).ifPresent(task -> {
-                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-                        taskRepository.save(task);
+                        if (!task.isTerminal()) {
+                            task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                            taskRepository.save(task);
+                        }
                         claimService.releaseTerminalClaim(taskId);
                         log.info("AutoMergeService: Marked task {} as DONE because its PR was merged", taskId);
 
@@ -1794,6 +1798,10 @@ public class AutoMergeService {
                 log.warn("Cannot trigger auto-resolve rebase for task {} because no accountId could be resolved", taskId);
                 return;
             }
+            if (task.isTerminal()) {
+                log.warn("Cannot trigger auto-resolve rebase for task {} because it is already terminal ({})", taskId, task.getStatus());
+                return;
+            }
             task.setStatus(com.eneik.production.models.persistence.TaskStatus.queued);
             taskRepository.save(task);
             claimService.claimSpecificTask(task.getId(), accountId);
@@ -1835,8 +1843,10 @@ public class AutoMergeService {
         }
 
         if (hasMergedSibling) {
-            task.setStatus(TaskStatus.done);
-            taskRepository.save(task);
+            if (!task.isTerminal()) {
+                task.setStatus(TaskStatus.done);
+                taskRepository.save(task);
+            }
             claimService.releaseTerminalClaim(task.getId());
         }
 
@@ -2235,8 +2245,10 @@ public class AutoMergeService {
                 if (!hasRunningSession) {
                     log.info("AutoMergeService [LOCAL-MOCK]: Automatically completing orphaned task {} ({}) for active project {}",
                             task.getId(), task.getTitle(), task.getProject().getName());
-                    task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
-                    taskRepository.save(task);
+                    if (!task.isTerminal()) {
+                        task.setStatus(com.eneik.production.models.persistence.TaskStatus.done);
+                        taskRepository.save(task);
+                    }
 
                     prReviewRepository.findByJulesSessionIdIn(
                                     sessions.stream().map(com.eneik.production.models.persistence.JulesSessionEntity::getId).toList())
@@ -2388,8 +2400,10 @@ public class AutoMergeService {
             routeUncertifiedMerge(task, mergedPrUrl);
         }
         if (taskNeedsRepair) {
-            task.setStatus(TaskStatus.done);
-            taskRepository.save(task);
+            if (!task.isTerminal()) {
+                task.setStatus(TaskStatus.done);
+                taskRepository.save(task);
+            }
         }
         claimService.releaseTerminalClaim(task.getId());
 
@@ -2535,7 +2549,7 @@ public class AutoMergeService {
         review.setDiffSummary(reason.length() > 2000 ? reason.substring(0, 2000) : reason);
         prReviewRepository.save(review);
 
-        if (task != null) {
+        if (task != null && !task.isTerminal()) {
             task.setStatus(TaskStatus.blocked);
             taskRepository.save(task);
         }

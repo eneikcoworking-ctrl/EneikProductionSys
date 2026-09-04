@@ -170,6 +170,15 @@ public class BranchGarbageCollectorService {
         }
 
         // Step 4: Re-queue task off clean main with Priority 100
+        if (task.isTerminal()) {
+            log.info("[BRANCH-GC] Task {} is already terminal ({}); skipping re-queue", task.getId(), task.getStatus());
+            return false;
+        }
+        int updated = taskRepository.writeStatusUnlessTerminal(task.getId(), TaskStatus.queued);
+        if (updated == 0) {
+            log.info("[BRANCH-GC] Task {} reached a terminal status concurrently; re-queue skipped", task.getId());
+            return false;
+        }
         task.setStatus(TaskStatus.queued);
         task.setPriority(100);
         taskRepository.save(task);

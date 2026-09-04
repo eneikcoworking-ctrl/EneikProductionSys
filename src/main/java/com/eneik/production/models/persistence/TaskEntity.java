@@ -136,7 +136,38 @@ public class TaskEntity {
         this.payload = node;
     }
     public TaskStatus getStatus() { return status; }
-    public void setStatus(TaskStatus status) { this.status = status; }
+
+    /**
+     * True if the current status of this task is terminal (done, failed, spike_completed).
+     */
+    public boolean isTerminal() {
+        return status != null && status.isTerminal();
+    }
+
+    /**
+     * Sets the status of this task.
+     * Enforces Law 20 / Invariant S2: terminal(τ) ⟹ status(τ) cannot be overwritten.
+     *
+     * <p>An existing terminal status (done, failed, spike_completed) cannot be overwritten with a different status.
+     * Idempotent transitions (setting the same terminal status) are permitted as no-ops.
+     * For initialization of freshly minted task entities, use {@link #initializeStatus(TaskStatus)}.
+     *
+     * @throws IllegalStateException if this task is already terminal and the new status differs
+     */
+    public void setStatus(TaskStatus status) {
+        if (this.status != null && this.status.isTerminal() && this.status != status) {
+            throw new IllegalStateException(
+                    "Terminal status " + this.status + " of task " + id + " cannot be overwritten with " + status);
+        }
+        this.status = status;
+    }
+
+    /**
+     * Explicit initial status assignment during new entity creation.
+     */
+    public void initializeStatus(TaskStatus status) {
+        this.status = status;
+    }
     public String getLinearIssueId() { return linearIssueId; }
     public void setLinearIssueId(String linearIssueId) { this.linearIssueId = linearIssueId; }
     public String getJulesSessionName() { return julesSessionName; }

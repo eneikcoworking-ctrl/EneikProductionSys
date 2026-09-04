@@ -217,7 +217,7 @@ public class PlannedWorkRecoveryService {
         payload.put(RESUME_COUNT_KEY, 1);
         payload.put("ems_bounded_plan_resume_at", Instant.now().toString());
         task.setPayload(payload);
-        task.setStatus(TaskStatus.queued);
+        task.initializeStatus(TaskStatus.queued);
         task.setJulesSessionName(null);
         task.setJulesDispatchStatus("Poka-yoke bounded resume 1/1: reusing the original planned task identity");
         task.setUpdatedAt(Instant.now());
@@ -494,8 +494,10 @@ public class PlannedWorkRecoveryService {
 
         int dismissedCount = 0;
         for (TaskEntity metaTask : activeMetaTasks) {
-            metaTask.setStatus(TaskStatus.done);
-            taskRepository.save(metaTask);
+            if (!metaTask.isTerminal()) {
+                metaTask.setStatus(TaskStatus.done);
+                taskRepository.save(metaTask);
+            }
             claimService.releaseTerminalClaim(metaTask.getId());
             log.info("[LEAN-CLEANOUT] Completed orphaned meta task {} ({}) because all product features are 100% complete and merged in main.",
                     metaTask.getId(), metaTask.getTitle());

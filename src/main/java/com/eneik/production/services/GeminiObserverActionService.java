@@ -365,6 +365,9 @@ public class GeminiObserverActionService {
                 return "not part of a genuine 3+ duplicate cluster (found " + siblingCount
                         + " matching non-terminal task(s) in the last 30) - refusing to collapse real work";
             }
+            if (target.isTerminal()) {
+                return "target task is already terminal (" + target.getStatus() + ") - refusing to rewrite status";
+            }
             target.setStatus(TaskStatus.blocked);
             taskRepository.save(target);
             return null;
