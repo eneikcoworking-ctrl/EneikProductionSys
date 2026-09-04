@@ -191,8 +191,14 @@ public class GithubAccessService {
      * does not name the cause; it names whatever it happens to see.
      */
     private HttpResponse<String> sendGitHub(HttpRequest request) throws java.io.IOException, InterruptedException {
+        String token = request.headers().firstValue("Authorization").orElse(null);
+        String operation = request.method() + " " + request.uri().getPath();
+        GitHubApiBudgetService.GuardDecision guard = githubApiBudgetService.guard(token, operation);
+        if (!guard.allowed()) {
+            throw new IllegalStateException(guard.reason());
+        }
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        githubApiBudgetService.recordResponse(request.method() + " " + request.uri().getPath(), response);
+        githubApiBudgetService.recordResponse(token, operation, response);
         return response;
     }
 

@@ -6,75 +6,205 @@ import org.springframework.stereotype.Service;
 
 import java.net.http.HttpHeaders;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 @Service
 public class GitHubApiBudgetService {
     private static final Logger log = LoggerFactory.getLogger(GitHubApiBudgetService.class);
     private static final long DEFAULT_COOLDOWN_SECONDS = 300;
+    public static final String DEFAULT_TOKEN_FINGERPRINT = "default";
 
-    private final AtomicReference<BudgetState> state = new AtomicReference<>(BudgetState.initial());
+    /**
+     * Rigid designator token fingerprint (SOL_KRIPKE_02_INDEXICAL_CONTEXT_LOCK).
+     * Prevents cross-token budget leakage and protects secrets by computing an irreversible SHA-256 hash.
+     */
+    public static String fingerprint(String token) {
+        if (token == null || token.isBlank()) {
+            return DEFAULT_TOKEN_FINGERPRINT;
+        }
+        String raw = token.trim();
+        if (raw.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            raw = raw.substring(7).trim();
+        } else if (raw.regionMatches(true, 0, "token ", 0, 6)) {
+            raw = raw.substring(6).trim();
+        }
+        if (raw.isEmpty()) {
+            return DEFAULT_TOKEN_FINGERPRINT;
+        }
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(raw.getBytes(StandardCharsets.UTF_8));
+            StringBuilder sb = new StringBuilder(16);
+            for (int i = 0; i < 8; i++) {
+                sb.append(String.format("%02x", digest[i]));
+            }
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            return Integer.toHexString(raw.hashCode());
+        }
+    }
 
-    /** Per-operation spend for the current rate-limit window - see countSpend (model rule 8.17). */
-    private final java.util.concurrent.ConcurrentHashMap<String, Long> spend = new java.util.concurrent.ConcurrentHashMap<>();
+    /**
+     * Isolated budget state and spend tracking for an individual token context (Law 13 / Kripke Context Lock).
+     */
+    public static class TokenBudget {
+        private final String tokenFingerprint;
+        private final AtomicReference<BudgetState> state = new AtomicReference<>(BudgetState.initial());
+        private final ConcurrentHashMap<String, Long> spend = new ConcurrentHashMap<>();
 
-    public GuardDecision guard(String operation) {
-        BudgetState current = state.get();
-        Instant now = Instant.now();
-        if (current.cooldownUntil() != null && current.cooldownUntil().isAfter(now)) {
-            return new GuardDecision(
-                    false,
-                    current.status(),
-                    current.reason(),
-                    current.cooldownUntil(),
-                    current.remaining(),
+        public TokenBudget(String tokenFingerprint) {
+            this.tokenFingerprint = tokenFingerprint;
+        }
+
+        public String getTokenFingerprint() {
+            return tokenFingerprint;
+        }
+
+        public BudgetState getState() {
+            return state.get();
+        }
+
+        public BudgetState getAndSetState(BudgetState next) {
+            return state.getAndSet(next);
+        }
+
+        public ConcurrentHashMap<String, Long> getSpend() {
+            return spend;
+        }
+
+        public GuardDecision guard(String operation) {
+            BudgetState current = state.get();
+            Instant now = Instant.now();
+            if (current.cooldownUntil() != null && current.cooldownUntil().isAfter(now)) {
+                return new GuardDecision(
+                        false,
+                        current.status(),
+                        current.reason(),
+                        current.cooldownUntil(),
+                        current.remaining(),
+                        current.limit(),
+                        current.resetAt(),
+                        current.lastOperation()
+                );
+            }
+            return new GuardDecision(true, "available", "GitHub API budget is available",
+                    null, current.remaining(), current.limit(), current.resetAt(), operation);
+        }
+
+        public boolean available() {
+            return guard("generic").allowed();
+        }
+
+        public Snapshot snapshot() {
+            BudgetState current = state.get();
+            GuardDecision guard = guard("snapshot");
+            String visibleStatus = guard.allowed() && "exhausted".equals(current.status())
+                    ? "available"
+                    : (guard.allowed() ? current.status() : "exhausted");
+            return new Snapshot(
+                    visibleStatus,
+                    guard.allowed(),
                     current.limit(),
+                    current.remaining(),
+                    current.used(),
                     current.resetAt(),
-                    current.lastOperation()
+                    current.cooldownUntil(),
+                    current.lastStatusCode(),
+                    current.lastOperation(),
+                    guard.allowed() ? guard.reason() : current.reason(),
+                    current.updatedAt(),
+                    spendByOperation()
             );
         }
-        return new GuardDecision(true, "available", "GitHub API budget is available",
-                null, current.remaining(), current.limit(), current.resetAt(), operation);
+
+        public void countSpend(BudgetState previous, Instant resetAt, String operation) {
+            Instant previousReset = previous.resetAt();
+            if (resetAt != null && previousReset != null && !resetAt.equals(previousReset)) {
+                spend.clear();
+            }
+            spend.merge(normalizeOperation(operation), 1L, Long::sum);
+        }
+
+        public Map<String, Long> spendByOperation() {
+            return spend.entrySet().stream()
+                    .sorted(Map.Entry.<String, Long>comparingByValue().reversed())
+                    .collect(java.util.LinkedHashMap::new,
+                            (m, e) -> m.put(e.getKey(), e.getValue()),
+                            java.util.LinkedHashMap::putAll);
+        }
+    }
+
+    private final ConcurrentHashMap<String, TokenBudget> budgets = new ConcurrentHashMap<>();
+    private final AtomicReference<String> lastActiveFingerprint = new AtomicReference<>(DEFAULT_TOKEN_FINGERPRINT);
+
+    public TokenBudget budgetFor(String token) {
+        String fp = fingerprint(token);
+        lastActiveFingerprint.set(fp);
+        return budgets.computeIfAbsent(fp, TokenBudget::new);
+    }
+
+    public GuardDecision guard(String token, String operation) {
+        return budgetFor(token).guard(operation);
+    }
+
+    public GuardDecision guard(String operation) {
+        String lastFp = lastActiveFingerprint.get();
+        TokenBudget tb = budgets.get(lastFp);
+        return tb != null ? tb.guard(operation) : budgetFor(null).guard(operation);
+    }
+
+    public boolean available(String token) {
+        return budgetFor(token).available();
     }
 
     public boolean available() {
-        return guard("generic").allowed();
+        if (budgets.isEmpty()) {
+            return true;
+        }
+        return budgets.values().stream().anyMatch(TokenBudget::available);
+    }
+
+    public Snapshot snapshot(String token) {
+        return budgetFor(token).snapshot();
     }
 
     public Snapshot snapshot() {
-        BudgetState current = state.get();
-        GuardDecision guard = guard("snapshot");
-        String visibleStatus = guard.allowed() && "exhausted".equals(current.status())
-                ? "available"
-                : (guard.allowed() ? current.status() : "exhausted");
-        return new Snapshot(
-                visibleStatus,
-                guard.allowed(),
-                current.limit(),
-                current.remaining(),
-                current.used(),
-                current.resetAt(),
-                current.cooldownUntil(),
-                current.lastStatusCode(),
-                current.lastOperation(),
-                guard.allowed() ? guard.reason() : current.reason(),
-                current.updatedAt(),
-                spendByOperation()
-        );
+        String lastFp = lastActiveFingerprint.get();
+        TokenBudget tb = budgets.get(lastFp);
+        if (tb == null) {
+            tb = budgetFor(null);
+        }
+        return tb.snapshot();
+    }
+
+    public void recordResponse(String token, String operation, HttpResponse<?> response) {
+        if (response == null) {
+            return;
+        }
+        recordResponse(token, operation, response.statusCode(), response.headers(), response.body() == null ? "" : response.body().toString());
     }
 
     public void recordResponse(String operation, HttpResponse<?> response) {
         if (response == null) {
             return;
         }
-        recordResponse(operation, response.statusCode(), response.headers(), response.body() == null ? "" : response.body().toString());
+        String token = null;
+        if (response.request() != null) {
+            token = response.request().headers().firstValue("Authorization").orElse(null);
+        }
+        recordResponse(token, operation, response.statusCode(), response.headers(), response.body() == null ? "" : response.body().toString());
     }
 
-    void recordResponse(String operation, int statusCode, HttpHeaders headers, String body) {
+    public void recordResponse(String token, String operation, int statusCode, HttpHeaders headers, String body) {
+        TokenBudget budget = budgetFor(token);
         Integer limit = intHeader(headers, "x-ratelimit-limit").orElse(null);
         Integer remaining = intHeader(headers, "x-ratelimit-remaining").orElse(null);
         Integer used = intHeader(headers, "x-ratelimit-used").orElse(null);
@@ -87,7 +217,7 @@ public class GitHubApiBudgetService {
         if (isRateLimited(statusCode, remaining, body)) {
             status = "exhausted";
             cooldownUntil = firstFuture(retryAfter, resetAt, Instant.now().plusSeconds(DEFAULT_COOLDOWN_SECONDS));
-            reason = "GitHub API rate limit exhausted; suppressing further GitHub API calls until reset.";
+            reason = "GitHub API rate limit exhausted for token [" + budget.getTokenFingerprint() + "]; suppressing further calls until reset.";
         }
 
         BudgetState next = new BudgetState(
@@ -102,34 +232,18 @@ public class GitHubApiBudgetService {
                 reason,
                 Instant.now()
         );
-        BudgetState previous = state.getAndSet(next);
-        countSpend(previous, resetAt, operation);
+        BudgetState previous = budget.getAndSetState(next);
+        budget.countSpend(previous, resetAt, operation);
         if ("exhausted".equals(status)
                 && (previous.cooldownUntil() == null || !previous.cooldownUntil().equals(cooldownUntil))) {
-            log.warn("[GITHUB-BUDGET] Rate limit exhausted; cooldownUntil={}. Spent this window by operation: {}",
-                    cooldownUntil, spendByOperation());
+            log.warn("[GITHUB-BUDGET] Rate limit exhausted for token [{}]; cooldownUntil={}. Spent this window by operation: {}",
+                    budget.getTokenFingerprint(), cooldownUntil, budget.spendByOperation());
         }
     }
 
-    /**
-     * What spent this window, per operation (model rule 8.17).
-     *
-     * <p>An admission order says who yields to whom, and it cannot be applied to spend that is not
-     * attributable. The hourly GitHub limit is shared capacity of exactly that kind, and exhausting it stops
-     * the whole flow - GITHUB_RATE_LIMITED is globally blocking. Measured 2026-08-30: 5000 of 5000 spent,
-     * the entire project frozen, and the only thing recorded was the name of the LAST call. Measured again
-     * two minutes after the reset: 234 calls gone, which is the whole window inside forty-three minutes -
-     * so this recurs every hour until someone can see who is spending it.
-     *
-     * <p>The key is the operation with its query string removed. Without that the key set is unbounded -
-     * page numbers alone would grow it without limit - and an unbounded tally is a leak, not an account.
-     */
-    private void countSpend(BudgetState previous, Instant resetAt, String operation) {
-        Instant previousReset = previous.resetAt();
-        if (resetAt != null && previousReset != null && !resetAt.equals(previousReset)) {
-            spend.clear();
-        }
-        spend.merge(normalizeOperation(operation), 1L, Long::sum);
+    void recordResponse(String operation, int statusCode, HttpHeaders headers, String body) {
+        String token = headers != null ? headers.firstValue("Authorization").orElse(null) : null;
+        recordResponse(token, operation, statusCode, headers, body);
     }
 
     static String normalizeOperation(String operation) {
@@ -140,13 +254,14 @@ public class GitHubApiBudgetService {
         return query < 0 ? operation : operation.substring(0, query);
     }
 
-    /** The window's tally, heaviest first, so a reader sees the cause before the noise. */
-    public java.util.Map<String, Long> spendByOperation() {
-        return spend.entrySet().stream()
-                .sorted(java.util.Map.Entry.<String, Long>comparingByValue().reversed())
-                .collect(java.util.LinkedHashMap::new,
-                        (m, e) -> m.put(e.getKey(), e.getValue()),
-                        java.util.LinkedHashMap::putAll);
+    public Map<String, Long> spendByOperation(String token) {
+        return budgetFor(token).spendByOperation();
+    }
+
+    public Map<String, Long> spendByOperation() {
+        String lastFp = lastActiveFingerprint.get();
+        TokenBudget tb = budgets.get(lastFp);
+        return tb != null ? tb.spendByOperation() : budgetFor(null).spendByOperation();
     }
 
     private boolean isRateLimited(int statusCode, Integer remaining, String body) {

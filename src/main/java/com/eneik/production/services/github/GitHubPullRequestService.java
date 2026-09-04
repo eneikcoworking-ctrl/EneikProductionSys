@@ -1640,12 +1640,13 @@ public class GitHubPullRequestService {
         if (request.uri().getRawQuery() != null) {
             operation += "?" + request.uri().getRawQuery();
         }
-        GitHubApiBudgetService.GuardDecision guard = githubApiBudgetService.guard(operation);
+        String token = request.headers().firstValue("Authorization").orElse(null);
+        GitHubApiBudgetService.GuardDecision guard = githubApiBudgetService.guard(token, operation);
         if (!guard.allowed()) {
             throw new IllegalStateException(guard.reason());
         }
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        githubApiBudgetService.recordResponse(operation, response);
+        githubApiBudgetService.recordResponse(token, operation, response);
         return response;
     }
 
