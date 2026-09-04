@@ -186,7 +186,6 @@ public class AutoMergeService {
         reconcileMergedTaskOutcomes();
         reconcileMergedGitHubPullRequests();
         reconcileOpenGitHubPullRequests();
-        reconcileCleanOpenGitHubPullRequests();
         reconcileLocalMockTasksWithoutReviews();
         resurrectTriviallyEscalatedConflicts();
         resurrectEscalatedConflictsWithRealCode();
@@ -2172,52 +2171,6 @@ public class AutoMergeService {
             evidenceNodeRepository.save(node);
         } catch (Exception e) {
             log.warn("AutoMergeService: failed to record operational-reality evidence for task {}: {}", task.getId(), e.getMessage());
-        }
-    }
-
-    private void reconcileCleanOpenGitHubPullRequests() {
-        if (!settingsService.effectiveBoolean("github_enabled")) {
-            return;
-        }
-        try {
-            List<com.eneik.production.models.persistence.ProjectEntity> activeProjects =
-                    projectRepository.findByStatusOrderByCreatedAtDesc(com.eneik.production.models.persistence.ProjectStatus.active);
-            for (com.eneik.production.models.persistence.ProjectEntity project : activeProjects) {
-                var snapshot = gitHubPullRequestService.pullRequestSnapshot(project);
-                if (snapshot == null || !snapshot.available() || snapshot.open() == null) {
-                    continue;
-                }
-                for (var openPr : snapshot.open()) {
-                    // 2026-08-03 (confirmed live risk during philosophical-audit persistent-worker design):
-                    // this sweep merges ANY GitHub-clean open PR with zero task/session-type awareness. A
-                    // persistent worker's record PR (compiler/review-fallback/philosophical-audit) is
-                    // deliberately kept open across many follow-up cycles - its lone changed file (a JSON
-                    // report/plan) is almost always trivially mergeable, so without this check it would get
-                    // merged and effectively terminated after its very first cycle. Same session-token
-                    // lookup BranchGarbageCollectorService already uses to find a PR's owning task.
-                    boolean isPersistentWorkerCarrier = julesSessionRepository.findByExternalSessionIdIsNotNull().stream()
-                            .filter(s -> !s.getExternalSessionId().isBlank())
-                            .filter(s -> GitHubPullRequestService.matchesSessionToken(openPr, s.getExternalSessionId()))
-                            .findFirst()
-                            .flatMap(s -> taskRepository.findById(s.getTaskId()))
-                            .map(projectFlowService::isPersistentWorkerCarrierTask)
-                            .orElse(false);
-                    if (isPersistentWorkerCarrier) {
-                        continue;
-                    }
-                    var mergeableState = gitHubPullRequestService.mergeableState(project, openPr.number());
-                    if (mergeableState.isPresent() && Boolean.TRUE.equals(mergeableState.get().mergeable())) {
-                        log.info("AutoMergeService [DIRECT-SWEEP]: Found clean open GitHub PR #{} ({}) for project {}. Executing direct merge...",
-                                openPr.number(), openPr.title(), project.getName());
-                        boolean merged = gitHubPullRequestService.mergePullRequest(project, openPr.number());
-                        if (merged) {
-                            log.info("AutoMergeService [DIRECT-SWEEP]: Successfully merged PR #{} directly on GitHub!", openPr.number());
-                        }
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.warn("AutoMergeService: Failed to sweep clean open GitHub PRs: {}", e.getMessage());
         }
     }
 

@@ -261,6 +261,19 @@
     * **Заслон Закона 6 восстановлен:** все три теста замыкания требований (`aRequirementIsFulfilledWhenItsRepairMergedRatherThanItsFirstAttempt`, `aRequirementWhoseRepairHasNotMergedIsStillUnfulfilled`, `aRepairDeliveredThroughItsSliceStillDischargesTheRequirement`) подтверждают погашение требований через срез и цепочку ремонтов.
     * **Заслон Закона 11 восстановлен:** фильтр знаменателя в `computeForSources` / `computeForProject` подтверждён зелёными тестами (включая исключения `dismissed` и вспомогательных задач).
     * В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` Законы 6 и 11 переведены в статус «Держится» и сняты из шапки неработающих/незаслонённых законов.
+17. **Закон 20 / Инвариант S4 (∀ путь к слиянию: он проходит через гейт / Ликвидация PR-шторма):**
+    * **Аварийный разбор:** Выявлен и локализован самовозбуждающийся контур холостого хода (316 PR на 2 пункта доставки, ~1 PR в минуту, пустые диффы PR #806/#808 с 0 строк, постоянные отказы по коллизиям миграций PR #799/#803/#810).
+    * **Корень в коде:** Метод `AutoMergeService.reconcileCleanOpenGitHubPullRequests` (`[DIRECT-SWEEP]`), добавленный коммитом `7606e39`, выполнял прямой вызов `gitHubPullRequestService.mergePullRequest` для любого открытого GitHub PR при `mergeable == true` в обход:
+      - Проверки `PrReviewEntity`
+      - Проверки CI (`checks.successful()`)
+      - Проверки качества / гейта
+      - Классификатора кода `hasCode` (мержил пустые PR и PR без изменений кода, после чего бэкенд помечал задачи как `done`).
+    * **Решение:**
+      - Метод `reconcileCleanOpenGitHubPullRequests` и его вызов на строке 189 `AutoMergeService.java` полностью удалены.
+      - Все слияния строго замкнуты через `PrReviewEntity`, `rejectByFactoryPokaYoke`, верификацию CI-статуса и quality gate.
+      - Разработан модульный заслон `AutoMergeLaw20InvariantS4Test` (3/3 тестов зелёные), контролирующий отсутствие обходов гейта в исходном коде и байткоде.
+      - Прогон `mvn test -Dtest=AutoMergeLaw20InvariantS4Test,AutoMergeServiceTest,AutoMergePokaYokeTest,MergeChokePointPokaYokeTest`: **38 из 38 тестов зелёные**.
+    * В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` Инвариант S4 переведён в статус «Держится».
 
 ---
 
