@@ -43,7 +43,6 @@ import java.util.HashMap;
 @Service
 public class AutoMergeService {
     private static final Logger log = LoggerFactory.getLogger(AutoMergeService.class);
-    private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
     private static final String EARLY_UNBLOCK_SPEC_NOTIFIED_KEY = "earlyUnblockedSpecNotified";
     private final PrReviewRepository prReviewRepository;
     private final com.eneik.production.repositories.JulesSessionRepository julesSessionRepository;
@@ -225,7 +224,7 @@ public class AutoMergeService {
                     // proceeds on green CI alone, and executeMerge() below unconditionally records a
                     // high-priority chaotic_debt wishlist item so the bypass is always followed up on review.
                     executeMerge(review);
-                } else if (review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN)) {
+                } else if (review.isApproved()) {
                     executeMerge(review);
                 }
             } finally {
@@ -1258,7 +1257,7 @@ public class AutoMergeService {
                             if (videoResult.available()) {
                                 log.info("AutoMergeService: Veo Video walkthrough successfully generated at {}", videoResult.videoPath());
                             } else {
-                                log.warn("AutoMergeService: Veo Video walkthrough generation was unavailable: {}", videoResult.message());
+                                log.info("AutoMergeService: Veo Video walkthrough generation was unavailable: {}", videoResult.message());
                             }
                         } catch (Exception e) {
                             log.error("AutoMergeService: Failed to trigger Veo Video walkthrough: " + e.getMessage());

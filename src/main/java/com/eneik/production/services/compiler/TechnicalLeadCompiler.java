@@ -1242,12 +1242,10 @@ public class TechnicalLeadCompiler {
         sb.append("- Write your own clear English PR title and summary describing what you actually built - do not paste the raw Original Brief verbatim into the PR narrative.\n");
         sb.append("- Do not implement adjacent slices or other roles.\n");
         sb.append("- Never create, write, modify, or commit anything under a path starting with `.eneik/` "
-                + "(e.g. `.eneik/records/...`, `.eneik/review-verdict.json`, `.eneik/task-plan.json`). That "
+                + "(e.g. `.eneik/records/...`, `.eneik/review-verdict.json`, `.eneik/task-plan.json`) unless "
+                + "explicitly instructed by your task's verification/design gate instructions (e.g. required design check screenshots). That "
                 + "directory belongs exclusively to the orchestration system's own internal bookkeeping, never "
-                + "to feature work - if any local tool, script, or verification step you run happens to produce "
-                + "files there, delete them or exclude them from your commit before opening the PR. Committing "
-                + "anything under `.eneik/` will cause your PR to be rejected by review even if the rest of "
-                + "your work is correct.\n");
+                + "to feature work - any transient files there are stripped by the factory before merge.\n");
         sb.append("- Never edit the ROOT `.gitignore` (the top-level file, not `frontend/.gitignore` or any "
                 + "other nested one). Operator directive 2026-07-24 (live incident): every branch that added "
                 + "its own ignore rule to the root file independently caused a real merge conflict against "

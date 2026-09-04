@@ -40,7 +40,6 @@ import java.util.stream.Collectors;
 
 @Service
 public class ProjectOperationalContextService {
-    private static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
 
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
@@ -625,11 +624,11 @@ public class ProjectOperationalContextService {
     }
 
     private boolean isApproved(PrReviewEntity review) {
-        return review.getDiffSummary() != null && review.getDiffSummary().contains(APPROVAL_TOKEN);
+        return review != null && review.isApproved();
     }
 
     private boolean isRejected(PrReviewEntity review) {
-        return review.getDiffSummary() != null && review.getDiffSummary().startsWith("REVIEW REJECTED");
+        return review != null && review.isRejected();
     }
 
     private String reviewDecision(PrReviewEntity review) {

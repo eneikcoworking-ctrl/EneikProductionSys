@@ -33,7 +33,7 @@
 
 | закон | предмет | коммит | заслон |
 |---|---|---|---|
-| 1 | единственная точка применения: предикат носителя, тип носителя, отправка в Jules | `40ff9ef`, `658ff89`, `4ed78a8` | `TaskEntityLaw1CarrierTest`, `ProjectFlowServiceLaw1JulesDispatchTest` |
+| 1 | единственная точка применения: предикат носителя, тип носителя, отправка в Jules, предикат одобрения | `40ff9ef`, `658ff89`, `4ed78a8` | `TaskEntityLaw1CarrierTest`, `ProjectFlowServiceLaw1JulesDispatchTest`, `PrReviewApprovalLaw1Test` |
 | 2, 7 | изоляция носителя, принадлежность ремонта, канал носителя | `5802de2`, `4ed78a8` | `DeliveryRealityLaw2CarrierChannelTest` |
 | 3 | замкнутость контура: дизайн идёт через компилятор | `d5e158d` | `DesignImplementationLoopClosureLaw3Test` |
 | 4 | предмет слияния: три читателя на одном предикате | `c344c23`, `ac076d2` | `JulesDispatchServiceLaw4MergeEvidenceTest`, `ProjectFlowServiceTest` |
@@ -633,6 +633,27 @@
     и лежит в таблице, а урок про «первое попавшееся объяснение» — в модели, раздел «Опровергнутое».
     Записка 685 → 621 строка. Список починки в плане сверен, изменений не потребовал: за такт ничего не
     закрывалось.
+
+18. **Такт Antigravity (Инженер L2) 23:10 UTC. Закрыты Закон 1 (предикат одобрения), Закон 25 (шум GC/видео), согласован инвариант L_factory для ревьюера и восстановлен заслон BranchGC.**
+
+    * **Закон 1 (предикат одобрения, Находка 4):**
+      - Токен `"CORE ARCHITECTURE VERIFIED. APPROVED."` вынесен в единственный канонический источник `PrReviewEntity.APPROVAL_TOKEN`.
+      - На `PrReviewEntity` реализованы методы `isApproved()` и `isRejected()`.
+      - Из `AutoMergeService` и `ProjectOperationalContextService` удалены независимые поля `APPROVAL_TOKEN`; точки вызова переведены на `review.isApproved()` / `review.isRejected()`.
+      - В `JulesDispatchService:3936` конкатенация замечаний использует `PrReviewEntity.APPROVAL_TOKEN`.
+      - Разработан заслон `PrReviewApprovalLaw1Test` (3/3 зелёные): поведенческий тест, структурный рефлексивный запрет на объявление токена в сервисах, и скрининг исходников на присутствие строкового литерала исключительно в `PrReviewEntity.java` ($|\text{impl}(I)| = 1$).
+
+    * **Закон 25 (Zero Muda — ликвидация ложного шума и предупреждений, Находка 5):**
+      - `BranchGarbageCollectorService:207`: вывод строки инспекции открытого PR переведён с `INFO` на `DEBUG`, что ликвидировало 222 повторяющиеся тождественные строки в логе за каждые 30 минут.
+      - `AutoMergeService:1260`: отсутствие видеогенерации при штатном отключении модуля переведено с `WARN` на `INFO` (предупреждение не порождается на норме).
+
+    * **Инвариант изоляции слоёв и устранение противоречия в ревью (Находка 3):**
+      - В `reviewerFallbackPromptBatch`: явно указано, что записи `.eneik/` (task-plan, review-verdict) и требуемые скриншоты UI-верификации под `.eneik/records/design-check-*` управляются оркестратором и автоматически вычищаются фабрикой перед слиянием в `main` (`stripFactoryRecordFiles`). Запрещено блокировать PR за наличие легитимных `.eneik/` файлов; снята слепая блокировка `.png` для скриншотов дизайна.
+      - В `TechnicalLeadCompiler`: раздел `Boundaries` приведен в строгое согласие с заданием дизайн-цеха — файлы под `.eneik/` запрещено трогать, если это прямо не предписано верификацией дизайна (`design-check-*`).
+
+    * **Восстановление заслона `BranchGarbageCollectorServiceTest`:**
+      - Исправлен mock-разрыв, возникший после внедрения Закона 20/S2: в `setUp` добавлен возврат `taskRepository.writeStatusUnlessTerminal(...) = 1`.
+      - Результат: **12 из 12 тестов зелёные** (устранены 3 старых сбоя из списка прочих).
 
 ---
 

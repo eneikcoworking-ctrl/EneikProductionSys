@@ -3630,6 +3630,10 @@ public class JulesDispatchService {
                     here. If the diff turns out to carry committed build output or other generated
                     artifacts (target/, node_modules, coverage, surefire reports, .class files), that alone
                     is a blocking finding for this PR and you do not need to read further to record it.
+                    (NOTE: factory internal records under `.eneik/` — e.g. task plans, review verdicts,
+                    or required design screenshots under `.eneik/records/design-check-*` — are managed by
+                    the factory and stripped before merge to main; do NOT treat legitimate `.eneik/` records
+                    as blocking build artifacts).
 
                     """.formatted(i, i, t.getRole().getTag(), t.getDescription(), prUrls.get(i)));
         }
@@ -3643,13 +3647,15 @@ public class JulesDispatchService {
                 ("verdict":"block") ONLY for a small set of genuinely critical problems on THAT PR: a real
                 security vulnerability, data loss risk, hardcoded secrets/credentials, committed
                 generated/build artifacts (node_modules, playwright-report, coverage,
-                .zip/.png/.webm/.trace files), missing required tests for a QA task, a status/lifecycle field
-                with a terminal value (done/failed/confirmed/settled) written via a plain read-then-save
-                instead of a guarded conditional update WHEN the diff shows that entity is reachable from
+                .zip/.webm/.trace files, or stray media files outside .eneik/records/), missing required tests for a QA task,
+                a status/lifecycle field with a terminal value (done/failed/confirmed/settled) written via a plain
+                read-then-save instead of a guarded conditional update WHEN the diff shows that entity is reachable from
                 more than one place (a scheduled job plus a direct endpoint, or two independent call sites) -
                 that specific, narrow shape only, not every setter-then-save you see - or a direct
-                contradiction of that PR's own stated Acceptance Criteria/DoD. Anything else - style
-                preferences, architecture opinions, missing edge cases that do not break the Acceptance
+                contradiction of that PR's own stated Acceptance Criteria/DoD.
+                (NOTE: Do NOT block for orchestrator records under .eneik/ or required design screenshots under
+                .eneik/records/design-check-*, which are stripped automatically by the factory before merge to main).
+                Anything else - style preferences, architecture opinions, missing edge cases that do not break the Acceptance
                 Criteria, suggestions for a better approach - is NOT a blocker: approve that PR and list it
                 as a "concern" instead, so it becomes a follow-up improvement item rather than stopped work.
 
@@ -3931,9 +3937,9 @@ public class JulesDispatchService {
         prData.setLinesChanged(120);
         prData.setFilesChanged(4);
         prData.setChangedFiles(java.util.Collections.emptyList());
-        // The leading sentence is AutoMergeService.APPROVAL_TOKEN verbatim and is load-bearing: the merge
+        // The leading sentence is PrReviewEntity.APPROVAL_TOKEN and is load-bearing: the merge
         // gate reads it out of diffSummary. Only the ground after it is restated here.
-        String remarks = "CORE ARCHITECTURE VERIFIED. APPROVED. Reviewed by Jules. "
+        String remarks = PrReviewEntity.APPROVAL_TOKEN + " Reviewed by Jules. "
                 + (verdict.concerns().isEmpty() ? "No concerns raised." : verdict.concerns().size() + " concern(s) recorded as follow-up wishlist items.");
         prData.setDiffSummary(remarks);
         prReviewPipelineService.onPrOpened(prUrl, implementerSession.getId(), prData);

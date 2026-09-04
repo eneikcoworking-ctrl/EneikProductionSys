@@ -204,7 +204,7 @@ public class BranchGarbageCollectorService {
             String title = pr.title();
             String headRef = pr.headRef();
             int pullNumber = pr.number();
-            log.info("[BRANCH-GC] Inspecting open PR #{} ('{}') headRef='{}'", pullNumber, title, headRef);
+            log.debug("[BRANCH-GC] Inspecting open PR #{} ('{}') headRef='{}'", pullNumber, title, headRef);
 
             // Case A: Closeout PR where the feature has already been merged via another PR.
             //

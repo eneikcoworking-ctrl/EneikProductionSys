@@ -53,6 +53,7 @@ class BranchGarbageCollectorServiceTest {
         projectFlowService = mock(com.eneik.production.services.ProjectFlowService.class);
         sessionLifecycleService = mock(com.eneik.production.services.jules.SessionLifecycleService.class);
         featureThreadRepository = mock(com.eneik.production.repositories.FeatureThreadRepository.class);
+        when(taskRepository.writeStatusUnlessTerminal(any(), any())).thenReturn(1);
         service = new BranchGarbageCollectorService(gitHubPullRequestService, taskRepository,
                 taskConflictRepository, julesSessionRepository,
                 sessionLifecycleService,

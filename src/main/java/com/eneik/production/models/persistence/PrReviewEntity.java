@@ -7,6 +7,9 @@ import java.util.UUID;
 @Entity
 @Table(name = "pr_reviews")
 public class PrReviewEntity {
+    public static final String APPROVAL_TOKEN = "CORE ARCHITECTURE VERIFIED. APPROVED.";
+    public static final String REJECTION_PREFIX = "REVIEW REJECTED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.AUTO)
     private UUID id;
@@ -87,4 +90,12 @@ public class PrReviewEntity {
     public void setBaseRef(String baseRef) { this.baseRef = baseRef; }
     public Integer getPrNumber() { return prNumber; }
     public void setPrNumber(Integer prNumber) { this.prNumber = prNumber; }
+
+    public boolean isApproved() {
+        return diffSummary != null && diffSummary.contains(APPROVAL_TOKEN);
+    }
+
+    public boolean isRejected() {
+        return diffSummary != null && diffSummary.startsWith(REJECTION_PREFIX);
+    }
 }
