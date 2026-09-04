@@ -66,3 +66,17 @@
 3. **Фиксация синхронизации:**
    * Вычищенные расхождения и директивы по ликвидации муды синхронизируются в `docs/reports/CLAUDE_COORDINATION_NOTE.md`.
 
+---
+
+## 5. Инфраструктура Hetzner Cloud (Remote Production Server)
+
+1. **Сервер Hetzner:**
+   * IP: `2.28.123.162`, SSH-алиас: `hetzner` (ключ `~/.ssh/eneik_server`).
+   * Вся фабрика (`backend`, `ml`, `runtime-launcher`, `judgment-proxy`) развернута и работает в Docker на сервере Hetzner в `/opt/EneikProductionSys`.
+2. **Опрос телеметрии фабрики:**
+   * Проверка здоровья: `curl -s http://2.28.123.162:8080/actuator/health`.
+   * Состояние контейнеров: `ssh hetzner 'docker ps'` и `ssh hetzner 'docker stats --no-stream'`.
+   * Чтение логов: `ssh hetzner 'docker logs --tail 50 eneikproductionsys-backend-1'`.
+   * Управление стеком: `ssh hetzner 'cd /opt/EneikProductionSys && docker compose ...'`.
+3. **Запрет локальной нагрузки (Zero Host Overload):**
+   * Запрещено поднимать тяжелые контейнеры на локальном ноутбуке. Вся производственная нагрузка локализована на сервере Hetzner.
