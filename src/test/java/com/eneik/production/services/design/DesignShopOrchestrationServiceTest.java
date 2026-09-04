@@ -74,6 +74,7 @@ class DesignShopOrchestrationServiceTest {
         // overrides this to exercise the "already claimed" path.
         when(designShopCycleRepository.saveAndFlush(any())).thenAnswer(inv -> inv.getArgument(0));
         when(designShopCycleRepository.claimStartCycle(any(), any())).thenReturn(1);
+        when(settingsService.effectiveDouble(anyString(), anyDouble())).thenAnswer(inv -> inv.getArgument(1));
     }
 
     @Test

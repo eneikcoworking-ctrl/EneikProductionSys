@@ -5260,25 +5260,26 @@ public class ProjectFlowService {
     private static final String DESIGN_IMPLEMENTATION_ROLE = "BARCAN-TAG-11";
 
     public void dispatchDesignImplementation(ProjectEntity project, String approvedDesignPath, String jtbd) {
-        RoleEntity designerRole = roleRepository.findById(DESIGN_IMPLEMENTATION_ROLE).orElse(null);
-        if (designerRole == null) {
-            log.error("Cannot dispatch design implementation for project {}: role {} not found", project.getId(), DESIGN_IMPLEMENTATION_ROLE);
-            return;
-        }
-        TaskEntity implementationTask = new TaskEntity();
-        implementationTask.setProject(project);
-        implementationTask.setRole(designerRole);
-        implementationTask.setTitle("Design implementation (" + shortId(project.getId()) + "-" + FILE_TIME_SUFFIX.format(java.time.Instant.now()) + ")");
-        implementationTask.setDescription("Implement the following pixel-perfect against the already-approved design reference. " + jtbd
+        // Law 3 (Закон замкнутости контура): Stage 3 of design shop must create a WishlistEntity with
+        // design source so it enters normal decomposition and inherits an epic, closing the value loop.
+        // Direct TaskEntity instantiation without compilation/epic bypassed the value circuit.
+        WishlistEntity wishlist = new WishlistEntity();
+        wishlist.setProjectId(project.getId());
+        wishlist.setSource(WishlistSource.design_review_concern_pattern);
+        wishlist.setSourceRoleTag(DESIGN_IMPLEMENTATION_ROLE);
+        wishlist.setStatus(WishlistStatus.pending);
+        wishlist.setLeanValue(LeanValue.essential);
+        wishlist.setCynefinDomain("clear");
+        wishlist.setContent("Design implementation: implement the following pixel-perfect against the already-approved design reference. "
+                + (jtbd != null ? jtbd : "")
                 + "\n\nDESIGN_MOCKUP_ASSET (already approved - implement directly against it, no new mockup or design review needed): "
                 + approvedDesignPath + "/mockup.html");
-        implementationTask.initializeStatus(TaskStatus.queued);
-
-        implementationTask.setAcceptanceCriteria("Given the approved design reference, When this implementation is delivered, Then the shipped screen matches it element for element, and any deviation is named in the pull request with the reason it was necessary.");
-        implementationTask = taskRepository.save(implementationTask);
-        dispatchToGeneralPool(implementationTask);
-        log.info("Dispatched design implementation task {} for approved design {} in project {}",
-                implementationTask.getId(), approvedDesignPath, project.getName());
+        wishlist.setJtbd(jtbd != null && !jtbd.isBlank() ? jtbd : "Implement approved design mockup for this round");
+        wishlist.setAcceptanceCriteria("Given the approved design reference, When this implementation is delivered, Then the shipped screen matches it element for element, and any deviation is named in the pull request with the reason it was necessary.");
+        wishlist.setDod("Shipped screen matches approved design mockup element for element with zero undocumented regressions.");
+        wishlist = wishlistRepository.save(wishlist);
+        log.info("Enqueued design implementation wishlist {} for approved design {} in project {}",
+                wishlist.getId(), approvedDesignPath, project.getName());
     }
 
     // Design shop Stage 2.5 (2026-08-11, operator directive): raw review concerns must never just sit

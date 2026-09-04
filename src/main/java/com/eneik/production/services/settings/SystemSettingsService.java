@@ -130,6 +130,18 @@ public class SystemSettingsService {
         return Boolean.parseBoolean(value);
     }
 
+    public double effectiveDouble(String key, double defaultValue) {
+        String value = effectiveValue(key);
+        if (value == null || value.isBlank()) {
+            return defaultValue;
+        }
+        try {
+            return Double.parseDouble(value.trim());
+        } catch (NumberFormatException e) {
+            return defaultValue;
+        }
+    }
+
     /** One warning per key per boot: audible, never a flood. */
     private final java.util.Set<String> unreportedBlankFlags = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
@@ -311,6 +323,8 @@ public class SystemSettingsService {
         // same generateAsset/dispatchDesignReview building blocks already live in production.
         definitions.put("design_shop_enabled", flag("design_shop_enabled",
                 "DESIGN_SHOP_ENABLED", "design-shop.enabled"));
+        definitions.put("design_shop_readiness_threshold", plain("design_shop_readiness_threshold",
+                "DESIGN_SHOP_READINESS_THRESHOLD", "design-shop.readiness-threshold"));
         // Off by default (Step 18). Lets the verdict lattice constrain the readiness the factory REPORTS -
         // never what the client may do. See VerdictGate: acceptance is the client's act of ending an
         // engagement, and a lattice that abstains must not be able to stop them ending it.

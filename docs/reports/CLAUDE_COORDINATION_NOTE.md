@@ -69,13 +69,26 @@
    * **Закон 18 (Закон неразрешённого вопроса):** подтверждено удержание (`stillWorthAsking` переспрашивает `UNDECIDABLE`, пока основание не повторилось) — покрыто `UnsettledQuestionIsAskedAgainTest`.
    * **Закон 20 / S2 (Необратимость статуса):** актуализирован статус удержания в плане действий.
 
+7. **Закон 15 (Закон готовности / Дизайн-цех) и Закон 3 (Закон замкнутости контура):**
+   * **Закон 15:**
+     - В `SystemSettingsService` добавлена регистрация и типизированный доступ `design_shop_readiness_threshold` (метод `effectiveDouble(key, defaultValue)`).
+     - В `DesignShopOrchestrationService` логика готовности вынесена в метод `isReadinessReached(Readiness)`: оценивает `decompositionComplete` и настраиваемый порог $\theta$ (`design_shop_readiness_threshold`, default 0.80) либо терминальный фронт фальсификации (`selfFalsificationReadyRatio >= 1.0`), ликвидируя муду бесконечного ожидания недостижимой единицы в brownfield.
+     - Сохранено строгое срабатывание на нарастающем фронте (`isReady && !cycle.isLastWasReady()`) с перевзводом при расширении скоупа и информативным логированием причины удержания.
+     - Создан тестовый гарнитур `DesignShopOrchestrationServiceLaw15Test` (6 тестов) и адаптирован `DesignShopOrchestrationServiceTest`.
+   * **Закон 3:**
+     - В `ProjectFlowService.dispatchDesignImplementation` создание сырой `TaskEntity` с ролью `BARCAN-TAG-11` заменено на сохранение `WishlistEntity` со статусом `pending`, источником `WishlistSource.design_review_concern_pattern` и ролью `DESIGN_IMPLEMENTATION_ROLE`.
+     - Теперь утверждённый дизайн попадает в компилятор (`TechnicalLeadCompiler`), декомпозируется, наследует эпик и замыкает контур доставки ценности.
+     - Создан модульный и структурный тестовый гарнитур `DesignImplementationLoopClosureLaw3Test`.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
 
 * **Регламент взаимодействия:** Руководствоваться правилами из `docs/architecture/AUTONOMOUS_OPERATING_REGULATION.md`.
 * **Следующий приоритетный дефект фабрики:**
-  - **Закон 15 (Закон готовности / Дизайн-цех):** `DesignShopOrchestrationService` ожидает глобального `ratio >= 1.0` и `decompositionComplete`, что в brownfield-проектах с исчерпанными попытками ремонта является недостижимым условием и порождает муду бесконечного ожидания.
-  - **Закон 3 (Закон замкнутости контура):** `ProjectFlowService.dispatchDesignImplementation` создаёт задачу напрямую в обход компиляции и срезов.
-* **Философский паттерн:** Подготовить философский паттерн и доказательные обязательства для перехода с глобального `ratio = 1.0` на фронтальное/срезовое срабатывание (Николай Гартман / Чарльз Пирс / Карл Поппер).
+  - **Закон 1 (Закон единственной точки применения / Отправка в Jules):**
+    Отправка в Jules сейчас написана трижды: `dispatchToGeneralPool`, `dispatchReviewTasks`, `dispatchCompilerTask`. Свести `ProjectFlowService.dispatchReviewTasks` на `dispatchToGeneralPool` с режимом `REVIEWER`, а `dispatchCompilerTask` — на неё же с аргументом «только этот аккаунт по имени». Привязка компилятора к своему аккаунту сохраняется как **значение аргумента**, не как отдельный код.
+  - **Закон 14 (Закон убеждения о внешней системе / Jules capacity):**
+    У отказа внешней системы нет различимого имени (`FAILED_PRECONDITION`), поэтому `AccountHealthService` не может фальсифицировать гипотезы ёмкости.
+* **Философский паттерн:** Подготовить философский паттерн для устранения дублирования отправки и различимости свидетельств (Уильям Оккам / Рудольф Карнап / Питер Гэрденфорс).
 * **Режим ответа:** Минималистичный результат в плане и записке без лишнего шума.

@@ -138,7 +138,7 @@ public class DesignShopOrchestrationService {
         }
 
         ClientDeliverableReadinessService.Readiness readiness = readinessService.computeForProject(project.getId());
-        boolean isReady = readiness.decompositionComplete() && readiness.ratio() >= 1.0;
+        boolean isReady = isReadinessReached(readiness);
 
         if (isReady && !cycle.isLastWasReady()) {
             // 2026-08-14 (bug-hunt sweep, V98 migration): atomic claim closing a genuine double-dispatch
@@ -163,8 +163,34 @@ public class DesignShopOrchestrationService {
             cycle.setUpdatedAt(Instant.now());
             designShopCycleRepository.save(cycle);
         } else {
-            reportHoldIfChanged(project.getId(), readiness);
+            double threshold = settingsService.effectiveDouble("design_shop_readiness_threshold", 0.80);
+            reportHoldIfChanged(project.getId(), readiness, threshold);
         }
+    }
+
+    /**
+     * Law 15 (Закон готовности): readiness front evaluation.
+     * Evaluates whether the deliverable scope has crossed the readiness front theta (default 0.80) or reached
+     * a terminal falsification frontier in brownfield projects, rather than stalling on unreachable 1.0.
+     */
+    boolean isReadinessReached(ClientDeliverableReadinessService.Readiness readiness) {
+        if (!readiness.decompositionComplete()) {
+            return false;
+        }
+        if (readiness.totalFeatures() == 0 && readiness.totalDeliverables() == 0) {
+            return false;
+        }
+        double threshold = settingsService.effectiveDouble("design_shop_readiness_threshold", 0.80);
+        if (readiness.ratio() >= threshold) {
+            return true;
+        }
+        if (readiness.totalFeatures() > 0 && readiness.completeFeatures() >= readiness.totalFeatures()) {
+            return true;
+        }
+        if (readiness.selfFalsificationReadyRatio() >= 1.0 && (readiness.mergedDeliverables() > 0 || readiness.completeFeatures() > 0)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -181,9 +207,12 @@ public class DesignShopOrchestrationService {
      * {@code decompositionComplete ∧ ratio = 1} and fires on its rising edge, and a front that has not
      * arrived is not a defect. What was a defect is that nobody could see which of the two it was.
      */
-    private void reportHoldIfChanged(UUID projectId, ClientDeliverableReadinessService.Readiness readiness) {
+    private void reportHoldIfChanged(UUID projectId, ClientDeliverableReadinessService.Readiness readiness, double threshold) {
         String hold = "decompositionComplete=" + readiness.decompositionComplete()
-                + " ratio=" + String.format(java.util.Locale.ROOT, "%.3f", readiness.ratio());
+                + " ratio=" + String.format(java.util.Locale.ROOT, "%.3f", readiness.ratio())
+                + " threshold=" + String.format(java.util.Locale.ROOT, "%.3f", threshold)
+                + " completeFeatures=" + readiness.completeFeatures() + "/" + readiness.totalFeatures()
+                + " selfFalsificationReadyRatio=" + String.format(java.util.Locale.ROOT, "%.3f", readiness.selfFalsificationReadyRatio());
         if (hold.equals(lastHold.get(projectId))) {
             return;
         }
