@@ -4986,7 +4986,7 @@ public class ProjectFlowService {
         // Suffixed with size + the first reviewed task's short id - same duplicate-title false-positive
         // reasoning as the compiler/audit task titles above; observed live triggering
         // ContinuousOrchestrationService's DUPLICATE TASK TITLES alarm after only 3 fallback dispatches.
-        reviewTask.setTitle("PR review fallback (Gemini unavailable, " + originalTasks.size() + " PR(s), "
+        reviewTask.setTitle("PR review by Jules (" + originalTasks.size() + " PR(s), "
                 + shortId(originalTasks.get(0).getId()) + ")");
         reviewTask.setDescription(prompt);
         reviewTask.initializeStatus(TaskStatus.queued);

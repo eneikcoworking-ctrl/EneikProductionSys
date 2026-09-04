@@ -3363,7 +3363,11 @@ public class JulesDispatchService {
             log.warn("Could not dispatch batched PR review fallback for {} task(s)", tasks.size());
             return;
         }
-        log.info("Dispatched batched PR review fallback task {} covering {} PR(s) - Gemini review unavailable",
+        // The ground named here is the standing one, not an outage. Metered per-token review was removed by
+        // operator directive after a cost incident; Jules is the reviewer by decision, and a message that
+        // calls that decision an outage sends the next reader to restore something deliberately retired
+        // (Law 12: a message names the conjunct that actually applied, and never a cause that is not one).
+        log.info("Dispatched batched PR review task {} covering {} PR(s) - review is Jules-only by standing directive",
                 reviewTaskId, tasks.size());
     }
 
@@ -3892,7 +3896,7 @@ public class JulesDispatchService {
             taskRepository.save(originalTask);
             implementerSession.setStatus("revising");
             julesSessionRepository.save(implementerSession);
-            String correction = "Fallback reviewer (Jules, Gemini unavailable) blocked this PR: " + verdict.criticalReason()
+            String correction = "The reviewer blocked this PR: " + verdict.criticalReason()
                     + "\nPlease fix the same PR to resolve this specific problem.";
             String externalSessionId = implementerSession.getExternalSessionId();
             String sessionApiKey = apiKeyForSession(implementerSession);
@@ -3927,7 +3931,9 @@ public class JulesDispatchService {
         prData.setLinesChanged(120);
         prData.setFilesChanged(4);
         prData.setChangedFiles(java.util.Collections.emptyList());
-        String remarks = "CORE ARCHITECTURE VERIFIED. APPROVED. Jules fallback review (Gemini unavailable). "
+        // The leading sentence is AutoMergeService.APPROVAL_TOKEN verbatim and is load-bearing: the merge
+        // gate reads it out of diffSummary. Only the ground after it is restated here.
+        String remarks = "CORE ARCHITECTURE VERIFIED. APPROVED. Reviewed by Jules. "
                 + (verdict.concerns().isEmpty() ? "No concerns raised." : verdict.concerns().size() + " concern(s) recorded as follow-up wishlist items.");
         prData.setDiffSummary(remarks);
         prReviewPipelineService.onPrOpened(prUrl, implementerSession.getId(), prData);
