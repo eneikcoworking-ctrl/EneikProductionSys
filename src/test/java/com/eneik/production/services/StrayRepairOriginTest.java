@@ -321,6 +321,58 @@ class StrayRepairOriginTest {
         return task;
     }
 
+    @Test
+    void aSliceOnThePathToRequirementIsWalkedThroughLineage() {
+        UUID productEpic = UUID.randomUUID();
+        com.eneik.production.models.persistence.ProjectEntity project = project();
+        TaskEntity attempt = task(null);
+        attempt.setProject(project);
+
+        WishlistEntity requirement = new WishlistEntity();
+        requirement.setId(UUID.randomUUID());
+        requirement.setFeatureId(productEpic);
+
+        WishlistEntity slice = new WishlistEntity();
+        slice.setId(UUID.randomUUID());
+        slice.setOriginWishlistId(requirement.getId());
+        attempt.setSourceWishlistId(slice.getId());
+
+        stubProductEpics(project, productEpic);
+        when(wishlistRepository.findById(slice.getId())).thenReturn(java.util.Optional.of(slice));
+        when(wishlistRepository.findById(requirement.getId())).thenReturn(java.util.Optional.of(requirement));
+
+        assertEquals(productEpic, service.epicOfRequirement(attempt),
+                "epicOfRequirement did not follow originWishlistId through slice");
+    }
+
+    @Test
+    void repairDepthWalksThroughSlicesViaOriginWishlistId() {
+        TaskEntity originalTask = task(null);
+        WishlistEntity repair1 = repairOf(originalTask, null);
+
+        WishlistEntity slice1 = new WishlistEntity();
+        slice1.setId(UUID.randomUUID());
+        slice1.setOriginWishlistId(repair1.getId());
+
+        TaskEntity repairTask1 = task(null);
+        repairTask1.setSourceWishlistId(slice1.getId());
+
+        WishlistEntity repair2 = repairOf(repairTask1, null);
+
+        Map<UUID, WishlistEntity> wishlistMap = Map.of(
+                repair1.getId(), repair1,
+                slice1.getId(), slice1,
+                repair2.getId(), repair2
+        );
+        Map<UUID, TaskEntity> taskMap = Map.of(
+                originalTask.getId(), originalTask,
+                repairTask1.getId(), repairTask1
+        );
+
+        assertEquals(2, service.repairDepth(repair2, wishlistMap, taskMap),
+                "repairDepth failed to follow slice lineage to parent repair brief");
+    }
+
     private WishlistEntity repairOf(TaskEntity repaired, UUID epic) {
         WishlistEntity repair = new WishlistEntity();
         repair.setId(UUID.randomUUID());
@@ -329,3 +381,4 @@ class StrayRepairOriginTest {
         return repair;
     }
 }
+

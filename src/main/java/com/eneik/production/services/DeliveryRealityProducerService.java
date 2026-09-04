@@ -611,6 +611,18 @@ public class DeliveryRealityProducerService {
             if (origin.getFeatureId() != null && productEpics.contains(origin.getFeatureId())) {
                 return origin.getFeatureId();
             }
+            // Slices carry lineage back to their root brief (originWishlistId, rule 8.18). Following this link
+            // reaches the repair brief or requirement that holds the product epic and sourceTaskId.
+            if (origin.getSourceTaskId() == null && origin.getOriginWishlistId() != null) {
+                com.eneik.production.models.persistence.WishlistEntity parentOrigin =
+                        wishlistRepository.findById(origin.getOriginWishlistId()).orElse(null);
+                if (parentOrigin != null) {
+                    if (parentOrigin.getFeatureId() != null && productEpics.contains(parentOrigin.getFeatureId())) {
+                        return parentOrigin.getFeatureId();
+                    }
+                    origin = parentOrigin;
+                }
+            }
             if (origin.getSourceTaskId() == null) {
                 return null;
             }
@@ -620,9 +632,9 @@ public class DeliveryRealityProducerService {
     }
 
     /** Depth of one repair chain, walked back through the task each link repairs. Visited-guarded. */
-    private int repairDepth(com.eneik.production.models.persistence.WishlistEntity repair,
-                            java.util.Map<java.util.UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
-                            java.util.Map<java.util.UUID, TaskEntity> taskById) {
+    int repairDepth(com.eneik.production.models.persistence.WishlistEntity repair,
+                    java.util.Map<java.util.UUID, com.eneik.production.models.persistence.WishlistEntity> wishlistById,
+                    java.util.Map<java.util.UUID, TaskEntity> taskById) {
         java.util.Set<java.util.UUID> visited = new java.util.HashSet<>();
         int depth = 1;
         com.eneik.production.models.persistence.WishlistEntity current = repair;
@@ -633,6 +645,12 @@ public class DeliveryRealityProducerService {
             }
             com.eneik.production.models.persistence.WishlistEntity previous =
                     wishlistById.get(repaired.getSourceWishlistId());
+            if (previous == null) {
+                return depth;
+            }
+            if (previous.getSourceTaskId() == null && previous.getOriginWishlistId() != null) {
+                previous = wishlistById.get(previous.getOriginWishlistId());
+            }
             if (previous == null || previous.getSourceTaskId() == null) {
                 return depth;
             }
