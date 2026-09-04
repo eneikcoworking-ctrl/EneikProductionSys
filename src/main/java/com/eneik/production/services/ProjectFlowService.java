@@ -3305,94 +3305,47 @@ public class ProjectFlowService {
      * assume success because a TaskEntity got created - the task legitimately stays `queued` on false and
      * will retry on the next compiler-dispatch cycle, which is real, not a bug in itself.
      */
+    /**
+     * Law 1 (|impl(I)| = 1): Unified Jules dispatch implementation.
+     * All dispatch pathways (general pool, reviewer, compiler) execute through this single method,
+     * differentiating behavior via arguments rather than duplicate code.
+     */
     private boolean dispatchCompilerTask(TaskEntity compilerTask) {
-        Optional<AccountEntity> accountOpt = self.claimAccountForTask(compilerTask.getId(), () ->
-                accountRepository.lockAccountByNameWithCapacity(
-                        taskCompilerAccountName(), maxConcurrentJulesSessionsPerAccount));
-        if (accountOpt.isEmpty()) {
-            log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
-                    taskCompilerAccountName(), compilerTask.getId());
-            return false;
-        }
-
-        AccountEntity account = accountOpt.get();
-        try {
-            TaskEntity savedTask = taskRepository.findById(compilerTask.getId()).orElse(compilerTask);
-            JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
-            savedTask.setJulesSessionName(dispatch.sessionName());
-            savedTask.setJulesDispatchStatus(dispatch.reason());
-            taskRepository.save(savedTask);
-            if (!dispatch.dispatched()) {
-                if (isJulesSourceNotFound(dispatch.reason())) {
-                    claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
-                    log.warn("Blocked wishlist compiler task {} because Jules cannot see the repository source: {}",
-                            savedTask.getId(), dispatch.reason());
-                    return false;
-                }
-                claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
-                log.warn("Failed to dispatch wishlist compiler task {} to account {}: {}",
-                        savedTask.getId(), account.getName(), dispatch.reason());
-
-                return false;
-            }
-            // JulesDispatchService.dispatch() reports dispatched=true both for a genuinely fresh dispatch
-            // and for the "already dispatched, skip duplicate" no-op - logging both as "Dispatched compiler
-            // task" made the no-op case indistinguishable from a real dispatch in the logs.
-            if ("already dispatched, skipping duplicate".equals(dispatch.reason())) {
-                log.info("Compiler task {} was already dispatched to account {}; skipped duplicate dispatch", savedTask.getId(), account.getName());
-            } else {
-                log.info("Dispatched compiler task {} to account {}", savedTask.getId(), account.getName());
-            }
-            return true;
-        } catch (Exception e) {
-            log.error("Failed to claim/dispatch compiler task {} to account {}: {}",
-                    compilerTask.getId(), account.getName(), e.getMessage(), e);
-            return false;
-        }
+        return dispatchToGeneralPool(compilerTask, java.util.Set.of(), null, taskCompilerAccountName());
     }
 
-    // The reserved compiler account (dispatchCompilerTask above) is meant for genuinely low-frequency,
-    // identity-sensitive work (the wishlist compiler itself, falsification audits). PR-review-fallback and
-    // design-review both fire far more often than that assumption holds - PR-review-fallback fires on
-    // EVERY implementer PR whenever Gemini is unavailable, which is not a rare event; design-review fires
-    // on every new mockup. Stacking that volume onto one account alongside compiler traffic burns its daily
-    // Jules session quota fast (confirmed live: the operator watched it happen) for tasks that have no
-    // actual need for the reserved identity - any capable general-pool account can review a diff or a
-    // mockup. This dispatches through the same general-pool selector implementer tasks already use.
-    //
-    // Operator directive (2026-07-23): the compiler account (eneikdru) now also participates in this and
-    // every other general-pool selector below (reservedName passed as null, not taskCompilerAccountName())
-    // - it is no longer excluded from implementer/reviewer/general-pool dispatch. Its own concurrency
-    // ceiling is set via AccountEntity.maxConcurrentSessions (see V50 migration), independent of the
-    // shared jules.max-concurrent-sessions-per-account default used by every other account.
     private void dispatchToGeneralPool(TaskEntity task) {
-        dispatchToGeneralPool(task, java.util.Set.of());
+        dispatchToGeneralPool(task, java.util.Set.of(), null, null);
     }
 
-    // Charter Pattern #12 (independent verification, not self-attestation): review-fallback carrier
-    // tasks must exclude the account(s) that implemented the code under review, so the general-pool
-    // round-robin selector can't hand a PR's review back to the same account that wrote it - nothing
-    // about the underlying capacity query otherwise prevents that. Callers with nothing to exclude
-    // (plain implementer dispatch, design-review - see the call site comment at isDesignReviewTask)
-    // use the no-arg overload above.
     private void dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames) {
+        dispatchToGeneralPool(task, excludedAccountNames, null, null);
+    }
+
+    private boolean dispatchToGeneralPool(TaskEntity task, java.util.Set<String> excludedAccountNames, String mode, String exactAccountName) {
         String excludedNamesCsv = excludedAccountNames.isEmpty() ? null : String.join(",", excludedAccountNames);
         String failedAccountName = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
+        int maxAttempts = exactAccountName != null ? 1 : 3;
+        for (int attempt = 0; attempt < maxAttempts; attempt++) {
             String excludedForThisAttempt = failedAccountName;
             Optional<AccountEntity> accountOpt = self.claimAccountForTask(task.getId(), () ->
-                    accountRepository.lockNextJulesAccountWithCapacity(
-                            task.getProject().getId(),
-                            task.getRole().getTag(),
-                            maxConcurrentJulesSessionsPerAccount,
-                            excludedForThisAttempt,
-                            maxDailySessionsPerAccount,
-                            excludedNamesCsv
-                    ));
+                    exactAccountName != null
+                            ? accountRepository.lockAccountByNameWithCapacity(
+                                    exactAccountName, maxConcurrentJulesSessionsPerAccount)
+                            : accountRepository.lockNextJulesAccountWithCapacity(
+                                    task.getProject().getId(),
+                                    task.getRole().getTag(),
+                                    maxConcurrentJulesSessionsPerAccount,
+                                    excludedForThisAttempt,
+                                    maxDailySessionsPerAccount,
+                                    excludedNamesCsv
+                            ));
             if (accountOpt.isEmpty()) {
-                // Recorded on the task, not only in the log (2026-08-29): this was the one thing the
-                // duplicated queued-task branch did that this method did not, and a hold nobody can read
-                // afterwards is how seventeen tasks spent twenty-two hours unexplained.
+                if (exactAccountName != null) {
+                    log.warn("Wishlist compiler account '{}' has no free capacity right now; task {} stays queued for the next cycle",
+                            exactAccountName, task.getId());
+                    return false;
+                }
                 String noCapacity = "No free Jules shared session slot available for role context "
                         + task.getRole().getTag();
                 if (!noCapacity.equals(task.getJulesDispatchStatus())) {
@@ -3400,50 +3353,55 @@ public class ProjectFlowService {
                     taskRepository.save(task);
                 }
                 log.warn("No general-pool account has free capacity right now; task {} stays queued for the next cycle", task.getId());
-                return;
+                return false;
             }
 
             AccountEntity account = accountOpt.get();
             try {
                 TaskEntity savedTask = taskRepository.findById(task.getId()).orElse(task);
-                JulesDispatchResult dispatch = julesDispatchService.dispatch(savedTask, account.getId());
+                JulesDispatchResult dispatch = mode != null
+                        ? julesDispatchService.dispatch(savedTask, account.getId(), mode)
+                        : julesDispatchService.dispatch(savedTask, account.getId());
                 savedTask.setJulesSessionName(dispatch.sessionName());
                 savedTask.setJulesDispatchStatus(dispatch.reason());
                 taskRepository.save(savedTask);
                 if (!dispatch.dispatched()) {
                     if (isJulesSourceNotFound(dispatch.reason())) {
-                        // Rotating is pointless here: no account can see a repository Jules cannot see.
-                        // Carried over from the queued-task branch this method absorbed on 2026-08-29.
                         claimService.closeTaskAsBlocked(savedTask.getId(), dispatch.reason());
                         log.warn("Blocked task {} because Jules cannot see the repository source: {}",
                                 savedTask.getId(), dispatch.reason());
-                        return;
+                        return false;
                     }
                     claimService.releaseClaimToQueue(savedTask.getId(), dispatch.reason());
-                    // releaseClaimToQueue does not always requeue: at its dispatch-attempt budget (action
-                    // plan 4.1) it writes `blocked` and leaves the task blocked instead. Rotating
-                    // on regardless would offer a task around that has just left the queue - and if the
-                    // next account happened to accept it, would open a live session against a blocked
-                    // task, which the session poller then has to close again.
+                    if (exactAccountName != null) {
+                        log.warn("Failed to dispatch compiler task {} to account {}: {}",
+                                savedTask.getId(), account.getName(), dispatch.reason());
+                        return false;
+                    }
                     TaskStatus statusAfterRelease = taskRepository.findById(savedTask.getId())
                             .map(TaskEntity::getStatus).orElse(null);
                     if (statusAfterRelease != TaskStatus.queued) {
                         log.info("Task {} is no longer queued after a failed dispatch ({}); stopping account rotation",
                                 savedTask.getId(), statusAfterRelease);
-                        return;
+                        return false;
                     }
                     log.warn("Failed to dispatch task {} to account {} (attempt {}/3): {}. Rotating to next account...",
                             savedTask.getId(), account.getName(), attempt + 1, dispatch.reason());
                     failedAccountName = account.getName();
                     continue;
                 }
-                log.info("Dispatched task {} to general-pool account {}", savedTask.getId(), account.getName());
-                return;
+                if ("already dispatched, skipping duplicate".equals(dispatch.reason())) {
+                    log.info("Task {} was already dispatched to account {}; skipped duplicate dispatch", savedTask.getId(), account.getName());
+                } else {
+                    log.info("Dispatched task {} to account {}", savedTask.getId(), account.getName());
+                }
+                return true;
             } catch (Exception e) {
                 log.error("Failed to claim/dispatch task {} to account {}: {}", task.getId(), account.getName(), e.getMessage(), e);
                 failedAccountName = account.getName();
             }
         }
+        return false;
     }
 
     // Charter Pattern #12: resolves the account(s) that implemented the code a review-fallback batch is
@@ -5821,31 +5779,8 @@ public class ProjectFlowService {
             boolean hasActiveReviewSession = julesDispatchService.hasActiveSession(task.getId());
 
             if (!hasActiveReviewSession) {
-                // Find any idle capable account to act as reviewer
-                String roleTag = task.getRole().getTag();
-                Optional<AccountEntity> accountOpt = accountRepository.lockNextJulesAccountWithCapacity(
-                        project.getId(),
-                        roleTag,
-                        maxConcurrentJulesSessionsPerAccount,
-                        null,
-                        maxDailySessionsPerAccount,
-                        null
-                );
-                if (accountOpt.isPresent()) {
-                    AccountEntity account = accountOpt.get();
-                    try {
-                        JulesDispatchResult result = julesDispatchService.dispatch(task, account.getId(), "REVIEWER");
-                        if (result.dispatched()) {
-                            log.info("Auto-dispatched reviewer for task {} of project {} to account {}",
-                                    task.getId(), project.getName(), account.getName());
-                        } else {
-                            log.info("Reviewer dispatch for task {} of project {} did not start a new session ({})",
-                                    task.getId(), project.getName(), result.reason());
-                        }
-                    } catch (Exception e) {
-                        log.error("Failed to auto-dispatch reviewer for task {}: {}", task.getId(), e.getMessage());
-                    }
-                }
+                // Law 1 (|impl(I)| = 1): unified dispatchToGeneralPool in REVIEWER mode
+                dispatchToGeneralPool(task, java.util.Set.of(), "REVIEWER", null);
             }
         }
     }
