@@ -182,6 +182,24 @@ public class PlannedWorkRecoveryService {
         // `blocked`, which is a terminating path; this gate must not race it.
         TaskEntity dependency = task.getDependsOn();
         if (dependency != null && !readinessService.isDependencySatisfied(dependency)) {
+            // A dependency that is merely unsatisfied is waited for. One that nothing will ever resume is a
+            // dead end, and the dependent belongs in `blocked` - a terminating status - not in `failed`,
+            // where it holds BLOCKED_BY_FAILED_FRONTIER for the whole project forever while this gate
+            // refuses it every tick. The routing existed already, on the queued path only: a rule with one
+            // consumer enumerated instead of all of them (ACP-103), and this is the failed path.
+            //
+            // Measured 04.09 on test-fiftieth: the project globally blocked by exactly one failed task,
+            // whose dependency this same service had already refused as work it may never resume.
+            if (isDeadForGood(dependency)) {
+                int blocked = taskRepository.compareAndSetStatus(task.getId(), TaskStatus.failed,
+                        TaskStatus.blocked);
+                if (blocked > 0) {
+                    log.info("PlannedWorkRecoveryService: task {} blocked - its dependency {} is failed and "
+                            + "is not work this service may ever resume, so waiting for it cannot end",
+                            task.getId(), dependency.getId());
+                }
+                return false;
+            }
             return refuse(refusals, task, "its dependency " + dependency.getId() + " (" + dependency.getStatus()
                     + ") is not satisfied");
         }
@@ -293,6 +311,19 @@ public class PlannedWorkRecoveryService {
      * WHY is still RETIRED_WITH_NOTHING_LEFT_WORKING_IT below. Only "is this product work" changed, and it
      * changed from a written list to a measured structural fact.
      */
+    /**
+     * A dependency that has failed and is not work this service may ever resume.
+     *
+     * <p>The distinction the dependent's fate turns on: an unsatisfied dependency that can still be revived
+     * is worth waiting for, while one nothing will revive makes the wait endless. Asked with the same
+     * durable predicate the BLOCKED_BY_FAILED_FRONTIER gate itself uses, so the two cannot disagree.
+     */
+    boolean isDeadForGood(TaskEntity dependency) {
+        return dependency != null
+                && dependency.getStatus() == TaskStatus.failed
+                && !isEligibleRetiredPlanTask(dependency);
+    }
+
     private boolean isEligibleRetiredPlanTask(TaskEntity task) {
         WishlistEntity source = task.getSourceWishlistId() == null
                 ? null
