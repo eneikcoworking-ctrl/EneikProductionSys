@@ -343,7 +343,7 @@ class ClientDeliverableReadinessServiceTest {
         TaskEntity mergedDone = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
         stubMerged(mergedDone, true);
         TaskEntity siblingStillInReview = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
-        siblingStillInReview.setStatus(TaskStatus.review);
+        siblingStillInReview.initializeStatus(TaskStatus.review);
         when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(mergedDone, siblingStillInReview));
         when(wishlistRepository.findByFeatureId(featureId)).thenReturn(List.of());
 
@@ -357,7 +357,7 @@ class ClientDeliverableReadinessServiceTest {
         TaskEntity doneWithoutCode = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
         stubMerged(doneWithoutCode, false);
         TaskEntity stillInReview = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
-        stillInReview.setStatus(TaskStatus.review);
+        stillInReview.initializeStatus(TaskStatus.review);
         when(taskRepository.findByFeatureId(featureId)).thenReturn(List.of(doneWithoutCode, stillInReview));
 
         assertFalse(service.isFeatureReadyForCloseout(projectId, featureId));
@@ -400,7 +400,7 @@ class ClientDeliverableReadinessServiceTest {
         List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
         List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
         tasks.get(0).setCynefinDomain("complex");
-        tasks.get(0).setStatus(TaskStatus.spike_completed);
+        tasks.get(0).initializeStatus(TaskStatus.spike_completed);
         stubPlan(projectId, root, feature, items, tasks);
         // Deliberately no stubMerged() - a spike's review is never merged=true by design.
 
@@ -453,7 +453,7 @@ class ClientDeliverableReadinessServiceTest {
         UUID projectId = UUID.randomUUID();
         UUID featureId = UUID.randomUUID();
         TaskEntity failed = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
-        failed.setStatus(TaskStatus.failed);
+        failed.initializeStatus(TaskStatus.failed);
         failed.setPayload(payload("ems:one"));
         TaskEntity otherSlice = task(UUID.randomUUID(), projectId, featureId, UUID.randomUUID(), "BARCAN-TAG-02");
         otherSlice.setPayload(payload("ems:other"));
@@ -476,33 +476,33 @@ class ClientDeliverableReadinessServiceTest {
     @Test
     void apiContractTaskWithOpenPrIsEarlyUnblockable() {
         TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
-        contractTask.setStatus(TaskStatus.review);
+        contractTask.initializeStatus(TaskStatus.review);
         assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
-        contractTask.setStatus(TaskStatus.pending_review);
+        contractTask.initializeStatus(TaskStatus.pending_review);
         assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
-        contractTask.setStatus(TaskStatus.done);
+        contractTask.initializeStatus(TaskStatus.done);
         assertTrue(service.isSpecDependencyPrOpenButUnmerged(contractTask));
     }
 
     @Test
     void apiContractTaskStillQueuedIsNotEarlyUnblockable() {
         TaskEntity contractTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
-        contractTask.setStatus(TaskStatus.queued);
+        contractTask.initializeStatus(TaskStatus.queued);
         assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
-        contractTask.setStatus(TaskStatus.claimed);
+        contractTask.initializeStatus(TaskStatus.claimed);
         assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
 
-        contractTask.setStatus(TaskStatus.failed);
+        contractTask.initializeStatus(TaskStatus.failed);
         assertFalse(service.isSpecDependencyPrOpenButUnmerged(contractTask));
     }
 
     @Test
     void nonSpecRoleIsNeverEarlyUnblockableEvenInReview() {
         TaskEntity backendTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-02");
-        backendTask.setStatus(TaskStatus.review);
+        backendTask.initializeStatus(TaskStatus.review);
         assertFalse(service.isSpecDependencyPrOpenButUnmerged(backendTask));
     }
 
@@ -512,7 +512,7 @@ class ClientDeliverableReadinessServiceTest {
 
         TaskEntity noRole = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), "BARCAN-TAG-12");
         noRole.setRole(null);
-        noRole.setStatus(TaskStatus.review);
+        noRole.initializeStatus(TaskStatus.review);
         assertFalse(service.isSpecDependencyPrOpenButUnmerged(noRole));
     }
 
@@ -521,13 +521,13 @@ class ClientDeliverableReadinessServiceTest {
         for (String roleTag : List.of("BARCAN-TAG-09", "BARCAN-TAG-01", "BARCAN-TAG-10")) {
             TaskEntity specTask = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), roleTag);
 
-            specTask.setStatus(TaskStatus.review);
+            specTask.initializeStatus(TaskStatus.review);
             assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " in review");
 
-            specTask.setStatus(TaskStatus.pending_review);
+            specTask.initializeStatus(TaskStatus.pending_review);
             assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " in pending_review");
 
-            specTask.setStatus(TaskStatus.done);
+            specTask.initializeStatus(TaskStatus.done);
             assertTrue(service.isSpecDependencyPrOpenButUnmerged(specTask), roleTag + " when done");
         }
     }
@@ -538,7 +538,7 @@ class ClientDeliverableReadinessServiceTest {
         // config / real test results, not a reference document a dependent can build against pre-merge).
         for (String roleTag : List.of("BARCAN-TAG-05", "BARCAN-TAG-06")) {
             TaskEntity task = task(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), roleTag);
-            task.setStatus(TaskStatus.review);
+            task.initializeStatus(TaskStatus.review);
             assertFalse(service.isSpecDependencyPrOpenButUnmerged(task), roleTag + " must stay excluded");
         }
     }
@@ -558,7 +558,7 @@ class ClientDeliverableReadinessServiceTest {
         List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
         List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
         TaskEntity firstAttempt = attempts.get(0);
-        firstAttempt.setStatus(TaskStatus.failed);
+        firstAttempt.initializeStatus(TaskStatus.failed);
 
         WishlistEntity repair = repairOf(projectId, feature.getId(), firstAttempt);
         TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
@@ -586,7 +586,7 @@ class ClientDeliverableReadinessServiceTest {
         List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
         List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
         TaskEntity firstAttempt = attempts.get(0);
-        firstAttempt.setStatus(TaskStatus.failed);
+        firstAttempt.initializeStatus(TaskStatus.failed);
 
         WishlistEntity repair = repairOf(projectId, feature.getId(), firstAttempt);
         TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
@@ -615,7 +615,7 @@ class ClientDeliverableReadinessServiceTest {
         WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
         List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
         List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
-        attempts.get(0).setStatus(TaskStatus.failed);
+        attempts.get(0).initializeStatus(TaskStatus.failed);
 
         WishlistEntity repair = repairOf(projectId, feature.getId(), attempts.get(0));
         // The slice the compiler produced under the repair brief - this is what the task actually hangs on.
@@ -701,7 +701,7 @@ class ClientDeliverableReadinessServiceTest {
         WishlistEntity root = root(projectId, rootId, WishlistStatus.converted_to_task);
         List<WishlistEntity> items = plannedItems(projectId, feature.getId(), 1);
         List<TaskEntity> tasks = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
-        tasks.get(0).setStatus(TaskStatus.failed);
+        tasks.get(0).initializeStatus(TaskStatus.failed);
         stubPlan(projectId, root, feature, items, tasks);
         stubMerged(tasks.get(0), false);
 
@@ -732,11 +732,11 @@ class ClientDeliverableReadinessServiceTest {
         items.get(0).setContent("Internal work item 1 (BARCAN-TAG-02) from wishlist " + rootId
                 + ": Privacy Compliance Backend");
         List<TaskEntity> attempts = tasksFor(projectId, feature.getId(), items, "BARCAN-TAG-02");
-        attempts.get(0).setStatus(TaskStatus.failed);
+        attempts.get(0).initializeStatus(TaskStatus.failed);
 
         WishlistEntity repair = repairOf(projectId, feature.getId(), attempts.get(0));
         TaskEntity repairTask = task(UUID.randomUUID(), projectId, feature.getId(), repair.getId(), "BARCAN-TAG-02");
-        repairTask.setStatus(TaskStatus.in_progress);
+        repairTask.initializeStatus(TaskStatus.in_progress);
         stubPlan(projectId, root, feature, items, attempts);
         when(wishlistRepository.findByProjectId(projectId)).thenReturn(List.of(root, items.get(0), repair));
         when(taskRepository.findBySourceWishlistIdIn(List.of(repair.getId()))).thenReturn(List.of(repairTask));
@@ -946,7 +946,7 @@ class ClientDeliverableReadinessServiceTest {
         RoleEntity role = new RoleEntity();
         role.setTag(roleTag);
         task.setRole(role);
-        task.setStatus(TaskStatus.done);
+        task.initializeStatus(TaskStatus.done);
         return task;
     }
 
@@ -1024,7 +1024,7 @@ class ClientDeliverableReadinessServiceTest {
         dismissedItem.setStatus(WishlistStatus.dismissed);
 
         TaskEntity withheld = task(UUID.randomUUID(), projectId, feature.getId(), UUID.randomUUID(), "BARCAN-TAG-02");
-        withheld.setStatus(TaskStatus.queued);
+        withheld.initializeStatus(TaskStatus.queued);
 
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
         stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());
@@ -1092,7 +1092,7 @@ class ClientDeliverableReadinessServiceTest {
         dismissedItem.setStatus(WishlistStatus.dismissed);
 
         TaskEntity finished = task(UUID.randomUUID(), projectId, feature.getId(), UUID.randomUUID(), "BARCAN-TAG-02");
-        finished.setStatus(TaskStatus.done);
+        finished.initializeStatus(TaskStatus.done);
 
         when(projectRepository.findByStatusOrderByCreatedAtDesc(ProjectStatus.active)).thenReturn(List.of(project));
         stubPlan(projectId, root, feature, List.of(dismissedItem), List.of());

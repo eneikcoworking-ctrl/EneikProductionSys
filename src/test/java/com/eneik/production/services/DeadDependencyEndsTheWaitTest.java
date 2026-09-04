@@ -63,7 +63,7 @@ class DeadDependencyEndsTheWaitTest {
     @Test
     void aDependencyThatHasNotFailedIsNeverDeadForGood() {
         TaskEntity queued = failedTask();
-        queued.setStatus(TaskStatus.queued);
+        queued.initializeStatus(TaskStatus.queued);
         WishlistEntity clientBrief = new WishlistEntity();
         clientBrief.setSource(WishlistSource.client);
 
@@ -119,7 +119,7 @@ class DeadDependencyEndsTheWaitTest {
     private TaskEntity failedTask() {
         TaskEntity task = new TaskEntity();
         task.setId(java.util.UUID.randomUUID());
-        task.setStatus(TaskStatus.failed);
+        task.initializeStatus(TaskStatus.failed);
         task.setFeatureId(java.util.UUID.randomUUID());
         return task;
     }

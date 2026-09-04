@@ -254,8 +254,13 @@
     * `factory_report` пишется построчной прозой, а читается Jackson'ом (`Unexpected character ('-')`) —
       одно поле, два несогласованных представления, закон 1. Поток не блокирует.
     * Большинство эпиков — группирующие строки без содержания.
-    * `target/` отслеживается в клиентском репозитории, каждая сборка даёт мусорный diff. Чинится на стороне
-      клиента.
+16. **Законы 6 и 11 (Погашение требования и Множество решения / Возврат заслонов):**
+    * В ответ на находку аудита Клода (падение фикстур из-за строгого барьера Закона 20/S2 в `TaskEntity.setStatus`):
+      - В `DeadDependencyEndsTheWaitTest.java`: вызовы мутации фикстур переведены с `setStatus` на `initializeStatus`. Результат: **6 из 6 тестов зелёные**.
+      - В `ClientDeliverableReadinessServiceTest.java`: все 25 вызовов `setStatus(TaskStatus.X)` в тестовых фикстурах переведены на `initializeStatus(TaskStatus.X)`. Результат: **49 из 49 тестов зелёные**, ликвидированы все 16 ошибок `IllegalStateException`.
+    * **Заслон Закона 6 восстановлен:** все три теста замыкания требований (`aRequirementIsFulfilledWhenItsRepairMergedRatherThanItsFirstAttempt`, `aRequirementWhoseRepairHasNotMergedIsStillUnfulfilled`, `aRepairDeliveredThroughItsSliceStillDischargesTheRequirement`) подтверждают погашение требований через срез и цепочку ремонтов.
+    * **Заслон Закона 11 восстановлен:** фильтр знаменателя в `computeForSources` / `computeForProject` подтверждён зелёными тестами (включая исключения `dismissed` и вспомогательных задач).
+    * В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` Законы 6 и 11 переведены в статус «Держится» и сняты из шапки неработающих/незаслонённых законов.
 
 ---
 
