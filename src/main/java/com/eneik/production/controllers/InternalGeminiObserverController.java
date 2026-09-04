@@ -109,7 +109,7 @@ public class InternalGeminiObserverController {
     public List<java.util.Map<String, Object>> wishlistCompilerTasks(@RequestParam UUID projectId) {
         List<java.util.Map<String, Object>> result = new java.util.ArrayList<>();
         for (TaskEntity task : taskRepository.findByProjectIdOrderByCreatedAtDesc(projectId)) {
-            if (task.getPayload() == null || !"wishlist_compiler".equals(task.getPayload().path("taskType").asText(null))) {
+            if (!task.isWishlistCompiler()) {
                 continue;
             }
             java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();

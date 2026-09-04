@@ -882,7 +882,7 @@ public class JulesDispatchService {
     private String julesRetrievalQuery(TaskEntity task, String mode, boolean buildPhase) {
         String roleTag = task.getRole() == null ? "unknown" : task.getRole().getTag();
         String roleDescription = task.getRole() == null ? "" : task.getRole().getDescription();
-        String taskType = task.getPayload() == null ? "" : task.getPayload().path("taskType").asText("");
+        String taskType = task.carrierTaskType() == null ? "" : task.carrierTaskType();
         String safeMode = mode == null || mode.isBlank() ? "IMPLEMENTER" : mode;
         return "Jules execution context. mode=" + safeMode
                 + "; roleTag=" + roleTag
@@ -5291,8 +5291,7 @@ public class JulesDispatchService {
             // decisive elsewhere - a pull request closed without a merge has been reviewed by its closing.
             //
             // The silence windows are untouched; they remain for the case where there is no evidence.
-            boolean carrierWithNothingLeftToDeliver = task.getPayload() != null
-                    && task.getPayload().hasNonNull(com.eneik.production.services.ProjectFlowService.WISHLIST_COMPILER_PAYLOAD_KEY);
+            boolean carrierWithNothingLeftToDeliver = task.isCarrier();
             // The claim's veto is narrowed to the phase where its own reason holds (2026-08-29, plan
             // §4.27). The reason written above is that an implementer whose PR closed can push a new
             // branch and open another one from the same session - true while it is still implementing,

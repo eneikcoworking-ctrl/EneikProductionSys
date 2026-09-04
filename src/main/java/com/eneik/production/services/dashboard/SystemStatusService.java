@@ -445,7 +445,7 @@ public class SystemStatusService {
     // interested in tasks with no code and no content useful to a user") - counting carrier tasks
     // here would silently reintroduce the exact debris this directive was about.
     private boolean isSystemMetaTask(TaskEntity task) {
-        return task.getPayload() != null && task.getPayload().has("taskType");
+        return task != null && task.isCarrier();
     }
 
     private Map<String, Object> tasks(UUID projectId) {

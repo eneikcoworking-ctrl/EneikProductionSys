@@ -58,10 +58,8 @@ public class EmsMetricsService {
     // was the root cause). Marked via the same "taskType" payload key JulesDispatchService already uses to
     // route these tasks around the normal review pipeline (isWishlistCompilerTask etc.) - reused here
     // rather than re-deriving task type from title/role heuristics.
-    private static final String SYSTEM_TASK_TYPE_PAYLOAD_KEY = "taskType";
-
     private boolean isSystemMetaTask(TaskEntity task) {
-        return task.getPayload() != null && task.getPayload().has(SYSTEM_TASK_TYPE_PAYLOAD_KEY);
+        return task != null && task.isCarrier();
     }
 
     private final JulesSessionRepository julesSessionRepository;

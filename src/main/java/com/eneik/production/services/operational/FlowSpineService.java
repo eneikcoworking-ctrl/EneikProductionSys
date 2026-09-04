@@ -75,7 +75,7 @@ public class FlowSpineService {
      * feature and 8 were carriers, and carriers carrying a feature numbered zero.
      */
     static boolean isFactoryCarrierTask(TaskEntity task) {
-        return task.getPayload() != null && task.getPayload().hasNonNull("taskType");
+        return task != null && task.isCarrier();
     }
 
     private final ProjectRepository projectRepository;

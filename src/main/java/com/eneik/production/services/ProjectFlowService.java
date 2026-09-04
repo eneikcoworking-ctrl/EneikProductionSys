@@ -3175,8 +3175,8 @@ public class ProjectFlowService {
         return value == null || value.isBlank() ? fallback : value;
     }
 
-    public static final String WISHLIST_COMPILER_TASK_TYPE = "wishlist_compiler";
-    public static final String WISHLIST_COMPILER_PAYLOAD_KEY = "taskType";
+    public static final String WISHLIST_COMPILER_TASK_TYPE = TaskEntity.WISHLIST_COMPILER_TASK_TYPE;
+    public static final String WISHLIST_COMPILER_PAYLOAD_KEY = TaskEntity.CARRIER_PAYLOAD_KEY;
     // Plural: one compiler task now covers a whole admitted batch (see dispatchBatchedWishlistCompiler),
     // not a single wishlist. Kept as a JSON array of UUID strings rather than one string.
     public static final String WISHLIST_COMPILER_WISHLIST_IDS_KEY = "compilesWishlistIds";
@@ -3270,8 +3270,7 @@ public class ProjectFlowService {
     }
 
     public boolean isWishlistCompilerTask(TaskEntity task) {
-        return task.getPayload() != null
-                && WISHLIST_COMPILER_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task != null && task.isWishlistCompiler();
     }
 
     private java.util.List<UUID> compilerTaskWishlistIds(TaskEntity task) {
@@ -5753,8 +5752,7 @@ public class ProjectFlowService {
      * is already the definition the model uses.
      */
     boolean isFactoryCarrier(TaskEntity task) {
-        return task != null && task.getPayload() != null
-                && task.getPayload().hasNonNull(WISHLIST_COMPILER_PAYLOAD_KEY);
+        return task != null && task.isCarrier();
     }
 
     private boolean isJulesSourceNotFound(String reason) {
@@ -5762,8 +5760,7 @@ public class ProjectFlowService {
     }
 
     private boolean isHousekeepingCarrierTask(TaskEntity task) {
-        // Same correction as queuedDispatchClass above: the enumeration missed a carrier type that exists.
-        return isFactoryCarrier(task) && !isWishlistCompilerTask(task);
+        return task != null && task.isHousekeepingCarrier();
     }
 
     private Optional<JulesSessionEntity> findActiveJulesSession(UUID taskId) {

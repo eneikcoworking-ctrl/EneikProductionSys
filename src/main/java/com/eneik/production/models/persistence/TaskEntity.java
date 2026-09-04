@@ -206,6 +206,36 @@ public class TaskEntity {
     public static final String ACCEPTANCE_VERDICT_REASON_KEY = "acceptance_verdict_reason";
 
     /**
+     * Payload marker for factory carrier tasks (model §II, carrier(τ) ⟺ payload(τ).taskType ≠ ∅).
+     * Single point of application (Law 1, |impl(I)| = 1).
+     */
+    public static final String CARRIER_PAYLOAD_KEY = "taskType";
+    public static final String WISHLIST_COMPILER_TASK_TYPE = "wishlist_compiler";
+
+    /**
+     * A task the factory created to carry its own process (model §II, carrier(τ) ⟺ payload(τ).taskType ≠ ∅).
+     * Single point of implementation (Law 1, |impl(I)| = 1).
+     */
+    public boolean isCarrier() {
+        return payload != null && payload.hasNonNull(CARRIER_PAYLOAD_KEY);
+    }
+
+    /** The type of carrier this task is, or null if it is not a factory carrier. */
+    public String carrierTaskType() {
+        return isCarrier() ? payload.path(CARRIER_PAYLOAD_KEY).asText(null) : null;
+    }
+
+    /** A carrier tasked with compiling wishlists into epic task graphs. */
+    public boolean isWishlistCompiler() {
+        return WISHLIST_COMPILER_TASK_TYPE.equals(carrierTaskType());
+    }
+
+    /** A carrier performing factory housekeeping/audit duties rather than compiling wishlists. */
+    public boolean isHousekeepingCarrier() {
+        return isCarrier() && !isWishlistCompiler();
+    }
+
+    /**
      * Why the recorded verdict came out as it did, or null when no ground was recorded.
      *
      * <p>Model rule 8.22: an order reissued after a denial must carry that denial's ground. The ground is
