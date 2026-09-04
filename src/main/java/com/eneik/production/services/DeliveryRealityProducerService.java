@@ -74,6 +74,9 @@ public class DeliveryRealityProducerService {
     private static final java.util.UUID RUNTIME_OBSERVATION_PSEUDO_TASK =
             java.util.UUID.fromString("00000000-0000-0000-0000-00000000fa11");
 
+    public static final int DEFAULT_MAX_REPAIR_DEPTH = 2;
+    public static final String MAX_REPAIR_DEPTH_KEY = "max_repair_depth";
+
     private final ProjectRepository projectRepository;
     private final TaskRepository taskRepository;
     private final ClientDeliverableReadinessService readinessService;
@@ -91,6 +94,12 @@ public class DeliveryRealityProducerService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.eneik.production.services.runtime.ClientRuntimeObservabilityService runtimeObservabilityService;
 
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.services.settings.SystemSettingsService systemSettingsService;
+
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository;
+
     public DeliveryRealityProducerService(ProjectRepository projectRepository,
                                           TaskRepository taskRepository,
                                           ClientDeliverableReadinessService readinessService,
@@ -105,6 +114,21 @@ public class DeliveryRealityProducerService {
         this.evidenceNodeRepository = evidenceNodeRepository;
         this.wishlistRepository = wishlistRepository;
         this.plannedWorkRecoveryService = plannedWorkRecoveryService;
+    }
+
+    public void setSystemSettingsService(com.eneik.production.services.settings.SystemSettingsService systemSettingsService) {
+        this.systemSettingsService = systemSettingsService;
+    }
+
+    public void setDefectJournalRepository(com.eneik.production.kaizen.repository.DefectJournalRepository defectJournalRepository) {
+        this.defectJournalRepository = defectJournalRepository;
+    }
+
+    public int getMaxRepairDepth() {
+        if (systemSettingsService != null) {
+            return systemSettingsService.effectiveInt(MAX_REPAIR_DEPTH_KEY, DEFAULT_MAX_REPAIR_DEPTH);
+        }
+        return DEFAULT_MAX_REPAIR_DEPTH;
     }
 
     /**
@@ -124,6 +148,13 @@ public class DeliveryRealityProducerService {
     // Package-private for P5 (§9): the split of marker's two jobs has to be asserted on BOTH halves,
     // and breaking one side of a boundary without noticing the other is this session's recurring defect.
     void fileTheMissingWorkAsScope(ProjectEntity project, TaskEntity task) {
+        // Law 2 (Carrier Category Isolation): carrier tasks (TechnicalLeadCompiler, housekeeping, review
+        // carriers, audits) are internal factory mechanisms (carrier(τ) ⟺ payload(τ).taskType ≠ ∅). They
+        // have no product epic (carrier(τ) → epic(τ) = ∅) and must never order product scope.
+        if (task == null || task.isCarrier()) {
+            return;
+        }
+
         // Deduplicated on the identifier, not on a substring of the brief's own prose (V116, §9). The
         // old form did both jobs with one string: it matched `"task " + id` inside the text, which meant
         // the id HAD to be in text an agent working in the client's codebase reads. That is the zone
@@ -149,17 +180,30 @@ public class DeliveryRealityProducerService {
         // download - stuck at 6 of 7 while task after task completed beside it. Repairing delivery of a
         // task and detaching that repair from the task's own feature is delivering into a void.
         // Model rule 8.18.1: a repair belongs to the epic of the requirement it repairs and never founds
-        // one of its own. This used to copy the task's featureId even when it was null - the brief then
-        // reached the compiler with no epic, and resolveOrCreateFeatureId minted a fresh one rooted in the
-        // REPAIR BRIEF itself. That brief's source is delivery_never_reached_main, outside
-        // PRODUCT_ITERATION_SOURCES, so the epic never enters the product set, and every later repair
-        // inherits it. Measured 2026-09-02: of 444 repairs, 434 carried an epic outside the product set,
-        // spread over 30 such epics against nine real ones - work that runs, merges and moves nothing.
-        UUID epic = epicOfRequirement(task);
+        // one of its own.
+        UUID epic = epicOfRequirement(task, project);
         if (epic == null) {
             log.warn("DeliveryRealityProducerService: not filing scope for task {} - no epic is reachable "
                             + "from it, and a repair may not found one (model rule 8.18.1). The finding "
                             + "itself stays on record.", task.getId());
+            // Law 8 (Absorbing Condition): an unreachable epic for a product task cannot be silently dropped;
+            // record terminal condition in the defect journal.
+            recordTerminalFinding(project, task, null, "PRODUCT_EPIC_UNREACHABLE",
+                    "Product task " + task.getId() + " has no reachable product epic under Law 7/8.");
+            return;
+        }
+
+        // Law 8 (Variant Function): repair depth strictly decreases the remaining repair budget.
+        // v = maxRepairDepth - repairDepthForTask(task). If exhausted, stop creating work and record terminal state.
+        int currentDepth = repairDepthForTask(task);
+        int maxRepairDepth = getMaxRepairDepth();
+        if (currentDepth > maxRepairDepth) {
+            log.warn("DeliveryRealityProducerService: repair budget exhausted for task {} (order {} > max {}) - "
+                            + "recording terminal absorbing failure in DefectJournal under Law 8",
+                    task.getId(), currentDepth, maxRepairDepth);
+            recordTerminalFinding(project, task, epic, "REPAIR_BUDGET_EXHAUSTED",
+                    "Task " + task.getId() + " reached max repair depth (" + currentDepth + "/" + maxRepairDepth
+                            + "). Repair budget exhausted under Law 8.");
             return;
         }
         wishlist.setFeatureId(epic);
@@ -583,12 +627,22 @@ public class DeliveryRealityProducerService {
      * set by construction and can never come back into it.
      */
     UUID epicOfRequirement(TaskEntity task) {
-        java.util.Set<UUID> productEpics = task.getProject() == null ? java.util.Set.of()
-                : readinessService.listEpicDiagnostics(task.getProject().getId()).stream()
+        return epicOfRequirement(task, task != null ? task.getProject() : null);
+    }
+
+    UUID epicOfRequirement(TaskEntity task, ProjectEntity projectFallback) {
+        // Law 2: Carrier tasks have no product epic (carrier(τ) → epic(τ) = ∅).
+        if (task == null || task.isCarrier()) {
+            return null;
+        }
+        ProjectEntity proj = (task.getProject() != null) ? task.getProject() : projectFallback;
+        java.util.Set<UUID> productEpics = proj == null ? java.util.Set.of()
+                : readinessService.listEpicDiagnostics(proj.getId()).stream()
                         .map(ClientDeliverableReadinessService.EpicDiagnostic::id)
                         .collect(java.util.stream.Collectors.toSet());
-        if (task.getFeatureId() != null && productEpics.contains(task.getFeatureId())) {
-            return task.getFeatureId();
+
+        if (isProductEpic(task.getFeatureId(), productEpics)) {
+            return resolveCanonical(task.getFeatureId(), productEpics);
         }
         java.util.Set<UUID> visited = new java.util.HashSet<>();
         TaskEntity current = task;
@@ -608,8 +662,8 @@ public class DeliveryRealityProducerService {
             // born and then inherited down the chain. Measured on the live circuit: 120 repairs outside the
             // set with no product epic reachable from any of them, 71 of those repairing a task whose own
             // role is the repair brief's. Walking past it costs one more hop; accepting it costs the work.
-            if (origin.getFeatureId() != null && productEpics.contains(origin.getFeatureId())) {
-                return origin.getFeatureId();
+            if (isProductEpic(origin.getFeatureId(), productEpics)) {
+                return resolveCanonical(origin.getFeatureId(), productEpics);
             }
             // Slices carry lineage back to their root brief (originWishlistId, rule 8.18). Following this link
             // reaches the repair brief or requirement that holds the product epic and sourceTaskId.
@@ -617,8 +671,8 @@ public class DeliveryRealityProducerService {
                 com.eneik.production.models.persistence.WishlistEntity parentOrigin =
                         wishlistRepository.findById(origin.getOriginWishlistId()).orElse(null);
                 if (parentOrigin != null) {
-                    if (parentOrigin.getFeatureId() != null && productEpics.contains(parentOrigin.getFeatureId())) {
-                        return parentOrigin.getFeatureId();
+                    if (isProductEpic(parentOrigin.getFeatureId(), productEpics)) {
+                        return resolveCanonical(parentOrigin.getFeatureId(), productEpics);
                     }
                     origin = parentOrigin;
                 }
@@ -629,6 +683,109 @@ public class DeliveryRealityProducerService {
             current = taskRepository.findById(origin.getSourceTaskId()).orElse(null);
         }
         return null;
+    }
+
+    private boolean isProductEpic(UUID featureId, java.util.Set<UUID> productEpics) {
+        if (featureId == null || productEpics.isEmpty()) {
+            return false;
+        }
+        if (productEpics.contains(featureId)) {
+            return true;
+        }
+        UUID canonical = readinessService.canonicalFeatureId(featureId);
+        return canonical != null && productEpics.contains(canonical);
+    }
+
+    private UUID resolveCanonical(UUID featureId, java.util.Set<UUID> productEpics) {
+        if (featureId == null) {
+            return null;
+        }
+        if (productEpics.contains(featureId)) {
+            return featureId;
+        }
+        UUID canonical = readinessService.canonicalFeatureId(featureId);
+        return (canonical != null && productEpics.contains(canonical)) ? canonical : featureId;
+    }
+
+    private void recordTerminalFinding(ProjectEntity project, TaskEntity task, UUID epic,
+                                       String defectType, String description) {
+        if (defectJournalRepository != null && project != null && task != null) {
+            try {
+                boolean alreadyRecorded = defectJournalRepository
+                        .findBySourceComponentAndDefectTypeOrderByCreatedAtDesc(
+                                "DeliveryRealityProducerService", defectType)
+                        .stream()
+                        .anyMatch(d -> project.getId().equals(d.getProjectId())
+                                && d.getDescription() != null
+                                && d.getDescription().contains(task.getId().toString()));
+                if (!alreadyRecorded) {
+                    com.eneik.production.kaizen.model.DefectJournalEntity journal =
+                            new com.eneik.production.kaizen.model.DefectJournalEntity(
+                                    project.getId(),
+                                    epic,
+                                    null,
+                                    "CRITICAL",
+                                    "DELIVERY_EXHAUSTED",
+                                    "DeliveryRealityProducerService",
+                                    defectType,
+                                    description,
+                                    (double) task.getRetryCount()
+                            );
+                    defectJournalRepository.save(journal);
+                }
+            } catch (Exception e) {
+                log.warn("DeliveryRealityProducerService: could not record terminal defect to journal: {}", e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Compute repair depth for a task that is a candidate for repair (model rule 8.21).
+     * If the task originated from an existing repair wishlist, its repair depth will be that wishlist's depth + 1.
+     * If the task originated from a primary client requirement, the new repair depth will be 1.
+     */
+    public int repairDepthForTask(TaskEntity task) {
+        if (task == null || task.getSourceWishlistId() == null) {
+            return 1;
+        }
+        com.eneik.production.models.persistence.WishlistEntity source =
+                wishlistRepository.findById(task.getSourceWishlistId()).orElse(null);
+        if (source != null && source.getSourceTaskId() == null && source.getOriginWishlistId() != null) {
+            source = wishlistRepository.findById(source.getOriginWishlistId()).orElse(null);
+        }
+        if (source == null || source.getSourceTaskId() == null) {
+            return 1;
+        }
+        return repairDepthOfWishlist(source) + 1;
+    }
+
+    public int repairDepthOfWishlist(com.eneik.production.models.persistence.WishlistEntity repair) {
+        if (repair == null || repair.getSourceTaskId() == null) {
+            return 0;
+        }
+        java.util.Set<UUID> visited = new java.util.HashSet<>();
+        int depth = 1;
+        com.eneik.production.models.persistence.WishlistEntity current = repair;
+        while (current != null && current.getSourceTaskId() != null && visited.add(current.getId())) {
+            TaskEntity repaired = taskRepository.findById(current.getSourceTaskId()).orElse(null);
+            if (repaired == null || repaired.getSourceWishlistId() == null) {
+                return depth;
+            }
+            com.eneik.production.models.persistence.WishlistEntity previous =
+                    wishlistRepository.findById(repaired.getSourceWishlistId()).orElse(null);
+            if (previous == null) {
+                return depth;
+            }
+            if (previous.getSourceTaskId() == null && previous.getOriginWishlistId() != null) {
+                previous = wishlistRepository.findById(previous.getOriginWishlistId()).orElse(null);
+            }
+            if (previous == null || previous.getSourceTaskId() == null) {
+                return depth;
+            }
+            depth++;
+            current = previous;
+        }
+        return depth;
     }
 
     /** Depth of one repair chain, walked back through the task each link repairs. Visited-guarded. */
@@ -786,7 +943,11 @@ public class DeliveryRealityProducerService {
             // requirement was parked with nothing anywhere saying so. Measured 2026-08-30: 16 such tasks in
             // one project, against 400 done and 13 of 19 requirements delivered. Both questions are now
             // answered by one predicate (Charter invariant 10).
-            if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
+            // Law 2 (Carrier Category Isolation): carrier tasks (TechnicalLeadCompiler, housekeeping,
+            // review carrier, audits) perform internal factory operations and never deliver product code to
+            // main. Flagging them as missing product deliverables is an ontological category mistake
+            // (Aristotle / Russell) that corrupts the delivery record.
+            if (task.isCarrier() || readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
                 continue;
             }
             tasksSeen++;

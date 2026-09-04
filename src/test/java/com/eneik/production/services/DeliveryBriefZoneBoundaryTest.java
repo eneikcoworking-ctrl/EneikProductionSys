@@ -49,12 +49,13 @@ class DeliveryBriefZoneBoundaryTest {
     private final WishlistRepository wishlistRepository = mock(WishlistRepository.class);
     private final PlannedWorkRecoveryService plannedWorkRecoveryService = mock(PlannedWorkRecoveryService.class);
     private final TaskRepository taskRepository = mock(TaskRepository.class);
+    private final ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
 
     private DeliveryRealityProducerService service() {
         return new DeliveryRealityProducerService(
                 mock(ProjectRepository.class),
                 taskRepository,
-                mock(ClientDeliverableReadinessService.class),
+                readinessService,
                 mock(OperationalRealityFindingRepository.class),
                 mock(EvidenceNodeRepository.class),
                 wishlistRepository,
@@ -149,7 +150,13 @@ class DeliveryBriefZoneBoundaryTest {
         task.setTitle("Runtime Contract 9b58412d");
         // The ordinary case: the task belongs to an epic, so the repair inherits it (model rule 8.18.1).
         // The case where nothing in the chain carries one has its own test below.
-        task.setFeatureId(UUID.randomUUID());
+        UUID epic = UUID.randomUUID();
+        task.setFeatureId(epic);
+        if (project != null && project.getId() != null) {
+            when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of(
+                    new ClientDeliverableReadinessService.EpicDiagnostic(
+                            epic, "default", null, java.time.Instant.now(), true, false, 0, 0)));
+        }
         return task;
     }
 
@@ -224,6 +231,9 @@ class DeliveryBriefZoneBoundaryTest {
         TaskEntity attempt = task(project);
         attempt.setFeatureId(null);
         attempt.setSourceWishlistId(requirement.getId());
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of(
+                new ClientDeliverableReadinessService.EpicDiagnostic(
+                        requirementEpic, "requirement", null, java.time.Instant.now(), true, false, 0, 0)));
         // no featureId on the task itself - this is the case that used to mint a fresh epic
         when(wishlistRepository.findById(requirement.getId())).thenReturn(java.util.Optional.of(requirement));
 

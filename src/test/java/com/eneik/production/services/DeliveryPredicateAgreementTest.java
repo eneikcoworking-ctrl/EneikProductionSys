@@ -68,6 +68,9 @@ class DeliveryPredicateAgreementTest {
         // been failing in main ever since, asserting nothing.
         task.setFeatureId(UUID.randomUUID());
         when(taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId())).thenReturn(List.of(task));
+        when(readinessService.listEpicDiagnostics(project.getId())).thenReturn(List.of(
+                new ClientDeliverableReadinessService.EpicDiagnostic(
+                        task.getFeatureId(), "API Slice", null, java.time.Instant.now(), true, false, 0, 0)));
         return task;
     }
 
