@@ -4582,9 +4582,9 @@ public class JulesDispatchService {
      * compiler answered and there was nothing in the answer. Every other rejection below says the compiler
      * produced something this factory refused, which establishes nothing about the brief (action plan 8.3).
      */
-    static final String EMPTY_COMPILER_ANSWER = "the answer carried no epic at all";
+    public static final String EMPTY_COMPILER_ANSWER = "the answer carried no epic at all";
 
-    static String compilerPlanRejection(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
+    public static String compilerPlanRejection(List<com.eneik.production.services.MLPredictionServiceClient.EpicPlan> epics, int briefCount) {
         if (epics.isEmpty()) {
             return EMPTY_COMPILER_ANSWER;
         }

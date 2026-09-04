@@ -286,19 +286,7 @@ python3 есть.
 Попытка, не дошедшая до компилятора, бюджет брифа не тратит. Попытка, ответ на которую отвергла **наша**
 проверка, — тоже: о брифе она не сказала ничего.
 
-**В коде не держится на возврате.**
-
-1. Ввести константу пустого ответа рядом с `JulesDispatchService.compilerPlanRejection` и сравнивать по ней,
-   не по подстроке.
-2. В `completeWishlistCompilation` при `rejection ≠ ∅ ∧ rejection ≠ EMPTY` звать новый
-   `ProjectFlowService.returnCompileAttempt(Set<UUID>)` рядом с `releaseUnfinishedClaims`; то же в
-   персистентном пути, где вычисляется `cycleRejection`.
-3. `returnCompileAttempt` уменьшает `compileAttempts` на единицу, не ниже нуля, и ничего больше.
-4. Миграция: вернуть бюджет брифам, чей вердикт вынесен до появления записи причины. Опознание точное:
-   `status='pending' ∧ compiled_by_role IS NULL ∧ compile_attempts ≥ 3 ∧ last_compile_reached_at IS NOT NULL`,
-   и ни один из них не породил ни одной задачи. Основание — закон 12: вердикт по нечитаемому свидетельству
-   недействителен.
-5. Тесты: отказ нашей проверки `compileAttempts` не двигает, пустой ответ двигает.
+**В коде держится.** Введена константа `EMPTY_COMPILER_ANSWER`, сравнение ведётся по ней. В `JulesDispatchService` (в разовой компиляции `completeWishlistCompilation` и в персистентном цикле) при отказе валидатора схемы фабрики (`rejection ≠ EMPTY_COMPILER_ANSWER`) вызывается `ProjectFlowService.returnCompileAttempt`, возвращающий попытку брифу со строгим ограничением снизу `c ≥ 0`. Выполнена миграция `V126`. Доказано тестами `WishlistCompileBudgetLaw9Test` (причинность по Дж.Л. Маки / Гудмену: внутренний отказ фабрики не является свидетельством о клиентском брифе).
 
 ## 10. Закон метки
 
