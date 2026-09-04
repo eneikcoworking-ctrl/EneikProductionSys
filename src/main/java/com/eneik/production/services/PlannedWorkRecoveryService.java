@@ -72,7 +72,7 @@ public class PlannedWorkRecoveryService {
     @Transactional
     public int resumeNextFrontier(ProjectEntity project) {
         int resumed = 0;
-        java.util.Map<String, Integer> refusals = new java.util.LinkedHashMap<>();
+        java.util.Map<String, java.util.List<java.util.UUID>> refusals = new java.util.LinkedHashMap<>();
         List<TaskEntity> tasks = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .sorted(java.util.Comparator.comparing(TaskEntity::getCreatedAt))
                 .toList();
@@ -93,11 +93,16 @@ public class PlannedWorkRecoveryService {
      * Only tasks in the gate's own denominator are counted here - anything else is not something this
      * resolver was ever asked about, and reporting it would be noise rather than evidence.
      */
-    private void reportFrontierRefusalsIfChanged(java.util.UUID projectId, java.util.Map<String, Integer> refusals) {
+    private void reportFrontierRefusalsIfChanged(java.util.UUID projectId,
+            java.util.Map<String, java.util.List<java.util.UUID>> refusals) {
+        // Names the tasks, not only the reasons. A count says a wait is being refused; it does not say
+        // WHICH wait, so nothing can be looked at, and a record that cannot be acted on is not a record
+        // (rule 8.11 O8). Measured 04.09: the frontier reported "1x its dependency ... is not satisfied"
+        // for days and the task holding it could not be named from the log.
         String digest = refusals.isEmpty()
                 ? "none"
                 : refusals.entrySet().stream()
-                        .map(entry -> entry.getValue() + "x " + entry.getKey())
+                        .map(entry -> entry.getValue().size() + "x " + entry.getKey() + " " + entry.getValue())
                         .collect(java.util.stream.Collectors.joining("; "));
         if (digest.equals(lastFrontierRefusal.get(projectId))) {
             return;
@@ -111,9 +116,10 @@ public class PlannedWorkRecoveryService {
     }
 
     /** Records one refusal and returns false, so a refusing branch stays a single statement. */
-    private boolean refuse(java.util.Map<String, Integer> refusals, TaskEntity task, String reason) {
+    private boolean refuse(java.util.Map<String, java.util.List<java.util.UUID>> refusals, TaskEntity task,
+            String reason) {
         if (isResumableInPrinciple(task) && hasResumeBudgetLeft(task)) {
-            refusals.merge(reason, 1, Integer::sum);
+            refusals.computeIfAbsent(reason, key -> new java.util.ArrayList<>()).add(task.getId());
         }
         return false;
     }
@@ -135,7 +141,7 @@ public class PlannedWorkRecoveryService {
     }
 
     private boolean resumeEligibleTask(TaskEntity task, java.util.UUID projectId, int frontierIndexForLog,
-                                       java.util.Map<String, Integer> refusals) {
+                                       java.util.Map<String, java.util.List<java.util.UUID>> refusals) {
         if (!isEligibleRetiredPlanTask(task)) {
             return refuse(refusals, task, "not product work this recovery may resume "
                     + "(out-of-cycle source, or a failure reason outside RETIRED_WITH_NOTHING_LEFT_WORKING_IT)");
