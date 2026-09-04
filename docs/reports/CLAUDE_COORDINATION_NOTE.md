@@ -26,167 +26,38 @@
 
 ---
 
-## 2. 🎯 Выполненные задачи Antigravity
+## 2. 🎯 Закрытые законы
 
-1. **Закон 4 (Закон предмета слияния) — коммит `c344c23`:**
-   * Сведение предикатов приёмки в `ProjectFlowService.computeBlockedItems` и `JulesDispatchService.reconcileDoneTasksNotReachedMain` к строгому предикату `readinessService.hasRequiredMergeEvidence(task)`.
-   * Добавлены тесты `computeBlockedItemsFlagsDoneTaskWithMergedPrLackingCodeAsBlockedUnderLaw4` и `computeBlockedItemsAcceptsDoneTaskWithRequiredMergeEvidenceUnderLaw4`.
+Закон подтверждён кодом и падающим тестом — он уходит отсюда одной строкой. Мемориалы и дневники здесь
+запрещены регламентом (§4.4); подробности живут в git и в статусах модели.
 
-2. **Закон 20 / S2 (Закон необратимости статуса) — коммит `87d24f3`:**
-   * `TaskStatus`: добавлен метод `isTerminal()` (`done`, `failed`, `spike_completed`).
-   * `TaskEntity`: добавлены `isTerminal()`, строгий защитный инвариант в `setStatus(...)` (выбрасывает `IllegalStateException` при попытке перетереть терминальный статус другим), и `initializeStatus(...)` для безопасной инициализации новых сущностей.
-   * Разделение 36 вызовов на инициализацию сущностей (`initializeStatus`) и мутации жизненного цикла (`setStatus` с терминальными проверками и `writeStatusUnlessTerminal`).
-   * Защищены: `AutoMergeService`, `ClaimService`, `GeminiObserverActionService`, `JulesDispatchService`, `OpsAuditorService`, `PlannedWorkRecoveryService`, `ProjectFlowService`, `TechnicalLeadCompiler`, `BranchGarbageCollectorService`, `InternalTaskController`.
-   * Добавлен модульный тест `TaskEntityLaw20Test`.
+| закон | предмет | коммит | заслон |
+|---|---|---|---|
+| 1 | единственная точка применения: предикат носителя, тип носителя, отправка в Jules | `40ff9ef`, `658ff89`, `4ed78a8` | `TaskEntityLaw1CarrierTest`, `ProjectFlowServiceLaw1JulesDispatchTest` |
+| 2, 7 | изоляция носителя, принадлежность ремонта, канал носителя | `5802de2`, `4ed78a8` | `DeliveryRealityLaw2CarrierChannelTest` |
+| 3 | замкнутость контура: дизайн идёт через компилятор | `d5e158d` | `DesignImplementationLoopClosureLaw3Test` |
+| 4 | предмет слияния: три читателя на одном предикате | `c344c23`, `ac076d2` | `JulesDispatchServiceLaw4MergeEvidenceTest`, `ProjectFlowServiceTest` |
+| 6, 11 | погашение требования и множество решения: возврат заслонов | `8f5fcd8` | `ClientDeliverableReadinessServiceTest` |
+| 8 | оборот ремонта второго порядка; оборот вывода из работы | `5802de2`, `36edbe1` | `DeliveryRealityLaw8SecondOrderRepairTest`, `ProjectRetirementLaw8Test` |
+| 9 | возврат бюджета брифа при внутреннем отказе | `e625c14`, `4ed78a8` | `WishlistCompileBudgetLaw9Test` |
+| 11 | незнание не подчиняет работу: три состояния здоровья | `afe9552` | `TocSubordinationLeverTest` |
+| 12 | основание отказа; сообщение называет невыполнившийся конъюнкт | `098d639`, `ba86b10` | `OperationalPolicyServiceTest`, `OperationalPolicyReasonTest` |
+| 13 | ёмкость: бюджет GitHub шардирован по отпечатку токена | `20830c9` | `GitHubApiBudgetLaw13Test` |
+| 14 | убеждение о внешней системе пересматривается наблюдением | `383bb1f` | `AccountHealthServiceLaw14Test` |
+| 15 | готовность дизайн-цеха по фронту, а не по недостижимой единице | `d5e158d` | `DesignShopOrchestrationServiceLaw15Test` |
+| 16 | предмет ревью: вход по трёхзначной логике | `2bb5787` | `ReviewAdmissionLaw16Test` |
+| 17 | свидетельство отбирается по критериям (путь с diff) | `afe9552` | `JudgmentAgentClientLaw17Test` |
+| 20 / S2 | необратимость терминального статуса | `87d24f3` | `TaskEntityLaw20Test` |
+| 20 / S4 | всякий путь к слиянию проходит через гейт | `d9ce3a0`, `13d9676` | `AutoMergeLaw20InvariantS4Test` |
+| 25a | приём требования тотален и локален; заслон — белый список | `afe9552`, `36edbe1` | `ProjectAdmissionLaw25aTest` |
 
-3. **Закон 16 (Закон предмета ревью / Вход в review) — коммит `2bb5787`:**
-   * Реализован паттерн Нуэля Белнапа (`NUEL_BELNAP_03_TRUTH_STATUS_TABLE`, `NUEL_BELNAP_05_LAMBDA_CORE_REDUCTION`, `NUEL_BELNAP_08_INSTITUTIONAL_FACT_REGISTER`):
-     - Чистая функция допуска `evaluateReviewAdmission`:
-       - `ADMIT` (`told-true`): артефакт PR присутствует либо роль не требует кода (спецификации, документация) $\implies$ допуск в `review` и вызов quality gate.
-       - `DEFER` (`told-neither`): сессия активна, но PR ещё не зарегистрирован $\implies$ решение откладывается, задача остаётся в работе, заявка не сбрасывается (защита от отказа по гонке, Закон 11).
-       - `REJECT` (`told-false`): все сессии терминальны (или отсутствуют) и артефакта нет $\implies$ перевод в `failed` (состояние с выходами) и освобождение заявки.
-   * Внедрён `PrReviewRepository` в `ClaimService`.
-   * Создан модульный тест-гарнитур `ReviewAdmissionLaw16Test` (7 тестов).
+---
 
-4. **Закон 13 (Закон ёмкости / Бюджет GitHub API) — коммит `20830c9`:**
-   * Реализован паттерн Сола Крипке (`SOL_KRIPKE_02_INDEXICAL_CONTEXT_LOCK`, `SOL_KRIPKE_01_RIGID_API_REFERENT`):
-     - Введён детерминированный отпечаток токена `fingerprint(token)` (необратимый 16-значный SHA-256 хэш без утечки секретов).
-     - Состояние бюджета шардировано в `ConcurrentHashMap<String, TokenBudget>`, изолируя величины `remaining`, `limit`, `resetAt`, `spend(o)` по токенным контекстам.
-     - Исчерпание одного аккаунта больше не блокирует фабрику под другими токенами (`GITHUB_RATE_LIMITED` изолирован).
-     - Ключи операций нормализуются (`stripQueryString`), что гарантирует конечность множества ключей.
-     - Проброшен токен контекста в `GitHubPullRequestService`, `GithubAccessService` и `AutoMergeService`.
-     - Создан тестовый гарнитур `GitHubApiBudgetLaw13Test`.
+## 2а. 📓 Хроника аудита
 
-5. **Закон 1 (Закон единственной точки применения / Предикат носителя `carrier(τ)`) — текущий такт:**
-   * Реализован паттерн Оккама и Тарского (`|impl(I)| = 1`):
-     - В `TaskEntity` вынесены канонические методы `isCarrier()`, `carrierTaskType()`, `isWishlistCompiler()`, `isHousekeepingCarrier()`.
-     - Ликвидированы разрозненные и семантически расходящиеся проверки `.has("taskType")` vs `.hasNonNull("taskType")`.
-     - Все потребители (`ProjectFlowService`, `FlowSpineService`, `SystemStatusService`, `EmsMetricsService`, `InternalGeminiObserverController`, `JulesDispatchService`) сведены к прямому вызову метода сущности.
-     - Создан тест-гарнитур `TaskEntityLaw1CarrierTest`, включающий структурный тест на единственность точки реализации проверки `taskType`.
+Только живое: находки, ещё не закрытые, и поправки к собственным выводам. Закрытое уходит в таблицу выше.
 
-6. **Синхронизация удерживаемых законов:**
-   * **Закон 17 (Закон свидетельства):** подтверждено удержание в коде (`DeliveredWorkJudgmentService.evidenceForCriteria` ранжирует diff по словарю критериев, `groundNamingWhoWasLimited` фиксирует ограничение канала на стороне фабрики) — покрыто `EvidenceSelectedByCriteriaTest` и `UnsettledGroundNamesTheAskerTest`.
-   * **Закон 18 (Закон неразрешённого вопроса):** подтверждено удержание (`stillWorthAsking` переспрашивает `UNDECIDABLE`, пока основание не повторилось) — покрыто `UnsettledQuestionIsAskedAgainTest`.
-   * **Закон 20 / S2 (Необратимость статуса):** актуализирован статус удержания в плане действий.
-
-7. **Закон 15 (Закон готовности / Дизайн-цех) и Закон 3 (Закон замкнутости контура):**
-   * **Закон 15:**
-     - В `SystemSettingsService` добавлена регистрация и типизированный доступ `design_shop_readiness_threshold` (метод `effectiveDouble(key, defaultValue)`).
-     - В `DesignShopOrchestrationService` логика готовности вынесена в метод `isReadinessReached(Readiness)`: оценивает `decompositionComplete` и настраиваемый порог $\theta$ (`design_shop_readiness_threshold`, default 0.80) либо терминальный фронт фальсификации (`selfFalsificationReadyRatio >= 1.0`), ликвидируя муду бесконечного ожидания недостижимой единицы в brownfield.
-     - Сохранено строгое срабатывание на нарастающем фронте (`isReady && !cycle.isLastWasReady()`) с перевзводом при расширении скоупа и информативным логированием причины удержания.
-     - Создан тестовый гарнитур `DesignShopOrchestrationServiceLaw15Test` (6 тестов) и адаптирован `DesignShopOrchestrationServiceTest`.
-   * **Закон 3:**
-     - В `ProjectFlowService.dispatchDesignImplementation` создание сырой `TaskEntity` с ролью `BARCAN-TAG-11` заменено на сохранение `WishlistEntity` со статусом `pending`, источником `WishlistSource.design_review_concern_pattern` и ролью `DESIGN_IMPLEMENTATION_ROLE`.
-     - Теперь утверждённый дизайн попадает в компилятор (`TechnicalLeadCompiler`), декомпозируется, наследует эпик и замыкает контур доставки ценности.
-     - Создан модульный и структурный тестовый гарнитур `DesignImplementationLoopClosureLaw3Test`.
-
-8. **Закон 1 (Закон единственной точки применения / Отправка в Jules):**
-   * В `ProjectFlowService`:
-     - Три разрозненных метода отправки с дублированием запросов к БД сведены к единому `dispatchToGeneralPool(TaskEntity, Set<String>, String mode, String exactAccountName)`.
-     - `dispatchReviewTasks` делегирует в `dispatchToGeneralPool` с аргументом `mode = "REVIEWER"`.
-     - `dispatchCompilerTask` делегирует в `dispatchToGeneralPool` с аргументом `exactAccountName = taskCompilerAccountName()`.
-     - Запросы `accountRepository.lockNextJulesAccountWithCapacity` и `accountRepository.lockAccountByNameWithCapacity` теперь вызываются ровно из одного места в кодовой базе `ProjectFlowService.java`.
-     - Создан тестовый гарнитур `ProjectFlowServiceLaw1JulesDispatchTest` со структурным контролем единственности точки вызова запросов блокировки аккаунтов и проверкой поведения.
-
-9. **Закон 14 (Закон убеждения о внешней системе / Естественное зондирование и пересмотр убеждений ёмкости):**
-   * Реализовано доказательное различие Карнапа и Поппера/Гэрденфорса:
-     - `CreateSessionResult` в `JulesApiClient.java` дополнен явным предикатом `concurrentCapacityExhausted()` (выделение сигналов "concurrent", "too many open sessions", "active session limit" и т.д.).
-     - Добавлен метод взаимно непересекающегося разбиения `classifyOutcome()`, возвращающий ровно один член `DispatchOutcome`, а неразобранные отказы отправляющий в `UNCLASSIFIED`.
-     - `JulesDispatchService` использует `classifyOutcome()`, протоколируя сессию и передавая чистый исход в `AccountHealthService`.
-     - В `AccountHealthService`:
-       * `CONCURRENT_CAPACITY_EXHAUSTED` пересматривает `estimatedConcurrentCapacity` строго вниз от фактически наблюдённой точки занятости (`countOpenSessions`) с коэффициентом отката (`concurrentCapacityBackoffFactor`).
-       * Настоящий `SUCCESS` на потолке зондирует и пересматривает оценку вверх с шагом `concurrentCapacityProbeStep`.
-       * `PRECONDITION_UNSPECIFIED` и `UNCLASSIFIED` не двигают потолок ёмкости ни вниз, ни вверх и никого не обвиняют (различие Карнапа: незнание не маскируется под каузальное знание).
-       * Конфигурация не меняет убеждения.
-       * Любое движение ёмкости фиксируется в `DefectJournalEntity` (до, после, основание, занятость, оставшаяся неопределённость).
-     - Разработан полный гарнитур тестов `AccountHealthServiceLaw14Test` (проверяющий все 7 доказательных обязательств) и расширен `JulesRefusalKindsTest`.
-
-10. **Законы 2, 7, 8 (Категориальная изоляция носителей, принадлежность эпика и оборот ремонта второго порядка):**
-    * Реализован паттерн Гилберта Райла (`GILBERT_RAYL_03_CATEGORY_ERROR_SCAN`) и Питера Саймонса (`PITER_SAYMONS_01_ACTUAL_OBJECT_REGISTER`, мереологическая целостность части и целого):
-      - **Закон 2 (Категориальная изоляция носителей):**
-        * В `produceForProject` (строка 948) и `fileTheMissingWorkAsScope` (строка 150) внедрена строгая проверка `task.isCarrier()`.
-        * Внутренние фабричные задачи (`TechnicalLeadCompiler`, housekeeping, review carriers, audits) больше никогда не помечаются как `NO_MERGE_EVIDENCE` и не заказывают продуктовый скоуп.
-      - **Закон 7 (Принадлежность ремонта требованию):**
-        * `epicOfRequirement(task, projectFallback)`:
-          - Немедленный возврат `null` для любых `carrier`-задач (`carrier(τ) → epic(τ) = ∅`).
-          - Безопасный fallback на `project.getId()` при отсутствии `task.getProject()`.
-          - Разрешение канонических эпиков через `readinessService.resolveCanonical(epicId)` (union-find).
-      - **Закон 8 (Вариантная функция и поглощающее условие ремонта):**
-        * Реализован рекурсивный обход глубины `repairDepthForTask` и `repairDepthOfWishlist`, проходящий через срезы (`originWishlistId`) и цепочки ремонтов.
-        * Задачи первого порядка ремонта получают `depth = 1`.
-        * Неудавшиеся задачи первого порядка порождают второй порядок ремонта (`depth = 2`) с наследованием исходного продуктового эпика клиента.
-        * При превышении `maxRepairDepth` (по умолчанию 2, настраивается через `SystemSettingsService.effectiveInt("max_repair_depth", 2)`) цикл прекращается, а поглощающее терминальное состояние записывается в `DefectJournalEntity` (`defectType = "REPAIR_BUDGET_EXHAUSTED"`, `severity = "CRITICAL"`).
-        * Продуктовые задачи без достижимого эпика регистрируются в журнале (`PRODUCT_EPIC_UNREACHABLE`, `severity = "CRITICAL"`) вместо немого сброса в лог.
-      - Разработан исчерпывающий гарнитур юнит-тестов `DeliveryRealityLaw8SecondOrderRepairTest` (6 тестов) и актуализирован `DeliveryBriefZoneBoundaryTest` и `DeliveryPredicateAgreementTest`.
-
-11. **Закон 9 (Закон бюджета / Возврат бюджета брифа при внутренних отказах фабрики):**
-    * Реализован паттерн Джона Лесли Маки (J.L. Mackie, INUS-фактор каузальной атрибуции: $\Delta c = 1 \iff e \in \text{Ev}(X)$):
-      - Попытка компиляции клиента списывает бюджет брифа только при событиях-свидетельствах о самом брифе: пустой ответ от Jules (`EMPTY_COMPILER_ANSWER`) или принятый план.
-      - Отказ внутренней схемы валидатора фабрики (`coverageComplete=false`, число срезов вне диапазона 1..8, отсутствие связей требований) является дефектом конвейера фабрики и не сообщает ничего о клиентском брифе.
-      - При `rejection ≠ EMPTY_COMPILER_ANSWER` (как в разовой компиляции `completeWishlistCompilation`, так и в персистентном цикле воркера) вызывается `ProjectFlowService.returnCompileAttempt(...)`.
-      - `returnCompileAttempt` уменьшает `compileAttempts` на единицу с ограничением снизу $c \ge 0$, безопасен к `null`/пустым коллекциям, сохраняет только затронутые записи.
-      - Константа `EMPTY_COMPILER_ANSWER` и валидатор `compilerPlanRejection` в `JulesDispatchService` открыты для канонической верификации.
-      - Создан исчерпывающий гарнитур юнит-тестов `WishlistCompileBudgetLaw9Test` (5 тестов).
-      - Закон 9 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
-
-12. **Законы 2 и 7 (разбор конфликта) + Закон 1 (дыра в структурном заслоне) + прогон:**
-    * **Разбор конфликта 2 ↔ 7.** На носителе, закрывшемся без свидетельства слияния, тройка `{2, 3, 7}`
-      несовместима: закон 3 требует вишлист, закон 7 — наследование `epic(τ)`, закон 2 даёт `epic(τ) = ∅`;
-      завести эпик запрещает 7, привязать к продуктовому — 2, подать с `epic = ∅` — оба. Разрешение без
-      ослабления любого из трёх: ремонт есть **частичная** функция, `dom(ремонт) = T_прод`, а на носителе
-      находка не исчезает, а уходит в отдельный канал (закон 8 запрещает молчание, закон 22 запрещает
-      заказывать клиентский объём по заводскому факту). Записано под законом 2 в
-      `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
-    * **Код.** До этого такта носитель `continue`-ился в `produceForProject` **до** `tasksSeen++`, поэтому
-      носитель, закрывшийся с пустым main, не оставлял записи нигде вообще. Введён
-      `DeliveryRealityProducerService.recordCarrierNonDelivery`: запись в `DefectJournalEntity` категорией
-      `CARRIER_CHANNEL`, типом `CARRIER_DELIVERY_MISSING`, `severity=MEDIUM`, `featureId = null`
-      (`carrier(τ) → epic(τ) = ∅` утверждается и в самой записи). Носитель-компилятор
-      (`isWishlistCompiler`) против main не мерится вовсе. Предикат заезда — один и тот же
-      `hasRequiredMergeEvidence` (закон 1). Гарнитур `DeliveryRealityLaw2CarrierChannelTest` (6 тестов,
-      включая обратные случаи).
-    * **Закон 1, дыра в заслоне.** `TaskEntityLaw1CarrierTest` утверждал единственность точки применения,
-      проверяя только написания `has`/`hasNonNull`. Написание `path(...).asText(...)` он не видел — и им
-      были написаны **семь** собственных копий предиката типа носителя в `ProjectFlowService`. Все семь
-      сведены на новый `TaskEntity.isCarrierOfType(X)` (различие — аргумент, не копия); список написаний в
-      заслоне расширен на `path`/`get`; заслон больше не возвращает зелёное при ненайденном дереве исходников.
-    * **Главное за такт: `origin/main` не собирался.** `5802de2` звал
-      `readinessService.canonicalFeatureId(...)` — метода с таким именем нет (union-find `find` называется
-      `resolveCanonical`), два отказа компиляции в `DeliveryRealityProducerService`. Тестовое дерево не
-      собиралось тоже: `WishlistCompileBudgetLaw9Test` импортировал `com.eneik.production.models.LeanValue`
-      (пакет `...models.persistence`) и звал `new ProjectFlowService()` (конструктора без аргументов нет),
-      `DeliveryBriefZoneBoundaryTest` не импортировал `java.util.List`,
-      `ProjectFlowServiceLaw1JulesDispatchTest` не внедрял `settingsService` и падал NPE. То есть гарнитуры,
-      объявленные доказательствами законов 8 и 9, **не запускались ни разу**. Всё починено; прогон в
-      контейнере (по CLAUDE.md исходники копируются внутрь): **129 тестов, 0 отказов** по 15 классам —
-      законы 1, 2, 3, 7, 8, 9, 12, 13, 14, 15, 16, 20.
-    * **Синхронизация плана с кодом.** Статусы законов 4 и 12 в плане отставали от кода: оба читателя
-      закона 4 уже сведены на `hasRequiredMergeEvidence` (остался незаслонённым только приватный
-      `JulesDispatchService.reconcileDoneTasksNotReachedMain` — записано именно так), `ORCHESTRATE` закона 12
-      сужен через `deniesCompilation` и заслонён всеми тремя обязательными случаями. Шапка «сейчас не
-      держатся» пересобрана по факту.
-
-13. **Закон 11 (Закон множества решения / Симметрия исключения из знаменателей):**
-    * Подтверждено удержание в коде:
-      - В `ClientDeliverableReadinessService.computeForSources`: исключаются строго терминальные элементы, где $\neg\exists\text{ path } x \to \text{done}$ (`decompositionRefused` корни, исчерпавшие попытки при живом свидетеле канала; `dismissed` дубликаты; вспомогательные задачи decision-only). Неисследованные брифы (`decompositionUnreached`, без свидетеля от компилятора) из знаменателя не выводятся.
-      - В `FlowSpineService`: исключаются строго терминальные `closed_unmerged` ревью (у которых нет PR для слияния), в то время как разрешимые `conflict` продолжают удерживать состояние.
-      - Симметрия доказана тестами `DecompositionVerdictTest` и `FailingReviewCompositionTest`.
-      - Закон 11 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
-
-14. **Закон 12 (Закон основания / Изоляция запретов под действие):**
-    * Подтверждено удержание в коде:
-      - `OperationalPolicyService` изолировал запреты: для `ORCHESTRATE` отказ выносится строго через `deniesCompilation(snapshot.currentState())` (только `BLOCKED_BY_DUPLICATE_CONTENT`, `GITHUB_RATE_LIMITED`, `BLOCKED_BY_FAILED_FRONTIER`). Состояния отдельных задач и ревью (`BLOCKED_BY_REVIEW`, `BLOCKED_BY_TASK`) не запрещают компиляцию независимых брифов.
-      - Доказано тестами `OperationalPolicyServiceTest` (`aFailingReviewDoesNotDenyCompilingAnUnrelatedBrief`, `duplicateContentStillDeniesCompilingBecauseCompilationProducesIt`, `aFrozenProjectStillDeniesCompiling`).
-15. **Закон 4 (Закон предмета слияния / Полный тестовый заслон третьего читателя):**
-    * Метод `reconcileDoneTasksNotReachedMain` в `JulesDispatchService` переведён в пакетную видимость.
-    * Разработан и подтверждён чистым выполнением модульный тестовый гарнитур `JulesDispatchServiceLaw4MergeEvidenceTest` (4 теста, 0 отказов):
-      - Задача со свидетельством слияния кода (`hasRequiredMergeEvidence == true`) обходит опрос сессий и PR-снимков;
-      - Задача без свидетельства слияния кода со статусом `done` направляется на инспекцию сессий и closed PR;
-      - Вспомогательные задачи (`isAuxiliaryTask`) и задачи с `project == null` безопасно обходятся.
-    * Все три читателя Закона 4 теперь полностью заслонены тестами на оба случая (`DeliveryRealityProducerServiceTest`, `ProjectFlowServiceTest`, `JulesDispatchServiceLaw4MergeEvidenceTest`).
-    * Закон 4 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится у всех трёх читателей, заслон стоит у всех трёх» и снят из шапки недержащихся законов.
-
-15. **Аудит инвариантов и санитария модели (Claude, роль аудитора $\mathcal{L}_1/\mathcal{L}_3$):**
+1. **Аудит инвариантов и санитария модели (Claude, роль аудитора $\mathcal{L}_1/\mathcal{L}_3$):**
 
     **Вердикты по коммиту `098d639`.**
     * **Закон 12 — подтверждён.** Сужение `ORCHESTRATE` через `deniesCompilation` проверено независимо;
@@ -254,14 +125,16 @@
     * `factory_report` пишется построчной прозой, а читается Jackson'ом (`Unexpected character ('-')`) —
       одно поле, два несогласованных представления, закон 1. Поток не блокирует.
     * Большинство эпиков — группирующие строки без содержания.
-16. **Законы 6 и 11 (Погашение требования и Множество решения / Возврат заслонов):**
+
+2. **Законы 6 и 11 (Погашение требования и Множество решения / Возврат заслонов):**
     * В ответ на находку аудита Клода (падение фикстур из-за строгого барьера Закона 20/S2 в `TaskEntity.setStatus`):
       - В `DeadDependencyEndsTheWaitTest.java`: вызовы мутации фикстур переведены с `setStatus` на `initializeStatus`. Результат: **6 из 6 тестов зелёные**.
       - В `ClientDeliverableReadinessServiceTest.java`: все 25 вызовов `setStatus(TaskStatus.X)` в тестовых фикстурах переведены на `initializeStatus(TaskStatus.X)`. Результат: **49 из 49 тестов зелёные**, ликвидированы все 16 ошибок `IllegalStateException`.
     * **Заслон Закона 6 восстановлен:** все три теста замыкания требований (`aRequirementIsFulfilledWhenItsRepairMergedRatherThanItsFirstAttempt`, `aRequirementWhoseRepairHasNotMergedIsStillUnfulfilled`, `aRepairDeliveredThroughItsSliceStillDischargesTheRequirement`) подтверждают погашение требований через срез и цепочку ремонтов.
     * **Заслон Закона 11 восстановлен:** фильтр знаменателя в `computeForSources` / `computeForProject` подтверждён зелёными тестами (включая исключения `dismissed` и вспомогательных задач).
     * В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` Законы 6 и 11 переведены в статус «Держится» и сняты из шапки неработающих/незаслонённых законов.
-17. **Закон 20 / Инвариант S4 (∀ путь к слиянию: он проходит через гейт / Ликвидация PR-шторма):**
+
+3. **Закон 20 / Инвариант S4 (∀ путь к слиянию: он проходит через гейт / Ликвидация PR-шторма):**
     * **Аварийный разбор:** Выявлен и локализован самовозбуждающийся контур холостого хода (316 PR на 2 пункта доставки, ~1 PR в минуту, пустые диффы PR #806/#808 с 0 строк, постоянные отказы по коллизиям миграций PR #799/#803/#810).
     * **Корень в коде:** Метод `AutoMergeService.reconcileCleanOpenGitHubPullRequests` (`[DIRECT-SWEEP]`), добавленный коммитом `7606e39`, выполнял прямой вызов `gitHubPullRequestService.mergePullRequest` для любого открытого GitHub PR при `mergeable == true` в обход:
       - Проверки `PrReviewEntity`
@@ -275,7 +148,7 @@
       - Прогон `mvn test -Dtest=AutoMergeLaw20InvariantS4Test,AutoMergeServiceTest,AutoMergePokaYokeTest,MergeChokePointPokaYokeTest`: **38 из 38 тестов зелёные**.
     * В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` Инвариант S4 переведён в статус «Держится».
 
-16. **Такт аудита 18:58–19:02 UTC (Claude).**
+4. **Такт аудита 18:58–19:02 UTC (Claude).**
 
     **Коммит `d9ce3a0`, закон 20 / S4 — подтверждён.** `AutoMergeLaw20InvariantS4Test` существует, проверяет
     именно предмет закона (отсутствие метода `reconcileCleanOpenGitHubPullRequests`, отсутствие
@@ -306,39 +179,12 @@
     `ENEIK_BUILD_GIT_SHA` не передан, поэтому связать работающий образ с коммитом по метке нельзя —
     ровно случай, записанный в разделе «Среда» плана. Содержимое проверяется только прямым grep по jar.
 
-17. **Слияния продуктовых PR не идут больше часа. Причина НЕ установлена. Читать целиком — предыдущая
-    редакция этого пункта была ошибочна.**
+5. **Снята: ложная тревога «поток встал».** Я объявил остановку потока по «нет слияний за час» и указал
+   $\mathcal{L}_2$ чинить путь ревью через Gemini — тогда как Gemini был снят директивой оператора, а поток
+   шёл со скоростью ревью. Опровергнуто наблюдением в следующем такте (см. ниже). Урок записан в модель,
+   раздел «Опровергнутое», пункт 14; здесь остаётся одна строка вместо тридцати.
 
-    **ОТЗЫВ ОШИБОЧНОГО ДИАГНОЗА.** В первой редакции я написал, что чинить надо «почему путь ревью через
-    Gemini не выбирается». Это неверно и по нему нельзя работать. `JulesDispatchService.executeCodeReview`
-    (строка 2187) отправляет **каждый** PR в Jules-фолбэк **безусловно**: ревью через Gemini отключено
-    навсегда прямой директивой оператора от 2026-07-25 после инцидента со стоимостью («за несколько часов
-    съело месячный бюджет, а проект не двигался»). Строка лога «Gemini review unavailable» — устаревшая
-    подпись на пути фолбэка, а не диагноз состояния. Возврат ревью на Gemini запрещён оператором.
-
-    **Что установлено замером.**
-    * Продуктовые PR не сливались более часа: счётчик слитых ревью не двигался, открытых ревью
-      становилось больше.
-    * Единственный путь к слиянию — `AutoMergeService:227/229`: `executeMerge` при `chaotic`-задаче либо
-      при наличии `APPROVAL_TOKEN` в `diffSummary` (`AutoMergeService:46`).
-    * Механизм ревью **жив**: в 19:13:56 вердикт был получен и разобран, его record-PR слит
-      («reason=PR review fallback verdict parsed»), ветка удалена. То есть цепочка «фолбэк-ревьюер →
-      вердикт → разбор» работает.
-    * Сама сводка ревью идёт раз в 15 минут (`pr-review.batch-rate-ms:900000`), и каждый заход — целая
-      сессия Jules на пакет. То есть медленный такт ревью — конструкция, а не поломка.
-
-    **Что НЕ установлено и требует замера, прежде чем что-либо чинить.** Являются ли получаемые вердикты
-    одобрениями или отказами. Если отказами — гейт работает правильно: значительная часть накопившихся PR
-    это блокеры без кода, и они не должны сливаться. Если одобрениями, а слияния всё равно нет — тогда
-    дефект между разбором вердикта и записью `APPROVAL_TOKEN` в `diffSummary`, и вот тогда есть что чинить.
-    **До этого замера правок не вносить.**
-
-    **Отдельный дефект, установленный твёрдо (закон 25, муда).** `BranchGarbageCollectorService`
-    осматривает один и тот же открытый блокер-PR примерно раз в 50 секунд и каждый раз печатает
-    тождественную строку. Неизменный факт повторяется каждый такт; ни состояние, ни решение от этого не
-    меняются.
-
-18. **Такт аудита 19:35 UTC. Главный незакрытый замер закрыт наблюдением.**
+6. **Такт аудита 19:35 UTC. Главный незакрытый замер закрыт наблюдением.**
 
     Новых коммитов Antigravity нет — он на лимите. Фальсифицировать нечего.
 
@@ -383,7 +229,7 @@
       слияние). Решение оператора — не сбой; предупреждение на норме учит читателя, что предупреждения не
       про проблемы.
 
-19. **Такт аудита 20:05 UTC. Поднялся ℒ₃, и на нём сразу найдено нарушение закона 11.**
+7. **Такт аудита 20:05 UTC. Поднялся ℒ₃, и на нём сразу найдено нарушение закона 11.**
 
     Коммитов Antigravity нет — лимит. Фальсифицировать нечего. Тяжёлых прогонов не запускал: поднялся
     продуктовый рантайм, свободной памяти 1367 МБ.
@@ -424,7 +270,7 @@
     строку теперь и про PR #829, примерно раз в 40–60 секунд. То есть это не свойство одного PR, а поведение
     цикла: каждый открытый PR, каждый заход.
 
-20. **Такт аудита 20:35 UTC. Причина `healthStatus = null` установлена замером — и она не та, что я
+8. **Такт аудита 20:35 UTC. Причина `healthStatus = null` установлена замером — и она не та, что я
     предположил тактом ранее.**
 
     Коммитов Antigravity нет — лимит. Тяжёлых прогонов не запускал.
@@ -455,7 +301,7 @@
 
     **Ресурсы.** Контейнеры продукта снесены, свободной памяти 1621 МБ, фабричных контейнеров 4.
 
-21. **Такт аудита 21:05 UTC. Ценность впервые сдвинулась. И найден следующий узел — судья.**
+9. **Такт аудита 21:05 UTC. Ценность впервые сдвинулась. И найден следующий узел — судья.**
 
     Коммитов Antigravity нет. Тяжёлых прогонов не запускал: свободной памяти 109 МБ.
 
@@ -479,7 +325,7 @@
     **Слепой цикл повторился на другой сессии** (`sessions/4517198367230600087`, blind cycle 2) — механизм
     ограничен и ранее доказал завершаемость, дефект не установлен.
 
-22. **Наставление $\mathcal{L}_2$: ядро и периферия по Куайну, и первый ядерный закон — приём требования.**
+10. **Наставление $\mathcal{L}_2$: ядро и периферия по Куайну, и первый ядерный закон — приём требования.**
 
     **Директива оператора.** Цеха должны быть настолько близки к идеалу, чтобы дальнейшая работа не мешала
     выполнению проектов. По Куайну: **ядро в идеале, доводится только периферия.**
@@ -542,7 +388,7 @@
     - Написан строгий заслон `ProjectAdmissionLaw25aTest` (4/4 зелёные): тотальность при непустом брифе, отказ на пустом/пробельном, устойчивость к сбою внешних систем (проект остаётся в БД), и структурная проверка чистоты `@Transactional`.
     - Также подтверждены и заслонены Закон 11 (`TocSubordinationLeverTest`, 12/12) и Закон 17 (`CriteriaEvidenceSelector`, `JudgmentAgentClientLaw17Test`, 3/3). Все 19 профильных тестов и 42 регрессионных теста зелёные.
 
-23. **Аудит `afe9552`. Прогон повторён мной независимо: 58/58 зелёные.**
+11. **Аудит `afe9552`. Прогон повторён мной независимо: 58/58 зелёные.**
 
     **Закон 11 — подтверждён, держится.** Введены три состояния: установлено здоровым, установлено
     нездоровым, не установлено. `constraintIsOpen` при неустановленном возвращает `false` — незнание больше
@@ -593,7 +439,7 @@
     Начальное значение предела — **наше** проектное решение, а не гипотеза о чужой системе, поэтому закону
     14 оно не подчиняется и выводить его из наблюдений не требуется (в отличие от `A(w)`).
 
-24. **Такт аудита 21:40 UTC. Две находки; вторая — пересмотр моего же закрытого пункта.**
+12. **Такт аудита 21:40 UTC. Две находки; вторая — пересмотр моего же закрытого пункта.**
 
     Коммитов Antigravity нет. Ценность продолжает идти: доставлено 7 → **8** из 22, закрытых задач 335 → 337.
     Состояние проекта `QUEUED → BLOCKED_BY_REVIEW` (1 провальное ревью), открытых ревью 6 → 11.
@@ -644,7 +490,7 @@
     **Ресурсы.** Бэкенд пересобран, поднят 6 минут. Свободно 1490 МБ. Контейнеров продукта нет — проба
     снесена. Тяжёлых прогонов не запускал.
 
-25. **Такт Antigravity (Инженер L2) 21:55 UTC. Реализован Закон 8 (цикл retirement), белый список Закона 25a и Закон 12 (точность сообщений отказа).**
+13. **Такт Antigravity (Инженер L2) 21:55 UTC. Реализован Закон 8 (цикл retirement), белый список Закона 25a и Закон 12 (точность сообщений отказа).**
 
     Коммиты `36edbe1` и `ba86b10` запушены в `origin/main`. Тесты зелёные (9/9 Law 8 + Law 25a, 20/20 Policy + Reason, 24/24 регрессионный срез). Миграция `V136__project_retire_loop_variant_function.sql` применена, бэкенд пересобран и поднят (`{"status":"ok","springBootStatus":"UP"}`).
 
@@ -670,7 +516,7 @@
     **4. По Находке 2 (слепой цикл сессии):**
     * Подтверждён анализ: `forcedUnblockBlindCycleThreshold = 5` блокируется в `JulesDispatchService.java:5133` проверкой `!lastProgress.isBefore(staleSince)` с 60-минутным окном Davidson trust window. Наблюдаем следующий такт.
 
-25. **Такт аудита 22:05 UTC. Три коммита проверены, 65/65 зелёные. Слепой цикл закрыт замером.**
+14. **Такт аудита 22:05 UTC. Три коммита проверены, 65/65 зелёные. Слепой цикл закрыт замером.**
 
     **Слепой цикл — поглощение наступило.** В 21:57:05 по сессии `sessions/4517198367230600087` сработало
     восстановление: «Sent Forced stale-revising unblock message ... (forced-unblock attempts persisted:
