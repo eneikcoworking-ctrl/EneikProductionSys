@@ -166,6 +166,19 @@
       сужен через `deniesCompilation` и заслонён всеми тремя обязательными случаями. Шапка «сейчас не
       держатся» пересобрана по факту.
 
+13. **Закон 11 (Закон множества решения / Симметрия исключения из знаменателей):**
+    * Подтверждено удержание в коде:
+      - В `ClientDeliverableReadinessService.computeForSources`: исключаются строго терминальные элементы, где $\neg\exists\text{ path } x \to \text{done}$ (`decompositionRefused` корни, исчерпавшие попытки при живом свидетеле канала; `dismissed` дубликаты; вспомогательные задачи decision-only). Неисследованные брифы (`decompositionUnreached`, без свидетеля от компилятора) из знаменателя не выводятся.
+      - В `FlowSpineService`: исключаются строго терминальные `closed_unmerged` ревью (у которых нет PR для слияния), в то время как разрешимые `conflict` продолжают удерживать состояние.
+      - Симметрия доказана тестами `DecompositionVerdictTest` и `FailingReviewCompositionTest`.
+      - Закон 11 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
+
+14. **Закон 12 (Закон основания / Изоляция запретов под действие):**
+    * Подтверждено удержание в коде:
+      - `OperationalPolicyService` изолировал запреты: для `ORCHESTRATE` отказ выносится строго через `deniesCompilation(snapshot.currentState())` (только `BLOCKED_BY_DUPLICATE_CONTENT`, `GITHUB_RATE_LIMITED`, `BLOCKED_BY_FAILED_FRONTIER`). Состояния отдельных задач и ревью (`BLOCKED_BY_REVIEW`, `BLOCKED_BY_TASK`) не запрещают компиляцию независимых брифов.
+      - Доказано тестами `OperationalPolicyServiceTest` (`aFailingReviewDoesNotDenyCompilingAnUnrelatedBrief`, `duplicateContentStillDeniesCompilingBecauseCompilationProducesIt`, `aFrozenProjectStillDeniesCompiling`).
+      - Закон 12 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
@@ -176,9 +189,7 @@
     * Устранение магических констант времени (`ORCHESTRATION_COOLDOWN_SECONDS 300`, `BLOCKED_ITEM_STALE_THRESHOLD_HOURS 2`, `WAITING_THRESHOLD_MINUTES 10`, `EPIC_CLEANUP_MIN_AGE_MINUTES 10`).
     * Вопрос: замещает ли окно длительность или наблюдаемый факт? Если факт — окно заменяется фактом (событие канала, переход состояния), а не числовой подгонкой.
   - **Закон 10 (Закон метки):**
-    * Доказательство монотонности меток: ни один переход самого цикла повтора не продвигает метку. Метка не берётся из таблицы повтора без фильтра «только успехи».
-  - **Закон 11 (Закон множества решения):**
-    * Аудит фильтров знаменателей в `ClientDeliverableReadinessService.computeForSources` и `FlowSpineService.inputs` — каждое исключение обязано нести строгое доказательство невозможности пути к `done`, незнание из знаменателя не выводит.
+    * Доказательство монотонности меток (`lastCompileReachedAt(w)`, `lastMessageSentAt`, отказной ряд аккаунта): ни один переход самого цикла повтора не продвигает метку. Структурный запрет выборки без фильтра «только успехи».
 * **Философский паттерн:**
   - Для Закона 8 и окон: Людвиг Витгенштейн (`LUDVIG_VITGENSHTEIN_01_FACT_STATE_REGISTER`, мир как совокупность фактов, а не вещей/интервалов) и Анри Бергсон (длительность как непрерывное становление vs пространственные фикции дискретных секунд).
 * **Режим ответа:** Минималистичный результат в плане и записке без лишнего шума.
