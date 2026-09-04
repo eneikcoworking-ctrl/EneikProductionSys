@@ -982,4 +982,61 @@ class ProjectFlowServiceTest {
                 .restoreUnreachedBriefs(project));
         verify(wishlistRepository, never()).saveAll(any());
     }
+
+    // --- Law 4 (Subject of Merge): Predicates of delivery must ask hasRequiredMergeEvidence ---
+
+    @Test
+    void computeBlockedItemsFlagsDoneTaskWithMergedPrLackingCodeAsBlockedUnderLaw4() {
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        ProjectFlowService service = serviceWithWishlistsAndWorker(
+                mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class),
+                mock(JulesSessionRepository.class),
+                mock(TaskRepository.class),
+                readinessService);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.done);
+        com.eneik.production.models.persistence.RoleEntity role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-01");
+        task.setRole(role);
+
+        // Under the weak predicate, reachedMain was true (PR merged, but PR was a blocker without code).
+        // Under Law 4, hasRequiredMergeEvidence is false because the role requires code and PR has no code.
+        when(readinessService.reachedMain(task)).thenReturn(true);
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(false);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+
+        List<com.eneik.production.models.dto.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
+
+        assertEquals(1, blocked.size());
+        assertEquals(task.getId(), blocked.get(0).taskId());
+        assertEquals("done_not_reached_main", blocked.get(0).reason());
+    }
+
+    @Test
+    void computeBlockedItemsAcceptsDoneTaskWithRequiredMergeEvidenceUnderLaw4() {
+        ClientDeliverableReadinessService readinessService = mock(ClientDeliverableReadinessService.class);
+        ProjectFlowService service = serviceWithWishlistsAndWorker(
+                mock(WishlistRepository.class),
+                mock(PersistentWorkerSessionService.class),
+                mock(JulesSessionRepository.class),
+                mock(TaskRepository.class),
+                readinessService);
+
+        TaskEntity task = new TaskEntity();
+        task.setId(UUID.randomUUID());
+        task.setStatus(TaskStatus.done);
+        com.eneik.production.models.persistence.RoleEntity role = new com.eneik.production.models.persistence.RoleEntity();
+        role.setTag("BARCAN-TAG-01");
+        task.setRole(role);
+
+        when(readinessService.hasRequiredMergeEvidence(task)).thenReturn(true);
+        when(readinessService.isAuxiliaryTask(task)).thenReturn(false);
+
+        List<com.eneik.production.models.dto.BlockedItemDto> blocked = service.computeBlockedItems(List.of(task));
+
+        assertTrue(blocked.isEmpty());
+    }
 }

@@ -5384,7 +5384,9 @@ public class JulesDispatchService {
             Map<UUID, GitHubPullRequestService.PullRequestSnapshot> sweepSnapshots) {
         List<TaskEntity> doneTasks = taskRepository.findByStatus(TaskStatus.done);
         for (TaskEntity task : doneTasks) {
-            if (task.getProject() == null || readinessService.isAuxiliaryTask(task) || readinessService.reachedMain(task)) {
+            // Law 4 (Subject of Merge): A merged PR without code does not count as delivery for roles requiring code.
+            // Synchronize with DeliveryRealityProducerService and ProjectFlowService via hasRequiredMergeEvidence.
+            if (task.getProject() == null || readinessService.isAuxiliaryTask(task) || readinessService.hasRequiredMergeEvidence(task)) {
                 continue;
             }
             com.eneik.production.services.logging.LogScope.project(task.getProject().getId());

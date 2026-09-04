@@ -6017,7 +6017,7 @@ public class ProjectFlowService {
      * closeout deadlock - both were only found by hand, this is meant to make the next one visible without
      * a SQL session).
      */
-    private List<BlockedItemDto> computeBlockedItems(List<TaskEntity> allTaskEntities) {
+    List<BlockedItemDto> computeBlockedItems(List<TaskEntity> allTaskEntities) {
         java.time.Instant now = java.time.Instant.now();
         List<BlockedItemDto> blocked = new java.util.ArrayList<>();
         for (TaskEntity task : allTaskEntities) {
@@ -6030,7 +6030,9 @@ public class ProjectFlowService {
                 // reach main on its own (ClientDeliverableReadinessService excludes it from its own
                 // deliverable-ratio the same way) - without this check this widget flagged spec/decision
                 // work as "blocked" when it was actually just correctly-done, non-mergeable work.
-                if (readinessService.reachedMain(task) || readinessService.isAuxiliaryTask(task)) {
+                // Law 4 (Subject of Merge): A merged PR without code does not count as delivery for roles requiring code.
+                // Both computeBlockedItems and value accounting use hasRequiredMergeEvidence.
+                if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
                     continue;
                 }
                 reason = "done_not_reached_main";
