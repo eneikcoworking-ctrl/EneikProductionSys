@@ -225,9 +225,22 @@ public class TaskEntity {
         return isCarrier() ? payload.path(CARRIER_PAYLOAD_KEY).asText(null) : null;
     }
 
+    /**
+     * A carrier of exactly this type.
+     *
+     * <p>Law 1 (single point of application): the difference between one kind of carrier and another is an
+     * ARGUMENT to this predicate, not a second reading of the payload written out at each caller. Seven
+     * callers had written their own copy of "payload is not null and its taskType equals mine"; the
+     * structural guard that claims uniqueness banned only the `has`/`hasNonNull` spellings and could not
+     * see the `path(...).asText(...)` one, so every copy passed it.
+     */
+    public boolean isCarrierOfType(String taskType) {
+        return taskType != null && taskType.equals(carrierTaskType());
+    }
+
     /** A carrier tasked with compiling wishlists into epic task graphs. */
     public boolean isWishlistCompiler() {
-        return WISHLIST_COMPILER_TASK_TYPE.equals(carrierTaskType());
+        return isCarrierOfType(WISHLIST_COMPILER_TASK_TYPE);
     }
 
     /** A carrier performing factory housekeeping/audit duties rather than compiling wishlists. */

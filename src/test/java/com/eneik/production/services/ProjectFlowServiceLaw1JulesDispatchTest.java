@@ -44,6 +44,7 @@ class ProjectFlowServiceLaw1JulesDispatchTest {
     private AccountRepository accountRepository;
     private TaskRepository taskRepository;
     private JulesDispatchService julesDispatchService;
+    private com.eneik.production.services.settings.SystemSettingsService settingsService;
     private ProjectFlowService service;
     private ProjectEntity project;
     private AccountEntity account;
@@ -58,6 +59,12 @@ class ProjectFlowServiceLaw1JulesDispatchTest {
         ReflectionTestUtils.setField(service, "accountRepository", accountRepository);
         ReflectionTestUtils.setField(service, "taskRepository", taskRepository);
         ReflectionTestUtils.setField(service, "julesDispatchService", julesDispatchService);
+        // dispatchCompilerTask resolves the compiler's account through settings (the account binding is a
+        // deliberate constraint, not a quota knob - see the refuted list, item 8). Without this field the
+        // test threw NullPointerException before reaching its own assertion.
+        settingsService = mock(com.eneik.production.services.settings.SystemSettingsService.class);
+        when(settingsService.effectiveValue("task_compiler_account_name")).thenReturn("eneikdru");
+        ReflectionTestUtils.setField(service, "settingsService", settingsService);
         ReflectionTestUtils.setField(service, "self", service);
         ReflectionTestUtils.setField(service, "maxConcurrentJulesSessionsPerAccount", 3);
         ReflectionTestUtils.setField(service, "maxDailySessionsPerAccount", 15);

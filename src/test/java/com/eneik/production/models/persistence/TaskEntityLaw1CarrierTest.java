@@ -115,9 +115,10 @@ public class TaskEntityLaw1CarrierTest {
         if (!Files.exists(mainJavaRoot)) {
             mainJavaRoot = Path.of("C:/Projects/Eneik/docker-build/EneikProductionSys/src/main/java/com/eneik/production");
         }
-        if (!Files.exists(mainJavaRoot)) {
-            return;
-        }
+        // A guard that returns green when it cannot find the tree it screens is a test that cannot fail -
+        // the shape this document records twice already. It fails instead.
+        assertTrue(Files.exists(mainJavaRoot),
+                "Law 1 structural guard cannot run: main source tree not found at " + mainJavaRoot.toAbsolutePath());
 
         List<String> filesWithDirectCarrierPayloadInspection = new ArrayList<>();
 
@@ -125,11 +126,23 @@ public class TaskEntityLaw1CarrierTest {
             paths.filter(p -> p.toString().endsWith(".java")).forEach(path -> {
                 try {
                     String content = Files.readString(path);
+                    // The `path(...)` and `get(...)` spellings are screened too. Without them this guard
+                    // asserted uniqueness while seven callers in ProjectFlowService each carried their own
+                    // copy of "payload is not null and its taskType equals mine", written as
+                    // `.path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null)` - a form no pattern here matched.
+                    // A guard whose pattern list is narrower than the predicate it guards is the defect
+                    // this document records as "фильтр поставили на один список отбора из двух".
                     if (content.contains(".hasNonNull(\"taskType\")")
                             || content.contains(".hasNonNull(CARRIER_PAYLOAD_KEY)")
                             || content.contains(".hasNonNull(WISHLIST_COMPILER_PAYLOAD_KEY)")
                             || content.contains(".has(\"taskType\")")
-                            || content.contains(".has(SYSTEM_TASK_TYPE_PAYLOAD_KEY)")) {
+                            || content.contains(".has(SYSTEM_TASK_TYPE_PAYLOAD_KEY)")
+                            || content.contains(".path(\"taskType\")")
+                            || content.contains(".path(CARRIER_PAYLOAD_KEY)")
+                            || content.contains(".path(WISHLIST_COMPILER_PAYLOAD_KEY)")
+                            || content.contains(".get(\"taskType\")")
+                            || content.contains(".get(CARRIER_PAYLOAD_KEY)")
+                            || content.contains(".get(WISHLIST_COMPILER_PAYLOAD_KEY)")) {
                         filesWithDirectCarrierPayloadInspection.add(path.getFileName().toString());
                     }
                 } catch (IOException e) {

@@ -1,6 +1,6 @@
 package com.eneik.production.services.jules;
 
-import com.eneik.production.models.LeanValue;
+import com.eneik.production.models.persistence.LeanValue;
 import com.eneik.production.models.persistence.WishlistEntity;
 import com.eneik.production.repositories.WishlistRepository;
 import com.eneik.production.services.MLPredictionServiceClient.EpicPlan;
@@ -24,6 +24,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -57,7 +59,10 @@ class WishlistCompileBudgetLaw9Test {
 
     @BeforeEach
     void setUp() {
-        projectFlowService = new ProjectFlowService();
+        // ProjectFlowService has no no-argument constructor (40 collaborators). returnCompileAttempt reads
+        // exactly one of them, so the real method is called on an uninitialized instance with that one field
+        // injected - the alternative is standing up forty mocks to exercise ten lines.
+        projectFlowService = mock(ProjectFlowService.class, CALLS_REAL_METHODS);
         ReflectionTestUtils.setField(projectFlowService, "wishlistRepository", wishlistRepository);
     }
 

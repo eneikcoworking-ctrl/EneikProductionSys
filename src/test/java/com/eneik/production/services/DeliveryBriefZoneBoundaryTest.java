@@ -13,6 +13,7 @@ import com.eneik.production.repositories.WishlistRepository;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 
+import java.util.List;
 import java.util.UUID;
 import java.util.regex.Pattern;
 

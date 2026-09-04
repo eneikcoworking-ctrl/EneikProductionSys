@@ -74,6 +74,14 @@ public class DeliveryRealityProducerService {
     private static final java.util.UUID RUNTIME_OBSERVATION_PSEUDO_TASK =
             java.util.UUID.fromString("00000000-0000-0000-0000-00000000fa11");
 
+    // Law 2 (carrier/product partition), the carrier's own channel. A carrier that closed with nothing on
+    // main is a fact about the factory, never a client requirement: it is named here and never ordered as
+    // scope. Kept in its own CATEGORY on purpose - T = T_product ⊔ T_carrier has to survive in the record
+    // too, or a reader counting value out of this journal re-merges exactly what the law separated.
+    public static final String CARRIER_CHANNEL_CATEGORY = "CARRIER_CHANNEL";
+    public static final String CARRIER_DELIVERY_MISSING = "CARRIER_DELIVERY_MISSING";
+    public static final String DELIVERY_EXHAUSTED_CATEGORY = "DELIVERY_EXHAUSTED";
+
     public static final int DEFAULT_MAX_REPAIR_DEPTH = 2;
     public static final String MAX_REPAIR_DEPTH_KEY = "max_repair_depth";
 
@@ -692,7 +700,7 @@ public class DeliveryRealityProducerService {
         if (productEpics.contains(featureId)) {
             return true;
         }
-        UUID canonical = readinessService.canonicalFeatureId(featureId);
+        UUID canonical = readinessService.resolveCanonical(featureId);
         return canonical != null && productEpics.contains(canonical);
     }
 
@@ -703,12 +711,53 @@ public class DeliveryRealityProducerService {
         if (productEpics.contains(featureId)) {
             return featureId;
         }
-        UUID canonical = readinessService.canonicalFeatureId(featureId);
+        UUID canonical = readinessService.resolveCanonical(featureId);
         return (canonical != null && productEpics.contains(canonical)) ? canonical : featureId;
+    }
+
+    /**
+     * The carrier channel (Laws 2, 7, 8).
+     *
+     * <p>A carrier that closed without merge evidence orders no scope and founds no epic - and it does not
+     * vanish either. It is recorded against the project with {@code featureId = null}, which is what
+     * {@code carrier(τ) → epic(τ) = ∅} says in the record.
+     */
+    void recordCarrierNonDelivery(ProjectEntity project, TaskEntity task) {
+        if (project == null || task == null || !task.isCarrier()) {
+            return;
+        }
+        // The compiler carrier is not measured against main at all: its product is a decomposition in the
+        // database, not a diff, so asking whether its code landed is the category mistake Law 2 forbids in
+        // the other direction. Its own spend is accounted by the compile budget (Law 9) and by
+        // lastCompileReachedAt (Law 10), and neither of those lives here.
+        if (task.isWishlistCompiler()) {
+            return;
+        }
+        // Asked with the one delivery predicate (Law 1). The carrier channel does not get a second opinion
+        // about what "landed" means; if it did, the two halves of the partition could disagree about the
+        // same pull request.
+        if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
+            return;
+        }
+        log.warn("DeliveryRealityProducerService: carrier task {} (type {}) closed as {} with no merge "
+                        + "evidence - recorded in the carrier channel under Law 2; it orders no product "
+                        + "scope and founds no epic", task.getId(), task.carrierTaskType(), task.getStatus());
+        recordTerminalFinding(project, task, null, "MEDIUM", CARRIER_CHANNEL_CATEGORY, CARRIER_DELIVERY_MISSING,
+                "Carrier task " + task.getId() + " ("
+                        + com.eneik.production.services.task.TaskTitleBuilder.displayTitle(task)
+                        + ", carrier type " + task.carrierTaskType() + ") closed as " + task.getStatus()
+                        + " with no merge evidence. Recorded in the carrier channel: a carrier repair is not "
+                        + "a client requirement (Law 2) and may not found an epic of its own (Law 7), and it "
+                        + "may not stop silently either (Law 8).");
     }
 
     private void recordTerminalFinding(ProjectEntity project, TaskEntity task, UUID epic,
                                        String defectType, String description) {
+        recordTerminalFinding(project, task, epic, "CRITICAL", DELIVERY_EXHAUSTED_CATEGORY, defectType, description);
+    }
+
+    private void recordTerminalFinding(ProjectEntity project, TaskEntity task, UUID epic, String severity,
+                                       String category, String defectType, String description) {
         if (defectJournalRepository != null && project != null && task != null) {
             try {
                 boolean alreadyRecorded = defectJournalRepository
@@ -724,8 +773,8 @@ public class DeliveryRealityProducerService {
                                     project.getId(),
                                     epic,
                                     null,
-                                    "CRITICAL",
-                                    "DELIVERY_EXHAUSTED",
+                                    severity,
+                                    category,
                                     "DeliveryRealityProducerService",
                                     defectType,
                                     description,
@@ -947,7 +996,18 @@ public class DeliveryRealityProducerService {
             // review carrier, audits) perform internal factory operations and never deliver product code to
             // main. Flagging them as missing product deliverables is an ontological category mistake
             // (Aristotle / Russell) that corrupts the delivery record.
-            if (task.isCarrier() || readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
+            // Laws 2 and 7 are jointly satisfiable on a carrier only by restricting the domain of repair to
+            // the product half of the partition: the carrier has no epic to inherit (epic(τ) = ∅) and Law 7
+            // forbids founding one, so no finding, no evidence node and no scope may be produced from it.
+            // Law 8 forbids the other half of that - stopping silently - so it is named in the carrier's own
+            // channel instead. The full argument is written under Law 2 in ENGINEERING_PHILOSOPHY_ACTION_PLAN.md
+            // ("Разбор конфликта с законом 7"). Before this split the carrier was `continue`d here before
+            // tasksSeen++, so a carrier that closed with nothing on main left no record anywhere at all.
+            if (task.isCarrier()) {
+                recordCarrierNonDelivery(project, task);
+                continue;
+            }
+            if (readinessService.hasRequiredMergeEvidence(task) || readinessService.isAuxiliaryTask(task)) {
                 continue;
             }
             tasksSeen++;

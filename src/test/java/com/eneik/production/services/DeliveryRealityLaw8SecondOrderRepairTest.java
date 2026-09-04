@@ -287,7 +287,7 @@ class DeliveryRealityLaw8SecondOrderRepairTest {
         UUID loserEpicId = UUID.randomUUID();
         UUID canonicalWinnerId = productEpicId;
 
-        when(readinessService.canonicalFeatureId(loserEpicId)).thenReturn(canonicalWinnerId);
+        when(readinessService.resolveCanonical(loserEpicId)).thenReturn(canonicalWinnerId);
 
         TaskEntity task = new TaskEntity();
         task.setId(UUID.randomUUID());

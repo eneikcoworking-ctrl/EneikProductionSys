@@ -110,7 +110,7 @@
         * `epicOfRequirement(task, projectFallback)`:
           - Немедленный возврат `null` для любых `carrier`-задач (`carrier(τ) → epic(τ) = ∅`).
           - Безопасный fallback на `project.getId()` при отсутствии `task.getProject()`.
-          - Разрешение канонических эпиков через `readinessService.canonicalFeatureId(epicId)` (union-find).
+          - Разрешение канонических эпиков через `readinessService.resolveCanonical(epicId)` (union-find).
       - **Закон 8 (Вариантная функция и поглощающее условие ремонта):**
         * Реализован рекурсивный обход глубины `repairDepthForTask` и `repairDepthOfWishlist`, проходящий через срезы (`originWishlistId`) и цепочки ремонтов.
         * Задачи первого порядка ремонта получают `depth = 1`.
@@ -128,6 +128,43 @@
       - Константа `EMPTY_COMPILER_ANSWER` и валидатор `compilerPlanRejection` в `JulesDispatchService` открыты для канонической верификации.
       - Создан исчерпывающий гарнитур юнит-тестов `WishlistCompileBudgetLaw9Test` (5 тестов).
       - Закон 9 в `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md` переведён в статус «В коде держится».
+
+12. **Законы 2 и 7 (разбор конфликта) + Закон 1 (дыра в структурном заслоне) + прогон:**
+    * **Разбор конфликта 2 ↔ 7.** На носителе, закрывшемся без свидетельства слияния, тройка `{2, 3, 7}`
+      несовместима: закон 3 требует вишлист, закон 7 — наследование `epic(τ)`, закон 2 даёт `epic(τ) = ∅`;
+      завести эпик запрещает 7, привязать к продуктовому — 2, подать с `epic = ∅` — оба. Разрешение без
+      ослабления любого из трёх: ремонт есть **частичная** функция, `dom(ремонт) = T_прод`, а на носителе
+      находка не исчезает, а уходит в отдельный канал (закон 8 запрещает молчание, закон 22 запрещает
+      заказывать клиентский объём по заводскому факту). Записано под законом 2 в
+      `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`.
+    * **Код.** До этого такта носитель `continue`-ился в `produceForProject` **до** `tasksSeen++`, поэтому
+      носитель, закрывшийся с пустым main, не оставлял записи нигде вообще. Введён
+      `DeliveryRealityProducerService.recordCarrierNonDelivery`: запись в `DefectJournalEntity` категорией
+      `CARRIER_CHANNEL`, типом `CARRIER_DELIVERY_MISSING`, `severity=MEDIUM`, `featureId = null`
+      (`carrier(τ) → epic(τ) = ∅` утверждается и в самой записи). Носитель-компилятор
+      (`isWishlistCompiler`) против main не мерится вовсе. Предикат заезда — один и тот же
+      `hasRequiredMergeEvidence` (закон 1). Гарнитур `DeliveryRealityLaw2CarrierChannelTest` (6 тестов,
+      включая обратные случаи).
+    * **Закон 1, дыра в заслоне.** `TaskEntityLaw1CarrierTest` утверждал единственность точки применения,
+      проверяя только написания `has`/`hasNonNull`. Написание `path(...).asText(...)` он не видел — и им
+      были написаны **семь** собственных копий предиката типа носителя в `ProjectFlowService`. Все семь
+      сведены на новый `TaskEntity.isCarrierOfType(X)` (различие — аргумент, не копия); список написаний в
+      заслоне расширен на `path`/`get`; заслон больше не возвращает зелёное при ненайденном дереве исходников.
+    * **Главное за такт: `origin/main` не собирался.** `5802de2` звал
+      `readinessService.canonicalFeatureId(...)` — метода с таким именем нет (union-find `find` называется
+      `resolveCanonical`), два отказа компиляции в `DeliveryRealityProducerService`. Тестовое дерево не
+      собиралось тоже: `WishlistCompileBudgetLaw9Test` импортировал `com.eneik.production.models.LeanValue`
+      (пакет `...models.persistence`) и звал `new ProjectFlowService()` (конструктора без аргументов нет),
+      `DeliveryBriefZoneBoundaryTest` не импортировал `java.util.List`,
+      `ProjectFlowServiceLaw1JulesDispatchTest` не внедрял `settingsService` и падал NPE. То есть гарнитуры,
+      объявленные доказательствами законов 8 и 9, **не запускались ни разу**. Всё починено; прогон в
+      контейнере (по CLAUDE.md исходники копируются внутрь): **129 тестов, 0 отказов** по 15 классам —
+      законы 1, 2, 3, 7, 8, 9, 12, 13, 14, 15, 16, 20.
+    * **Синхронизация плана с кодом.** Статусы законов 4 и 12 в плане отставали от кода: оба читателя
+      закона 4 уже сведены на `hasRequiredMergeEvidence` (остался незаслонённым только приватный
+      `JulesDispatchService.reconcileDoneTasksNotReachedMain` — записано именно так), `ORCHESTRATE` закона 12
+      сужен через `deniesCompilation` и заслонён всеми тремя обязательными случаями. Шапка «сейчас не
+      держатся» пересобрана по факту.
 
 ---
 

@@ -2329,7 +2329,7 @@ public class ProjectFlowService {
 
         boolean hasExistingActiveCompilerTask = taskRepository.findByProjectIdOrderByCreatedAtDesc(project.getId()).stream()
                 .filter(t -> t.getStatus() == TaskStatus.queued || t.getStatus() == TaskStatus.claimed)
-                .anyMatch(t -> t.getPayload() != null && WISHLIST_COMPILER_TASK_TYPE.equals(t.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText()));
+                .anyMatch(TaskEntity::isWishlistCompiler);
         if (hasExistingActiveCompilerTask) {
             log.info("ProjectFlowService: An active compiler task already exists for project {}; skipping duplicate carrier creation", project.getId());
             revertWishlistsToPending(admitted);
@@ -4208,8 +4208,7 @@ public class ProjectFlowService {
     }
 
     public boolean isFalsificationAuditTask(TaskEntity task) {
-        return task.getPayload() != null
-                && FALSIFICATION_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(FALSIFICATION_AUDIT_TASK_TYPE);
     }
 
     /** Falls back to the old shared constant for tasks dispatched before this fix. */
@@ -4292,8 +4291,7 @@ public class ProjectFlowService {
     }
 
     public boolean isPhilosophicalAuditTask(TaskEntity task) {
-        return task.getPayload() != null
-                && PHILOSOPHICAL_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(PHILOSOPHICAL_AUDIT_TASK_TYPE);
     }
 
     // Used by FalsificationCycleService to rotate which single role's charter+philosopher-pattern content
@@ -4863,8 +4861,7 @@ public class ProjectFlowService {
     }
 
     public boolean isCoverageAuditTask(TaskEntity task) {
-        return task.getPayload() != null
-                && COVERAGE_AUDIT_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(COVERAGE_AUDIT_TASK_TYPE);
     }
 
     public UUID coverageAuditTargetWishlistId(TaskEntity task) {
@@ -5070,8 +5067,7 @@ public class ProjectFlowService {
     }
 
     public boolean isReviewFallbackTask(TaskEntity task) {
-        return task.getPayload() != null
-                && PR_REVIEW_FALLBACK_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(PR_REVIEW_FALLBACK_TASK_TYPE);
     }
 
     public List<UUID> reviewFallbackTargetTaskIds(TaskEntity task) {
@@ -5187,8 +5183,7 @@ public class ProjectFlowService {
     }
 
     public boolean isDesignReviewTask(TaskEntity task) {
-        return task.getPayload() != null
-                && DESIGN_REVIEW_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(DESIGN_REVIEW_TASK_TYPE);
     }
 
     public String designReviewDraftPath(TaskEntity task) {
@@ -5282,8 +5277,7 @@ public class ProjectFlowService {
     }
 
     public boolean isDesignConcernTriageTask(TaskEntity task) {
-        return task.getPayload() != null
-                && DESIGN_CONCERN_TRIAGE_TASK_TYPE.equals(task.getPayload().path(WISHLIST_COMPILER_PAYLOAD_KEY).asText(null));
+        return task.isCarrierOfType(DESIGN_CONCERN_TRIAGE_TASK_TYPE);
     }
 
     public String designConcernTriageMockupPath(TaskEntity task) {
