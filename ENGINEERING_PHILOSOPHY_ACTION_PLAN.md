@@ -298,54 +298,31 @@ it`, 43 перезапуска подряд, 29.08. Проверка — чёт�
 **Что требуется.** Замерить, на чём именно обрывается или отсеивается цикл свода: назвать причину для каждой
 из тридцати четырёх, а не считать их разницей двух чисел.
 
-### 4.51 Шесть требований стоят на мёртвых попытках, и живой ни одной
+### 4.51 Пять требований стоят на мёртвых попытках и блокерах без кода (delivery_mapping_bottleneck)
 
-**Замер 03.09 00:53, после того как удержание научилось называть состояния своих попыток (§8.11 O8):**
+**Расхождение с §8.18, §8.19 и §8.21.** Затор `delivery_mapping_bottleneck` удерживает контур в `VERIFYING_DELIVERY`
+(возраст >10 000 мин). Сдвиг с 13/19 до 14/19 произошёл, но оставшиеся пять клиентских требований не могут закрыться
+из-за разрыва в цепочке ремонтов и перформативной капитуляции:
 
-    Apply domain integrity fixes and remove invalid tracking  {failed=1}
-    Implement Account Recovery Flow                           {done=1}
-    Privacy Compliance Backend and Integration                {failed=2}
-    QA Verification for Authentication Fix                    {done=1}
-    Self-Service Account Recovery Flow                        {failed=3}
-    Verify Architectural Fixes via QA                         {failed=1}
+    Apply domain integrity fixes and remove invalid tracking  repairs=1/2 {converted_to_task=1} {failed=2}
+    Implement Account Recovery Flow                           repairs=1/2 {converted_to_task=1} {done=2}
+    Privacy Compliance Backend and Integration                repairs=2/3 {converted_to_task=1, pending=1} {failed=3}
+    QA Verification for Authentication Fix                    repairs=1/2 {converted_to_task=1} {done=2}
+    Verify Architectural Fixes via QA                         repairs=1/2 {converted_to_task=1} {failed=2}
 
-Два разных положения, и они требуют разного:
+Два класса дефектов:
 
-* четыре требования держатся на **только упавших** попытках — работа мертва, а замыкание §8.18 не засчитало
-  ни одного ремонта, хотя девять ремонтов по этим эпикам заведены 30.08 и стали задачами;
-* два держатся на `done`, не несущем кода, — это класс §8.19, за который отвечает департамент реальности
-  доставки.
+1. **Мёртвые попытки ремонта ({failed=N}):** Первичные и ремонтные попытки завершились `failed`, бюджет воскрешений
+   исчерпан (`mayStillBeResumed == false`). `DeliveryRealityProducerService` не заказывает повторный ремонт $k+1$,
+   так как блокируется существованием старой записи `existsByProjectIdAndSourceAndSourceTaskId`.
+2. **Блокеры без кода ({done=N}):** Задачи завершены со статусом `done`, но их PR озаглавлены как блокеры без изменений
+   кода (`hasCode == false`, §8.19). `fileTheMissingWorkAsScope` пропускает повторный заказ, считая работу заведённой.
 
-**Главное:** среди всех шести нет ни одной попытки в живом состоянии — ни `queued`, ни `claimed`, ни
-`in_progress`, ни `review`. При `queuedTasks 0` и `activeTasks 0` это значит, что по требованиям клиента
-сейчас не выполняется ничего.
-
-**Замер 03.09, в два шага, и второй опроверг вывод первого.**
-
-Шаг первый: запись научили обходить замыкание §8.18, а не только собственные попытки элемента — строка не
-изменилась ни на символ. Я заключил, что ремонты чинят другие задачи. **Неверно.**
-
-Шаг второй: запись стала называть, на сколько попыток ремонт вообще заведён, по `sourceTaskId`:
-
-    Apply domain integrity fixes    repairs=1/1  {failed=1}
-    Implement Account Recovery Flow repairs=1/1  {done=1}
-    Privacy Compliance Backend      repairs=2/2  {failed=2}
-    QA Verification for Auth Fix    repairs=1/1  {done=1}
-    Self-Service Account Recovery   repairs=3/3  {failed=3}
-    Verify Architectural Fixes QA   repairs=1/1  {failed=1}
-
-Ремонт заведён на **каждую** попытку, девять из девяти. Департамент сработал. Но в замыкании не появилось ни
-одной ремонтной попытки — значит эти девять вишлистов **не породили задач**: либо отброшены, либо не
-скомпилированы.
-
-**Рядом, то же число:** отчёт рубежа сообщает «held by — **6x** not product work this recovery may resume
-(причина отказа вне `RETIRED_WITH_NOTHING_LEFT_WORKING_IT`)». Шесть отказов восстановления при шести
-недоставленных требованиях.
-
-**Ответ получен 03.09:** `repairs=N/N{converted_to_task=…}` — восемь из девяти ремонтов стали задачами, один
-ещё `pending`. Отбрасывания нет. Значит дефект первый: **связь**. Ремонтный бриф — корень, компиляция кладёт
-задачи на его срезы, а замыкание §8.18 искало их прямо по вишлисту ремонта. Модель исправлена звеном
-`slices`; код приводится к ней следующим тактом, и проверкой будет сдвиг `13/19`, а не зелёный тест.
+**Что требуется от кода.**
+1. В `DeliveryRealityProducerService`: если предыдущий ремонт терминален и не доставил артефакт роли на `main`,
+   выписывать следующий вишлист ремонта $k+1$ вплоть до предела глубины §8.21.
+2. В `epicOfRequirement`: поддержать связь срезов (`originWishlistId`) с корнем ремонтного брифа, чтобы повторные
+   ремонты не теряли продуктовый эпик.
 
 ### 4.7 Замеченное, не разобранное
 
