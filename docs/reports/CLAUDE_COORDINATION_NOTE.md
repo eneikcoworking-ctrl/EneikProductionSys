@@ -37,9 +37,11 @@
 | 2, 7 | изоляция носителя, принадлежность ремонта, канал носителя | `5802de2`, `4ed78a8` | `DeliveryRealityLaw2CarrierChannelTest` |
 | 3 | замкнутость контура: дизайн идёт через компилятор | `d5e158d` | `DesignImplementationLoopClosureLaw3Test` |
 | 4 | предмет слияния: три читателя на одном предикате | `c344c23`, `ac076d2` | `JulesDispatchServiceLaw4MergeEvidenceTest`, `ProjectFlowServiceTest` |
+| 5 | независимый свидетель: done не влечёт landed, проверка веток и diff, структурный запрет status=done в предикатах ценности | `HEAD` | `IndependentWitnessLaw5Test` |
 | 6, 11 | погашение требования и множество решения: возврат заслонов | `8f5fcd8` | `ClientDeliverableReadinessServiceTest` |
 | 8 | оборот ремонта второго порядка; оборот вывода из работы | `5802de2`, `36edbe1` | `DeliveryRealityLaw8SecondOrderRepairTest`, `ProjectRetirementLaw8Test` |
 | 9 | возврат бюджета брифа при внутреннем отказе | `e625c14`, `4ed78a8` | `WishlistCompileBudgetLaw9Test` |
+| 10 | монотонность меток (5 каналов) и структурный фильтр только успехов в выборках меток | `HEAD` | `WatermarkMonotonicityLaw10Test` |
 | 11 | незнание не подчиняет работу: три состояния здоровья | `afe9552` | `TocSubordinationLeverTest` |
 | 12 | основание отказа; сообщение называет невыполнившийся конъюнкт | `098d639`, `ba86b10` | `OperationalPolicyServiceTest`, `OperationalPolicyReasonTest` |
 | 13 | ёмкость: бюджет GitHub шардирован по отпечатку токена | `20830c9` | `GitHubApiBudgetLaw13Test` |
@@ -692,6 +694,32 @@
     закон признан держащимся, и жило только здесь), закон 25 статусной строки не имеет. Правок не
     потребовалось.
 
+
+19. **Такт Antigravity (Инженер L2) 23:55 UTC. Закрыты Закон 5 (независимый свидетель) и Закон 10 (монотонность меток канала). Регрессионный прогон 12 законов ядра: 62/62 зелёные.**
+
+    * **Закон 5 (Независимый свидетель — $done(\tau) \not\implies landed(\tau)$):**
+      - Разработан заслон `IndependentWitnessLaw5Test` (6/6 зелёные):
+        1. `doneTaskWithoutMergedReviewsIsNotDelivered`: задача со статусом `done` без влитых ревью даёт `reachedMain == false` и `hasRequiredMergeEvidence == false`.
+        2. `doneTasksDoNotFulfillPlannedRequirementWithoutMergeEvidence`: требование заказчика со всеми задачами `done` без слияния в `main` даёт `mergedDeliverables == 0`, `completeFeatures == 0`, `ratio == 0.0`.
+        3. `prMergedToFeatureBranchDoesNotImplyReachedMainUnlessThreadMerged`: промежуточное слияние в ветку фичи не удовлетворяет предикату доставки до вливания нити в `main`.
+        4. `codeOwedTaskMergedWithoutCodeDoesNotImplyDelivery`: слияние кодовой задачи с пустым диффом не считается выполнением (`hasRequiredMergeEvidence == false`).
+        5. `deliveryRealityFlagsDoneTaskWithoutMergeEvidenceAsDefect`: `DeliveryRealityProducerService` фиксирует невмерженные `done` задачи как дефекты конвейера (`no merge evidence: never reached main`), исключая ложную ценность.
+        6. `structuralAuditNoStatusDoneCheckInReadinessPredicates`: структурный AST-аудит запрещает использование проверки `task.getStatus() == TaskStatus.done` в предикатах готовности и доставки.
+
+    * **Закон 10 (Закон метки — монотонность 5 каналов и структурный фильтр):**
+      - Разработан заслон `WatermarkMonotonicityLaw10Test` (6/6 зелёные):
+        1. Метка 1 ($A(\tau)$): `ClaimService.refusedSessionCreations` прирастает строго при `externalSessionId == null && status == "failed"`; штатные отказы гейтов и пропуски её не двигают.
+        2. Метка 2 ($W_c(project)$): `latestAcceptedSessionAtForAccount` монотонно сдвигается только реальными принятыми сессиями.
+        3. Метка 3 (Ряд отказов аккаунта): `consecutiveApiBlockCount` инкрементируется при блоке и релаксирует только при реальном успехе.
+        4. Метка 4 (`lastCompileReachedAt(w)`): выставляется на вишлисте только при успешной диспетчеризации компилятора; внутренние отказы и занятость не двигают метку.
+        5. Метка 5 (`lastMessageSentAt`): продвигается строго отправкой пакета сообщений (`recordBatchSent`), а не тактами поллинга.
+        6. Структурный фильтр: проверка репозиторных запросов `MAX(...)` на `jules_sessions` — обязательное присутствие конъюнкта `externalSessionId IS NOT NULL AND externalSessionId <> 'skipped'`.
+
+    * **Верификация ядра:**
+      - Изолированный прогон: `IndependentWitnessLaw5Test`, `WatermarkMonotonicityLaw10Test` — 12/12 зелёные.
+      - Широкий регрессионный прогон 12 законов (`PrReviewApprovalLaw1Test`, `TaskEntityLaw1CarrierTest`, `TaskEntityLaw20Test`, `AutoMergeLaw20InvariantS4Test`, `DeliveryRealityLaw2CarrierChannelTest`, `DeliveryRealityLaw8SecondOrderRepairTest`, `DesignImplementationLoopClosureLaw3Test`, `ProjectAdmissionLaw25aTest`, `ProjectRetirementLaw8Test`, `ReviewAdmissionLaw16Test`, `IndependentWitnessLaw5Test`, `WatermarkMonotonicityLaw10Test`): **62 из 62 тестов зелёные**.
+      - В `ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`: Законы 5 и 10 переведены в статус «Держится» и исключены из списка дефектов Ядра.
+
 ---
 
 ## 3. 📋 Задачи Claude (Аудит и Философские Паттерны)
@@ -699,11 +727,11 @@
 * **Регламент взаимодействия:** Руководствоваться правилами из `docs/architecture/AUTONOMOUS_OPERATING_REGULATION.md`.
 * **Текущий приоритетный фокус фабрики:**
   - **Закон 8 (Вариантная функция декомпозиции и временные окна):**
+    * Единственный оставшийся дефект в списке ЯДРА (`ENGINEERING_PHILOSOPHY_ACTION_PLAN.md`).
     * Устранение магических констант времени (`ORCHESTRATION_COOLDOWN_SECONDS 300`, `BLOCKED_ITEM_STALE_THRESHOLD_HOURS 2`, `WAITING_THRESHOLD_MINUTES 10`, `EPIC_CLEANUP_MIN_AGE_MINUTES 10`).
     * Вопрос: замещает ли окно длительность или наблюдаемый факт? Если факт — окно заменяется фактом (событие канала, переход состояния), а не числовой подгонкой.
-  - **Закон 10 (Закон метки):**
-    * Доказательство монотонности меток (`lastCompileReachedAt(w)`, `lastMessageSentAt`, отказной ряд аккаунта): ни один переход самого цикла повтора не продвигает метку. Структурный запрет выборки без фильтра «только успехи».
 * **Философский паттерн:**
   - Для Закона 8 и окон: Людвиг Витгенштейн (`LUDVIG_VITGENSHTEIN_01_FACT_STATE_REGISTER`, мир как совокупность фактов, а не вещей/интервалов) и Анри Бергсон (длительность как непрерывное становление vs пространственные фикции дискретных секунд).
 * **Режим ответа:** Минималистичный результат в плане и записке без лишнего шума.
+
 
